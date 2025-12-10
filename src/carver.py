@@ -103,16 +103,23 @@ class MemoryCarver:
             except Exception as e:
                 logger.warning(f"Error searching {sig_name} in chunk at offset {chunk_start:08X}: {e}")
 
-    def carve_dump(self, dump_path: str, file_types: Optional[List[str]] = None) -> None:
+    def carve_dump(self, dump_path: str, file_types: Optional[List[str]] = None, output_subdir: bool = True) -> None:
         """
         Carve files from a memory dump.
 
         Args:
             dump_path: Path to the .dmp file
             file_types: List of file types to carve (None = all types)
+            output_subdir: If True, create a subdirectory named after the dump. If False, use output_dir directly.
         """
         dump_name = os.path.splitext(os.path.basename(dump_path))[0]
-        output_path = create_output_directory(self.output_dir, dump_name)
+
+        if output_subdir:
+            output_path = create_output_directory(self.output_dir, dump_name)
+        else:
+            output_path = self.output_dir
+            os.makedirs(output_path, exist_ok=True)
+
         self._current_output_path = output_path
 
         # Clear manifest for new carve operation
@@ -246,7 +253,11 @@ class MemoryCarver:
 
             self.stats[file_type] += 1
             filename = self._generate_filename(file_type, extension, is_xbox360, script_name, is_complete, offset)
-            output_file = os.path.join(output_path, filename)
+
+            # Organize by file type in subdirectories
+            type_dir = os.path.join(output_path, file_type)
+            os.makedirs(type_dir, exist_ok=True)
+            output_file = os.path.join(type_dir, filename)
 
             # Handle duplicate filenames - skip if identical content exists
             if os.path.exists(output_file):
@@ -258,13 +269,15 @@ class MemoryCarver:
                 # Different content, use offset suffix
                 base, ext = os.path.splitext(filename)
                 filename = f"{base}_off_{offset:08X}{ext}"
-                output_file = os.path.join(output_path, filename)
+                output_file = os.path.join(type_dir, filename)
 
             with open(output_file, "wb") as out_f:
                 out_f.write(file_data)
 
-            # Add to manifest
-            self.manifest.append(CarveEntry(file_type=file_type, offset=offset, size_in_dump=file_size, size_output=file_size, filename=filename, is_compressed=False))
+            # Add to manifest with relative path
+            self.manifest.append(
+                CarveEntry(file_type=file_type, offset=offset, size_in_dump=file_size, size_output=file_size, filename=f"{file_type}/{filename}", is_compressed=False)
+            )
 
             logger.debug(f"Carved: {filename} ({format_size(file_size)})")
 
@@ -321,10 +334,7 @@ class MemoryCarver:
 
             logger.debug(f"Carved zlib: {filename} ({format_size(len(decompressed_data))} decompressed, {zlib_info['compression_ratio']:.1f}x ratio)")
 
-        except (IOError, OSError) as e:
-            logger.warning(f"Failed to save zlib stream at offset {offset:08X}: {e}")
-
-        except (IOError, OSError) as e:
+        except Exception as e:
             logger.warning(f"Failed to save zlib stream at offset {offset:08X}: {e}")
 
     def _determine_file_size(self, header_data: bytes, file_type: str, sig_info: SignatureInfo) -> Optional[Union[int, tuple[Any, ...], Dict[str, Any]]]:
@@ -420,22 +430,25 @@ class MemoryCarver:
     def _save_manifest(self, output_path: str) -> None:
         """Save the carve manifest to a JSON file."""
         manifest_path = os.path.join(output_path, "carve_manifest.json")
-        manifest_data = {
+
+        # Build by-type summary
+        by_type: Dict[str, Dict[str, int]] = {}
+        for entry in self.manifest:
+            if entry.file_type not in by_type:
+                by_type[entry.file_type] = {"count": 0, "bytes_in_dump": 0, "bytes_output": 0}
+            by_type[entry.file_type]["count"] += 1
+            by_type[entry.file_type]["bytes_in_dump"] += entry.size_in_dump
+            by_type[entry.file_type]["bytes_output"] += entry.size_output
+
+        manifest_data: Dict[str, Any] = {
             "entries": [asdict(entry) for entry in self.manifest],
             "summary": {
                 "total_files": len(self.manifest),
                 "total_bytes_in_dump": sum(e.size_in_dump for e in self.manifest),
                 "total_bytes_output": sum(e.size_output for e in self.manifest),
-                "by_type": {},
+                "by_type": by_type,
             },
         }
-        # Build by-type summary
-        for entry in self.manifest:
-            if entry.file_type not in manifest_data["summary"]["by_type"]:
-                manifest_data["summary"]["by_type"][entry.file_type] = {"count": 0, "bytes_in_dump": 0, "bytes_output": 0}
-            manifest_data["summary"]["by_type"][entry.file_type]["count"] += 1
-            manifest_data["summary"]["by_type"][entry.file_type]["bytes_in_dump"] += entry.size_in_dump
-            manifest_data["summary"]["by_type"][entry.file_type]["bytes_output"] += entry.size_output
 
         with open(manifest_path, "w") as f:
             json.dump(manifest_data, f, indent=2)

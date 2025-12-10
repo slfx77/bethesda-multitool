@@ -1,175 +1,297 @@
 """
 Xbox 360 Memory Dump File Carver
 
-A tool for extracting files from Xbox 360 memory dumps, specifically designed for
-Fallout: New Vegas prototype builds but applicable to other Xbox 360 games.
+A comprehensive tool for extracting usable data from Xbox 360 memory dumps.
+Extracts files, strings, and generates detailed extraction reports.
 
 Supports carving:
-- DDS textures (Xbox 360 and PC formats)
+- DDS/DDX textures (Xbox 360 and PC formats)
 - XMA audio files
 - NIF/KF model and animation files
-- Bethesda script files
-- ESP plugin files
-- BSA archive files
-- Common audio formats (MP3, OGG, WAV)
+- Bethesda ObScript source files
+- STFS/CON packages
+- And many more formats
+
+Output is organized into subdirectories by asset type with a comprehensive
+extraction report at the top level.
 """
 
+import logging
 import os
 import sys
-import logging
-import argparse
 from pathlib import Path
 from typing import List, Optional
 
 from src.carver import MemoryCarver
 from src.file_signatures import FILE_SIGNATURES
-from src.integrity import generate_integrity_report
-from src.minidump_extractor import MinidumpExtractor
+from src.report import ReportGenerator
+from src.string_extractor import StringExtractor
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
-def setup_logging(verbose: bool = False):
+def setup_logging(verbose: bool = False, log_file: Optional[str] = None) -> None:
     """Configure logging for the application."""
     level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s", handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("carver.log", mode="a")])
+
+    handlers: List[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file, mode="a"))
+
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=handlers,
+    )
 
 
-def find_dump_files(directory: str) -> List[str]:
-    """Find all .dmp files in a directory."""
-    dump_files = []
-    for file in Path(directory).glob("*.dmp"):
-        if file.is_file():
-            dump_files.append(str(file))
-    return sorted(dump_files)
+def find_dump_files(path: str) -> List[Path]:
+    """Find all .dmp files in a path (file or directory)."""
+    path_obj = Path(path)
+
+    if path_obj.is_file() and path_obj.suffix.lower() == ".dmp":
+        return [path_obj]
+
+    if path_obj.is_dir():
+        return sorted(path_obj.glob("*.dmp"))
+
+    return []
 
 
-def main():
-    """Main entry point for the file carver."""
+def extract_dump(
+    dump_path: Path,
+    output_base: str,
+    file_types: Optional[List[str]] = None,
+    extract_strings: bool = True,
+    chunk_size_mb: int = 10,
+    max_files: int = 10000,
+    verbose: bool = False,
+) -> Path:
+    """
+    Extract all usable data from a single dump file.
+
+    Args:
+        dump_path: Path to the .dmp file
+        output_base: Base output directory
+        file_types: Optional list of file types to extract (None = all)
+        extract_strings: Whether to extract text strings
+        chunk_size_mb: Chunk size for processing
+        max_files: Maximum files per type
+        verbose: Enable verbose logging
+
+    Returns:
+        Path to the output directory for this dump.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Create output directory named after the dump
+    dump_name = dump_path.stem
+    output_dir = Path(output_base) / dump_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    dump_size = dump_path.stat().st_size
+
+    logger.info(f"Processing: {dump_path.name}")
+    logger.info(f"Dump size: {dump_size / 1024 / 1024:.2f} MB")
+    logger.info(f"Output: {output_dir}")
+    logger.info("-" * 60)
+
+    # Initialize report generator
+    report_gen = ReportGenerator(output_dir)
+    report_gen.set_dump_info(str(dump_path), dump_size)
+
+    # Step 1: Carve files
+    logger.info("Step 1: Carving files...")
+    chunk_size_bytes = chunk_size_mb * 1024 * 1024
+    carver = MemoryCarver(
+        output_dir=str(output_dir),
+        chunk_size=chunk_size_bytes,
+        max_files_per_type=max_files,
+    )
+
+    # output_subdir=False because we already created the dump-named directory
+    carver.carve_dump(str(dump_path), file_types=file_types, output_subdir=False)
+
+    # Get manifest entries for report
+    manifest_entries = [
+        {
+            "file_type": e.file_type,
+            "offset": e.offset,
+            "size_in_dump": e.size_in_dump,
+            "size_output": e.size_output,
+            "filename": e.filename,
+        }
+        for e in carver.manifest
+    ]
+    report_gen.add_carved_files(manifest_entries)
+
+    # Step 2: Extract strings (excluding carved regions)
+    if extract_strings:
+        logger.info("\nStep 2: Extracting strings...")
+        string_extractor = StringExtractor()
+
+        # Load carved regions to exclude
+        manifest_path = output_dir / "carve_manifest.json"
+        if manifest_path.exists():
+            num_regions = string_extractor.load_carved_regions(str(manifest_path))
+            logger.info(f"  Excluding {num_regions} carved regions from string search")
+
+        string_result = string_extractor.extract(str(dump_path))
+
+        logger.info(f"  Found {string_result.total_found:,} strings")
+        logger.info(f"  Kept {string_result.total_kept:,} (excluded {string_result.skipped_carved:,} in carved regions)")
+
+        # Save strings
+        string_extractor.save_strings(string_result, output_dir)
+
+        # Add to report
+        report_gen.add_string_stats(
+            total=string_result.total_kept,
+            excluded=string_result.skipped_carved,
+            by_category=string_result.by_category,
+            by_encoding=string_result.by_encoding,
+        )
+
+    # Step 3: Generate report
+    logger.info("\nStep 3: Generating report...")
+    report_path = report_gen.save_report()
+    logger.info(f"  Report saved to: {report_path}")
+
+    return output_dir
+
+
+def main() -> int:
+    """Main entry point."""
+    import argparse
+
     parser = argparse.ArgumentParser(
-        description="Carve files from Xbox 360 memory dumps",
+        description="Extract usable data from Xbox 360 memory dumps",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Carve all file types from a single dump
-  python main.py Fallout_Debug.xex.dmp
+  # Extract everything from a single dump
+  python main.py Sample/Fallout_Debug.xex.dmp
   
-  # Carve only DDS textures from all dumps in current directory
-  python main.py --types dds --all
+  # Extract from all dumps in a directory
+  python main.py Sample/
   
-  # Carve DDS and XMA files with verbose output
-  python main.py Fallout_Release_Beta.xex.dmp --types dds xma --verbose
+  # Extract only specific file types
+  python main.py dump.dmp --types dds xma script_scn
   
-  # Process all dumps with custom output directory
-  python main.py --all --output ./extracted_files
+  # Skip string extraction
+  python main.py dump.dmp --no-strings
   
+Output Structure:
+  output/<dump_name>/
+    ├── extraction_report.txt    # Human-readable summary
+    ├── extraction_report.json   # Machine-readable report
+    ├── carve_manifest.json      # Detailed file manifest
+    ├── strings/                 # Extracted text strings
+    │   ├── general.txt
+    │   ├── filepath.txt
+    │   └── ...
+    ├── dds/                     # DDS textures
+    ├── xma/                     # XMA audio
+    ├── script_scn/              # ObScript source files
+    └── ...                      # Other file types
+
 Supported file types:
   """
         + ", ".join(sorted(FILE_SIGNATURES.keys())),
     )
 
-    parser.add_argument("dump_files", nargs="*", help="Path(s) to .dmp file(s) to process")
-
-    parser.add_argument("--all", action="store_true", help="Process all .dmp files in the current directory")
-
-    parser.add_argument("--types", nargs="+", choices=list(FILE_SIGNATURES.keys()), help="Specific file types to carve (default: all types)")
-
-    parser.add_argument("--output", default="./output", help="Output directory for carved files (default: ./output)")
-
-    parser.add_argument("--chunk-size", type=int, default=10, help="Chunk size in MB for processing (default: 10)")
-
-    parser.add_argument("--max-files", type=int, default=10000, help="Maximum files to carve per type (default: 10000)")
-
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
-
-    parser.add_argument("--check-integrity", action="store_true", help="Run integrity check on carved files after extraction")
-
-    parser.add_argument("--extract-modules", action="store_true", help="Extract loaded modules (EXE/DLL) from minidump using proper parsing")
-
-    parser.add_argument("--version", action="version", version=f"Xbox 360 Memory Carver v{__version__}")
+    parser.add_argument(
+        "path",
+        help="Path to .dmp file or directory containing .dmp files",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        default="./output",
+        help="Base output directory (default: ./output)",
+    )
+    parser.add_argument(
+        "--types",
+        nargs="+",
+        choices=list(FILE_SIGNATURES.keys()),
+        help="Specific file types to extract (default: all)",
+    )
+    parser.add_argument(
+        "--no-strings",
+        action="store_true",
+        help="Skip string extraction",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=10,
+        help="Chunk size in MB for processing (default: 10)",
+    )
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=10000,
+        help="Maximum files to extract per type (default: 10000)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"Xbox 360 Memory Carver v{__version__}",
+    )
 
     args = parser.parse_args()
 
     # Setup logging
-    setup_logging(args.verbose)
+    setup_logging(verbose=args.verbose)
     logger = logging.getLogger(__name__)
 
-    logger.info(f"Xbox 360 Memory Dump File Carver v{__version__}")
+    logger.info(f"Xbox 360 Memory Dump Extractor v{__version__}")
     logger.info("=" * 60)
 
-    # Determine which dumps to process
-    dumps_to_process = []
-
-    if args.all:
-        dumps_to_process = find_dump_files(".")
-        if not dumps_to_process:
-            logger.error("No .dmp files found in current directory")
-            return 1
-        logger.info(f"Found {len(dumps_to_process)} dump file(s) to process")
-    elif args.dump_files:
-        dumps_to_process = args.dump_files
-    else:
-        parser.print_help()
+    # Find dump files
+    dumps = find_dump_files(args.path)
+    if not dumps:
+        logger.error(f"No .dmp files found at: {args.path}")
         return 1
 
-    # Validate dump files exist
-    for dump in dumps_to_process:
-        if not os.path.exists(dump):
-            logger.error(f"Dump file not found: {dump}")
-            return 1
+    logger.info(f"Found {len(dumps)} dump file(s) to process")
 
-    # Create output directory
-    os.makedirs(args.output, exist_ok=True)
+    # Process each dump
+    for i, dump_path in enumerate(dumps, 1):
+        logger.info(f"\n{'=' * 60}")
+        logger.info(f"Processing dump {i}/{len(dumps)}")
+        logger.info("=" * 60)
 
-    # Initialize carver
-    chunk_size_bytes = args.chunk_size * 1024 * 1024
-    carver = MemoryCarver(output_dir=args.output, chunk_size=chunk_size_bytes, max_files_per_type=args.max_files)
-
-    # Extract modules if requested (using proper minidump parsing)
-    if args.extract_modules:
-        logger.info("\nExtracting modules from minidumps using minidump library...")
-        for i, dump_path in enumerate(dumps_to_process, 1):
-            try:
-                dump_name = Path(dump_path).stem
-                module_output = os.path.join(args.output, dump_name, "modules")
-                extractor = MinidumpExtractor(module_output)
-                modules = extractor.extract_modules(dump_path)
-                if modules:
-                    logger.info(f"Extracted {len(modules)} modules from {dump_name}")
-                    for mod in modules:
-                        logger.debug(f"  - {mod['name']} ({mod['size']} bytes)")
-            except Exception as e:
-                logger.error(f"Error extracting modules from {dump_path}: {e}", exc_info=args.verbose)
-                continue
-
-    # Process each dump for file carving
-    for i, dump_path in enumerate(dumps_to_process, 1):
-        logger.info(f"\nProcessing dump {i}/{len(dumps_to_process)}")
         try:
-            carver.carve_dump(dump_path, file_types=args.types)
+            extract_dump(
+                dump_path=dump_path,
+                output_base=args.output,
+                file_types=args.types,
+                extract_strings=not args.no_strings,
+                chunk_size_mb=args.chunk_size,
+                max_files=args.max_files,
+                verbose=args.verbose,
+            )
         except KeyboardInterrupt:
-            logger.warning("\nCarving interrupted by user")
+            logger.warning("\nExtraction interrupted by user")
             return 130
         except Exception as e:
-            logger.error(f"Error processing {dump_path}: {e}", exc_info=args.verbose)
+            logger.error(f"Error processing {dump_path}: {e}")
+            if args.verbose:
+                import traceback
+
+                traceback.print_exc()
             continue
 
-    # Print final statistics
-    logger.info("\n" + "=" * 60)
-    logger.info("Carving complete!")
-    stats = carver.get_statistics()
-    total = sum(stats.values())
-    logger.info(f"Total files carved: {total}")
-
-    # Run integrity check if requested
-    if args.check_integrity and total > 0:
-        logger.info("\n" + "=" * 60)
-        logger.info("Running integrity check...")
-        try:
-            report_path = generate_integrity_report(args.output, args.types)
-            logger.info(f"Integrity report saved to: {report_path}")
-        except Exception as e:
-            logger.error(f"Error generating integrity report: {e}", exc_info=args.verbose)
+    logger.info(f"\n{'=' * 60}")
+    logger.info("Extraction complete!")
+    logger.info(f"Output saved to: {args.output}")
 
     return 0
 
