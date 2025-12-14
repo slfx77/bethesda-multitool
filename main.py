@@ -2,7 +2,14 @@
 Xbox 360 Memory Dump File Carver
 
 A comprehensive tool for extracting usable data from Xbox 360 memory dumps.
-Extracts files, strings, and generates detailed extraction reports.
+Extracts files from various formats.
+
+Usage:
+  # Extract assets from a dump
+  python main.py Sample/Fallout_Debug.xex.dmp
+
+  # Batch process all dumps
+  python main.py Sample/
 
 Supports carving:
 - DDS/DDX textures (Xbox 360 and PC formats)
@@ -11,23 +18,24 @@ Supports carving:
 - Bethesda ObScript source files
 - STFS/CON packages
 - And many more formats
-
-Output is organized into subdirectories by asset type with a comprehensive
-extraction report at the top level.
 """
 
 import logging
-import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from src.carver import MemoryCarver
 from src.file_signatures import FILE_SIGNATURES
+from src.minidump_extractor import MinidumpExtractor
 from src.report import ReportGenerator
-from src.string_extractor import StringExtractor
 
-__version__ = "1.1.0"
+__version__ = "2.0.0"
+
+
+# Path to DDXConv.exe (in the root folder of the project)
+DDXCONV_PATH = Path(__file__).parent / "DDXConv.exe"
 
 
 def setup_logging(verbose: bool = False, log_file: Optional[str] = None) -> None:
@@ -45,6 +53,72 @@ def setup_logging(verbose: bool = False, log_file: Optional[str] = None) -> None
     )
 
 
+def _convert_single_ddx(ddx_file: Path, dds_file: Path, logger: logging.Logger) -> bool:
+    """
+    Convert a single DDX file to DDS format.
+
+    Returns:
+        True if conversion succeeded, False otherwise.
+    """
+    try:
+        result = subprocess.run(
+            [str(DDXCONV_PATH), str(ddx_file), str(dds_file)],
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and dds_file.exists():
+            logger.debug(f"  Converted: {ddx_file.name} -> {dds_file.name}")
+            return True
+        logger.debug(f"  Failed to convert: {ddx_file.name}")
+        if result.stderr:
+            logger.debug(f"    Error: {result.stderr.decode('utf-8', errors='ignore')}")
+    except subprocess.TimeoutExpired:
+        logger.debug(f"  Timeout converting: {ddx_file.name}")
+    except Exception as e:
+        logger.debug(f"  Error converting {ddx_file.name}: {e}")
+    return False
+
+
+def convert_ddx_to_dds(ddx_dir: Path, output_dir: Optional[Path] = None, logger: Optional[logging.Logger] = None) -> Tuple[int, int]:
+    """
+    Convert DDX files to DDS format using DDXConv.exe.
+
+    Args:
+        ddx_dir: Directory containing .ddx files
+        output_dir: Output directory for .dds files (default: ddx_dir/../textures_converted)
+        logger: Logger instance
+
+    Returns:
+        Tuple of (successful_conversions, failed_conversions)
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    if not DDXCONV_PATH.exists():
+        logger.warning(f"DDXConv.exe not found at {DDXCONV_PATH}")
+        return 0, 0
+
+    if not ddx_dir.exists():
+        return 0, 0
+
+    ddx_files = list(ddx_dir.glob("*.ddx"))
+    if not ddx_files:
+        return 0, 0
+
+    if output_dir is None:
+        output_dir = ddx_dir.parent / "textures_converted"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    success_count = 0
+    for ddx_file in ddx_files:
+        dds_file = output_dir / ddx_file.with_suffix(".dds").name
+        if _convert_single_ddx(ddx_file, dds_file, logger):
+            success_count += 1
+
+    fail_count = len(ddx_files) - success_count
+    return success_count, fail_count
+
+
 def find_dump_files(path: str) -> List[Path]:
     """Find all .dmp files in a path (file or directory)."""
     path_obj = Path(path)
@@ -58,11 +132,31 @@ def find_dump_files(path: str) -> List[Path]:
     return []
 
 
+def _convert_ddx_step(output_dir: Path, logger: logging.Logger) -> None:
+    """Step 3: Convert DDX textures to DDS format."""
+    logger.info("\nStep 3: Converting DDX textures to DDS...")
+    ddx_dir = output_dir / "ddx"
+    if not ddx_dir.exists() or not any(ddx_dir.glob("*.ddx")):
+        logger.info("  No DDX files to convert")
+        return
+    if not DDXCONV_PATH.exists():
+        logger.warning(f"  DDXConv.exe not found at {DDXCONV_PATH}")
+        logger.info("  Download from: https://github.com/kran27/DDXConv")
+        return
+    converted_dir = output_dir / "textures_converted"
+    success, failed = convert_ddx_to_dds(ddx_dir, converted_dir, logger)
+    if success > 0 or failed > 0:
+        logger.info(f"  Converted {success} DDX files to DDS ({failed} failed)")
+        if failed > 0:
+            logger.info("  Note: 3XDR format files may not convert (engine-tiled format)")
+
+
 def extract_dump(
     dump_path: Path,
     output_base: str,
     file_types: Optional[List[str]] = None,
-    extract_strings: bool = True,
+    extract_modules: bool = True,
+    convert_ddx: bool = True,
     chunk_size_mb: int = 10,
     max_files: int = 10000,
     verbose: bool = False,
@@ -74,7 +168,8 @@ def extract_dump(
         dump_path: Path to the .dmp file
         output_base: Base output directory
         file_types: Optional list of file types to extract (None = all)
-        extract_strings: Whether to extract text strings
+        extract_modules: Whether to extract PE modules (EXE/DLL) from minidump
+        convert_ddx: Whether to convert DDX files to DDS using DDXConv.exe
         chunk_size_mb: Chunk size for processing
         max_files: Maximum files per type
         verbose: Enable verbose logging
@@ -84,7 +179,6 @@ def extract_dump(
     """
     logger = logging.getLogger(__name__)
 
-    # Create output directory named after the dump
     dump_name = dump_path.stem
     output_dir = Path(output_base) / dump_name
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -96,7 +190,6 @@ def extract_dump(
     logger.info(f"Output: {output_dir}")
     logger.info("-" * 60)
 
-    # Initialize report generator
     report_gen = ReportGenerator(output_dir)
     report_gen.set_dump_info(str(dump_path), dump_size)
 
@@ -108,12 +201,9 @@ def extract_dump(
         chunk_size=chunk_size_bytes,
         max_files_per_type=max_files,
     )
-
-    # output_subdir=False because we already created the dump-named directory
     carver.carve_dump(str(dump_path), file_types=file_types, output_subdir=False)
 
-    # Get manifest entries for report
-    manifest_entries = [
+    manifest_entries: List[dict[str, object]] = [
         {
             "file_type": e.file_type,
             "offset": e.offset,
@@ -125,32 +215,11 @@ def extract_dump(
     ]
     report_gen.add_carved_files(manifest_entries)
 
-    # Step 2: Extract strings (excluding carved regions)
-    if extract_strings:
-        logger.info("\nStep 2: Extracting strings...")
-        string_extractor = StringExtractor()
+    if extract_modules:
+        _extract_modules_step_with_path(dump_path, output_dir, logger)
 
-        # Load carved regions to exclude
-        manifest_path = output_dir / "carve_manifest.json"
-        if manifest_path.exists():
-            num_regions = string_extractor.load_carved_regions(str(manifest_path))
-            logger.info(f"  Excluding {num_regions} carved regions from string search")
-
-        string_result = string_extractor.extract(str(dump_path))
-
-        logger.info(f"  Found {string_result.total_found:,} strings")
-        logger.info(f"  Kept {string_result.total_kept:,} (excluded {string_result.skipped_carved:,} in carved regions)")
-
-        # Save strings
-        string_extractor.save_strings(string_result, output_dir)
-
-        # Add to report
-        report_gen.add_string_stats(
-            total=string_result.total_kept,
-            excluded=string_result.skipped_carved,
-            by_category=string_result.by_category,
-            by_encoding=string_result.by_encoding,
-        )
+    if convert_ddx:
+        _convert_ddx_step(output_dir, logger)
 
     # Step 3: Generate report
     logger.info("\nStep 3: Generating report...")
@@ -158,6 +227,23 @@ def extract_dump(
     logger.info(f"  Report saved to: {report_path}")
 
     return output_dir
+
+
+def _extract_modules_step_with_path(dump_path: Path, output_dir: Path, logger: logging.Logger) -> None:
+    """Step 2: Extract PE modules (EXE/DLL) from minidump structure."""
+    logger.info("\nStep 2: Extracting modules from minidump...")
+    modules_dir = output_dir / "modules"
+    try:
+        module_extractor = MinidumpExtractor(str(modules_dir))
+        extracted_modules = module_extractor.extract_modules(str(dump_path))
+        if extracted_modules:
+            logger.info(f"  Extracted {len(extracted_modules)} modules")
+            for mod in extracted_modules:
+                logger.debug("    - %s (%s, %.1f%% coverage)", mod["name"], mod["machine"], mod["coverage"])
+        else:
+            logger.info("  No modules found in minidump")
+    except Exception as e:
+        logger.warning(f"  Module extraction failed: {e}")
 
 
 def main() -> int:
@@ -176,23 +262,24 @@ Examples:
   python main.py Sample/
   
   # Extract only specific file types
-  python main.py dump.dmp --types dds xma script_scn
+  python main.py dump.dmp --types dds ddx_3xdo xma script_scn
   
-  # Skip string extraction
-  python main.py dump.dmp --no-strings
+  # Skip module extraction from minidump
+  python main.py dump.dmp --no-modules
   
 Output Structure:
   output/<dump_name>/
     ├── extraction_report.txt    # Human-readable summary
     ├── extraction_report.json   # Machine-readable report
     ├── carve_manifest.json      # Detailed file manifest
-    ├── strings/                 # Extracted text strings
-    │   ├── general.txt
-    │   ├── filepath.txt
-    │   └── ...
-    ├── dds/                     # DDS textures
-    ├── xma/                     # XMA audio
-    ├── script_scn/              # ObScript source files
+    ├── modules/                 # Extracted PE modules (EXE/DLL)
+    ├── textures/                # DDS textures (PC format)
+    ├── ddx/                     # DDX textures (Xbox 360 format)
+    ├── textures_converted/      # DDX converted to DDS (via DDXConv.exe)
+    ├── audio/                   # XMA and other audio files
+    ├── scripts/                 # ObScript source files
+    ├── zlib_nif/                # Decompressed NIF models
+    ├── zlib_dds/                # Decompressed textures
     └── ...                      # Other file types
 
 Supported file types:
@@ -217,9 +304,14 @@ Supported file types:
         help="Specific file types to extract (default: all)",
     )
     parser.add_argument(
-        "--no-strings",
+        "--no-modules",
         action="store_true",
-        help="Skip string extraction",
+        help="Skip extracting PE modules (EXE/DLL) from minidump structure",
+    )
+    parser.add_argument(
+        "--no-convert",
+        action="store_true",
+        help="Skip converting DDX textures to DDS format",
     )
     parser.add_argument(
         "--chunk-size",
@@ -262,7 +354,7 @@ Supported file types:
 
     logger.info(f"Found {len(dumps)} dump file(s) to process")
 
-    # Process each dump
+    # Process each dump for asset extraction
     for i, dump_path in enumerate(dumps, 1):
         logger.info(f"\n{'=' * 60}")
         logger.info(f"Processing dump {i}/{len(dumps)}")
@@ -273,7 +365,8 @@ Supported file types:
                 dump_path=dump_path,
                 output_base=args.output,
                 file_types=args.types,
-                extract_strings=not args.no_strings,
+                extract_modules=not args.no_modules,
+                convert_ddx=not args.no_convert,
                 chunk_size_mb=args.chunk_size,
                 max_files=args.max_files,
                 verbose=args.verbose,

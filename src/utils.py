@@ -4,7 +4,7 @@ Utility functions for file carving operations.
 
 import struct
 import os
-from typing import Optional, Tuple
+from typing import Optional
 
 
 def read_uint32_le(data: bytes, offset: int = 0) -> int:
@@ -87,11 +87,12 @@ def format_size(size_bytes: int) -> str:
     Returns:
         Formatted string (e.g., "1.5 MB")
     """
+    size_float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if size_bytes < 1024.0:
-            return f"{size_bytes:.2f} {unit}"
-        size_bytes /= 1024.0
-    return f"{size_bytes:.2f} PB"
+        if size_float < 1024.0:
+            return f"{size_float:.2f} {unit}"
+        size_float /= 1024.0
+    return f"{size_float:.2f} PB"
 
 
 def find_pattern(data: bytes, pattern: bytes, start: int = 0) -> int:

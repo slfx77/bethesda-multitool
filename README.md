@@ -100,7 +100,13 @@ python main.py path/to/Fallout_Debug.xex.dmp
 ### Process All Dumps in Directory
 
 ```bash
-python main.py --all
+python main.py Sample/
+```
+
+### Analyze Player State (Quests, Locations, etc.)
+
+```bash
+python main.py --analyze Sample/Fallout_Release_Beta.xex.dmp
 ```
 
 ### Carve Specific File Types
@@ -120,7 +126,7 @@ python main.py Fallout_Release_Beta.xex.dmp --types dds xma
 ### Custom Output Directory
 
 ```bash
-python main.py --all --output ./extracted_files
+python main.py Sample/ --output ./extracted_files
 ```
 
 ### Advanced Options
@@ -138,14 +144,38 @@ python main.py Fallout_Debug.xex.dmp \
 
 | Option         | Description                                    | Default   |
 | -------------- | ---------------------------------------------- | --------- |
-| `dump_files`   | Path(s) to .dmp file(s) to process             | -         |
-| `--all`        | Process all .dmp files in current directory    | False     |
+| `path`         | Path to .dmp file or directory of .dmp files   | -         |
+| `--analyze`    | Run player state analysis instead of carving   | False     |
 | `--types`      | Specific file types to carve (space-separated) | All types |
 | `--output`     | Output directory for carved files              | ./output  |
+| `--no-strings` | Skip string extraction                         | False     |
+| `--no-modules` | Skip PE module extraction                      | False     |
 | `--chunk-size` | Chunk size in MB for processing                | 10        |
 | `--max-files`  | Maximum files to carve per type                | 10000     |
 | `--verbose`    | Enable verbose logging                         | False     |
 | `--version`    | Show version information                       | -         |
+
+## Memory Snapshot Analysis (Preservation)
+
+In addition to file carving, the repo includes analysis scripts that scan minidump memory ranges for _evidence-backed_ gameplay clues (quests, locations/cells, faction reputation strings, etc.).
+
+Analyze one dump:
+
+```bash
+python main.py --analyze Sample/Fallout_Release_Beta.xex24.dmp
+```
+
+Or use the analyzer directly:
+
+```bash
+python -m src.player_state_analyzer Sample/Fallout_Release_Beta.xex24.dmp
+```
+
+Batch analyze all dumps in `Sample/`:
+
+```bash
+python -m src.batch_player_state --input Sample --output results/player_state_batch
+```
 
 ## Output Structure
 

@@ -893,25 +893,104 @@ class ZlibStreamParser:
         """Not used for zlib - use try_decompress instead."""
         return None
 
+    # Mapping of file signatures to (content_type, extension)
+    _SIGNATURE_MAP: Dict[bytes, Tuple[str, str]] = {
+        b"DDS ": ("dds", ".dds"),
+        b"3XDO": ("ddx", ".ddx"),
+        b"3XDR": ("ddx", ".ddx"),
+        b"TES4": ("esp", ".esp"),
+        b"BSA\x00": ("bsa", ".bsa"),
+        b"OggS": ("ogg", ".ogg"),
+        b"\x89PNG": ("png", ".png"),
+        b"BIKi": ("bik", ".bik"),
+        b"LIPS": ("lip", ".lip"),
+        b"XEX2": ("xex", ".xex"),
+        b"XDBF": ("xdbf", ".xdbf"),
+        b"XUIS": ("xui", ".xui"),
+        b"XUIB": ("xui", ".xui"),
+    }
+
+    @staticmethod
+    def _check_signature_match(decompressed: bytes) -> Optional[Tuple[str, str]]:
+        """Check if data starts with a known signature."""
+        for sig, (ctype, ext) in ZlibStreamParser._SIGNATURE_MAP.items():
+            if decompressed.startswith(sig):
+                return ctype, ext
+        return None
+
+    @staticmethod
+    def _check_riff_type(decompressed: bytes) -> Tuple[str, str]:
+        """Determine RIFF subtype."""
+        if b"XMA2" in decompressed[:100] or b"fmt " in decompressed[:100]:
+            return "xma", ".xma"
+        return "riff", ".riff"
+
+    @staticmethod
+    def _check_xml_content(decompressed: bytes) -> Optional[Tuple[str, str]]:
+        """Check if data is XML content."""
+        try:
+            text_sample = decompressed[:500].decode("utf-8", errors="strict")
+            if "<" in text_sample and ">" in text_sample:
+                return "xml", ".xml"
+        except UnicodeDecodeError:
+            pass
+        return None
+
+    @staticmethod
+    def _check_text_content(decompressed: bytes) -> Optional[Tuple[str, str]]:
+        """Check if data is plain text."""
+        if len(decompressed) <= 20:
+            return None
+        try:
+            text_sample = decompressed[: min(500, len(decompressed))]
+            printable_count = sum(1 for b in text_sample if 32 <= b < 127 or b in (9, 10, 13))
+            if printable_count / len(text_sample) > 0.85:
+                return "text", ".txt"
+        except Exception:
+            pass
+        return None
+
     @staticmethod
     def _determine_content_type(decompressed: bytes) -> Tuple[str, str, Optional[str]]:
         """Determine content type and extension from decompressed data."""
-        content_type = "binary"
-        extension = ".bin"
         name_hint: Optional[str] = None
 
+        # Check NIF format (has special handling for author extraction)
         if decompressed.startswith(ZlibStreamParser.NIF_MAGIC):
-            content_type = "nif"
-            extension = ".nif"
-            name_hint = ZlibStreamParser._extract_nif_author(decompressed)
-        elif decompressed.startswith(ZlibStreamParser.DATA_CHUNK):
-            content_type = "data_chunk"
-            extension = ".data"
-            if b"VNML" in decompressed[:20]:
-                content_type = "vnml"
-                extension = ".vnml"
+            return "nif", ".nif", ZlibStreamParser._extract_nif_author(decompressed)
 
-        return content_type, extension, name_hint
+        # Check DATA chunk format
+        if decompressed.startswith(ZlibStreamParser.DATA_CHUNK):
+            if b"VNML" in decompressed[:20]:
+                return "vnml", ".vnml", None
+            return "data_chunk", ".data", None
+
+        # Check simple signature matches
+        sig_match = ZlibStreamParser._check_signature_match(decompressed)
+        if sig_match:
+            return sig_match[0], sig_match[1], None
+
+        # Check RIFF format
+        if decompressed.startswith(b"RIFF"):
+            ctype, ext = ZlibStreamParser._check_riff_type(decompressed)
+            return ctype, ext, None
+
+        # Check script formats
+        if decompressed[:3] in (b"scn", b"Scn", b"SCN") or decompressed.startswith(b"ScriptName"):
+            return "script", ".txt", None
+
+        # Check XML content
+        if decompressed.startswith(b"<?xml") or decompressed.startswith(b"<"):
+            xml_match = ZlibStreamParser._check_xml_content(decompressed)
+            if xml_match:
+                return xml_match[0], xml_match[1], None
+
+        # Check plain text
+        text_match = ZlibStreamParser._check_text_content(decompressed)
+        if text_match:
+            return text_match[0], text_match[1], None
+
+        return "binary", ".bin", name_hint
 
     @staticmethod
     def _extract_nif_author(decompressed: bytes) -> Optional[str]:

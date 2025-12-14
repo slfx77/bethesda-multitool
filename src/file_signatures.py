@@ -37,27 +37,42 @@ CON_MAGIC = b"CON "  # Xbox LIVE content package
 
 # File signatures for carving
 FILE_SIGNATURES: SignaturesDict = {
-    # Textures
-    "dds": {"magic": b"DDS ", "extension": ".dds", "description": "DirectDraw Surface texture", "min_size": 128, "max_size": 50 * 1024 * 1024},
+    # Textures - all output to unified folders
+    "dds": {"magic": b"DDS ", "extension": ".dds", "description": "DirectDraw Surface texture", "min_size": 128, "max_size": 50 * 1024 * 1024, "folder": "textures"},
     # Xbox 360 DDX textures - use DDXConv (https://github.com/kran27/DDXConv) for conversion to standard DDS
-    "ddx_3xdo": {"magic": DDX_3XDO_MAGIC, "extension": ".ddx", "description": "Xbox 360 DDX texture (3XDO format)", "min_size": 68, "max_size": 50 * 1024 * 1024},
-    "ddx_3xdr": {"magic": DDX_3XDR_MAGIC, "extension": ".ddx", "description": "Xbox 360 DDX texture (3XDR engine-tiled format)", "min_size": 68, "max_size": 50 * 1024 * 1024},
+    # Both 3XDO and 3XDR formats output to unified 'ddx' folder (DDXConv converts them automatically)
+    "ddx_3xdo": {"magic": DDX_3XDO_MAGIC, "extension": ".ddx", "description": "Xbox 360 DDX texture (3XDO format)", "min_size": 68, "max_size": 50 * 1024 * 1024, "folder": "ddx"},
+    "ddx_3xdr": {
+        "magic": DDX_3XDR_MAGIC,
+        "extension": ".ddx",
+        "description": "Xbox 360 DDX texture (3XDR engine-tiled format)",
+        "min_size": 68,
+        "max_size": 50 * 1024 * 1024,
+        "folder": "ddx",
+    },
     # 3D Models and Animations
     "nif": {"magic": GAMEBRYO_MAGIC, "extension": ".nif", "description": "NetImmerse/Gamebryo 3D model", "min_size": 100, "max_size": 20 * 1024 * 1024},
     "kf": {"magic": GAMEBRYO_MAGIC, "extension": ".kf", "description": "Gamebryo animation", "min_size": 100, "max_size": 10 * 1024 * 1024},
     "egm": {"magic": GAMEBRYO_MAGIC, "extension": ".egm", "description": "FaceGen Morph file", "min_size": 100, "max_size": 5 * 1024 * 1024},
     "egt": {"magic": GAMEBRYO_MAGIC, "extension": ".egt", "description": "FaceGen Tint file", "min_size": 100, "max_size": 1 * 1024 * 1024},
     # Audio
-    "xma": {"magic": RIFF_MAGIC, "extension": ".xma", "description": "Xbox Media Audio", "min_size": 44, "max_size": 100 * 1024 * 1024},
-    # MP3 - DISABLED: 0xFF 0xFB is too common, causes thousands of false positives
-    # "mp3": {"magic": b"\xff\xfb", "extension": ".mp3", "description": "MP3 audio", "min_size": 128, "max_size": 50 * 1024 * 1024},
-    "ogg": {"magic": b"OggS", "extension": ".ogg", "description": "Ogg Vorbis audio", "min_size": 58, "max_size": 50 * 1024 * 1024},
-    "wav": {"magic": RIFF_MAGIC, "extension": ".wav", "description": "WAV audio", "min_size": 44, "max_size": 100 * 1024 * 1024},
+    # Xbox 360 uses XMA audio format (RIFF container with XMA2 or XMA fmt chunks)
+    # Standard WAV files also use RIFF but are distinguished by fmt chunk format code
+    "xma": {"magic": RIFF_MAGIC, "extension": ".xma", "description": "Xbox Media Audio (RIFF/XMA)", "min_size": 44, "max_size": 100 * 1024 * 1024, "folder": "audio"},
+    "ogg": {"magic": b"OggS", "extension": ".ogg", "description": "Ogg Vorbis audio", "min_size": 58, "max_size": 50 * 1024 * 1024, "folder": "audio"},
     "lip": {"magic": b"LIPS", "extension": ".lip", "description": "Lip-sync animation", "min_size": 20, "max_size": 5 * 1024 * 1024},
     # Scripts - ObScript format (present in debug builds, stripped from release builds)
     # Uses "scn <name>" or "ScriptName <name>" header format
-    "script_scn": {"magic": b"scn ", "extension": ".txt", "description": "Bethesda ObScript (scn format)", "min_size": 20, "max_size": 100 * 1024},
-    "script_sn": {"magic": b"ScriptName ", "extension": ".txt", "description": "Bethesda ObScript (ScriptName format)", "min_size": 20, "max_size": 100 * 1024},
+    # Both formats output to unified 'scripts' folder
+    "script_scn": {"magic": b"scn ", "extension": ".txt", "description": "Bethesda ObScript (scn format)", "min_size": 20, "max_size": 100 * 1024, "folder": "scripts"},
+    "script_sn": {
+        "magic": b"ScriptName ",
+        "extension": ".txt",
+        "description": "Bethesda ObScript (ScriptName format)",
+        "min_size": 20,
+        "max_size": 100 * 1024,
+        "folder": "scripts",
+    },
     # Game Data Files
     "esp": {"magic": TES4_MAGIC, "extension": ".esp", "description": "Elder Scrolls Plugin", "min_size": 24, "max_size": 500 * 1024 * 1024},
     "esm": {"magic": TES4_MAGIC, "extension": ".esm", "description": "Elder Scrolls Master", "min_size": 24, "max_size": 500 * 1024 * 1024},
@@ -74,9 +89,6 @@ FILE_SIGNATURES: SignaturesDict = {
     "xdbf": {"magic": XDBF_MAGIC, "extension": ".xdbf", "description": "Xbox Dashboard File (achievements/title data)", "min_size": 24, "max_size": 10 * 1024 * 1024},
     "xuis": {"magic": XUIS_MAGIC, "extension": ".xuis", "description": "Xbox UI Scene/Skin", "min_size": 16, "max_size": 10 * 1024 * 1024},
     "xuib": {"magic": XUIB_MAGIC, "extension": ".xuib", "description": "Xbox UI Binary", "min_size": 16, "max_size": 10 * 1024 * 1024},
-    "pirs": {"magic": PIRS_MAGIC, "extension": ".pirs", "description": "Xbox LIVE Signed Content", "min_size": 24, "max_size": 100 * 1024 * 1024},
-    "con": {"magic": CON_MAGIC, "extension": ".con", "description": "Xbox LIVE Content Package", "min_size": 24, "max_size": 100 * 1024 * 1024},
-    # Compressed streams - zlib (used for embedded NIF models, plugin data chunks, etc.)
     "zlib_default": {"magic": ZLIB_DEFAULT, "extension": ".zlib", "description": "Zlib compressed stream (default)", "min_size": 10, "max_size": 10 * 1024 * 1024},
     "zlib_best": {"magic": ZLIB_BEST, "extension": ".zlib", "description": "Zlib compressed stream (best)", "min_size": 10, "max_size": 10 * 1024 * 1024},
 }
@@ -95,16 +107,6 @@ XBOX360_GPU_TEXTURE_FORMATS = {
     0x82: "DXT1",  # DXT1 (default when format byte is 0)
     0x86: "DXT1",  # DXT1 variant
     0x88: "DXT5",  # DXT5 variant
-}
-
-# Legacy mapping (kept for compatibility)
-XBOX360_DDS_FORMATS = {
-    0x47: "DXT1",
-    0x49: "DXT3",
-    0x4F: "DXT5",
-    0x52: "ATI2/BC5",
-    0x71: "A8R8G8B8",
-    0x72: "X8R8G8B8",
 }
 
 

@@ -7,10 +7,10 @@ extracted strings, and coverage statistics.
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class FileTypeStats:
 
     count: int = 0
     total_bytes: int = 0
-    files: List[str] = field(default_factory=list)
+    files: List[str] = field(default_factory=lambda: [])
 
 
 @dataclass
@@ -37,13 +37,13 @@ class ExtractionReport:
     # File carving results
     total_files_carved: int = 0
     total_bytes_carved: int = 0
-    files_by_type: Dict[str, FileTypeStats] = field(default_factory=dict)
+    files_by_type: Dict[str, FileTypeStats] = field(default_factory=lambda: {})
 
     # String extraction results
     total_strings: int = 0
     strings_excluded_carved: int = 0
-    strings_by_category: Dict[str, int] = field(default_factory=dict)
-    strings_by_encoding: Dict[str, int] = field(default_factory=dict)
+    strings_by_category: Dict[str, int] = field(default_factory=lambda: {})
+    strings_by_encoding: Dict[str, int] = field(default_factory=lambda: {})
 
     # Coverage
     coverage_percent: float = 0.0
@@ -85,6 +85,7 @@ class ReportGenerator:
     def __init__(self, output_dir: Path) -> None:
         self.output_dir = output_dir
         self.report = ExtractionReport()
+        self._manifest_entries: List[Dict[str, Any]] = []
 
     def set_dump_info(self, dump_path: str, dump_size: int) -> None:
         """Set basic dump information."""
@@ -94,6 +95,9 @@ class ReportGenerator:
 
     def add_carved_files(self, manifest_entries: List[Dict[str, Any]]) -> None:
         """Add carved file statistics from manifest entries."""
+        # Store for later coverage calculation
+        self._manifest_entries = manifest_entries
+
         for entry in manifest_entries:
             file_type = entry.get("file_type", "unknown")
             size = entry.get("size_in_dump", 0)
@@ -123,12 +127,51 @@ class ReportGenerator:
         self.report.strings_by_category = by_category
         self.report.strings_by_encoding = by_encoding
 
-    def calculate_coverage(self) -> None:
-        """Calculate coverage statistics."""
-        if self.report.dump_size > 0:
+    def _extract_ranges_from_entries(self, manifest_entries: List[Dict[str, Any]]) -> List[tuple[int, int]]:
+        """Extract valid offset ranges from manifest entries."""
+        ranges: List[tuple[int, int]] = []
+        for entry in manifest_entries:
+            offset = entry.get("offset", 0)
+            size = entry.get("size_in_dump", 0)
+            if offset >= 0 and size > 0:
+                ranges.append((offset, offset + size))
+        return ranges
+
+    def _merge_overlapping_ranges(self, ranges: List[tuple[int, int]]) -> List[tuple[int, int]]:
+        """Sort and merge overlapping ranges to avoid double-counting."""
+        if not ranges:
+            return []
+        ranges.sort()
+        merged: List[tuple[int, int]] = [ranges[0]]
+        for start, end in ranges[1:]:
+            if start <= merged[-1][1]:
+                # Overlapping - extend the current range
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        return merged
+
+    def calculate_coverage(self, manifest_entries: List[Dict[str, Any]] | None = None) -> None:
+        """Calculate coverage statistics based on unique offset ranges.
+
+        Args:
+            manifest_entries: List of carved file entries. If provided, calculates
+                             unique coverage by merging overlapping offset ranges
+                             to avoid double-counting files that share signatures.
+        """
+        if self.report.dump_size <= 0:
+            return
+
+        if manifest_entries:
+            ranges = self._extract_ranges_from_entries(manifest_entries)
+            merged = self._merge_overlapping_ranges(ranges)
+            self.report.identified_bytes = sum(end - start for start, end in merged)
+        else:
+            # Fallback to simple sum (may have duplicates)
             self.report.identified_bytes = self.report.total_bytes_carved
-            self.report.unknown_bytes = self.report.dump_size - self.report.identified_bytes
-            self.report.coverage_percent = self.report.identified_bytes / self.report.dump_size * 100
+
+        self.report.unknown_bytes = self.report.dump_size - self.report.identified_bytes
+        self.report.coverage_percent = self.report.identified_bytes / self.report.dump_size * 100
 
     def generate_text_report(self) -> str:
         """Generate a human-readable text report."""
@@ -192,7 +235,7 @@ class ReportGenerator:
 
     def save_report(self) -> Path:
         """Save the report to the output directory."""
-        self.calculate_coverage()
+        self.calculate_coverage(self._manifest_entries if self._manifest_entries else None)
 
         # Save text report
         text_path = self.output_dir / "extraction_report.txt"
@@ -203,7 +246,7 @@ class ReportGenerator:
         json_path = self.output_dir / "extraction_report.json"
 
         # Convert to serializable dict
-        report_dict = {
+        report_dict: Dict[str, Any] = {
             "dump_file": self.report.dump_file,
             "dump_size": self.report.dump_size,
             "extraction_time": self.report.extraction_time,

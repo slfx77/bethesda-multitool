@@ -254,8 +254,9 @@ class MemoryCarver:
             self.stats[file_type] += 1
             filename = self._generate_filename(file_type, extension, is_xbox360, script_name, is_complete, offset)
 
-            # Organize by file type in subdirectories
-            type_dir = os.path.join(output_path, file_type)
+            # Organize by folder name (use override from signature if present, otherwise file_type)
+            folder_name = str(sig_info.get("folder", file_type))
+            type_dir = os.path.join(output_path, folder_name)
             os.makedirs(type_dir, exist_ok=True)
             output_file = os.path.join(type_dir, filename)
 
@@ -274,9 +275,9 @@ class MemoryCarver:
             with open(output_file, "wb") as out_f:
                 out_f.write(file_data)
 
-            # Add to manifest with relative path
+            # Add to manifest with relative path (use folder_name for path)
             self.manifest.append(
-                CarveEntry(file_type=file_type, offset=offset, size_in_dump=file_size, size_output=file_size, filename=f"{file_type}/{filename}", is_compressed=False)
+                CarveEntry(file_type=file_type, offset=offset, size_in_dump=file_size, size_output=file_size, filename=f"{folder_name}/{filename}", is_compressed=False)
             )
 
             logger.debug(f"Carved: {filename} ({format_size(file_size)})")
