@@ -1,7 +1,0 @@
-# Python dependencies
-tqdm>=4.66.0
-
-# Note: minidump library does not support Xbox 360 dump format
-# PE extraction via --extract-modules is disabled
-
-# Optional but recommended for better performance

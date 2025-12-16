@@ -1,89 +1,49 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Build outputs
+bin/
+obj/
+out/
 
 # IDE
+.vs/
 .vscode/
-.idea/
-*.swp
-*.swo
-*~
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# NuGet
+packages/
+*.nupkg
+*.nuget.props
+*.nuget.targets
+
+# Test results
+TestResults/
+*.trx
+*.runsettings
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
 
 # Logs
 *.log
-carver.log
 
-# Output directories (carved files)
+# Native dependencies (add to repo if needed)
+xcompress64.dll
+XnaNative.dll
+
+# Output directories
 output/
-carved_output/
-extracted/
-extracted_files/
-string_extraction/
-coverage_analysis/
+test_output/
+test_output_csharp/
+TestOutput/
 
-# Sample data directory (large binary dumps)
+# Python remnants (if any)
+.venv/
+__pycache__/
+*.pyc
+
+# Input directories
 Sample/
-
-# XDK files
-XDK/
-
-# Executables
-*.exe
-
-# Memory dumps (large binary files)
-*.dmp
-
-# OS specific
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Project specific
-*.bak
-*.tmp
-*.temp
