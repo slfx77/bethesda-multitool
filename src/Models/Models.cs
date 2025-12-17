@@ -25,6 +25,16 @@ public class CarveEntry
     public required string Filename { get; init; }
     public bool IsCompressed { get; init; }
     public string ContentType { get; init; } = "";
+
+    /// <summary>
+    /// Indicates the file was partially recovered (e.g., missing chunks).
+    /// </summary>
+    public bool IsPartial { get; init; }
+
+    /// <summary>
+    /// Additional notes about the carving result (e.g., "atlas-only", "truncated").
+    /// </summary>
+    public string? Notes { get; init; }
 }
 
 /// <summary>
@@ -45,7 +55,7 @@ public class DdxHeader
     public int DataOffset { get; init; }
     public int CompressedSize { get; init; }
     public int UncompressedSize { get; init; }
-    
+
     public bool Is3Xdr => FormatType == "3XDR";
 }
 
@@ -137,6 +147,37 @@ public class FileTypeStats
 }
 
 /// <summary>
+/// Result of a DDX to DDS conversion.
+/// </summary>
+public class DdxConversionResult
+{
+    /// <summary>
+    /// Whether the conversion succeeded (at least partial output).
+    /// </summary>
+    public bool Success { get; init; }
+
+    /// <summary>
+    /// The converted DDS data, if successful.
+    /// </summary>
+    public byte[]? DdsData { get; init; }
+
+    /// <summary>
+    /// Whether the output is partial (e.g., atlas-only, missing mips).
+    /// </summary>
+    public bool IsPartial { get; init; }
+
+    /// <summary>
+    /// Notes about the conversion (e.g., "atlas-only: 8 mip levels recovered").
+    /// </summary>
+    public string? Notes { get; init; }
+
+    /// <summary>
+    /// Raw console output from DDXConv for diagnostics.
+    /// </summary>
+    public string? ConsoleOutput { get; init; }
+}
+
+/// <summary>
 /// Complete extraction report.
 /// </summary>
 public class ExtractionReport
@@ -145,11 +186,21 @@ public class ExtractionReport
     public long DumpSize { get; set; }
     public DateTime ExtractionTime { get; set; } = DateTime.Now;
     public string Version { get; set; } = Program.Version;
-    
+
     public int TotalFilesCarved { get; set; }
     public long TotalBytesCarved { get; set; }
     public Dictionary<string, FileTypeStats> FilesByType { get; } = new();
-    
+
+    /// <summary>
+    /// Detailed manifest of all carved files with offsets and metadata.
+    /// </summary>
+    public List<CarveEntry> Manifest { get; set; } = new();
+
+    /// <summary>
+    /// Count of partial/incomplete files recovered.
+    /// </summary>
+    public int PartialFilesCount { get; set; }
+
     public double CoveragePercent { get; set; }
     public long IdentifiedBytes { get; set; }
     public long UnknownBytes { get; set; }

@@ -197,8 +197,8 @@ public class DdxParser : IFileParser
             int blocksH = (height + 3) / 4;
             int baseSize = blocksW * blocksH * bytesPerBlock;
 
-            // Total size with mipmaps
-            int totalSize = baseSize;
+            // Total uncompressed size with mipmaps
+            int uncompressedSize = baseSize;
             int mipW = width, mipH = height;
             for (int i = 1; i < mipCount; i++)
             {
@@ -206,13 +206,17 @@ public class DdxParser : IFileParser
                 mipH = Math.Max(1, mipH / 2);
                 int mipBlocksW = Math.Max(1, (mipW + 3) / 4);
                 int mipBlocksH = Math.Max(1, (mipH + 3) / 4);
-                totalSize += mipBlocksW * mipBlocksH * bytesPerBlock;
+                uncompressedSize += mipBlocksW * mipBlocksH * bytesPerBlock;
             }
+
+            // DDX files are compressed - estimate actual size by scanning for next signature
+            // This is more accurate for memory dump carving where files are packed together
+            int estimatedSize = FindDdxBoundary(data, offset, uncompressedSize);
 
             return new ParseResult
             {
                 Format = formatType,
-                EstimatedSize = 0x44 + totalSize,
+                EstimatedSize = estimatedSize,
                 Width = width,
                 Height = height,
                 MipCount = mipCount,
@@ -223,7 +227,8 @@ public class DdxParser : IFileParser
                     ["version"] = version,
                     ["gpuFormat"] = formatByte,
                     ["isTiled"] = isTiled,
-                    ["dataOffset"] = 0x44
+                    ["dataOffset"] = 0x44,
+                    ["uncompressedSize"] = uncompressedSize
                 }
             };
         }
@@ -231,6 +236,50 @@ public class DdxParser : IFileParser
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Find the boundary of this DDX file by scanning for the next DDX signature.
+    /// This helps with memory dump carving where compressed DDX files are packed together.
+    /// </summary>
+    private static int FindDdxBoundary(ReadOnlySpan<byte> data, int offset, int uncompressedSize)
+    {
+        const int headerSize = 0x44;
+
+        // Minimum compressed size - assume at least 20% compression
+        int minSize = headerSize + Math.Max(100, uncompressedSize / 5);
+
+        // Maximum size - compressed data shouldn't exceed uncompressed
+        int maxSize = Math.Min(data.Length - offset, headerSize + uncompressedSize);
+
+        // Scan for next DDX signature starting after minimum expected size
+        ReadOnlySpan<byte> ddx3xdo = "3XDO"u8;
+        ReadOnlySpan<byte> ddx3xdr = "3XDR"u8;
+
+        for (int i = offset + minSize; i < offset + maxSize && i < data.Length - 4; i++)
+        {
+            var slice = data.Slice(i, 4);
+            if (slice.SequenceEqual(ddx3xdo) || slice.SequenceEqual(ddx3xdr))
+            {
+                // Validate this looks like a real DDX header
+                if (i + 0x44 < data.Length)
+                {
+                    // Check version field
+                    ushort nextVersion = BinaryUtils.ReadUInt16LE(data, i + 7);
+                    byte nextFlags = data[i + 0x24];
+
+                    if (nextVersion >= 3 && nextFlags >= 0x80)
+                    {
+                        // Found valid next DDX - this is our boundary
+                        return i - offset;
+                    }
+                }
+            }
+        }
+
+        // No next signature found - use compression estimate
+        // DXT data typically compresses to 50-80% of original size
+        return headerSize + Math.Min(uncompressedSize, uncompressedSize * 3 / 4);
     }
 }
 

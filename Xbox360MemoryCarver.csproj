@@ -8,24 +8,17 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
+
+  <!-- Include source files from src directory -->
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
     <PackageReference Include="Spectre.Console" Version="0.49.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="XCompression\obj\**" />
-    <EmbeddedResource Remove="XCompression\obj\**" />
-    <None Remove="XCompression\obj\**" />
-  </ItemGroup>
-
-  <!-- Exclude DDXConv reference repo from compilation -->
-  <ItemGroup>
-    <Compile Remove="DDXConv\**" />
-    <EmbeddedResource Remove="DDXConv\**" />
-    <None Remove="DDXConv\**" />
   </ItemGroup>
 
 </Project>

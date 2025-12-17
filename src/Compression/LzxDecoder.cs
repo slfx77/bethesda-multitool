@@ -594,7 +594,7 @@ public class LzxDecoder
 
                 // Form 16-bit word in big-endian order
                 uint word = (uint)((b0 << 8) | b1);
-                
+
                 // Insert into buffer at the position after existing bits
                 // Bits go into the buffer's MSB side
                 _buffer |= word << (16 - _bitsInBuffer);

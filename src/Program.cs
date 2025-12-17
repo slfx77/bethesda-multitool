@@ -275,7 +275,7 @@ public class Program
                     try
                     {
                         bool success;
-                        
+
                         if (subprocessConverter != null)
                         {
                             // Use DDXConv subprocess
@@ -326,7 +326,7 @@ public class Program
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[green]Success:[/] {successCount}  [red]Failed:[/] {failCount}");
-        
+
         if (subprocessConverter != null)
         {
             AnsiConsole.MarkupLine($"DDX conversion: {subprocessConverter.Succeeded} succeeded, {subprocessConverter.Failed} failed, {subprocessConverter.Processed} total");

@@ -1,5 +1,6 @@
 using Spectre.Console;
 using Xbox360MemoryCarver.Converters;
+using Xbox360MemoryCarver.Minidump;
 using Xbox360MemoryCarver.Models;
 using Xbox360MemoryCarver.Parsers;
 using Xbox360MemoryCarver.Utils;
@@ -32,7 +33,7 @@ public class MemoryCarver
         _manifest = [];
         _processedOffsets = [];
         _convertDdxToDds = convertDdxToDds;
-        
+
         if (_convertDdxToDds)
         {
             if (DdxSubprocessConverter.IsAvailable())
@@ -71,14 +72,18 @@ public class MemoryCarver
         var fileInfo = new FileInfo(dumpPath);
         long fileSize = fileInfo.Length;
 
+        // First, try to extract modules from minidump metadata
+        // This extracts DLLs/EXEs with their proper filenames
+        await ExtractMinidumpModulesAsync(dumpPath, outputPath);
+
         var signaturesToSearch = GetSignaturesToSearch(fileTypes);
         const int overlapSize = 2048;
 
         // Use larger buffer for better I/O performance
-        using var fs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read, 
+        using var fs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 1024 * 1024, // 1MB buffer
             useAsync: true);
-        
+
         var buffer = new byte[_chunkSize + overlapSize];
 
         long offset = 0;
@@ -123,10 +128,10 @@ public class MemoryCarver
         string outputPath)
     {
         var chunkData = chunkBuffer.AsSpan(0, bytesRead);
-        
+
         // Collect all file extraction tasks
         var extractionTasks = new List<Task>();
-        
+
         foreach (var (sigName, sigInfo) in signatures)
         {
             if (_stats[sigName] >= _maxFilesPerType)
@@ -160,7 +165,7 @@ public class MemoryCarver
     {
         var tasks = new List<Task>();
         int searchPos = 0;
-        
+
         while (searchPos < chunkData.Length - sigInfo.Magic.Length)
         {
             int foundPos = BinaryUtils.FindPattern(chunkData.Slice(searchPos), sigInfo.Magic);
@@ -185,7 +190,7 @@ public class MemoryCarver
             // Try to parse and prepare extraction
             var dataSlice = chunkData.Slice(relativeOffset);
             var extractionData = PrepareExtraction(fs, dataSlice, absoluteOffset, sigName, sigInfo, outputPath);
-            
+
             if (extractionData != null)
             {
                 lock (_processedOffsets)
@@ -193,9 +198,9 @@ public class MemoryCarver
                     _processedOffsets.Add(absoluteOffset);
                     _stats[sigName]++;
                 }
-                
+
                 // Queue async file write
-                tasks.Add(WriteFileAsync(extractionData.Value.outputFile, extractionData.Value.data, 
+                tasks.Add(WriteFileAsync(extractionData.Value.outputFile, extractionData.Value.data,
                     absoluteOffset, sigName, extractionData.Value.fileSize));
             }
 
@@ -285,20 +290,28 @@ public class MemoryCarver
         try
         {
             // Check if this is a DDX file and conversion is enabled
-            if (_convertDdxToDds && _ddxConverter != null && 
+            if (_convertDdxToDds && _ddxConverter != null &&
                 (sigName == "ddx_3xdo" || sigName == "ddx_3xdr") &&
                 DdxSubprocessConverter.IsDdxFile(data))
             {
-                // Try to convert DDX to DDS
-                var ddsData = _ddxConverter.ConvertFromMemory(data);
-                
-                if (ddsData != null)
+                // Try to convert DDX to DDS with detailed result
+                var result = _ddxConverter.ConvertFromMemoryWithResult(data);
+
+                if (result.Success && result.DdsData != null)
                 {
-                    // Save as DDS instead of DDX - only change the extension
-                    var ddsOutputFile = Path.ChangeExtension(outputFile, ".dds");
-                    
-                    await File.WriteAllBytesAsync(ddsOutputFile, ddsData);
-                    
+                    // Save as DDS in textures folder instead of ddx folder
+                    var ddsOutputFile = outputFile
+                        .Replace(Path.DirectorySeparatorChar + "ddx" + Path.DirectorySeparatorChar,
+                                 Path.DirectorySeparatorChar + "textures" + Path.DirectorySeparatorChar);
+                    ddsOutputFile = Path.ChangeExtension(ddsOutputFile, ".dds");
+
+                    // Ensure textures directory exists
+                    var texturesDir = Path.GetDirectoryName(ddsOutputFile);
+                    if (texturesDir != null)
+                        Directory.CreateDirectory(texturesDir);
+
+                    await File.WriteAllBytesAsync(ddsOutputFile, result.DdsData);
+
                     lock (_manifest)
                     {
                         _manifest.Add(new CarveEntry
@@ -306,14 +319,16 @@ public class MemoryCarver
                             FileType = sigName,
                             Offset = offset,
                             SizeInDump = fileSize,
-                            SizeOutput = ddsData.Length,
+                            SizeOutput = result.DdsData.Length,
                             Filename = Path.GetFileName(ddsOutputFile),
                             IsCompressed = true, // Indicates conversion happened
-                            ContentType = "dds_converted"
+                            ContentType = result.IsPartial ? "dds_partial" : "dds_converted",
+                            IsPartial = result.IsPartial,
+                            Notes = result.Notes
                         });
                         _ddxConvertedCount++;
                     }
-                    
+
                     return;
                 }
                 else
@@ -358,6 +373,86 @@ public class MemoryCarver
         await File.WriteAllTextAsync(manifestPath, json);
     }
 
+    /// <summary>
+    /// Extract modules from minidump metadata with their proper filenames.
+    /// </summary>
+    private async Task ExtractMinidumpModulesAsync(string dumpPath, string outputPath)
+    {
+        try
+        {
+            // Check if this is a valid minidump by looking for MDMP signature
+            await using var checkFs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var magic = new byte[4];
+            if (await checkFs.ReadAsync(magic) < 4) return;
+
+            if (magic[0] != 'M' || magic[1] != 'D' || magic[2] != 'M' || magic[3] != 'P')
+            {
+                // Not a minidump file
+                return;
+            }
+
+            checkFs.Close();
+
+            var executablesPath = Path.Combine(outputPath, "executables");
+            Directory.CreateDirectory(executablesPath);
+
+            var extractor = new MinidumpExtractor(executablesPath);
+            var (modules, dumpInfo) = await extractor.ExtractModulesAsync(dumpPath);
+
+            // Log dump info summary
+            if (dumpInfo != null)
+            {
+                if (dumpInfo.System != null)
+                {
+                    AnsiConsole.MarkupLine($"[blue]Dump Architecture: {dumpInfo.System.ProcessorArchitectureName}[/]");
+                }
+                if (dumpInfo.Exception != null)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Exception: {dumpInfo.Exception.ExceptionCodeName} at 0x{dumpInfo.Exception.ExceptionAddress:X}[/]");
+                }
+                if (dumpInfo.MemoryRegionCount > 0)
+                {
+                    AnsiConsole.MarkupLine($"[blue]Memory: {dumpInfo.MemoryRegionCount} regions, {BinaryUtils.FormatSize(dumpInfo.TotalMemorySize)} total[/]");
+                }
+            }
+
+            // Add extracted modules to manifest
+            foreach (var module in modules)
+            {
+                var safeName = BinaryUtils.SanitizeFilename(Path.GetFileName(module.Name));
+                var ext = Path.GetExtension(safeName).ToLowerInvariant();
+                var fileType = ext switch
+                {
+                    ".dll" => "dll",
+                    ".exe" => "exe",
+                    ".xex" => "xex",
+                    _ => "module"
+                };
+
+                _manifest.Add(new CarveEntry
+                {
+                    FileType = fileType,
+                    Offset = (long)module.BaseAddress,
+                    SizeInDump = module.Size,
+                    SizeOutput = module.Size,
+                    Filename = safeName,
+                    ContentType = "minidump_module",
+                    Notes = $"Extracted from minidump module list: {module.Name}"
+                });
+
+                // Update stats
+                if (!_stats.ContainsKey(fileType))
+                    _stats[fileType] = 0;
+                _stats[fileType]++;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Silently continue - this might not be a minidump or could be a different format
+            AnsiConsole.MarkupLine($"[grey]Note: Could not extract minidump modules: {ex.Message}[/]");
+        }
+    }
+
     public void PrintStats()
     {
         var table = new Table()
@@ -375,7 +470,7 @@ public class MemoryCarver
         table.AddRow("[bold]Total[/]", $"[bold]{total}[/]");
 
         AnsiConsole.Write(table);
-        
+
         // Print DDX conversion stats if applicable
         if (_convertDdxToDds && (_ddxConvertedCount > 0 || _ddxConvertFailedCount > 0))
         {

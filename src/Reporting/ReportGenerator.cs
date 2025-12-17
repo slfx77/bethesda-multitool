@@ -60,6 +60,9 @@ public class ReportGenerator
     {
         _manifestEntries = manifestEntries;
 
+        // Store detailed manifest for JSON output
+        _report.Manifest = manifestEntries;
+
         foreach (var entry in manifestEntries)
         {
             string fileType = entry.FileType;
@@ -78,6 +81,12 @@ public class ReportGenerator
 
             _report.TotalFilesCarved++;
             _report.TotalBytesCarved += size;
+
+            // Track partial files
+            if (entry.IsPartial)
+            {
+                _report.PartialFilesCount++;
+            }
         }
     }
 

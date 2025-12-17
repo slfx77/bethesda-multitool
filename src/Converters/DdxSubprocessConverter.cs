@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Xbox360MemoryCarver.Models;
 
 namespace Xbox360MemoryCarver.Converters;
 
@@ -11,7 +12,7 @@ public class DdxSubprocessConverter
 {
     private readonly string _ddxConvPath;
     private readonly bool _verbose;
-    
+
     private int _processed;
     private int _succeeded;
     private int _failed;
@@ -24,7 +25,7 @@ public class DdxSubprocessConverter
     {
         _verbose = verbose;
         _ddxConvPath = ddxConvPath ?? FindDdxConvPath();
-        
+
         if (string.IsNullOrEmpty(_ddxConvPath) || !File.Exists(_ddxConvPath))
         {
             throw new FileNotFoundException(
@@ -44,10 +45,10 @@ public class DdxSubprocessConverter
             return envPath;
 
         var assemblyDir = AppContext.BaseDirectory;
-        
+
         // For development: find workspace root by looking for .sln or .csproj
         var workspaceRoot = FindWorkspaceRoot(assemblyDir);
-        
+
         // Check various possible locations
         var candidates = new List<string>
         {
@@ -56,14 +57,14 @@ public class DdxSubprocessConverter
             // Sibling DDXConv folder
             Path.Combine(assemblyDir, "..", "DDXConv", "DDXConv.exe"),
         };
-        
+
         // Add workspace-relative paths if we found the workspace root
         if (!string.IsNullOrEmpty(workspaceRoot))
         {
             candidates.Add(Path.Combine(workspaceRoot, "DDXConv", "DDXConv", "bin", "Release", "net9.0", "DDXConv.exe"));
             candidates.Add(Path.Combine(workspaceRoot, "DDXConv", "DDXConv", "bin", "Debug", "net9.0", "DDXConv.exe"));
         }
-        
+
         // Development layout relative to assembly
         candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "DDXConv", "DDXConv", "bin", "Release", "net9.0", "DDXConv.exe"));
         candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "DDXConv", "DDXConv", "bin", "Debug", "net9.0", "DDXConv.exe"));
@@ -93,7 +94,7 @@ public class DdxSubprocessConverter
             {
                 return dir;
             }
-            
+
             var parent = Directory.GetParent(dir);
             if (parent == null) break;
             dir = parent.FullName;
@@ -262,6 +263,164 @@ public class DdxSubprocessConverter
     public async Task<byte[]?> ConvertFromMemoryAsync(byte[] ddxData)
     {
         return await Task.Run(() => ConvertFromMemory(ddxData));
+    }
+
+    /// <summary>
+    /// Convert DDX data from memory with detailed result information.
+    /// Captures console output to detect partial conversions.
+    /// </summary>
+    public DdxConversionResult ConvertFromMemoryWithResult(byte[] ddxData)
+    {
+        _processed++;
+
+        string? tempInputPath = null;
+        string? tempOutputPath = null;
+
+        try
+        {
+            // Create temp files for the conversion
+            tempInputPath = Path.Combine(Path.GetTempPath(), $"ddx_{Guid.NewGuid():N}.ddx");
+            tempOutputPath = Path.Combine(Path.GetTempPath(), $"dds_{Guid.NewGuid():N}.dds");
+
+            // Write DDX data to temp file
+            File.WriteAllBytes(tempInputPath, ddxData);
+
+            // Run DDXConv with verbose to capture partial detection info
+            var args = $"\"{tempInputPath}\" \"{tempOutputPath}\" --verbose";
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _ddxConvPath,
+                Arguments = args,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null)
+            {
+                _failed++;
+                return new DdxConversionResult
+                {
+                    Success = false,
+                    Notes = "Failed to start DDXConv process"
+                };
+            }
+
+            var stdout = process.StandardOutput.ReadToEnd();
+            var stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+
+            var consoleOutput = stdout + (string.IsNullOrEmpty(stderr) ? "" : $"\nSTDERR: {stderr}");
+
+            // Check for partial/atlas-only indicators in output
+            bool isPartial = false;
+            string? notes = null;
+
+            if (consoleOutput.Contains("atlas-only", StringComparison.OrdinalIgnoreCase) ||
+                consoleOutput.Contains("partial", StringComparison.OrdinalIgnoreCase))
+            {
+                isPartial = true;
+                // Extract notes from output
+                if (consoleOutput.Contains("atlas-only"))
+                    notes = ExtractNotesFromOutput(consoleOutput, "atlas-only");
+                else if (consoleOutput.Contains("mip levels recovered"))
+                    notes = ExtractNotesFromOutput(consoleOutput, "mip levels");
+            }
+
+            if (consoleOutput.Contains("truncated", StringComparison.OrdinalIgnoreCase))
+            {
+                isPartial = true;
+                notes = (notes != null ? notes + "; " : "") + "truncated data";
+            }
+
+            if (process.ExitCode != 0 && !File.Exists(tempOutputPath))
+            {
+                _failed++;
+                return new DdxConversionResult
+                {
+                    Success = false,
+                    IsPartial = isPartial,
+                    Notes = notes ?? $"DDXConv exited with code {process.ExitCode}",
+                    ConsoleOutput = consoleOutput
+                };
+            }
+
+            // Read converted DDS data even if exit code was non-zero (partial success)
+            if (!File.Exists(tempOutputPath))
+            {
+                _failed++;
+                return new DdxConversionResult
+                {
+                    Success = false,
+                    Notes = "Output file was not created",
+                    ConsoleOutput = consoleOutput
+                };
+            }
+
+            var ddsData = File.ReadAllBytes(tempOutputPath);
+            _succeeded++;
+
+            return new DdxConversionResult
+            {
+                Success = true,
+                DdsData = ddsData,
+                IsPartial = isPartial,
+                Notes = notes,
+                ConsoleOutput = _verbose ? consoleOutput : null
+            };
+        }
+        catch (Exception ex)
+        {
+            _failed++;
+            return new DdxConversionResult
+            {
+                Success = false,
+                Notes = $"Exception: {ex.Message}"
+            };
+        }
+        finally
+        {
+            // Clean up temp files
+            try
+            {
+                if (tempInputPath != null && File.Exists(tempInputPath))
+                    File.Delete(tempInputPath);
+                if (tempOutputPath != null && File.Exists(tempOutputPath))
+                    File.Delete(tempOutputPath);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extract relevant notes from DDXConv output.
+    /// </summary>
+    private static string? ExtractNotesFromOutput(string output, string keyword)
+    {
+        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            if (line.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            {
+                // Clean up the line and return as note
+                var note = line.Trim();
+                // Remove timestamps or prefixes if present
+                if (note.StartsWith("["))
+                {
+                    var bracketEnd = note.IndexOf(']');
+                    if (bracketEnd > 0 && bracketEnd < note.Length - 1)
+                        note = note[(bracketEnd + 1)..].Trim();
+                }
+                return note;
+            }
+        }
+        return null;
     }
 
     /// <summary>

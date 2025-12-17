@@ -39,6 +39,10 @@ output/
 test_output/
 test_output_csharp/
 TestOutput/
+test_carve/
+test_verify/
+extracted_all/
+extracted/
 
 # Python remnants (if any)
 .venv/
