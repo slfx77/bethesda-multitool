@@ -114,7 +114,7 @@ public static class Program
                 }
                 else
                 {
-                    await RunCarving(input, output, types, maxFiles, convertDdx);
+                    await RunCarving(input, output, types, maxFiles, convertDdx, verbose);
                 }
             }
             catch (Exception ex)
@@ -137,7 +137,7 @@ public static class Program
         AnsiConsole.WriteLine();
     }
 
-    private static async Task RunCarving(string input, string output, string[]? types, int maxFiles, bool convertDdx)
+    private static async Task RunCarving(string input, string output, string[]? types, int maxFiles, bool convertDdx, bool verbose)
     {
         var inputPath = Path.GetFullPath(input);
 
@@ -151,7 +151,7 @@ public static class Program
         Directory.CreateDirectory(outputPath);
 
         // Use high-performance carver with Aho-Corasick and memory-mapped I/O
-        var carver = new MemoryCarver(outputPath, maxFiles, convertDdx, types?.ToList());
+        var carver = new MemoryCarver(outputPath, maxFiles, convertDdx, types?.ToList(), verbose);
         var reportGenerator = new ReportGenerator(outputPath);
 
         // Get list of files to process

@@ -25,6 +25,7 @@ public sealed class MemoryCarver
     private readonly ConcurrentBag<CarveEntry> _manifest;
     private readonly ConcurrentDictionary<long, byte> _processedOffsets;
     private readonly bool _convertDdxToDds;
+    private readonly bool _verbose;
     private readonly DdxSubprocessConverter? _ddxConverter;
     private int _ddxConvertedCount;
     private int _ddxConvertFailedCount;
@@ -40,7 +41,8 @@ public sealed class MemoryCarver
         string outputDir,
         int maxFilesPerType = 10000,
         bool convertDdxToDds = false,
-        List<string>? fileTypes = null)
+        List<string>? fileTypes = null,
+        bool verbose = false)
     {
         _outputDir = outputDir;
         _maxFilesPerType = maxFilesPerType;
@@ -48,6 +50,7 @@ public sealed class MemoryCarver
         _manifest = [];
         _processedOffsets = new ConcurrentDictionary<long, byte>();
         _convertDdxToDds = convertDdxToDds;
+        _verbose = verbose;
 
         // Build signature matcher
         _signatureMatcher = new AhoCorasick();
@@ -65,7 +68,7 @@ public sealed class MemoryCarver
         {
             if (DdxSubprocessConverter.IsAvailable())
             {
-                _ddxConverter = new DdxSubprocessConverter(verbose: false);
+                _ddxConverter = new DdxSubprocessConverter(verbose: _verbose);
             }
             else
             {
