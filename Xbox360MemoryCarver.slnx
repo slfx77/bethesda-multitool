@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="Xbox360MemoryCarver.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/Xbox360MemoryCarver/Xbox360MemoryCarver.csproj" />
+  </Folder>
 </Solution>

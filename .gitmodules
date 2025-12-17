@@ -1,3 +1,3 @@
 [submodule "DDXConv"]
-	path = DDXConv
+	path = src/DDXConv
 	url = https://github.com/kran27/DDXConv.git
