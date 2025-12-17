@@ -315,6 +315,10 @@ public class DdxSubprocessConverter
 
             var consoleOutput = stdout + (string.IsNullOrEmpty(stderr) ? "" : $"\nSTDERR: {stderr}");
 
+            // Print DDXConv output in verbose mode
+            if (_verbose && !string.IsNullOrWhiteSpace(stdout))
+                Console.WriteLine(stdout.TrimEnd());
+
             // Check for partial/atlas-only indicators in output
             bool isPartial = false;
             string? notes = null;
@@ -434,6 +438,31 @@ public class DdxSubprocessConverter
         // Check for 3XDO (0x4F445833) or 3XDR (0x52445833)
         uint magic = BitConverter.ToUInt32(data, 0);
         return magic == 0x4F445833 || magic == 0x52445833;
+    }
+
+    /// <summary>
+    /// Check if the provided data starts with a valid DDX signature (span version).
+    /// </summary>
+    public static bool IsDdxFile(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 4)
+            return false;
+
+        // Check for 3XDO (0x4F445833) or 3XDR (0x52445833)
+        uint magic = BitConverter.ToUInt32(data);
+        return magic == 0x4F445833 || magic == 0x52445833;
+    }
+
+    /// <summary>
+    /// Check if DDX data uses the 3XDR format.
+    /// </summary>
+    public static bool Is3XdrFormat(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 4)
+            return false;
+
+        uint magic = BitConverter.ToUInt32(data);
+        return magic == 0x52445833; // 3XDR
     }
 
     /// <summary>
