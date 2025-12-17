@@ -112,11 +112,10 @@ public class LzxDecoder
     /// Decompresses LZX data.
     /// </summary>
     /// <param name="input">Input stream containing compressed data.</param>
-    /// <param name="inputLength">Number of bytes to read from input.</param>
     /// <param name="output">Output stream to write decompressed data.</param>
     /// <param name="outputLength">Expected decompressed size.</param>
     /// <returns>0 on success, non-zero on error.</returns>
-    public int Decompress(Stream input, int inputLength, Stream output, int outputLength)
+    public int Decompress(Stream input, Stream output, int outputLength)
     {
         var bitBuffer = new BitBuffer(input);
         int togo = outputLength;
@@ -374,7 +373,7 @@ public class LzxDecoder
         }
     }
 
-    private int DecodeSymbol(BitBuffer bitBuffer, ushort[] table, byte[] lens, int tableBits)
+    private static int DecodeSymbol(BitBuffer bitBuffer, ushort[] table, byte[] lens, int tableBits)
     {
         uint bits = bitBuffer.PeekBits(tableBits);
         int symbol = table[bits];
@@ -482,18 +481,11 @@ public class LzxDecoder
     /// Xbox 360 uses big-endian byte order for 16-bit words.
     /// LZX reads bits MSB-first from each 16-bit word.
     /// </summary>
-    private class BitBuffer
+    private class BitBuffer(Stream stream)
     {
-        private readonly Stream _stream;
-        private uint _buffer;     // Bits are stored at MSB position
-        private int _bitsInBuffer;
-
-        public BitBuffer(Stream stream)
-        {
-            _stream = stream;
-            _buffer = 0;
-            _bitsInBuffer = 0;
-        }
+        private readonly Stream _stream = stream;
+        private uint _buffer = 0;     // Bits are stored at MSB position
+        private int _bitsInBuffer = 0;
 
         /// <summary>
         /// Initialize/reset the bit stream state.

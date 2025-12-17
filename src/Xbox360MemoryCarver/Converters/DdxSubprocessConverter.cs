@@ -411,7 +411,7 @@ public class DdxSubprocessConverter
                 // Clean up the line and return as note
                 var note = line.Trim();
                 // Remove timestamps or prefixes if present
-                if (note.StartsWith("["))
+                if (note.StartsWith('['))
                 {
                     var bracketEnd = note.IndexOf(']');
                     if (bracketEnd > 0 && bracketEnd < note.Length - 1)

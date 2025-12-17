@@ -7,9 +7,9 @@ namespace Xbox360MemoryCarver.Reporting;
 /// <summary>
 /// Generate extraction reports summarizing carved files and coverage statistics.
 /// </summary>
-public class ReportGenerator
+public class ReportGenerator(string outputDir)
 {
-    private readonly string _outputDir;
+    private readonly string _outputDir = outputDir;
     private readonly ExtractionReport _report = new();
     private List<CarveEntry>? _manifestEntries;
 
@@ -44,11 +44,6 @@ public class ReportGenerator
         ["esp"] = "ESP Plugin Files"
     };
 
-    public ReportGenerator(string outputDir)
-    {
-        _outputDir = outputDir;
-    }
-
     public void SetDumpInfo(string dumpPath, long dumpSize)
     {
         _report.DumpFile = Path.GetFileName(dumpPath);
@@ -69,12 +64,12 @@ public class ReportGenerator
             long size = entry.SizeInDump;
             string filename = entry.Filename;
 
-            if (!_report.FilesByType.ContainsKey(fileType))
+            if (!_report.FilesByType.TryGetValue(fileType, out FileTypeStats? stats))
             {
-                _report.FilesByType[fileType] = new FileTypeStats();
+                stats = new FileTypeStats();
+                _report.FilesByType[fileType] = stats;
             }
 
-            var stats = _report.FilesByType[fileType];
             stats.Count++;
             stats.TotalBytes += size;
             stats.Files.Add(filename);
@@ -119,16 +114,16 @@ public class ReportGenerator
 
     private static List<(long Start, long End)> MergeOverlappingRanges(List<(long Start, long End)> ranges)
     {
-        if (ranges.Count == 0) return new List<(long, long)>();
+        if (ranges.Count == 0) return [];
 
         var merged = new List<(long Start, long End)> { ranges[0] };
 
         foreach (var (start, end) in ranges.Skip(1))
         {
-            var last = merged[^1];
-            if (start <= last.End)
+            var (Start, End) = merged[^1];
+            if (start <= End)
             {
-                merged[^1] = (last.Start, Math.Max(last.End, end));
+                merged[^1] = (Start, Math.Max(End, end));
             }
             else
             {
@@ -198,12 +193,15 @@ public class ReportGenerator
         return sb.ToString();
     }
 
+    // Add this static field to cache the JsonSerializerOptions instance
+    private static readonly System.Text.Json.JsonSerializerOptions CachedJsonOptions = new()
+    {
+        WriteIndented = true
+    };
+
     public string GenerateJsonReport()
     {
-        return System.Text.Json.JsonSerializer.Serialize(_report, new System.Text.Json.JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
+        return System.Text.Json.JsonSerializer.Serialize(_report, CachedJsonOptions);
     }
 
     public async Task SaveReportAsync(string? filename = null)

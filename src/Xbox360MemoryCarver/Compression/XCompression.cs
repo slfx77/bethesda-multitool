@@ -111,7 +111,7 @@ public static class XCompression
                 long frameStart = input.Position;
                 using var frameOutput = new MemoryStream(frameSize);
 
-                int result = decoder.Decompress(input, blockSize, frameOutput, frameSize);
+                int result = decoder.Decompress(input, frameOutput, frameSize);
                 if (result != 0)
                     break;
 
@@ -151,7 +151,7 @@ public static class XCompression
             using var inputStream = new MemoryStream(compressedData);
             using var outputStream = new MemoryStream(uncompressedSize);
 
-            int result = decoder.Decompress(inputStream, compressedData.Length, outputStream, uncompressedSize);
+            int result = decoder.Decompress(inputStream, outputStream, uncompressedSize);
             bytesConsumed = (int)inputStream.Position;
 
             if (result != 0)

@@ -6,18 +6,13 @@ namespace Xbox360MemoryCarver.Converters;
 /// DDX (3XDO/3XDR) to DDS converter with Xbox 360 tiling/untile support.
 /// Ported from kran27/DDXConv for 64-bit managed implementation.
 /// </summary>
-public class DdxParser
+public class DdxParser(bool verbose = false)
 {
-    private readonly bool _verbose;
+    private readonly bool _verbose = verbose;
     private ConversionOptions _options = new();
 
     private const uint Magic3Xdo = 0x4F445833; // "3XDO"
     private const uint Magic3Xdr = 0x52445833; // "3XDR"
-
-    public DdxParser(bool verbose = false)
-    {
-        _verbose = verbose;
-    }
 
     /// <summary>
     /// Check if data appears to be a valid DDX file.
@@ -312,9 +307,9 @@ public class DdxParser
         return result;
     }
 
-    private bool TryDecompressAllChunks(byte[] compressedData, uint chunkSize, out byte[] decompressed)
+    private static bool TryDecompressAllChunks(byte[] compressedData, uint chunkSize, out byte[] decompressed)
     {
-        decompressed = Array.Empty<byte>();
+        decompressed = [];
 
         try
         {
@@ -503,35 +498,41 @@ public class DdxParser
         for (var y = 0; y < blocksHigh; y++)
         {
             var inputRowOffset = TiledOffset2DRow((uint)y, (uint)blocksWide, log2Bpp);
-
-            for (var x = 0; x < blocksWide; x++)
-            {
-                var inputOffset = TiledOffset2DColumn((uint)x, (uint)y, log2Bpp, inputRowOffset);
-                inputOffset >>= (int)log2Bpp;
-
-                var srcOffset = (int)(inputOffset * blockSize);
-                var dstOffset = (y * blocksWide + x) * blockSize;
-
-                if (srcOffset + blockSize <= src.Length && dstOffset + blockSize <= dst.Length)
-                {
-                    if (!_options.SkipEndianSwap)
-                    {
-                        // Xbox 360 is big-endian, swap bytes in 16-bit words
-                        for (var i = 0; i < blockSize; i += 2)
-                        {
-                            dst[dstOffset + i] = src[srcOffset + i + 1];
-                            dst[dstOffset + i + 1] = src[srcOffset + i];
-                        }
-                    }
-                    else
-                    {
-                        Array.Copy(src, srcOffset, dst, dstOffset, blockSize);
-                    }
-                }
-            }
+            UnswizzleRow(src, dst, blocksWide, y, inputRowOffset, log2Bpp, blockSize);
         }
 
         return dst;
+    }
+
+    private void UnswizzleRow(byte[] src, byte[] dst, int blocksWide, int y, uint inputRowOffset, uint log2Bpp, int blockSize)
+    {
+        for (var x = 0; x < blocksWide; x++)
+        {
+            var inputOffset = TiledOffset2DColumn((uint)x, (uint)y, log2Bpp, inputRowOffset);
+            inputOffset >>= (int)log2Bpp;
+
+            var srcOffset = (int)(inputOffset * blockSize);
+            var dstOffset = (y * blocksWide + x) * blockSize;
+
+            if (srcOffset + blockSize <= src.Length && dstOffset + blockSize <= dst.Length)
+                CopyBlock(src, dst, srcOffset, dstOffset, blockSize);
+        }
+    }
+
+    private void CopyBlock(byte[] src, byte[] dst, int srcOffset, int dstOffset, int blockSize)
+    {
+        if (_options.SkipEndianSwap)
+        {
+            Array.Copy(src, srcOffset, dst, dstOffset, blockSize);
+            return;
+        }
+
+        // Xbox 360 is big-endian, swap bytes in 16-bit words
+        for (var i = 0; i < blockSize; i += 2)
+        {
+            dst[dstOffset + i] = src[srcOffset + i + 1];
+            dst[dstOffset + i + 1] = src[srcOffset + i];
+        }
     }
 
     // Xbox 360 tiling functions from Xenia emulator
@@ -556,7 +557,7 @@ public class DdxParser
 
     #region Mip Atlas
 
-    private byte[] UnpackMipAtlas(byte[] atlasData, int atlasWidth, int atlasHeight, uint format, int mainWidth, int mainHeight)
+    private static byte[] UnpackMipAtlas(byte[] atlasData, int atlasWidth, int atlasHeight, uint format, int mainWidth, int mainHeight)
     {
         int blockSize = GetBlockSize(format);
         var atlasWidthInBlocks = atlasWidth / 4;
@@ -567,7 +568,7 @@ public class DdxParser
         var totalMipSize = (int)(CalculateMainDataSize((uint)mainWidth, (uint)mainHeight, format, mipCount) - mainSize);
 
         if (totalMipSize <= 0)
-            return Array.Empty<byte>();
+            return [];
 
         var output = new byte[totalMipSize];
         var outputOffset = 0;
@@ -617,27 +618,27 @@ public class DdxParser
         if (atlasWidth == 256 && atlasHeight == 192)
         {
             // 128x128 texture
-            return new[]
-            {
+            return
+            [
                 (0, 0, 16, 16),   // Mip 0: 64x64
                 (32, 0, 8, 8),    // Mip 1: 32x32
                 (4, 32, 4, 4),    // Mip 2: 16x16
                 (2, 32, 2, 2),    // Mip 3: 8x8
                 (1, 32, 1, 1),    // Mip 4: 4x4
-            };
+            ];
         }
 
         if (atlasWidth == 256 && atlasHeight == 256)
         {
             // 128x128 texture
-            return new[]
-            {
+            return
+            [
                 (32, 0, 16, 16),  // Mip 1: 64x64
                 (0, 32, 8, 8),    // Mip 2: 32x32
                 (36, 32, 4, 4),   // Mip 3: 16x16
                 (34, 32, 2, 2),   // Mip 4: 8x8
                 (33, 32, 1, 1),   // Mip 5: 4x4
-            };
+            ];
         }
 
         // Dynamic layout: pack mips starting from half-size
@@ -668,14 +669,14 @@ public class DdxParser
             mipH /= 2;
         }
 
-        return positions.ToArray();
+        return [.. positions];
     }
 
     #endregion
 
     #region DDS Writing
 
-    private void WriteDdsFile(string outputPath, D3DTextureInfo texture, byte[] data)
+    private static void WriteDdsFile(string outputPath, D3DTextureInfo texture, byte[] data)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
         using var writer = new BinaryWriter(File.Create(outputPath));

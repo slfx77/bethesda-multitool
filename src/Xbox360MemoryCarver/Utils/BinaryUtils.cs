@@ -101,19 +101,19 @@ public static class BinaryUtils
         // Use optimized single-byte search if pattern is just one byte
         if (pattern.Length == 1)
         {
-            int idx = data.Slice(start).IndexOf(pattern[0]);
+            int idx = data[start..].IndexOf(pattern[0]);
             return idx >= 0 ? start + idx : -1;
         }
 
         // For multi-byte patterns, use IndexOf for the first byte, then verify the rest
         byte firstByte = pattern[0];
-        var searchSpan = data.Slice(start);
+        var searchSpan = data[start..];
         int searchOffset = 0;
 
         while (searchOffset <= searchSpan.Length - pattern.Length)
         {
             // Use SIMD-optimized IndexOf to find first byte
-            int idx = searchSpan.Slice(searchOffset).IndexOf(firstByte);
+            int idx = searchSpan[searchOffset..].IndexOf(firstByte);
             if (idx < 0)
                 return -1;
 
@@ -141,7 +141,7 @@ public static class BinaryUtils
         int endOffset = Math.Min(offset + maxLength, data.Length);
         
         // Use IndexOf for fast null search
-        var searchSpan = data.Slice(offset, endOffset - offset);
+        var searchSpan = data[offset..endOffset];
         int nullPos = searchSpan.IndexOf((byte)0);
 
         if (nullPos < 0) return null;

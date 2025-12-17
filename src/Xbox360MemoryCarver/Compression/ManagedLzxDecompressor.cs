@@ -121,14 +121,6 @@ public static class ManagedLzxDecompressor
         return null;
     }
 
-    /// <summary>
-    /// Try decompression with a specific window size.
-    /// </summary>
-    private static byte[]? TryDecompressWithWindowBits(byte[] compressedData, int uncompressedSize, int windowBits)
-    {
-        return TryDecompressWithWindowBits(compressedData, uncompressedSize, windowBits, out _);
-    }
-
     private static byte[]? TryDecompressWithWindowBits(byte[] compressedData, int uncompressedSize, int windowBits, out int bytesConsumed)
     {
         bytesConsumed = 0;
@@ -145,7 +137,7 @@ public static class ManagedLzxDecompressor
             using var outputStream = new MemoryStream(uncompressedSize);
 
             // Decompress
-            var result = decoder.Decompress(inputStream, compressedData.Length, outputStream, uncompressedSize);
+            var result = decoder.Decompress(inputStream, outputStream, uncompressedSize);
             bytesConsumed = (int)inputStream.Position;
 
             if (Verbose)

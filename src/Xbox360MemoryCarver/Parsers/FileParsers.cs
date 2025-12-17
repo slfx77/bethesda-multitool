@@ -26,7 +26,7 @@ public class ParseResult
     public int MipCount { get; init; }
     public string? FourCc { get; init; }
     public bool IsXbox360 { get; init; }
-    public Dictionary<string, object> Metadata { get; init; } = new();
+    public Dictionary<string, object> Metadata { get; init; } = [];
 }
 
 /// <summary>
@@ -42,7 +42,7 @@ public class DdsParser : IFileParser
         var headerData = data.Slice(offset, 128);
 
         // Check magic
-        if (!headerData.Slice(0, 4).SequenceEqual("DDS "u8))
+        if (!headerData[..4].SequenceEqual("DDS "u8))
             return null;
 
         try
@@ -288,7 +288,7 @@ public class DdxParser : IFileParser
 /// </summary>
 public class XmaParser : IFileParser
 {
-    private static readonly ushort[] XmaFormatCodes = { 0x0165, 0x0166 };
+    private static readonly ushort[] XmaFormatCodes = [0x0165, 0x0166];
 
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
@@ -386,7 +386,7 @@ public class NifParser : IFileParser
             if (nullPos == -1)
                 return null;
 
-            string versionString = System.Text.Encoding.ASCII.GetString(data.Slice(versionOffset, nullPos - versionOffset));
+            string versionString = System.Text.Encoding.ASCII.GetString(data[versionOffset..nullPos]);
             int estimatedSize = 50000; // Default fallback
 
             // For NIF 20.x, try to estimate size based on block count
@@ -427,14 +427,14 @@ public class NifParser : IFileParser
 public class ScriptParser : IFileParser
 {
     private static readonly byte[][] ScriptHeaders =
-    {
+    [
         "scn "u8.ToArray(),
         "Scn "u8.ToArray(),
         "SCN "u8.ToArray(),
         "ScriptName "u8.ToArray(),
         "scriptname "u8.ToArray(),
         "SCRIPTNAME "u8.ToArray()
-    };
+    ];
 
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
@@ -444,7 +444,7 @@ public class ScriptParser : IFileParser
         try
         {
             int maxEnd = Math.Min(offset + 100000, data.Length);
-            var scriptData = data.Slice(offset, maxEnd - offset);
+            var scriptData = data[offset..maxEnd];
 
             // Find first line
             int firstLineEnd = -1;
@@ -460,7 +460,7 @@ public class ScriptParser : IFileParser
             if (firstLineEnd == -1)
                 return null;
 
-            string firstLine = System.Text.Encoding.ASCII.GetString(scriptData.Slice(0, firstLineEnd)).Trim();
+            string firstLine = System.Text.Encoding.ASCII.GetString(scriptData[..firstLineEnd]).Trim();
 
             // Extract script name
             string? scriptName = null;
@@ -474,7 +474,7 @@ public class ScriptParser : IFileParser
                 return null;
 
             // Clean script name
-            int invalidChar = scriptName.IndexOfAny(new[] { ';', '\r', '\t', ' ' });
+            int invalidChar = scriptName.IndexOfAny([';', '\r', '\t', ' ']);
             if (invalidChar >= 0)
                 scriptName = scriptName[..invalidChar];
 
@@ -491,7 +491,7 @@ public class ScriptParser : IFileParser
                 Metadata = new Dictionary<string, object>
                 {
                     ["scriptName"] = scriptName,
-                    ["safeName"] = new string(scriptName.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray())
+                    ["safeName"] = new string([.. scriptName.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')])
                 }
             };
         }
@@ -509,7 +509,7 @@ public class ScriptParser : IFileParser
         // Find next script header
         foreach (var header in ScriptHeaders)
         {
-            int nextScript = BinaryUtils.FindPattern(scriptData.Slice(searchStart), header);
+            int nextScript = BinaryUtils.FindPattern(scriptData[searchStart..], header);
             if (nextScript >= 0)
             {
                 int absolutePos = searchStart + nextScript;
@@ -588,8 +588,8 @@ public class BikParser : IFileParser
 /// </summary>
 public class PngParser : IFileParser
 {
-    private static readonly byte[] PngMagic = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
-    private static readonly byte[] IendMagic = { 0x49, 0x45, 0x4E, 0x44 };
+    private static readonly byte[] PngMagic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    private static readonly byte[] IendMagic = [0x49, 0x45, 0x4E, 0x44];
 
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {

@@ -14,7 +14,7 @@ namespace Xbox360MemoryCarver;
 /// A comprehensive tool for extracting usable data from Xbox 360 memory dumps
 /// and converting DDX texture files to DDS format.
 /// </summary>
-public class Program
+public static class Program
 {
     public const string Version = "2.0.0";
 
@@ -63,12 +63,6 @@ public class Program
             "Do not swap byte order during untile (useful for testing)"
         );
 
-        // Swap atlas/main chunk order when two-chunk payload detected (testing aid)
-        var swapChunksOption = new Option<bool>(
-            ["--swap-chunks"],
-            "Swap the detected two-chunk order (atlas/main) before untile"
-        );
-
         // Save raw decompressed data before untiling (debugging aid)
         var saveRawOption = new Option<bool>(
             ["--save-raw"],
@@ -94,7 +88,6 @@ public class Program
         rootCommand.AddOption(typesOption);
         rootCommand.AddOption(verboseOption);
         rootCommand.AddOption(skipEndianOption);
-        rootCommand.AddOption(swapChunksOption);
         rootCommand.AddOption(saveRawOption);
         rootCommand.AddOption(chunkSizeOption);
         rootCommand.AddOption(maxFilesOption);
@@ -108,7 +101,6 @@ public class Program
             var types = context.ParseResult.GetValueForOption(typesOption);
             var verbose = context.ParseResult.GetValueForOption(verboseOption);
             var skipEndian = context.ParseResult.GetValueForOption(skipEndianOption);
-            var swapChunks = context.ParseResult.GetValueForOption(swapChunksOption);
             var saveRaw = context.ParseResult.GetValueForOption(saveRawOption);
             var chunkSize = context.ParseResult.GetValueForOption(chunkSizeOption);
             var maxFiles = context.ParseResult.GetValueForOption(maxFilesOption);
@@ -119,11 +111,11 @@ public class Program
             {
                 if (ddxMode)
                 {
-                    await RunDdxConversion(input, output, verbose, skipEndian, swapChunks, saveRaw);
+                    await RunDdxConversion(input, output, verbose, skipEndian, saveRaw);
                 }
                 else
                 {
-                    await RunCarving(input, output, types, verbose, chunkSize, maxFiles, convertDdx);
+                    await RunCarving(input, output, types, chunkSize, maxFiles, convertDdx);
                 }
             }
             catch (Exception ex)
@@ -146,7 +138,7 @@ public class Program
         AnsiConsole.WriteLine();
     }
 
-    private static async Task RunCarving(string input, string output, string[]? types, bool verbose, int chunkSize, int maxFiles, bool convertDdx)
+    private static async Task RunCarving(string input, string output, string[]? types, int chunkSize, int maxFiles, bool convertDdx)
     {
         var inputPath = Path.GetFullPath(input);
 
@@ -217,14 +209,13 @@ public class Program
         AnsiConsole.MarkupLine($"[blue]Report saved to:[/] {reportPath}");
     }
 
-    private static async Task RunDdxConversion(string input, string output, bool verbose, bool skipEndian, bool swapChunks, bool saveRaw)
+    private static async Task RunDdxConversion(string input, string output, bool verbose, bool skipEndian, bool saveRaw)
     {
         var inputPath = Path.GetFullPath(input);
         var outputPath = Path.GetFullPath(output);
         Directory.CreateDirectory(outputPath);
 
         var ddxFiles = GetDdxFiles(inputPath);
-
         if (ddxFiles.Count == 0)
         {
             AnsiConsole.MarkupLine("[yellow]No DDX files found to convert[/]");
@@ -233,33 +224,47 @@ public class Program
 
         AnsiConsole.MarkupLine($"[blue]Found {ddxFiles.Count} DDX file(s) to convert[/]");
 
-        // Try to use DDXConv subprocess (most reliable, uses native XnaNative.dll)
-        DdxSubprocessConverter? subprocessConverter = null;
+        var subprocessConverter = TryCreateSubprocessConverter(verbose);
+        AnsiConsole.WriteLine();
+
+        var basePath = File.Exists(inputPath) ? Path.GetDirectoryName(inputPath)! : inputPath;
+        var conversionOptions = new ConversionOptions { Verbose = verbose, SkipEndianSwap = skipEndian, SaveRaw = saveRaw };
+
+        var (successCount, failCount) = await ConvertDdxFilesWithProgressAsync(
+            ddxFiles, basePath, outputPath, subprocessConverter, conversionOptions, verbose);
+
+        PrintConversionSummary(successCount, failCount, subprocessConverter);
+    }
+
+    private static DdxSubprocessConverter? TryCreateSubprocessConverter(bool verbose)
+    {
         try
         {
-            subprocessConverter = new DdxSubprocessConverter(verbose);
-            AnsiConsole.MarkupLine($"[green]Using DDXConv subprocess:[/] {subprocessConverter.DdxConvPath}");
+            var converter = new DdxSubprocessConverter(verbose);
+            AnsiConsole.MarkupLine($"[green]Using DDXConv subprocess:[/] {converter.DdxConvPath}");
+            return converter;
         }
         catch (FileNotFoundException)
         {
             AnsiConsole.MarkupLine("[yellow]DDXConv.exe not found, using managed converter (may have limited functionality)[/]");
+            return null;
         }
+    }
 
-        AnsiConsole.WriteLine();
-
+    private static async Task<(int success, int fail)> ConvertDdxFilesWithProgressAsync(
+        List<string> ddxFiles,
+        string basePath,
+        string outputPath,
+        DdxSubprocessConverter? subprocessConverter,
+        ConversionOptions options,
+        bool verbose)
+    {
         var successCount = 0;
         var failCount = 0;
 
-        // Determine base path for relative path calculation
-        var basePath = File.Exists(inputPath) ? Path.GetDirectoryName(inputPath)! : inputPath;
-
         await AnsiConsole.Progress()
             .AutoClear(false)
-            .Columns(
-                new TaskDescriptionColumn(),
-                new ProgressBarColumn(),
-                new PercentageColumn(),
-                new SpinnerColumn())
+            .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
             .StartAsync(async ctx =>
             {
                 var task = ctx.AddTask("Converting DDX files");
@@ -267,70 +272,57 @@ public class Program
 
                 foreach (var ddxFile in ddxFiles)
                 {
-                    var relativePath = Path.GetRelativePath(basePath, ddxFile);
-                    var ddsPath = Path.Combine(outputPath, Path.ChangeExtension(relativePath, ".dds"));
+                    var success = await ConvertSingleDdxFileAsync(
+                        ddxFile, basePath, outputPath, subprocessConverter, options, verbose);
 
-                    Directory.CreateDirectory(Path.GetDirectoryName(ddsPath)!);
-
-                    try
-                    {
-                        bool success;
-
-                        if (subprocessConverter != null)
-                        {
-                            // Use DDXConv subprocess
-                            success = await subprocessConverter.ConvertFileAsync(ddxFile, ddsPath);
-                        }
-                        else
-                        {
-                            // Fall back to managed converter
-                            var options = new ConversionOptions
-                            {
-                                Verbose = verbose,
-                                SkipEndianSwap = skipEndian,
-                                SaveRaw = saveRaw
-                            };
-                            var converter = new DdxConverter(verbose, options);
-                            success = await converter.ConvertFileAsync(ddxFile, ddsPath);
-                        }
-
-                        if (success)
-                        {
-                            successCount++;
-                            if (verbose)
-                            {
-                                AnsiConsole.MarkupLine($"[green]✓[/] {relativePath}");
-                            }
-                        }
-                        else
-                        {
-                            failCount++;
-                            if (verbose)
-                            {
-                                AnsiConsole.MarkupLine($"[red]✗[/] {relativePath}");
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        failCount++;
-                        if (verbose)
-                        {
-                            AnsiConsole.MarkupLine($"[red]✗[/] {relativePath}: {ex.Message}");
-                        }
-                    }
+                    if (success) successCount++;
+                    else failCount++;
 
                     task.Increment(1);
                 }
             });
 
+        return (successCount, failCount);
+    }
+
+    private static async Task<bool> ConvertSingleDdxFileAsync(
+        string ddxFile,
+        string basePath,
+        string outputPath,
+        DdxSubprocessConverter? subprocessConverter,
+        ConversionOptions options,
+        bool verbose)
+    {
+        var relativePath = Path.GetRelativePath(basePath, ddxFile);
+        var ddsPath = Path.Combine(outputPath, Path.ChangeExtension(relativePath, ".dds"));
+        Directory.CreateDirectory(Path.GetDirectoryName(ddsPath)!);
+
+        try
+        {
+            var success = subprocessConverter != null
+                ? await subprocessConverter.ConvertFileAsync(ddxFile, ddsPath)
+                : await new DdxConverter(options.Verbose, options).ConvertFileAsync(ddxFile, ddsPath);
+
+            if (verbose)
+                AnsiConsole.MarkupLine(success ? $"[green]✓[/] {relativePath}" : $"[red]✗[/] {relativePath}");
+
+            return success;
+        }
+        catch (Exception ex)
+        {
+            if (verbose)
+                AnsiConsole.MarkupLine($"[red]✗[/] {relativePath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static void PrintConversionSummary(int successCount, int failCount, DdxSubprocessConverter? subprocessConverter)
+    {
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[green]Success:[/] {successCount}  [red]Failed:[/] {failCount}");
 
         if (subprocessConverter != null)
-        {
             AnsiConsole.MarkupLine($"DDX conversion: {subprocessConverter.Succeeded} succeeded, {subprocessConverter.Failed} failed, {subprocessConverter.Processed} total");
-        }
     }
 
     private static List<string> GetDumpFiles(string path)

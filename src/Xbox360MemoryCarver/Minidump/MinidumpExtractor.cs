@@ -325,7 +325,7 @@ public class MinidumpExtractor
     /// <summary>
     /// Parse full MINIDUMP_HEADER structure.
     /// </summary>
-    private (uint Version, uint NumStreams, uint StreamDirRva, uint Timestamp, uint Flags) ParseFullHeader(BinaryReader reader)
+    private static (uint Version, uint NumStreams, uint StreamDirRva, uint Timestamp, uint Flags) ParseFullHeader(BinaryReader reader)
     {
         var magic = reader.ReadBytes(4);
         if (!magic.SequenceEqual("MDMP"u8.ToArray()))

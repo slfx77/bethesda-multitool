@@ -143,7 +143,7 @@ public class FileTypeStats
 {
     public int Count { get; set; }
     public long TotalBytes { get; set; }
-    public List<string> Files { get; } = new();
+    public List<string> Files { get; } = [];
 }
 
 /// <summary>
@@ -189,12 +189,12 @@ public class ExtractionReport
 
     public int TotalFilesCarved { get; set; }
     public long TotalBytesCarved { get; set; }
-    public Dictionary<string, FileTypeStats> FilesByType { get; } = new();
+    public Dictionary<string, FileTypeStats> FilesByType { get; } = [];
 
     /// <summary>
     /// Detailed manifest of all carved files with offsets and metadata.
     /// </summary>
-    public List<CarveEntry> Manifest { get; set; } = new();
+    public List<CarveEntry> Manifest { get; set; } = [];
 
     /// <summary>
     /// Count of partial/incomplete files recovered.

@@ -19,10 +19,16 @@ public class MemoryCarver
     private readonly Dictionary<string, int> _stats;
     private readonly List<CarveEntry> _manifest;
     private readonly HashSet<long> _processedOffsets;
+    private readonly object _fileStreamLock = new();
     private readonly bool _convertDdxToDds;
     private readonly DdxSubprocessConverter? _ddxConverter;
     private int _ddxConvertedCount;
     private int _ddxConvertFailedCount;
+
+    private static readonly System.Text.Json.JsonSerializerOptions _cachedJsonOptions = new()
+    {
+        WriteIndented = true
+    };
 
     public MemoryCarver(string outputDir, int chunkSize = 10 * 1024 * 1024, int maxFilesPerType = 10000, bool convertDdxToDds = false)
     {
@@ -109,7 +115,7 @@ public class MemoryCarver
         return _manifest;
     }
 
-    private Dictionary<string, SignatureInfo> GetSignaturesToSearch(List<string>? fileTypes)
+    private static Dictionary<string, SignatureInfo> GetSignaturesToSearch(List<string>? fileTypes)
     {
         if (fileTypes == null || fileTypes.Count == 0)
             return FileSignatures.Signatures;
@@ -189,7 +195,7 @@ public class MemoryCarver
 
             // Try to parse and prepare extraction
             var dataSlice = chunkData.Slice(relativeOffset);
-            var extractionData = PrepareExtraction(fs, dataSlice, absoluteOffset, sigName, sigInfo, outputPath);
+            var extractionData = PrepareExtraction(fs, _fileStreamLock, dataSlice, absoluteOffset, sigName, sigInfo, outputPath);
 
             if (extractionData != null)
             {
@@ -210,8 +216,9 @@ public class MemoryCarver
         return tasks;
     }
 
-    private (string outputFile, byte[] data, int fileSize)? PrepareExtraction(
+    private static (string outputFile, byte[] data, int fileSize)? PrepareExtraction(
         FileStream fs,
+        object fsLock,
         ReadOnlySpan<byte> data,
         long offset,
         string sigName,
@@ -273,7 +280,7 @@ public class MemoryCarver
         {
             // Need to read more data from file
             fileData = new byte[fileSize];
-            lock (fs)
+            lock (fsLock)
             {
                 long currentPos = fs.Position;
                 fs.Seek(offset, SeekOrigin.Begin);
@@ -366,10 +373,7 @@ public class MemoryCarver
     private async Task SaveManifestAsync(string outputPath)
     {
         var manifestPath = Path.Combine(outputPath, "manifest.json");
-        var json = System.Text.Json.JsonSerializer.Serialize(_manifest, new System.Text.Json.JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
+        var json = System.Text.Json.JsonSerializer.Serialize(_manifest, _cachedJsonOptions);
         await File.WriteAllTextAsync(manifestPath, json);
     }
 
@@ -380,18 +384,8 @@ public class MemoryCarver
     {
         try
         {
-            // Check if this is a valid minidump by looking for MDMP signature
-            await using var checkFs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var magic = new byte[4];
-            if (await checkFs.ReadAsync(magic) < 4) return;
-
-            if (magic[0] != 'M' || magic[1] != 'D' || magic[2] != 'M' || magic[3] != 'P')
-            {
-                // Not a minidump file
+            if (!await IsValidMinidumpAsync(dumpPath))
                 return;
-            }
-
-            checkFs.Close();
 
             var executablesPath = Path.Combine(outputPath, "executables");
             Directory.CreateDirectory(executablesPath);
@@ -399,59 +393,70 @@ public class MemoryCarver
             var extractor = new MinidumpExtractor(executablesPath);
             var (modules, dumpInfo) = await extractor.ExtractModulesAsync(dumpPath);
 
-            // Log dump info summary
-            if (dumpInfo != null)
-            {
-                if (dumpInfo.System != null)
-                {
-                    AnsiConsole.MarkupLine($"[blue]Dump Architecture: {dumpInfo.System.ProcessorArchitectureName}[/]");
-                }
-                if (dumpInfo.Exception != null)
-                {
-                    AnsiConsole.MarkupLine($"[yellow]Exception: {dumpInfo.Exception.ExceptionCodeName} at 0x{dumpInfo.Exception.ExceptionAddress:X}[/]");
-                }
-                if (dumpInfo.MemoryRegionCount > 0)
-                {
-                    AnsiConsole.MarkupLine($"[blue]Memory: {dumpInfo.MemoryRegionCount} regions, {BinaryUtils.FormatSize(dumpInfo.TotalMemorySize)} total[/]");
-                }
-            }
-
-            // Add extracted modules to manifest
-            foreach (var module in modules)
-            {
-                var safeName = BinaryUtils.SanitizeFilename(Path.GetFileName(module.Name));
-                var ext = Path.GetExtension(safeName).ToLowerInvariant();
-                var fileType = ext switch
-                {
-                    ".dll" => "dll",
-                    ".exe" => "exe",
-                    ".xex" => "xex",
-                    _ => "module"
-                };
-
-                _manifest.Add(new CarveEntry
-                {
-                    FileType = fileType,
-                    Offset = (long)module.BaseAddress,
-                    SizeInDump = module.Size,
-                    SizeOutput = module.Size,
-                    Filename = safeName,
-                    ContentType = "minidump_module",
-                    Notes = $"Extracted from minidump module list: {module.Name}"
-                });
-
-                // Update stats
-                if (!_stats.ContainsKey(fileType))
-                    _stats[fileType] = 0;
-                _stats[fileType]++;
-            }
+            LogDumpInfo(dumpInfo);
+            AddModulesToManifest(modules);
         }
         catch (Exception ex)
         {
-            // Silently continue - this might not be a minidump or could be a different format
             AnsiConsole.MarkupLine($"[grey]Note: Could not extract minidump modules: {ex.Message}[/]");
         }
     }
+
+    private static async Task<bool> IsValidMinidumpAsync(string dumpPath)
+    {
+        await using var checkFs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var magic = new byte[4];
+        if (await checkFs.ReadAsync(magic) < 4)
+            return false;
+
+        return magic[0] == 'M' && magic[1] == 'D' && magic[2] == 'M' && magic[3] == 'P';
+    }
+
+    private static void LogDumpInfo(DumpInfo? dumpInfo)
+    {
+        if (dumpInfo == null)
+            return;
+
+        if (dumpInfo.System != null)
+            AnsiConsole.MarkupLine($"[blue]Dump Architecture: {dumpInfo.System.ProcessorArchitectureName}[/]");
+
+        if (dumpInfo.Exception != null)
+            AnsiConsole.MarkupLine($"[yellow]Exception: {dumpInfo.Exception.ExceptionCodeName} at 0x{dumpInfo.Exception.ExceptionAddress:X}[/]");
+
+        if (dumpInfo.MemoryRegionCount > 0)
+            AnsiConsole.MarkupLine($"[blue]Memory: {dumpInfo.MemoryRegionCount} regions, {BinaryUtils.FormatSize(dumpInfo.TotalMemorySize)} total[/]");
+    }
+
+    private void AddModulesToManifest(List<ModuleInfo> modules)
+    {
+        foreach (var module in modules)
+        {
+            var safeName = BinaryUtils.SanitizeFilename(Path.GetFileName(module.Name));
+            var fileType = GetFileTypeFromExtension(Path.GetExtension(safeName));
+
+            _manifest.Add(new CarveEntry
+            {
+                FileType = fileType,
+                Offset = (long)module.BaseAddress,
+                SizeInDump = module.Size,
+                SizeOutput = module.Size,
+                Filename = safeName,
+                ContentType = "minidump_module",
+                Notes = $"Extracted from minidump module list: {module.Name}"
+            });
+
+            _stats.TryAdd(fileType, 0);
+            _stats[fileType]++;
+        }
+    }
+
+    private static string GetFileTypeFromExtension(string extension) => extension.ToLowerInvariant() switch
+    {
+        ".dll" => "dll",
+        ".exe" => "exe",
+        ".xex" => "xex",
+        _ => "module"
+    };
 
     public void PrintStats()
     {

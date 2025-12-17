@@ -175,7 +175,7 @@ public static class FileSignatures
         },
         ["bsa"] = new SignatureInfo
         {
-            Magic = new byte[] { 0x42, 0x53, 0x41, 0x00 },
+            Magic = [0x42, 0x53, 0x41, 0x00],
             Extension = ".bsa",
             Description = "Bethesda Archive",
             MinSize = 36,
