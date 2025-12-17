@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.Collections.Concurrent;
+using System.IO.MemoryMappedFiles;
 using Spectre.Console;
 using Xbox360MemoryCarver.Converters;
 using Xbox360MemoryCarver.Minidump;
@@ -8,37 +11,55 @@ using Xbox360MemoryCarver.Utils;
 namespace Xbox360MemoryCarver.Carving;
 
 /// <summary>
-/// Memory dump file carver with chunked processing for efficient handling of large dumps.
-/// Supports automatic DDX to DDS conversion during extraction.
+/// High-performance memory dump file carver using:
+/// - Aho-Corasick multi-pattern search (single pass for all signatures)
+/// - Memory-mapped file I/O for zero-copy reads
+/// - Parallel extraction with concurrent collections
+/// - ArrayPool buffer reuse to minimize GC pressure
 /// </summary>
-public class MemoryCarver
+public sealed class MemoryCarver
 {
     private readonly string _outputDir;
-    private readonly int _chunkSize;
     private readonly int _maxFilesPerType;
-    private readonly Dictionary<string, int> _stats;
-    private readonly List<CarveEntry> _manifest;
-    private readonly HashSet<long> _processedOffsets;
-    private readonly object _fileStreamLock = new();
+    private readonly ConcurrentDictionary<string, int> _stats;
+    private readonly ConcurrentBag<CarveEntry> _manifest;
+    private readonly ConcurrentDictionary<long, byte> _processedOffsets;
     private readonly bool _convertDdxToDds;
     private readonly DdxSubprocessConverter? _ddxConverter;
     private int _ddxConvertedCount;
     private int _ddxConvertFailedCount;
+    private readonly AhoCorasick _signatureMatcher;
+    private readonly Dictionary<string, SignatureInfo> _signatureInfoMap;
 
-    private static readonly System.Text.Json.JsonSerializerOptions _cachedJsonOptions = new()
+    private static readonly System.Text.Json.JsonSerializerOptions CachedJsonOptions = new()
     {
         WriteIndented = true
     };
 
-    public MemoryCarver(string outputDir, int chunkSize = 10 * 1024 * 1024, int maxFilesPerType = 10000, bool convertDdxToDds = false)
+    public MemoryCarver(
+        string outputDir,
+        int maxFilesPerType = 10000,
+        bool convertDdxToDds = false,
+        List<string>? fileTypes = null)
     {
         _outputDir = outputDir;
-        _chunkSize = chunkSize;
         _maxFilesPerType = maxFilesPerType;
-        _stats = [];
+        _stats = new ConcurrentDictionary<string, int>();
         _manifest = [];
-        _processedOffsets = [];
+        _processedOffsets = new ConcurrentDictionary<long, byte>();
         _convertDdxToDds = convertDdxToDds;
+
+        // Build signature matcher
+        _signatureMatcher = new AhoCorasick();
+        _signatureInfoMap = GetSignaturesToSearch(fileTypes);
+
+        foreach (var (name, info) in _signatureInfoMap)
+        {
+            _signatureMatcher.AddPattern(name, info.Magic);
+            _stats[name] = 0;
+        }
+
+        _signatureMatcher.Build();
 
         if (_convertDdxToDds)
         {
@@ -52,67 +73,6 @@ public class MemoryCarver
                 _convertDdxToDds = false;
             }
         }
-
-        // Initialize stats for all signature types
-        foreach (var key in FileSignatures.Signatures.Keys)
-        {
-            _stats[key] = 0;
-        }
-    }
-
-    /// <summary>
-    /// Carve files from a memory dump asynchronously.
-    /// </summary>
-    public async Task<List<CarveEntry>> CarveDumpAsync(
-        string dumpPath,
-        List<string>? fileTypes = null,
-        IProgress<double>? progress = null)
-    {
-        var dumpName = Path.GetFileNameWithoutExtension(dumpPath);
-        var outputPath = Path.Combine(_outputDir, BinaryUtils.SanitizeFilename(dumpName));
-        Directory.CreateDirectory(outputPath);
-
-        _manifest.Clear();
-        _processedOffsets.Clear();
-
-        var fileInfo = new FileInfo(dumpPath);
-        long fileSize = fileInfo.Length;
-
-        // First, try to extract modules from minidump metadata
-        // This extracts DLLs/EXEs with their proper filenames
-        await ExtractMinidumpModulesAsync(dumpPath, outputPath);
-
-        var signaturesToSearch = GetSignaturesToSearch(fileTypes);
-        const int overlapSize = 2048;
-
-        // Use larger buffer for better I/O performance
-        using var fs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read,
-            bufferSize: 1024 * 1024, // 1MB buffer
-            useAsync: true);
-
-        var buffer = new byte[_chunkSize + overlapSize];
-
-        long offset = 0;
-        while (offset < fileSize)
-        {
-            long seekPos = Math.Max(0, offset - overlapSize);
-            fs.Seek(seekPos, SeekOrigin.Begin);
-
-            int toRead = (int)Math.Min(buffer.Length, fileSize - seekPos);
-            int bytesRead = await fs.ReadAsync(buffer.AsMemory(0, toRead));
-
-            if (bytesRead == 0) break;
-
-            await ProcessChunkAsync(fs, buffer, bytesRead, seekPos, signaturesToSearch, outputPath);
-
-            offset += _chunkSize;
-            progress?.Report((double)Math.Min(offset, fileSize) / fileSize);
-        }
-
-        // Save manifest
-        await SaveManifestAsync(outputPath);
-
-        return _manifest;
     }
 
     private static Dictionary<string, SignatureInfo> GetSignaturesToSearch(List<string>? fileTypes)
@@ -125,171 +85,220 @@ public class MemoryCarver
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
     }
 
-    private async Task ProcessChunkAsync(
-        FileStream fs,
-        byte[] chunkBuffer,
-        int bytesRead,
-        long chunkStart,
-        Dictionary<string, SignatureInfo> signatures,
+    /// <summary>
+    /// Carve files from a memory dump using high-performance techniques.
+    /// </summary>
+    public async Task<List<CarveEntry>> CarveDumpAsync(
+        string dumpPath,
+        IProgress<double>? progress = null)
+    {
+        var dumpName = Path.GetFileNameWithoutExtension(dumpPath);
+        var outputPath = Path.Combine(_outputDir, BinaryUtils.SanitizeFilename(dumpName));
+        Directory.CreateDirectory(outputPath);
+
+        _manifest.Clear();
+        _processedOffsets.Clear();
+        foreach (var key in _stats.Keys)
+            _stats[key] = 0;
+
+        var fileInfo = new FileInfo(dumpPath);
+        long fileSize = fileInfo.Length;
+
+        // Extract minidump modules first
+        await ExtractMinidumpModulesAsync(dumpPath, outputPath);
+
+        // Use memory-mapped file for high-performance reading
+        using var mmf = MemoryMappedFile.CreateFromFile(dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+
+        // Find all signature matches in a single pass
+        var matches = FindAllMatches(accessor, fileSize, progress);
+
+        // Extract files in parallel
+        await ExtractMatchesParallelAsync(accessor, fileSize, matches, outputPath);
+
+        // Save manifest
+        await SaveManifestAsync(outputPath);
+
+        return [.. _manifest];
+    }
+
+    private List<(string SigName, long Offset)> FindAllMatches(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        IProgress<double>? progress)
+    {
+        const int chunkSize = 64 * 1024 * 1024; // 64MB chunks
+        int maxPatternLength = _signatureInfoMap.Values.Max(s => s.Magic.Length);
+
+        var allMatches = new List<(string SigName, long Offset)>();
+        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
+
+        try
+        {
+            long offset = 0;
+            while (offset < fileSize)
+            {
+                int toRead = (int)Math.Min(chunkSize + maxPatternLength, fileSize - offset);
+                accessor.ReadArray(offset, buffer, 0, toRead);
+
+                var span = buffer.AsSpan(0, toRead);
+                var matches = _signatureMatcher.Search(span, offset);
+
+                foreach (var (name, _, position) in matches)
+                {
+                    // Check if we've hit the limit for this type
+                    if (_stats.GetValueOrDefault(name, 0) < _maxFilesPerType)
+                    {
+                        allMatches.Add((name, position));
+                    }
+                }
+
+                // Move forward, but overlap by max pattern length to catch patterns at boundaries
+                offset += chunkSize;
+                progress?.Report(Math.Min((double)offset / fileSize, 0.5)); // First half is scanning
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        // Sort by offset and deduplicate
+        return allMatches
+            .DistinctBy(m => m.Offset)
+            .OrderBy(m => m.Offset)
+            .ToList();
+    }
+
+    private async Task ExtractMatchesParallelAsync(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        List<(string SigName, long Offset)> matches,
         string outputPath)
     {
-        var chunkData = chunkBuffer.AsSpan(0, bytesRead);
-
-        // Collect all file extraction tasks
-        var extractionTasks = new List<Task>();
-
-        foreach (var (sigName, sigInfo) in signatures)
+        // Process in parallel with degree limited by CPU cores
+        var options = new ParallelOptions
         {
-            if (_stats[sigName] >= _maxFilesPerType)
-                continue;
+            MaxDegreeOfParallelism = Environment.ProcessorCount
+        };
+
+        await Parallel.ForEachAsync(matches, options, async (match, ct) =>
+        {
+            if (_stats.GetValueOrDefault(match.SigName, 0) >= _maxFilesPerType)
+                return;
+
+            // Skip if already processed
+            if (!_processedOffsets.TryAdd(match.Offset, 0))
+                return;
+
+            var sigInfo = _signatureInfoMap[match.SigName];
 
             try
             {
-                var tasks = SearchAndExtractAsync(fs, chunkData, chunkStart, sigName, sigInfo, outputPath);
-                extractionTasks.AddRange(tasks);
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine($"[yellow]Warning: Error searching {sigName} at offset 0x{chunkStart:X}: {ex.Message}[/]");
-            }
-        }
+                var extractionData = PrepareExtraction(accessor, fileSize, match.Offset, match.SigName, sigInfo, outputPath);
 
-        // Wait for all extractions to complete
-        if (extractionTasks.Count > 0)
-        {
-            await Task.WhenAll(extractionTasks);
-        }
-    }
-
-    private List<Task> SearchAndExtractAsync(
-        FileStream fs,
-        ReadOnlySpan<byte> chunkData,
-        long chunkStart,
-        string sigName,
-        SignatureInfo sigInfo,
-        string outputPath)
-    {
-        var tasks = new List<Task>();
-        int searchPos = 0;
-
-        while (searchPos < chunkData.Length - sigInfo.Magic.Length)
-        {
-            int foundPos = BinaryUtils.FindPattern(chunkData.Slice(searchPos), sigInfo.Magic);
-            if (foundPos < 0) break;
-
-            int relativeOffset = searchPos + foundPos;
-            long absoluteOffset = chunkStart + relativeOffset;
-
-            // Skip if we've already processed this offset
-            lock (_processedOffsets)
-            {
-                if (_processedOffsets.Contains(absoluteOffset))
+                if (extractionData != null)
                 {
-                    searchPos = relativeOffset + sigInfo.Magic.Length;
-                    continue;
+                    _stats.AddOrUpdate(match.SigName, 1, (_, v) => v + 1);
+
+                    await WriteFileAsync(
+                        extractionData.Value.outputFile,
+                        extractionData.Value.data,
+                        match.Offset,
+                        match.SigName,
+                        extractionData.Value.fileSize);
                 }
             }
-
-            if (_stats[sigName] >= _maxFilesPerType)
-                break;
-
-            // Try to parse and prepare extraction
-            var dataSlice = chunkData.Slice(relativeOffset);
-            var extractionData = PrepareExtraction(fs, _fileStreamLock, dataSlice, absoluteOffset, sigName, sigInfo, outputPath);
-
-            if (extractionData != null)
+            catch
             {
-                lock (_processedOffsets)
-                {
-                    _processedOffsets.Add(absoluteOffset);
-                    _stats[sigName]++;
-                }
-
-                // Queue async file write
-                tasks.Add(WriteFileAsync(extractionData.Value.outputFile, extractionData.Value.data,
-                    absoluteOffset, sigName, extractionData.Value.fileSize));
+                // Ignore extraction errors for individual files
             }
-
-            searchPos = relativeOffset + sigInfo.Magic.Length;
-        }
-
-        return tasks;
+        });
     }
 
     private static (string outputFile, byte[] data, int fileSize)? PrepareExtraction(
-        FileStream fs,
-        object fsLock,
-        ReadOnlySpan<byte> data,
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
         long offset,
         string sigName,
         SignatureInfo sigInfo,
         string outputPath)
     {
-        // Get parser for this file type
-        var parser = ParserFactory.GetParser(sigName);
-        int fileSize;
-        string? customFilename = null;
+        // Read header data (enough for parsing)
+        int headerSize = Math.Min(sigInfo.MaxSize, 64 * 1024); // Read up to 64KB for header parsing
+        headerSize = (int)Math.Min(headerSize, fileSize - offset);
 
-        if (parser != null)
+        var headerBuffer = ArrayPool<byte>.Shared.Rent(headerSize);
+        try
         {
-            var parseResult = parser.ParseHeader(data);
-            if (parseResult == null)
+            accessor.ReadArray(offset, headerBuffer, 0, headerSize);
+            var headerSpan = headerBuffer.AsSpan(0, headerSize);
+
+            // Get parser for this file type
+            var parser = ParserFactory.GetParser(sigName);
+            int fileDataSize;
+            string? customFilename = null;
+
+            if (parser != null)
+            {
+                var parseResult = parser.ParseHeader(headerSpan);
+                if (parseResult == null)
+                    return null;
+
+                fileDataSize = parseResult.EstimatedSize;
+
+                if (parseResult.Metadata.TryGetValue("safeName", out var safeName))
+                {
+                    customFilename = safeName.ToString();
+                }
+            }
+            else
+            {
+                fileDataSize = Math.Min(sigInfo.MaxSize, headerSize);
+            }
+
+            // Validate size
+            if (fileDataSize < sigInfo.MinSize || fileDataSize > sigInfo.MaxSize)
                 return null;
 
-            fileSize = parseResult.EstimatedSize;
+            // Ensure we don't read past end of file
+            fileDataSize = (int)Math.Min(fileDataSize, fileSize - offset);
 
-            // Get custom filename for scripts
-            if (parseResult.Metadata.TryGetValue("safeName", out var safeName))
+            // Create output directory
+            string typeFolder = string.IsNullOrEmpty(sigInfo.Folder) ? sigName : sigInfo.Folder;
+            string typePath = Path.Combine(outputPath, typeFolder);
+            Directory.CreateDirectory(typePath);
+
+            // Generate filename
+            string filename = customFilename ?? $"{offset:X8}";
+            string outputFile = Path.Combine(typePath, $"{filename}{sigInfo.Extension}");
+
+            // Ensure unique filename
+            int counter = 1;
+            while (File.Exists(outputFile))
             {
-                customFilename = safeName.ToString();
+                outputFile = Path.Combine(typePath, $"{filename}_{counter++}{sigInfo.Extension}");
             }
-        }
-        else
-        {
-            // For types without parsers, use a reasonable default size
-            fileSize = Math.Min(sigInfo.MaxSize, data.Length);
-        }
 
-        // Validate size
-        if (fileSize < sigInfo.MinSize || fileSize > sigInfo.MaxSize)
-            return null;
-
-        // Create output directory
-        string typeFolder = string.IsNullOrEmpty(sigInfo.Folder) ? sigName : sigInfo.Folder;
-        string typePath = Path.Combine(outputPath, typeFolder);
-        Directory.CreateDirectory(typePath);
-
-        // Generate filename
-        string filename = customFilename ?? $"{offset:X8}";
-        string outputFile = Path.Combine(typePath, $"{filename}{sigInfo.Extension}");
-
-        // Ensure unique filename
-        int counter = 1;
-        while (File.Exists(outputFile))
-        {
-            outputFile = Path.Combine(typePath, $"{filename}_{counter++}{sigInfo.Extension}");
-        }
-
-        // Read full file data
-        byte[] fileData;
-        if (data.Length >= fileSize)
-        {
-            fileData = data.Slice(0, fileSize).ToArray();
-        }
-        else
-        {
-            // Need to read more data from file
-            fileData = new byte[fileSize];
-            lock (fsLock)
+            // Read full file data
+            byte[] fileData;
+            if (fileDataSize <= headerSize)
             {
-                long currentPos = fs.Position;
-                fs.Seek(offset, SeekOrigin.Begin);
-                fs.ReadExactly(fileData, 0, fileSize);
-                fs.Seek(currentPos, SeekOrigin.Begin);
+                fileData = headerSpan[..fileDataSize].ToArray();
             }
-        }
+            else
+            {
+                fileData = new byte[fileDataSize];
+                accessor.ReadArray(offset, fileData, 0, fileDataSize);
+            }
 
-        return (outputFile, fileData, fileSize);
+            return (outputFile, fileData, fileDataSize);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(headerBuffer);
+        }
     }
 
     private async Task WriteFileAsync(string outputFile, byte[] data, long offset, string sigName, int fileSize)
@@ -301,90 +310,76 @@ public class MemoryCarver
                 (sigName == "ddx_3xdo" || sigName == "ddx_3xdr") &&
                 DdxSubprocessConverter.IsDdxFile(data))
             {
-                // Try to convert DDX to DDS with detailed result
                 var result = _ddxConverter.ConvertFromMemoryWithResult(data);
 
                 if (result.Success && result.DdsData != null)
                 {
-                    // Save as DDS in textures folder instead of ddx folder
                     var ddsOutputFile = outputFile
                         .Replace(Path.DirectorySeparatorChar + "ddx" + Path.DirectorySeparatorChar,
                                  Path.DirectorySeparatorChar + "textures" + Path.DirectorySeparatorChar);
                     ddsOutputFile = Path.ChangeExtension(ddsOutputFile, ".dds");
 
-                    // Ensure textures directory exists
                     var texturesDir = Path.GetDirectoryName(ddsOutputFile);
                     if (texturesDir != null)
                         Directory.CreateDirectory(texturesDir);
 
                     await File.WriteAllBytesAsync(ddsOutputFile, result.DdsData);
 
-                    lock (_manifest)
+                    _manifest.Add(new CarveEntry
                     {
-                        _manifest.Add(new CarveEntry
-                        {
-                            FileType = sigName,
-                            Offset = offset,
-                            SizeInDump = fileSize,
-                            SizeOutput = result.DdsData.Length,
-                            Filename = Path.GetFileName(ddsOutputFile),
-                            IsCompressed = true, // Indicates conversion happened
-                            ContentType = result.IsPartial ? "dds_partial" : "dds_converted",
-                            IsPartial = result.IsPartial,
-                            Notes = result.Notes
-                        });
-                        _ddxConvertedCount++;
-                    }
+                        FileType = sigName,
+                        Offset = offset,
+                        SizeInDump = fileSize,
+                        SizeOutput = result.DdsData.Length,
+                        Filename = Path.GetFileName(ddsOutputFile),
+                        IsCompressed = true,
+                        ContentType = result.IsPartial ? "dds_partial" : "dds_converted",
+                        IsPartial = result.IsPartial,
+                        Notes = result.Notes
+                    });
 
+                    Interlocked.Increment(ref _ddxConvertedCount);
                     return;
                 }
-                else
-                {
-                    // Conversion failed, save original DDX
-                    _ddxConvertFailedCount++;
-                }
+
+                Interlocked.Increment(ref _ddxConvertFailedCount);
             }
 
+            // Use async for all file writes
             await File.WriteAllBytesAsync(outputFile, data);
 
-            // Add to manifest (thread-safe)
-            lock (_manifest)
+            _manifest.Add(new CarveEntry
             {
-                _manifest.Add(new CarveEntry
-                {
-                    FileType = sigName,
-                    Offset = offset,
-                    SizeInDump = fileSize,
-                    SizeOutput = fileSize,
-                    Filename = Path.GetFileName(outputFile)
-                });
-            }
+                FileType = sigName,
+                Offset = offset,
+                SizeInDump = fileSize,
+                SizeOutput = fileSize,
+                Filename = Path.GetFileName(outputFile)
+            });
         }
         catch
         {
-            // Decrement stats on failure
-            lock (_stats)
-            {
-                _stats[sigName]--;
-            }
+            _stats.AddOrUpdate(sigName, 0, (_, v) => Math.Max(0, v - 1));
         }
     }
 
     private async Task SaveManifestAsync(string outputPath)
     {
         var manifestPath = Path.Combine(outputPath, "manifest.json");
-        var json = System.Text.Json.JsonSerializer.Serialize(_manifest, _cachedJsonOptions);
+        var manifestList = _manifest.ToList();
+        var json = System.Text.Json.JsonSerializer.Serialize(manifestList, CachedJsonOptions);
         await File.WriteAllTextAsync(manifestPath, json);
     }
 
-    /// <summary>
-    /// Extract modules from minidump metadata with their proper filenames.
-    /// </summary>
     private async Task ExtractMinidumpModulesAsync(string dumpPath, string outputPath)
     {
         try
         {
-            if (!await IsValidMinidumpAsync(dumpPath))
+            await using var checkFs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var magic = new byte[4];
+            if (await checkFs.ReadAsync(magic) < 4) return;
+
+            if (magic[0] != 'M' || magic[1] != 'D' || magic[2] != 'M' || magic[3] != 'P')
                 return;
 
             var executablesPath = Path.Combine(outputPath, "executables");
@@ -402,20 +397,9 @@ public class MemoryCarver
         }
     }
 
-    private static async Task<bool> IsValidMinidumpAsync(string dumpPath)
-    {
-        await using var checkFs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var magic = new byte[4];
-        if (await checkFs.ReadAsync(magic) < 4)
-            return false;
-
-        return magic[0] == 'M' && magic[1] == 'D' && magic[2] == 'M' && magic[3] == 'P';
-    }
-
     private static void LogDumpInfo(DumpInfo? dumpInfo)
     {
-        if (dumpInfo == null)
-            return;
+        if (dumpInfo == null) return;
 
         if (dumpInfo.System != null)
             AnsiConsole.MarkupLine($"[blue]Dump Architecture: {dumpInfo.System.ProcessorArchitectureName}[/]");
@@ -432,7 +416,13 @@ public class MemoryCarver
         foreach (var module in modules)
         {
             var safeName = BinaryUtils.SanitizeFilename(Path.GetFileName(module.Name));
-            var fileType = GetFileTypeFromExtension(Path.GetExtension(safeName));
+            var fileType = Path.GetExtension(safeName).ToLowerInvariant() switch
+            {
+                ".dll" => "dll",
+                ".exe" => "exe",
+                ".xex" => "xex",
+                _ => "module"
+            };
 
             _manifest.Add(new CarveEntry
             {
@@ -445,18 +435,9 @@ public class MemoryCarver
                 Notes = $"Extracted from minidump module list: {module.Name}"
             });
 
-            _stats.TryAdd(fileType, 0);
-            _stats[fileType]++;
+            _stats.AddOrUpdate(fileType, 1, (_, v) => v + 1);
         }
     }
-
-    private static string GetFileTypeFromExtension(string extension) => extension.ToLowerInvariant() switch
-    {
-        ".dll" => "dll",
-        ".exe" => "exe",
-        ".xex" => "xex",
-        _ => "module"
-    };
 
     public void PrintStats()
     {
@@ -476,14 +457,13 @@ public class MemoryCarver
 
         AnsiConsole.Write(table);
 
-        // Print DDX conversion stats if applicable
         if (_convertDdxToDds && (_ddxConvertedCount > 0 || _ddxConvertFailedCount > 0))
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[green]DDX?DDS converted:[/] {_ddxConvertedCount}  [yellow]Failed:[/] {_ddxConvertFailedCount}");
+            AnsiConsole.MarkupLine($"[green]DDX→DDS converted:[/] {_ddxConvertedCount}  [yellow]Failed:[/] {_ddxConvertFailedCount}");
         }
     }
 
     public Dictionary<string, int> GetStats() => new(_stats);
-    public List<CarveEntry> GetManifest() => new(_manifest);
+    public List<CarveEntry> GetManifest() => [.. _manifest];
 }

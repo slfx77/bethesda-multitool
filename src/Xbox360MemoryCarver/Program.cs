@@ -102,7 +102,6 @@ public static class Program
             var verbose = context.ParseResult.GetValueForOption(verboseOption);
             var skipEndian = context.ParseResult.GetValueForOption(skipEndianOption);
             var saveRaw = context.ParseResult.GetValueForOption(saveRawOption);
-            var chunkSize = context.ParseResult.GetValueForOption(chunkSizeOption);
             var maxFiles = context.ParseResult.GetValueForOption(maxFilesOption);
 
             PrintBanner();
@@ -115,7 +114,7 @@ public static class Program
                 }
                 else
                 {
-                    await RunCarving(input, output, types, chunkSize, maxFiles, convertDdx);
+                    await RunCarving(input, output, types, maxFiles, convertDdx);
                 }
             }
             catch (Exception ex)
@@ -138,7 +137,7 @@ public static class Program
         AnsiConsole.WriteLine();
     }
 
-    private static async Task RunCarving(string input, string output, string[]? types, int chunkSize, int maxFiles, bool convertDdx)
+    private static async Task RunCarving(string input, string output, string[]? types, int maxFiles, bool convertDdx)
     {
         var inputPath = Path.GetFullPath(input);
 
@@ -151,7 +150,8 @@ public static class Program
         var outputPath = Path.GetFullPath(output);
         Directory.CreateDirectory(outputPath);
 
-        var carver = new MemoryCarver(outputPath, chunkSize, maxFiles, convertDdx);
+        // Use high-performance carver with Aho-Corasick and memory-mapped I/O
+        var carver = new MemoryCarver(outputPath, maxFiles, convertDdx, types?.ToList());
         var reportGenerator = new ReportGenerator(outputPath);
 
         // Get list of files to process
@@ -188,7 +188,7 @@ public static class Program
 
                     var progress = new Progress<double>(value => task.Value = value * 100);
 
-                    var manifest = await carver.CarveDumpAsync(dumpFile, types?.ToList(), progress);
+                    var manifest = await carver.CarveDumpAsync(dumpFile, progress);
 
                     task.Value = 100;
 
