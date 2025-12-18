@@ -83,8 +83,11 @@ public sealed class MemoryCarver
         if (fileTypes == null || fileTypes.Count == 0)
             return FileSignatures.Signatures;
 
+        // Support both exact matches (e.g., "ddx_3xdo") and prefix matches (e.g., "ddx" matches "ddx_3xdo", "ddx_3xdr")
         return FileSignatures.Signatures
-            .Where(kvp => fileTypes.Contains(kvp.Key))
+            .Where(kvp => fileTypes.Any(ft => 
+                kvp.Key.Equals(ft, StringComparison.OrdinalIgnoreCase) || 
+                kvp.Key.StartsWith(ft + "_", StringComparison.OrdinalIgnoreCase)))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
     }
 
@@ -132,6 +135,10 @@ public sealed class MemoryCarver
         IProgress<double>? progress)
     {
         const int chunkSize = 64 * 1024 * 1024; // 64MB chunks
+        
+        if (_signatureInfoMap.Count == 0)
+            return [];
+            
         int maxPatternLength = _signatureInfoMap.Values.Max(s => s.Magic.Length);
 
         var allMatches = new List<(string SigName, long Offset)>();

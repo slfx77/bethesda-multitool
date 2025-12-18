@@ -246,11 +246,24 @@ public class DdxParser : IFileParser
     {
         const int headerSize = 0x44;
 
-        // Minimum compressed size - assume at least 20% compression
-        int minSize = headerSize + Math.Max(100, uncompressedSize / 5);
+        // DDX files contain XMemCompress data which typically compresses DXT to 60-100% of original
+        // Use a more conservative minimum (50% compression = data is 50% of original)
+        int minSize = headerSize + Math.Max(100, uncompressedSize / 2);
 
-        // Maximum size - compressed data shouldn't exceed uncompressed
-        int maxSize = Math.Min(data.Length - offset, headerSize + uncompressedSize);
+        // Maximum size - compressed data could exceed uncompressed if poorly compressible
+        // Add some extra margin for overhead
+        int maxSize = Math.Min(data.Length - offset, headerSize + uncompressedSize + 4096);
+
+        // Check if data starts with XMemCompress frame marker (0xFF)
+        // If so, try to parse XMemCompress frames to find actual end
+        if (offset + headerSize < data.Length && data[offset + headerSize] == 0xFF)
+        {
+            int xmemEnd = FindXMemCompressEnd(data, offset + headerSize, uncompressedSize);
+            if (xmemEnd > 0)
+            {
+                return headerSize + xmemEnd;
+            }
+        }
 
         // Scan for next DDX signature starting after minimum expected size
         ReadOnlySpan<byte> ddx3xdo = "3XDO"u8;
@@ -277,9 +290,62 @@ public class DdxParser : IFileParser
             }
         }
 
-        // No next signature found - use compression estimate
-        // DXT data typically compresses to 50-80% of original size
-        return headerSize + Math.Min(uncompressedSize, uncompressedSize * 3 / 4);
+        // No next signature found - use uncompressed size estimate
+        // DDX compressed data is typically 60-100% of uncompressed size
+        return headerSize + uncompressedSize;
+    }
+
+    /// <summary>
+    /// Try to find the end of XMemCompress data by parsing frame headers.
+    /// Returns the offset from start of compressed data, or -1 if unable to parse.
+    /// </summary>
+    private static int FindXMemCompressEnd(ReadOnlySpan<byte> data, int start, int expectedUncompressed)
+    {
+        // XMemCompress uses frames starting with 0xFF
+        // Frame format: FF [flags] [size info...]
+        // This is a heuristic approach since exact format varies
+
+        int pos = start;
+        int totalDecompressed = 0;
+        int maxPos = Math.Min(data.Length, start + expectedUncompressed * 2);
+
+        while (pos < maxPos - 4 && totalDecompressed < expectedUncompressed * 2)
+        {
+            if (data[pos] != 0xFF)
+            {
+                // End of XMemCompress frames
+                break;
+            }
+
+            // Try to estimate frame size from header bytes
+            // Format appears to be: FF [type] [size_hi] [size_lo] where size is uncompressed KB
+            byte frameType = data[pos + 1];
+            int frameUncompressed = (data[pos + 2] << 8 | data[pos + 3]) * 64; // Size in 64-byte units
+
+            if (frameUncompressed <= 0 || frameUncompressed > 1024 * 1024)
+            {
+                // Invalid frame size, stop parsing
+                break;
+            }
+
+            totalDecompressed += frameUncompressed;
+
+            // Skip to next frame - estimate based on compression ratio
+            // This is approximate since we don't know exact compressed size
+            int estimatedFrameCompressed = frameUncompressed * 3 / 4; // Assume 75% compression
+            pos += 4 + estimatedFrameCompressed;
+
+            // Safety check
+            if (pos > maxPos) break;
+        }
+
+        if (totalDecompressed >= expectedUncompressed / 2)
+        {
+            // We parsed enough frames, use current position
+            return pos - start;
+        }
+
+        return -1; // Unable to reliably determine end
     }
 }
 
