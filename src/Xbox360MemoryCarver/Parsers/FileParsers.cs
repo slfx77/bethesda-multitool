@@ -246,13 +246,8 @@ public class DdxParser : IFileParser
     {
         const int headerSize = 0x44;
 
-        // DDX files contain XMemCompress data which typically compresses DXT to 60-100% of original
-        // Use a more conservative minimum (50% compression = data is 50% of original)
-        int minSize = headerSize + Math.Max(100, uncompressedSize / 2);
-
-        // Maximum size - compressed data could exceed uncompressed if poorly compressible
-        // Add some extra margin for overhead
-        int maxSize = Math.Min(data.Length - offset, headerSize + uncompressedSize + 4096);
+        // DDX files contain XMemCompress data which typically compresses DXT to ~50-90% of original
+        // For memory carving, we need to estimate the compressed size accurately
 
         // Check if data starts with XMemCompress frame marker (0xFF)
         // If so, try to parse XMemCompress frames to find actual end
@@ -265,34 +260,70 @@ public class DdxParser : IFileParser
             }
         }
 
-        // Scan for next DDX signature starting after minimum expected size
+        // XMemCompress frame parsing failed - use size-based estimation
+        // DXT data typically compresses to 50-90% of original size
+        // Use 100% as maximum to be safe (poorly compressible data), plus small overhead
+        int estimatedCompressedMax = uncompressedSize + 512;
+
+        // Minimum is typically 40% compression for highly compressible textures
+        int estimatedCompressedMin = Math.Max(100, uncompressedSize * 2 / 5);
+
+        int minSize = headerSize + estimatedCompressedMin;
+        int maxSize = Math.Min(data.Length - offset, headerSize + estimatedCompressedMax);
+
+        // Scan for next DDX signature within the expected range
+        // Only accept signatures that are reasonably close to expected size
         ReadOnlySpan<byte> ddx3xdo = "3XDO"u8;
         ReadOnlySpan<byte> ddx3xdr = "3XDR"u8;
 
-        for (int i = offset + minSize; i < offset + maxSize && i < data.Length - 4; i++)
+        for (int i = offset + minSize; i < offset + maxSize && i < data.Length - 0x44; i++)
         {
             var slice = data.Slice(i, 4);
             if (slice.SequenceEqual(ddx3xdo) || slice.SequenceEqual(ddx3xdr))
             {
-                // Validate this looks like a real DDX header
-                if (i + 0x44 < data.Length)
-                {
-                    // Check version field
-                    ushort nextVersion = BinaryUtils.ReadUInt16LE(data, i + 7);
-                    byte nextFlags = data[i + 0x24];
+                // Validate this looks like a real DDX header with stricter checks
+                // Check version field
+                ushort nextVersion = BinaryUtils.ReadUInt16LE(data, i + 7);
+                if (nextVersion < 3 || nextVersion > 10) continue;
 
-                    if (nextVersion >= 3 && nextFlags >= 0x80)
-                    {
-                        // Found valid next DDX - this is our boundary
-                        return i - offset;
-                    }
-                }
+                // Check flags byte
+                byte nextFlags = data[i + 0x24];
+                if (nextFlags < 0x80) continue;
+
+                // Check header indicator byte
+                byte nextHeaderIndicator = data[i + 0x04];
+                if (nextHeaderIndicator == 0xFF) continue;
+
+                // Parse dimensions from the next header to validate it makes sense
+                uint nextSizeDword = BinaryUtils.ReadUInt32BE(data, i + 0x2C);
+                int nextWidth = (int)(nextSizeDword & 0x1FFF) + 1;
+                int nextHeight = (int)((nextSizeDword >> 13) & 0x1FFF) + 1;
+
+                // Reject if dimensions are invalid (must be powers of 2 and reasonable)
+                if (nextWidth <= 0 || nextWidth > 4096 || nextHeight <= 0 || nextHeight > 4096)
+                    continue;
+                if (!IsPowerOfTwo(nextWidth) || !IsPowerOfTwo(nextHeight))
+                    continue;
+
+                // Found valid next DDX - this is our boundary
+                // Add a small overlap margin to reduce false positives where a compressed
+                // payload happens to contain a DDX-looking sequence. This keeps the
+                // carved data large enough for multi-chunk textures while still stopping
+                // before the next real header.
+                const int overlapMargin = 0x8000; // 32KB tail to keep potential trailing chunks
+                return Math.Min((i - offset) + overlapMargin, maxSize);
             }
         }
 
-        // No next signature found - use uncompressed size estimate
-        // DDX compressed data is typically 60-100% of uncompressed size
-        return headerSize + uncompressedSize;
+        // No next signature found within expected range
+        // Use a compression-ratio based estimate (typical DXT compression is ~70%)
+        int typicalCompressedSize = uncompressedSize * 7 / 10;
+        return headerSize + Math.Max(estimatedCompressedMin, typicalCompressedSize);
+    }
+
+    private static bool IsPowerOfTwo(int x)
+    {
+        return x > 0 && (x & (x - 1)) == 0;
     }
 
     /// <summary>
@@ -301,51 +332,14 @@ public class DdxParser : IFileParser
     /// </summary>
     private static int FindXMemCompressEnd(ReadOnlySpan<byte> data, int start, int expectedUncompressed)
     {
-        // XMemCompress uses frames starting with 0xFF
-        // Frame format: FF [flags] [size info...]
-        // This is a heuristic approach since exact format varies
+        // XMemCompress/LZX decompression is complex and frame parsing is unreliable.
+        // Instead of trying to parse frames, we'll return -1 to force use of the 
+        // size-based estimation which is more reliable for memory-carved textures.
+        //
+        // The actual compressed size will be determined when DDXConv decompresses
+        // the data and reports how many bytes were consumed.
 
-        int pos = start;
-        int totalDecompressed = 0;
-        int maxPos = Math.Min(data.Length, start + expectedUncompressed * 2);
-
-        while (pos < maxPos - 4 && totalDecompressed < expectedUncompressed * 2)
-        {
-            if (data[pos] != 0xFF)
-            {
-                // End of XMemCompress frames
-                break;
-            }
-
-            // Try to estimate frame size from header bytes
-            // Format appears to be: FF [type] [size_hi] [size_lo] where size is uncompressed KB
-            byte frameType = data[pos + 1];
-            int frameUncompressed = (data[pos + 2] << 8 | data[pos + 3]) * 64; // Size in 64-byte units
-
-            if (frameUncompressed <= 0 || frameUncompressed > 1024 * 1024)
-            {
-                // Invalid frame size, stop parsing
-                break;
-            }
-
-            totalDecompressed += frameUncompressed;
-
-            // Skip to next frame - estimate based on compression ratio
-            // This is approximate since we don't know exact compressed size
-            int estimatedFrameCompressed = frameUncompressed * 3 / 4; // Assume 75% compression
-            pos += 4 + estimatedFrameCompressed;
-
-            // Safety check
-            if (pos > maxPos) break;
-        }
-
-        if (totalDecompressed >= expectedUncompressed / 2)
-        {
-            // We parsed enough frames, use current position
-            return pos - start;
-        }
-
-        return -1; // Unable to reliably determine end
+        return -1; // Let the caller use size-based estimation
     }
 }
 

@@ -26,6 +26,7 @@ public sealed class MemoryCarver
     private readonly ConcurrentDictionary<long, byte> _processedOffsets;
     private readonly bool _convertDdxToDds;
     private readonly bool _verbose;
+    private readonly bool _saveAtlas;
     private readonly DdxSubprocessConverter? _ddxConverter;
     private int _ddxConvertedCount;
     private int _ddxConvertFailedCount;
@@ -42,7 +43,8 @@ public sealed class MemoryCarver
         int maxFilesPerType = 10000,
         bool convertDdxToDds = false,
         List<string>? fileTypes = null,
-        bool verbose = false)
+        bool verbose = false,
+        bool saveAtlas = false)
     {
         _outputDir = outputDir;
         _maxFilesPerType = maxFilesPerType;
@@ -51,6 +53,7 @@ public sealed class MemoryCarver
         _processedOffsets = new ConcurrentDictionary<long, byte>();
         _convertDdxToDds = convertDdxToDds;
         _verbose = verbose;
+        _saveAtlas = saveAtlas;
 
         // Build signature matcher
         _signatureMatcher = new AhoCorasick();
@@ -68,7 +71,7 @@ public sealed class MemoryCarver
         {
             if (DdxSubprocessConverter.IsAvailable())
             {
-                _ddxConverter = new DdxSubprocessConverter(verbose: _verbose);
+                _ddxConverter = new DdxSubprocessConverter(verbose: _verbose, saveAtlas: _saveAtlas);
             }
             else
             {
@@ -85,8 +88,8 @@ public sealed class MemoryCarver
 
         // Support both exact matches (e.g., "ddx_3xdo") and prefix matches (e.g., "ddx" matches "ddx_3xdo", "ddx_3xdr")
         return FileSignatures.Signatures
-            .Where(kvp => fileTypes.Any(ft => 
-                kvp.Key.Equals(ft, StringComparison.OrdinalIgnoreCase) || 
+            .Where(kvp => fileTypes.Any(ft =>
+                kvp.Key.Equals(ft, StringComparison.OrdinalIgnoreCase) ||
                 kvp.Key.StartsWith(ft + "_", StringComparison.OrdinalIgnoreCase)))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
     }
@@ -135,10 +138,10 @@ public sealed class MemoryCarver
         IProgress<double>? progress)
     {
         const int chunkSize = 64 * 1024 * 1024; // 64MB chunks
-        
+
         if (_signatureInfoMap.Count == 0)
             return [];
-            
+
         int maxPatternLength = _signatureInfoMap.Values.Max(s => s.Magic.Length);
 
         var allMatches = new List<(string SigName, long Offset)>();
@@ -334,6 +337,13 @@ public sealed class MemoryCarver
                         Directory.CreateDirectory(texturesDir);
 
                     await File.WriteAllBytesAsync(ddsOutputFile, result.DdsData);
+
+                    // Write atlas file if available (for debugging)
+                    if (result.AtlasData != null)
+                    {
+                        var atlasOutputFile = ddsOutputFile.Replace(".dds", "_full_atlas.dds");
+                        await File.WriteAllBytesAsync(atlasOutputFile, result.AtlasData);
+                    }
 
                     _manifest.Add(new CarveEntry
                     {

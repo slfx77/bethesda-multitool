@@ -81,6 +81,11 @@ public static class Program
             () => 10000,
             "Maximum files to extract per type");
 
+        // Save atlas files during DDX conversion
+        var saveAtlasOption = new Option<bool>(
+            ["--save-atlas"],
+            "Save untiled atlas DDS files alongside converted textures (for debugging)");
+
         rootCommand.AddArgument(inputArgument);
         rootCommand.AddOption(outputOption);
         rootCommand.AddOption(ddxOption);
@@ -91,6 +96,7 @@ public static class Program
         rootCommand.AddOption(saveRawOption);
         rootCommand.AddOption(chunkSizeOption);
         rootCommand.AddOption(maxFilesOption);
+        rootCommand.AddOption(saveAtlasOption);
 
         rootCommand.SetHandler(async (context) =>
         {
@@ -103,6 +109,7 @@ public static class Program
             var skipEndian = context.ParseResult.GetValueForOption(skipEndianOption);
             var saveRaw = context.ParseResult.GetValueForOption(saveRawOption);
             var maxFiles = context.ParseResult.GetValueForOption(maxFilesOption);
+            var saveAtlas = context.ParseResult.GetValueForOption(saveAtlasOption);
 
             PrintBanner();
 
@@ -114,7 +121,7 @@ public static class Program
                 }
                 else
                 {
-                    await RunCarving(input, output, types, maxFiles, convertDdx, verbose);
+                    await RunCarving(input, output, types, maxFiles, convertDdx, verbose, saveAtlas);
                 }
             }
             catch (Exception ex)
@@ -137,7 +144,7 @@ public static class Program
         AnsiConsole.WriteLine();
     }
 
-    private static async Task RunCarving(string input, string output, string[]? types, int maxFiles, bool convertDdx, bool verbose)
+    private static async Task RunCarving(string input, string output, string[]? types, int maxFiles, bool convertDdx, bool verbose, bool saveAtlas = false)
     {
         var inputPath = Path.GetFullPath(input);
 
@@ -151,7 +158,7 @@ public static class Program
         Directory.CreateDirectory(outputPath);
 
         // Use high-performance carver with Aho-Corasick and memory-mapped I/O
-        var carver = new MemoryCarver(outputPath, maxFiles, convertDdx, types?.ToList(), verbose);
+        var carver = new MemoryCarver(outputPath, maxFiles, convertDdx, types?.ToList(), verbose, saveAtlas);
         var reportGenerator = new ReportGenerator(outputPath);
 
         // Get list of files to process

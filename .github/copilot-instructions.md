@@ -6,8 +6,7 @@ High-performance .NET 10.0 console application for converting Xbox 360 DDX textu
 
 ## Key Features
 
-- XMemCompress/XMemDecompress support via XCompression library (xcompress64.dll or XnaNative.dll)
-- Managed LZX decompression fallback when native DLLs unavailable (experimental, not fully working)
+- XMemCompress/XMemDecompress support via XCompression library (requires XnaNative.dll from XNA Framework)
 - Xbox 360 texture untiling/unswizzling
 - Support for both 3XDO and 3XDR formats
 - Command-line interface for batch processing
@@ -18,7 +17,7 @@ High-performance .NET 10.0 console application for converting Xbox 360 DDX textu
 
 - 3XDO: Standard compressed format (working)
 - 3XDR: Uses different tiling pattern (experimental support)
-- Uses XnaNative.dll from XNA Framework or managed LZX for decompression
+- Requires XnaNative.dll from XNA Framework for decompression
 - Texture data is Morton-order tiled on Xbox 360
 - Minidumps from Xbox 360 devkits use PowerPC architecture (0x3)
 

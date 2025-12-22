@@ -162,6 +162,11 @@ public class DdxConversionResult
     public byte[]? DdsData { get; init; }
 
     /// <summary>
+    /// Optional atlas DDS data (full untiled atlas for debugging).
+    /// </summary>
+    public byte[]? AtlasData { get; init; }
+
+    /// <summary>
     /// Whether the output is partial (e.g., atlas-only, missing mips).
     /// </summary>
     public bool IsPartial { get; init; }

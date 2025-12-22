@@ -12,6 +12,7 @@ public class DdxSubprocessConverter
 {
     private readonly string _ddxConvPath;
     private readonly bool _verbose;
+    private readonly bool _saveAtlas;
 
     private int _processed;
     private int _succeeded;
@@ -21,9 +22,10 @@ public class DdxSubprocessConverter
     public int Succeeded => _succeeded;
     public int Failed => _failed;
 
-    public DdxSubprocessConverter(bool verbose = false, string? ddxConvPath = null)
+    public DdxSubprocessConverter(bool verbose = false, string? ddxConvPath = null, bool saveAtlas = false)
     {
         _verbose = verbose;
+        _saveAtlas = saveAtlas;
         _ddxConvPath = ddxConvPath ?? FindDdxConvPath();
 
         if (string.IsNullOrEmpty(_ddxConvPath) || !File.Exists(_ddxConvPath))
@@ -131,6 +133,8 @@ public class DdxSubprocessConverter
             var args = $"\"{inputPath}\" \"{outputPath}\"";
             if (_verbose)
                 args += " --verbose";
+            if (_saveAtlas)
+                args += " --atlas";
 
             if (_verbose)
                 Console.WriteLine($"Running: {_ddxConvPath} {args}");
@@ -287,6 +291,8 @@ public class DdxSubprocessConverter
 
             // Run DDXConv with verbose to capture partial detection info
             var args = $"\"{tempInputPath}\" \"{tempOutputPath}\" --verbose";
+            if (_saveAtlas)
+                args += " --atlas";
 
             var startInfo = new ProcessStartInfo
             {
@@ -365,12 +371,22 @@ public class DdxSubprocessConverter
             }
 
             var ddsData = File.ReadAllBytes(tempOutputPath);
+
+            // Check for atlas file (if --atlas was passed)
+            byte[]? atlasData = null;
+            var tempAtlasPath = tempOutputPath.Replace(".dds", "_full_atlas.dds");
+            if (_saveAtlas && File.Exists(tempAtlasPath))
+            {
+                atlasData = File.ReadAllBytes(tempAtlasPath);
+            }
+
             _succeeded++;
 
             return new DdxConversionResult
             {
                 Success = true,
                 DdsData = ddsData,
+                AtlasData = atlasData,
                 IsPartial = isPartial,
                 Notes = notes,
                 ConsoleOutput = _verbose ? consoleOutput : null
@@ -394,6 +410,13 @@ public class DdxSubprocessConverter
                     File.Delete(tempInputPath);
                 if (tempOutputPath != null && File.Exists(tempOutputPath))
                     File.Delete(tempOutputPath);
+                // Also clean up atlas file if it exists
+                if (tempOutputPath != null)
+                {
+                    var tempAtlasPath = tempOutputPath.Replace(".dds", "_full_atlas.dds");
+                    if (File.Exists(tempAtlasPath))
+                        File.Delete(tempAtlasPath);
+                }
             }
             catch
             {
