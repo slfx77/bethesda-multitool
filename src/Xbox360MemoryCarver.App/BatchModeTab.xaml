@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Xbox360MemoryCarver.App.BatchModeTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Xbox360MemoryCarver.App"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls">
+
+    <Grid Padding="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Input/Output Section -->
+        <StackPanel Grid.Row="0"
+                Spacing="12">
+            <!-- Input Directory -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="InputDirectoryTextBox"
+                         Header="Input Directory (containing .dmp files)"
+                         PlaceholderText="Select a folder containing memory dumps..."
+                         IsReadOnly="True"/>
+                <Button Grid.Column="1"
+                        Content="Browse..."
+                        Margin="8,22,0,0"
+                        Click="BrowseInputButton_Click"/>
+            </Grid>
+
+            <!-- Output Directory -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="OutputDirectoryTextBox"
+                         Header="Output Directory"
+                         PlaceholderText="Select output directory..."
+                         IsReadOnly="True"/>
+                <Button Grid.Column="1"
+                        Content="Browse..."
+                        Margin="8,22,0,0"
+                        Click="BrowseOutputButton_Click"/>
+            </Grid>
+
+            <!-- Scan Button -->
+            <Button x:Name="ScanButton"
+                    Content="Scan for Dumps"
+                    Style="{StaticResource AccentButtonStyle}"
+                    HorizontalAlignment="Left"
+                    IsEnabled="False"
+                    Click="ScanButton_Click"/>
+        </StackPanel>
+
+        <!-- File List -->
+        <Border Grid.Row="1"
+                Margin="0,16,0,0"
+                Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8"
+                Padding="8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0"
+                        Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Dump Files"
+                            Style="{StaticResource SubtitleTextBlockStyle}"/>
+                    <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                        <Button Content="Select All"
+                                Click="SelectAllButton_Click"
+                                Style="{StaticResource DefaultButtonStyle}"/>
+                        <Button Content="Select None"
+                                Click="SelectNoneButton_Click"
+                                Style="{StaticResource DefaultButtonStyle}"/>
+                    </StackPanel>
+                </Grid>
+
+                <ListView x:Name="DumpFilesListView"
+                          Grid.Row="1"
+                          SelectionMode="Multiple">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:DumpFileEntry">
+                            <Grid Padding="8,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="100"/>
+                                    <ColumnDefinition Width="120"/>
+                                </Grid.ColumnDefinitions>
+                                <CheckBox Grid.Column="0"
+                                          IsChecked="{x:Bind IsSelected, Mode=TwoWay}"
+                                          Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{x:Bind FileName}"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind SizeFormatted}"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="3"
+                                           Text="{x:Bind Status}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{x:Bind StatusColor}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+
+        <!-- Options -->
+        <Border Grid.Row="2"
+                Margin="0,8,0,0"
+                Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8"
+                Padding="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0"
+                        Spacing="8">
+                    <TextBlock Text="Extraction Options"
+                            FontWeight="SemiBold"/>
+                    <CheckBox x:Name="BatchConvertDdxCheckBox"
+                              Content="Convert DDX to DDS"
+                              IsChecked="True"/>
+                    <CheckBox x:Name="BatchSaveAtlasCheckBox"
+                              Content="Save Atlas Files"/>
+                    <CheckBox x:Name="BatchVerboseCheckBox"
+                              Content="Verbose Output"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1"
+                        Spacing="8">
+                    <TextBlock Text="Processing Options"
+                            FontWeight="SemiBold"/>
+                    <StackPanel Orientation="Horizontal"
+                            Spacing="8">
+                        <TextBlock Text="Max Parallel:"
+                                VerticalAlignment="Center"/>
+                        <NumberBox x:Name="ParallelCountBox"
+                                   Value="2"
+                                   Minimum="1"
+                                   Maximum="8"
+                                   SpinButtonPlacementMode="Compact"/>
+                    </StackPanel>
+                    <CheckBox x:Name="SkipExistingCheckBox"
+                              Content="Skip already extracted"
+                              IsChecked="True"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Progress and Actions -->
+        <Grid Grid.Row="3"
+                Margin="0,16,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Row="0"
+                    Grid.ColumnSpan="2"
+                    Spacing="4"
+                    Margin="0,0,0,8">
+                <ProgressBar x:Name="BatchProgressBar"
+                             Visibility="Collapsed"
+                             Value="0"/>
+                <TextBlock x:Name="ProgressTextBlock"
+                           Text=""
+                           FontSize="12"
+                           Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="1"
+                    Grid.Column="0"
+                       x:Name="StatusTextBlock"
+                       VerticalAlignment="Center"
+                       Text="Select a folder to scan for dump files"/>
+
+            <StackPanel Grid.Row="1"
+                    Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                <Button x:Name="CancelButton"
+                        Content="Cancel"
+                        IsEnabled="False"
+                        Click="CancelButton_Click"/>
+                <Button x:Name="ProcessButton"
+                        Content="Process Selected"
+                        Style="{StaticResource AccentButtonStyle}"
+                        IsEnabled="False"
+                        Click="ProcessButton_Click"
+                        MinWidth="140"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

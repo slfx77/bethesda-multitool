@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Xbox360MemoryCarver.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Xbox360MemoryCarver.App"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    Title="Xbox 360 Memory Carver">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar Area -->
+        <Grid Grid.Row="0"
+                Background="{ThemeResource SystemControlBackgroundChromeMediumBrush}"
+                Padding="16,8">
+            <TextBlock Text="Xbox 360 Memory Carver"
+                    Style="{StaticResource TitleTextBlockStyle}"/>
+        </Grid>
+
+        <!-- Main Content with Tabs -->
+        <controls:TabView Grid.Row="1"
+                          IsAddTabButtonVisible="False"
+                          TabWidthMode="Equal"
+                          CloseButtonOverlayMode="Auto">
+            <controls:TabView.TabItems>
+                <!-- Single File Tab -->
+                <controls:TabViewItem Header="Single File"
+                        IsClosable="False">
+                    <local:SingleFileTab x:Name="SingleFileTabContent"/>
+                </controls:TabViewItem>
+
+                <!-- Batch Mode Tab -->
+                <controls:TabViewItem Header="Batch Mode"
+                        IsClosable="False">
+                    <local:BatchModeTab x:Name="BatchModeTabContent"/>
+                </controls:TabViewItem>
+            </controls:TabView.TabItems>
+        </controls:TabView>
+    </Grid>
+</Window>

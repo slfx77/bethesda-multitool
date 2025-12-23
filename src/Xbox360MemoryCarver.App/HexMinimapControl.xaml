@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Xbox360MemoryCarver.App.HexMinimapControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Xbox360MemoryCarver.App">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Legend -->
+        <Border Grid.Row="0"
+                Background="#FF1E1E1E"
+                Padding="4,2"
+                CornerRadius="2"
+                Margin="0,0,0,4">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8"
+                        HorizontalAlignment="Center">
+                <StackPanel Orientation="Horizontal"
+                        Spacing="4">
+                    <Border Width="12"
+                            Height="12"
+                            Background="#FF4CAF50"
+                            CornerRadius="2"/>
+                    <TextBlock Text="Texture"
+                            FontSize="10"
+                            VerticalAlignment="Center"
+                            Foreground="#FFCCCCCC"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                        Spacing="4">
+                    <Border Width="12"
+                            Height="12"
+                            Background="#FFE91E63"
+                            CornerRadius="2"/>
+                    <TextBlock Text="Audio"
+                            FontSize="10"
+                            VerticalAlignment="Center"
+                            Foreground="#FFCCCCCC"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                        Spacing="4">
+                    <Border Width="12"
+                            Height="12"
+                            Background="#FFFFC107"
+                            CornerRadius="2"/>
+                    <TextBlock Text="Model"
+                            FontSize="10"
+                            VerticalAlignment="Center"
+                            Foreground="#FFCCCCCC"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                        Spacing="4">
+                    <Border Width="12"
+                            Height="12"
+                            Background="#FF9C27B0"
+                            CornerRadius="2"/>
+                    <TextBlock Text="Module"
+                            FontSize="10"
+                            VerticalAlignment="Center"
+                            Foreground="#FFCCCCCC"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                        Spacing="4">
+                    <Border Width="12"
+                            Height="12"
+                            Background="#FFFF9800"
+                            CornerRadius="2"/>
+                    <TextBlock Text="Script"
+                            FontSize="10"
+                            VerticalAlignment="Center"
+                            Foreground="#FFCCCCCC"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                        Spacing="4">
+                    <Border Width="12"
+                            Height="12"
+                            Background="#FF607D8B"
+                            CornerRadius="2"/>
+                    <TextBlock Text="Data"
+                            FontSize="10"
+                            VerticalAlignment="Center"
+                            Foreground="#FFCCCCCC"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                        Spacing="4">
+                    <Border Width="12"
+                            Height="12"
+                            Background="#FF00BCD4"
+                            CornerRadius="2"/>
+                    <TextBlock Text="Compressed"
+                            FontSize="10"
+                            VerticalAlignment="Center"
+                            Foreground="#FFCCCCCC"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                        Spacing="4">
+                    <Border Width="12"
+                            Height="12"
+                            Background="#FF424242"
+                            CornerRadius="2"/>
+                    <TextBlock Text="Unknown"
+                            FontSize="10"
+                            VerticalAlignment="Center"
+                            Foreground="#FFCCCCCC"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Minimap Canvas -->
+        <Border Grid.Row="1"
+                Background="#FF2D2D2D"
+                CornerRadius="4"
+                Padding="2">
+            <Canvas x:Name="MinimapCanvas"
+                    Background="#FF252526"/>
+        </Border>
+    </Grid>
+</UserControl>

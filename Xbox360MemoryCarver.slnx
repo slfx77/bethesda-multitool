@@ -1,5 +1,10 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/Xbox360MemoryCarver/Xbox360MemoryCarver.csproj" />
+    <Project Path="src/Xbox360MemoryCarver.App/Xbox360MemoryCarver.App.csproj" />
+    <Project Path="src/Xbox360MemoryCarver.Core/Xbox360MemoryCarver.Core.csproj" />
+  </Folder>
+  <Folder Name="/src/DDXConv/">
+    <Project Path="src/DDXConv/DDXConv/DDXConv.csproj" />
+    <Project Path="src/DDXConv/XCompression/XCompression.csproj" />
   </Folder>
 </Solution>

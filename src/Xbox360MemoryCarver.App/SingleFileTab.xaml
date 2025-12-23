@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Xbox360MemoryCarver.App.SingleFileTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Xbox360MemoryCarver.App"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls">
+
+    <Grid Padding="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- TOP: File Input Section -->
+        <Border Grid.Row="0"
+                Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8"
+                Padding="12"
+                Margin="0,0,0,8">
+            <Grid RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Minidump Path -->
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Text="Minidump Path"
+                           VerticalAlignment="Center"
+                           Margin="0,0,12,0"/>
+                <TextBox x:Name="MinidumpPathTextBox"
+                         Grid.Row="0"
+                         Grid.Column="1"
+                         PlaceholderText="Select a .dmp file..."
+                         IsReadOnly="True"
+                         Margin="0,0,8,0"
+                         TextChanged="MinidumpPathTextBox_TextChanged"/>
+                <Button Grid.Row="0"
+                        Grid.Column="2"
+                        Content="Open..."
+                        Click="OpenMinidumpButton_Click"/>
+
+                <!-- Output Path -->
+                <TextBlock Grid.Row="1"
+                           Grid.Column="0"
+                           Text="Output Path"
+                           VerticalAlignment="Center"
+                           Margin="0,0,12,0"/>
+                <TextBox x:Name="OutputPathTextBox"
+                         Grid.Row="1"
+                         Grid.Column="1"
+                         PlaceholderText="Select output directory..."
+                         IsReadOnly="True"
+                         Margin="0,0,8,0"/>
+                <Button Grid.Row="1"
+                        Grid.Column="2"
+                        Content="Browse..."
+                        Click="BrowseOutputButton_Click"/>
+            </Grid>
+        </Border>
+
+        <!-- Progress Bar -->
+        <ProgressBar x:Name="AnalysisProgressBar"
+                     Grid.Row="1"
+                     Margin="0,0,0,8"
+                     Visibility="Collapsed"
+                     IsIndeterminate="True"/>
+
+        <!-- MIDDLE: Memory Map and Discovered Files side-by-side -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"
+                                  MinWidth="500"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"
+                                  MinWidth="400"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Memory Map (Hex Viewer) -->
+            <Border Grid.Column="0"
+                    Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8"
+                    Padding="8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0"
+                               Text="Memory Map"
+                               Style="{StaticResource SubtitleTextBlockStyle}"
+                               Margin="0,0,0,8"/>
+
+                    <local:HexViewerControl Grid.Row="1"
+                                            x:Name="HexViewer"/>
+                </Grid>
+            </Border>
+
+            <!-- Splitter space -->
+            <controls:ContentPresenter Grid.Column="1"/>
+
+            <!-- Discovered Files Table -->
+            <Border Grid.Column="2"
+                    Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="8"
+                    Padding="8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0"
+                               Text="Discovered Files"
+                               Style="{StaticResource SubtitleTextBlockStyle}"
+                               Margin="0,0,0,8"/>
+
+                    <ListView x:Name="ResultsListView"
+                              Grid.Row="1"
+                              SelectionMode="Extended"
+                              SelectionChanged="ResultsListView_SelectionChanged">
+                        <ListView.HeaderTemplate>
+                            <DataTemplate>
+                                <Grid Padding="8,4"
+                                      Background="{ThemeResource SystemControlBackgroundListLowBrush}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="60"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="Offset"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="Length"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="2"
+                                               Text="Type"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="3"
+                                               Text="Status"
+                                               FontWeight="SemiBold"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.HeaderTemplate>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:CarvedFileEntry">
+                                <Grid Padding="8,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="60"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="{x:Bind OffsetHex}"
+                                               FontFamily="Consolas"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{x:Bind LengthFormatted}"/>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{x:Bind FileType}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <FontIcon Grid.Column="3"
+                                              Glyph="{x:Bind ExtractedGlyph}"
+                                              Foreground="{x:Bind ExtractedColor}"
+                                              HorizontalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- BOTTOM: File Types, Options, and Extract Button -->
+        <Border Grid.Row="3"
+                Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="8"
+                Padding="12"
+                Margin="0,8,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- File Type Filters -->
+                <Expander Grid.Row="0"
+                          Header="File Types to Extract"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          Margin="0,0,0,8">
+                    <StackPanel x:Name="FileTypeCheckboxPanel"
+                                Orientation="Horizontal"
+                                Spacing="16">
+                        <!-- Checkboxes will be generated dynamically -->
+                    </StackPanel>
+                </Expander>
+
+                <!-- Options and Extract Button -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                Spacing="16"
+                                VerticalAlignment="Center">
+                        <CheckBox x:Name="ConvertDdxCheckBox"
+                                  Content="Convert DDX to DDS"
+                                  IsChecked="True"/>
+                        <CheckBox x:Name="SaveAtlasCheckBox"
+                                  Content="Save Atlas Files"/>
+                        <CheckBox x:Name="VerboseCheckBox"
+                                  Content="Verbose Output"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="8">
+                        <Button x:Name="AnalyzeButton"
+                                Content="Analyze"
+                                Style="{StaticResource AccentButtonStyle}"
+                                IsEnabled="False"
+                                MinWidth="100"
+                                Click="AnalyzeButton_Click"/>
+                        <Button x:Name="ExtractButton"
+                                Content="Extract Files"
+                                Style="{StaticResource AccentButtonStyle}"
+                                IsEnabled="False"
+                                MinWidth="120"
+                                Click="ExtractButton_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

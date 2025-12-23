@@ -1,16 +1,15 @@
 # Xbox 360 Memory Carver
 
-A high-performance C# application for extracting usable data from Xbox 360 memory dumps and converting DDX texture files to DDS format.
+A high-performance WinUI 3 desktop application for extracting usable data from Xbox 360 memory dumps and converting DDX texture files to DDS format.
 
 ## Features
 
+- **Modern GUI**: WinUI 3 desktop application with hex viewer and minimap
 - **High Performance**: Native C# implementation with parallel processing support
-- **XCompression Support**: Native Xbox 360 XMemCompress/XMemDecompress via xcompress64.dll or managed LZX fallback (experimental, not fully working)
+- **XCompression Support**: Native Xbox 360 XMemCompress/XMemDecompress via XnaNative.dll from XNA Framework
 - **Multiple File Format Support**: Carves DDS textures, XMA audio, NIF models, Bethesda scripts, and more
 - **Xbox 360 Optimized**: Handles Xbox 360-specific formats including big-endian byte order and swizzled textures
-- **Minidump Analysis**: Extracts modules from Xbox 360 debug dumps with full metadata (system info, crash details, thread list)
 - **Memory Efficient**: Processes large dumps in chunks to prevent excessive memory usage
-- **Progress Tracking**: Real-time progress bars using Spectre.Console
 - **Batch Processing**: Process multiple dump files at once
 
 ## Supported File Types
@@ -58,8 +57,8 @@ A high-performance C# application for extracting usable data from Xbox 360 memor
 ## Requirements
 
 - .NET 10.0 or later
-- Windows (for XCompression native library support, or use managed LZX fallback - experimental)
-- Optional: xcompress64.dll or XnaNative.dll (for native XMemDecompress support)
+- Windows 10/11 (WinUI 3 requires Windows 10 version 1809 or later)
+- Microsoft XNA Framework 4.0 (for XnaNative.dll decompression support)
 
 ## Building
 
@@ -73,101 +72,105 @@ Or build from solution:
 dotnet build Xbox360MemoryCarver.slnx -c Release
 ```
 
-## Usage
-
-### Basic Usage - Carve Files from Dump
+## Running the Application
 
 ```bash
-dotnet run --project src/Xbox360MemoryCarver -- Sample/MemoryDump/Fallout_Debug.xex.dmp
+dotnet run --project src/Xbox360MemoryCarver.App
 ```
 
-### Process All Dumps in Directory
+Or run the built executable directly:
 
 ```bash
-dotnet run --project src/Xbox360MemoryCarver -- Sample/MemoryDump/
+.\src\Xbox360MemoryCarver.App\bin\Release\net10.0-windows10.0.22621.0\win-x64\Xbox360MemoryCarver.App.exe
 ```
 
-### Convert DDX Files to DDS
+## DDXConv Command-Line Tool
+
+The DDXConv command-line tool can also be used standalone for batch DDX to DDS conversion:
 
 ```bash
-dotnet run --project src/Xbox360MemoryCarver -- --ddx path/to/ddx/files/
+# Single file conversion
+dotnet run --project src/DDXConv/DDXConv -- path/to/texture.ddx output.dds
+
+# Batch conversion
+dotnet run --project src/DDXConv/DDXConv -- path/to/ddx/folder output/folder
 ```
 
-### Quick Sample DDX Batch Runs
-
-Convert the bundled sample texture DDX files:
-
-```bash
-dotnet run --project src/Xbox360MemoryCarver -- --ddx Sample/Texture -o Output/SampleTextureDDS
-```
-
-Convert carved DDX files found in the sample memory dumps:
-
-```bash
-dotnet run --project src/Xbox360MemoryCarver -- --ddx Sample/MemoryDump -o Output/SampleDumpDDS
-```
-
-### Options
+### DDXConv Options
 
 ```
-Arguments:
-  <input>              Path to memory dump file (.dmp) or directory; or DDX file/directory when using --ddx
+Standard Options:
+  --pc-friendly, -pc   Produce PC-ready normal maps (batch conversion only)
+  --regen-mips, -g     Regenerate mip levels from top level
+
+Memory Dump Options:
+  --memory, -m         Use memory texture parser (handles memory dump layouts)
+  --atlas, -a          Save full untiled atlas as separate DDS file
+
+Developer Options:
+  --verbose, -v        Enable verbose output
+```
 
 Options:
-  -o, --output <path>  Output directory (default: "output")
-  --ddx                Convert DDX textures to DDS instead of carving dumps
-  --convert-ddx        Automatically convert carved DDX textures to DDS during carving (default: true)
-  -t, --types <types>  File types to extract (e.g., -t dds ddx xma)
-  -v, --verbose        Enable verbose output
-  --chunk-size <size>  Chunk size in bytes (default: 10485760)
-  --max-files <count>  Maximum files per type (default: 10000)
-  --help               Show help information
-  --version            Show version information
+-o, --output <path> Output directory (default: "output")
+--ddx Convert DDX textures to DDS instead of carving dumps
+--convert-ddx Automatically convert carved DDX textures to DDS during carving (default: true)
+-t, --types <types> File types to extract (e.g., -t dds ddx xma)
+-v, --verbose Enable verbose output
+--chunk-size <size> Chunk size in bytes (default: 10485760)
+--max-files <count> Maximum files per type (default: 10000)
+--help Show help information
+--version Show version information
+
 ```
 
 ## XCompression Setup
 
-For full Xbox 360 compressed texture support, place one of these DLLs in the application directory:
+For full Xbox 360 compressed texture support, install Microsoft XNA Framework 4.0. The application uses XnaNative.dll from the XNA Framework for LZX decompression.
 
-1. **xcompress64.dll** - From various Xbox 360 development tools
-2. **XnaNative.dll** - From Microsoft XNA Framework 4.0
-
-The application will work without these DLLs, but some compressed DDX files may not convert correctly.
+If XNA Framework is not installed, DDX files cannot be converted (the converter subprocess will fail).
 
 ## Project Structure
 
 ```
+
 Xbox360MemoryCarver/
-├── Xbox360MemoryCarver.slnx      # Solution file
+├── Xbox360MemoryCarver.slnx # Solution file
 ├── README.md
 ├── LICENSE
-├── docs/                         # Documentation
-├── Sample/                       # Sample data (dumps, textures)
+├── docs/ # Documentation
+├── Sample/ # Sample data (dumps, textures)
 └── src/
-    ├── Xbox360MemoryCarver/      # Main application
-    │   ├── Xbox360MemoryCarver.csproj
-    │   ├── Program.cs            # Entry point and CLI
-    │   ├── Carving/
-    │   │   └── MemoryCarver.cs   # Main carving engine
-    │   ├── Compression/
-    │   │   ├── XCompression.cs   # Native Xbox 360 decompression
-    │   │   ├── LzxDecoder.cs     # Managed LZX implementation
-    │   │   └── ManagedLzxDecompressor.cs
-    │   ├── Converters/
-    │   │   ├── DdxConverter.cs   # DDX to DDS conversion
-    │   │   └── DdxParser.cs      # DDX format parsing
-    │   ├── Minidump/
-    │   │   └── MinidumpExtractor.cs  # PE/module extraction & metadata
-    │   ├── Models/
-    │   │   ├── Models.cs         # Data models
-    │   │   └── FileSignatures.cs # File signature definitions
-    │   ├── Parsers/
-    │   │   └── FileParsers.cs    # Format-specific parsers
-    │   ├── Reporting/
-    │   │   └── ReportGenerator.cs
-    │   └── Utils/
-    │       └── BinaryUtils.cs    # Binary helper functions
-    └── DDXConv/                  # Reference submodule (DDXConv project)
+├── Xbox360MemoryCarver.App/ # WinUI 3 desktop application
+│ ├── Xbox360MemoryCarver.App.csproj
+│ ├── App.xaml # Application entry
+│ ├── MainWindow.xaml # Main window with tabs
+│ ├── SingleFileTab.xaml # Single file analysis UI
+│ ├── BatchModeTab.xaml # Batch processing UI
+│ ├── HexViewerControl.xaml # Hex viewer component
+│ └── HexMinimapControl.xaml # Minimap component
+├── Xbox360MemoryCarver.Core/ # Core library
+│ ├── Xbox360MemoryCarver.Core.csproj
+│ ├── MemoryDumpAnalyzer.cs # Analysis engine
+│ ├── MemoryDumpExtractor.cs # Extraction orchestrator
+│ ├── Carving/
+│ │ └── MemoryCarver.cs # Main carving engine
+│ ├── Converters/
+│ │ └── DdxSubprocessConverter.cs # DDX conversion via subprocess
+│ ├── Models/
+│ │ └── FileSignatures.cs # File signature definitions
+│ ├── Parsers/
+│ │ └── FileParsers.cs # Format-specific parsers
+│ └── Utils/
+│ └── BinaryUtils.cs # Binary helper functions
+└── DDXConv/ # DDX conversion submodule (x86)
+├── DDXConv/ # Main converter
+│ ├── DDXConv.csproj
+│ ├── Program.cs # CLI entry point
+│ └── DdxParser.cs # DDX format parsing & untiling
+└── XCompression/ # Xbox 360 compression library
+└── XCompression.csproj
+
 ```
 
 ## Technical Notes
@@ -200,3 +203,4 @@ Based on algorithms from:
 - [DDXConv](https://github.com/kran27/DDXConv)
 - [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia)
 - [XCompression](https://github.com/gibbed/XCompression)
+```

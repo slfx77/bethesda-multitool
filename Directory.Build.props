@@ -1,0 +1,44 @@
+<Project>
+  <PropertyGroup>
+    <!-- Enable .NET analyzers -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    
+    <!-- Nullable reference types -->
+    <Nullable>enable</Nullable>
+    
+    <!-- Implicit usings for modern C# -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    
+    <!-- Use latest C# language version -->
+    <LangVersion>latest</LangVersion>
+    
+    <!-- Enforce code style in build -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    
+    <!-- Generate documentation comments -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    
+    <!-- Suppress XML documentation warnings for now (can enable later) -->
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1712</NoWarn>
+    
+    <!-- Enable deterministic builds -->
+    <Deterministic>true</Deterministic>
+    
+    <!-- Enable continuous analysis -->
+    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+    <RunAnalyzersDuringLiveAnalysis>true</RunAnalyzersDuringLiveAnalysis>
+  </PropertyGroup>
+  
+  <!-- Code analysis packages applied to App and Core projects only -->
+  <ItemGroup Condition="$(MSBuildProjectName.StartsWith('Xbox360MemoryCarver'))">
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.4.0.108396">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Roslynator.Analyzers" Version="4.12.10">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>
