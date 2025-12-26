@@ -1,0 +1,14 @@
+{
+  "msbuild": {
+    "loadProjectsOnDemand": false,
+    "EnablePackageAutoRestore": true
+  },
+  "RoslynExtensionsOptions": {
+    "EnableAnalyzersSupport": true,
+    "EnableImportCompletion": true,
+    "AnalyzeOpenDocumentsOnly": false
+  },
+  "FormattingOptions": {
+    "EnableEditorConfigSupport": true
+  }
+}

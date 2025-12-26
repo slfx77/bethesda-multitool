@@ -1,5 +1,5 @@
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using System;
 
 namespace Xbox360MemoryCarver.App;
 
@@ -17,7 +17,7 @@ public sealed partial class MainWindow : Window
             Console.WriteLine("[MainWindow] InitializeComponent complete");
 
             // Set minimum window size
-            var appWindow = this.AppWindow;
+            AppWindow appWindow = this.AppWindow;
             appWindow.Resize(new Windows.Graphics.SizeInt32(1400, 900));
 
             // Center the window

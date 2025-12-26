@@ -8,6 +8,18 @@ namespace Xbox360MemoryCarver.App;
 /// </summary>
 public static class FileTypeColors
 {
+    // Normalized type name constants (S1192)
+    private const string TypeModule = "module";
+    private const string TypeObscript = "obscript";
+    private const string TypeDds = "dds";
+    private const string TypePng = "png";
+    private const string TypeXma = "xma";
+    private const string TypeNif = "nif";
+    private const string TypeLip = "lip";
+    private const string TypeXdbf = "xdbf";
+    private const string TypeXui = "xui";
+    private const string TypeEsp = "esp";
+
     /// <summary>
     /// Color used for unknown/untyped regions.
     /// </summary>
@@ -16,7 +28,7 @@ public static class FileTypeColors
     // Legend categories with display names and colors
     public static readonly LegendCategory[] LegendCategories =
     [
-        new("Texture", 0xFF4CAF50),   // DDX/DDS - Green
+        new("Texture", 0xFF4CAF50),    // DDX/DDS - Green
         new("PNG", 0xFF81C784),        // PNG - Light Green
         new("Audio", 0xFFE91E63),      // XMA/LIP - Pink
         new("Model", 0xFFFFC107),      // NIF - Yellow
@@ -26,126 +38,129 @@ public static class FileTypeColors
     ];
 
     // Mapping from normalized type names to colors
-    public static Color GetColor(string normalizedTypeName)
+    public static Color GetColor(string normalizedTypeName) => normalizedTypeName switch
     {
-        return normalizedTypeName switch
-        {
-            // Textures (DDX/DDS) - Green
-            "dds" or "ddx_3xdo" or "ddx_3xdr" => FromArgb(0xFF4CAF50),
+        // Textures (DDX/DDS) - Green
+        TypeDds or "ddx_3xdo" or "ddx_3xdr" => FromArgb(0xFF4CAF50),
 
-            // PNG - Light Green
-            "png" => FromArgb(0xFF81C784),
+        // PNG - Light Green
+        TypePng => FromArgb(0xFF81C784),
 
-            // Audio - Pink
-            "xma" or "lip" => FromArgb(0xFFE91E63),
+        // Audio - Pink
+        TypeXma or TypeLip => FromArgb(0xFFE91E63),
 
-            // Models - Yellow
-            "nif" => FromArgb(0xFFFFC107),
+        // Models - Yellow
+        TypeNif => FromArgb(0xFFFFC107),
 
-            // Modules/Executables - Purple
-            "xex" or "module" => FromArgb(0xFF9C27B0),
+        // Modules/Executables - Purple
+        "xex" or TypeModule => FromArgb(0xFF9C27B0),
 
-            // Scripts - Orange
-            "script_scn" or "obscript" => FromArgb(0xFFFF9800),
+        // Scripts - Orange
+        "script_scn" or TypeObscript => FromArgb(0xFFFF9800),
 
-            // Xbox Dashboard/XUI - Indigo
-            "xdbf" or "xui" => FromArgb(0xFF3F51B5),
+        // Xbox Dashboard/XUI - Indigo
+        TypeXdbf or TypeXui => FromArgb(0xFF3F51B5),
 
-            // Game data (ESP) - Amber
-            "esp" => FromArgb(0xFFFFB74D),
+        // Game data (ESP) - Amber
+        TypeEsp => FromArgb(0xFFFFB74D),
 
-            // Unknown - Gray
-            _ => FromArgb(0xFF646464)
-        };
-    }
+        // Unknown - Gray
+        _ => FromArgb(0xFF646464)
+    };
 
     /// <summary>
     /// Normalize a file type description to a standard key.
     /// </summary>
     public static string NormalizeTypeName(string fileType)
     {
-        var lower = fileType.ToLowerInvariant();
+        ArgumentNullException.ThrowIfNull(fileType);
+
+        string lower = fileType.ToLowerInvariant();
         return lower switch
         {
             "xbox 360 ddx texture (3xdo format)" => "ddx_3xdo",
             "xbox 360 ddx texture (3xdr engine-tiled format)" => "ddx_3xdr",
-            "directdraw surface texture" => "dds",
-            "png image" => "png",
-            "xbox media audio (riff/xma)" => "xma",
-            "netimmerse/gamebryo 3d model" => "nif",
-            "xbox 360 executable" => "module",
-            "xex" => "module",
-            "xbox dashboard file" => "xdbf",
-            "xui scene" => "xui",
-            "xui binary" => "xui",
-            "elder scrolls plugin" => "esp",
-            "lip-sync animation" => "lip",
-            "bethesda obscript (scn format)" => "obscript",
-            "script_scn" => "obscript",
+            "directdraw surface texture" => TypeDds,
+            "png image" => TypePng,
+            "xbox media audio (riff/xma)" => TypeXma,
+            "netimmerse/gamebryo 3d model" => TypeNif,
+            "xbox 360 executable" or "xex" => TypeModule,
+            "xbox dashboard file" => TypeXdbf,
+            "xui scene" or "xui binary" => TypeXui,
+            "elder scrolls plugin" => TypeEsp,
+            "lip-sync animation" => TypeLip,
+            "bethesda obscript (scn format)" or "script_scn" => TypeObscript,
             _ => FallbackNormalize(lower)
         };
     }
 
-    private static string FallbackNormalize(string lower)
-    {
-        // Fallback: match by category keywords
-        if (lower.Contains("ddx") || lower.Contains("dds") || lower.Contains("texture"))
-            return "dds";
-        if (lower.Contains("png") || lower.Contains("image"))
-            return "png";
-        if (lower.Contains("xma") || lower.Contains("audio"))
-            return "xma";
-        if (lower.Contains("nif") || lower.Contains("model"))
-            return "nif";
-        if (lower.Contains("xex") || lower.Contains("executable") || lower.Contains("module"))
-            return "module";
-        if (lower.Contains("script") || lower.Contains("obscript"))
-            return "obscript";
-        if (lower.Contains("lip"))
-            return "lip";
-        if (lower.Contains("xdbf") || lower.Contains("dashboard"))
-            return "xdbf";
-        if (lower.Contains("xui") || lower.Contains("scene") || lower.Contains("xuib") || lower.Contains("xuis"))
-            return "xui";
-        if (lower.Contains("esp") || lower.Contains("plugin"))
-            return "esp";
+    private static string FallbackNormalize(string lower) =>
+        GetFallbackCategory(lower) ?? lower.Replace(" ", "_");
 
-        return lower.Replace(" ", "_");
-    }
+    private static string? GetFallbackCategory(string lower) => lower switch
+    {
+        _ when ContainsAny(lower, "ddx", "dds", "texture") => TypeDds,
+        _ when ContainsAny(lower, "png", "image") => TypePng,
+        _ when ContainsAny(lower, "xma", "audio") => TypeXma,
+        _ when ContainsAny(lower, "nif", "model") => TypeNif,
+        _ when ContainsAny(lower, "xex", "executable", "module") => TypeModule,
+        _ when ContainsAny(lower, "script", "obscript") => TypeObscript,
+        _ when lower.Contains("lip", StringComparison.Ordinal) => TypeLip,
+        _ when ContainsAny(lower, "xdbf", "dashboard") => TypeXdbf,
+        _ when ContainsAny(lower, "xui", "scene", "xuib", "xuis") => TypeXui,
+        _ when ContainsAny(lower, "esp", "plugin") => TypeEsp,
+        _ => null
+    };
+
+    private static bool ContainsAny(string text, params string[] terms) =>
+        terms.Any(term => text.Contains(term, StringComparison.Ordinal));
 
     /// <summary>
     /// Get priority for overlap resolution. Lower number = higher priority.
     /// </summary>
     public static int GetPriority(string fileType)
     {
-        var lower = fileType.ToLowerInvariant();
-        if (lower.Contains("png"))
+        ArgumentNullException.ThrowIfNull(fileType);
+
+        string lower = fileType.ToLowerInvariant();
+        return GetPriorityLevel(lower);
+    }
+
+    private static int GetPriorityLevel(string lower)
+    {
+        // Priority 1: High-value content types
+        if (ContainsAny(lower, "png", "ddx", "dds", "xma", "audio"))
+        {
             return 1;
-        if (lower.Contains("ddx") || lower.Contains("dds"))
-            return 1;
-        if (lower.Contains("xma") || lower.Contains("audio"))
-            return 1;
-        if (lower.Contains("nif") || lower.Contains("model"))
+        }
+
+        // Priority 2: Models
+        if (ContainsAny(lower, "nif", "model"))
+        {
             return 2;
-        if (lower.Contains("script") || lower.Contains("obscript"))
+        }
+
+        // Priority 3: Scripts, data files, UI
+        if (ContainsAny(lower, "script", "obscript", "lip", "esp", "xdbf", "xui", "scene", "xuib", "xuis"))
+        {
             return 3;
-        if (lower.Contains("lip") || lower.Contains("esp") || lower.Contains("xdbf"))
-            return 3;
-        if (lower.Contains("xui") || lower.Contains("scene") || lower.Contains("xuib") || lower.Contains("xuis"))
-            return 3;
-        if (lower.Contains("xex") || lower.Contains("module") || lower.Contains("executable"))
+        }
+
+        // Priority 4: Executables (often false positives in memory dumps)
+        if (ContainsAny(lower, "xex", "module", "executable"))
+        {
             return 4;
+        }
+
+        // Priority 5: Unknown/default
         return 5;
     }
 
-    private static Color FromArgb(uint argb)
-    {
-        return Color.FromArgb(
-            (byte)((argb >> 24) & 0xFF),
-            (byte)((argb >> 16) & 0xFF),
-            (byte)((argb >> 8) & 0xFF),
-            (byte)(argb & 0xFF));
-    }
+    private static Color FromArgb(uint argb) => Color.FromArgb(
+        (byte)((argb >> 24) & 0xFF),
+        (byte)((argb >> 16) & 0xFF),
+        (byte)((argb >> 8) & 0xFF),
+        (byte)(argb & 0xFF));
 
     public readonly struct LegendCategory(string name, uint color)
     {

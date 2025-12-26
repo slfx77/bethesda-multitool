@@ -12,14 +12,14 @@ namespace Xbox360MemoryCarver.Core;
 public class MemoryDumpAnalyzer
 {
     private readonly AhoCorasickMatcher _signatureMatcher;
-    private readonly Dictionary<string, SignatureInfo> _signatures;
+    private readonly IReadOnlyDictionary<string, SignatureInfo> _signatures;
 
     public MemoryDumpAnalyzer()
     {
         _signatures = FileSignatures.Signatures;
         _signatureMatcher = new AhoCorasickMatcher();
 
-        foreach (var (name, sig) in _signatures)
+        foreach ((string? name, SignatureInfo? sig) in _signatures)
         {
             _signatureMatcher.AddPattern(name, sig.Magic);
         }
@@ -41,15 +41,15 @@ public class MemoryDumpAnalyzer
         result.FileSize = fileInfo.Length;
 
         using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
+        using MemoryMappedViewAccessor accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
 
-        var matches = FindAllMatches(accessor, result.FileSize, progress);
+        List<(string SigName, long Offset)> matches = FindAllMatches(accessor, result.FileSize, progress);
 
         // Convert matches to CarvedFileInfo using proper parsers
-        foreach (var (sigName, offset) in matches)
+        foreach ((string? sigName, long offset) in matches)
         {
-            var sig = _signatures[sigName];
-            var length = EstimateFileSize(accessor, result.FileSize, offset, sigName, sig);
+            SignatureInfo sig = _signatures[sigName];
+            long length = EstimateFileSize(accessor, result.FileSize, offset, sigName, sig);
 
             if (length > 0)
             {
@@ -60,7 +60,7 @@ public class MemoryDumpAnalyzer
                     FileType = sig.Description ?? sigName
                 });
 
-                result.TypeCounts.TryGetValue(sigName, out var count);
+                result.TypeCounts.TryGetValue(sigName, out int count);
                 result.TypeCounts[sigName] = count + 1;
             }
         }
@@ -80,7 +80,7 @@ public class MemoryDumpAnalyzer
         int maxPatternLength = _signatureMatcher.MaxPatternLength;
 
         var allMatches = new List<(string SigName, long Offset)>();
-        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
         var progressData = new AnalysisProgress { TotalBytes = fileSize };
 
         try
@@ -91,10 +91,10 @@ public class MemoryDumpAnalyzer
                 int toRead = (int)Math.Min(chunkSize + maxPatternLength, fileSize - offset);
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
-                var span = buffer.AsSpan(0, toRead);
-                var matches = _signatureMatcher.Search(span, offset);
+                Span<byte> span = buffer.AsSpan(0, toRead);
+                List<(string Name, byte[] Pattern, long Position)> matches = _signatureMatcher.Search(span, offset);
 
-                foreach (var (name, _, position) in matches)
+                foreach ((string? name, byte[] _, long position) in matches)
                 {
                     allMatches.Add((name, position));
                 }
@@ -118,7 +118,7 @@ public class MemoryDumpAnalyzer
             .ToList();
     }
 
-    private long EstimateFileSize(
+    private static long EstimateFileSize(
         MemoryMappedViewAccessor accessor,
         long fileSize,
         long offset,
@@ -129,20 +129,20 @@ public class MemoryDumpAnalyzer
         int headerSize = Math.Min(sig.MaxSize, 64 * 1024);
         headerSize = (int)Math.Min(headerSize, fileSize - offset);
 
-        var buffer = ArrayPool<byte>.Shared.Rent(headerSize);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(headerSize);
         try
         {
             accessor.ReadArray(offset, buffer, 0, headerSize);
-            var span = buffer.AsSpan(0, headerSize);
+            Span<byte> span = buffer.AsSpan(0, headerSize);
 
             // Use parser if available for accurate size estimation
-            var parser = ParserFactory.GetParser(sigName);
+            IFileParser? parser = ParserFactory.GetParser(sigName);
             if (parser != null)
             {
-                var parseResult = parser.ParseHeader(span);
+                ParseResult? parseResult = parser.ParseHeader(span);
                 if (parseResult != null)
                 {
-                    var estimatedSize = parseResult.EstimatedSize;
+                    int estimatedSize = parseResult.EstimatedSize;
                     if (estimatedSize >= sig.MinSize && estimatedSize <= sig.MaxSize)
                     {
                         return Math.Min(estimatedSize, (int)(fileSize - offset));

@@ -6,17 +6,18 @@ namespace Xbox360MemoryCarver.Core;
 /// Extracts files from memory dumps based on analysis results.
 /// Uses the MemoryCarver for actual extraction with proper DDX handling.
 /// </summary>
-public class MemoryDumpExtractor
+public static class MemoryDumpExtractor
 {
     /// <summary>
     /// Extract files from a memory dump based on prior analysis.
     /// </summary>
-    public async Task<ExtractionSummary> Extract(
+    public static async Task<ExtractionSummary> Extract(
         string filePath,
-        AnalysisResult analysisResult,
         ExtractionOptions options,
         IProgress<ExtractionProgress>? progress)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         // Create carver with options
         var carver = new MemoryCarver(
             options.OutputPath,
@@ -27,19 +28,16 @@ public class MemoryDumpExtractor
             options.SaveAtlas);
 
         // Progress wrapper
-        var carverProgress = progress != null
-            ? new Progress<double>(p =>
+        Progress<double>? carverProgress = progress != null
+            ? new Progress<double>(p => progress.Report(new ExtractionProgress
             {
-                progress.Report(new ExtractionProgress
-                {
-                    PercentComplete = p * 100,
-                    CurrentOperation = "Extracting files..."
-                });
-            })
+                PercentComplete = p * 100,
+                CurrentOperation = "Extracting files..."
+            }))
             : null;
 
         // Perform extraction using the full carver
-        var entries = await carver.CarveDumpAsync(filePath, carverProgress);
+        List<CarveEntry> entries = await carver.CarveDumpAsync(filePath, carverProgress);
 
         // Return summary
         return new ExtractionSummary
@@ -57,8 +55,8 @@ public class MemoryDumpExtractor
 /// </summary>
 public class ExtractionSummary
 {
-    public int TotalExtracted { get; set; }
-    public int DdxConverted { get; set; }
-    public int DdxFailed { get; set; }
-    public Dictionary<string, int> TypeCounts { get; set; } = [];
+    public int TotalExtracted { get; init; }
+    public int DdxConverted { get; init; }
+    public int DdxFailed { get; init; }
+    public Dictionary<string, int> TypeCounts { get; init; } = [];
 }

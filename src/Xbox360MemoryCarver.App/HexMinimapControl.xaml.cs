@@ -2,10 +2,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using Windows.UI;
 using Xbox360MemoryCarver.Core;
 
@@ -17,20 +13,82 @@ namespace Xbox360MemoryCarver.App;
 /// </summary>
 public sealed partial class HexMinimapControl : UserControl
 {
-    private string? _filePath;
     private AnalysisResult? _analysisResult;
     private long _fileSize;
-    private List<FileRegion> _fileRegions = [];
+    private readonly List<FileRegion> _fileRegions = [];
 
     public HexMinimapControl()
     {
         this.InitializeComponent();
         this.SizeChanged += OnSizeChanged;
+
+        // Build the legend from the shared color definitions
+        BuildLegend();
+    }
+
+    private void BuildLegend()
+    {
+        LegendPanel.Children.Clear();
+
+        foreach (FileTypeColors.LegendCategory category in FileTypeColors.LegendCategories)
+        {
+            var itemPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 4
+            };
+
+            var colorBox = new Border
+            {
+                Width = 12,
+                Height = 12,
+                Background = new SolidColorBrush(category.Color),
+                CornerRadius = new CornerRadius(2)
+            };
+
+            var label = new TextBlock
+            {
+                Text = category.Name,
+                FontSize = 10,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = new SolidColorBrush(Color.FromArgb(255, 204, 204, 204))
+            };
+
+            itemPanel.Children.Add(colorBox);
+            itemPanel.Children.Add(label);
+            LegendPanel.Children.Add(itemPanel);
+        }
+
+        // Add the "Unknown" category
+        var unknownPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4
+        };
+
+        var unknownColorBox = new Border
+        {
+            Width = 12,
+            Height = 12,
+            Background = new SolidColorBrush(FileTypeColors.UnknownColor),
+            CornerRadius = new CornerRadius(2)
+        };
+
+        var unknownLabel = new TextBlock
+        {
+            Text = "Unknown",
+            FontSize = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(Color.FromArgb(255, 204, 204, 204))
+        };
+
+        unknownPanel.Children.Add(unknownColorBox);
+        unknownPanel.Children.Add(unknownLabel);
+        LegendPanel.Children.Add(unknownPanel);
     }
 
     public void Clear()
     {
-        _filePath = null;
         _analysisResult = null;
         _fileSize = 0;
         _fileRegions.Clear();
@@ -39,7 +97,6 @@ public sealed partial class HexMinimapControl : UserControl
 
     public void LoadData(string filePath, AnalysisResult analysisResult)
     {
-        _filePath = filePath;
         _analysisResult = analysisResult;
 
         var fileInfo = new FileInfo(filePath);
@@ -54,15 +111,19 @@ public sealed partial class HexMinimapControl : UserControl
         _fileRegions.Clear();
 
         if (_analysisResult == null)
+        {
             return;
+        }
 
-        foreach (var file in _analysisResult.CarvedFiles.OrderBy(f => f.Offset))
+        foreach (CarvedFileInfo? file in _analysisResult.CarvedFiles.OrderBy(f => f.Offset))
         {
             if (file.Length <= 0)
+            {
                 continue;
+            }
 
-            var typeName = FileTypeColors.NormalizeTypeName(file.FileType);
-            var color = FileTypeColors.GetColor(typeName);
+            string typeName = FileTypeColors.NormalizeTypeName(file.FileType);
+            Color color = FileTypeColors.GetColor(typeName);
 
             _fileRegions.Add(new FileRegion
             {
@@ -74,6 +135,7 @@ public sealed partial class HexMinimapControl : UserControl
         }
     }
 
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_analysisResult != null)
@@ -81,19 +143,24 @@ public sealed partial class HexMinimapControl : UserControl
             Render();
         }
     }
+#pragma warning restore RCS1163
 
     private void Render()
     {
         MinimapCanvas.Children.Clear();
 
         if (_analysisResult == null || _fileSize == 0)
+        {
             return;
+        }
 
-        var canvasWidth = MinimapCanvas.ActualWidth;
-        var canvasHeight = MinimapCanvas.ActualHeight;
+        double canvasWidth = MinimapCanvas.ActualWidth;
+        double canvasHeight = MinimapCanvas.ActualHeight;
 
         if (canvasWidth <= 0 || canvasHeight <= 0)
+        {
             return;
+        }
 
         // Background for unknown/untyped regions
         var bgRect = new Rectangle
@@ -105,11 +172,11 @@ public sealed partial class HexMinimapControl : UserControl
         MinimapCanvas.Children.Add(bgRect);
 
         // Draw each file region as a colored bar
-        foreach (var region in _fileRegions)
+        foreach (FileRegion region in _fileRegions)
         {
-            var startY = (region.Start / (double)_fileSize) * canvasHeight;
-            var endY = (region.End / (double)_fileSize) * canvasHeight;
-            var height = Math.Max(1, endY - startY);
+            double startY = region.Start / (double)_fileSize * canvasHeight;
+            double endY = region.End / (double)_fileSize * canvasHeight;
+            double height = Math.Max(1, endY - startY);
 
             var rect = new Rectangle
             {

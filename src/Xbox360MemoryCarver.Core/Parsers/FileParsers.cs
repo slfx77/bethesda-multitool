@@ -34,12 +34,16 @@ public class DdsParser : IFileParser
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
         if (data.Length < offset + 128)
+        {
             return null;
+        }
 
-        var headerData = data.Slice(offset, 128);
+        ReadOnlySpan<byte> headerData = data.Slice(offset, 128);
 
         if (!headerData[..4].SequenceEqual("DDS "u8))
+        {
             return null;
+        }
 
         try
         {
@@ -48,7 +52,7 @@ public class DdsParser : IFileParser
             uint width = BinaryUtils.ReadUInt32LE(headerData, 16);
             uint pitchOrLinearSize = BinaryUtils.ReadUInt32LE(headerData, 20);
             uint mipmapCount = BinaryUtils.ReadUInt32LE(headerData, 28);
-            var fourcc = headerData.Slice(84, 4);
+            ReadOnlySpan<byte> fourcc = headerData.Slice(84, 4);
             string endianness = "little";
 
             if (height > 16384 || width > 16384 || headerSize != 124)
@@ -61,7 +65,9 @@ public class DdsParser : IFileParser
             }
 
             if (height == 0 || width == 0 || height > 16384 || width > 16384)
+            {
                 return null;
+            }
 
             string fourccStr = System.Text.Encoding.ASCII.GetString(fourcc).TrimEnd('\0');
             int bytesPerBlock = GetBytesPerBlock(fourccStr);
@@ -89,17 +95,14 @@ public class DdsParser : IFileParser
         }
     }
 
-    private static int GetBytesPerBlock(string fourcc)
+    private static int GetBytesPerBlock(string fourcc) => fourcc switch
     {
-        return fourcc switch
-        {
-            "DXT1" => 8,
-            "DXT2" or "DXT3" or "DXT4" or "DXT5" => 16,
-            "ATI1" or "BC4U" or "BC4S" => 8,
-            "ATI2" or "BC5U" or "BC5S" => 16,
-            _ => 16
-        };
-    }
+        "DXT1" => 8,
+        "DXT2" or "DXT3" or "DXT4" or "DXT5" => 16,
+        "ATI1" or "BC4U" or "BC4S" => 8,
+        "ATI2" or "BC5U" or "BC5S" => 16,
+        _ => 16
+    };
 
     private static int CalculateMipmapSize(int width, int height, int mipmapCount, int bytesPerBlock)
     {
@@ -133,102 +136,130 @@ public class DdxParser : IFileParser
     {
         const int minHeaderSize = 68;
         if (data.Length < offset + minHeaderSize)
+        {
             return null;
+        }
 
-        var magic = data.Slice(offset, 4);
+        ReadOnlySpan<byte> magic = data.Slice(offset, 4);
         bool is3Xdo = magic.SequenceEqual("3XDO"u8);
         bool is3Xdr = magic.SequenceEqual("3XDR"u8);
 
         if (!is3Xdo && !is3Xdr)
+        {
             return null;
+        }
 
         try
         {
-            string formatType = is3Xdo ? "3XDO" : "3XDR";
-
-            // Version at offset 0x07 (little-endian uint16)
-            ushort version = BinaryUtils.ReadUInt16LE(data, offset + 7);
-            if (version < 3)
-                return null;
-
-            // Validate DDX header structure
-            byte headerIndicator = data[offset + 0x04];
-            if (headerIndicator == 0xFF)
-                return null;
-
-            byte flagsByte = data[offset + 0x24];
-            if (flagsByte < 0x80)
-                return null;
-
-            // Read format code from offset 0x28 (low byte)
-            uint formatDword = BinaryUtils.ReadUInt32BE(data, offset + 0x28);
-            int formatByte = (int)(formatDword & 0xFF);
-
-            // Read dimensions from file offset 0x2C (size_2d structure)
-            uint sizeDword = BinaryUtils.ReadUInt32BE(data, offset + 0x2C);
-            int width = (int)(sizeDword & 0x1FFF) + 1;
-            int height = (int)((sizeDword >> 13) & 0x1FFF) + 1;
-
-            // Read mip count
-            int mipCount = (int)(((formatDword >> 16) & 0xF) + 1);
-            if (mipCount > 13) mipCount = 1;
-
-            // Tiled flag from offset 0x24
-            uint flagsDword = BinaryUtils.ReadUInt32BE(data, offset + 0x24);
-            bool isTiled = ((flagsDword >> 22) & 0x1) != 0;
-
-            // Validate dimensions
-            if (width == 0 || height == 0 || width > 4096 || height > 4096)
-                return null;
-
-            // Get format name
-            string formatName = FileSignatures.Xbox360GpuTextureFormats.TryGetValue(formatByte, out var fn)
-                ? fn
-                : $"Unknown(0x{formatByte:X2})";
-
-            int bytesPerBlock = FileSignatures.GetBytesPerBlock(formatName);
-            int blocksW = (width + 3) / 4;
-            int blocksH = (height + 3) / 4;
-            int baseSize = blocksW * blocksH * bytesPerBlock;
-
-            // Total uncompressed size with mipmaps
-            int uncompressedSize = baseSize;
-            int mipW = width, mipH = height;
-            for (int i = 1; i < mipCount; i++)
-            {
-                mipW = Math.Max(1, mipW / 2);
-                mipH = Math.Max(1, mipH / 2);
-                int mipBlocksW = Math.Max(1, (mipW + 3) / 4);
-                int mipBlocksH = Math.Max(1, (mipH + 3) / 4);
-                uncompressedSize += mipBlocksW * mipBlocksH * bytesPerBlock;
-            }
-
-            // Find DDX boundary by scanning for next signature
-            int estimatedSize = FindDdxBoundary(data, offset, uncompressedSize);
-
-            return new ParseResult
-            {
-                Format = formatType,
-                EstimatedSize = estimatedSize,
-                Width = width,
-                Height = height,
-                MipCount = mipCount,
-                FourCc = formatName,
-                IsXbox360 = true,
-                Metadata = new Dictionary<string, object>
-                {
-                    ["version"] = version,
-                    ["gpuFormat"] = formatByte,
-                    ["isTiled"] = isTiled,
-                    ["dataOffset"] = 0x44,
-                    ["uncompressedSize"] = uncompressedSize
-                }
-            };
+            return ParseDdxHeader(data, offset, is3Xdo);
         }
         catch
         {
             return null;
         }
+    }
+
+    private static ParseResult? ParseDdxHeader(ReadOnlySpan<byte> data, int offset, bool is3Xdo)
+    {
+        string formatType = is3Xdo ? "3XDO" : "3XDR";
+
+        // Version at offset 0x07 (little-endian uint16)
+        ushort version = BinaryUtils.ReadUInt16LE(data, offset + 7);
+        if (version < 3)
+        {
+            return null;
+        }
+
+        // Validate DDX header structure
+        if (!ValidateDdxHeader(data, offset))
+        {
+            return null;
+        }
+
+        // Read format code from offset 0x28 (low byte)
+        uint formatDword = BinaryUtils.ReadUInt32BE(data, offset + 0x28);
+        int formatByte = (int)(formatDword & 0xFF);
+
+        // Read dimensions from file offset 0x2C (size_2d structure)
+        uint sizeDword = BinaryUtils.ReadUInt32BE(data, offset + 0x2C);
+        int width = (int)(sizeDword & 0x1FFF) + 1;
+        int height = (int)((sizeDword >> 13) & 0x1FFF) + 1;
+
+        // Read mip count
+        int mipCount = (int)(((formatDword >> 16) & 0xF) + 1);
+        if (mipCount > 13)
+        {
+            mipCount = 1;
+        }
+
+        // Tiled flag from offset 0x24
+        uint flagsDword = BinaryUtils.ReadUInt32BE(data, offset + 0x24);
+        bool isTiled = ((flagsDword >> 22) & 0x1) != 0;
+
+        // Validate dimensions
+        if (width == 0 || height == 0 || width > 4096 || height > 4096)
+        {
+            return null;
+        }
+
+        // Get format name
+        string formatName = FileSignatures.Xbox360GpuTextureFormats.TryGetValue(formatByte, out string? fn)
+            ? fn
+            : $"Unknown(0x{formatByte:X2})";
+
+        int uncompressedSize = CalculateUncompressedSize(width, height, mipCount, formatName);
+        int estimatedSize = FindDdxBoundary(data, offset, uncompressedSize);
+
+        return new ParseResult
+        {
+            Format = formatType,
+            EstimatedSize = estimatedSize,
+            Width = width,
+            Height = height,
+            MipCount = mipCount,
+            FourCc = formatName,
+            IsXbox360 = true,
+            Metadata = new Dictionary<string, object>
+            {
+                ["version"] = version,
+                ["gpuFormat"] = formatByte,
+                ["isTiled"] = isTiled,
+                ["dataOffset"] = 0x44,
+                ["uncompressedSize"] = uncompressedSize
+            }
+        };
+    }
+
+    private static bool ValidateDdxHeader(ReadOnlySpan<byte> data, int offset)
+    {
+        byte headerIndicator = data[offset + 0x04];
+        if (headerIndicator == 0xFF)
+        {
+            return false;
+        }
+
+        byte flagsByte = data[offset + 0x24];
+        return flagsByte >= 0x80;
+    }
+
+    private static int CalculateUncompressedSize(int width, int height, int mipCount, string formatName)
+    {
+        int bytesPerBlock = FileSignatures.GetBytesPerBlock(formatName);
+        int blocksW = (width + 3) / 4;
+        int blocksH = (height + 3) / 4;
+        int uncompressedSize = blocksW * blocksH * bytesPerBlock;
+
+        int mipW = width, mipH = height;
+        for (int i = 1; i < mipCount; i++)
+        {
+            mipW = Math.Max(1, mipW / 2);
+            mipH = Math.Max(1, mipH / 2);
+            int mipBlocksW = Math.Max(1, (mipW + 3) / 4);
+            int mipBlocksH = Math.Max(1, (mipH + 3) / 4);
+            uncompressedSize += mipBlocksW * mipBlocksH * bytesPerBlock;
+        }
+
+        return uncompressedSize;
     }
 
     /// <summary>
@@ -245,39 +276,10 @@ public class DdxParser : IFileParser
         int minSize = headerSize + estimatedCompressedMin;
         int maxSize = Math.Min(data.Length - offset, headerSize + estimatedCompressedMax);
 
-        // Scan for next DDX signature within the expected range
-        ReadOnlySpan<byte> ddx3xdo = "3XDO"u8;
-        ReadOnlySpan<byte> ddx3xdr = "3XDR"u8;
-
-        for (int i = offset + minSize; i < offset + maxSize && i < data.Length - 0x44; i++)
+        int? foundBoundary = ScanForNextDdxSignature(data, offset, minSize, maxSize);
+        if (foundBoundary.HasValue)
         {
-            var slice = data.Slice(i, 4);
-            if (slice.SequenceEqual(ddx3xdo) || slice.SequenceEqual(ddx3xdr))
-            {
-                // Validate this looks like a real DDX header
-                ushort nextVersion = BinaryUtils.ReadUInt16LE(data, i + 7);
-                if (nextVersion < 3 || nextVersion > 10) continue;
-
-                byte nextFlags = data[i + 0x24];
-                if (nextFlags < 0x80) continue;
-
-                byte nextHeaderIndicator = data[i + 0x04];
-                if (nextHeaderIndicator == 0xFF) continue;
-
-                // Parse dimensions from the next header
-                uint nextSizeDword = BinaryUtils.ReadUInt32BE(data, i + 0x2C);
-                int nextWidth = (int)(nextSizeDword & 0x1FFF) + 1;
-                int nextHeight = (int)((nextSizeDword >> 13) & 0x1FFF) + 1;
-
-                if (nextWidth <= 0 || nextWidth > 4096 || nextHeight <= 0 || nextHeight > 4096)
-                    continue;
-                if (!IsPowerOfTwo(nextWidth) || !IsPowerOfTwo(nextHeight))
-                    continue;
-
-                // Found valid next DDX - add overlap margin
-                const int overlapMargin = 0x8000;
-                return Math.Min((i - offset) + overlapMargin, maxSize);
-            }
+            return foundBoundary.Value;
         }
 
         // No next signature found - use compression-ratio estimate
@@ -285,10 +287,61 @@ public class DdxParser : IFileParser
         return headerSize + Math.Max(estimatedCompressedMin, typicalCompressedSize);
     }
 
-    private static bool IsPowerOfTwo(int x)
+    private static int? ScanForNextDdxSignature(ReadOnlySpan<byte> data, int offset, int minSize, int maxSize)
     {
-        return x > 0 && (x & (x - 1)) == 0;
+        ReadOnlySpan<byte> ddx3xdo = "3XDO"u8;
+        ReadOnlySpan<byte> ddx3xdr = "3XDR"u8;
+
+        for (int i = offset + minSize; i < offset + maxSize && i < data.Length - 0x44; i++)
+        {
+            ReadOnlySpan<byte> slice = data.Slice(i, 4);
+            if (!slice.SequenceEqual(ddx3xdo) && !slice.SequenceEqual(ddx3xdr))
+            {
+                continue;
+            }
+
+            if (IsValidNextDdxHeader(data, i))
+            {
+                const int overlapMargin = 0x8000;
+                return Math.Min(i - offset + overlapMargin, maxSize);
+            }
+        }
+
+        return null;
     }
+
+    private static bool IsValidNextDdxHeader(ReadOnlySpan<byte> data, int i)
+    {
+        ushort nextVersion = BinaryUtils.ReadUInt16LE(data, i + 7);
+        if (nextVersion is < 3 or > 10)
+        {
+            return false;
+        }
+
+        byte nextFlags = data[i + 0x24];
+        if (nextFlags < 0x80)
+        {
+            return false;
+        }
+
+        byte nextHeaderIndicator = data[i + 0x04];
+        if (nextHeaderIndicator == 0xFF)
+        {
+            return false;
+        }
+
+        // Parse dimensions from the next header
+        uint nextSizeDword = BinaryUtils.ReadUInt32BE(data, i + 0x2C);
+        int nextWidth = (int)(nextSizeDword & 0x1FFF) + 1;
+        int nextHeight = (int)((nextSizeDword >> 13) & 0x1FFF) + 1;
+
+        return nextWidth is > 0 and <= 4096 &&
+               nextHeight is > 0 and <= 4096 &&
+               IsPowerOfTwo(nextWidth) &&
+               IsPowerOfTwo(nextHeight);
+    }
+
+    private static bool IsPowerOfTwo(int x) => x > 0 && (x & (x - 1)) == 0;
 }
 
 /// <summary>
@@ -301,60 +354,73 @@ public class XmaParser : IFileParser
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
         if (data.Length < offset + 12)
+        {
             return null;
+        }
 
         if (!data.Slice(offset, 4).SequenceEqual("RIFF"u8))
+        {
             return null;
+        }
 
         try
         {
             uint fileSize = BinaryUtils.ReadUInt32LE(data, offset + 4) + 8;
-            var formatType = data.Slice(offset + 8, 4);
+            ReadOnlySpan<byte> formatType = data.Slice(offset + 8, 4);
 
-            if (!formatType.SequenceEqual("WAVE"u8))
-                return null;
-
-            int searchOffset = offset + 12;
-            while (searchOffset < Math.Min(offset + 200, data.Length - 8))
-            {
-                var chunkId = data.Slice(searchOffset, 4);
-
-                if (chunkId.SequenceEqual("XMA2"u8))
-                {
-                    return new ParseResult
-                    {
-                        Format = "XMA",
-                        EstimatedSize = (int)fileSize,
-                        IsXbox360 = true,
-                        Metadata = new Dictionary<string, object> { ["isXma"] = true }
-                    };
-                }
-
-                if (chunkId.SequenceEqual("fmt "u8) && data.Length >= searchOffset + 10)
-                {
-                    ushort formatTag = (ushort)(BinaryUtils.ReadUInt32LE(data, searchOffset + 8) & 0xFFFF);
-                    if (XmaFormatCodes.Contains(formatTag))
-                    {
-                        return new ParseResult
-                        {
-                            Format = "XMA",
-                            EstimatedSize = (int)fileSize,
-                            IsXbox360 = true,
-                            Metadata = new Dictionary<string, object> { ["isXma"] = true, ["formatTag"] = formatTag }
-                        };
-                    }
-                }
-
-                uint chunkSize = BinaryUtils.ReadUInt32LE(data, searchOffset + 4);
-                searchOffset += 8 + (int)((chunkSize + 1) & ~1u);
-            }
-
-            return null;
+            return !formatType.SequenceEqual("WAVE"u8)
+                ? null
+                : SearchForXmaChunks(data, offset, (int)fileSize);
         }
         catch
         {
             return null;
         }
+    }
+
+    private static ParseResult? SearchForXmaChunks(ReadOnlySpan<byte> data, int offset, int fileSize)
+    {
+        int searchOffset = offset + 12;
+        while (searchOffset < Math.Min(offset + 200, data.Length - 8))
+        {
+            ReadOnlySpan<byte> chunkId = data.Slice(searchOffset, 4);
+
+            if (chunkId.SequenceEqual("XMA2"u8))
+            {
+                return CreateXmaResult(fileSize, null);
+            }
+
+            if (chunkId.SequenceEqual("fmt "u8) && data.Length >= searchOffset + 10)
+            {
+                ushort formatTag = (ushort)(BinaryUtils.ReadUInt32LE(data, searchOffset + 8) & 0xFFFF);
+                if (XmaFormatCodes.Contains(formatTag))
+                {
+                    return CreateXmaResult(fileSize, formatTag);
+                }
+            }
+
+            uint chunkSize = BinaryUtils.ReadUInt32LE(data, searchOffset + 4);
+            searchOffset += 8 + (int)((chunkSize + 1) & ~1u);
+        }
+
+        return null;
+    }
+
+    private static ParseResult CreateXmaResult(int fileSize, ushort? formatTag)
+    {
+        var metadata = new Dictionary<string, object> { ["isXma"] = true };
+        if (formatTag.HasValue)
+        {
+            metadata["formatTag"] = formatTag.Value;
+        }
+
+        return new ParseResult
+        {
+            Format = "XMA",
+            EstimatedSize = fileSize,
+            IsXbox360 = true,
+            Metadata = metadata
+        };
     }
 }
 
@@ -366,47 +432,28 @@ public class NifParser : IFileParser
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
         if (data.Length < offset + 64)
+        {
             return null;
+        }
 
-        var headerMagic = data.Slice(offset, 20);
+        ReadOnlySpan<byte> headerMagic = data.Slice(offset, 20);
         if (!headerMagic.SequenceEqual("Gamebryo File Format"u8))
+        {
             return null;
+        }
 
         try
         {
             int versionOffset = offset + 22;
-            int nullPos = -1;
-            for (int i = versionOffset; i < Math.Min(versionOffset + 40, data.Length); i++)
-            {
-                if (data[i] == 0)
-                {
-                    nullPos = i;
-                    break;
-                }
-            }
+            int nullPos = FindNullTerminator(data, versionOffset, 40);
 
             if (nullPos == -1)
+            {
                 return null;
+            }
 
             string versionString = System.Text.Encoding.ASCII.GetString(data[versionOffset..nullPos]);
-            int estimatedSize = 50000;
-
-            if (versionString.Contains("20."))
-            {
-                int parseOffset = nullPos + 1;
-                if (data.Length >= offset + 100)
-                {
-                    for (int testOffset = parseOffset; testOffset < Math.Min(parseOffset + 60, data.Length - 4); testOffset += 4)
-                    {
-                        uint potentialBlocks = BinaryUtils.ReadUInt32LE(data, testOffset);
-                        if (potentialBlocks >= 1 && potentialBlocks <= 10000)
-                        {
-                            estimatedSize = Math.Min((int)(potentialBlocks * 500 + 1000), 20 * 1024 * 1024);
-                            break;
-                        }
-                    }
-                }
-            }
+            int estimatedSize = EstimateNifSize(data, offset, nullPos, versionString);
 
             return new ParseResult
             {
@@ -419,6 +466,47 @@ public class NifParser : IFileParser
         {
             return null;
         }
+    }
+
+    private static int FindNullTerminator(ReadOnlySpan<byte> data, int start, int maxLength)
+    {
+        int end = Math.Min(start + maxLength, data.Length);
+        for (int i = start; i < end; i++)
+        {
+            if (data[i] == 0)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int EstimateNifSize(ReadOnlySpan<byte> data, int offset, int nullPos, string versionString)
+    {
+        int estimatedSize = 50000;
+
+        if (!versionString.Contains("20.", StringComparison.Ordinal))
+        {
+            return estimatedSize;
+        }
+
+        int parseOffset = nullPos + 1;
+        if (data.Length < offset + 100)
+        {
+            return estimatedSize;
+        }
+
+        for (int testOffset = parseOffset; testOffset < Math.Min(parseOffset + 60, data.Length - 4); testOffset += 4)
+        {
+            uint potentialBlocks = BinaryUtils.ReadUInt32LE(data, testOffset);
+            if (potentialBlocks is >= 1 and <= 10000)
+            {
+                estimatedSize = Math.Min((int)((potentialBlocks * 500) + 1000), 20 * 1024 * 1024);
+                break;
+            }
+        }
+
+        return estimatedSize;
     }
 }
 
@@ -433,13 +521,17 @@ public class PngParser : IFileParser
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
         if (data.Length < offset + 8)
+        {
             return null;
+        }
 
         if (!data.Slice(offset, 8).SequenceEqual(PngMagic))
+        {
             return null;
+        }
 
         int searchPos = offset + 8;
-        int maxSearch = Math.Min(offset + 50 * 1024 * 1024, data.Length - 4);
+        int maxSearch = Math.Min(offset + (50 * 1024 * 1024), data.Length - 4);
 
         while (searchPos < maxSearch)
         {
@@ -473,8 +565,6 @@ public static class ParserFactory
         ["png"] = new PngParser()
     };
 
-    public static IFileParser? GetParser(string fileType)
-    {
-        return Parsers.TryGetValue(fileType, out var parser) ? parser : null;
-    }
+    public static IFileParser? GetParser(string fileType) =>
+        Parsers.TryGetValue(fileType, out IFileParser? parser) ? parser : null;
 }

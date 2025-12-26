@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Text;
 
 namespace Xbox360MemoryCarver.Core.Models;
@@ -20,26 +21,38 @@ public class SignatureInfo
 /// </summary>
 public static class FileSignatures
 {
-    // Common magic bytes
-    public static readonly byte[] GamebryoMagic = Encoding.ASCII.GetBytes("Gamebryo File Format");
-    public static readonly byte[] RiffMagic = Encoding.ASCII.GetBytes("RIFF");
-    public static readonly byte[] Tes4Magic = Encoding.ASCII.GetBytes("TES4");
-    public static readonly byte[] PngMagic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    // Common magic bytes - use ReadOnlyMemory<byte> for immutability (S3887/S2386)
+    private static readonly byte[] s_gamebryoMagic = Encoding.ASCII.GetBytes("Gamebryo File Format");
+    private static readonly byte[] s_riffMagic = Encoding.ASCII.GetBytes("RIFF");
+    private static readonly byte[] s_tes4Magic = Encoding.ASCII.GetBytes("TES4");
+    private static readonly byte[] s_pngMagic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     // Xbox 360 DDX texture magic bytes
-    public static readonly byte[] Ddx3XdoMagic = Encoding.ASCII.GetBytes("3XDO");
-    public static readonly byte[] Ddx3XdrMagic = Encoding.ASCII.GetBytes("3XDR");
+    private static readonly byte[] s_ddx3XdoMagic = Encoding.ASCII.GetBytes("3XDO");
+    private static readonly byte[] s_ddx3XdrMagic = Encoding.ASCII.GetBytes("3XDR");
 
     // Xbox 360 specific formats
-    public static readonly byte[] Xex2Magic = Encoding.ASCII.GetBytes("XEX2");
-    public static readonly byte[] XdbfMagic = Encoding.ASCII.GetBytes("XDBF");
-    public static readonly byte[] XuisMagic = Encoding.ASCII.GetBytes("XUIS");
-    public static readonly byte[] XuibMagic = Encoding.ASCII.GetBytes("XUIB");
+    private static readonly byte[] s_xex2Magic = Encoding.ASCII.GetBytes("XEX2");
+    private static readonly byte[] s_xdbfMagic = Encoding.ASCII.GetBytes("XDBF");
+    private static readonly byte[] s_xuisMagic = Encoding.ASCII.GetBytes("XUIS");
+    private static readonly byte[] s_xuibMagic = Encoding.ASCII.GetBytes("XUIB");
+
+    // Public read-only spans for external access
+    public static ReadOnlySpan<byte> GamebryoMagic => s_gamebryoMagic;
+    public static ReadOnlySpan<byte> RiffMagic => s_riffMagic;
+    public static ReadOnlySpan<byte> Tes4Magic => s_tes4Magic;
+    public static ReadOnlySpan<byte> PngMagic => s_pngMagic;
+    public static ReadOnlySpan<byte> Ddx3XdoMagic => s_ddx3XdoMagic;
+    public static ReadOnlySpan<byte> Ddx3XdrMagic => s_ddx3XdrMagic;
+    public static ReadOnlySpan<byte> Xex2Magic => s_xex2Magic;
+    public static ReadOnlySpan<byte> XdbfMagic => s_xdbfMagic;
+    public static ReadOnlySpan<byte> XuisMagic => s_xuisMagic;
+    public static ReadOnlySpan<byte> XuibMagic => s_xuibMagic;
 
     /// <summary>
     /// All supported file signatures for carving.
     /// </summary>
-    public static readonly Dictionary<string, SignatureInfo> Signatures = new()
+    public static FrozenDictionary<string, SignatureInfo> Signatures { get; } = new Dictionary<string, SignatureInfo>
     {
         // Textures
         ["dds"] = new SignatureInfo
@@ -55,7 +68,7 @@ public static class FileSignatures
         // Xbox 360 DDX textures
         ["ddx_3xdo"] = new SignatureInfo
         {
-            Magic = Ddx3XdoMagic,
+            Magic = s_ddx3XdoMagic,
             Extension = ".ddx",
             Description = "Xbox 360 DDX texture (3XDO format)",
             MinSize = 68,
@@ -64,7 +77,7 @@ public static class FileSignatures
         },
         ["ddx_3xdr"] = new SignatureInfo
         {
-            Magic = Ddx3XdrMagic,
+            Magic = s_ddx3XdrMagic,
             Extension = ".ddx",
             Description = "Xbox 360 DDX texture (3XDR engine-tiled format)",
             MinSize = 68,
@@ -75,7 +88,7 @@ public static class FileSignatures
         // 3D Models
         ["nif"] = new SignatureInfo
         {
-            Magic = GamebryoMagic,
+            Magic = s_gamebryoMagic,
             Extension = ".nif",
             Description = "NetImmerse/Gamebryo 3D model",
             MinSize = 100,
@@ -86,7 +99,7 @@ public static class FileSignatures
         // Audio
         ["xma"] = new SignatureInfo
         {
-            Magic = RiffMagic,
+            Magic = s_riffMagic,
             Extension = ".xma",
             Description = "Xbox Media Audio (RIFF/XMA)",
             MinSize = 44,
@@ -117,7 +130,7 @@ public static class FileSignatures
         // Game Data Files
         ["esp"] = new SignatureInfo
         {
-            Magic = Tes4Magic,
+            Magic = s_tes4Magic,
             Extension = ".esp",
             Description = "Elder Scrolls Plugin",
             MinSize = 24,
@@ -128,7 +141,7 @@ public static class FileSignatures
         // Images
         ["png"] = new SignatureInfo
         {
-            Magic = PngMagic,
+            Magic = s_pngMagic,
             Extension = ".png",
             Description = "PNG image",
             MinSize = 67,
@@ -139,7 +152,7 @@ public static class FileSignatures
         // Xbox 360 System Formats
         ["xex"] = new SignatureInfo
         {
-            Magic = Xex2Magic,
+            Magic = s_xex2Magic,
             Extension = ".xex",
             Description = "Xbox 360 Executable",
             MinSize = 24,
@@ -148,7 +161,7 @@ public static class FileSignatures
         },
         ["xdbf"] = new SignatureInfo
         {
-            Magic = XdbfMagic,
+            Magic = s_xdbfMagic,
             Extension = ".xdbf",
             Description = "Xbox Dashboard File",
             MinSize = 24,
@@ -157,7 +170,7 @@ public static class FileSignatures
         },
         ["xui_scene"] = new SignatureInfo
         {
-            Magic = XuisMagic,
+            Magic = s_xuisMagic,
             Extension = ".xui",
             Description = "XUI Scene",
             MinSize = 24,
@@ -166,19 +179,19 @@ public static class FileSignatures
         },
         ["xui_binary"] = new SignatureInfo
         {
-            Magic = XuibMagic,
+            Magic = s_xuibMagic,
             Extension = ".xui",
             Description = "XUI Binary",
             MinSize = 24,
             MaxSize = 5 * 1024 * 1024,
             Folder = "xbox"
         }
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>
     /// Xbox 360 GPU texture formats (from DDXConv/Xenia).
     /// </summary>
-    public static readonly Dictionary<int, string> Xbox360GpuTextureFormats = new()
+    public static FrozenDictionary<int, string> Xbox360GpuTextureFormats { get; } = new Dictionary<int, string>
     {
         [0x12] = "DXT1",
         [0x13] = "DXT3",
@@ -191,12 +204,12 @@ public static class FileSignatures
         [0x82] = "DXT1",
         [0x86] = "DXT1",
         [0x88] = "DXT5"
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>
     /// Bytes per compression block for each format.
     /// </summary>
-    public static readonly Dictionary<string, int> BytesPerBlock = new()
+    public static FrozenDictionary<string, int> BytesPerBlock { get; } = new Dictionary<string, int>
     {
         ["DXT1"] = 8,
         ["DXT3"] = 16,
@@ -207,10 +220,8 @@ public static class FileSignatures
         ["BC4S"] = 8,
         ["BC5U"] = 16,
         ["BC5S"] = 16
-    };
+    }.ToFrozenDictionary();
 
-    public static int GetBytesPerBlock(string fourcc)
-    {
-        return BytesPerBlock.TryGetValue(fourcc, out var bytes) ? bytes : 16;
-    }
+    public static int GetBytesPerBlock(string fourcc) =>
+        BytesPerBlock.TryGetValue(fourcc, out int bytes) ? bytes : 16;
 }

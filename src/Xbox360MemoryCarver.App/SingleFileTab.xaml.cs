@@ -1,13 +1,8 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using Xbox360MemoryCarver.Core;
@@ -19,8 +14,8 @@ namespace Xbox360MemoryCarver.App;
 /// </summary>
 public sealed partial class SingleFileTab : UserControl
 {
-    private readonly ObservableCollection<CarvedFileEntry> _carvedFiles = new();
-    private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = new();
+    private readonly ObservableCollection<CarvedFileEntry> _carvedFiles = [];
+    private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
     private AnalysisResult? _analysisResult;
 
     // Known file types that can be extracted
@@ -53,7 +48,7 @@ public sealed partial class SingleFileTab : UserControl
         FileTypeCheckboxPanel.Children.Clear();
         _fileTypeCheckboxes.Clear();
 
-        foreach (var fileType in KnownFileTypes)
+        foreach (string fileType in KnownFileTypes)
         {
             var checkbox = new CheckBox
             {
@@ -66,14 +61,13 @@ public sealed partial class SingleFileTab : UserControl
         }
     }
 
-    private void MinidumpPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        UpdateButtonStates();
-    }
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
+    private void MinidumpPathTextBox_TextChanged(object sender, TextChangedEventArgs e) => UpdateButtonStates();
+#pragma warning restore RCS1163
 
     private void UpdateButtonStates()
     {
-        var hasValidPath = !string.IsNullOrEmpty(MinidumpPathTextBox.Text)
+        bool hasValidPath = !string.IsNullOrEmpty(MinidumpPathTextBox.Text)
                            && File.Exists(MinidumpPathTextBox.Text)
                            && MinidumpPathTextBox.Text.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase);
 
@@ -81,17 +75,20 @@ public sealed partial class SingleFileTab : UserControl
         ExtractButton.IsEnabled = hasValidPath && _analysisResult != null && !string.IsNullOrEmpty(OutputPathTextBox.Text);
     }
 
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private async void OpenMinidumpButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        var picker = new FileOpenPicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+        };
         picker.FileTypeFilter.Add(".dmp");
 
         // Get the window handle for the picker
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Current.MainWindow);
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Current.MainWindow);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
 
-        var file = await picker.PickSingleFileAsync();
+        StorageFile file = await picker.PickSingleFileAsync();
         if (file != null)
         {
             MinidumpPathTextBox.Text = file.Path;
@@ -99,8 +96,8 @@ public sealed partial class SingleFileTab : UserControl
             // Auto-set output path if not set
             if (string.IsNullOrEmpty(OutputPathTextBox.Text))
             {
-                var directory = Path.GetDirectoryName(file.Path);
-                var fileName = Path.GetFileNameWithoutExtension(file.Path);
+                string? directory = Path.GetDirectoryName(file.Path);
+                string fileName = Path.GetFileNameWithoutExtension(file.Path);
                 OutputPathTextBox.Text = Path.Combine(directory ?? "", $"{fileName}_extracted");
             }
 
@@ -114,14 +111,16 @@ public sealed partial class SingleFileTab : UserControl
 
     private async void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker();
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        var picker = new FolderPicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+        };
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Current.MainWindow);
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Current.MainWindow);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
 
-        var folder = await picker.PickSingleFolderAsync();
+        StorageFolder folder = await picker.PickSingleFolderAsync();
         if (folder != null)
         {
             OutputPathTextBox.Text = folder.Path;
@@ -132,7 +131,9 @@ public sealed partial class SingleFileTab : UserControl
     private async void AnalyzeButton_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(MinidumpPathTextBox.Text))
+        {
             return;
+        }
 
         try
         {
@@ -140,12 +141,12 @@ public sealed partial class SingleFileTab : UserControl
             AnalysisProgressBar.Visibility = Visibility.Visible;
             _carvedFiles.Clear();
 
-            var filePath = MinidumpPathTextBox.Text;
+            string filePath = MinidumpPathTextBox.Text;
 
             // Verify file exists and is accessible
             if (!File.Exists(filePath))
             {
-                await ShowErrorDialog("Analysis Failed", $"File not found: {filePath}");
+                await ShowDialogAsync("Analysis Failed", $"File not found: {filePath}");
                 return;
             }
 
@@ -166,7 +167,7 @@ public sealed partial class SingleFileTab : UserControl
             Console.WriteLine($"[Analysis] Complete: {_analysisResult.CarvedFiles.Count} files found in {_analysisResult.AnalysisTime.TotalSeconds:F2}s");
 
             // Populate the results table
-            foreach (var entry in _analysisResult.CarvedFiles)
+            foreach (CarvedFileInfo entry in _analysisResult.CarvedFiles)
             {
                 _carvedFiles.Add(new CarvedFileEntry
                 {
@@ -185,11 +186,14 @@ public sealed partial class SingleFileTab : UserControl
         catch (Exception ex)
         {
             Console.WriteLine($"[Analysis] Error: {ex.Message}");
-            var fullError = $"{ex.GetType().Name}: {ex.Message}";
+            string fullError = $"{ex.GetType().Name}: {ex.Message}";
             if (ex.InnerException != null)
+            {
                 fullError += $"\n\nInner: {ex.InnerException.Message}";
+            }
+
             fullError += $"\n\nStack trace:\n{ex.StackTrace}";
-            await ShowErrorDialog("Analysis Failed", fullError);
+            await ShowDialogAsync("Analysis Failed", fullError);
         }
         finally
         {
@@ -202,7 +206,9 @@ public sealed partial class SingleFileTab : UserControl
     private async void ExtractButton_Click(object sender, RoutedEventArgs e)
     {
         if (_analysisResult == null || string.IsNullOrEmpty(OutputPathTextBox.Text))
+        {
             return;
+        }
 
         try
         {
@@ -210,13 +216,13 @@ public sealed partial class SingleFileTab : UserControl
             AnalysisProgressBar.Visibility = Visibility.Visible;
 
             // Get selected file types
-            var selectedTypes = _fileTypeCheckboxes
+            List<string> selectedTypes = _fileTypeCheckboxes
                 .Where(kvp => kvp.Value.IsChecked == true)
                 .Select(kvp => kvp.Key)
                 .ToList();
 
-            var inputPath = MinidumpPathTextBox.Text;
-            var outputPath = OutputPathTextBox.Text;
+            string inputPath = MinidumpPathTextBox.Text;
+            string outputPath = OutputPathTextBox.Text;
 
             Console.WriteLine($"[Extraction] Starting extraction");
             Console.WriteLine($"[Extraction] Input: {inputPath}");
@@ -233,7 +239,6 @@ public sealed partial class SingleFileTab : UserControl
                 FileTypes = selectedTypes
             };
 
-            var extractor = new MemoryDumpExtractor();
             var progress = new Progress<ExtractionProgress>(p =>
             {
                 DispatcherQueue.TryEnqueue(() =>
@@ -244,7 +249,7 @@ public sealed partial class SingleFileTab : UserControl
                     // Update extracted status in the table
                     if (p.CurrentFile != null)
                     {
-                        var entry = _carvedFiles.FirstOrDefault(f => f.Offset == p.CurrentFile.Offset);
+                        CarvedFileEntry? entry = _carvedFiles.FirstOrDefault(f => f.Offset == p.CurrentFile.Offset);
                         if (entry != null)
                         {
                             entry.IsExtracted = p.CurrentFile.IsExtracted;
@@ -253,16 +258,15 @@ public sealed partial class SingleFileTab : UserControl
                 });
             });
 
-            var summary = await Task.Run(() => extractor.Extract(
+            ExtractionSummary summary = await Task.Run(() => MemoryDumpExtractor.Extract(
                 inputPath,
-                _analysisResult,
                 options,
                 progress));
 
             Console.WriteLine($"[Extraction] Complete: {summary.TotalExtracted} files");
             Console.WriteLine($"[Extraction] DDX converted: {summary.DdxConverted}, failed: {summary.DdxFailed}");
 
-            var summaryMessage = $"Extraction complete!\n\n" +
+            string summaryMessage = $"Extraction complete!\n\n" +
                                  $"Files extracted: {summary.TotalExtracted}\n";
 
             if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
@@ -274,15 +278,18 @@ public sealed partial class SingleFileTab : UserControl
 
             summaryMessage += $"\n\nOutput: {outputPath}";
 
-            await ShowInfoDialog("Extraction Complete", summaryMessage);
+            await ShowDialogAsync("Extraction Complete", summaryMessage);
         }
         catch (Exception ex)
         {
-            var fullError = $"{ex.GetType().Name}: {ex.Message}";
+            string fullError = $"{ex.GetType().Name}: {ex.Message}";
             if (ex.InnerException != null)
+            {
                 fullError += $"\n\nInner: {ex.InnerException.Message}";
+            }
+
             fullError += $"\n\nStack trace:\n{ex.StackTrace}";
-            await ShowErrorDialog("Extraction Failed", fullError);
+            await ShowDialogAsync("Extraction Failed", fullError);
         }
         finally
         {
@@ -291,8 +298,9 @@ public sealed partial class SingleFileTab : UserControl
             AnalysisProgressBar.IsIndeterminate = true;
         }
     }
+#pragma warning restore RCS1163
 
-    private async Task ShowErrorDialog(string title, string message)
+    private async Task ShowDialogAsync(string title, string message)
     {
         var dialog = new ContentDialog
         {
@@ -304,18 +312,7 @@ public sealed partial class SingleFileTab : UserControl
         await dialog.ShowAsync();
     }
 
-    private async Task ShowInfoDialog(string title, string message)
-    {
-        var dialog = new ContentDialog
-        {
-            Title = title,
-            Content = message,
-            CloseButtonText = "OK",
-            XamlRoot = this.XamlRoot
-        };
-        await dialog.ShowAsync();
-    }
-
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         // When a file is selected in the list, navigate the hex viewer to that offset
@@ -324,12 +321,13 @@ public sealed partial class SingleFileTab : UserControl
             HexViewer.NavigateToOffset(selectedFile.Offset);
         }
     }
+#pragma warning restore RCS1163
 }
 
 /// <summary>
 /// Represents a carved file entry in the results table.
 /// </summary>
-public class CarvedFileEntry : INotifyPropertyChanged
+public partial class CarvedFileEntry : INotifyPropertyChanged
 {
     public long Offset { get; set; }
     public long Length { get; set; }
@@ -358,9 +356,15 @@ public class CarvedFileEntry : INotifyPropertyChanged
         get
         {
             if (Length >= 1024 * 1024)
+            {
                 return $"{Length / (1024.0 * 1024.0):F2} MB";
+            }
+
             if (Length >= 1024)
+            {
                 return $"{Length / 1024.0:F2} KB";
+            }
+
             return $"{Length} B";
         }
     }

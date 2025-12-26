@@ -1,7 +1,5 @@
-using System;
 using System.CommandLine;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Xbox360MemoryCarver.Core.Carving;
 
@@ -13,20 +11,27 @@ namespace Xbox360MemoryCarver.App;
 /// </summary>
 public static class Program
 {
+#pragma warning disable SYSLIB1054 // Use LibraryImport - we keep DllImport to avoid requiring /unsafe
     [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachConsole(int dwProcessId);
 
     [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AllocConsole();
 
     [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool FreeConsole();
+#pragma warning restore SYSLIB1054
 
     private const int ATTACH_PARENT_PROCESS = -1;
 
     [STAThread]
     public static async Task<int> Main(string[] args)
     {
+        ArgumentNullException.ThrowIfNull(args);
+
         // Check if running in CLI mode
         if (args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n")))
         {
@@ -37,24 +42,18 @@ public static class Program
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Application.Start(p =>
         {
+            _ = p; // Suppress unused parameter warning
             var context = new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(
                 Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
             System.Threading.SynchronizationContext.SetSynchronizationContext(context);
-            new App();
+            _ = new App();
         });
 
         return 0;
     }
 
-    private static bool HasFlag(string[] args, string flag)
-    {
-        foreach (var arg in args)
-        {
-            if (arg.Equals(flag, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
+    private static bool HasFlag(string[] args, string flag) =>
+        args.Any(arg => arg.Equals(flag, StringComparison.OrdinalIgnoreCase));
 
     private static async Task<int> RunCliAsync(string[] args)
     {
@@ -125,13 +124,12 @@ public static class Program
 
         rootCommand.SetHandler(async (context) =>
         {
-            var input = context.ParseResult.GetValueForArgument(inputArgument);
-            var output = context.ParseResult.GetValueForOption(outputOption)!;
-            var ddxMode = context.ParseResult.GetValueForOption(ddxOption);
-            var convertDdx = context.ParseResult.GetValueForOption(convertDdxOption);
-            var types = context.ParseResult.GetValueForOption(typesOption);
-            var verbose = context.ParseResult.GetValueForOption(verboseOption);
-            var maxFiles = context.ParseResult.GetValueForOption(maxFilesOption);
+            string? input = context.ParseResult.GetValueForArgument(inputArgument);
+            string output = context.ParseResult.GetValueForOption(outputOption)!;
+            bool convertDdx = context.ParseResult.GetValueForOption(convertDdxOption);
+            string[]? types = context.ParseResult.GetValueForOption(typesOption);
+            bool verbose = context.ParseResult.GetValueForOption(verboseOption);
+            int maxFiles = context.ParseResult.GetValueForOption(maxFilesOption);
 
             if (string.IsNullOrEmpty(input))
             {
@@ -157,7 +155,9 @@ public static class Program
             {
                 Console.WriteLine($"Error: {ex.Message}");
                 if (verbose)
+                {
                     Console.WriteLine(ex.StackTrace);
+                }
                 context.ExitCode = 1;
             }
         });
@@ -192,7 +192,7 @@ public static class Program
 
         Console.WriteLine($"Found {files.Count} file(s) to process");
 
-        foreach (var file in files)
+        foreach (string file in files)
         {
             Console.WriteLine();
             Console.WriteLine($"Processing: {Path.GetFileName(file)}");
@@ -208,23 +208,27 @@ public static class Program
             var progress = new Progress<double>(p =>
             {
                 if (verbose)
+                {
                     Console.Write($"\rProgress: {p * 100:F1}%");
+                }
             });
 
-            var startTime = DateTime.Now;
-            var results = await carver.CarveDumpAsync(file, progress);
-            var elapsed = DateTime.Now - startTime;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            List<CarveEntry> results = await carver.CarveDumpAsync(file, progress);
+            stopwatch.Stop();
 
             Console.WriteLine();
-            Console.WriteLine($"Extracted {results.Count} files in {elapsed.TotalSeconds:F2}s");
+            Console.WriteLine($"Extracted {results.Count} files in {stopwatch.Elapsed.TotalSeconds:F2}s");
 
             // Print stats
             Console.WriteLine();
             Console.WriteLine("File type summary:");
-            foreach (var (type, count) in carver.Stats.OrderByDescending(x => x.Value))
+            foreach ((string? type, int count) in carver.Stats.OrderByDescending(x => x.Value))
             {
                 if (count > 0)
+                {
                     Console.WriteLine($"  {type}: {count}");
+                }
             }
 
             if (convertDdx && carver.DdxConvertedCount > 0)

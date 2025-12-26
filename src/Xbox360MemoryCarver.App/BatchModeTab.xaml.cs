@@ -1,14 +1,9 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using Windows.Storage;
 using Windows.Storage.Pickers;
 using Xbox360MemoryCarver.Core;
 
@@ -17,10 +12,11 @@ namespace Xbox360MemoryCarver.App;
 /// <summary>
 /// Batch processing tab for multiple dump files.
 /// </summary>
-public sealed partial class BatchModeTab : UserControl
+public sealed partial class BatchModeTab : UserControl, IDisposable
 {
-    private readonly ObservableCollection<DumpFileEntry> _dumpFiles = new();
+    private readonly ObservableCollection<DumpFileEntry> _dumpFiles = [];
     private CancellationTokenSource? _cancellationTokenSource;
+    private bool _disposed;
 
     public BatchModeTab()
     {
@@ -28,27 +24,43 @@ public sealed partial class BatchModeTab : UserControl
         DumpFilesListView.ItemsSource = _dumpFiles;
     }
 
+    /// <summary>
+    /// Dispose managed resources.
+    /// </summary>
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
+            _disposed = true;
+        }
+    }
+
     private void UpdateButtonStates()
     {
-        var hasInputDir = !string.IsNullOrEmpty(InputDirectoryTextBox.Text)
+        bool hasInputDir = !string.IsNullOrEmpty(InputDirectoryTextBox.Text)
                           && Directory.Exists(InputDirectoryTextBox.Text);
-        var hasOutputDir = !string.IsNullOrEmpty(OutputDirectoryTextBox.Text);
-        var hasSelectedFiles = _dumpFiles.Any(f => f.IsSelected);
+        bool hasOutputDir = !string.IsNullOrEmpty(OutputDirectoryTextBox.Text);
+        bool hasSelectedFiles = _dumpFiles.Any(f => f.IsSelected);
 
         ScanButton.IsEnabled = hasInputDir;
         ProcessButton.IsEnabled = hasInputDir && hasOutputDir && hasSelectedFiles;
     }
 
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private async void BrowseInputButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker();
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        var picker = new FolderPicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+        };
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Current.MainWindow);
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Current.MainWindow);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
 
-        var folder = await picker.PickSingleFolderAsync();
+        StorageFolder folder = await picker.PickSingleFolderAsync();
         if (folder != null)
         {
             InputDirectoryTextBox.Text = folder.Path;
@@ -65,14 +77,16 @@ public sealed partial class BatchModeTab : UserControl
 
     private async void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker();
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        var picker = new FolderPicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+        };
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Current.MainWindow);
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Current.MainWindow);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
 
-        var folder = await picker.PickSingleFolderAsync();
+        StorageFolder folder = await picker.PickSingleFolderAsync();
         if (folder != null)
         {
             OutputDirectoryTextBox.Text = folder.Path;
@@ -85,11 +99,13 @@ public sealed partial class BatchModeTab : UserControl
         _dumpFiles.Clear();
 
         if (!Directory.Exists(InputDirectoryTextBox.Text))
+        {
             return;
+        }
 
-        var dmpFiles = Directory.GetFiles(InputDirectoryTextBox.Text, "*.dmp", SearchOption.AllDirectories);
+        string[] dmpFiles = Directory.GetFiles(InputDirectoryTextBox.Text, "*.dmp", SearchOption.AllDirectories);
 
-        foreach (var file in dmpFiles)
+        foreach (string file in dmpFiles)
         {
             var fileInfo = new FileInfo(file);
             var entry = new DumpFileEntry
@@ -100,7 +116,7 @@ public sealed partial class BatchModeTab : UserControl
                 IsSelected = true,
                 Status = "Pending"
             };
-            entry.PropertyChanged += (s, e) => UpdateButtonStates();
+            entry.PropertyChanged += OnEntryPropertyChanged;
             _dumpFiles.Add(entry);
         }
 
@@ -108,9 +124,11 @@ public sealed partial class BatchModeTab : UserControl
         UpdateButtonStates();
     }
 
+    private void OnEntryPropertyChanged(object? sender, PropertyChangedEventArgs e) => UpdateButtonStates();
+
     private void SelectAllButton_Click(object sender, RoutedEventArgs e)
     {
-        foreach (var entry in _dumpFiles)
+        foreach (DumpFileEntry entry in _dumpFiles)
         {
             entry.IsSelected = true;
         }
@@ -119,7 +137,7 @@ public sealed partial class BatchModeTab : UserControl
 
     private void SelectNoneButton_Click(object sender, RoutedEventArgs e)
     {
-        foreach (var entry in _dumpFiles)
+        foreach (DumpFileEntry entry in _dumpFiles)
         {
             entry.IsSelected = false;
         }
@@ -128,14 +146,18 @@ public sealed partial class BatchModeTab : UserControl
 
     private async void ProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        var selectedFiles = _dumpFiles.Where(f => f.IsSelected).ToList();
-        if (!selectedFiles.Any())
+        List<DumpFileEntry> selectedFiles = _dumpFiles.Where(f => f.IsSelected).ToList();
+        if (selectedFiles.Count == 0)
+        {
             return;
+        }
+
+        SemaphoreSlim? semaphore = null;
 
         try
         {
             _cancellationTokenSource = new CancellationTokenSource();
-            var token = _cancellationTokenSource.Token;
+            CancellationToken token = _cancellationTokenSource.Token;
 
             ProcessButton.IsEnabled = false;
             CancelButton.IsEnabled = true;
@@ -151,27 +173,29 @@ public sealed partial class BatchModeTab : UserControl
                 Verbose = BatchVerboseCheckBox.IsChecked == true
             };
 
-            var parallelCount = (int)ParallelCountBox.Value;
-            var skipExisting = SkipExistingCheckBox.IsChecked == true;
-            var processed = 0;
-            var total = selectedFiles.Count;
+            int parallelCount = (int)ParallelCountBox.Value;
+            bool skipExisting = SkipExistingCheckBox.IsChecked == true;
+            int processed = 0;
+            int total = selectedFiles.Count;
 
-            var semaphore = new SemaphoreSlim(parallelCount);
+            semaphore = new SemaphoreSlim(parallelCount);
             var tasks = new List<Task>();
 
-            foreach (var entry in selectedFiles)
+            foreach (DumpFileEntry? entry in selectedFiles)
             {
                 if (token.IsCancellationRequested)
+                {
                     break;
+                }
 
                 await semaphore.WaitAsync(token);
 
-                var task = Task.Run(async () =>
+                Task task = Task.Run(async () =>
                 {
                     try
                     {
                         // Check if already extracted
-                        var outputSubdir = Path.Combine(options.OutputPath,
+                        string outputSubdir = Path.Combine(options.OutputPath,
                             Path.GetFileNameWithoutExtension(entry.FileName));
 
                         if (skipExisting && Directory.Exists(outputSubdir))
@@ -188,16 +212,12 @@ public sealed partial class BatchModeTab : UserControl
                             entry.Status = "Processing...";
                         });
 
-                        var analyzer = new MemoryDumpAnalyzer();
-                        var result = analyzer.Analyze(entry.FilePath, null);
-
-                        var entryOptions = options with
+                        ExtractionOptions entryOptions = options with
                         {
                             OutputPath = outputSubdir
                         };
 
-                        var extractor = new MemoryDumpExtractor();
-                        await extractor.Extract(entry.FilePath, result, entryOptions, null);
+                        await MemoryDumpExtractor.Extract(entry.FilePath, entryOptions, null);
 
                         DispatcherQueue.TryEnqueue(() =>
                         {
@@ -215,7 +235,7 @@ public sealed partial class BatchModeTab : UserControl
                     {
                         semaphore.Release();
 
-                        var current = Interlocked.Increment(ref processed);
+                        int current = Interlocked.Increment(ref processed);
                         DispatcherQueue.TryEnqueue(() =>
                         {
                             BatchProgressBar.Value = (current * 100.0) / total;
@@ -238,7 +258,7 @@ public sealed partial class BatchModeTab : UserControl
         }
         catch (Exception ex)
         {
-            await ShowErrorDialog("Batch Processing Failed", ex.Message);
+            await ShowDialogAsync("Batch Processing Failed", ex.Message);
         }
         finally
         {
@@ -248,6 +268,7 @@ public sealed partial class BatchModeTab : UserControl
             BatchProgressBar.Visibility = Visibility.Collapsed;
             _cancellationTokenSource?.Dispose();
             _cancellationTokenSource = null;
+            semaphore?.Dispose();
             UpdateButtonStates();
         }
     }
@@ -257,8 +278,9 @@ public sealed partial class BatchModeTab : UserControl
         _cancellationTokenSource?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
     }
+#pragma warning restore RCS1163
 
-    private async Task ShowErrorDialog(string title, string message)
+    private async Task ShowDialogAsync(string title, string message)
     {
         var dialog = new ContentDialog
         {
@@ -274,7 +296,7 @@ public sealed partial class BatchModeTab : UserControl
 /// <summary>
 /// Represents a dump file in the batch list.
 /// </summary>
-public class DumpFileEntry : INotifyPropertyChanged
+public partial class DumpFileEntry : INotifyPropertyChanged
 {
     public string FilePath { get; set; } = "";
     public string FileName { get; set; } = "";
@@ -309,26 +331,20 @@ public class DumpFileEntry : INotifyPropertyChanged
         }
     }
 
-    public string SizeFormatted
+    public string SizeFormatted => Size switch
     {
-        get
-        {
-            if (Size >= 1024 * 1024 * 1024)
-                return $"{Size / (1024.0 * 1024.0 * 1024.0):F2} GB";
-            if (Size >= 1024 * 1024)
-                return $"{Size / (1024.0 * 1024.0):F2} MB";
-            if (Size >= 1024)
-                return $"{Size / 1024.0:F2} KB";
-            return $"{Size} B";
-        }
-    }
+        >= 1024 * 1024 * 1024 => $"{Size / (1024.0 * 1024.0 * 1024.0):F2} GB",
+        >= 1024 * 1024 => $"{Size / (1024.0 * 1024.0):F2} MB",
+        >= 1024 => $"{Size / 1024.0:F2} KB",
+        _ => $"{Size} B"
+    };
 
     public Brush StatusColor => Status switch
     {
         "Complete" => new SolidColorBrush(Microsoft.UI.Colors.Green),
         "Skipped" => new SolidColorBrush(Microsoft.UI.Colors.Gray),
         "Processing..." => new SolidColorBrush(Microsoft.UI.Colors.Blue),
-        _ when Status.StartsWith("Error") => new SolidColorBrush(Microsoft.UI.Colors.Red),
+        _ when Status.StartsWith("Error", StringComparison.Ordinal) => new SolidColorBrush(Microsoft.UI.Colors.Red),
         _ => new SolidColorBrush(Microsoft.UI.Colors.Gray)
     };
 

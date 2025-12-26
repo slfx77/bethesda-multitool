@@ -1,5 +1,3 @@
-using System.Buffers;
-
 namespace Xbox360MemoryCarver.Core;
 
 /// <summary>
@@ -29,13 +27,15 @@ public sealed class AhoCorasickMatcher
     /// </summary>
     public void AddPattern(string name, byte[] pattern)
     {
-        var patternIndex = _patterns.Count;
+        ArgumentNullException.ThrowIfNull(pattern);
+
+        int patternIndex = _patterns.Count;
         _patterns.Add((name, pattern));
 
-        var current = _root;
-        foreach (var b in pattern)
+        Node current = _root;
+        foreach (byte b in pattern)
         {
-            if (!current.Children.TryGetValue(b, out var next))
+            if (!current.Children.TryGetValue(b, out Node? next))
             {
                 next = new Node();
                 current.Children[b] = next;
@@ -51,12 +51,14 @@ public sealed class AhoCorasickMatcher
     public void Build()
     {
         if (_patterns.Count == 0)
+        {
             return;
+        }
 
         var queue = new Queue<Node>();
 
         // Initialize failure links for depth-1 nodes
-        foreach (var child in _root.Children.Values)
+        foreach (Node child in _root.Children.Values)
         {
             child.Failure = _root;
             queue.Enqueue(child);
@@ -65,24 +67,26 @@ public sealed class AhoCorasickMatcher
         // BFS to build failure links
         while (queue.Count > 0)
         {
-            var current = queue.Dequeue();
+            Node current = queue.Dequeue();
 
-            foreach (var (b, child) in current.Children)
+            foreach ((byte b, Node? child) in current.Children)
             {
                 queue.Enqueue(child);
 
-                var failure = current.Failure;
-                while (failure != null && !failure.Children.ContainsKey(b))
+                Node? failure = current.Failure;
+                while (failure?.Children.ContainsKey(b) == false)
                 {
                     failure = failure.Failure;
                 }
 
                 child.Failure = failure?.Children.GetValueOrDefault(b) ?? _root;
                 if (child.Failure == child)
+                {
                     child.Failure = _root;
+                }
 
                 // Merge output from failure link
-                child.Output.AddRange(child.Failure.Output);
+                child.Failure?.Output.ForEach(o => child.Output.Add(o));
             }
         }
     }
@@ -93,12 +97,12 @@ public sealed class AhoCorasickMatcher
     /// </summary>
     public List<(string Name, byte[] Pattern, long Position)> Search(ReadOnlySpan<byte> data, long baseOffset = 0)
     {
-        var current = _root;
+        Node current = _root;
         var results = new List<(string, byte[], long)>();
 
         for (int i = 0; i < data.Length; i++)
         {
-            var b = data[i];
+            byte b = data[i];
 
             while (current != _root && !current.Children.ContainsKey(b))
             {
@@ -107,10 +111,10 @@ public sealed class AhoCorasickMatcher
 
             current = current.Children.GetValueOrDefault(b) ?? _root;
 
-            foreach (var patternIndex in current.Output)
+            foreach (int patternIndex in current.Output)
             {
-                var (name, pattern) = _patterns[patternIndex];
-                var matchPos = baseOffset + i - pattern.Length + 1;
+                (string? name, byte[]? pattern) = _patterns[patternIndex];
+                long matchPos = baseOffset + i - pattern.Length + 1;
                 results.Add((name, pattern, matchPos));
             }
         }

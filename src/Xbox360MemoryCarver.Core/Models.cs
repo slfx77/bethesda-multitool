@@ -7,8 +7,8 @@ public class AnalysisResult
 {
     public string FilePath { get; set; } = "";
     public long FileSize { get; set; }
-    public List<CarvedFileInfo> CarvedFiles { get; set; } = new();
-    public Dictionary<string, int> TypeCounts { get; set; } = new();
+    public List<CarvedFileInfo> CarvedFiles { get; } = [];
+    public Dictionary<string, int> TypeCounts { get; } = [];
     public TimeSpan AnalysisTime { get; set; }
 }
 
@@ -34,10 +34,10 @@ public record ExtractionOptions
 {
     public string OutputPath { get; init; } = "output";
     public bool ConvertDdx { get; init; } = true;
-    public bool SaveAtlas { get; init; } = false;
-    public bool SaveRaw { get; init; } = false;
-    public bool Verbose { get; init; } = false;
-    public bool SkipEndian { get; init; } = false;
+    public bool SaveAtlas { get; init; }
+    public bool SaveRaw { get; init; }
+    public bool Verbose { get; init; }
+    public bool SkipEndian { get; init; }
     public int ChunkSize { get; init; } = 10 * 1024 * 1024;
     public int MaxFilesPerType { get; init; } = 10000;
     public List<string>? FileTypes { get; init; }
@@ -52,7 +52,7 @@ public class AnalysisProgress
     public long TotalBytes { get; set; }
     public int FilesFound { get; set; }
     public string CurrentType { get; set; } = "";
-    public double PercentComplete => TotalBytes > 0 ? (BytesProcessed * 100.0 / TotalBytes) : 0;
+    public double PercentComplete => TotalBytes > 0 ? BytesProcessed * 100.0 / TotalBytes : 0;
 }
 
 /// <summary>
@@ -64,10 +64,14 @@ public class ExtractionProgress
     public int TotalFiles { get; set; }
     public CarvedFileInfo? CurrentFile { get; set; }
     public string CurrentOperation { get; set; } = "";
-    private double _percentComplete;
-    public double PercentComplete
-    {
-        get => _percentComplete > 0 ? _percentComplete : (TotalFiles > 0 ? (FilesProcessed * 100.0 / TotalFiles) : 0);
-        set => _percentComplete = value;
-    }
+    public double PercentComplete { get; set; }
+
+    /// <summary>
+    /// Gets the calculated percent complete, using the set value if positive, otherwise calculating from files processed.
+    /// </summary>
+    public double GetEffectivePercentComplete() =>
+        PercentComplete > 0 ? PercentComplete : CalculateFromFilesProcessed();
+
+    private double CalculateFromFilesProcessed() =>
+        TotalFiles > 0 ? FilesProcessed * 100.0 / TotalFiles : 0;
 }

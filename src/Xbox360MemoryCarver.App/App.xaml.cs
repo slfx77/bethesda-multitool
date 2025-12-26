@@ -1,6 +1,5 @@
-using Microsoft.UI.Xaml;
-using System;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Xaml;
 
 namespace Xbox360MemoryCarver.App;
 
@@ -12,8 +11,11 @@ public partial class App : Application
     private Window? _window;
 
     // Console attachment for debug output when launched from terminal
+#pragma warning disable SYSLIB1054 // Use LibraryImport - we keep DllImport to avoid requiring /unsafe
     [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachConsole(int dwProcessId);
+#pragma warning restore SYSLIB1054
 
     private const int ATTACH_PARENT_PROCESS = -1;
 
@@ -51,12 +53,14 @@ public partial class App : Application
         }
     }
 
-    private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
+    private static void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
         Console.WriteLine($"[CRASH] Unhandled exception: {e.Exception}");
         Console.WriteLine($"[CRASH] Message: {e.Message}");
         e.Handled = false; // Let it crash but we logged it
     }
+#pragma warning restore RCS1163
 
     /// <summary>
     /// Invoked when the application is launched.
