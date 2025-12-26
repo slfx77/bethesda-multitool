@@ -10,50 +10,38 @@ public static class BinaryUtils
     /// <summary>
     /// Read a 32-bit unsigned integer in little-endian format.
     /// </summary>
-    public static uint ReadUInt32LE(ReadOnlySpan<byte> data, int offset = 0)
-    {
-        return (uint)(data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24));
-    }
+    public static uint ReadUInt32LE(ReadOnlySpan<byte> data, int offset = 0) =>
+        (uint)(data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24));
 
     /// <summary>
     /// Read a 32-bit unsigned integer in big-endian format.
     /// </summary>
-    public static uint ReadUInt32BE(ReadOnlySpan<byte> data, int offset = 0)
-    {
-        return (uint)((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
-    }
+    public static uint ReadUInt32BE(ReadOnlySpan<byte> data, int offset = 0) =>
+        (uint)((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
 
     /// <summary>
     /// Read a 16-bit unsigned integer in little-endian format.
     /// </summary>
-    public static ushort ReadUInt16LE(ReadOnlySpan<byte> data, int offset = 0)
-    {
-        return (ushort)(data[offset] | (data[offset + 1] << 8));
-    }
+    public static ushort ReadUInt16LE(ReadOnlySpan<byte> data, int offset = 0) =>
+        (ushort)(data[offset] | (data[offset + 1] << 8));
 
     /// <summary>
     /// Read a 16-bit unsigned integer in big-endian format.
     /// </summary>
-    public static ushort ReadUInt16BE(ReadOnlySpan<byte> data, int offset = 0)
-    {
-        return (ushort)((data[offset] << 8) | data[offset + 1]);
-    }
+    public static ushort ReadUInt16BE(ReadOnlySpan<byte> data, int offset = 0) =>
+        (ushort)((data[offset] << 8) | data[offset + 1]);
 
     /// <summary>
     /// Check if data contains mostly printable ASCII text.
     /// </summary>
     public static bool IsPrintableText(ReadOnlySpan<byte> data, double minRatio = 0.8)
     {
-        if (data.IsEmpty) return false;
-
-        int printableCount = 0;
-        foreach (var b in data)
+        if (data.IsEmpty)
         {
-            if ((b >= 32 && b < 127) || b == 9 || b == 10 || b == 13)
-            {
-                printableCount++;
-            }
+            return false;
         }
+
+        int printableCount = data.ToArray().Count(b => b is (>= 32 and < 127) or 9 or 10 or 13);
 
         return (double)printableCount / data.Length >= minRatio;
     }
@@ -63,8 +51,10 @@ public static class BinaryUtils
     /// </summary>
     public static string SanitizeFilename(string filename)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        foreach (var c in invalid)
+        ArgumentNullException.ThrowIfNull(filename);
+
+        char[] invalid = Path.GetInvalidFileNameChars();
+        foreach (char c in invalid)
         {
             filename = filename.Replace(c, '_');
         }
@@ -95,7 +85,9 @@ public static class BinaryUtils
     public static int FindPattern(ReadOnlySpan<byte> data, ReadOnlySpan<byte> pattern, int start = 0)
     {
         if (pattern.IsEmpty || start + pattern.Length > data.Length)
+        {
             return -1;
+        }
 
         if (pattern.Length == 1)
         {
@@ -104,14 +96,16 @@ public static class BinaryUtils
         }
 
         byte firstByte = pattern[0];
-        var searchSpan = data[start..];
+        ReadOnlySpan<byte> searchSpan = data[start..];
         int searchOffset = 0;
 
         while (searchOffset <= searchSpan.Length - pattern.Length)
         {
             int idx = searchSpan[searchOffset..].IndexOf(firstByte);
             if (idx < 0)
+            {
                 return -1;
+            }
 
             int candidateOffset = searchOffset + idx;
 
@@ -131,18 +125,22 @@ public static class BinaryUtils
     /// </summary>
     public static string? ExtractNullTerminatedString(ReadOnlySpan<byte> data, int offset = 0, int maxLength = 256)
     {
-        if (offset >= data.Length) return null;
+        if (offset >= data.Length)
+        {
+            return null;
+        }
 
         int endOffset = Math.Min(offset + maxLength, data.Length);
-        var searchSpan = data[offset..endOffset];
+        ReadOnlySpan<byte> searchSpan = data[offset..endOffset];
         int nullPos = searchSpan.IndexOf((byte)0);
 
-        if (nullPos < 0) return null;
+        if (nullPos < 0)
+        {
+            return null;
+        }
 
-        var stringBytes = data.Slice(offset, nullPos);
-        if (!IsPrintableText(stringBytes, 0.9)) return null;
-
-        return System.Text.Encoding.ASCII.GetString(stringBytes);
+        ReadOnlySpan<byte> stringBytes = data.Slice(offset, nullPos);
+        return !IsPrintableText(stringBytes, 0.9) ? null : System.Text.Encoding.ASCII.GetString(stringBytes);
     }
 
     /// <summary>
@@ -159,7 +157,7 @@ public static class BinaryUtils
     /// </summary>
     public static void SwapBytes16(Span<byte> data)
     {
-        var ulongSpan = MemoryMarshal.Cast<byte, ulong>(data);
+        Span<ulong> ulongSpan = MemoryMarshal.Cast<byte, ulong>(data);
         for (int i = 0; i < ulongSpan.Length; i++)
         {
             ulong v = ulongSpan[i];

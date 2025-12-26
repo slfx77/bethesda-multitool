@@ -1,3 +1,5 @@
+using System.IO.MemoryMappedFiles;
+using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -5,12 +7,6 @@ using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.MemoryMappedFiles;
-using System.Linq;
-using System.Text;
 using Windows.UI;
 using Xbox360MemoryCarver.Core;
 
@@ -21,13 +17,14 @@ namespace Xbox360MemoryCarver.App;
 /// Uses a single TextBlock with Inlines for efficient rendering.
 /// Only renders visible rows - true lazy loading.
 /// </summary>
-public sealed partial class HexViewerControl : UserControl
+public sealed partial class HexViewerControl : UserControl, IDisposable
 {
     private string? _filePath;
     private AnalysisResult? _analysisResult;
     private long _fileSize;
     private MemoryMappedFile? _mmf;
     private MemoryMappedViewAccessor? _accessor;
+    private bool _disposed;
 
     // Layout constants
     private const int BytesPerRow = 16;
@@ -39,7 +36,7 @@ public sealed partial class HexViewerControl : UserControl
     private int _visibleRows;
 
     // File regions for coloring
-    private List<FileRegion> _fileRegions = [];
+    private readonly List<FileRegion> _fileRegions = [];
 
     // Minimap state
     private bool _isDraggingMinimap;
@@ -67,7 +64,7 @@ public sealed partial class HexViewerControl : UserControl
 
     private void BuildLegend()
     {
-        foreach (var category in FileTypeColors.LegendCategories)
+        foreach (FileTypeColors.LegendCategory category in FileTypeColors.LegendCategories)
         {
             var itemPanel = new StackPanel
             {
@@ -112,8 +109,19 @@ public sealed partial class HexViewerControl : UserControl
         });
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs e)
+    private void OnUnloaded(object sender, RoutedEventArgs e) => Dispose();
+
+    /// <summary>
+    /// Dispose managed resources.
+    /// </summary>
+    public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         CleanupMemoryMapping();
     }
 
@@ -130,15 +138,17 @@ public sealed partial class HexViewerControl : UserControl
         }
     }
 
-    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+#pragma warning disable S2325, RCS1163 // Event handlers bound in XAML must be instance methods
+    private void OnSizeChanged(object _, SizeChangedEventArgs __)
     {
         // Handled by HexDisplayArea_SizeChanged and MinimapContainer_SizeChanged
     }
+#pragma warning restore S2325, RCS1163
 
     private void UpdateVisibleRowCount()
     {
         // Account for Border padding (4px top + 4px bottom = 8px)
-        var displayHeight = HexDisplayArea.ActualHeight - 8;
+        double displayHeight = HexDisplayArea.ActualHeight - 8;
         if (displayHeight > 0)
         {
             // Calculate exact rows that fit, rounding up to fill viewport completely
@@ -183,13 +193,15 @@ public sealed partial class HexViewerControl : UserControl
     public void NavigateToOffset(long offset)
     {
         if (_fileSize == 0 || _totalRows == 0)
+        {
             return;
+        }
 
         // Calculate the row for this offset
-        var targetRow = offset / BytesPerRow;
+        long targetRow = offset / BytesPerRow;
 
         // Center the view on this row if possible
-        targetRow = Math.Max(0, targetRow - _visibleRows / 2);
+        targetRow = Math.Max(0, targetRow - (_visibleRows / 2));
         targetRow = Math.Clamp(targetRow, 0, Math.Max(0, _totalRows - _visibleRows));
 
         _currentTopRow = targetRow;
@@ -198,7 +210,7 @@ public sealed partial class HexViewerControl : UserControl
         UpdateMinimapViewport();
 
         // Log for debugging
-        var region = FindRegionForOffset(offset);
+        FileRegion? region = FindRegionForOffset(offset);
         System.Diagnostics.Debug.WriteLine($"[Navigate] Offset=0x{offset:X8}, Row={targetRow}, Region={region?.TypeName ?? "none"} (color: {region?.Color})");
     }
 
@@ -233,7 +245,7 @@ public sealed partial class HexViewerControl : UserControl
 
         // Setup scrollbar - ensure it has a valid range
         UpdateVisibleRowCount();
-        var scrollMax = Math.Max(0, _totalRows - _visibleRows);
+        long scrollMax = Math.Max(0, _totalRows - _visibleRows);
         VirtualScrollBar.Minimum = 0;
         VirtualScrollBar.Maximum = scrollMax;
         VirtualScrollBar.Value = 0;
@@ -243,7 +255,7 @@ public sealed partial class HexViewerControl : UserControl
         RenderVisibleRows();
         RenderMinimap();
 
-        DispatcherQueue.TryEnqueue(() => UpdateMinimapViewport());
+        DispatcherQueue.TryEnqueue(UpdateMinimapViewport);
     }
 
     private void BuildFileRegions()
@@ -251,10 +263,12 @@ public sealed partial class HexViewerControl : UserControl
         _fileRegions.Clear();
 
         if (_analysisResult == null)
+        {
             return;
+        }
 
         // Sort by offset, then by priority (so higher priority comes first for same offset)
-        var sortedFiles = _analysisResult.CarvedFiles
+        List<CarvedFileInfo> sortedFiles = _analysisResult.CarvedFiles
             .Where(f => f.Length > 0)
             .OrderBy(f => f.Offset)
             .ThenBy(f => FileTypeColors.GetPriority(f.FileType))
@@ -264,11 +278,11 @@ public sealed partial class HexViewerControl : UserControl
         var occupiedRanges = new List<(long Start, long End, int Priority)>();
         int skippedOverlaps = 0;
 
-        foreach (var file in sortedFiles)
+        foreach (CarvedFileInfo? file in sortedFiles)
         {
-            var start = file.Offset;
-            var end = file.Offset + file.Length;
-            var priority = FileTypeColors.GetPriority(file.FileType);
+            long start = file.Offset;
+            long end = file.Offset + file.Length;
+            int priority = FileTypeColors.GetPriority(file.FileType);
 
             // Check if this region overlaps with any existing higher-priority region
             bool hasHigherPriorityOverlap = occupiedRanges.Any(r =>
@@ -282,8 +296,8 @@ public sealed partial class HexViewerControl : UserControl
                 continue;
             }
 
-            var typeName = FileTypeColors.NormalizeTypeName(file.FileType);
-            var color = FileTypeColors.GetColor(typeName);
+            string typeName = FileTypeColors.NormalizeTypeName(file.FileType);
+            Color color = FileTypeColors.GetColor(typeName);
 
             System.Diagnostics.Debug.WriteLine($"[BuildRegions] Region: {file.FileType} -> {typeName} @ 0x{start:X}-0x{end:X}, Color=#{color.R:X2}{color.G:X2}{color.B:X2}");
 
@@ -301,6 +315,7 @@ public sealed partial class HexViewerControl : UserControl
         System.Diagnostics.Debug.WriteLine($"[BuildRegions] Built {_fileRegions.Count} regions, skipped {skippedOverlaps} overlapping regions");
     }
 
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void VirtualScrollBar_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         _currentTopRow = (long)e.NewValue;
@@ -308,24 +323,26 @@ public sealed partial class HexViewerControl : UserControl
         UpdateMinimapViewport();
         UpdatePositionIndicator();
     }
+#pragma warning restore RCS1163
 
     private void UpdatePositionIndicator()
     {
-        var offset = _currentTopRow * BytesPerRow;
-        var endOffset = Math.Min(offset + (_visibleRows * BytesPerRow), _fileSize);
+        long offset = _currentTopRow * BytesPerRow;
+        long endOffset = Math.Min(offset + (_visibleRows * BytesPerRow), _fileSize);
         PositionIndicator.Text = $"Offset: 0x{offset:X8} - 0x{endOffset:X8} ({offset:N0} - {endOffset:N0})";
     }
 
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void HexDisplayArea_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
-        var delta = e.GetCurrentPoint(HexDisplayArea).Properties.MouseWheelDelta;
-        var rowDelta = delta > 0 ? -3 : 3; // Scroll 3 rows at a time
+        int delta = e.GetCurrentPoint(HexDisplayArea).Properties.MouseWheelDelta;
+        int rowDelta = delta > 0 ? -3 : 3; // Scroll 3 rows at a time
 
-        var newValue = Math.Clamp(VirtualScrollBar.Value + rowDelta,
+        double newValue = Math.Clamp(VirtualScrollBar.Value + rowDelta,
                                    VirtualScrollBar.Minimum,
                                    VirtualScrollBar.Maximum);
 
-        if (newValue != VirtualScrollBar.Value)
+        if (Math.Abs(newValue - VirtualScrollBar.Value) > 0.0001)
         {
             VirtualScrollBar.Value = newValue;
             _currentTopRow = (long)newValue;
@@ -335,37 +352,44 @@ public sealed partial class HexViewerControl : UserControl
 
         e.Handled = true;
     }
+#pragma warning restore RCS1163
 
     private void RenderVisibleRows()
     {
         if (_fileSize == 0 || _filePath == null)
+        {
             return;
+        }
 
         HexTextBlock.Inlines.Clear();
 
         // Calculate byte range to read
-        var startRow = _currentTopRow;
-        var endRow = Math.Min(_currentTopRow + _visibleRows, _totalRows);
-        var startOffset = startRow * BytesPerRow;
-        var endOffset = Math.Min(endRow * BytesPerRow, _fileSize);
-        var bytesToRead = (int)(endOffset - startOffset);
+        long startRow = _currentTopRow;
+        long endRow = Math.Min(_currentTopRow + _visibleRows, _totalRows);
+        long startOffset = startRow * BytesPerRow;
+        long endOffset = Math.Min(endRow * BytesPerRow, _fileSize);
+        int bytesToRead = (int)(endOffset - startOffset);
 
         if (bytesToRead <= 0)
+        {
             return;
+        }
 
         // Read the data
-        var buffer = new byte[bytesToRead];
+        byte[] buffer = new byte[bytesToRead];
         ReadBytes(startOffset, buffer);
 
         // Build the display
         for (long row = startRow; row < endRow; row++)
         {
-            var rowOffset = row * BytesPerRow;
-            var bufferOffset = (int)(rowOffset - startOffset);
-            var rowBytes = (int)Math.Min(BytesPerRow, _fileSize - rowOffset);
+            long rowOffset = row * BytesPerRow;
+            int bufferOffset = (int)(rowOffset - startOffset);
+            int rowBytes = (int)Math.Min(BytesPerRow, _fileSize - rowOffset);
 
             if (rowBytes <= 0)
+            {
                 break;
+            }
 
             // Offset column
             HexTextBlock.Inlines.Add(new Run
@@ -379,9 +403,9 @@ public sealed partial class HexViewerControl : UserControl
             {
                 if (i < rowBytes && bufferOffset + i < buffer.Length)
                 {
-                    var byteOffset = rowOffset + i;
-                    var b = buffer[bufferOffset + i];
-                    var region = FindRegionForOffset(byteOffset);
+                    long byteOffset = rowOffset + i;
+                    byte b = buffer[bufferOffset + i];
+                    FileRegion? region = FindRegionForOffset(byteOffset);
 
                     HexTextBlock.Inlines.Add(new Run
                     {
@@ -404,8 +428,8 @@ public sealed partial class HexViewerControl : UserControl
             var asciiBuilder = new StringBuilder(rowBytes);
             for (int i = 0; i < rowBytes && bufferOffset + i < buffer.Length; i++)
             {
-                var b = buffer[bufferOffset + i];
-                asciiBuilder.Append((b >= 32 && b < 127) ? (char)b : '.');
+                byte b = buffer[bufferOffset + i];
+                asciiBuilder.Append(b is >= 32 and < 127 ? (char)b : '.');
             }
             HexTextBlock.Inlines.Add(new Run { Text = asciiBuilder.ToString(), Foreground = AsciiBrush });
 
@@ -433,19 +457,47 @@ public sealed partial class HexViewerControl : UserControl
 
     private FileRegion? FindRegionForOffset(long offset)
     {
-        // Binary search would be more efficient for large region counts
-        foreach (var region in _fileRegions)
+        // Binary search for the region containing offset
+        // Regions are sorted by Start offset
+        if (_fileRegions.Count == 0)
         {
-            if (offset >= region.Start && offset < region.End)
-                return region;
-            if (region.Start > offset)
-                break;
+            return null;
         }
-        return null;
+
+        int left = 0;
+        int right = _fileRegions.Count - 1;
+        FileRegion? candidate = null;
+
+        while (left <= right)
+        {
+            int mid = left + ((right - left) / 2);
+            FileRegion region = _fileRegions[mid];
+
+            if (offset >= region.Start && offset < region.End)
+            {
+                return region;
+            }
+
+            if (region.Start > offset)
+            {
+                right = mid - 1;
+            }
+            else
+            {
+                // region.End <= offset, so check if this could be a partial match
+                // and continue searching to the right
+                candidate = region;
+                left = mid + 1;
+            }
+        }
+
+        // Check if candidate contains offset (edge case)
+        return candidate != null && offset >= candidate.Start && offset < candidate.End ? candidate : null;
     }
 
     #region Minimap
 
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void MinimapContainer_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (Math.Abs(e.NewSize.Height - _lastMinimapContainerHeight) > 1)
@@ -468,11 +520,29 @@ public sealed partial class HexViewerControl : UserControl
             UpdateMinimapViewport();
         }
     }
+#pragma warning restore RCS1163
 
     private void RenderMinimap()
     {
-        if (MinimapCanvas == null || MinimapContainer == null)
+        if (!TryInitializeMinimapCanvas(out double canvasWidth, out double canvasHeight))
+        {
             return;
+        }
+
+        AddMinimapBackground(canvasWidth, canvasHeight);
+        RenderMinimapRegions(canvasWidth, canvasHeight);
+        EnsureViewportIndicatorOnTop();
+    }
+
+    private bool TryInitializeMinimapCanvas(out double canvasWidth, out double canvasHeight)
+    {
+        canvasWidth = 0;
+        canvasHeight = 0;
+
+        if (MinimapCanvas == null || MinimapContainer == null)
+        {
+            return false;
+        }
 
         MinimapCanvas.Children.Clear();
         MinimapCanvas.Children.Add(ViewportIndicator);
@@ -480,22 +550,28 @@ public sealed partial class HexViewerControl : UserControl
         if (_fileSize == 0)
         {
             ViewportIndicator.Visibility = Visibility.Collapsed;
-            return;
+            return false;
         }
 
-        var containerWidth = MinimapContainer.ActualWidth - 8;
-        var containerHeight = MinimapContainer.ActualHeight - 8;
+        double containerWidth = MinimapContainer.ActualWidth - 8;
+        double containerHeight = MinimapContainer.ActualHeight - 8;
 
         if (containerWidth <= 0 || containerHeight <= 0)
-            return;
+        {
+            return false;
+        }
 
-        var canvasWidth = Math.Max(20, containerWidth);
-        var canvasHeight = Math.Max(containerHeight, containerHeight * _minimapZoom);
+        canvasWidth = Math.Max(20, containerWidth);
+        canvasHeight = Math.Max(containerHeight, containerHeight * _minimapZoom);
 
         MinimapCanvas.Width = canvasWidth;
         MinimapCanvas.Height = canvasHeight;
 
-        // Background
+        return true;
+    }
+
+    private void AddMinimapBackground(double canvasWidth, double canvasHeight)
+    {
         var bg = new Rectangle
         {
             Width = canvasWidth,
@@ -503,40 +579,31 @@ public sealed partial class HexViewerControl : UserControl
             Fill = new SolidColorBrush(Color.FromArgb(255, 30, 30, 30))
         };
         MinimapCanvas.Children.Insert(0, bg);
+    }
 
-        // Render minimap like VS Code - show a pixel line for each "virtual row" of the file
-        // The minimap represents the entire file, with each pixel row representing a chunk of bytes
-        var bytesPerMinimapRow = _fileSize / canvasHeight;
-        if (bytesPerMinimapRow < BytesPerRow) bytesPerMinimapRow = BytesPerRow;
-
+    private void RenderMinimapRegions(double canvasWidth, double canvasHeight)
+    {
         // Group consecutive rows with the same color into rectangles for efficiency
         Color? currentColor = null;
         double currentStartY = 0;
+        Color defaultColor = Color.FromArgb(255, 60, 60, 60); // Dark gray for untyped areas
 
         for (double y = 0; y < canvasHeight; y++)
         {
-            var fileOffset = (long)(y / canvasHeight * _fileSize);
-            var region = FindRegionForOffset(fileOffset);
-            var color = region?.Color ?? Color.FromArgb(255, 60, 60, 60); // Dark gray for untyped areas
+            long fileOffset = (long)((y / canvasHeight) * _fileSize);
+            FileRegion? region = FindRegionForOffset(fileOffset);
+            Color color = region?.Color ?? defaultColor;
 
             if (currentColor == null)
             {
                 currentColor = color;
                 currentStartY = y;
+                continue;
             }
-            else if (color != currentColor.Value)
-            {
-                // Draw the previous rectangle
-                var rect = new Rectangle
-                {
-                    Width = canvasWidth,
-                    Height = Math.Max(1, y - currentStartY),
-                    Fill = new SolidColorBrush(currentColor.Value)
-                };
-                Canvas.SetTop(rect, currentStartY);
-                Canvas.SetLeft(rect, 0);
-                MinimapCanvas.Children.Insert(MinimapCanvas.Children.Count - 1, rect);
 
+            if (color != currentColor.Value)
+            {
+                AddMinimapRectangle(canvasWidth, currentStartY, y - currentStartY, currentColor.Value);
                 currentColor = color;
                 currentStartY = y;
             }
@@ -545,85 +612,114 @@ public sealed partial class HexViewerControl : UserControl
         // Draw the last rectangle
         if (currentColor != null)
         {
-            var rect = new Rectangle
-            {
-                Width = canvasWidth,
-                Height = Math.Max(1, canvasHeight - currentStartY),
-                Fill = new SolidColorBrush(currentColor.Value)
-            };
-            Canvas.SetTop(rect, currentStartY);
-            Canvas.SetLeft(rect, 0);
-            MinimapCanvas.Children.Insert(MinimapCanvas.Children.Count - 1, rect);
+            AddMinimapRectangle(canvasWidth, currentStartY, canvasHeight - currentStartY, currentColor.Value);
         }
+    }
 
-        // Ensure viewport indicator is on top
+    private void AddMinimapRectangle(double width, double top, double height, Color color)
+    {
+        var rect = new Rectangle
+        {
+            Width = width,
+            Height = Math.Max(1, height),
+            Fill = new SolidColorBrush(color)
+        };
+        Canvas.SetTop(rect, top);
+        Canvas.SetLeft(rect, 0);
+        MinimapCanvas.Children.Insert(MinimapCanvas.Children.Count - 1, rect);
+    }
+
+    private void EnsureViewportIndicatorOnTop()
+    {
         MinimapCanvas.Children.Remove(ViewportIndicator);
         MinimapCanvas.Children.Add(ViewportIndicator);
     }
 
     private void UpdateMinimapViewport()
     {
-        if (_fileSize == 0 || _totalRows == 0 || MinimapCanvas == null || ViewportIndicator == null)
+        if (!TryGetMinimapDimensions(out double canvasWidth, out double canvasHeight))
         {
-            if (ViewportIndicator != null)
-                ViewportIndicator.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var canvasHeight = MinimapCanvas.Height;
-        var canvasWidth = MinimapCanvas.Width;
+        (double minimapTop, double minimapHeight) = CalculateViewportPosition(canvasHeight);
+        PositionViewportIndicator(canvasWidth, canvasHeight, minimapTop, minimapHeight);
+        AutoScrollMinimapIfZoomed(canvasHeight, minimapTop, minimapHeight);
+    }
 
-        if (double.IsNaN(canvasHeight) || canvasHeight <= 0 ||
-            double.IsNaN(canvasWidth) || canvasWidth <= 0)
-            return;
+    private bool TryGetMinimapDimensions(out double canvasWidth, out double canvasHeight)
+    {
+        canvasWidth = 0;
+        canvasHeight = 0;
 
-        // Calculate based on actual byte offsets being viewed
-        var viewStartOffset = _currentTopRow * BytesPerRow;
-        var viewEndOffset = Math.Min((_currentTopRow + _visibleRows) * BytesPerRow, _fileSize);
+        if (_fileSize == 0 || _totalRows == 0 || MinimapCanvas == null || ViewportIndicator == null)
+        {
+            if (ViewportIndicator != null)
+            {
+                ViewportIndicator.Visibility = Visibility.Collapsed;
+            }
+            return false;
+        }
 
-        // Calculate fractions of file - ensure proper scaling
-        var viewStartFraction = (double)viewStartOffset / _fileSize;
-        var viewEndFraction = (double)viewEndOffset / _fileSize;
-        var viewHeightFraction = viewEndFraction - viewStartFraction;
+        canvasHeight = MinimapCanvas.Height;
+        canvasWidth = MinimapCanvas.Width;
 
-        // Map to minimap coordinates
-        var minimapTop = viewStartFraction * canvasHeight;
-        var minimapHeight = viewHeightFraction * canvasHeight;
+        return !double.IsNaN(canvasHeight) && canvasHeight > 0 &&
+               !double.IsNaN(canvasWidth) && canvasWidth > 0;
+    }
 
-        // Ensure minimum visibility - at least 12px so border and fill are visible
-        minimapHeight = Math.Max(12, minimapHeight);
+    private (double top, double height) CalculateViewportPosition(double canvasHeight)
+    {
+        long viewStartOffset = _currentTopRow * BytesPerRow;
+        long viewEndOffset = Math.Min((_currentTopRow + _visibleRows) * BytesPerRow, _fileSize);
+
+        double viewStartFraction = (double)viewStartOffset / _fileSize;
+        double viewEndFraction = (double)viewEndOffset / _fileSize;
+        double viewHeightFraction = viewEndFraction - viewStartFraction;
+
+        double minimapTop = viewStartFraction * canvasHeight;
+        double minimapHeight = Math.Max(12, viewHeightFraction * canvasHeight);
 
         // Clamp top position to keep indicator in bounds
         if (minimapTop + minimapHeight > canvasHeight)
         {
             minimapTop = canvasHeight - minimapHeight;
         }
-        minimapTop = Math.Max(0, minimapTop);
 
-        // Position viewport indicator
+        return (Math.Max(0, minimapTop), minimapHeight);
+    }
+
+    private void PositionViewportIndicator(double canvasWidth, double canvasHeight, double minimapTop, double minimapHeight)
+    {
         ViewportIndicator.Width = Math.Max(10, canvasWidth - 4);
         ViewportIndicator.Height = minimapHeight;
         Canvas.SetLeft(ViewportIndicator, 2);
         Canvas.SetTop(ViewportIndicator, minimapTop);
         ViewportIndicator.Visibility = Visibility.Visible;
 
-        // Debug - log what region we're viewing vs where indicator is
-        var region = FindRegionForOffset(viewStartOffset);
+        // Debug logging
+        long viewStartOffset = _currentTopRow * BytesPerRow;
+        FileRegion? region = FindRegionForOffset(viewStartOffset);
         System.Diagnostics.Debug.WriteLine($"[Minimap] Offset=0x{viewStartOffset:X8}, ViewHeight={minimapHeight:F1}px, Top={minimapTop:F1}/{canvasHeight:F1}, Region={region?.TypeName ?? "none"}");
+    }
 
-        // Auto-scroll minimap when zoomed
-        if (_minimapZoom > 1 && MinimapScrollViewer != null)
+    private void AutoScrollMinimapIfZoomed(double canvasHeight, double minimapTop, double minimapHeight)
+    {
+        if (_minimapZoom <= 1 || MinimapScrollViewer == null)
         {
-            var minimapViewportHeight = MinimapScrollViewer.ViewportHeight;
-            if (minimapViewportHeight > 0 && minimapViewportHeight < canvasHeight)
-            {
-                var targetY = minimapTop + minimapHeight / 2 - minimapViewportHeight / 2;
-                targetY = Math.Clamp(targetY, 0, canvasHeight - minimapViewportHeight);
-                MinimapScrollViewer.ChangeView(null, targetY, null, true);
-            }
+            return;
+        }
+
+        double minimapViewportHeight = MinimapScrollViewer.ViewportHeight;
+        if (minimapViewportHeight > 0 && minimapViewportHeight < canvasHeight)
+        {
+            double targetY = (minimapTop + (minimapHeight / 2)) - (minimapViewportHeight / 2);
+            targetY = Math.Clamp(targetY, 0, canvasHeight - minimapViewportHeight);
+            MinimapScrollViewer.ChangeView(null, targetY, null, true);
         }
     }
 
+#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void Minimap_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         _isDraggingMinimap = true;
@@ -644,16 +740,19 @@ public sealed partial class HexViewerControl : UserControl
         _isDraggingMinimap = false;
         MinimapCanvas.ReleasePointerCapture(e.Pointer);
     }
+#pragma warning restore RCS1163
 
     private void NavigateToMinimapPosition(double y)
     {
-        var canvasHeight = MinimapCanvas.Height;
+        double canvasHeight = MinimapCanvas.Height;
         if (canvasHeight <= 0 || _totalRows == 0)
+        {
             return;
+        }
 
         // Calculate target row (center viewport on click)
-        var fraction = Math.Clamp(y / canvasHeight, 0, 1);
-        var targetRow = (long)(fraction * _totalRows) - _visibleRows / 2;
+        double fraction = Math.Clamp(y / canvasHeight, 0, 1);
+        long targetRow = (long)(fraction * _totalRows) - (_visibleRows / 2);
         targetRow = Math.Clamp(targetRow, 0, Math.Max(0, _totalRows - _visibleRows));
 
         _currentTopRow = targetRow;
