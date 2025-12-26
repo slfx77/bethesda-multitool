@@ -10,7 +10,7 @@ using Xbox360MemoryCarver.Core.Utils;
 namespace Xbox360MemoryCarver.Core.Carving;
 
 /// <summary>
-/// Entry in the carving manifest.
+///     Entry in the carving manifest.
 /// </summary>
 public class CarveEntry
 {
@@ -26,37 +26,30 @@ public class CarveEntry
 }
 
 /// <summary>
-/// High-performance memory dump file carver using:
-/// - Aho-Corasick multi-pattern search (single pass for all signatures)
-/// - Memory-mapped file I/O for zero-copy reads
-/// - Parallel extraction with concurrent collections
-/// - ArrayPool buffer reuse to minimize GC pressure
+///     High-performance memory dump file carver using:
+///     - Aho-Corasick multi-pattern search (single pass for all signatures)
+///     - Memory-mapped file I/O for zero-copy reads
+///     - Parallel extraction with concurrent collections
+///     - ArrayPool buffer reuse to minimize GC pressure
 /// </summary>
 public sealed class MemoryCarver : IDisposable
 {
-    private readonly string _outputDir;
-    private readonly int _maxFilesPerType;
-    private readonly ConcurrentDictionary<string, int> _stats;
-    private readonly ConcurrentBag<CarveEntry> _manifest;
-    private readonly ConcurrentDictionary<long, byte> _processedOffsets;
+    private static readonly JsonSerializerOptions CachedJsonOptions = new() { WriteIndented = true };
+
     private readonly bool _convertDdxToDds;
-    private readonly bool _verbose;
-    private readonly bool _saveAtlas;
     private readonly DdxSubprocessConverter? _ddxConverter;
+    private readonly ConcurrentBag<CarveEntry> _manifest;
+    private readonly int _maxFilesPerType;
+    private readonly string _outputDir;
+    private readonly ConcurrentDictionary<long, byte> _processedOffsets;
+    private readonly bool _saveAtlas;
+    private readonly IReadOnlyDictionary<string, SignatureInfo> _signatureInfoMap;
+    private readonly AhoCorasickMatcher _signatureMatcher;
+    private readonly ConcurrentDictionary<string, int> _stats;
+    private readonly bool _verbose;
     private int _ddxConvertedCount;
     private int _ddxConvertFailedCount;
-    private readonly AhoCorasickMatcher _signatureMatcher;
-    private readonly IReadOnlyDictionary<string, SignatureInfo> _signatureInfoMap;
     private bool _disposed;
-
-    private static readonly JsonSerializerOptions CachedJsonOptions = new()
-    {
-        WriteIndented = true
-    };
-
-    public int DdxConvertedCount => _ddxConvertedCount;
-    public int DdxConvertFailedCount => _ddxConvertFailedCount;
-    public IReadOnlyDictionary<string, int> Stats => _stats;
 
     public MemoryCarver(
         string outputDir,
@@ -78,7 +71,7 @@ public sealed class MemoryCarver : IDisposable
         _signatureMatcher = new AhoCorasickMatcher();
         _signatureInfoMap = GetSignaturesToSearch(fileTypes);
 
-        foreach ((string? name, SignatureInfo? info) in _signatureInfoMap)
+        foreach (var (name, info) in _signatureInfoMap)
         {
             _signatureMatcher.AddPattern(name, info.Magic);
             _stats[name] = 0;
@@ -88,15 +81,11 @@ public sealed class MemoryCarver : IDisposable
 
         // Initialize DDX converter if conversion is enabled
         if (convertDdxToDds)
-        {
             try
             {
-                _ddxConverter = new DdxSubprocessConverter(verbose: _verbose, saveAtlas: _saveAtlas);
+                _ddxConverter = new DdxSubprocessConverter(_verbose, saveAtlas: _saveAtlas);
                 _convertDdxToDds = true;
-                if (_verbose)
-                {
-                    Console.WriteLine($"DDXConv found at: {_ddxConverter.DdxConvPath}");
-                }
+                if (_verbose) Console.WriteLine($"DDXConv found at: {_ddxConverter.DdxConvPath}");
             }
             catch (FileNotFoundException ex)
             {
@@ -104,48 +93,61 @@ public sealed class MemoryCarver : IDisposable
                 Console.WriteLine("DDX files will be saved without conversion.");
                 _convertDdxToDds = false;
             }
-        }
         else
-        {
             _convertDdxToDds = false;
-        }
     }
 
-    private static IReadOnlyDictionary<string, SignatureInfo> GetSignaturesToSearch(List<string>? fileTypes) =>
-        fileTypes == null || fileTypes.Count == 0
+    public int DdxConvertedCount => _ddxConvertedCount;
+    public int DdxConvertFailedCount => _ddxConvertFailedCount;
+    public IReadOnlyDictionary<string, int> Stats => _stats;
+
+    /// <summary>
+    ///     Dispose resources held by the carver.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+
+        _disposed = true;
+        // DdxSubprocessConverter doesn't hold unmanaged resources,
+        // but we clear the reference for GC
+        GC.SuppressFinalize(this);
+    }
+
+    private static IReadOnlyDictionary<string, SignatureInfo> GetSignaturesToSearch(List<string>? fileTypes)
+    {
+        return fileTypes == null || fileTypes.Count == 0
             ? FileSignatures.Signatures
             : FileSignatures.Signatures
                 .Where(kvp => fileTypes.Any(ft =>
                     kvp.Key.Equals(ft, StringComparison.OrdinalIgnoreCase) ||
                     kvp.Key.StartsWith(ft + "_", StringComparison.OrdinalIgnoreCase)))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+    }
 
     /// <summary>
-    /// Carve files from a memory dump.
+    ///     Carve files from a memory dump.
     /// </summary>
     public async Task<List<CarveEntry>> CarveDumpAsync(
         string dumpPath,
         IProgress<double>? progress = null)
     {
-        string dumpName = Path.GetFileNameWithoutExtension(dumpPath);
-        string outputPath = Path.Combine(_outputDir, BinaryUtils.SanitizeFilename(dumpName));
+        var dumpName = Path.GetFileNameWithoutExtension(dumpPath);
+        var outputPath = Path.Combine(_outputDir, BinaryUtils.SanitizeFilename(dumpName));
         Directory.CreateDirectory(outputPath);
 
         _manifest.Clear();
         _processedOffsets.Clear();
-        foreach (string key in _stats.Keys)
-        {
-            _stats[key] = 0;
-        }
+        foreach (var key in _stats.Keys) _stats[key] = 0;
 
         var fileInfo = new FileInfo(dumpPath);
-        long fileSize = fileInfo.Length;
+        var fileSize = fileInfo.Length;
 
         using var mmf = MemoryMappedFile.CreateFromFile(dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using MemoryMappedViewAccessor accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
 
         // Find all signature matches in a single pass
-        List<(string SigName, long Offset)> matches = FindAllMatches(accessor, fileSize, progress);
+        var matches = FindAllMatches(accessor, fileSize, progress);
 
         // Extract files in parallel
         await ExtractMatchesParallelAsync(accessor, fileSize, matches, outputPath);
@@ -163,34 +165,27 @@ public sealed class MemoryCarver : IDisposable
     {
         const int chunkSize = 64 * 1024 * 1024; // 64MB chunks
 
-        if (_signatureInfoMap.Count == 0)
-        {
-            return [];
-        }
+        if (_signatureInfoMap.Count == 0) return [];
 
-        int maxPatternLength = _signatureMatcher.MaxPatternLength;
+        var maxPatternLength = _signatureMatcher.MaxPatternLength;
 
         var allMatches = new List<(string SigName, long Offset)>();
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
+        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
 
         try
         {
             long offset = 0;
             while (offset < fileSize)
             {
-                int toRead = (int)Math.Min(chunkSize + maxPatternLength, fileSize - offset);
+                var toRead = (int)Math.Min(chunkSize + maxPatternLength, fileSize - offset);
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
-                Span<byte> span = buffer.AsSpan(0, toRead);
-                List<(string Name, byte[] Pattern, long Position)> matches = _signatureMatcher.Search(span, offset);
+                var span = buffer.AsSpan(0, toRead);
+                var matches = _signatureMatcher.Search(span, offset);
 
-                foreach ((string? name, byte[] _, long position) in matches)
-                {
+                foreach (var (name, _, position) in matches)
                     if (_stats.GetValueOrDefault(name, 0) < _maxFilesPerType)
-                    {
                         allMatches.Add((name, position));
-                    }
-                }
 
                 offset += chunkSize;
                 progress?.Report(Math.Min((double)offset / fileSize, 0.5));
@@ -213,28 +208,20 @@ public sealed class MemoryCarver : IDisposable
         List<(string SigName, long Offset)> matches,
         string outputPath)
     {
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = Environment.ProcessorCount
-        };
+        var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
 
         await Parallel.ForEachAsync(matches, options, async (match, _) =>
         {
-            if (_stats.GetValueOrDefault(match.SigName, 0) >= _maxFilesPerType)
-            {
-                return;
-            }
+            if (_stats.GetValueOrDefault(match.SigName, 0) >= _maxFilesPerType) return;
 
-            if (!_processedOffsets.TryAdd(match.Offset, 0))
-            {
-                return;
-            }
+            if (!_processedOffsets.TryAdd(match.Offset, 0)) return;
 
-            SignatureInfo sigInfo = _signatureInfoMap[match.SigName];
+            var sigInfo = _signatureInfoMap[match.SigName];
 
             try
             {
-                (string outputFile, byte[] data, int fileSize)? extractionData = PrepareExtraction(accessor, fileSize, match.Offset, match.SigName, sigInfo, outputPath);
+                var extractionData =
+                    PrepareExtraction(accessor, fileSize, match.Offset, match.SigName, sigInfo, outputPath);
 
                 if (extractionData != null)
                 {
@@ -252,9 +239,7 @@ public sealed class MemoryCarver : IDisposable
             {
                 // Log extraction errors in verbose mode for debugging
                 if (_verbose)
-                {
                     Console.WriteLine($"[Extract] Error at offset 0x{match.Offset:X8} ({match.SigName}): {ex.Message}");
-                }
             }
         });
     }
@@ -267,58 +252,48 @@ public sealed class MemoryCarver : IDisposable
         SignatureInfo sigInfo,
         string outputPath)
     {
-        int headerSize = Math.Min(sigInfo.MaxSize, 64 * 1024);
+        var headerSize = Math.Min(sigInfo.MaxSize, 64 * 1024);
         headerSize = (int)Math.Min(headerSize, fileSize - offset);
 
-        byte[] headerBuffer = ArrayPool<byte>.Shared.Rent(headerSize);
+        var headerBuffer = ArrayPool<byte>.Shared.Rent(headerSize);
         try
         {
             accessor.ReadArray(offset, headerBuffer, 0, headerSize);
-            Span<byte> headerSpan = headerBuffer.AsSpan(0, headerSize);
+            var headerSpan = headerBuffer.AsSpan(0, headerSize);
 
-            IFileParser? parser = ParserFactory.GetParser(sigName);
+            var parser = ParserFactory.GetParser(sigName);
             int fileDataSize;
             string? customFilename = null;
 
             if (parser != null)
             {
-                ParseResult? parseResult = parser.ParseHeader(headerSpan);
-                if (parseResult == null)
-                {
-                    return null;
-                }
+                var parseResult = parser.ParseHeader(headerSpan);
+                if (parseResult == null) return null;
 
                 fileDataSize = parseResult.EstimatedSize;
 
-                if (parseResult.Metadata.TryGetValue("safeName", out object? safeName))
-                {
+                if (parseResult.Metadata.TryGetValue("safeName", out var safeName))
                     customFilename = safeName.ToString();
-                }
             }
             else
             {
                 fileDataSize = Math.Min(sigInfo.MaxSize, headerSize);
             }
 
-            if (fileDataSize < sigInfo.MinSize || fileDataSize > sigInfo.MaxSize)
-            {
-                return null;
-            }
+            if (fileDataSize < sigInfo.MinSize || fileDataSize > sigInfo.MaxSize) return null;
 
             fileDataSize = (int)Math.Min(fileDataSize, fileSize - offset);
 
-            string typeFolder = string.IsNullOrEmpty(sigInfo.Folder) ? sigName : sigInfo.Folder;
-            string typePath = Path.Combine(outputPath, typeFolder);
+            var typeFolder = string.IsNullOrEmpty(sigInfo.Folder) ? sigName : sigInfo.Folder;
+            var typePath = Path.Combine(outputPath, typeFolder);
             Directory.CreateDirectory(typePath);
 
-            string filename = customFilename ?? $"{offset:X8}";
-            string outputFile = Path.Combine(typePath, $"{filename}{sigInfo.Extension}");
+            var filename = customFilename ?? $"{offset:X8}";
+            var outputFile = Path.Combine(typePath, $"{filename}{sigInfo.Extension}");
 
-            int counter = 1;
+            var counter = 1;
             while (File.Exists(outputFile))
-            {
                 outputFile = Path.Combine(typePath, $"{filename}_{counter++}{sigInfo.Extension}");
-            }
 
             byte[] fileData;
             if (fileDataSize <= headerSize)
@@ -348,11 +323,9 @@ public sealed class MemoryCarver : IDisposable
                 sigName is "ddx_3xdo" or "ddx_3xdr" &&
                 IsDdxFile(data))
             {
-                DdxConversionResult? convertedResult = await TryConvertDdxAsync(data, outputFile, offset, sigName, fileSize);
-                if (convertedResult != null)
-                {
-                    return;
-                }
+                var convertedResult =
+                    await TryConvertDdxAsync(data, outputFile, offset, sigName, fileSize);
+                if (convertedResult != null) return;
             }
 
             await File.WriteAllBytesAsync(outputFile, data);
@@ -370,16 +343,14 @@ public sealed class MemoryCarver : IDisposable
         {
             _stats.AddOrUpdate(sigName, 0, (_, v) => Math.Max(0, v - 1));
 
-            if (_verbose)
-            {
-                Console.WriteLine($"[Write] Error writing {sigName} at 0x{offset:X8}: {ex.Message}");
-            }
+            if (_verbose) Console.WriteLine($"[Write] Error writing {sigName} at 0x{offset:X8}: {ex.Message}");
         }
     }
 
-    private async Task<DdxConversionResult?> TryConvertDdxAsync(byte[] data, string outputFile, long offset, string sigName, int fileSize)
+    private async Task<DdxConversionResult?> TryConvertDdxAsync(byte[] data, string outputFile, long offset,
+        string sigName, int fileSize)
     {
-        DdxConversionResult result = await ConvertDdxToDdsAsync(data);
+        var result = await ConvertDdxToDdsAsync(data);
 
         if (!result.Success || result.DdsData == null)
         {
@@ -387,22 +358,19 @@ public sealed class MemoryCarver : IDisposable
             return null;
         }
 
-        string ddsOutputFile = outputFile
+        var ddsOutputFile = outputFile
             .Replace(Path.DirectorySeparatorChar + "ddx" + Path.DirectorySeparatorChar,
-                     Path.DirectorySeparatorChar + "textures" + Path.DirectorySeparatorChar);
+                Path.DirectorySeparatorChar + "textures" + Path.DirectorySeparatorChar);
         ddsOutputFile = Path.ChangeExtension(ddsOutputFile, ".dds");
 
-        string? texturesDir = Path.GetDirectoryName(ddsOutputFile);
-        if (texturesDir != null)
-        {
-            Directory.CreateDirectory(texturesDir);
-        }
+        var texturesDir = Path.GetDirectoryName(ddsOutputFile);
+        if (texturesDir != null) Directory.CreateDirectory(texturesDir);
 
         await File.WriteAllBytesAsync(ddsOutputFile, result.DdsData);
 
         if (result.AtlasData != null && _saveAtlas)
         {
-            string atlasOutputFile = ddsOutputFile.Replace(".dds", "_full_atlas.dds");
+            var atlasOutputFile = ddsOutputFile.Replace(".dds", "_full_atlas.dds");
             await File.WriteAllBytesAsync(atlasOutputFile, result.AtlasData);
         }
 
@@ -423,19 +391,19 @@ public sealed class MemoryCarver : IDisposable
         return result;
     }
 
-    private static bool IsDdxFile(byte[] data) =>
-        data.Length >= 4 && data[0] == '3' && data[1] == 'X' && data[2] == 'D' && data[3] is (byte)'O' or (byte)'R';
+    private static bool IsDdxFile(byte[] data)
+    {
+        return data.Length >= 4 && data[0] == '3' && data[1] == 'X' && data[2] == 'D' &&
+               data[3] is (byte)'O' or (byte)'R';
+    }
 
     private async Task<DdxConversionResult> ConvertDdxToDdsAsync(byte[] ddxData)
     {
         // Check magic first
-        if (ddxData.Length < 4)
-        {
-            return DdxConversionResult.Failure("File too small");
-        }
+        if (ddxData.Length < 4) return DdxConversionResult.Failure("File too small");
 
-        bool is3Xdo = ddxData[0] == '3' && ddxData[1] == 'X' && ddxData[2] == 'D' && ddxData[3] == 'O';
-        bool is3Xdr = ddxData[0] == '3' && ddxData[1] == 'X' && ddxData[2] == 'D' && ddxData[3] == 'R';
+        var is3Xdo = ddxData[0] == '3' && ddxData[1] == 'X' && ddxData[2] == 'D' && ddxData[3] == 'O';
+        var is3Xdr = ddxData[0] == '3' && ddxData[1] == 'X' && ddxData[2] == 'D' && ddxData[3] == 'R';
 
         // Validate DDX signature and check for unsupported 3XDR format
         return (!is3Xdo && !is3Xdr, is3Xdr, _ddxConverter) switch
@@ -449,25 +417,9 @@ public sealed class MemoryCarver : IDisposable
 
     private async Task SaveManifestAsync(string outputPath)
     {
-        string manifestPath = Path.Combine(outputPath, "manifest.json");
+        var manifestPath = Path.Combine(outputPath, "manifest.json");
         var manifestList = _manifest.ToList();
-        string json = JsonSerializer.Serialize(manifestList, CachedJsonOptions);
+        var json = JsonSerializer.Serialize(manifestList, CachedJsonOptions);
         await File.WriteAllTextAsync(manifestPath, json);
-    }
-
-    /// <summary>
-    /// Dispose resources held by the carver.
-    /// </summary>
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        // DdxSubprocessConverter doesn't hold unmanaged resources,
-        // but we clear the reference for GC
-        GC.SuppressFinalize(this);
     }
 }

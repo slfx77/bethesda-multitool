@@ -1,10 +1,11 @@
+using Windows.Graphics;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 
 namespace Xbox360MemoryCarver.App;
 
 /// <summary>
-/// Main application window with tabbed interface.
+///     Main application window with tabbed interface.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -13,23 +14,24 @@ public sealed partial class MainWindow : Window
         try
         {
             Console.WriteLine("[MainWindow] Constructor starting...");
-            this.InitializeComponent();
+            InitializeComponent();
             Console.WriteLine("[MainWindow] InitializeComponent complete");
 
             // Set minimum window size
-            AppWindow appWindow = this.AppWindow;
-            appWindow.Resize(new Windows.Graphics.SizeInt32(1400, 900));
+            var appWindow = AppWindow;
+            appWindow.Resize(new SizeInt32(1400, 900));
 
             // Center the window
-            var displayArea = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(
-                appWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest);
+            var displayArea = DisplayArea.GetFromWindowId(
+                appWindow.Id, DisplayAreaFallback.Nearest);
             if (displayArea != null)
             {
-                var centeredPosition = new Windows.Graphics.PointInt32(
+                var centeredPosition = new PointInt32(
                     (displayArea.WorkArea.Width - appWindow.Size.Width) / 2,
                     (displayArea.WorkArea.Height - appWindow.Size.Height) / 2);
                 appWindow.Move(centeredPosition);
             }
+
             Console.WriteLine("[MainWindow] Constructor complete");
         }
         catch (Exception ex)

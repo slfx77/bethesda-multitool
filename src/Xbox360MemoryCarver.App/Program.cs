@@ -1,30 +1,20 @@
 using System.CommandLine;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using WinRT;
 using Xbox360MemoryCarver.Core.Carving;
 
 namespace Xbox360MemoryCarver.App;
 
 /// <summary>
-/// Entry point that supports both GUI and CLI modes.
-/// Use --no-gui for command-line carving without launching the UI.
+///     Entry point that supports both GUI and CLI modes.
+///     Use --no-gui for command-line carving without launching the UI.
 /// </summary>
 public static class Program
 {
-#pragma warning disable SYSLIB1054 // Use LibraryImport - we keep DllImport to avoid requiring /unsafe
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AttachConsole(int dwProcessId);
-
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AllocConsole();
-
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool FreeConsole();
-#pragma warning restore SYSLIB1054
-
     private const int ATTACH_PARENT_PROCESS = -1;
 
     [STAThread]
@@ -33,37 +23,33 @@ public static class Program
         ArgumentNullException.ThrowIfNull(args);
 
         // Check if running in CLI mode
-        if (args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n")))
-        {
-            return await RunCliAsync(args);
-        }
+        if (args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n"))) return await RunCliAsync(args);
 
         // GUI mode - launch WinUI app
-        WinRT.ComWrappersSupport.InitializeComWrappers();
+        ComWrappersSupport.InitializeComWrappers();
         Application.Start(p =>
         {
             _ = p; // Suppress unused parameter warning
-            var context = new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(
-                Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
-            System.Threading.SynchronizationContext.SetSynchronizationContext(context);
+            var context = new DispatcherQueueSynchronizationContext(
+                DispatcherQueue.GetForCurrentThread());
+            SynchronizationContext.SetSynchronizationContext(context);
             _ = new App();
         });
 
         return 0;
     }
 
-    private static bool HasFlag(string[] args, string flag) =>
-        args.Any(arg => arg.Equals(flag, StringComparison.OrdinalIgnoreCase));
+    private static bool HasFlag(string[] args, string flag)
+    {
+        return args.Any(arg => arg.Equals(flag, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static async Task<int> RunCliAsync(string[] args)
     {
         // Attach to console for output
-        if (!AttachConsole(ATTACH_PARENT_PROCESS))
-        {
-            AllocConsole();
-        }
+        if (!AttachConsole(ATTACH_PARENT_PROCESS)) AllocConsole();
 
-        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Console.OutputEncoding = Encoding.UTF8;
         Console.WriteLine("Xbox 360 Memory Carver - CLI Mode");
         Console.WriteLine("=================================");
 
@@ -122,14 +108,14 @@ public static class Program
         rootCommand.AddOption(verboseOption);
         rootCommand.AddOption(maxFilesOption);
 
-        rootCommand.SetHandler(async (context) =>
+        rootCommand.SetHandler(async context =>
         {
-            string? input = context.ParseResult.GetValueForArgument(inputArgument);
-            string output = context.ParseResult.GetValueForOption(outputOption)!;
-            bool convertDdx = context.ParseResult.GetValueForOption(convertDdxOption);
-            string[]? types = context.ParseResult.GetValueForOption(typesOption);
-            bool verbose = context.ParseResult.GetValueForOption(verboseOption);
-            int maxFiles = context.ParseResult.GetValueForOption(maxFilesOption);
+            var input = context.ParseResult.GetValueForArgument(inputArgument);
+            var output = context.ParseResult.GetValueForOption(outputOption)!;
+            var convertDdx = context.ParseResult.GetValueForOption(convertDdxOption);
+            var types = context.ParseResult.GetValueForOption(typesOption);
+            var verbose = context.ParseResult.GetValueForOption(verboseOption);
+            var maxFiles = context.ParseResult.GetValueForOption(maxFilesOption);
 
             if (string.IsNullOrEmpty(input))
             {
@@ -154,10 +140,7 @@ public static class Program
             catch (Exception ex)
             {
                 Console.WriteLine($"Error: {ex.Message}");
-                if (verbose)
-                {
-                    Console.WriteLine(ex.StackTrace);
-                }
+                if (verbose) Console.WriteLine(ex.StackTrace);
                 context.ExitCode = 1;
             }
         });
@@ -176,13 +159,9 @@ public static class Program
         var files = new List<string>();
 
         if (File.Exists(inputPath))
-        {
             files.Add(inputPath);
-        }
         else if (Directory.Exists(inputPath))
-        {
             files.AddRange(Directory.GetFiles(inputPath, "*.dmp", SearchOption.TopDirectoryOnly));
-        }
 
         if (files.Count == 0)
         {
@@ -192,7 +171,7 @@ public static class Program
 
         Console.WriteLine($"Found {files.Count} file(s) to process");
 
-        foreach (string file in files)
+        foreach (var file in files)
         {
             Console.WriteLine();
             Console.WriteLine($"Processing: {Path.GetFileName(file)}");
@@ -200,21 +179,18 @@ public static class Program
 
             var carver = new MemoryCarver(
                 outputDir,
-                maxFilesPerType: maxFiles,
-                convertDdxToDds: convertDdx,
-                fileTypes: fileTypes,
-                verbose: verbose);
+                maxFiles,
+                convertDdx,
+                fileTypes,
+                verbose);
 
             var progress = new Progress<double>(p =>
             {
-                if (verbose)
-                {
-                    Console.Write($"\rProgress: {p * 100:F1}%");
-                }
+                if (verbose) Console.Write($"\rProgress: {p * 100:F1}%");
             });
 
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            List<CarveEntry> results = await carver.CarveDumpAsync(file, progress);
+            var stopwatch = Stopwatch.StartNew();
+            var results = await carver.CarveDumpAsync(file, progress);
             stopwatch.Stop();
 
             Console.WriteLine();
@@ -223,22 +199,32 @@ public static class Program
             // Print stats
             Console.WriteLine();
             Console.WriteLine("File type summary:");
-            foreach ((string? type, int count) in carver.Stats.OrderByDescending(x => x.Value))
-            {
+            foreach (var (type, count) in carver.Stats.OrderByDescending(x => x.Value))
                 if (count > 0)
-                {
                     Console.WriteLine($"  {type}: {count}");
-                }
-            }
 
             if (convertDdx && carver.DdxConvertedCount > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine($"DDX conversions: {carver.DdxConvertedCount} successful, {carver.DdxConvertFailedCount} failed");
+                Console.WriteLine(
+                    $"DDX conversions: {carver.DdxConvertedCount} successful, {carver.DdxConvertFailedCount} failed");
             }
         }
 
         Console.WriteLine();
         Console.WriteLine("Done!");
     }
+#pragma warning disable SYSLIB1054 // Use LibraryImport - we keep DllImport to avoid requiring /unsafe
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AttachConsole(int dwProcessId);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AllocConsole();
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool FreeConsole();
+#pragma warning restore SYSLIB1054
 }

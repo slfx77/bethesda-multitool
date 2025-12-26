@@ -1,26 +1,26 @@
+using Windows.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
-using Windows.UI;
 using Xbox360MemoryCarver.Core;
 
 namespace Xbox360MemoryCarver.App;
 
 /// <summary>
-/// Standalone hex minimap control for file visualization.
-/// Displays color-coded representation of file regions by type.
+///     Standalone hex minimap control for file visualization.
+///     Displays color-coded representation of file regions by type.
 /// </summary>
 public sealed partial class HexMinimapControl : UserControl
 {
+    private readonly List<FileRegion> _fileRegions = [];
     private AnalysisResult? _analysisResult;
     private long _fileSize;
-    private readonly List<FileRegion> _fileRegions = [];
 
     public HexMinimapControl()
     {
-        this.InitializeComponent();
-        this.SizeChanged += OnSizeChanged;
+        InitializeComponent();
+        SizeChanged += OnSizeChanged;
 
         // Build the legend from the shared color definitions
         BuildLegend();
@@ -30,7 +30,7 @@ public sealed partial class HexMinimapControl : UserControl
     {
         LegendPanel.Children.Clear();
 
-        foreach (FileTypeColors.LegendCategory category in FileTypeColors.LegendCategories)
+        foreach (var category in FileTypeColors.LegendCategories)
         {
             var itemPanel = new StackPanel
             {
@@ -110,20 +110,14 @@ public sealed partial class HexMinimapControl : UserControl
     {
         _fileRegions.Clear();
 
-        if (_analysisResult == null)
-        {
-            return;
-        }
+        if (_analysisResult == null) return;
 
-        foreach (CarvedFileInfo? file in _analysisResult.CarvedFiles.OrderBy(f => f.Offset))
+        foreach (var file in _analysisResult.CarvedFiles.OrderBy(f => f.Offset))
         {
-            if (file.Length <= 0)
-            {
-                continue;
-            }
+            if (file.Length <= 0) continue;
 
-            string typeName = FileTypeColors.NormalizeTypeName(file.FileType);
-            Color color = FileTypeColors.GetColor(typeName);
+            var typeName = FileTypeColors.NormalizeTypeName(file.FileType);
+            var color = FileTypeColors.GetColor(typeName);
 
             _fileRegions.Add(new FileRegion
             {
@@ -138,10 +132,7 @@ public sealed partial class HexMinimapControl : UserControl
 #pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (_analysisResult != null)
-        {
-            Render();
-        }
+        if (_analysisResult != null) Render();
     }
 #pragma warning restore RCS1163
 
@@ -149,18 +140,12 @@ public sealed partial class HexMinimapControl : UserControl
     {
         MinimapCanvas.Children.Clear();
 
-        if (_analysisResult == null || _fileSize == 0)
-        {
-            return;
-        }
+        if (_analysisResult == null || _fileSize == 0) return;
 
-        double canvasWidth = MinimapCanvas.ActualWidth;
-        double canvasHeight = MinimapCanvas.ActualHeight;
+        var canvasWidth = MinimapCanvas.ActualWidth;
+        var canvasHeight = MinimapCanvas.ActualHeight;
 
-        if (canvasWidth <= 0 || canvasHeight <= 0)
-        {
-            return;
-        }
+        if (canvasWidth <= 0 || canvasHeight <= 0) return;
 
         // Background for unknown/untyped regions
         var bgRect = new Rectangle
@@ -172,11 +157,11 @@ public sealed partial class HexMinimapControl : UserControl
         MinimapCanvas.Children.Add(bgRect);
 
         // Draw each file region as a colored bar
-        foreach (FileRegion region in _fileRegions)
+        foreach (var region in _fileRegions)
         {
-            double startY = region.Start / (double)_fileSize * canvasHeight;
-            double endY = region.End / (double)_fileSize * canvasHeight;
-            double height = Math.Max(1, endY - startY);
+            var startY = region.Start / (double)_fileSize * canvasHeight;
+            var endY = region.End / (double)_fileSize * canvasHeight;
+            var height = Math.Max(1, endY - startY);
 
             var rect = new Rectangle
             {

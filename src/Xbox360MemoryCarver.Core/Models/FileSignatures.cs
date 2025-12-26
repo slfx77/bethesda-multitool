@@ -4,7 +4,7 @@ using System.Text;
 namespace Xbox360MemoryCarver.Core.Models;
 
 /// <summary>
-/// File signature information for carving.
+///     File signature information for carving.
 /// </summary>
 public class SignatureInfo
 {
@@ -17,7 +17,7 @@ public class SignatureInfo
 }
 
 /// <summary>
-/// File signature definitions for carving various file types from memory dumps.
+///     File signature definitions for carving various file types from memory dumps.
 /// </summary>
 public static class FileSignatures
 {
@@ -50,12 +50,12 @@ public static class FileSignatures
     public static ReadOnlySpan<byte> XuibMagic => s_xuibMagic;
 
     /// <summary>
-    /// All supported file signatures for carving.
+    ///     All supported file signatures for carving.
     /// </summary>
     public static FrozenDictionary<string, SignatureInfo> Signatures { get; } = new Dictionary<string, SignatureInfo>
     {
         // Textures
-        ["dds"] = new SignatureInfo
+        ["dds"] = new()
         {
             Magic = Encoding.ASCII.GetBytes("DDS "),
             Extension = ".dds",
@@ -66,16 +66,17 @@ public static class FileSignatures
         },
 
         // Xbox 360 DDX textures
-        ["ddx_3xdo"] = new SignatureInfo
-        {
-            Magic = s_ddx3XdoMagic,
-            Extension = ".ddx",
-            Description = "Xbox 360 DDX texture (3XDO format)",
-            MinSize = 68,
-            MaxSize = 50 * 1024 * 1024,
-            Folder = "ddx"
-        },
-        ["ddx_3xdr"] = new SignatureInfo
+        ["ddx_3xdo"] =
+            new()
+            {
+                Magic = s_ddx3XdoMagic,
+                Extension = ".ddx",
+                Description = "Xbox 360 DDX texture (3XDO format)",
+                MinSize = 68,
+                MaxSize = 50 * 1024 * 1024,
+                Folder = "ddx"
+            },
+        ["ddx_3xdr"] = new()
         {
             Magic = s_ddx3XdrMagic,
             Extension = ".ddx",
@@ -86,7 +87,7 @@ public static class FileSignatures
         },
 
         // 3D Models
-        ["nif"] = new SignatureInfo
+        ["nif"] = new()
         {
             Magic = s_gamebryoMagic,
             Extension = ".nif",
@@ -97,7 +98,7 @@ public static class FileSignatures
         },
 
         // Audio
-        ["xma"] = new SignatureInfo
+        ["xma"] = new()
         {
             Magic = s_riffMagic,
             Extension = ".xma",
@@ -106,7 +107,7 @@ public static class FileSignatures
             MaxSize = 100 * 1024 * 1024,
             Folder = "audio"
         },
-        ["lip"] = new SignatureInfo
+        ["lip"] = new()
         {
             Magic = Encoding.ASCII.GetBytes("LIPS"),
             Extension = ".lip",
@@ -117,7 +118,7 @@ public static class FileSignatures
         },
 
         // Scripts
-        ["script_scn"] = new SignatureInfo
+        ["script_scn"] = new()
         {
             Magic = Encoding.ASCII.GetBytes("scn "),
             Extension = ".txt",
@@ -128,7 +129,7 @@ public static class FileSignatures
         },
 
         // Game Data Files
-        ["esp"] = new SignatureInfo
+        ["esp"] = new()
         {
             Magic = s_tes4Magic,
             Extension = ".esp",
@@ -139,7 +140,7 @@ public static class FileSignatures
         },
 
         // Images
-        ["png"] = new SignatureInfo
+        ["png"] = new()
         {
             Magic = s_pngMagic,
             Extension = ".png",
@@ -150,7 +151,7 @@ public static class FileSignatures
         },
 
         // Xbox 360 System Formats
-        ["xex"] = new SignatureInfo
+        ["xex"] = new()
         {
             Magic = s_xex2Magic,
             Extension = ".xex",
@@ -159,7 +160,7 @@ public static class FileSignatures
             MaxSize = 100 * 1024 * 1024,
             Folder = "executables"
         },
-        ["xdbf"] = new SignatureInfo
+        ["xdbf"] = new()
         {
             Magic = s_xdbfMagic,
             Extension = ".xdbf",
@@ -168,7 +169,7 @@ public static class FileSignatures
             MaxSize = 10 * 1024 * 1024,
             Folder = "xbox"
         },
-        ["xui_scene"] = new SignatureInfo
+        ["xui_scene"] = new()
         {
             Magic = s_xuisMagic,
             Extension = ".xui",
@@ -177,7 +178,7 @@ public static class FileSignatures
             MaxSize = 5 * 1024 * 1024,
             Folder = "xbox"
         },
-        ["xui_binary"] = new SignatureInfo
+        ["xui_binary"] = new()
         {
             Magic = s_xuibMagic,
             Extension = ".xui",
@@ -189,7 +190,7 @@ public static class FileSignatures
     }.ToFrozenDictionary();
 
     /// <summary>
-    /// Xbox 360 GPU texture formats (from DDXConv/Xenia).
+    ///     Xbox 360 GPU texture formats (from DDXConv/Xenia).
     /// </summary>
     public static FrozenDictionary<int, string> Xbox360GpuTextureFormats { get; } = new Dictionary<int, string>
     {
@@ -207,7 +208,7 @@ public static class FileSignatures
     }.ToFrozenDictionary();
 
     /// <summary>
-    /// Bytes per compression block for each format.
+    ///     Bytes per compression block for each format.
     /// </summary>
     public static FrozenDictionary<string, int> BytesPerBlock { get; } = new Dictionary<string, int>
     {
@@ -222,6 +223,8 @@ public static class FileSignatures
         ["BC5S"] = 16
     }.ToFrozenDictionary();
 
-    public static int GetBytesPerBlock(string fourcc) =>
-        BytesPerBlock.TryGetValue(fourcc, out int bytes) ? bytes : 16;
+    public static int GetBytesPerBlock(string fourcc)
+    {
+        return BytesPerBlock.TryGetValue(fourcc, out var bytes) ? bytes : 16;
+    }
 }

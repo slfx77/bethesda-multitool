@@ -3,13 +3,13 @@ using Xbox360MemoryCarver.Core.Carving;
 namespace Xbox360MemoryCarver.Core;
 
 /// <summary>
-/// Extracts files from memory dumps based on analysis results.
-/// Uses the MemoryCarver for actual extraction with proper DDX handling.
+///     Extracts files from memory dumps based on analysis results.
+///     Uses the MemoryCarver for actual extraction with proper DDX handling.
 /// </summary>
 public static class MemoryDumpExtractor
 {
     /// <summary>
-    /// Extract files from a memory dump based on prior analysis.
+    ///     Extract files from a memory dump based on prior analysis.
     /// </summary>
     public static async Task<ExtractionSummary> Extract(
         string filePath,
@@ -28,16 +28,15 @@ public static class MemoryDumpExtractor
             options.SaveAtlas);
 
         // Progress wrapper
-        Progress<double>? carverProgress = progress != null
+        var carverProgress = progress != null
             ? new Progress<double>(p => progress.Report(new ExtractionProgress
             {
-                PercentComplete = p * 100,
-                CurrentOperation = "Extracting files..."
+                PercentComplete = p * 100, CurrentOperation = "Extracting files..."
             }))
             : null;
 
         // Perform extraction using the full carver
-        List<CarveEntry> entries = await carver.CarveDumpAsync(filePath, carverProgress);
+        var entries = await carver.CarveDumpAsync(filePath, carverProgress);
 
         // Return summary
         return new ExtractionSummary
@@ -51,7 +50,7 @@ public static class MemoryDumpExtractor
 }
 
 /// <summary>
-/// Summary of extraction results.
+///     Summary of extraction results.
 /// </summary>
 public class ExtractionSummary
 {

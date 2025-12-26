@@ -7,7 +7,7 @@ using Xbox360MemoryCarver.Core.Parsers;
 namespace Xbox360MemoryCarver.Core;
 
 /// <summary>
-/// Analyzes memory dumps to identify extractable file types without extracting them.
+///     Analyzes memory dumps to identify extractable file types without extracting them.
 /// </summary>
 public class MemoryDumpAnalyzer
 {
@@ -19,48 +19,42 @@ public class MemoryDumpAnalyzer
         _signatures = FileSignatures.Signatures;
         _signatureMatcher = new AhoCorasickMatcher();
 
-        foreach ((string? name, SignatureInfo? sig) in _signatures)
-        {
-            _signatureMatcher.AddPattern(name, sig.Magic);
-        }
+        foreach (var (name, sig) in _signatures) _signatureMatcher.AddPattern(name, sig.Magic);
+
         _signatureMatcher.Build();
     }
 
     /// <summary>
-    /// Analyze a memory dump file to identify all extractable files.
+    ///     Analyze a memory dump file to identify all extractable files.
     /// </summary>
     public AnalysisResult Analyze(string filePath, IProgress<AnalysisProgress>? progress)
     {
         var stopwatch = Stopwatch.StartNew();
-        var result = new AnalysisResult
-        {
-            FilePath = filePath
-        };
+        var result = new AnalysisResult { FilePath = filePath };
 
         var fileInfo = new FileInfo(filePath);
         result.FileSize = fileInfo.Length;
 
         using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-        using MemoryMappedViewAccessor accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
+        using var accessor =
+            mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
 
-        List<(string SigName, long Offset)> matches = FindAllMatches(accessor, result.FileSize, progress);
+        var matches = FindAllMatches(accessor, result.FileSize, progress);
 
         // Convert matches to CarvedFileInfo using proper parsers
-        foreach ((string? sigName, long offset) in matches)
+        foreach (var (sigName, offset) in matches)
         {
-            SignatureInfo sig = _signatures[sigName];
-            long length = EstimateFileSize(accessor, result.FileSize, offset, sigName, sig);
+            var sig = _signatures[sigName];
+            var length = EstimateFileSize(accessor, result.FileSize, offset, sigName, sig);
 
             if (length > 0)
             {
                 result.CarvedFiles.Add(new CarvedFileInfo
                 {
-                    Offset = offset,
-                    Length = length,
-                    FileType = sig.Description ?? sigName
+                    Offset = offset, Length = length, FileType = sig.Description ?? sigName
                 });
 
-                result.TypeCounts.TryGetValue(sigName, out int count);
+                result.TypeCounts.TryGetValue(sigName, out var count);
                 result.TypeCounts[sigName] = count + 1;
             }
         }
@@ -77,10 +71,10 @@ public class MemoryDumpAnalyzer
         IProgress<AnalysisProgress>? progress)
     {
         const int chunkSize = 64 * 1024 * 1024; // 64MB chunks
-        int maxPatternLength = _signatureMatcher.MaxPatternLength;
+        var maxPatternLength = _signatureMatcher.MaxPatternLength;
 
         var allMatches = new List<(string SigName, long Offset)>();
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
+        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
         var progressData = new AnalysisProgress { TotalBytes = fileSize };
 
         try
@@ -88,16 +82,13 @@ public class MemoryDumpAnalyzer
             long offset = 0;
             while (offset < fileSize)
             {
-                int toRead = (int)Math.Min(chunkSize + maxPatternLength, fileSize - offset);
+                var toRead = (int)Math.Min(chunkSize + maxPatternLength, fileSize - offset);
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
-                Span<byte> span = buffer.AsSpan(0, toRead);
-                List<(string Name, byte[] Pattern, long Position)> matches = _signatureMatcher.Search(span, offset);
+                var span = buffer.AsSpan(0, toRead);
+                var matches = _signatureMatcher.Search(span, offset);
 
-                foreach ((string? name, byte[] _, long position) in matches)
-                {
-                    allMatches.Add((name, position));
-                }
+                foreach (var (name, _, position) in matches) allMatches.Add((name, position));
 
                 offset += chunkSize;
 
@@ -126,28 +117,27 @@ public class MemoryDumpAnalyzer
         SignatureInfo sig)
     {
         // Read enough data to parse the header
-        int headerSize = Math.Min(sig.MaxSize, 64 * 1024);
+        var headerSize = Math.Min(sig.MaxSize, 64 * 1024);
         headerSize = (int)Math.Min(headerSize, fileSize - offset);
 
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(headerSize);
+        var buffer = ArrayPool<byte>.Shared.Rent(headerSize);
         try
         {
             accessor.ReadArray(offset, buffer, 0, headerSize);
-            Span<byte> span = buffer.AsSpan(0, headerSize);
+            var span = buffer.AsSpan(0, headerSize);
 
             // Use parser if available for accurate size estimation
-            IFileParser? parser = ParserFactory.GetParser(sigName);
+            var parser = ParserFactory.GetParser(sigName);
             if (parser != null)
             {
-                ParseResult? parseResult = parser.ParseHeader(span);
+                var parseResult = parser.ParseHeader(span);
                 if (parseResult != null)
                 {
-                    int estimatedSize = parseResult.EstimatedSize;
+                    var estimatedSize = parseResult.EstimatedSize;
                     if (estimatedSize >= sig.MinSize && estimatedSize <= sig.MaxSize)
-                    {
                         return Math.Min(estimatedSize, (int)(fileSize - offset));
-                    }
                 }
+
                 // Parser returned null - invalid file, skip it
                 return 0;
             }

@@ -1,7 +1,7 @@
 namespace Xbox360MemoryCarver.Core;
 
 /// <summary>
-/// Result of analyzing a memory dump.
+///     Result of analyzing a memory dump.
 /// </summary>
 public class AnalysisResult
 {
@@ -13,7 +13,7 @@ public class AnalysisResult
 }
 
 /// <summary>
-/// Information about a carved file.
+///     Information about a carved file.
 /// </summary>
 public class CarvedFileInfo
 {
@@ -28,7 +28,7 @@ public class CarvedFileInfo
 }
 
 /// <summary>
-/// Options for file extraction.
+///     Options for file extraction.
 /// </summary>
 public record ExtractionOptions
 {
@@ -44,7 +44,7 @@ public record ExtractionOptions
 }
 
 /// <summary>
-/// Progress information for analysis operations.
+///     Progress information for analysis operations.
 /// </summary>
 public class AnalysisProgress
 {
@@ -56,7 +56,7 @@ public class AnalysisProgress
 }
 
 /// <summary>
-/// Progress information for extraction operations.
+///     Progress information for extraction operations.
 /// </summary>
 public class ExtractionProgress
 {
@@ -67,11 +67,15 @@ public class ExtractionProgress
     public double PercentComplete { get; set; }
 
     /// <summary>
-    /// Gets the calculated percent complete, using the set value if positive, otherwise calculating from files processed.
+    ///     Gets the calculated percent complete, using the set value if positive, otherwise calculating from files processed.
     /// </summary>
-    public double GetEffectivePercentComplete() =>
-        PercentComplete > 0 ? PercentComplete : CalculateFromFilesProcessed();
+    public double GetEffectivePercentComplete()
+    {
+        return PercentComplete > 0 ? PercentComplete : CalculateFromFilesProcessed();
+    }
 
-    private double CalculateFromFilesProcessed() =>
-        TotalFiles > 0 ? FilesProcessed * 100.0 / TotalFiles : 0;
+    private double CalculateFromFilesProcessed()
+    {
+        return TotalFiles > 0 ? FilesProcessed * 100.0 / TotalFiles : 0;
+    }
 }

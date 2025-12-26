@@ -1,36 +1,18 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
+using UnhandledExceptionEventArgs = Microsoft.UI.Xaml.UnhandledExceptionEventArgs;
 
 namespace Xbox360MemoryCarver.App;
 
 /// <summary>
-/// Provides application-specific behavior to supplement the default Application class.
+///     Provides application-specific behavior to supplement the default Application class.
 /// </summary>
 public partial class App : Application
 {
-    private Window? _window;
-
-    // Console attachment for debug output when launched from terminal
-#pragma warning disable SYSLIB1054 // Use LibraryImport - we keep DllImport to avoid requiring /unsafe
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AttachConsole(int dwProcessId);
-#pragma warning restore SYSLIB1054
-
     private const int ATTACH_PARENT_PROCESS = -1;
 
     /// <summary>
-    /// Gets the current application instance.
-    /// </summary>
-    public static new App Current => (App)Application.Current;
-
-    /// <summary>
-    /// Gets the main application window.
-    /// </summary>
-    public Window? MainWindow => _window;
-
-    /// <summary>
-    /// Initializes the singleton application object.
+    ///     Initializes the singleton application object.
     /// </summary>
     public App()
     {
@@ -39,11 +21,11 @@ public partial class App : Application
         Console.WriteLine("[Xbox360MemoryCarver] Application starting...");
 
         // Global unhandled exception handler
-        this.UnhandledException += App_UnhandledException;
+        UnhandledException += App_UnhandledException;
 
         try
         {
-            this.InitializeComponent();
+            InitializeComponent();
             Console.WriteLine("[Xbox360MemoryCarver] App initialized");
         }
         catch (Exception ex)
@@ -53,8 +35,25 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    ///     Gets the current application instance.
+    /// </summary>
+    public new static App Current => (App)Application.Current;
+
+    /// <summary>
+    ///     Gets the main application window.
+    /// </summary>
+    public Window? MainWindow { get; private set; }
+
+    // Console attachment for debug output when launched from terminal
+#pragma warning disable SYSLIB1054 // Use LibraryImport - we keep DllImport to avoid requiring /unsafe
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AttachConsole(int dwProcessId);
+#pragma warning restore SYSLIB1054
+
 #pragma warning disable RCS1163 // Unused parameter - required for event handler signature
-    private static void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    private static void App_UnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         Console.WriteLine($"[CRASH] Unhandled exception: {e.Exception}");
         Console.WriteLine($"[CRASH] Message: {e.Message}");
@@ -63,7 +62,7 @@ public partial class App : Application
 #pragma warning restore RCS1163
 
     /// <summary>
-    /// Invoked when the application is launched.
+    ///     Invoked when the application is launched.
     /// </summary>
     /// <param name="args">Details about the launch request and process.</param>
     protected override void OnLaunched(LaunchActivatedEventArgs args)
@@ -71,9 +70,9 @@ public partial class App : Application
         try
         {
             Console.WriteLine("[Xbox360MemoryCarver] Creating main window...");
-            _window = new MainWindow();
+            MainWindow = new MainWindow();
             Console.WriteLine("[Xbox360MemoryCarver] Activating main window...");
-            _window.Activate();
+            MainWindow.Activate();
             Console.WriteLine("[Xbox360MemoryCarver] Main window activated");
         }
         catch (Exception ex)
