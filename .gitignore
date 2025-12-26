@@ -56,3 +56,6 @@ __pycache__/
 
 # Input directories
 Sample/
+
+# SonarQube
+.sonarqube/
