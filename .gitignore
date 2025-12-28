@@ -63,3 +63,6 @@ Sample/
 # Old/comparison code
 Xbox360MemoryCarverCLI/
 comparison_test/
+
+# Reference copies (not part of the project)
+DDXConvVanilla/
