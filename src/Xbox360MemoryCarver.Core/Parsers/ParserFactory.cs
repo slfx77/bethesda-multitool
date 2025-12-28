@@ -13,7 +13,8 @@ public static class ParserFactory
         ["xma"] = new XmaParser(),
         ["nif"] = new NifParser(),
         ["png"] = new PngParser(),
-        ["xex"] = new XexParser()
+        ["xex"] = new XexParser(),
+        ["script_scn"] = new ScriptParser()
     };
 
     public static IFileParser? GetParser(string fileType)

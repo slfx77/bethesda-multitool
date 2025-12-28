@@ -93,21 +93,22 @@ public sealed partial class SingleFileTab : UserControl
 
     private async void AnalyzeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(MinidumpPathTextBox.Text)) return;
+        var filePath = MinidumpPathTextBox.Text;
+        if (string.IsNullOrEmpty(filePath)) return;
         try
         {
             AnalyzeButton.IsEnabled = false; AnalysisProgressBar.Visibility = Visibility.Visible;
             _carvedFiles.Clear(); _allCarvedFiles.Clear(); ResetSortState();
 
-            if (!File.Exists(MinidumpPathTextBox.Text)) { await ShowDialogAsync("Analysis Failed", $"File not found: {MinidumpPathTextBox.Text}"); return; }
+            if (!File.Exists(filePath)) { await ShowDialogAsync("Analysis Failed", $"File not found: {filePath}"); return; }
 
             var progress = new Progress<AnalysisProgress>(p => DispatcherQueue.TryEnqueue(() => { AnalysisProgressBar.IsIndeterminate = false; AnalysisProgressBar.Value = p.PercentComplete; }));
-            _analysisResult = await Task.Run(() => new MemoryDumpAnalyzer().Analyze(MinidumpPathTextBox.Text, progress));
+            _analysisResult = await Task.Run(() => new MemoryDumpAnalyzer().Analyze(filePath, progress));
 
             foreach (var entry in _analysisResult.CarvedFiles)
             { _allCarvedFiles.Add(new CarvedFileEntry { Offset = entry.Offset, Length = entry.Length, FileType = entry.FileType, FileName = entry.FileName }); _carvedFiles.Add(_allCarvedFiles[^1]); }
 
-            HexViewer.LoadData(MinidumpPathTextBox.Text, _analysisResult); UpdateButtonStates();
+            HexViewer.LoadData(filePath, _analysisResult); UpdateButtonStates();
         }
         catch (Exception ex) { await ShowDialogAsync("Analysis Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}"); }
         finally { AnalyzeButton.IsEnabled = true; AnalysisProgressBar.Visibility = Visibility.Collapsed; AnalysisProgressBar.IsIndeterminate = true; }
@@ -115,21 +116,23 @@ public sealed partial class SingleFileTab : UserControl
 
     private async void ExtractButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_analysisResult == null || string.IsNullOrEmpty(OutputPathTextBox.Text)) return;
+        var filePath = MinidumpPathTextBox.Text;
+        var outputPath = OutputPathTextBox.Text;
+        if (_analysisResult == null || string.IsNullOrEmpty(outputPath)) return;
         try
         {
             ExtractButton.IsEnabled = false; AnalysisProgressBar.Visibility = Visibility.Visible;
             var types = FileTypeMapping.GetSignatureKeys(_fileTypeCheckboxes.Where(kvp => kvp.Value.IsChecked == true).Select(kvp => kvp.Key)).ToList();
-            var opts = new ExtractionOptions { OutputPath = OutputPathTextBox.Text, ConvertDdx = ConvertDdxCheckBox.IsChecked == true, SaveAtlas = SaveAtlasCheckBox.IsChecked == true, Verbose = VerboseCheckBox.IsChecked == true, FileTypes = types };
+            var opts = new ExtractionOptions { OutputPath = outputPath, ConvertDdx = ConvertDdxCheckBox.IsChecked == true, SaveAtlas = SaveAtlasCheckBox.IsChecked == true, Verbose = VerboseCheckBox.IsChecked == true, FileTypes = types };
             var progress = new Progress<ExtractionProgress>(p => DispatcherQueue.TryEnqueue(() => { AnalysisProgressBar.IsIndeterminate = false; AnalysisProgressBar.Value = p.PercentComplete; }));
-            var summary = await Task.Run(() => MemoryDumpExtractor.Extract(MinidumpPathTextBox.Text, opts, progress));
+            var summary = await Task.Run(() => MemoryDumpExtractor.Extract(filePath, opts, progress));
 
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedOffsets.Contains(x.Offset))) entry.Status = ExtractionStatus.Extracted;
 
             var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
             if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";
             if (summary.DdxConverted > 0 || summary.DdxFailed > 0) msg += $"\nDDX conversion: {summary.DdxConverted} ok, {summary.DdxFailed} failed";
-            await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {OutputPathTextBox.Text}");
+            await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {outputPath}");
         }
         catch (Exception ex) { await ShowDialogAsync("Extraction Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}"); }
         finally { ExtractButton.IsEnabled = true; AnalysisProgressBar.Visibility = Visibility.Collapsed; AnalysisProgressBar.IsIndeterminate = true; }

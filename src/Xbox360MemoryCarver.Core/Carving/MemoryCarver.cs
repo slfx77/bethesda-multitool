@@ -96,9 +96,14 @@ public sealed class MemoryCarver : IDisposable
         using var mmf = MemoryMappedFile.CreateFromFile(dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
+        // Phase 1: Scanning (0-50%)
         var matches = FindAllMatches(accessor, fileInfo.Length, progress);
-        await ExtractMatchesAsync(accessor, fileInfo.Length, matches, outputPath);
+        
+        // Phase 2: Extraction (50-100%)
+        await ExtractMatchesAsync(accessor, fileInfo.Length, matches, outputPath, progress);
+        
         await CarveManifest.SaveAsync(outputPath, _manifest);
+        progress?.Report(1.0);
 
         return [.. _manifest];
     }
@@ -125,7 +130,8 @@ public sealed class MemoryCarver : IDisposable
                         allMatches.Add((name, position));
 
                 offset += chunkSize;
-                progress?.Report(Math.Min((double)offset / fileSize, 0.5));
+                // Scanning is 0-50% of total progress
+                progress?.Report(Math.Min((double)offset / fileSize * 0.5, 0.5));
             }
         }
         finally { ArrayPool<byte>.Shared.Return(buffer); }
@@ -134,8 +140,13 @@ public sealed class MemoryCarver : IDisposable
     }
 
     private async Task ExtractMatchesAsync(MemoryMappedViewAccessor accessor, long fileSize,
-        List<(string SigName, long Offset)> matches, string outputPath)
+        List<(string SigName, long Offset)> matches, string outputPath, IProgress<double>? progress)
     {
+        if (matches.Count == 0) return;
+
+        var processedCount = 0;
+        var totalMatches = matches.Count;
+
         await Parallel.ForEachAsync(matches, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
             async (match, _) =>
             {
@@ -149,6 +160,15 @@ public sealed class MemoryCarver : IDisposable
                 {
                     _stats.AddOrUpdate(match.SigName, 1, (_, v) => v + 1);
                     await WriteFileAsync(extraction.Value.outputFile, extraction.Value.data, match.Offset, match.SigName, extraction.Value.fileSize);
+                }
+
+                // Report extraction progress (50-100% of total)
+                var currentCount = Interlocked.Increment(ref processedCount);
+                // Only report every ~1% to avoid flooding the UI
+                if (progress != null && (currentCount % Math.Max(1, totalMatches / 100) == 0 || currentCount == totalMatches))
+                {
+                    var extractionProgress = (double)currentCount / totalMatches;
+                    progress.Report(0.5 + extractionProgress * 0.5);
                 }
             });
     }

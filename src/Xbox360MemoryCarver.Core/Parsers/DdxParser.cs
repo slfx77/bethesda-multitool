@@ -49,13 +49,45 @@ public class DdxParser : IFileParser
             ["version"] = version, ["gpuFormat"] = formatByte, ["isTiled"] = isTiled,
             ["dataOffset"] = 0x44, ["uncompressedSize"] = uncompressedSize
         };
-        if (texturePath != null) metadata["texturePath"] = texturePath;
+        
+        if (texturePath != null)
+        {
+            metadata["texturePath"] = texturePath;
+            // Convert texture path to safe filename for extraction
+            // e.g., "textures\architecture\anvil\anvildoor01.ddx" -> "textures_architecture_anvil_anvildoor01"
+            var safeName = ConvertPathToSafeName(texturePath);
+            if (!string.IsNullOrEmpty(safeName))
+            {
+                metadata["safeName"] = safeName;
+            }
+        }
 
         return new ParseResult
         {
             Format = is3Xdo ? "3XDO" : "3XDR", EstimatedSize = estimatedSize, Width = width, Height = height,
             MipCount = mipCount, FourCc = formatName, IsXbox360 = true, Metadata = metadata
         };
+    }
+
+    private static string? ConvertPathToSafeName(string texturePath)
+    {
+        if (string.IsNullOrEmpty(texturePath)) return null;
+
+        // Remove extension
+        var nameWithoutExt = Path.GetFileNameWithoutExtension(texturePath);
+        if (string.IsNullOrEmpty(nameWithoutExt)) return null;
+
+        // Get parent directory for context (e.g., "anvil" from "textures\architecture\anvil\anvildoor01.ddx")
+        var directory = Path.GetDirectoryName(texturePath);
+        var parentDir = !string.IsNullOrEmpty(directory) ? Path.GetFileName(directory) : null;
+
+        // Combine parent dir + filename for uniqueness
+        var safeName = !string.IsNullOrEmpty(parentDir)
+            ? $"{parentDir}_{nameWithoutExt}"
+            : nameWithoutExt;
+
+        // Clean to valid filename characters
+        return new string([.. safeName.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')]);
     }
 
     private static bool ValidateDdxHeader(ReadOnlySpan<byte> data, int offset) =>
