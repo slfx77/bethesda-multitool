@@ -29,7 +29,7 @@ public static class BinaryUtils
     /// </summary>
     public static ulong ReadUInt64LE(ReadOnlySpan<byte> data, int offset = 0)
     {
-        return (ulong)data[offset]
+        return data[offset]
                | ((ulong)data[offset + 1] << 8)
                | ((ulong)data[offset + 2] << 16)
                | ((ulong)data[offset + 3] << 24)
@@ -51,7 +51,7 @@ public static class BinaryUtils
                | ((ulong)data[offset + 4] << 24)
                | ((ulong)data[offset + 5] << 16)
                | ((ulong)data[offset + 6] << 8)
-               | (ulong)data[offset + 7];
+               | data[offset + 7];
     }
 
     /// <summary>

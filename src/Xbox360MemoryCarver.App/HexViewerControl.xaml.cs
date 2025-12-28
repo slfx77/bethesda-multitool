@@ -1,8 +1,12 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
+using System.Runtime.InteropServices;
 using System.Text;
+using Windows.System;
 using Windows.UI;
+using Windows.UI.Core;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -46,11 +50,11 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     private double _lastMinimapContainerHeight;
     private double _minimapZoom = 1.0;
     private MemoryMappedFile? _mmf;
-    private long _totalRows;
-    private int _visibleRows;
 
     // Dynamic row height
     private double _rowHeight;
+    private long _totalRows;
+    private int _visibleRows;
 
     public HexViewerControl()
     {
@@ -149,7 +153,10 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         _rowHeight = lineHeight;
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs e) => Dispose();
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        Dispose();
+    }
 
     private void HexDisplayArea_SizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -157,20 +164,14 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         if (Math.Abs(e.NewSize.Height - e.PreviousSize.Height) > 1)
         {
             UpdateVisibleRowCount();
-            if (_analysisResult != null)
-            {
-                RenderVisibleRows();
-            }
+            if (_analysisResult != null) RenderVisibleRows();
         }
     }
 
     private void UpdateVisibleRowCount()
     {
         // If row height is not yet determined, calculate it based on font size
-        if (_rowHeight <= 0)
-        {
-            CalculateRowHeight();
-        }
+        if (_rowHeight <= 0) CalculateRowHeight();
 
         // Account for Border padding (4px top + 4px bottom = 8px)
         var displayHeight = HexDisplayArea.ActualHeight - 8;
@@ -249,10 +250,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         _totalRows = (_fileSize + BytesPerRow - 1) / BytesPerRow;
         _currentTopRow = 0;
 
-        if (_rowHeight <= 0)
-        {
-            CalculateRowHeight();
-        }
+        if (_rowHeight <= 0) CalculateRowHeight();
 
         // Setup scrollbar - ensure it has a valid range
         UpdateVisibleRowCount();
@@ -345,8 +343,8 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void HexDisplayArea_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
-        var isCtrlPressed = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(
-            Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        var isCtrlPressed = InputKeyboardSource.GetKeyStateForCurrentThread(
+            VirtualKey.Control).HasFlag(CoreVirtualKeyStates.Down);
 
         // Vertical scrolling
         var delta = e.GetCurrentPoint(HexDisplayArea).Properties.MouseWheelDelta;
@@ -363,12 +361,12 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         // Handle navigation keys before they reach the ScrollViewer
         switch (e.Key)
         {
-            case Windows.System.VirtualKey.PageUp:
-            case Windows.System.VirtualKey.PageDown:
-            case Windows.System.VirtualKey.Home:
-            case Windows.System.VirtualKey.End:
-            case Windows.System.VirtualKey.Up:
-            case Windows.System.VirtualKey.Down:
+            case VirtualKey.PageUp:
+            case VirtualKey.PageDown:
+            case VirtualKey.Home:
+            case VirtualKey.End:
+            case VirtualKey.Up:
+            case VirtualKey.Down:
                 HexViewerControl_KeyDown(sender, e);
                 break;
         }
@@ -378,32 +376,32 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     {
         switch (e.Key)
         {
-            case Windows.System.VirtualKey.PageUp:
+            case VirtualKey.PageUp:
                 ScrollByRows(-_visibleRows);
                 e.Handled = true;
                 break;
 
-            case Windows.System.VirtualKey.PageDown:
+            case VirtualKey.PageDown:
                 ScrollByRows(_visibleRows);
                 e.Handled = true;
                 break;
 
-            case Windows.System.VirtualKey.Home:
+            case VirtualKey.Home:
                 ScrollToRow(0);
                 e.Handled = true;
                 break;
 
-            case Windows.System.VirtualKey.End:
+            case VirtualKey.End:
                 ScrollToRow(Math.Max(0, _totalRows - _visibleRows));
                 e.Handled = true;
                 break;
 
-            case Windows.System.VirtualKey.Up:
+            case VirtualKey.Up:
                 ScrollByRows(-1);
                 e.Handled = true;
                 break;
 
-            case Windows.System.VirtualKey.Down:
+            case VirtualKey.Down:
                 ScrollByRows(1);
                 e.Handled = true;
                 break;
@@ -415,15 +413,14 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         try
         {
             if (OpenClipboard(IntPtr.Zero))
-            {
                 try
                 {
                     EmptyClipboard();
-                    var hGlobal = System.Runtime.InteropServices.Marshal.StringToHGlobalUni(text + '\0');
+                    var hGlobal = Marshal.StringToHGlobalUni(text + '\0');
                     if (SetClipboardData(13, hGlobal) == IntPtr.Zero) // CF_UNICODETEXT = 13
                     {
                         // SetClipboardData failed, free the memory
-                        System.Runtime.InteropServices.Marshal.FreeHGlobal(hGlobal);
+                        Marshal.FreeHGlobal(hGlobal);
                         Debug.WriteLine("[HexViewer] SetClipboardData failed");
                     }
                     else
@@ -435,11 +432,8 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
                 {
                     CloseClipboard();
                 }
-            }
             else
-            {
                 Debug.WriteLine("[HexViewer] OpenClipboard failed");
-            }
         }
         catch (Exception ex)
         {
@@ -447,18 +441,18 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [DllImport("user32.dll")]
     private static extern bool OpenClipboard(IntPtr hWndNewOwner);
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [DllImport("user32.dll")]
     private static extern bool CloseClipboard();
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [DllImport("user32.dll")]
     private static extern bool EmptyClipboard();
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [DllImport("user32.dll")]
     private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
- 
+
     private void CopyHexMenuItem_Click(object sender, RoutedEventArgs e)
     {
         CopySelectedTextToClipboard(HexTextBlock);
@@ -472,10 +466,10 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     private void TextBlock_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         // Handle Ctrl+C for copy
-        if (e.Key == Windows.System.VirtualKey.C)
+        if (e.Key == VirtualKey.C)
         {
-            var isCtrlPressed = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(
-                Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+            var isCtrlPressed = InputKeyboardSource.GetKeyStateForCurrentThread(
+                VirtualKey.Control).HasFlag(CoreVirtualKeyStates.Down);
 
             if (isCtrlPressed && sender is TextBlock textBlock)
             {
@@ -502,15 +496,11 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
             // For Hex column, preserve formatting (spaces between bytes)
             string textToCopy;
             if (textBlock == AsciiTextBlock)
-            {
                 // Remove newlines to get continuous ASCII string
                 textToCopy = selectedText.Replace("\n", "").Replace("\r", "");
-            }
             else
-            {
                 // For hex, keep as-is (user might want the formatting)
                 textToCopy = selectedText;
-            }
 
             CopyTextToClipboardViaInterop(textToCopy);
         }
@@ -584,7 +574,6 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
             // Hex bytes with per-byte coloring
             for (var i = 0; i < BytesPerRow; i++)
-            {
                 if (i < rowBytes && bufferOffset + i < buffer.Length)
                 {
                     var byteOffset = rowOffset + i;
@@ -600,7 +589,6 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
                 {
                     HexTextBlock.Inlines.Add(new Run { Text = "   ", Foreground = TextBrush });
                 }
-            }
 
             // ASCII column
             for (var i = 0; i < rowBytes && bufferOffset + i < buffer.Length; i++)
@@ -647,6 +635,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
             if (region.Start > offset) right = mid - 1;
             else left = mid + 1;
         }
+
         return null;
     }
 
@@ -740,9 +729,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
 
         if (currentColor != null)
-        {
             AddMinimapRect(canvasWidth, currentStartY, canvasHeight - currentStartY, currentColor.Value);
-        }
 
         MinimapCanvas.Children.Remove(ViewportIndicator);
         MinimapCanvas.Children.Add(ViewportIndicator);
@@ -810,10 +797,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void Minimap_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
-        if (_isDraggingMinimap)
-        {
-            NavigateToMinimapPosition(e.GetCurrentPoint(MinimapCanvas).Position.Y);
-        }
+        if (_isDraggingMinimap) NavigateToMinimapPosition(e.GetCurrentPoint(MinimapCanvas).Position.Y);
     }
 
     private void Minimap_PointerReleased(object sender, PointerRoutedEventArgs e)

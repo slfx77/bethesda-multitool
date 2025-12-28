@@ -71,16 +71,10 @@ public static class MemoryDumpExtractor
         IProgress<ExtractionProgress>? progress)
     {
         // Check if module extraction is requested
-        if (options.FileTypes != null && !options.FileTypes.Contains("xex"))
-        {
-            return 0;
-        }
+        if (options.FileTypes != null && !options.FileTypes.Contains("xex")) return 0;
 
         var minidumpInfo = MinidumpParser.Parse(filePath);
-        if (!minidumpInfo.IsValid || minidumpInfo.Modules.Count == 0)
-        {
-            return 0;
-        }
+        if (!minidumpInfo.IsValid || minidumpInfo.Modules.Count == 0) return 0;
 
         // Create modules output directory matching the MemoryCarver pattern:
         // {output_dir}/{dmp_filename}/modules/
@@ -122,10 +116,7 @@ public static class MemoryDumpExtractor
                 await File.WriteAllBytesAsync(outputPath, buffer);
                 extractedCount++;
 
-                if (options.Verbose)
-                {
-                    Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
-                }
+                if (options.Verbose) Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
 
                 progress?.Report(new ExtractionProgress
                 {
@@ -136,10 +127,7 @@ public static class MemoryDumpExtractor
             }
             catch (Exception ex)
             {
-                if (options.Verbose)
-                {
-                    Console.WriteLine($"[Module] Failed to extract {fileName}: {ex.Message}");
-                }
+                if (options.Verbose) Console.WriteLine($"[Module] Failed to extract {fileName}: {ex.Message}");
             }
         }
 
@@ -153,10 +141,7 @@ public static class MemoryDumpExtractor
     {
         var invalidChars = Path.GetInvalidFileNameChars();
         var sanitized = new char[name.Length];
-        for (var i = 0; i < name.Length; i++)
-        {
-            sanitized[i] = Array.IndexOf(invalidChars, name[i]) >= 0 ? '_' : name[i];
-        }
+        for (var i = 0; i < name.Length; i++) sanitized[i] = Array.IndexOf(invalidChars, name[i]) >= 0 ? '_' : name[i];
         return new string(sanitized);
     }
 }

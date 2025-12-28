@@ -1,8 +1,8 @@
 using Windows.Graphics;
-using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 
 namespace Xbox360MemoryCarver.App;
@@ -82,7 +82,7 @@ public sealed partial class MainWindow : Window
         Console.WriteLine("[MainWindow] Title bar extended with custom drag region");
     }
 
-    private void MainTabView_SelectionChanged(object sender, Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)
+    private void MainTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var selectedIndex = MainTabView.SelectedIndex;
 

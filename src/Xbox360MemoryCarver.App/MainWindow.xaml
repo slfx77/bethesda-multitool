@@ -55,8 +55,6 @@
         TabWidthMode="Equal"
         SelectedIndex="0">
         <controls:TabView.Resources>
-          <x:Double x:Key="TabViewItemMaxWidth">160</x:Double>
-          <x:Double x:Key="TabViewItemMinWidth">160</x:Double>
         </controls:TabView.Resources>
         <controls:TabView.TabStripHeader>
           <Grid x:Name="TabStripDragRegion" Background="Transparent" />

@@ -24,9 +24,9 @@ public sealed partial class SingleFileTab : UserControl
         ["PNG"] = ["png"],
         ["XMA"] = ["xma"],
         ["NIF"] = ["nif"],
-        ["Module"] = ["xex"],  // Module maps to XEX executables
+        ["Module"] = ["xex"], // Module maps to XEX executables
         ["XDBF"] = ["xdbf"],
-        ["XUI"] = ["xui_scene", "xui_binary"],  // XUI has two variants
+        ["XUI"] = ["xui_scene", "xui_binary"], // XUI has two variants
         ["ESP"] = ["esp"],
         ["LIP"] = ["lip"],
         ["ObScript"] = ["script_scn"]
@@ -34,14 +34,12 @@ public sealed partial class SingleFileTab : UserControl
 
     // Display names for checkboxes (keys from the mapping)
     private static readonly string[] KnownFileTypes = [.. FileTypeMapping.Keys];
+    private readonly List<CarvedFileEntry> _allCarvedFiles = []; // Original unsorted list
 
     private readonly ObservableCollection<CarvedFileEntry> _carvedFiles = [];
-    private readonly List<CarvedFileEntry> _allCarvedFiles = []; // Original unsorted list
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
     private AnalysisResult? _analysisResult;
 
-    // Sorting state
-    private enum SortColumn { None, Offset, Length, Type, Filename }
     private SortColumn _currentSortColumn = SortColumn.None;
     private bool _sortAscending = true;
 
@@ -113,98 +111,6 @@ public sealed partial class SingleFileTab : UserControl
         }
     }
 
-    #region Sorting
-
-    private void SortByOffset_Click(object sender, RoutedEventArgs e) => ApplySort(SortColumn.Offset);
-    private void SortByLength_Click(object sender, RoutedEventArgs e) => ApplySort(SortColumn.Length);
-    private void SortByType_Click(object sender, RoutedEventArgs e) => ApplySort(SortColumn.Type);
-    private void SortByFilename_Click(object sender, RoutedEventArgs e) => ApplySort(SortColumn.Filename);
-
-    private void ApplySort(SortColumn column)
-    {
-        // Cycle through: Ascending -> Descending -> Default (by offset)
-        if (_currentSortColumn == column)
-        {
-            if (_sortAscending)
-            {
-                _sortAscending = false;
-            }
-            else
-            {
-                // Reset to default sort (by offset ascending)
-                _currentSortColumn = SortColumn.None;
-                _sortAscending = true;
-            }
-        }
-        else
-        {
-            _currentSortColumn = column;
-            _sortAscending = true;
-        }
-
-        UpdateSortIcons();
-        RefreshSortedList();
-    }
-
-    private void UpdateSortIcons()
-    {
-        // Hide all icons first
-        OffsetSortIcon.Visibility = Visibility.Collapsed;
-        LengthSortIcon.Visibility = Visibility.Collapsed;
-        TypeSortIcon.Visibility = Visibility.Collapsed;
-        FilenameSortIcon.Visibility = Visibility.Collapsed;
-
-        // Show the active sort icon
-        FontIcon? activeIcon = _currentSortColumn switch
-        {
-            SortColumn.Offset => OffsetSortIcon,
-            SortColumn.Length => LengthSortIcon,
-            SortColumn.Type => TypeSortIcon,
-            SortColumn.Filename => FilenameSortIcon,
-            _ => null
-        };
-
-        if (activeIcon != null)
-        {
-            activeIcon.Visibility = Visibility.Visible;
-            activeIcon.Glyph = _sortAscending ? "\uE70E" : "\uE70D"; // Up or Down arrow
-        }
-    }
-
-    private void RefreshSortedList()
-    {
-        IEnumerable<CarvedFileEntry> sorted = _currentSortColumn switch
-        {
-            SortColumn.Offset => _sortAscending
-                ? _allCarvedFiles.OrderBy(f => f.Offset)
-                : _allCarvedFiles.OrderByDescending(f => f.Offset),
-            SortColumn.Length => _sortAscending
-                ? _allCarvedFiles.OrderBy(f => f.Length)
-                : _allCarvedFiles.OrderByDescending(f => f.Length),
-            // Sort by FileType string for contiguous grouping
-            SortColumn.Type => _sortAscending
-                ? _allCarvedFiles.OrderBy(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset)
-                : _allCarvedFiles.OrderByDescending(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset),
-            // Sort by Filename, with nulls/empty at the end
-            SortColumn.Filename => _sortAscending
-                ? _allCarvedFiles.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
-                                 .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
-                                 .ThenBy(f => f.Offset)
-                : _allCarvedFiles.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
-                                 .ThenByDescending(f => f.FileName, StringComparer.OrdinalIgnoreCase)
-                                 .ThenBy(f => f.Offset),
-            _ => _allCarvedFiles.OrderBy(f => f.Offset) // Default sort by offset
-        };
-
-        _carvedFiles.Clear();
-        foreach (var file in sorted)
-        {
-            _carvedFiles.Add(file);
-        }
-    }
-
-    #endregion
-
 #pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void MinidumpPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -243,6 +149,121 @@ public sealed partial class SingleFileTab : UserControl
             HexViewer.NavigateToOffset(selectedFile.Offset);
     }
 #pragma warning restore RCS1163
+
+    // Sorting state
+    private enum SortColumn
+    {
+        None,
+        Offset,
+        Length,
+        Type,
+        Filename
+    }
+
+    #region Sorting
+
+    private void SortByOffset_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(SortColumn.Offset);
+    }
+
+    private void SortByLength_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(SortColumn.Length);
+    }
+
+    private void SortByType_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(SortColumn.Type);
+    }
+
+    private void SortByFilename_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(SortColumn.Filename);
+    }
+
+    private void ApplySort(SortColumn column)
+    {
+        // Cycle through: Ascending -> Descending -> Default (by offset)
+        if (_currentSortColumn == column)
+        {
+            if (_sortAscending)
+            {
+                _sortAscending = false;
+            }
+            else
+            {
+                // Reset to default sort (by offset ascending)
+                _currentSortColumn = SortColumn.None;
+                _sortAscending = true;
+            }
+        }
+        else
+        {
+            _currentSortColumn = column;
+            _sortAscending = true;
+        }
+
+        UpdateSortIcons();
+        RefreshSortedList();
+    }
+
+    private void UpdateSortIcons()
+    {
+        // Hide all icons first
+        OffsetSortIcon.Visibility = Visibility.Collapsed;
+        LengthSortIcon.Visibility = Visibility.Collapsed;
+        TypeSortIcon.Visibility = Visibility.Collapsed;
+        FilenameSortIcon.Visibility = Visibility.Collapsed;
+
+        // Show the active sort icon
+        var activeIcon = _currentSortColumn switch
+        {
+            SortColumn.Offset => OffsetSortIcon,
+            SortColumn.Length => LengthSortIcon,
+            SortColumn.Type => TypeSortIcon,
+            SortColumn.Filename => FilenameSortIcon,
+            _ => null
+        };
+
+        if (activeIcon != null)
+        {
+            activeIcon.Visibility = Visibility.Visible;
+            activeIcon.Glyph = _sortAscending ? "\uE70E" : "\uE70D"; // Up or Down arrow
+        }
+    }
+
+    private void RefreshSortedList()
+    {
+        IEnumerable<CarvedFileEntry> sorted = _currentSortColumn switch
+        {
+            SortColumn.Offset => _sortAscending
+                ? _allCarvedFiles.OrderBy(f => f.Offset)
+                : _allCarvedFiles.OrderByDescending(f => f.Offset),
+            SortColumn.Length => _sortAscending
+                ? _allCarvedFiles.OrderBy(f => f.Length)
+                : _allCarvedFiles.OrderByDescending(f => f.Length),
+            // Sort by FileType string for contiguous grouping
+            SortColumn.Type => _sortAscending
+                ? _allCarvedFiles.OrderBy(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset)
+                : _allCarvedFiles.OrderByDescending(f => f.FileType, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(f => f.Offset),
+            // Sort by Filename, with nulls/empty at the end
+            SortColumn.Filename => _sortAscending
+                ? _allCarvedFiles.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
+                    .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(f => f.Offset)
+                : _allCarvedFiles.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
+                    .ThenByDescending(f => f.FileName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(f => f.Offset),
+            _ => _allCarvedFiles.OrderBy(f => f.Offset) // Default sort by offset
+        };
+
+        _carvedFiles.Clear();
+        foreach (var file in sorted) _carvedFiles.Add(file);
+    }
+
+    #endregion
 
 #pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private async void OpenMinidumpButton_Click(object sender, RoutedEventArgs e)
@@ -430,9 +451,7 @@ public sealed partial class SingleFileTab : UserControl
 
             // Update file status in the table based on extraction results
             foreach (var entry in _allCarvedFiles.Where(e => summary.ExtractedOffsets.Contains(e.Offset)))
-            {
                 entry.Status = ExtractionStatus.Extracted;
-            }
 
             var summaryMessage = $"Extraction complete!\n\n" +
                                  $"Files extracted: {summary.TotalExtracted}\n";
@@ -527,8 +546,8 @@ public partial class CarvedFileEntry : INotifyPropertyChanged
     public string ExtractedGlyph => _status switch
     {
         ExtractionStatus.Extracted => "\uE73E", // Checkmark
-        ExtractionStatus.Failed => "\uE711",    // X
-        _ => "\uE8FB"                            // More (horizontal dots) - pending/not extracted
+        ExtractionStatus.Failed => "\uE711", // X
+        _ => "\uE8FB" // More (horizontal dots) - pending/not extracted
     };
 
     public Brush ExtractedColor => _status switch

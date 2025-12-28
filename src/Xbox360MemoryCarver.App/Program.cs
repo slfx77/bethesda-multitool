@@ -6,6 +6,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;
 using Xbox360MemoryCarver.Core.Carving;
+using UnhandledExceptionEventArgs = System.UnhandledExceptionEventArgs;
 
 namespace Xbox360MemoryCarver.App;
 
@@ -38,17 +39,11 @@ public static class Program
         try
         {
             // Check if running in CLI mode
-            if (args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n")))
-            {
-                return await RunCliAsync(args);
-            }
+            if (args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n"))) return await RunCliAsync(args);
 
             // Check for --file parameter for GUI mode
             AutoLoadFile = GetFlagValue(args, "--file") ?? GetFlagValue(args, "-f");
-            if (!string.IsNullOrEmpty(AutoLoadFile))
-            {
-                Console.WriteLine($"[Program] Auto-load file: {AutoLoadFile}");
-            }
+            if (!string.IsNullOrEmpty(AutoLoadFile)) Console.WriteLine($"[Program] Auto-load file: {AutoLoadFile}");
 
             // GUI mode - launch WinUI app
             Console.WriteLine("[Program] Starting GUI mode...");
@@ -75,11 +70,12 @@ public static class Program
                 Console.WriteLine($"[FATAL] Inner message: {ex.InnerException.Message}");
                 Console.WriteLine($"[FATAL] Inner stack trace:\n{ex.InnerException.StackTrace}");
             }
+
             return 1;
         }
     }
 
-    private static void OnUnhandledException(object sender, System.UnhandledExceptionEventArgs e)
+    private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         var ex = e.ExceptionObject as Exception;
         Console.WriteLine($"[FATAL] Unhandled domain exception: {ex?.GetType().Name ?? "Unknown"}");
@@ -98,6 +94,7 @@ public static class Program
             Console.WriteLine($"[ERROR] Inner: {inner.GetType().Name}: {inner.Message}");
             Console.WriteLine($"[ERROR] Inner stack:\n{inner.StackTrace}");
         }
+
         // Don't terminate for task exceptions
         e.SetObserved();
     }
@@ -110,12 +107,9 @@ public static class Program
     private static string? GetFlagValue(string[] args, string flag)
     {
         for (var i = 0; i < args.Length - 1; i++)
-        {
             if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
-            {
                 return args[i + 1];
-            }
-        }
+
         return null;
     }
 

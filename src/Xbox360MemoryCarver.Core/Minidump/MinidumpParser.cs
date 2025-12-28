@@ -64,14 +64,13 @@ public class MinidumpInfo
     public long? FileOffsetToVirtualAddress(long fileOffset)
     {
         foreach (var region in MemoryRegions)
-        {
             if (fileOffset >= region.FileOffset &&
                 fileOffset < region.FileOffset + region.Size)
             {
                 var offsetInRegion = fileOffset - region.FileOffset;
                 return region.VirtualAddress + offsetInRegion;
             }
-        }
+
         return null;
     }
 
@@ -160,7 +159,8 @@ public class MinidumpInfo
         var sb = new StringBuilder();
         sb.AppendLine(CultureInfo.InvariantCulture, $"=== Minidump Diagnostic Report ===");
         sb.AppendLine(CultureInfo.InvariantCulture, $"Valid: {IsValid}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"Architecture: 0x{ProcessorArchitecture:X4} ({(IsXbox360 ? "Xbox 360 / PowerPC" : "Other")})");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"Architecture: 0x{ProcessorArchitecture:X4} ({(IsXbox360 ? "Xbox 360 / PowerPC" : "Other")})");
         sb.AppendLine(CultureInfo.InvariantCulture, $"Streams: {NumberOfStreams}");
         sb.AppendLine();
 
@@ -169,33 +169,33 @@ public class MinidumpInfo
         {
             var fileRange = GetModuleFileRange(module);
             var fileName = Path.GetFileName(module.Name);
-            sb.Append(CultureInfo.InvariantCulture, $"  {fileName,-30} Base: 0x{module.BaseAddress32:X8} Size: {module.Size,12:N0}");
+            sb.Append(CultureInfo.InvariantCulture,
+                $"  {fileName,-30} Base: 0x{module.BaseAddress32:X8} Size: {module.Size,12:N0}");
             if (fileRange.HasValue)
-            {
-                sb.AppendLine(CultureInfo.InvariantCulture, $" -> File: 0x{fileRange.Value.fileOffset:X8} ({fileRange.Value.size:N0} bytes captured)");
-            }
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $" -> File: 0x{fileRange.Value.fileOffset:X8} ({fileRange.Value.size:N0} bytes captured)");
             else
-            {
                 sb.AppendLine(" -> NOT IN DUMP");
-            }
         }
+
         sb.AppendLine();
 
         sb.AppendLine(CultureInfo.InvariantCulture, $"=== Memory Regions ({MemoryRegions.Count}) ===");
         var totalCaptured = MemoryRegions.Sum(r => r.Size);
-        sb.AppendLine(CultureInfo.InvariantCulture, $"Total memory captured: {totalCaptured:N0} bytes ({totalCaptured / (1024.0 * 1024.0):F2} MB)");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"Total memory captured: {totalCaptured:N0} bytes ({totalCaptured / (1024.0 * 1024.0):F2} MB)");
 
         // Show first and last few regions
         var regionsToShow = MemoryRegions.Take(5).Concat(MemoryRegions.TakeLast(5)).Distinct().ToList();
         foreach (var region in regionsToShow.OrderBy(r => r.FileOffset))
         {
             var va32 = (uint)(region.VirtualAddress & 0xFFFFFFFF);
-            sb.AppendLine(CultureInfo.InvariantCulture, $"  VA: 0x{va32:X8} Size: {region.Size,12:N0} File: 0x{region.FileOffset:X8}");
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"  VA: 0x{va32:X8} Size: {region.Size,12:N0} File: 0x{region.FileOffset:X8}");
         }
+
         if (MemoryRegions.Count > 10)
-        {
             sb.AppendLine(CultureInfo.InvariantCulture, $"  ... ({MemoryRegions.Count - 10} more regions) ...");
-        }
 
         return sb.ToString();
     }
@@ -207,13 +207,14 @@ public class MinidumpInfo
 /// </summary>
 public static class MinidumpParser
 {
+    // Stream types
+    private const uint ModuleListStream = 4; // MINIDUMP_MODULE_LIST
+    private const uint SystemInfoStream = 7; // MINIDUMP_SYSTEM_INFO
+
+    private const uint Memory64ListStream = 9; // MINIDUMP_MEMORY64_LIST
+
     // Minidump signature "MDMP"
     private static readonly byte[] MinidumpSignature = [0x4D, 0x44, 0x4D, 0x50];
-
-    // Stream types
-    private const uint ModuleListStream = 4;      // MINIDUMP_MODULE_LIST
-    private const uint SystemInfoStream = 7;      // MINIDUMP_SYSTEM_INFO
-    private const uint Memory64ListStream = 9;    // MINIDUMP_MEMORY64_LIST
 
     /// <summary>
     ///     Parse a minidump file to extract module information.
@@ -230,16 +231,10 @@ public static class MinidumpParser
     public static MinidumpInfo Parse(Stream stream)
     {
         var headerBuffer = new byte[32];
-        if (stream.Read(headerBuffer, 0, 32) < 32)
-        {
-            return new MinidumpInfo { IsValid = false };
-        }
+        if (stream.Read(headerBuffer, 0, 32) < 32) return new MinidumpInfo { IsValid = false };
 
         // Validate signature
-        if (!headerBuffer.AsSpan(0, 4).SequenceEqual(MinidumpSignature))
-        {
-            return new MinidumpInfo { IsValid = false };
-        }
+        if (!headerBuffer.AsSpan(0, 4).SequenceEqual(MinidumpSignature)) return new MinidumpInfo { IsValid = false };
 
         // Parse header (all little-endian)
         // Offset 4: Version (uint16)
@@ -249,9 +244,7 @@ public static class MinidumpParser
         var streamDirectoryRva = BinaryUtils.ReadUInt32LE(headerBuffer, 12);
 
         if (numberOfStreams == 0 || numberOfStreams > 100 || streamDirectoryRva == 0)
-        {
             return new MinidumpInfo { IsValid = false };
-        }
 
         // Read stream directory
         var directorySize = (int)(numberOfStreams * 12); // Each entry is 12 bytes
@@ -260,9 +253,7 @@ public static class MinidumpParser
         {
             stream.Seek(streamDirectoryRva, SeekOrigin.Begin);
             if (stream.Read(directoryBuffer, 0, directorySize) < directorySize)
-            {
                 return new MinidumpInfo { IsValid = false };
-            }
 
             var result = new MinidumpInfo
             {
@@ -307,7 +298,7 @@ public static class MinidumpParser
         if (stream.Read(buffer, 0, 4) < 4) return;
 
         // First 2 bytes are ProcessorArchitecture
-        result.ProcessorArchitecture = BinaryUtils.ReadUInt16LE(buffer, 0);
+        result.ProcessorArchitecture = BinaryUtils.ReadUInt16LE(buffer);
     }
 
     private static void ParseModuleList(Stream stream, uint rva, MinidumpInfo result)
@@ -318,7 +309,7 @@ public static class MinidumpParser
         var countBuffer = new byte[4];
         if (stream.Read(countBuffer, 0, 4) < 4) return;
 
-        var numberOfModules = BinaryUtils.ReadUInt32LE(countBuffer, 0);
+        var numberOfModules = BinaryUtils.ReadUInt32LE(countBuffer);
         if (numberOfModules == 0 || numberOfModules > 1000) return;
 
         // Each MINIDUMP_MODULE is 108 bytes
@@ -334,10 +325,7 @@ public static class MinidumpParser
             {
                 var offset = i * moduleEntrySize;
                 var module = ParseModule(stream, modulesBuffer, offset);
-                if (module != null)
-                {
-                    result.Modules.Add(module);
-                }
+                if (module != null) result.Modules.Add(module);
             }
         }
         finally
@@ -359,7 +347,7 @@ public static class MinidumpParser
         var headerBuffer = new byte[16];
         if (stream.Read(headerBuffer, 0, 16) < 16) return;
 
-        var numberOfRanges = BinaryUtils.ReadUInt64LE(headerBuffer, 0);
+        var numberOfRanges = BinaryUtils.ReadUInt64LE(headerBuffer);
         var baseRva = (long)BinaryUtils.ReadUInt64LE(headerBuffer, 8);
 
         if (numberOfRanges == 0 || numberOfRanges > 10000) return;
@@ -445,7 +433,7 @@ public static class MinidumpParser
             var lengthBuffer = new byte[4];
             if (stream.Read(lengthBuffer, 0, 4) < 4) return null;
 
-            var length = (int)BinaryUtils.ReadUInt32LE(lengthBuffer, 0);
+            var length = (int)BinaryUtils.ReadUInt32LE(lengthBuffer);
             if (length == 0 || length > 520) return null; // Max path * 2 for unicode
 
             var stringBuffer = new byte[length];

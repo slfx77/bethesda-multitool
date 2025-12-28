@@ -198,10 +198,7 @@ public class DdxParser : IFileParser
             ["uncompressedSize"] = uncompressedSize
         };
 
-        if (texturePath != null)
-        {
-            metadata["texturePath"] = texturePath;
-        }
+        if (texturePath != null) metadata["texturePath"] = texturePath;
 
         return new ParseResult
         {
@@ -234,7 +231,6 @@ public class DdxParser : IFileParser
         // Look for ".ddx" (case insensitive) which would mark the end of a path
         // Search from the end backwards to find the closest match
         for (var i = searchLength - 4; i >= 0; i--)
-        {
             // Check for ".ddx" or ".DDX" 
             if ((searchArea[i] == '.' || searchArea[i] == 0x2E) &&
                 (searchArea[i + 1] == 'd' || searchArea[i + 1] == 'D') &&
@@ -255,14 +251,10 @@ public class DdxParser : IFileParser
 
                         // Validate it looks like a path and clean it up
                         var cleanPath = CleanupTexturePath(path);
-                        if (cleanPath != null)
-                        {
-                            return cleanPath;
-                        }
+                        if (cleanPath != null) return cleanPath;
                     }
                 }
             }
-        }
 
         return null;
     }
@@ -278,17 +270,11 @@ public class DdxParser : IFileParser
             var b = data[i];
 
             // Stop at null terminator or non-path characters
-            if (b == 0 || b < 0x20 || b > 0x7E)
-            {
-                return i + 1;
-            }
+            if (b == 0 || b < 0x20 || b > 0x7E) return i + 1;
 
             // Also stop at characters that wouldn't be in a path
             // but allow: letters, digits, underscore, dash, dot, backslash, forward slash
-            if (!IsValidPathChar((char)b))
-            {
-                return i + 1;
-            }
+            if (!IsValidPathChar((char)b)) return i + 1;
         }
 
         return 0;
@@ -351,10 +337,8 @@ public class DdxParser : IFileParser
                     break;
                 }
             }
-            if (firstValidIndex > 0)
-            {
-                path = path[firstValidIndex..];
-            }
+
+            if (firstValidIndex > 0) path = path[firstValidIndex..];
         }
 
         // Final validation
@@ -362,9 +346,8 @@ public class DdxParser : IFileParser
 
         // Check for reasonable characters
         foreach (var c in path)
-        {
-            if (!IsValidPathChar(c)) return null;
-        }
+            if (!IsValidPathChar(c))
+                return null;
 
         return path;
     }
@@ -701,13 +684,9 @@ public class XexParser : IFileParser
             // Header ID 0x00010001 contains image size info
             // Header ID 0x00018002 is file size
             if (headerId == 0x00010001 || headerId == 0x00018002)
-            {
                 // For small headers, data is inline
                 if ((headerId & 0xFF) <= 1)
-                {
                     return (int)headerData;
-                }
-            }
 
             headerOffset += 8;
         }

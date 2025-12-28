@@ -31,14 +31,14 @@ public static class FileTypeColors
     // Red (0°), Orange (30°), Yellow (60°), Green (120°), Cyan (180°), Blue (240°), Purple (270°), Magenta (300°)
     public static readonly LegendCategory[] LegendCategories =
     [
-        new("Texture", 0xFF2ECC71),   // Green (120°) - DDX/DDS
-        new("PNG", 0xFF1ABC9C),       // Teal/Cyan (170°) - PNG
-        new("Audio", 0xFFE74C3C),     // Red (5°) - XMA/LIP
-        new("Model", 0xFFF1C40F),     // Yellow (50°) - NIF
-        new("Module", 0xFF9B59B6),    // Purple (280°) - XEX
-        new("Script", 0xFFE67E22),    // Orange (30°) - Scripts
-        new("Xbox/XUI", 0xFF3498DB),  // Blue (210°) - XDBF/XUI
-        new("Plugin", 0xFFFF6B9D)     // Pink/Magenta (340°) - ESP
+        new("Texture", 0xFF2ECC71), // Green (120°) - DDX/DDS
+        new("PNG", 0xFF1ABC9C), // Teal/Cyan (170°) - PNG
+        new("Audio", 0xFFE74C3C), // Red (5°) - XMA/LIP
+        new("Model", 0xFFF1C40F), // Yellow (50°) - NIF
+        new("Module", 0xFF9B59B6), // Purple (280°) - XEX
+        new("Script", 0xFFE67E22), // Orange (30°) - Scripts
+        new("Xbox/XUI", 0xFF3498DB), // Blue (210°) - XDBF/XUI
+        new("Plugin", 0xFFFF6B9D) // Pink/Magenta (340°) - ESP
     ];
 
     // Mapping from normalized type names to colors

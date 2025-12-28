@@ -41,7 +41,8 @@ public class MemoryDumpAnalyzer
 
         if (minidumpInfo.IsValid)
         {
-            Console.WriteLine($"[Minidump] {minidumpInfo.Modules.Count} modules, {minidumpInfo.MemoryRegions.Count} memory regions, Xbox 360: {minidumpInfo.IsXbox360}");
+            Console.WriteLine(
+                $"[Minidump] {minidumpInfo.Modules.Count} modules, {minidumpInfo.MemoryRegions.Count} memory regions, Xbox 360: {minidumpInfo.IsXbox360}");
 
             // Add modules directly to results
             foreach (var module in minidumpInfo.Modules)
@@ -52,7 +53,8 @@ public class MemoryDumpAnalyzer
                 if (fileRange.HasValue)
                 {
                     var captured = fileRange.Value.size;
-                    Console.WriteLine($"[Minidump]   Module: {fileName} at 0x{fileRange.Value.fileOffset:X8}, captured: {captured:N0} bytes");
+                    Console.WriteLine(
+                        $"[Minidump]   Module: {fileName} at 0x{fileRange.Value.fileOffset:X8}, captured: {captured:N0} bytes");
 
                     // Determine type based on extension
                     var fileType = fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
@@ -115,10 +117,7 @@ public class MemoryDumpAnalyzer
         // Sort all results by offset
         var sortedFiles = result.CarvedFiles.OrderBy(f => f.Offset).ToList();
         result.CarvedFiles.Clear();
-        foreach (var file in sortedFiles)
-        {
-            result.CarvedFiles.Add(file);
-        }
+        foreach (var file in sortedFiles) result.CarvedFiles.Add(file);
 
         stopwatch.Stop();
         result.AnalysisTime = stopwatch.Elapsed;
@@ -210,10 +209,8 @@ public class MemoryDumpAnalyzer
 
                         // Extract filename from texture path if available
                         string? fileName = null;
-                        if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) && pathObj is string texturePath)
-                        {
-                            fileName = texturePath;
-                        }
+                        if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) &&
+                            pathObj is string texturePath) fileName = texturePath;
 
                         return (length, fileName);
                     }
