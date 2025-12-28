@@ -1,163 +1,169 @@
 # Xbox 360 Memory Carver
 
-A high-performance WinUI 3 desktop application for extracting usable data from Xbox 360 memory dumps and converting DDX texture files to DDS format.
+A cross-platform tool for Xbox 360 memory dump analysis, file carving, and DDX texture conversion. Features a **WinUI 3 GUI** on Windows and a **cross-platform CLI** for batch processing on Windows, Linux, and macOS.
+
+![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ## Features
 
--   **Modern GUI**: WinUI 3 desktop application with hex viewer and minimap
--   **High Performance**: Native C# implementation with parallel processing support
--   **XCompression Support**: Native Xbox 360 XMemCompress/XMemDecompress via XnaNative.dll from XNA Framework
--   **Multiple File Format Support**: Carves DDS textures, XMA audio, NIF models, Bethesda scripts, and more
--   **Xbox 360 Optimized**: Handles Xbox 360-specific formats including big-endian byte order and swizzled textures
--   **Memory Efficient**: Processes large dumps in chunks to prevent excessive memory usage
--   **Batch Processing**: Process multiple dump files at once
+### GUI (Windows only)
+- **Hex Viewer**: Virtual-scrolling hex editor supporting 200MB+ files
+- **Minimap**: VS Code-style overview with file type region coloring
+- **Analysis Tab**: File signature detection with filtering and statistics
+- **Extraction**: Carve and export detected files with DDX→DDS conversion
 
-## Supported File Types
+### CLI (Cross-platform)
+- Batch processing of memory dumps
+- Automatic file type detection and extraction
+- DDX to DDS texture conversion
+- Verbose progress reporting
 
-### Textures
+### Supported File Types
 
-| Type       | Extension | Description                               |
-| ---------- | --------- | ----------------------------------------- |
-| `dds`      | .dds      | DirectDraw Surface textures               |
-| `ddx_3xdo` | .ddx      | Xbox 360 DDX textures (3XDO format)       |
-| `ddx_3xdr` | .ddx      | Xbox 360 DDX textures (3XDR engine-tiled) |
+| Category | Formats |
+|----------|---------|
+| Textures | DDX (3XDO/3XDR), DDS, PNG |
+| Audio | XMA (Xbox Media Audio), LIP (lip sync) |
+| Models | NIF (NetImmerse/Gamebryo) |
+| Scripts | ObScript (Bethesda scripting) |
+| Executables | XEX (Xbox Executable) |
+| Data | ESP/ESM (Bethesda plugins), XUI (Xbox UI), XDBF |
 
-### 3D Models & Animations
+## Installation
 
-| Type  | Extension | Description              |
-| ----- | --------- | ------------------------ |
-| `nif` | .nif      | Gamebryo 3D models       |
-| `kf`  | .kf       | Gamebryo animation files |
-| `egm` | .egm      | FaceGen morph files      |
-| `egt` | .egt      | FaceGen tint files       |
+### Pre-built Releases
 
-### Audio
+Download from [Releases](https://github.com/slfx77/xbox-360-minidump-extractor/releases):
 
-| Type  | Extension | Description              |
-| ----- | --------- | ------------------------ |
-| `xma` | .xma      | Xbox Media Audio files   |
-| `ogg` | .ogg      | Ogg Vorbis audio files   |
-| `lip` | .lip      | Lip-sync animation files |
+| Platform | Download |
+|----------|----------|
+| Windows GUI | `Xbox360MemoryCarver-Windows-GUI-x64.zip` |
+| Windows CLI | `Xbox360MemoryCarver-Windows-CLI-x64.zip` |
+| Linux CLI | `Xbox360MemoryCarver-Linux-CLI-x64.tar.gz` |
 
-### Scripts
+### Build from Source
 
-| Type         | Extension | Description                               |
-| ------------ | --------- | ----------------------------------------- |
-| `script_scn` | .txt      | Bethesda script files (scn format)        |
-| `script_sn`  | .txt      | Bethesda script files (ScriptName format) |
-
-### Xbox 360 System Formats
-
-| Type   | Extension | Description         |
-| ------ | --------- | ------------------- |
-| `xex`  | .xex      | Xbox 360 Executable |
-| `xdbf` | .xdbf     | Xbox Dashboard File |
-| `xuis` | .xuis     | Xbox UI Scene/Skin  |
-
-## Requirements
-
--   .NET 10.0 or later
--   Windows 10/11 (WinUI 3 requires Windows 10 version 1809 or later)
--   Microsoft XNA Framework 4.0 (for XnaNative.dll decompression support)
-
-## Building
+Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```bash
+# Clone with submodules
+git clone --recursive https://github.com/slfx77/xbox-360-minidump-extractor.git
+cd xbox-360-minidump-extractor
+
+# Build all targets
 dotnet build -c Release
+
+# Run GUI (Windows only)
+dotnet run --project src/Xbox360MemoryCarver -f net10.0-windows10.0.19041.0
+
+# Run CLI (cross-platform)
+dotnet run --project src/Xbox360MemoryCarver -f net10.0 -- --help
 ```
 
-Or build from solution:
+## Usage
+
+### GUI Mode (Windows)
+
+Run the application without arguments to launch the GUI:
 
 ```bash
-dotnet build Xbox360MemoryCarver.slnx -c Release
+Xbox360MemoryCarver.exe
 ```
 
-## Running the Application
+Or auto-load a dump file:
 
 ```bash
-dotnet run --project src/Xbox360MemoryCarver.App
+Xbox360MemoryCarver.exe path/to/dump.dmp
 ```
 
-Or run the built executable directly:
+### CLI Mode
 
 ```bash
-.\src\Xbox360MemoryCarver.App\bin\Release\net10.0-windows10.0.22621.0\win-x64\Xbox360MemoryCarver.App.exe
+# Basic extraction
+Xbox360MemoryCarver dump.dmp -o output_folder
+
+# With options
+Xbox360MemoryCarver dump.dmp -o output -t ddx xma nif -v --convert-ddx
+
+# Windows: Force CLI mode (otherwise defaults to GUI)
+Xbox360MemoryCarver --no-gui dump.dmp -o output
 ```
 
-## DDXConv Command-Line Tool
+#### CLI Options
 
-The DDXConv command-line tool can also be used standalone for batch DDX to DDS conversion:
+| Option | Description |
+|--------|-------------|
+| `<input>` | Path to memory dump file (.dmp) |
+| `-o, --output` | Output directory (default: `output`) |
+| `-n, --no-gui` | Force CLI mode on Windows |
+| `-t, --types` | File types to extract (e.g., `ddx xma nif`) |
+| `--convert-ddx` | Convert DDX textures to DDS (default: true) |
+| `-v, --verbose` | Enable verbose output |
+| `--max-files` | Max files per type (default: 10000) |
+
+## DDXConv Standalone Tool
+
+The DDXConv command-line tool can also be used standalone for DDX to DDS conversion:
 
 ```bash
 # Single file conversion
-dotnet run --project src/DDXConv/DDXConv -- path/to/texture.ddx output.dds
+dotnet run --project src/DDXConv/DDXConv -- texture.ddx output.dds
 
 # Batch conversion
-dotnet run --project src/DDXConv/DDXConv -- path/to/ddx/folder output/folder
+dotnet run --project src/DDXConv/DDXConv -- ddx_folder/ output_folder/
 ```
 
-### DDXConv Options
+## Technical Details
+
+### Xbox 360 Specifics
+- **DDX Formats**: 3XDO (standard compressed), 3XDR (alternate tiling - experimental)
+- **Architecture**: PowerPC (processor type 0x3 in minidumps)
+- **Texture Tiling**: Morton-order (Z-order) swizzling on Xbox 360 GPU
+- **Compression**: XMemCompress/XMemDecompress via XnaNative.dll
+
+### Minidump Structure
+- Stream type 4: `MINIDUMP_MODULE_LIST` - Loaded module info with accurate sizes
+- Stream type 9: `MINIDUMP_MEMORY64_LIST` - Memory region descriptors
+- Modules extracted from metadata have correct sizes; signature carving uses heuristics
+
+### XCompression Setup
+
+For DDX texture conversion, install Microsoft XNA Framework 4.0. The application uses `XnaNative.dll` for LZX decompression. Without it, DDX conversion will fail.
+
+## Project Structure
 
 ```
-Standard Options:
-  --pc-friendly, -pc   Produce PC-ready normal maps (batch conversion only)
-  --regen-mips, -g     Regenerate mip levels from top level
+src/Xbox360MemoryCarver/
+├── Core/                    # Cross-platform carving logic
+│   ├── Carving/             # File carving engine
+│   ├── Converters/          # DDX conversion
+│   ├── Minidump/            # Minidump parsing
+│   ├── Models/              # File signatures, metadata
+│   ├── Parsers/             # File format parsers
+│   └── Utils/               # Binary utilities
+├── *.xaml / *.xaml.cs       # WinUI 3 GUI (Windows only)
+├── Program.cs               # Entry point (CLI/GUI switch)
+└── GuiEntryPoint.cs         # GUI bootstrap (Windows only)
 
-Memory Dump Options:
-  --memory, -m         Use memory texture parser (handles memory dump layouts)
-  --atlas, -a          Save full untiled atlas as separate DDS file
-
-Developer Options:
-  --verbose, -v        Enable verbose output
+src/DDXConv/                 # DDX conversion submodule
 ```
 
-Options:
--o, --output <path> Output directory (default: "output")
---ddx Convert DDX textures to DDS instead of carving dumps
---convert-ddx Automatically convert carved DDX textures to DDS during carving (default: true)
--t, --types <types> File types to extract (e.g., -t dds ddx xma)
--v, --verbose Enable verbose output
---chunk-size <size> Chunk size in bytes (default: 10485760)
---max-files <count> Maximum files per type (default: 10000)
---help Show help information
---version Show version information
+## Contributing
 
-```
+Contributions are welcome! Please ensure:
 
-## XCompression Setup
-
-For full Xbox 360 compressed texture support, install Microsoft XNA Framework 4.0. The application uses XnaNative.dll from the XNA Framework for LZX decompression.
-
-If XNA Framework is not installed, DDX files cannot be converted (the converter subprocess will fail).
-
-## Technical Notes
-
-### DDX Format
-
-- **3XDO**: Standard compressed format - fully supported
-- **3XDR**: Engine-tiled format - experimental support (uses different tiling pattern)
-
-### Texture Processing
-
-- Xbox 360 textures use Morton/Z-order (swizzled) memory layout
-- Big-endian byte order requires swapping for PC compatibility
-- Block-compressed formats (DXT1/3/5, ATI1/2) require special handling
-
-### Performance Tips
-
-- Use SSD storage for large dump files
-- Increase chunk size for better throughput on systems with more RAM
-- Filter to specific file types if you only need certain formats
+- Code follows existing style (file-scoped namespaces, `_camelCase` fields)
+- All I/O operations are async
+- New file types include parser, signature, and color mapping
 
 ## License
 
-MIT License - See LICENSE file for details.
+MIT License - See [LICENSE](LICENSE) file for details.
 
-## Credits
+## Acknowledgments
 
-Based on algorithms from:
-
-- [DDXConv](https://github.com/kran27/DDXConv)
-- [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia)
-- [XCompression](https://github.com/gibbed/XCompression)
-```
+- [DDXConv](https://github.com/slfx77/DDXConv) - DDX texture conversion
+- [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia) - Format documentation
+- [XCompression](https://github.com/gibbed/XCompression) - LZX decompression reference

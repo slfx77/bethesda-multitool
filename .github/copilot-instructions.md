@@ -2,35 +2,61 @@
 
 ## Project Overview
 
-.NET 10.0 application for Xbox 360 memory dump analysis, file carving, and DDX texture conversion. Features both a **WinUI 3 GUI** for interactive analysis and a **CLI mode** for batch processing.
+.NET 10.0 application for Xbox 360 memory dump analysis, file carving, and DDX texture conversion. Features both a **WinUI 3 GUI** (Windows only) and a **cross-platform CLI** for batch processing.
 
 ## Architecture
 
-### Projects
-- **Xbox360MemoryCarver.App** - WinUI 3 desktop application with dual GUI/CLI mode
-- **Xbox360MemoryCarver.Core** - Core library with carving logic, file signatures, and analysis
-- **DDXConv** - Submodule for DDX to DDS texture conversion
+### Single Unified Project
+The project uses multi-targeting to produce both GUI and CLI builds from a single codebase:
+
+- **`net10.0`** - Cross-platform CLI (Windows, Linux, macOS)
+- **`net10.0-windows10.0.19041.0`** - Windows GUI with WinUI 3
 
 ### Key Components
 - `MemoryCarver` - Main file carving engine with signature-based detection
 - `FileSignatures` - Defines magic bytes and file type detection rules
-- `MinidumpExtractor` - Parses Xbox 360 minidump structures for module extraction
+- `MinidumpParser` - Parses Xbox 360 minidump structures for module extraction
 - `HexViewerControl` / `HexMinimapControl` - Interactive hex viewing with VS Code-style minimap
 - `FileTypeColors` - Centralized color palette for file type visualization
+- `FileTypeMetadata` - Single source of truth for file type categories and display names
 
-## GUI Features (WinUI 3)
+### Submodules
+- **DDXConv** - DDX to DDS texture conversion tool
+
+## GUI Features (WinUI 3, Windows only)
 
 - **Hex Viewer**: Virtual-scrolling hex editor supporting 200MB+ files
 - **Minimap**: VS Code-style overview with file type region coloring
 - **Analysis Tab**: File signature detection with filtering and statistics
 - **Extraction**: Carve and export detected files with DDX→DDS conversion
 
-## CLI Mode
+## CLI Mode (Cross-platform)
 
-Run with `--no-gui` or `-n` flag for headless operation:
 ```bash
-Xbox360MemoryCarver.App.exe --no-gui <input.dmp> -o <output_dir> [-v]
-Xbox360MemoryCarver.App.exe --no-gui --ddx <input.ddx> -o <output.dds>
+# Linux/macOS
+./Xbox360MemoryCarver dump.dmp -o output_dir -v
+
+# Windows (force CLI mode)
+Xbox360MemoryCarver.exe --no-gui dump.dmp -o output_dir -v
+```
+
+## Build Commands
+
+```bash
+# Build all targets
+dotnet build -c Release
+
+# Run GUI (Windows only)
+dotnet run -f net10.0-windows10.0.19041.0
+
+# Run CLI (any platform)
+dotnet run -f net10.0 -- dump.dmp -o output
+
+# Publish cross-platform CLI
+dotnet publish -c Release -f net10.0 -r linux-x64 --self-contained
+
+# Publish Windows GUI
+dotnet publish -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained
 ```
 
 ## Technical Notes
@@ -48,23 +74,11 @@ Xbox360MemoryCarver.App.exe --no-gui --ddx <input.ddx> -o <output.dds>
 
 ### Supported File Types
 - **Textures**: DDX (3XDO/3XDR), DDS, PNG
-- **Audio**: XMA (Xbox Media Audio)
+- **Audio**: XMA (Xbox Media Audio), LIP (lip sync)
 - **Models**: NIF (NetImmerse/Gamebryo)
+- **Scripts**: ObScript (Bethesda scripting)
 - **Executables**: XEX (Xbox Executable)
-- **Data**: ESP/ESM (Bethesda plugins), XUI (Xbox UI), XDBF, LIP (lip sync)
-
-## Build Instructions
-
-```bash
-# Build all projects
-dotnet build -c Release
-
-# Run GUI
-dotnet run --project src/Xbox360MemoryCarver.App
-
-# Run CLI mode
-dotnet run --project src/Xbox360MemoryCarver.App -- --no-gui <input.dmp> -o <output_dir>
-```
+- **Data**: ESP/ESM (Bethesda plugins), XUI (Xbox UI), XDBF
 
 ## Code Style & Quality
 
@@ -75,10 +89,9 @@ dotnet run --project src/Xbox360MemoryCarver.App -- --no-gui <input.dmp> -o <out
 - **Private field naming**: `_camelCase` with underscore prefix
 - **Async methods**: Suffix with `Async` (e.g., `LoadFileAsync`)
 
-### Analyzers (via Directory.Build.props)
-- **Roslyn Analyzers**: Built-in .NET code analysis (latest-recommended)
-- **SonarAnalyzer.CSharp**: Security, bugs, code smells
-- **Roslynator**: 500+ additional analyzers
+### Conditional Compilation
+- `#if WINDOWS_GUI` - Code only included in Windows GUI build
+- GUI files are excluded from `net10.0` build via csproj conditions
 
 ### WinUI 3 Best Practices
 - Use `DispatcherQueue.TryEnqueue()` for UI thread access from background tasks
@@ -87,7 +100,7 @@ dotnet run --project src/Xbox360MemoryCarver.App -- --no-gui <input.dmp> -o <out
 - Use `async void` only for event handlers; prefer `async Task` elsewhere
 
 ### Patterns Used
-- **MVVM-lite**: Code-behind for simpler controls, consider ViewModels for complex state
+- **MVVM-lite**: Code-behind for simpler controls
 - **Async/await**: All I/O operations are async; never block UI thread
 - **IProgress<T>**: Report progress from long-running operations
 - **CancellationToken**: Support cancellation for all carving/analysis operations
@@ -96,43 +109,39 @@ dotnet run --project src/Xbox360MemoryCarver.App -- --no-gui <input.dmp> -o <out
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| Microsoft.WindowsAppSDK | 1.6.x | WinUI 3 framework |
-| CommunityToolkit.WinUI | 7.1.x | Additional WinUI controls |
+| Microsoft.WindowsAppSDK | 1.6.x | WinUI 3 framework (Windows only) |
+| CommunityToolkit.WinUI | 8.x | Additional WinUI controls (Windows only) |
 | System.CommandLine | 2.0.0-beta4 | CLI argument parsing |
-| SonarAnalyzer.CSharp | 10.x | Code analysis |
-| Roslynator.Analyzers | 4.x | Additional linting |
 
 ## Project Structure
 
 ```
-src/
-├── Xbox360MemoryCarver.App/     # WinUI 3 application
-│   ├── Program.cs               # Entry point (CLI/GUI switch)
-│   ├── MainWindow.xaml(.cs)     # Main window with tabs
-│   ├── SingleFileTab.xaml(.cs)  # File analysis tab
-│   ├── HexViewerControl.xaml    # Virtual hex viewer
-│   ├── HexMinimapControl.xaml   # Minimap visualization
-│   └── Converters/              # XAML value converters
-├── Xbox360MemoryCarver.Core/    # Core library
-│   ├── MemoryCarver.cs          # File carving engine
-│   ├── FileSignatures.cs        # Magic byte definitions
-│   ├── FileTypeColors.cs        # Color palette
-│   └── Minidump/                # Minidump parsing
-└── DDXConv/                     # DDX conversion submodule
-Sample/
-├── MemoryDump/                  # Test dump files
-└── Texture/                     # Sample textures
+src/Xbox360MemoryCarver/
+├── Core/                        # Cross-platform carving logic
+│   ├── Carving/                 # MemoryCarver, CarveManifest
+│   ├── Converters/              # DDX subprocess converter
+│   ├── Minidump/                # Minidump parsing
+│   ├── Models/                  # FileSignatures, FileTypeMetadata
+│   ├── Parsers/                 # DDX, DDS, XMA, NIF, Script parsers
+│   └── Utils/                   # BinaryUtils
+├── *.xaml / *.xaml.cs           # WinUI 3 GUI (Windows only)
+├── Program.cs                   # Entry point (CLI/GUI switch)
+├── GuiEntryPoint.cs             # GUI bootstrap (Windows only)
+├── FileTypeColors.cs            # UI color mappings (Windows only)
+└── Xbox360MemoryCarver.csproj   # Multi-target project file
+
+src/DDXConv/                     # DDX conversion submodule
 ```
 
 ## Common Tasks
 
 ### Adding a New File Signature
-1. Add magic bytes to `FileSignatures.cs` in `AllSignatures` list
-2. Add color mapping in `FileTypeColors.cs`
-3. Update file type filter in `SingleFileTab.xaml.cs` if needed
+1. Add magic bytes to `Core/Models/FileSignatures.cs`
+2. Add parser to `Core/Parsers/` and register in `ParserFactory.cs`
+3. Add to `Core/Models/FileTypeMetadata.cs` with category and display name
+4. Color is automatically derived from category in `FileTypeColors.cs`
 
-### Debugging CLI Mode
-Since it's a WinExe, run through cmd for console output:
+### Testing CLI on Windows
+The Windows build defaults to GUI mode. Force CLI with `--no-gui`:
 ```bash
-cmd /c "Xbox360MemoryCarver.App.exe --no-gui <args> 2>&1"
-```
+Xbox360MemoryCarver.exe --no-gui dump.dmp -o output -v
