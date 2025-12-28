@@ -12,36 +12,111 @@ namespace Xbox360MemoryCarver.App;
 /// <summary>
 ///     Entry point that supports both GUI and CLI modes.
 ///     Use --no-gui for command-line carving without launching the UI.
+///     Use --file to auto-load a file for analysis in GUI mode.
 /// </summary>
 public static class Program
 {
     private const int ATTACH_PARENT_PROCESS = -1;
+
+    /// <summary>
+    ///     File path to auto-load when GUI starts (set via --file parameter).
+    /// </summary>
+    public static string? AutoLoadFile { get; private set; }
 
     [STAThread]
     public static async Task<int> Main(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        // Check if running in CLI mode
-        if (args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n"))) return await RunCliAsync(args);
+        // Attach to console early for crash logging
+        AttachConsole(ATTACH_PARENT_PROCESS);
 
-        // GUI mode - launch WinUI app
-        ComWrappersSupport.InitializeComWrappers();
-        Application.Start(p =>
+        // Set up global exception handlers
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
+        try
         {
-            _ = p; // Suppress unused parameter warning
-            var context = new DispatcherQueueSynchronizationContext(
-                DispatcherQueue.GetForCurrentThread());
-            SynchronizationContext.SetSynchronizationContext(context);
-            _ = new App();
-        });
+            // Check if running in CLI mode
+            if (args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n")))
+            {
+                return await RunCliAsync(args);
+            }
 
-        return 0;
+            // Check for --file parameter for GUI mode
+            AutoLoadFile = GetFlagValue(args, "--file") ?? GetFlagValue(args, "-f");
+            if (!string.IsNullOrEmpty(AutoLoadFile))
+            {
+                Console.WriteLine($"[Program] Auto-load file: {AutoLoadFile}");
+            }
+
+            // GUI mode - launch WinUI app
+            Console.WriteLine("[Program] Starting GUI mode...");
+            ComWrappersSupport.InitializeComWrappers();
+            Application.Start(p =>
+            {
+                _ = p; // Suppress unused parameter warning
+                var context = new DispatcherQueueSynchronizationContext(
+                    DispatcherQueue.GetForCurrentThread());
+                SynchronizationContext.SetSynchronizationContext(context);
+                _ = new App();
+            });
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FATAL] Application crashed: {ex.GetType().Name}");
+            Console.WriteLine($"[FATAL] Message: {ex.Message}");
+            Console.WriteLine($"[FATAL] Stack trace:\n{ex.StackTrace}");
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"[FATAL] Inner exception: {ex.InnerException.GetType().Name}");
+                Console.WriteLine($"[FATAL] Inner message: {ex.InnerException.Message}");
+                Console.WriteLine($"[FATAL] Inner stack trace:\n{ex.InnerException.StackTrace}");
+            }
+            return 1;
+        }
+    }
+
+    private static void OnUnhandledException(object sender, System.UnhandledExceptionEventArgs e)
+    {
+        var ex = e.ExceptionObject as Exception;
+        Console.WriteLine($"[FATAL] Unhandled domain exception: {ex?.GetType().Name ?? "Unknown"}");
+        Console.WriteLine($"[FATAL] Message: {ex?.Message ?? "No message"}");
+        Console.WriteLine($"[FATAL] Stack trace:\n{ex?.StackTrace ?? "No stack trace"}");
+        Console.WriteLine($"[FATAL] IsTerminating: {e.IsTerminating}");
+    }
+
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        Console.WriteLine($"[ERROR] Unobserved task exception: {e.Exception.GetType().Name}");
+        Console.WriteLine($"[ERROR] Message: {e.Exception.Message}");
+        Console.WriteLine($"[ERROR] Stack trace:\n{e.Exception.StackTrace}");
+        foreach (var inner in e.Exception.InnerExceptions)
+        {
+            Console.WriteLine($"[ERROR] Inner: {inner.GetType().Name}: {inner.Message}");
+            Console.WriteLine($"[ERROR] Inner stack:\n{inner.StackTrace}");
+        }
+        // Don't terminate for task exceptions
+        e.SetObserved();
     }
 
     private static bool HasFlag(string[] args, string flag)
     {
         return args.Any(arg => arg.Equals(flag, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? GetFlagValue(string[] args, string flag)
+    {
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
+            {
+                return args[i + 1];
+            }
+        }
+        return null;
     }
 
     private static async Task<int> RunCliAsync(string[] args)

@@ -5,6 +5,7 @@ namespace Xbox360MemoryCarver.App;
 /// <summary>
 ///     Single source of truth for file type colors used across the application.
 ///     Used by the legend, hex viewer, and minimap to ensure consistency.
+///     Colors are distributed across the hue spectrum for maximum visual distinction.
 /// </summary>
 public static class FileTypeColors
 {
@@ -23,51 +24,55 @@ public static class FileTypeColors
     /// <summary>
     ///     Color used for unknown/untyped regions.
     /// </summary>
-    public static readonly Color UnknownColor = FromArgb(0xFF424242);
+    public static readonly Color UnknownColor = FromArgb(0xFF3D3D3D);
 
     // Legend categories with display names and colors
+    // Colors distributed across the hue spectrum (0°-360°) for maximum distinction:
+    // Red (0°), Orange (30°), Yellow (60°), Green (120°), Cyan (180°), Blue (240°), Purple (270°), Magenta (300°)
     public static readonly LegendCategory[] LegendCategories =
     [
-        new("Texture", 0xFF4CAF50), // DDX/DDS - Green
-        new("PNG", 0xFF81C784), // PNG - Light Green
-        new("Audio", 0xFFE91E63), // XMA/LIP - Pink
-        new("Model", 0xFFFFC107), // NIF - Yellow
-        new("Module", 0xFF9C27B0), // XEX - Purple
-        new("Script", 0xFFFF9800), // Scripts - Orange
-        new("Xbox/XUI", 0xFF3F51B5) // XDBF/XUI - Indigo
+        new("Texture", 0xFF2ECC71),   // Green (120°) - DDX/DDS
+        new("PNG", 0xFF1ABC9C),       // Teal/Cyan (170°) - PNG
+        new("Audio", 0xFFE74C3C),     // Red (5°) - XMA/LIP
+        new("Model", 0xFFF1C40F),     // Yellow (50°) - NIF
+        new("Module", 0xFF9B59B6),    // Purple (280°) - XEX
+        new("Script", 0xFFE67E22),    // Orange (30°) - Scripts
+        new("Xbox/XUI", 0xFF3498DB),  // Blue (210°) - XDBF/XUI
+        new("Plugin", 0xFFFF6B9D)     // Pink/Magenta (340°) - ESP
     ];
 
     // Mapping from normalized type names to colors
+    // Using the same hue-distributed palette
     public static Color GetColor(string normalizedTypeName)
     {
         return normalizedTypeName switch
         {
             // Textures (DDX/DDS) - Green
-            TypeDds or "ddx_3xdo" or "ddx_3xdr" => FromArgb(0xFF4CAF50),
+            TypeDds or "ddx_3xdo" or "ddx_3xdr" => FromArgb(0xFF2ECC71),
 
-            // PNG - Light Green
-            TypePng => FromArgb(0xFF81C784),
+            // PNG - Teal/Cyan
+            TypePng => FromArgb(0xFF1ABC9C),
 
-            // Audio - Pink
-            TypeXma or TypeLip => FromArgb(0xFFE91E63),
+            // Audio - Red
+            TypeXma or TypeLip => FromArgb(0xFFE74C3C),
 
             // Models - Yellow
-            TypeNif => FromArgb(0xFFFFC107),
+            TypeNif => FromArgb(0xFFF1C40F),
 
             // Modules/Executables - Purple
-            "xex" or TypeModule => FromArgb(0xFF9C27B0),
+            "xex" or TypeModule => FromArgb(0xFF9B59B6),
 
             // Scripts - Orange
-            "script_scn" or TypeObscript => FromArgb(0xFFFF9800),
+            "script_scn" or TypeObscript => FromArgb(0xFFE67E22),
 
-            // Xbox Dashboard/XUI - Indigo
-            TypeXdbf or TypeXui => FromArgb(0xFF3F51B5),
+            // Xbox Dashboard/XUI - Blue
+            TypeXdbf or TypeXui => FromArgb(0xFF3498DB),
 
-            // Game data (ESP) - Amber
-            TypeEsp => FromArgb(0xFFFFB74D),
+            // Game data (ESP) - Pink/Magenta
+            TypeEsp => FromArgb(0xFFFF6B9D),
 
-            // Unknown - Gray
-            _ => FromArgb(0xFF646464)
+            // Unknown - Dark Gray
+            _ => FromArgb(0xFF555555)
         };
     }
 
@@ -87,7 +92,8 @@ public static class FileTypeColors
             "png image" => TypePng,
             "xbox media audio (riff/xma)" => TypeXma,
             "netimmerse/gamebryo 3d model" => TypeNif,
-            "xbox 360 executable" or "xex" => TypeModule,
+            "xbox 360 executable" or "xex" or "xbox 360 dll" => TypeModule,
+            "xbox 360 module (exe)" or "xbox 360 module (dll)" => TypeModule,
             "xbox dashboard file" => TypeXdbf,
             "xui scene" or "xui binary" => TypeXui,
             "elder scrolls plugin" => TypeEsp,
@@ -110,7 +116,7 @@ public static class FileTypeColors
             _ when ContainsAny(lower, "png", "image") => TypePng,
             _ when ContainsAny(lower, "xma", "audio") => TypeXma,
             _ when ContainsAny(lower, "nif", "model") => TypeNif,
-            _ when ContainsAny(lower, "xex", "executable", "module") => TypeModule,
+            _ when ContainsAny(lower, "xex", "executable", "module", "dll") => TypeModule,
             _ when ContainsAny(lower, "script", "obscript") => TypeObscript,
             _ when lower.Contains("lip", StringComparison.Ordinal) => TypeLip,
             _ when ContainsAny(lower, "xdbf", "dashboard") => TypeXdbf,

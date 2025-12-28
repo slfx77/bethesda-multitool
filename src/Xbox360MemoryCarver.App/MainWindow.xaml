@@ -14,37 +14,71 @@
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <!--  Title Bar Area  -->
+    <!--  Custom title bar - compact, transparent for Mica  -->
     <Grid
+      x:Name="AppTitleBar"
       Grid.Row="0"
-      Padding="16,8"
-      Background="{ThemeResource SystemControlBackgroundChromeMediumBrush}">
+      Height="40"
+      Background="Transparent">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <!--  App icon  -->
+      <Image
+        Grid.Column="0"
+        Width="16"
+        Height="16"
+        Margin="12,0,0,0"
+        Source="Assets/StoreLogo.png"
+        VerticalAlignment="Center" />
+
+      <!--  App title - vertically centered with tabs  -->
       <TextBlock
-        Style="{StaticResource TitleTextBlockStyle}"
+        Grid.Column="1"
+        Margin="-12,6,0,0"
+        VerticalAlignment="Center"
+        FontSize="12"
         Text="Xbox 360 Memory Carver" />
+
+      <!--  Tab strip area - fixed width tabs  -->
+      <controls:TabView
+        x:Name="MainTabView"
+        Grid.Column="2"
+        Margin="8,0,0,0"
+        VerticalAlignment="Stretch"
+        Background="Transparent"
+        IsAddTabButtonVisible="False"
+        TabWidthMode="Equal"
+        SelectedIndex="0">
+        <controls:TabView.Resources>
+          <x:Double x:Key="TabViewItemMaxWidth">160</x:Double>
+          <x:Double x:Key="TabViewItemMinWidth">160</x:Double>
+        </controls:TabView.Resources>
+        <controls:TabView.TabStripHeader>
+          <Grid x:Name="TabStripDragRegion" Background="Transparent" />
+        </controls:TabView.TabStripHeader>
+        <controls:TabView.TabItems>
+          <controls:TabViewItem Header="Single File" IsClosable="False" />
+          <controls:TabViewItem Header="Batch Mode" IsClosable="False" />
+        </controls:TabView.TabItems>
+      </controls:TabView>
+
+      <!--  Caption buttons spacer (min/max/close)  -->
+      <Grid
+        x:Name="CaptionButtonsSpacer"
+        Grid.Column="3"
+        Width="138"
+        Background="Transparent" />
     </Grid>
 
-    <!--  Main Content with Tabs  -->
-    <controls:TabView
-      Grid.Row="1"
-      CloseButtonOverlayMode="Auto"
-      IsAddTabButtonVisible="False"
-      TabWidthMode="Equal">
-      <controls:TabView.TabItems>
-        <!--  Single File Tab  -->
-        <controls:TabViewItem
-          Header="Single File"
-          IsClosable="False">
-          <local:SingleFileTab x:Name="SingleFileTabContent" />
-        </controls:TabViewItem>
-
-        <!--  Batch Mode Tab  -->
-        <controls:TabViewItem
-          Header="Batch Mode"
-          IsClosable="False">
-          <local:BatchModeTab x:Name="BatchModeTabContent" />
-        </controls:TabViewItem>
-      </controls:TabView.TabItems>
-    </controls:TabView>
+    <!--  Main content area  -->
+    <Grid Grid.Row="1" Background="Transparent">
+      <local:SingleFileTab x:Name="SingleFileTabContent" Visibility="Visible" />
+      <local:BatchModeTab x:Name="BatchModeTabContent" Visibility="Collapsed" />
+    </Grid>
   </Grid>
 </Window>

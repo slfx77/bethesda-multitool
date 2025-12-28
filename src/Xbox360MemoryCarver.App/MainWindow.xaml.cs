@@ -1,6 +1,9 @@
 using Windows.Graphics;
+using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 
 namespace Xbox360MemoryCarver.App;
 
@@ -32,6 +35,15 @@ public sealed partial class MainWindow : Window
                 appWindow.Move(centeredPosition);
             }
 
+            // Apply Mica backdrop
+            TrySetMicaBackdrop();
+
+            // Extend content into title bar and set up drag region
+            SetupTitleBar();
+
+            // Handle tab selection changes
+            MainTabView.SelectionChanged += MainTabView_SelectionChanged;
+
             Console.WriteLine("[MainWindow] Constructor complete");
         }
         catch (Exception ex)
@@ -39,5 +51,42 @@ public sealed partial class MainWindow : Window
             Console.WriteLine($"[CRASH] MainWindow constructor failed: {ex}");
             throw;
         }
+    }
+
+    private void TrySetMicaBackdrop()
+    {
+        if (MicaController.IsSupported())
+        {
+            SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+            Console.WriteLine("[MainWindow] Mica backdrop applied");
+        }
+        else if (DesktopAcrylicController.IsSupported())
+        {
+            SystemBackdrop = new DesktopAcrylicBackdrop();
+            Console.WriteLine("[MainWindow] Acrylic backdrop applied (Mica not supported)");
+        }
+        else
+        {
+            Console.WriteLine("[MainWindow] No system backdrop supported");
+        }
+    }
+
+    private void SetupTitleBar()
+    {
+        // Extend content into the title bar
+        ExtendsContentIntoTitleBar = true;
+
+        // Set the custom title bar as the drag region
+        SetTitleBar(AppTitleBar);
+
+        Console.WriteLine("[MainWindow] Title bar extended with custom drag region");
+    }
+
+    private void MainTabView_SelectionChanged(object sender, Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)
+    {
+        var selectedIndex = MainTabView.SelectedIndex;
+
+        SingleFileTabContent.Visibility = selectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+        BatchModeTabContent.Visibility = selectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
     }
 }

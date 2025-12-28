@@ -20,11 +20,17 @@ public class CarvedFileInfo
     public long Offset { get; set; }
     public long Length { get; set; }
     public string FileType { get; set; } = "";
+    public string? FileName { get; set; }
     public string? SubType { get; set; }
     public byte[]? Header { get; set; }
     public bool IsExtracted { get; set; }
     public string? ExtractedPath { get; set; }
     public string? Error { get; set; }
+
+    /// <summary>
+    ///     Gets a display name - filename if available, otherwise the file type.
+    /// </summary>
+    public string DisplayName => !string.IsNullOrEmpty(FileName) ? FileName : FileType;
 }
 
 /// <summary>

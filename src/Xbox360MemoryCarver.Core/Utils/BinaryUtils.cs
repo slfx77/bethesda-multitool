@@ -25,6 +25,36 @@ public static class BinaryUtils
     }
 
     /// <summary>
+    ///     Read a 64-bit unsigned integer in little-endian format.
+    /// </summary>
+    public static ulong ReadUInt64LE(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        return (ulong)data[offset]
+               | ((ulong)data[offset + 1] << 8)
+               | ((ulong)data[offset + 2] << 16)
+               | ((ulong)data[offset + 3] << 24)
+               | ((ulong)data[offset + 4] << 32)
+               | ((ulong)data[offset + 5] << 40)
+               | ((ulong)data[offset + 6] << 48)
+               | ((ulong)data[offset + 7] << 56);
+    }
+
+    /// <summary>
+    ///     Read a 64-bit unsigned integer in big-endian format.
+    /// </summary>
+    public static ulong ReadUInt64BE(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        return ((ulong)data[offset] << 56)
+               | ((ulong)data[offset + 1] << 48)
+               | ((ulong)data[offset + 2] << 40)
+               | ((ulong)data[offset + 3] << 32)
+               | ((ulong)data[offset + 4] << 24)
+               | ((ulong)data[offset + 5] << 16)
+               | ((ulong)data[offset + 6] << 8)
+               | (ulong)data[offset + 7];
+    }
+
+    /// <summary>
     ///     Read a 16-bit unsigned integer in little-endian format.
     /// </summary>
     public static ushort ReadUInt16LE(ReadOnlySpan<byte> data, int offset = 0)

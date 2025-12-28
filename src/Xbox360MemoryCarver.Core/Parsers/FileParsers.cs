@@ -186,6 +186,23 @@ public class DdxParser : IFileParser
         var uncompressedSize = CalculateUncompressedSize(width, height, mipCount, formatName);
         var estimatedSize = FindDdxBoundary(data, offset, uncompressedSize);
 
+        // Try to find the texture path/filename that precedes the DDX header
+        var texturePath = FindPrecedingTexturePath(data, offset);
+
+        var metadata = new Dictionary<string, object>
+        {
+            ["version"] = version,
+            ["gpuFormat"] = formatByte,
+            ["isTiled"] = isTiled,
+            ["dataOffset"] = 0x44,
+            ["uncompressedSize"] = uncompressedSize
+        };
+
+        if (texturePath != null)
+        {
+            metadata["texturePath"] = texturePath;
+        }
+
         return new ParseResult
         {
             Format = formatType,
@@ -195,15 +212,161 @@ public class DdxParser : IFileParser
             MipCount = mipCount,
             FourCc = formatName,
             IsXbox360 = true,
-            Metadata = new Dictionary<string, object>
-            {
-                ["version"] = version,
-                ["gpuFormat"] = formatByte,
-                ["isTiled"] = isTiled,
-                ["dataOffset"] = 0x44,
-                ["uncompressedSize"] = uncompressedSize
-            }
+            Metadata = metadata
         };
+    }
+
+    /// <summary>
+    ///     Search backwards from the DDX header to find a texture path string.
+    ///     Texture paths typically end with .ddx and contain path separators.
+    /// </summary>
+    private static string? FindPrecedingTexturePath(ReadOnlySpan<byte> data, int ddxOffset)
+    {
+        // Search backwards up to 512 bytes before the DDX header
+        const int maxSearchDistance = 512;
+        var searchStart = Math.Max(0, ddxOffset - maxSearchDistance);
+        var searchLength = ddxOffset - searchStart;
+
+        if (searchLength < 4) return null;
+
+        var searchArea = data.Slice(searchStart, searchLength);
+
+        // Look for ".ddx" (case insensitive) which would mark the end of a path
+        // Search from the end backwards to find the closest match
+        for (var i = searchLength - 4; i >= 0; i--)
+        {
+            // Check for ".ddx" or ".DDX" 
+            if ((searchArea[i] == '.' || searchArea[i] == 0x2E) &&
+                (searchArea[i + 1] == 'd' || searchArea[i + 1] == 'D') &&
+                (searchArea[i + 2] == 'd' || searchArea[i + 2] == 'D') &&
+                (searchArea[i + 3] == 'x' || searchArea[i + 3] == 'X'))
+            {
+                // Found ".ddx" - now search backwards to find the start of the path
+                var pathEnd = i + 4; // Position after ".ddx"
+                var pathStart = FindPathStart(searchArea, i);
+
+                if (pathStart >= 0 && pathEnd > pathStart)
+                {
+                    var pathLength = pathEnd - pathStart;
+                    if (pathLength >= 5 && pathLength <= 260) // Reasonable path length
+                    {
+                        var pathBytes = searchArea.Slice(pathStart, pathLength);
+                        var path = Encoding.ASCII.GetString(pathBytes);
+
+                        // Validate it looks like a path and clean it up
+                        var cleanPath = CleanupTexturePath(path);
+                        if (cleanPath != null)
+                        {
+                            return cleanPath;
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Find the start of a path by searching backwards for a null terminator
+    ///     or non-printable character.
+    /// </summary>
+    private static int FindPathStart(ReadOnlySpan<byte> data, int pathEndPos)
+    {
+        for (var i = pathEndPos - 1; i >= 0; i--)
+        {
+            var b = data[i];
+
+            // Stop at null terminator or non-path characters
+            if (b == 0 || b < 0x20 || b > 0x7E)
+            {
+                return i + 1;
+            }
+
+            // Also stop at characters that wouldn't be in a path
+            // but allow: letters, digits, underscore, dash, dot, backslash, forward slash
+            if (!IsValidPathChar((char)b))
+            {
+                return i + 1;
+            }
+        }
+
+        return 0;
+    }
+
+    private static bool IsValidPathChar(char c)
+    {
+        return c switch
+        {
+            >= 'a' and <= 'z' => true,
+            >= 'A' and <= 'Z' => true,
+            >= '0' and <= '9' => true,
+            '_' or '-' or '.' or '\\' or '/' => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    ///     Clean up a texture path by removing any garbage prefix characters.
+    /// </summary>
+    private static string? CleanupTexturePath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+
+        // Must end with .ddx
+        if (!path.EndsWith(".ddx", StringComparison.OrdinalIgnoreCase)) return null;
+
+        // Find where the actual path starts - look for common root folders
+        // Common patterns: "textures\", "meshes\", or a drive-like pattern
+        var texturesIndex = path.IndexOf("textures\\", StringComparison.OrdinalIgnoreCase);
+        if (texturesIndex < 0)
+            texturesIndex = path.IndexOf("textures/", StringComparison.OrdinalIgnoreCase);
+
+        var meshesIndex = path.IndexOf("meshes\\", StringComparison.OrdinalIgnoreCase);
+        if (meshesIndex < 0)
+            meshesIndex = path.IndexOf("meshes/", StringComparison.OrdinalIgnoreCase);
+
+        // Use the first valid root we find
+        var rootIndex = -1;
+        if (texturesIndex >= 0) rootIndex = texturesIndex;
+        if (meshesIndex >= 0 && (rootIndex < 0 || meshesIndex < rootIndex)) rootIndex = meshesIndex;
+
+        // If we found a root, use that as the start
+        if (rootIndex > 0)
+        {
+            path = path[rootIndex..];
+        }
+        else if (rootIndex < 0)
+        {
+            // No known root found - try to find where valid path characters start
+            // Skip any leading garbage (non-letter characters before the path)
+            var firstValidIndex = 0;
+            for (var i = 0; i < path.Length; i++)
+            {
+                var c = path[i];
+                // Path should start with a letter (folder name) or backslash
+                if (char.IsLetter(c) || c == '\\' || c == '/')
+                {
+                    firstValidIndex = i;
+                    break;
+                }
+            }
+            if (firstValidIndex > 0)
+            {
+                path = path[firstValidIndex..];
+            }
+        }
+
+        // Final validation
+        if (path.Length < 5) return null;
+
+        // Check for reasonable characters
+        foreach (var c in path)
+        {
+            if (!IsValidPathChar(c)) return null;
+        }
+
+        return path;
     }
 
     private static bool ValidateDdxHeader(ReadOnlySpan<byte> data, int offset)
@@ -462,6 +625,98 @@ public class PngParser : IFileParser
 }
 
 /// <summary>
+///     Parser for Xbox 360 Executable (XEX) files.
+///     Note: In memory dumps, XEX2 signatures may appear in various contexts:
+///     - Loaded module headers
+///     - Embedded executables in game data
+///     - False positives in compressed/encrypted data
+/// </summary>
+public class XexParser : IFileParser
+{
+    public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        if (data.Length < offset + 24) return null;
+
+        // Check for XEX2 magic (big-endian)
+        if (!data.Slice(offset, 4).SequenceEqual("XEX2"u8)) return null;
+
+        try
+        {
+            // XEX2 header structure (big-endian):
+            // 0x00: Magic "XEX2"
+            // 0x04: Module flags (uint32 BE)
+            // 0x08: Data offset (uint32 BE) - offset to PE data
+            // 0x0C: Reserved
+            // 0x10: Security info offset (uint32 BE)
+            // 0x14: Optional header count (uint32 BE)
+
+            var moduleFlags = BinaryUtils.ReadUInt32BE(data, offset + 0x04);
+            var dataOffset = BinaryUtils.ReadUInt32BE(data, offset + 0x08);
+            var securityInfoOffset = BinaryUtils.ReadUInt32BE(data, offset + 0x10);
+            var optionalHeaderCount = BinaryUtils.ReadUInt32BE(data, offset + 0x14);
+
+            // Basic validation
+            if (dataOffset == 0 || dataOffset > 50 * 1024 * 1024) return null;
+            if (optionalHeaderCount > 100) return null;
+
+            // Try to find image size from optional headers
+            var imageSize = FindImageSize(data, offset, optionalHeaderCount);
+
+            // If we couldn't find image size, estimate based on data offset
+            // XEX files typically have headers + compressed PE data
+            var estimatedSize = imageSize > 0
+                ? imageSize
+                : (int)Math.Min(dataOffset * 4, 10 * 1024 * 1024); // Rough estimate
+
+            return new ParseResult
+            {
+                Format = "XEX2",
+                EstimatedSize = estimatedSize,
+                IsXbox360 = true,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["moduleFlags"] = moduleFlags,
+                    ["dataOffset"] = dataOffset,
+                    ["securityInfoOffset"] = securityInfoOffset,
+                    ["optionalHeaderCount"] = optionalHeaderCount
+                }
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static int FindImageSize(ReadOnlySpan<byte> data, int offset, uint optionalHeaderCount)
+    {
+        // Optional headers start at offset 0x18
+        var headerOffset = offset + 0x18;
+
+        for (var i = 0; i < optionalHeaderCount && headerOffset + 8 <= data.Length; i++)
+        {
+            var headerId = BinaryUtils.ReadUInt32BE(data, headerOffset);
+            var headerData = BinaryUtils.ReadUInt32BE(data, headerOffset + 4);
+
+            // Header ID 0x00010001 contains image size info
+            // Header ID 0x00018002 is file size
+            if (headerId == 0x00010001 || headerId == 0x00018002)
+            {
+                // For small headers, data is inline
+                if ((headerId & 0xFF) <= 1)
+                {
+                    return (int)headerData;
+                }
+            }
+
+            headerOffset += 8;
+        }
+
+        return 0;
+    }
+}
+
+/// <summary>
 ///     Factory for getting appropriate parser for a file type.
 /// </summary>
 public static class ParserFactory
@@ -473,7 +728,8 @@ public static class ParserFactory
         ["ddx_3xdr"] = new DdxParser(),
         ["xma"] = new XmaParser(),
         ["nif"] = new NifParser(),
-        ["png"] = new PngParser()
+        ["png"] = new PngParser(),
+        ["xex"] = new XexParser()
     };
 
     public static IFileParser? GetParser(string fileType)

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using Windows.UI;
@@ -22,7 +23,6 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 {
     // Layout constants
     private const int BytesPerRow = 16;
-    private const double RowHeight = 16.0; // Approximate height per row
 
     // Colors are now defined in FileTypeColors.cs - single source of truth
 
@@ -49,6 +49,9 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     private long _totalRows;
     private int _visibleRows;
 
+    // Dynamic row height
+    private double _rowHeight;
+
     public HexViewerControl()
     {
         InitializeComponent();
@@ -58,8 +61,20 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         // Build the legend from the shared color definitions
         BuildLegend();
 
-        // Handle mouse wheel on the hex display
-        HexDisplayArea.PointerWheelChanged += HexDisplayArea_PointerWheelChanged;
+        // Intercept wheel events on the display area
+        HexDisplayArea.AddHandler(
+            PointerWheelChangedEvent,
+            new PointerEventHandler(HexDisplayArea_PointerWheelChanged),
+            true);
+
+        // Handle keyboard navigation
+        KeyDown += HexViewerControl_KeyDown;
+        PreviewKeyDown += HexViewerControl_PreviewKeyDown;
+        IsTabStop = true;
+
+        // Handle copy with Ctrl+C to avoid clipboard COM issues
+        HexTextBlock.KeyDown += TextBlock_KeyDown;
+        AsciiTextBlock.KeyDown += TextBlock_KeyDown;
     }
 
     /// <summary>
@@ -77,11 +92,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     {
         foreach (var category in FileTypeColors.LegendCategories)
         {
-            var itemPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 4
-            };
+            var itemPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
 
             var colorBox = new Border
             {
@@ -110,6 +121,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         // Delay initial render to ensure layout is complete
         DispatcherQueue.TryEnqueue(() =>
         {
+            CalculateRowHeight();
             UpdateVisibleRowCount();
             if (_analysisResult != null)
             {
@@ -120,10 +132,24 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         });
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs e)
+    private void CalculateRowHeight()
     {
-        Dispose();
+        var lineHeight = HexTextBlock.FontSize * 1.2;
+
+        // Set line height on all text blocks for consistent alignment
+        OffsetTextBlock.LineHeight = lineHeight;
+        OffsetTextBlock.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+
+        HexTextBlock.LineHeight = lineHeight;
+        HexTextBlock.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+
+        AsciiTextBlock.LineHeight = lineHeight;
+        AsciiTextBlock.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+
+        _rowHeight = lineHeight;
     }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e) => Dispose();
 
     private void HexDisplayArea_SizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -131,26 +157,24 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         if (Math.Abs(e.NewSize.Height - e.PreviousSize.Height) > 1)
         {
             UpdateVisibleRowCount();
-            if (_analysisResult != null) RenderVisibleRows();
+            if (_analysisResult != null)
+            {
+                RenderVisibleRows();
+            }
         }
     }
 
-#pragma warning disable S2325, RCS1163 // Event handlers bound in XAML must be instance methods
-    private void OnSizeChanged(object _, SizeChangedEventArgs __)
-    {
-        // Handled by HexDisplayArea_SizeChanged and MinimapContainer_SizeChanged
-    }
-#pragma warning restore S2325, RCS1163
-
     private void UpdateVisibleRowCount()
     {
+        // If row height is not yet determined, calculate it based on font size
+        if (_rowHeight <= 0)
+        {
+            CalculateRowHeight();
+        }
+
         // Account for Border padding (4px top + 4px bottom = 8px)
         var displayHeight = HexDisplayArea.ActualHeight - 8;
-        if (displayHeight > 0)
-            // Calculate exact rows that fit, rounding up to fill viewport completely
-            _visibleRows = (int)Math.Ceiling(displayHeight / RowHeight);
-        else
-            _visibleRows = 30; // Default
+        _visibleRows = displayHeight > 0 ? (int)Math.Floor(displayHeight / _rowHeight) : 30;
 
         // Update slider step frequency for smooth scrolling
         VirtualScrollBar.StepFrequency = 1;
@@ -173,7 +197,9 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         _fileRegions.Clear();
         _currentTopRow = 0;
         _totalRows = 0;
+        OffsetTextBlock.Text = "";
         HexTextBlock.Inlines.Clear();
+        AsciiTextBlock.Text = "";
         MinimapCanvas.Children.Clear();
         ViewportIndicator.Visibility = Visibility.Collapsed;
         VirtualScrollBar.Maximum = 0;
@@ -182,27 +208,20 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     /// <summary>
     ///     Navigate to a specific byte offset in the file.
+    ///     Shows the offset at the top of the view.
     /// </summary>
     public void NavigateToOffset(long offset)
     {
         if (_fileSize == 0 || _totalRows == 0) return;
 
-        // Calculate the row for this offset
+        // Calculate the row for this offset - show at top of view
         var targetRow = offset / BytesPerRow;
-
-        // Center the view on this row if possible
-        targetRow = Math.Max(0, targetRow - _visibleRows / 2);
         targetRow = Math.Clamp(targetRow, 0, Math.Max(0, _totalRows - _visibleRows));
 
         _currentTopRow = targetRow;
         VirtualScrollBar.Value = targetRow;
         RenderVisibleRows();
         UpdateMinimapViewport();
-
-        // Log for debugging
-        var region = FindRegionForOffset(offset);
-        Debug.WriteLine(
-            $"[Navigate] Offset=0x{offset:X8}, Row={targetRow}, Region={region?.TypeName ?? "none"} (color: {region?.Color})");
     }
 
     public void LoadData(string filePath, AnalysisResult analysisResult)
@@ -212,10 +231,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         _filePath = filePath;
         _analysisResult = analysisResult;
 
-        var fileInfo = new FileInfo(filePath);
-        _fileSize = fileInfo.Length;
-
-        Debug.WriteLine($"[HexViewer] Loading {filePath}, size: {_fileSize:N0} bytes");
+        _fileSize = new FileInfo(filePath).Length;
 
         BuildFileRegions();
 
@@ -230,19 +246,22 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
             Debug.WriteLine($"[HexViewer] Memory mapping failed: {ex.Message}");
         }
 
-        // Calculate total rows
         _totalRows = (_fileSize + BytesPerRow - 1) / BytesPerRow;
         _currentTopRow = 0;
+
+        if (_rowHeight <= 0)
+        {
+            CalculateRowHeight();
+        }
 
         // Setup scrollbar - ensure it has a valid range
         UpdateVisibleRowCount();
         var scrollMax = Math.Max(0, _totalRows - _visibleRows);
-        VirtualScrollBar.Minimum = 0;
-        VirtualScrollBar.Maximum = scrollMax;
-        VirtualScrollBar.Value = 0;
 
-        Debug.WriteLine(
-            $"[HexViewer] TotalRows={_totalRows}, VisibleRows={_visibleRows}, ScrollMax={scrollMax}");
+        // Must set Maximum before Value, and ensure Maximum >= Minimum
+        VirtualScrollBar.Minimum = 0;
+        VirtualScrollBar.Maximum = Math.Max(0, scrollMax);
+        VirtualScrollBar.Value = 0;
 
         RenderVisibleRows();
         RenderMinimap();
@@ -324,35 +343,220 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         PositionIndicator.Text = $"Offset: 0x{offset:X8} - 0x{endOffset:X8} ({offset:N0} - {endOffset:N0})";
     }
 
-#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void HexDisplayArea_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
+        var isCtrlPressed = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(
+            Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+        // Vertical scrolling
         var delta = e.GetCurrentPoint(HexDisplayArea).Properties.MouseWheelDelta;
-        var rowDelta = delta > 0 ? -3 : 3; // Scroll 3 rows at a time
+        var baseRows = isCtrlPressed ? 10 : 1;
+        var rowDelta = delta > 0 ? -baseRows : baseRows;
 
-        var newValue = Math.Clamp(VirtualScrollBar.Value + rowDelta,
-            VirtualScrollBar.Minimum,
-            VirtualScrollBar.Maximum);
-
-        if (Math.Abs(newValue - VirtualScrollBar.Value) > 0.0001)
-        {
-            VirtualScrollBar.Value = newValue;
-            _currentTopRow = (long)newValue;
-            RenderVisibleRows();
-            UpdateMinimapViewport();
-        }
+        ScrollByRows(rowDelta);
 
         e.Handled = true;
     }
-#pragma warning restore RCS1163
+
+    private void HexViewerControl_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        // Handle navigation keys before they reach the ScrollViewer
+        switch (e.Key)
+        {
+            case Windows.System.VirtualKey.PageUp:
+            case Windows.System.VirtualKey.PageDown:
+            case Windows.System.VirtualKey.Home:
+            case Windows.System.VirtualKey.End:
+            case Windows.System.VirtualKey.Up:
+            case Windows.System.VirtualKey.Down:
+                HexViewerControl_KeyDown(sender, e);
+                break;
+        }
+    }
+
+    private void HexViewerControl_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Windows.System.VirtualKey.PageUp:
+                ScrollByRows(-_visibleRows);
+                e.Handled = true;
+                break;
+
+            case Windows.System.VirtualKey.PageDown:
+                ScrollByRows(_visibleRows);
+                e.Handled = true;
+                break;
+
+            case Windows.System.VirtualKey.Home:
+                ScrollToRow(0);
+                e.Handled = true;
+                break;
+
+            case Windows.System.VirtualKey.End:
+                ScrollToRow(Math.Max(0, _totalRows - _visibleRows));
+                e.Handled = true;
+                break;
+
+            case Windows.System.VirtualKey.Up:
+                ScrollByRows(-1);
+                e.Handled = true;
+                break;
+
+            case Windows.System.VirtualKey.Down:
+                ScrollByRows(1);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private static void CopyTextToClipboardViaInterop(string text)
+    {
+        try
+        {
+            if (OpenClipboard(IntPtr.Zero))
+            {
+                try
+                {
+                    EmptyClipboard();
+                    var hGlobal = System.Runtime.InteropServices.Marshal.StringToHGlobalUni(text + '\0');
+                    if (SetClipboardData(13, hGlobal) == IntPtr.Zero) // CF_UNICODETEXT = 13
+                    {
+                        // SetClipboardData failed, free the memory
+                        System.Runtime.InteropServices.Marshal.FreeHGlobal(hGlobal);
+                        Debug.WriteLine("[HexViewer] SetClipboardData failed");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"[HexViewer] Copied {text.Length} characters to clipboard");
+                    }
+                }
+                finally
+                {
+                    CloseClipboard();
+                }
+            }
+            else
+            {
+                Debug.WriteLine("[HexViewer] OpenClipboard failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[HexViewer] Interop copy failed: {ex.Message}");
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool CloseClipboard();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool EmptyClipboard();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+ 
+    private void CopyHexMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        CopySelectedTextToClipboard(HexTextBlock);
+    }
+
+    private void CopyAsciiMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        CopySelectedTextToClipboard(AsciiTextBlock);
+    }
+
+    private void TextBlock_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        // Handle Ctrl+C for copy
+        if (e.Key == Windows.System.VirtualKey.C)
+        {
+            var isCtrlPressed = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(
+                Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+            if (isCtrlPressed && sender is TextBlock textBlock)
+            {
+                e.Handled = true;
+                CopySelectedTextToClipboard(textBlock);
+            }
+        }
+    }
+
+    private void CopySelectedTextToClipboard(TextBlock textBlock)
+    {
+        try
+        {
+            var selectedText = textBlock.SelectedText;
+            Debug.WriteLine($"[HexViewer] Attempting copy, SelectedText length: {selectedText?.Length ?? 0}");
+
+            if (string.IsNullOrEmpty(selectedText))
+            {
+                Debug.WriteLine("[HexViewer] No text selected");
+                return;
+            }
+
+            // For ASCII column, remove artificial line breaks to get continuous text
+            // For Hex column, preserve formatting (spaces between bytes)
+            string textToCopy;
+            if (textBlock == AsciiTextBlock)
+            {
+                // Remove newlines to get continuous ASCII string
+                textToCopy = selectedText.Replace("\n", "").Replace("\r", "");
+            }
+            else
+            {
+                // For hex, keep as-is (user might want the formatting)
+                textToCopy = selectedText;
+            }
+
+            CopyTextToClipboardViaInterop(textToCopy);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[HexViewer] Copy failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void ScrollByRows(long rowDelta)
+    {
+        var newValue = Math.Clamp(_currentTopRow + rowDelta, 0, (long)VirtualScrollBar.Maximum);
+
+        if (newValue != _currentTopRow)
+        {
+            _currentTopRow = newValue;
+            VirtualScrollBar.Value = newValue;
+            RenderVisibleRows();
+            UpdateMinimapViewport();
+            UpdatePositionIndicator();
+        }
+    }
+
+    private void ScrollToRow(long row)
+    {
+        var newValue = Math.Clamp(row, 0, (long)VirtualScrollBar.Maximum);
+
+        if (newValue != _currentTopRow)
+        {
+            _currentTopRow = newValue;
+            VirtualScrollBar.Value = newValue;
+            RenderVisibleRows();
+            UpdateMinimapViewport();
+            UpdatePositionIndicator();
+        }
+    }
 
     private void RenderVisibleRows()
     {
         if (_fileSize == 0 || _filePath == null) return;
 
+        // Clear all three columns
+        OffsetTextBlock.Text = "";
         HexTextBlock.Inlines.Clear();
+        AsciiTextBlock.Text = "";
 
-        // Calculate byte range to read
         var startRow = _currentTopRow;
         var endRow = Math.Min(_currentTopRow + _visibleRows, _totalRows);
         var startOffset = startRow * BytesPerRow;
@@ -361,63 +565,60 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
         if (bytesToRead <= 0) return;
 
-        // Read the data
         var buffer = new byte[bytesToRead];
         ReadBytes(startOffset, buffer);
 
-        // Build the display
+        var offsetBuilder = new StringBuilder();
+        var asciiBuilder = new StringBuilder();
+
         for (var row = startRow; row < endRow; row++)
         {
             var rowOffset = row * BytesPerRow;
             var bufferOffset = (int)(rowOffset - startOffset);
             var rowBytes = (int)Math.Min(BytesPerRow, _fileSize - rowOffset);
-
             if (rowBytes <= 0) break;
 
             // Offset column
-            HexTextBlock.Inlines.Add(new Run
-            {
-                Text = $"{rowOffset:X8}  ",
-                Foreground = OffsetBrush
-            });
+            offsetBuilder.Append(CultureInfo.InvariantCulture, $"{rowOffset:X8}");
+            if (row < endRow - 1) offsetBuilder.Append('\n');
 
             // Hex bytes with per-byte coloring
             for (var i = 0; i < BytesPerRow; i++)
+            {
                 if (i < rowBytes && bufferOffset + i < buffer.Length)
                 {
                     var byteOffset = rowOffset + i;
                     var b = buffer[bufferOffset + i];
                     var region = FindRegionForOffset(byteOffset);
-
                     HexTextBlock.Inlines.Add(new Run
                     {
                         Text = $"{b:X2} ",
-                        Foreground = region != null
-                            ? new SolidColorBrush(region.Color)
-                            : TextBrush
+                        Foreground = region != null ? new SolidColorBrush(region.Color) : TextBrush
                     });
                 }
                 else
                 {
                     HexTextBlock.Inlines.Add(new Run { Text = "   ", Foreground = TextBrush });
                 }
-
-            // Space before ASCII
-            HexTextBlock.Inlines.Add(new Run { Text = " ", Foreground = TextBrush });
+            }
 
             // ASCII column
-            var asciiBuilder = new StringBuilder(rowBytes);
             for (var i = 0; i < rowBytes && bufferOffset + i < buffer.Length; i++)
             {
                 var b = buffer[bufferOffset + i];
                 asciiBuilder.Append(b is >= 32 and < 127 ? (char)b : '.');
             }
 
-            HexTextBlock.Inlines.Add(new Run { Text = asciiBuilder.ToString(), Foreground = AsciiBrush });
-
             // Newline (except for last row)
-            if (row < endRow - 1) HexTextBlock.Inlines.Add(new Run { Text = "\n" });
+            if (row < endRow - 1)
+            {
+                HexTextBlock.Inlines.Add(new Run { Text = "\n" });
+                asciiBuilder.Append('\n');
+            }
         }
+
+        OffsetTextBlock.Text = offsetBuilder.ToString();
+        AsciiTextBlock.Text = asciiBuilder.ToString();
     }
 
     private void ReadBytes(long offset, byte[] buffer)
@@ -436,36 +637,17 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private FileRegion? FindRegionForOffset(long offset)
     {
-        // Binary search for the region containing offset
-        // Regions are sorted by Start offset
         if (_fileRegions.Count == 0) return null;
-
-        var left = 0;
-        var right = _fileRegions.Count - 1;
-        FileRegion? candidate = null;
-
+        int left = 0, right = _fileRegions.Count - 1;
         while (left <= right)
         {
             var mid = left + (right - left) / 2;
             var region = _fileRegions[mid];
-
             if (offset >= region.Start && offset < region.End) return region;
-
-            if (region.Start > offset)
-            {
-                right = mid - 1;
-            }
-            else
-            {
-                // region.End <= offset, so check if this could be a partial match
-                // and continue searching to the right
-                candidate = region;
-                left = mid + 1;
-            }
+            if (region.Start > offset) right = mid - 1;
+            else left = mid + 1;
         }
-
-        // Check if candidate contains offset (edge case)
-        return candidate != null && offset >= candidate.Start && offset < candidate.End ? candidate : null;
+        return null;
     }
 
     private sealed class FileRegion
@@ -505,45 +687,25 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void RenderMinimap()
     {
-        if (!TryInitializeMinimapCanvas(out var canvasWidth, out var canvasHeight)) return;
-
-        AddMinimapBackground(canvasWidth, canvasHeight);
-        RenderMinimapRegions(canvasWidth, canvasHeight);
-        EnsureViewportIndicatorOnTop();
-    }
-
-    private bool TryInitializeMinimapCanvas(out double canvasWidth, out double canvasHeight)
-    {
-        canvasWidth = 0;
-        canvasHeight = 0;
-
-        if (MinimapCanvas == null || MinimapContainer == null) return false;
-
+        if (MinimapCanvas == null || MinimapContainer == null) return;
         MinimapCanvas.Children.Clear();
         MinimapCanvas.Children.Add(ViewportIndicator);
 
         if (_fileSize == 0)
         {
             ViewportIndicator.Visibility = Visibility.Collapsed;
-            return false;
+            return;
         }
 
         var containerWidth = MinimapContainer.ActualWidth - 8;
         var containerHeight = MinimapContainer.ActualHeight - 8;
+        if (containerWidth <= 0 || containerHeight <= 0) return;
 
-        if (containerWidth <= 0 || containerHeight <= 0) return false;
-
-        canvasWidth = Math.Max(20, containerWidth);
-        canvasHeight = Math.Max(containerHeight, containerHeight * _minimapZoom);
-
+        var canvasWidth = Math.Max(20, containerWidth);
+        var canvasHeight = Math.Max(containerHeight, containerHeight * _minimapZoom);
         MinimapCanvas.Width = canvasWidth;
         MinimapCanvas.Height = canvasHeight;
 
-        return true;
-    }
-
-    private void AddMinimapBackground(double canvasWidth, double canvasHeight)
-    {
         var bg = new Rectangle
         {
             Width = canvasWidth,
@@ -551,14 +713,10 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
             Fill = new SolidColorBrush(Color.FromArgb(255, 30, 30, 30))
         };
         MinimapCanvas.Children.Insert(0, bg);
-    }
 
-    private void RenderMinimapRegions(double canvasWidth, double canvasHeight)
-    {
-        // Group consecutive rows with the same color into rectangles for efficiency
         Color? currentColor = null;
         double currentStartY = 0;
-        var defaultColor = Color.FromArgb(255, 60, 60, 60); // Dark gray for untyped areas
+        var defaultColor = Color.FromArgb(255, 60, 60, 60);
 
         for (double y = 0; y < canvasHeight; y++)
         {
@@ -575,18 +733,22 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
             if (color != currentColor.Value)
             {
-                AddMinimapRectangle(canvasWidth, currentStartY, y - currentStartY, currentColor.Value);
+                AddMinimapRect(canvasWidth, currentStartY, y - currentStartY, currentColor.Value);
                 currentColor = color;
                 currentStartY = y;
             }
         }
 
-        // Draw the last rectangle
         if (currentColor != null)
-            AddMinimapRectangle(canvasWidth, currentStartY, canvasHeight - currentStartY, currentColor.Value);
+        {
+            AddMinimapRect(canvasWidth, currentStartY, canvasHeight - currentStartY, currentColor.Value);
+        }
+
+        MinimapCanvas.Children.Remove(ViewportIndicator);
+        MinimapCanvas.Children.Add(ViewportIndicator);
     }
 
-    private void AddMinimapRectangle(double width, double top, double height, Color color)
+    private void AddMinimapRect(double width, double top, double height, Color color)
     {
         var rect = new Rectangle
         {
@@ -599,83 +761,42 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         MinimapCanvas.Children.Insert(MinimapCanvas.Children.Count - 1, rect);
     }
 
-    private void EnsureViewportIndicatorOnTop()
-    {
-        MinimapCanvas.Children.Remove(ViewportIndicator);
-        MinimapCanvas.Children.Add(ViewportIndicator);
-    }
-
     private void UpdateMinimapViewport()
     {
-        if (!TryGetMinimapDimensions(out var canvasWidth, out var canvasHeight)) return;
-
-        var (minimapTop, minimapHeight) = CalculateViewportPosition(canvasHeight);
-        PositionViewportIndicator(canvasWidth, canvasHeight, minimapTop, minimapHeight);
-        AutoScrollMinimapIfZoomed(canvasHeight, minimapTop, minimapHeight);
-    }
-
-    private bool TryGetMinimapDimensions(out double canvasWidth, out double canvasHeight)
-    {
-        canvasWidth = 0;
-        canvasHeight = 0;
-
         if (_fileSize == 0 || _totalRows == 0 || MinimapCanvas == null || ViewportIndicator == null)
         {
             if (ViewportIndicator != null) ViewportIndicator.Visibility = Visibility.Collapsed;
-            return false;
+            return;
         }
 
-        canvasHeight = MinimapCanvas.Height;
-        canvasWidth = MinimapCanvas.Width;
+        var canvasHeight = MinimapCanvas.Height;
+        var canvasWidth = MinimapCanvas.Width;
+        if (double.IsNaN(canvasHeight) || canvasHeight <= 0) return;
 
-        return !double.IsNaN(canvasHeight) && canvasHeight > 0 &&
-               !double.IsNaN(canvasWidth) && canvasWidth > 0;
-    }
-
-    private (double top, double height) CalculateViewportPosition(double canvasHeight)
-    {
         var viewStartOffset = _currentTopRow * BytesPerRow;
         var viewEndOffset = Math.Min((_currentTopRow + _visibleRows) * BytesPerRow, _fileSize);
+        var viewCenterFraction = ((double)viewStartOffset / _fileSize + (double)viewEndOffset / _fileSize) / 2;
+        var viewHeightFraction = (double)(viewEndOffset - viewStartOffset) / _fileSize;
 
-        var viewStartFraction = (double)viewStartOffset / _fileSize;
-        var viewEndFraction = (double)viewEndOffset / _fileSize;
-        var viewHeightFraction = viewEndFraction - viewStartFraction;
-
-        var minimapTop = viewStartFraction * canvasHeight;
         var minimapHeight = Math.Max(12, viewHeightFraction * canvasHeight);
+        var minimapTop = viewCenterFraction * canvasHeight - minimapHeight / 2;
+        minimapTop = Math.Clamp(minimapTop, 0, canvasHeight - minimapHeight);
 
-        // Clamp top position to keep indicator in bounds
-        if (minimapTop + minimapHeight > canvasHeight) minimapTop = canvasHeight - minimapHeight;
-
-        return (Math.Max(0, minimapTop), minimapHeight);
-    }
-
-    private void PositionViewportIndicator(double canvasWidth, double canvasHeight, double minimapTop,
-        double minimapHeight)
-    {
         ViewportIndicator.Width = Math.Max(10, canvasWidth - 4);
         ViewportIndicator.Height = minimapHeight;
         Canvas.SetLeft(ViewportIndicator, 2);
         Canvas.SetTop(ViewportIndicator, minimapTop);
         ViewportIndicator.Visibility = Visibility.Visible;
 
-        // Debug logging
-        var viewStartOffset = _currentTopRow * BytesPerRow;
-        var region = FindRegionForOffset(viewStartOffset);
-        Debug.WriteLine(
-            $"[Minimap] Offset=0x{viewStartOffset:X8}, ViewHeight={minimapHeight:F1}px, Top={minimapTop:F1}/{canvasHeight:F1}, Region={region?.TypeName ?? "none"}");
-    }
-
-    private void AutoScrollMinimapIfZoomed(double canvasHeight, double minimapTop, double minimapHeight)
-    {
-        if (_minimapZoom <= 1 || MinimapScrollViewer == null) return;
-
-        var minimapViewportHeight = MinimapScrollViewer.ViewportHeight;
-        if (minimapViewportHeight > 0 && minimapViewportHeight < canvasHeight)
+        if (_minimapZoom > 1 && MinimapScrollViewer != null)
         {
-            var targetY = minimapTop + minimapHeight / 2 - minimapViewportHeight / 2;
-            targetY = Math.Clamp(targetY, 0, canvasHeight - minimapViewportHeight);
-            MinimapScrollViewer.ChangeView(null, targetY, null, true);
+            var viewportHeight = MinimapScrollViewer.ViewportHeight;
+            if (viewportHeight > 0 && viewportHeight < canvasHeight)
+            {
+                var targetY = Math.Clamp(minimapTop + minimapHeight / 2 - viewportHeight / 2,
+                    0, canvasHeight - viewportHeight);
+                MinimapScrollViewer.ChangeView(null, targetY, null, true);
+            }
         }
     }
 
@@ -689,7 +810,10 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void Minimap_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
-        if (_isDraggingMinimap) NavigateToMinimapPosition(e.GetCurrentPoint(MinimapCanvas).Position.Y);
+        if (_isDraggingMinimap)
+        {
+            NavigateToMinimapPosition(e.GetCurrentPoint(MinimapCanvas).Position.Y);
+        }
     }
 
     private void Minimap_PointerReleased(object sender, PointerRoutedEventArgs e)
@@ -704,7 +828,6 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         var canvasHeight = MinimapCanvas.Height;
         if (canvasHeight <= 0 || _totalRows == 0) return;
 
-        // Calculate target row (center viewport on click)
         var fraction = Math.Clamp(y / canvasHeight, 0, 1);
         var targetRow = (long)(fraction * _totalRows) - _visibleRows / 2;
         targetRow = Math.Clamp(targetRow, 0, Math.Max(0, _totalRows - _visibleRows));

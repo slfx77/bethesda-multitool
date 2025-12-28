@@ -35,6 +35,7 @@
       <Border
         Grid.Row="1"
         Background="#FF1E1E1E"
+        BorderThickness="0"
         CornerRadius="4">
         <Grid>
           <!--  Custom ScrollBar for virtual scrolling  -->
@@ -47,28 +48,85 @@
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
 
-          <!--  Hex display area with horizontal scrolling  -->
+          <!--  Hex display area with three separate columns  -->
           <Border
             x:Name="HexDisplayArea"
             Grid.Row="0"
             Grid.Column="0"
-            Background="#FF1E1E1E"
+            Padding="4"
+            Background="Transparent"
+            BorderThickness="0"
             SizeChanged="HexDisplayArea_SizeChanged">
-            <ScrollViewer
-              Padding="4"
-              HorizontalScrollBarVisibility="Auto"
-              VerticalScrollBarVisibility="Disabled">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+
+              <!--  Offset column (not selectable)  -->
+              <TextBlock
+                x:Name="OffsetTextBlock"
+                Grid.Column="0"
+                Margin="0,0,8,0"
+                VerticalAlignment="Top"
+                FontFamily="Consolas"
+                FontSize="12"
+                Foreground="#FF569CD6"
+                IsTextSelectionEnabled="False"
+                TextWrapping="NoWrap" />
+
+              <!--  Hex column (selectable with custom context menu)  -->
               <TextBlock
                 x:Name="HexTextBlock"
+                Grid.Column="1"
+                Margin="0,0,16,0"
                 VerticalAlignment="Top"
                 FontFamily="Consolas"
                 FontSize="12"
                 IsTextSelectionEnabled="True"
-                TextWrapping="NoWrap" />
-            </ScrollViewer>
+                TextWrapping="NoWrap">
+                <TextBlock.ContextFlyout>
+                  <MenuFlyout>
+                    <MenuFlyoutItem
+                      x:Name="HexCopyMenuItem"
+                      Click="CopyHexMenuItem_Click"
+                      Text="Copy">
+                      <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="C" Modifiers="Control" />
+                      </MenuFlyoutItem.KeyboardAccelerators>
+                    </MenuFlyoutItem>
+                  </MenuFlyout>
+                </TextBlock.ContextFlyout>
+              </TextBlock>
+
+              <!--  ASCII column (selectable with custom context menu)  -->
+              <TextBlock
+                x:Name="AsciiTextBlock"
+                Grid.Column="2"
+                VerticalAlignment="Top"
+                FontFamily="Consolas"
+                FontSize="12"
+                Foreground="#FF808080"
+                IsTextSelectionEnabled="True"
+                TextWrapping="NoWrap">
+                <TextBlock.ContextFlyout>
+                  <MenuFlyout>
+                    <MenuFlyoutItem
+                      x:Name="AsciiCopyMenuItem"
+                      Click="CopyAsciiMenuItem_Click"
+                      Text="Copy">
+                      <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="C" Modifiers="Control" />
+                      </MenuFlyoutItem.KeyboardAccelerators>
+                    </MenuFlyoutItem>
+                  </MenuFlyout>
+                </TextBlock.ContextFlyout>
+              </TextBlock>
+            </Grid>
           </Border>
 
-          <!--  Virtual scrollbar using Slider - tooltip disabled, using custom hex indicator  -->
+          <!--  Virtual scrollbar - tooltip disabled  -->
           <Slider
             x:Name="VirtualScrollBar"
             Grid.Row="0"
@@ -76,13 +134,13 @@
             MinWidth="20"
             Margin="4,0,0,0"
             IsDirectionReversed="True"
+            IsThumbToolTipEnabled="False"
             Maximum="100"
             Minimum="0"
             Orientation="Vertical"
             SnapsTo="StepValues"
             StepFrequency="1"
             TickFrequency="0"
-            ToolTipService.ToolTip="{x:Null}"
             ValueChanged="VirtualScrollBar_ValueChanged" />
 
           <!--  Position indicator in hex  -->
@@ -100,13 +158,13 @@
       </Border>
     </Grid>
 
-    <!--  Minimap Panel  -->
+    <!--  Minimap Panel - match hex area background color  -->
     <Border
       Grid.Column="1"
       Margin="4,0,0,0"
-      Background="#FF252526"
-      BorderBrush="#FF3C3C3C"
-      BorderThickness="1,0,0,0">
+      Background="#FF1E1E1E"
+      BorderThickness="0"
+      CornerRadius="4">
       <Grid>
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
@@ -116,24 +174,27 @@
 
         <TextBlock
           Grid.Row="0"
-          Margin="0,4,0,2"
+          Margin="0,4,0,4"
           HorizontalAlignment="Center"
           FontSize="10"
           Foreground="#FF888888"
           Text="Minimap" />
 
-        <!--  Zoom controls  -->
+        <!--  Zoom controls with proper height  -->
         <Grid
           Grid.Row="1"
-          Margin="4,0,4,4"
-          HorizontalAlignment="Stretch">
+          Height="32"
+          Margin="4,0,4,8"
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Center">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="20" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="24" />
           </Grid.ColumnDefinitions>
           <TextBlock
             Grid.Column="0"
+            HorizontalAlignment="Center"
             VerticalAlignment="Center"
             FontSize="9"
             Foreground="#FF666666"
@@ -141,15 +202,18 @@
           <Slider
             x:Name="MinimapZoomSlider"
             Grid.Column="1"
-            Height="20"
+            Height="32"
+            Margin="4,0"
             HorizontalAlignment="Stretch"
+            VerticalAlignment="Center"
+            IsThumbToolTipEnabled="False"
             Maximum="10"
             Minimum="1"
-            ToolTipService.ToolTip="Minimap Zoom"
             ValueChanged="MinimapZoomSlider_ValueChanged"
             Value="1" />
           <TextBlock
             Grid.Column="2"
+            HorizontalAlignment="Center"
             VerticalAlignment="Center"
             FontSize="9"
             Foreground="#FF666666"

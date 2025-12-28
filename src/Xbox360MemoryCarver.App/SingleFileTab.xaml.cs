@@ -15,16 +15,35 @@ namespace Xbox360MemoryCarver.App;
 /// </summary>
 public sealed partial class SingleFileTab : UserControl
 {
-    // Known file types that can be extracted
-    private static readonly string[] KnownFileTypes =
-    [
-        "DDS", "DDX (3XDO)", "DDX (3XDR)", "PNG", "XMA", "NIF",
-        "Module", "XDBF", "XUI", "ESP", "LIP", "SDT", "ObScript"
-    ];
+    // Known file types that can be extracted - maps display name to signature key(s)
+    private static readonly Dictionary<string, string[]> FileTypeMapping = new()
+    {
+        ["DDS"] = ["dds"],
+        ["DDX (3XDO)"] = ["ddx_3xdo"],
+        ["DDX (3XDR)"] = ["ddx_3xdr"],
+        ["PNG"] = ["png"],
+        ["XMA"] = ["xma"],
+        ["NIF"] = ["nif"],
+        ["Module"] = ["xex"],  // Module maps to XEX executables
+        ["XDBF"] = ["xdbf"],
+        ["XUI"] = ["xui_scene", "xui_binary"],  // XUI has two variants
+        ["ESP"] = ["esp"],
+        ["LIP"] = ["lip"],
+        ["ObScript"] = ["script_scn"]
+    };
+
+    // Display names for checkboxes (keys from the mapping)
+    private static readonly string[] KnownFileTypes = [.. FileTypeMapping.Keys];
 
     private readonly ObservableCollection<CarvedFileEntry> _carvedFiles = [];
+    private readonly List<CarvedFileEntry> _allCarvedFiles = []; // Original unsorted list
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
     private AnalysisResult? _analysisResult;
+
+    // Sorting state
+    private enum SortColumn { None, Offset, Length, Type, Filename }
+    private SortColumn _currentSortColumn = SortColumn.None;
+    private bool _sortAscending = true;
 
     public SingleFileTab()
     {
@@ -36,11 +55,43 @@ public sealed partial class SingleFileTab : UserControl
             ResultsListView.ItemsSource = _carvedFiles;
             InitializeFileTypeCheckboxes();
             Console.WriteLine("[SingleFileTab] Constructor complete");
+
+            // Check for auto-load file from command line
+            Loaded += SingleFileTab_Loaded;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[CRASH] SingleFileTab constructor failed: {ex}");
             throw;
+        }
+    }
+
+    private async void SingleFileTab_Loaded(object sender, RoutedEventArgs e)
+    {
+        // Only run once
+        Loaded -= SingleFileTab_Loaded;
+
+        // Check if we should auto-load a file
+        var autoLoadFile = Program.AutoLoadFile;
+        if (!string.IsNullOrEmpty(autoLoadFile) && File.Exists(autoLoadFile))
+        {
+            Console.WriteLine($"[SingleFileTab] Auto-loading file: {autoLoadFile}");
+            MinidumpPathTextBox.Text = autoLoadFile;
+
+            // Set default output path
+            var directory = Path.GetDirectoryName(autoLoadFile);
+            var fileName = Path.GetFileNameWithoutExtension(autoLoadFile);
+            OutputPathTextBox.Text = Path.Combine(directory ?? "", $"{fileName}_extracted");
+
+            UpdateButtonStates();
+
+            // Auto-start analysis after a short delay to let UI settle
+            await Task.Delay(500);
+            if (AnalyzeButton.IsEnabled)
+            {
+                Console.WriteLine("[SingleFileTab] Auto-starting analysis...");
+                AnalyzeButton_Click(this, new RoutedEventArgs());
+            }
         }
     }
 
@@ -61,6 +112,98 @@ public sealed partial class SingleFileTab : UserControl
             FileTypeCheckboxPanel.Children.Add(checkbox);
         }
     }
+
+    #region Sorting
+
+    private void SortByOffset_Click(object sender, RoutedEventArgs e) => ApplySort(SortColumn.Offset);
+    private void SortByLength_Click(object sender, RoutedEventArgs e) => ApplySort(SortColumn.Length);
+    private void SortByType_Click(object sender, RoutedEventArgs e) => ApplySort(SortColumn.Type);
+    private void SortByFilename_Click(object sender, RoutedEventArgs e) => ApplySort(SortColumn.Filename);
+
+    private void ApplySort(SortColumn column)
+    {
+        // Cycle through: Ascending -> Descending -> Default (by offset)
+        if (_currentSortColumn == column)
+        {
+            if (_sortAscending)
+            {
+                _sortAscending = false;
+            }
+            else
+            {
+                // Reset to default sort (by offset ascending)
+                _currentSortColumn = SortColumn.None;
+                _sortAscending = true;
+            }
+        }
+        else
+        {
+            _currentSortColumn = column;
+            _sortAscending = true;
+        }
+
+        UpdateSortIcons();
+        RefreshSortedList();
+    }
+
+    private void UpdateSortIcons()
+    {
+        // Hide all icons first
+        OffsetSortIcon.Visibility = Visibility.Collapsed;
+        LengthSortIcon.Visibility = Visibility.Collapsed;
+        TypeSortIcon.Visibility = Visibility.Collapsed;
+        FilenameSortIcon.Visibility = Visibility.Collapsed;
+
+        // Show the active sort icon
+        FontIcon? activeIcon = _currentSortColumn switch
+        {
+            SortColumn.Offset => OffsetSortIcon,
+            SortColumn.Length => LengthSortIcon,
+            SortColumn.Type => TypeSortIcon,
+            SortColumn.Filename => FilenameSortIcon,
+            _ => null
+        };
+
+        if (activeIcon != null)
+        {
+            activeIcon.Visibility = Visibility.Visible;
+            activeIcon.Glyph = _sortAscending ? "\uE70E" : "\uE70D"; // Up or Down arrow
+        }
+    }
+
+    private void RefreshSortedList()
+    {
+        IEnumerable<CarvedFileEntry> sorted = _currentSortColumn switch
+        {
+            SortColumn.Offset => _sortAscending
+                ? _allCarvedFiles.OrderBy(f => f.Offset)
+                : _allCarvedFiles.OrderByDescending(f => f.Offset),
+            SortColumn.Length => _sortAscending
+                ? _allCarvedFiles.OrderBy(f => f.Length)
+                : _allCarvedFiles.OrderByDescending(f => f.Length),
+            // Sort by FileType string for contiguous grouping
+            SortColumn.Type => _sortAscending
+                ? _allCarvedFiles.OrderBy(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset)
+                : _allCarvedFiles.OrderByDescending(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset),
+            // Sort by Filename, with nulls/empty at the end
+            SortColumn.Filename => _sortAscending
+                ? _allCarvedFiles.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
+                                 .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
+                                 .ThenBy(f => f.Offset)
+                : _allCarvedFiles.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
+                                 .ThenByDescending(f => f.FileName, StringComparer.OrdinalIgnoreCase)
+                                 .ThenBy(f => f.Offset),
+            _ => _allCarvedFiles.OrderBy(f => f.Offset) // Default sort by offset
+        };
+
+        _carvedFiles.Clear();
+        foreach (var file in sorted)
+        {
+            _carvedFiles.Add(file);
+        }
+    }
+
+    #endregion
 
 #pragma warning disable RCS1163 // Unused parameter - required for event handler signature
     private void MinidumpPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -130,6 +273,7 @@ public sealed partial class SingleFileTab : UserControl
             // Reset analysis state
             _analysisResult = null;
             _carvedFiles.Clear();
+            _allCarvedFiles.Clear();
             HexViewer.Clear();
             UpdateButtonStates();
         }
@@ -163,6 +307,12 @@ public sealed partial class SingleFileTab : UserControl
             AnalyzeButton.IsEnabled = false;
             AnalysisProgressBar.Visibility = Visibility.Visible;
             _carvedFiles.Clear();
+            _allCarvedFiles.Clear();
+
+            // Reset sort state
+            _currentSortColumn = SortColumn.None;
+            _sortAscending = true;
+            UpdateSortIcons();
 
             var filePath = MinidumpPathTextBox.Text;
 
@@ -192,13 +342,18 @@ public sealed partial class SingleFileTab : UserControl
 
             // Populate the results table
             foreach (var entry in _analysisResult.CarvedFiles)
-                _carvedFiles.Add(new CarvedFileEntry
+            {
+                var carvedEntry = new CarvedFileEntry
                 {
                     Offset = entry.Offset,
                     Length = entry.Length,
                     FileType = entry.FileType,
+                    FileName = entry.FileName,
                     IsExtracted = false
-                });
+                };
+                _allCarvedFiles.Add(carvedEntry);
+                _carvedFiles.Add(carvedEntry);
+            }
 
             // Update the hex viewer
             HexViewer.LoadData(filePath, _analysisResult);
@@ -231,10 +386,10 @@ public sealed partial class SingleFileTab : UserControl
             ExtractButton.IsEnabled = false;
             AnalysisProgressBar.Visibility = Visibility.Visible;
 
-            // Get selected file types
+            // Get selected file types and map display names to signature keys
             var selectedTypes = _fileTypeCheckboxes
                 .Where(kvp => kvp.Value.IsChecked == true)
-                .Select(kvp => kvp.Key)
+                .SelectMany(kvp => FileTypeMapping.TryGetValue(kvp.Key, out var sigKeys) ? sigKeys : [])
                 .ToList();
 
             var inputPath = MinidumpPathTextBox.Text;
@@ -243,7 +398,7 @@ public sealed partial class SingleFileTab : UserControl
             Console.WriteLine("[Extraction] Starting extraction");
             Console.WriteLine($"[Extraction] Input: {inputPath}");
             Console.WriteLine($"[Extraction] Output: {outputPath}");
-            Console.WriteLine($"[Extraction] Selected types: {string.Join(", ", selectedTypes)}");
+            Console.WriteLine($"[Extraction] Selected types (signature keys): {string.Join(", ", selectedTypes)}");
             Console.WriteLine(
                 $"[Extraction] ConvertDdx: {ConvertDdxCheckBox.IsChecked}, SaveAtlas: {SaveAtlasCheckBox.IsChecked}, Verbose: {VerboseCheckBox.IsChecked}");
 
@@ -262,13 +417,6 @@ public sealed partial class SingleFileTab : UserControl
                 {
                     AnalysisProgressBar.IsIndeterminate = false;
                     AnalysisProgressBar.Value = p.PercentComplete;
-
-                    // Update extracted status in the table
-                    if (p.CurrentFile != null)
-                    {
-                        var entry = _carvedFiles.FirstOrDefault(f => f.Offset == p.CurrentFile.Offset);
-                        if (entry != null) entry.IsExtracted = p.CurrentFile.IsExtracted;
-                    }
                 });
             });
 
@@ -280,8 +428,17 @@ public sealed partial class SingleFileTab : UserControl
             Console.WriteLine($"[Extraction] Complete: {summary.TotalExtracted} files");
             Console.WriteLine($"[Extraction] DDX converted: {summary.DdxConverted}, failed: {summary.DdxFailed}");
 
+            // Update file status in the table based on extraction results
+            foreach (var entry in _allCarvedFiles.Where(e => summary.ExtractedOffsets.Contains(e.Offset)))
+            {
+                entry.Status = ExtractionStatus.Extracted;
+            }
+
             var summaryMessage = $"Extraction complete!\n\n" +
                                  $"Files extracted: {summary.TotalExtracted}\n";
+
+            if (summary.ModulesExtracted > 0)
+                summaryMessage += $"Modules extracted: {summary.ModulesExtracted}\n";
 
             if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
                 summaryMessage += $"\nDDX to DDS conversion:\n" +
@@ -315,24 +472,42 @@ public sealed partial class SingleFileTab : UserControl
 /// </summary>
 public partial class CarvedFileEntry : INotifyPropertyChanged
 {
-    private bool _isExtracted;
+    private ExtractionStatus _status = ExtractionStatus.NotExtracted;
     public long Offset { get; set; }
     public long Length { get; set; }
     public string FileType { get; set; } = "";
+    public string? FileName { get; set; }
 
-    public bool IsExtracted
+    /// <summary>
+    ///     Gets a display name - filename if available, otherwise the file type.
+    /// </summary>
+    public string DisplayName => !string.IsNullOrEmpty(FileName) ? FileName : FileType;
+
+    /// <summary>
+    ///     Gets the filename for display, or empty string if none.
+    /// </summary>
+    public string FileNameDisplay => FileName ?? "";
+
+    public ExtractionStatus Status
     {
-        get => _isExtracted;
+        get => _status;
         set
         {
-            if (_isExtracted != value)
+            if (_status != value)
             {
-                _isExtracted = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExtracted)));
+                _status = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ExtractedGlyph)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ExtractedColor)));
             }
         }
+    }
+
+    // Legacy property for compatibility
+    public bool IsExtracted
+    {
+        get => _status == ExtractionStatus.Extracted;
+        set => Status = value ? ExtractionStatus.Extracted : ExtractionStatus.NotExtracted;
     }
 
     public string OffsetHex => $"0x{Offset:X8}";
@@ -349,11 +524,26 @@ public partial class CarvedFileEntry : INotifyPropertyChanged
         }
     }
 
-    public string ExtractedGlyph => IsExtracted ? "\uE73E" : "\uE711"; // Checkmark or X
+    public string ExtractedGlyph => _status switch
+    {
+        ExtractionStatus.Extracted => "\uE73E", // Checkmark
+        ExtractionStatus.Failed => "\uE711",    // X
+        _ => "\uE8FB"                            // More (horizontal dots) - pending/not extracted
+    };
 
-    public Brush ExtractedColor => IsExtracted
-        ? new SolidColorBrush(Colors.Green)
-        : new SolidColorBrush(Colors.Gray);
+    public Brush ExtractedColor => _status switch
+    {
+        ExtractionStatus.Extracted => new SolidColorBrush(Colors.Green),
+        ExtractionStatus.Failed => new SolidColorBrush(Colors.Red),
+        _ => new SolidColorBrush(Colors.Gray)
+    };
 
     public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+public enum ExtractionStatus
+{
+    NotExtracted,
+    Extracted,
+    Failed
 }
