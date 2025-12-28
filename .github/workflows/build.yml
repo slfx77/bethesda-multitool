@@ -25,10 +25,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore dependencies
-        run: dotnet restore ${{ env.PROJECT_PATH }}
-
-      - name: Build Windows GUI
+      - name: Build and Publish Windows GUI
         run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -o publish/win-gui
 
       - name: Upload Windows GUI artifact
@@ -51,10 +48,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore dependencies
-        run: dotnet restore ${{ env.PROJECT_PATH }}
-
-      - name: Build Windows CLI
+      - name: Build and Publish Windows CLI
         run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r win-x64 --self-contained -o publish/win-cli
 
       - name: Upload Windows CLI artifact
@@ -77,11 +71,8 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore dependencies
-        run: dotnet restore ${{ env.PROJECT_PATH }}
-
-      - name: Build Linux CLI
-        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r linux-x64 --self-contained -o publish/linux-cli
+      - name: Build and Publish Linux CLI
+        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r linux-x64 --self-contained -p:TargetFrameworks=net10.0 -o publish/linux-cli
 
       - name: Upload Linux CLI artifact
         uses: actions/upload-artifact@v4
@@ -118,3 +109,4 @@ jobs:
             Xbox360MemoryCarver-Windows-CLI-x64.zip
             Xbox360MemoryCarver-Linux-CLI-x64.tar.gz
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
