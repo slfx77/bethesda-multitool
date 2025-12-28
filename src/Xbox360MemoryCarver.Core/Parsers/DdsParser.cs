@@ -1,0 +1,108 @@
+using System.Text;
+using Xbox360MemoryCarver.Core.Utils;
+
+namespace Xbox360MemoryCarver.Core.Parsers;
+
+/// <summary>
+///     Parser for DDS (DirectDraw Surface) texture files.
+/// </summary>
+public class DdsParser : IFileParser
+{
+    public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        if (data.Length < offset + 128)
+        {
+            return null;
+        }
+
+        var headerData = data.Slice(offset, 128);
+
+        if (!headerData[..4].SequenceEqual("DDS "u8))
+        {
+            return null;
+        }
+
+        try
+        {
+            var headerSize = BinaryUtils.ReadUInt32LE(headerData, 4);
+            var height = BinaryUtils.ReadUInt32LE(headerData, 12);
+            var width = BinaryUtils.ReadUInt32LE(headerData, 16);
+            var pitchOrLinearSize = BinaryUtils.ReadUInt32LE(headerData, 20);
+            var mipmapCount = BinaryUtils.ReadUInt32LE(headerData, 28);
+            var fourcc = headerData.Slice(84, 4);
+            var endianness = "little";
+
+            if (height > 16384 || width > 16384 || headerSize != 124)
+            {
+                height = BinaryUtils.ReadUInt32BE(headerData, 12);
+                width = BinaryUtils.ReadUInt32BE(headerData, 16);
+                pitchOrLinearSize = BinaryUtils.ReadUInt32BE(headerData, 20);
+                mipmapCount = BinaryUtils.ReadUInt32BE(headerData, 28);
+                endianness = "big";
+            }
+
+            if (height == 0 || width == 0 || height > 16384 || width > 16384)
+            {
+                return null;
+            }
+
+            var fourccStr = Encoding.ASCII.GetString(fourcc).TrimEnd('\0');
+            var bytesPerBlock = GetBytesPerBlock(fourccStr);
+            var estimatedSize = CalculateMipmapSize((int)width, (int)height, (int)mipmapCount, bytesPerBlock);
+
+            return new ParseResult
+            {
+                Format = "DDS",
+                EstimatedSize = estimatedSize + 128,
+                Width = (int)width,
+                Height = (int)height,
+                MipCount = (int)mipmapCount,
+                FourCc = fourccStr,
+                IsXbox360 = endianness == "big",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["pitch"] = pitchOrLinearSize,
+                    ["endianness"] = endianness
+                }
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static int GetBytesPerBlock(string fourcc)
+    {
+        return fourcc switch
+        {
+            "DXT1" => 8,
+            "DXT2" or "DXT3" or "DXT4" or "DXT5" => 16,
+            "ATI1" or "BC4U" or "BC4S" => 8,
+            "ATI2" or "BC5U" or "BC5S" => 16,
+            _ => 16
+        };
+    }
+
+    private static int CalculateMipmapSize(int width, int height, int mipmapCount, int bytesPerBlock)
+    {
+        var blocksWide = (width + 3) / 4;
+        var blocksHigh = (height + 3) / 4;
+        var estimatedSize = blocksWide * blocksHigh * bytesPerBlock;
+
+        if (mipmapCount > 1)
+        {
+            int mipWidth = width, mipHeight = height;
+            for (var i = 1; i < Math.Min(mipmapCount, 16); i++)
+            {
+                mipWidth = Math.Max(1, mipWidth / 2);
+                mipHeight = Math.Max(1, mipHeight / 2);
+                var mipBlocksWide = Math.Max(1, (mipWidth + 3) / 4);
+                var mipBlocksHigh = Math.Max(1, (mipHeight + 3) / 4);
+                estimatedSize += mipBlocksWide * mipBlocksHigh * bytesPerBlock;
+            }
+        }
+
+        return estimatedSize;
+    }
+}
