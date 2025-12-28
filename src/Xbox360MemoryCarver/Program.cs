@@ -1,24 +1,16 @@
 using System.CommandLine;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
-using Microsoft.UI.Dispatching;
-using Microsoft.UI.Xaml;
-using WinRT;
 using Xbox360MemoryCarver.Core.Carving;
-using UnhandledExceptionEventArgs = System.UnhandledExceptionEventArgs;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
-///     Entry point that supports both GUI and CLI modes.
-///     Use --no-gui for command-line carving without launching the UI.
-///     Use --file to auto-load a file for analysis in GUI mode.
+///     Cross-platform CLI entry point for Xbox 360 Memory Carver.
+///     On Windows with GUI build, this delegates to the GUI app unless --no-gui is specified.
 /// </summary>
 public static class Program
 {
-    private const int ATTACH_PARENT_PROCESS = -1;
-
     /// <summary>
     ///     File path to auto-load when GUI starts (set via --file parameter).
     /// </summary>
@@ -29,74 +21,31 @@ public static class Program
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        // Attach to console early for crash logging
-        AttachConsole(ATTACH_PARENT_PROCESS);
+#if WINDOWS_GUI
+        // On Windows GUI build, check if we should launch GUI or CLI
+        var isCliMode = args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n"));
 
-        // Set up global exception handlers
-        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
-        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
-
-        try
+        if (!isCliMode)
         {
-            // Check if running in CLI mode
-            if (args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n"))) return await RunCliAsync(args);
-
             // Check for --file parameter for GUI mode
             AutoLoadFile = GetFlagValue(args, "--file") ?? GetFlagValue(args, "-f");
-            if (!string.IsNullOrEmpty(AutoLoadFile)) Console.WriteLine($"[Program] Auto-load file: {AutoLoadFile}");
 
-            // GUI mode - launch WinUI app
-            Console.WriteLine("[Program] Starting GUI mode...");
-            ComWrappersSupport.InitializeComWrappers();
-            Application.Start(p =>
+            // Also check for a single positional argument that's a .dmp file
+            if (string.IsNullOrEmpty(AutoLoadFile) && args.Length > 0 && !args[0].StartsWith('-'))
             {
-                _ = p; // Suppress unused parameter warning
-                var context = new DispatcherQueueSynchronizationContext(
-                    DispatcherQueue.GetForCurrentThread());
-                SynchronizationContext.SetSynchronizationContext(context);
-                _ = new App();
-            });
-
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[FATAL] Application crashed: {ex.GetType().Name}");
-            Console.WriteLine($"[FATAL] Message: {ex.Message}");
-            Console.WriteLine($"[FATAL] Stack trace:\n{ex.StackTrace}");
-            if (ex.InnerException != null)
-            {
-                Console.WriteLine($"[FATAL] Inner exception: {ex.InnerException.GetType().Name}");
-                Console.WriteLine($"[FATAL] Inner message: {ex.InnerException.Message}");
-                Console.WriteLine($"[FATAL] Inner stack trace:\n{ex.InnerException.StackTrace}");
+                var potentialFile = args[0];
+                if (File.Exists(potentialFile) && potentialFile.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase))
+                {
+                    AutoLoadFile = potentialFile;
+                }
             }
 
-            return 1;
+            return App.GuiEntryPoint.Run(args);
         }
-    }
+#endif
 
-    private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
-    {
-        var ex = e.ExceptionObject as Exception;
-        Console.WriteLine($"[FATAL] Unhandled domain exception: {ex?.GetType().Name ?? "Unknown"}");
-        Console.WriteLine($"[FATAL] Message: {ex?.Message ?? "No message"}");
-        Console.WriteLine($"[FATAL] Stack trace:\n{ex?.StackTrace ?? "No stack trace"}");
-        Console.WriteLine($"[FATAL] IsTerminating: {e.IsTerminating}");
-    }
-
-    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
-    {
-        Console.WriteLine($"[ERROR] Unobserved task exception: {e.Exception.GetType().Name}");
-        Console.WriteLine($"[ERROR] Message: {e.Exception.Message}");
-        Console.WriteLine($"[ERROR] Stack trace:\n{e.Exception.StackTrace}");
-        foreach (var inner in e.Exception.InnerExceptions)
-        {
-            Console.WriteLine($"[ERROR] Inner: {inner.GetType().Name}: {inner.Message}");
-            Console.WriteLine($"[ERROR] Inner stack:\n{inner.StackTrace}");
-        }
-
-        // Don't terminate for task exceptions
-        e.SetObserved();
+        // CLI mode
+        return await RunCliAsync(args);
     }
 
     private static bool HasFlag(string[] args, string flag)
@@ -107,17 +56,18 @@ public static class Program
     private static string? GetFlagValue(string[] args, string flag)
     {
         for (var i = 0; i < args.Length - 1; i++)
+        {
             if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
+            {
                 return args[i + 1];
+            }
+        }
 
         return null;
     }
 
     private static async Task<int> RunCliAsync(string[] args)
     {
-        // Attach to console for output
-        if (!AttachConsole(ATTACH_PARENT_PROCESS)) AllocConsole();
-
         Console.OutputEncoding = Encoding.UTF8;
         Console.WriteLine("Xbox 360 Memory Carver - CLI Mode");
         Console.WriteLine("=================================");
@@ -136,10 +86,10 @@ public static class Program
             () => "output",
             "Output directory for carved files");
 
-        // No GUI flag (required for CLI mode)
+        // No GUI flag (required for CLI mode on Windows)
         var noGuiOption = new Option<bool>(
             ["-n", "--no-gui"],
-            "Run in command-line mode without GUI");
+            "Run in command-line mode without GUI (Windows only)");
 
         // DDX conversion mode
         var ddxOption = new Option<bool>(
@@ -188,8 +138,21 @@ public static class Program
 
             if (string.IsNullOrEmpty(input))
             {
-                Console.WriteLine("Error: Input path is required for CLI mode.");
-                Console.WriteLine("Usage: Xbox360MemoryCarver.App --no-gui <input.dmp> -o <output_dir>");
+                Console.WriteLine("Error: Input path is required.");
+                Console.WriteLine();
+                Console.WriteLine("Usage:");
+                Console.WriteLine("  Xbox360MemoryCarver <input.dmp> -o <output_dir> [options]");
+                Console.WriteLine();
+                Console.WriteLine("Examples:");
+                Console.WriteLine("  Xbox360MemoryCarver dump.dmp -o extracted");
+                Console.WriteLine("  Xbox360MemoryCarver dump.dmp -o extracted -t ddx xma nif");
+                Console.WriteLine("  Xbox360MemoryCarver dump.dmp -o extracted --convert-ddx -v");
+#if WINDOWS_GUI
+                Console.WriteLine();
+                Console.WriteLine("For GUI mode, run without arguments or with --file:");
+                Console.WriteLine("  Xbox360MemoryCarver");
+                Console.WriteLine("  Xbox360MemoryCarver --file dump.dmp");
+#endif
                 context.ExitCode = 1;
                 return;
             }
@@ -209,7 +172,11 @@ public static class Program
             catch (Exception ex)
             {
                 Console.WriteLine($"Error: {ex.Message}");
-                if (verbose) Console.WriteLine(ex.StackTrace);
+                if (verbose)
+                {
+                    Console.WriteLine(ex.StackTrace);
+                }
+
                 context.ExitCode = 1;
             }
         });
@@ -228,9 +195,13 @@ public static class Program
         var files = new List<string>();
 
         if (File.Exists(inputPath))
+        {
             files.Add(inputPath);
+        }
         else if (Directory.Exists(inputPath))
+        {
             files.AddRange(Directory.GetFiles(inputPath, "*.dmp", SearchOption.TopDirectoryOnly));
+        }
 
         if (files.Count == 0)
         {
@@ -255,7 +226,10 @@ public static class Program
 
             var progress = new Progress<double>(p =>
             {
-                if (verbose) Console.Write($"\rProgress: {p * 100:F1}%");
+                if (verbose)
+                {
+                    Console.Write($"\rProgress: {p * 100:F1}%");
+                }
             });
 
             var stopwatch = Stopwatch.StartNew();
@@ -269,10 +243,14 @@ public static class Program
             Console.WriteLine();
             Console.WriteLine("File type summary:");
             foreach (var (type, count) in carver.Stats.OrderByDescending(x => x.Value))
+            {
                 if (count > 0)
+                {
                     Console.WriteLine($"  {type}: {count}");
+                }
+            }
 
-            if (convertDdx && carver.DdxConvertedCount > 0)
+            if (convertDdx && (carver.DdxConvertedCount > 0 || carver.DdxConvertFailedCount > 0))
             {
                 Console.WriteLine();
                 Console.WriteLine(
@@ -283,17 +261,4 @@ public static class Program
         Console.WriteLine();
         Console.WriteLine("Done!");
     }
-#pragma warning disable SYSLIB1054 // Use LibraryImport - we keep DllImport to avoid requiring /unsafe
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AttachConsole(int dwProcessId);
-
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AllocConsole();
-
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool FreeConsole();
-#pragma warning restore SYSLIB1054
 }

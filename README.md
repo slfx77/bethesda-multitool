@@ -4,13 +4,13 @@ A high-performance WinUI 3 desktop application for extracting usable data from X
 
 ## Features
 
-- **Modern GUI**: WinUI 3 desktop application with hex viewer and minimap
-- **High Performance**: Native C# implementation with parallel processing support
-- **XCompression Support**: Native Xbox 360 XMemCompress/XMemDecompress via XnaNative.dll from XNA Framework
-- **Multiple File Format Support**: Carves DDS textures, XMA audio, NIF models, Bethesda scripts, and more
-- **Xbox 360 Optimized**: Handles Xbox 360-specific formats including big-endian byte order and swizzled textures
-- **Memory Efficient**: Processes large dumps in chunks to prevent excessive memory usage
-- **Batch Processing**: Process multiple dump files at once
+-   **Modern GUI**: WinUI 3 desktop application with hex viewer and minimap
+-   **High Performance**: Native C# implementation with parallel processing support
+-   **XCompression Support**: Native Xbox 360 XMemCompress/XMemDecompress via XnaNative.dll from XNA Framework
+-   **Multiple File Format Support**: Carves DDS textures, XMA audio, NIF models, Bethesda scripts, and more
+-   **Xbox 360 Optimized**: Handles Xbox 360-specific formats including big-endian byte order and swizzled textures
+-   **Memory Efficient**: Processes large dumps in chunks to prevent excessive memory usage
+-   **Batch Processing**: Process multiple dump files at once
 
 ## Supported File Types
 
@@ -56,9 +56,9 @@ A high-performance WinUI 3 desktop application for extracting usable data from X
 
 ## Requirements
 
-- .NET 10.0 or later
-- Windows 10/11 (WinUI 3 requires Windows 10 version 1809 or later)
-- Microsoft XNA Framework 4.0 (for XnaNative.dll decompression support)
+-   .NET 10.0 or later
+-   Windows 10/11 (WinUI 3 requires Windows 10 version 1809 or later)
+-   Microsoft XNA Framework 4.0 (for XnaNative.dll decompression support)
 
 ## Building
 
@@ -129,49 +129,6 @@ Options:
 For full Xbox 360 compressed texture support, install Microsoft XNA Framework 4.0. The application uses XnaNative.dll from the XNA Framework for LZX decompression.
 
 If XNA Framework is not installed, DDX files cannot be converted (the converter subprocess will fail).
-
-## Project Structure
-
-```
-
-Xbox360MemoryCarver/
-├── Xbox360MemoryCarver.slnx # Solution file
-├── README.md
-├── LICENSE
-├── docs/ # Documentation
-├── Sample/ # Sample data (dumps, textures)
-└── src/
-├── Xbox360MemoryCarver.App/ # WinUI 3 desktop application
-│ ├── Xbox360MemoryCarver.App.csproj
-│ ├── App.xaml # Application entry
-│ ├── MainWindow.xaml # Main window with tabs
-│ ├── SingleFileTab.xaml # Single file analysis UI
-│ ├── BatchModeTab.xaml # Batch processing UI
-│ ├── HexViewerControl.xaml # Hex viewer component
-│ └── HexMinimapControl.xaml # Minimap component
-├── Xbox360MemoryCarver.Core/ # Core library
-│ ├── Xbox360MemoryCarver.Core.csproj
-│ ├── MemoryDumpAnalyzer.cs # Analysis engine
-│ ├── MemoryDumpExtractor.cs # Extraction orchestrator
-│ ├── Carving/
-│ │ └── MemoryCarver.cs # Main carving engine
-│ ├── Converters/
-│ │ └── DdxSubprocessConverter.cs # DDX conversion via subprocess
-│ ├── Models/
-│ │ └── FileSignatures.cs # File signature definitions
-│ ├── Parsers/
-│ │ └── FileParsers.cs # Format-specific parsers
-│ └── Utils/
-│ └── BinaryUtils.cs # Binary helper functions
-└── DDXConv/ # DDX conversion submodule (x86)
-├── DDXConv/ # Main converter
-│ ├── DDXConv.csproj
-│ ├── Program.cs # CLI entry point
-│ └── DdxParser.cs # DDX format parsing & untiling
-└── XCompression/ # Xbox 360 compression library
-└── XCompression.csproj
-
-```
 
 ## Technical Notes
 

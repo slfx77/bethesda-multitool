@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Multi-target: cross-platform CLI + Windows GUI -->
+    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Xbox360MemoryCarver</RootNamespace>
+    <AssemblyName>Xbox360MemoryCarver</AssemblyName>
+    <Platforms>x64;AnyCPU</Platforms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+  </PropertyGroup>
+
+  <!-- Cross-platform (CLI) settings -->
+  <PropertyGroup Condition="!$(TargetFramework.Contains('windows'))">
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!-- Windows GUI settings -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('windows'))">
+    <OutputType>WinExe</OutputType>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN;WINDOWS_GUI</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Shared packages -->
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+  </ItemGroup>
+
+  <!-- Windows GUI packages -->
+  <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250108002" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" Version="8.2.250402" />
+  </ItemGroup>
+
+  <!-- Exclude GUI code from cross-platform build -->
+  <ItemGroup Condition="!$(TargetFramework.Contains('windows'))">
+    <!-- XAML code-behind files -->
+    <Compile Remove="*.xaml.cs" />
+    <Compile Remove="GuiEntryPoint.cs" />
+    <Compile Remove="FileTypeColors.cs" />
+    <Compile Remove="ClipboardHelper.cs" />
+    <Compile Remove="FileRegion.cs" />
+    <Compile Remove="HexMinimapRenderer.cs" />
+    <Compile Remove="HexRowRenderer.cs" />
+    <Compile Remove="CarvedFileEntry.cs" />
+    <Compile Remove="FileTypeMapping.cs" />
+    <!-- XAML files -->
+    <Page Remove="*.xaml" />
+    <None Remove="app.manifest" />
+  </ItemGroup>
+
+</Project>
