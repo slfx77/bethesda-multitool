@@ -45,6 +45,21 @@ public class MinidumpInfo
     }
 
     /// <summary>
+    ///     Convert a virtual address to a file offset using memory regions.
+    /// </summary>
+    public long? VirtualAddressToFileOffset(long virtualAddress)
+    {
+        foreach (var region in MemoryRegions)
+            if (virtualAddress >= region.VirtualAddress && virtualAddress < region.VirtualAddress + region.Size)
+            {
+                var offsetInRegion = virtualAddress - region.VirtualAddress;
+                return region.FileOffset + offsetInRegion;
+            }
+
+        return null;
+    }
+
+    /// <summary>
     ///     Find a module by file offset (converts to virtual address first).
     /// </summary>
     public MinidumpModule? FindModuleByFileOffset(long fileOffset)
