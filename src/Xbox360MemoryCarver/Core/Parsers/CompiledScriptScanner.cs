@@ -3,47 +3,60 @@ using Xbox360MemoryCarver.Core.Utils;
 namespace Xbox360MemoryCarver.Core.Parsers;
 
 /// <summary>
-///     Scanner for compiled Bethesda script bytecode in Xbox 360 memory dumps.
+///     Scanner for compiled Bethesda script bytecode in memory dumps.
 ///     
-///     IMPORTANT: Xbox 360 uses PowerPC (big-endian), so all multi-byte values
-///     are read in big-endian format.
+///     Based on xNVSE's ScriptAnalyzer - uses correct opcodes:
+///     - 0x1D = ScriptName (scripts start with this)
+///     - 0x10 = Begin
+///     - 0x11 = End
 ///     
-///     This is experimental and may produce false positives. It's designed to
-///     find scripts in Release builds where the source text is not available.
+///     This scanner can work with both little-endian (PC) and big-endian (Xbox 360) bytecode.
 /// </summary>
 public static class CompiledScriptScanner
 {
-    // Opcodes in big-endian format for Xbox 360
-    private const ushort Opcode_ScriptName = 0x0010;
-    private const ushort Opcode_Begin = 0x0011;
-    private const ushort Opcode_End = 0x0012;
+    // From xNVSE ScriptStatementCode enum
+    private const ushort Opcode_ScriptName = 0x1D;
+    private const ushort Opcode_Begin = 0x10;
 
     /// <summary>
     ///     Scan a memory region for potential compiled scripts.
+    ///     
+    ///     NOTE: After extensive testing, it appears that Xbox 360 bytecode uses LITTLE-ENDIAN
+    ///     for opcodes despite the PowerPC being big-endian. This is because the game engine
+    ///     stores bytecode in a platform-independent format.
     /// </summary>
     /// <param name="data">The data to scan.</param>
     /// <param name="startOffset">Starting offset in the data.</param>
     /// <param name="maxResults">Maximum number of results to return.</param>
+    /// <param name="isBigEndian">If true, read as big-endian. Default is FALSE (bytecode is LE even on Xbox 360).</param>
     /// <returns>List of potential compiled script locations and sizes.</returns>
     public static List<CompiledScriptMatch> ScanForCompiledScripts(
         ReadOnlySpan<byte> data,
         int startOffset = 0,
-        int maxResults = 1000)
+        int maxResults = 1000,
+        bool isBigEndian = false)
     {
         var results = new List<CompiledScriptMatch>();
-        var parser = new CompiledScriptParser();
+        var parser = new CompiledScriptParser { IsBigEndian = isBigEndian };
 
         // Scan for potential script starts
-        // In big-endian, ScriptName opcode 0x0010 appears as bytes: 0x00 0x10
+        // ScriptName opcode 0x1D appears as:
+        // - Little-endian: 0x1D 0x00 (bytes)
+        // - Big-endian: 0x00 0x1D (bytes)
+        var firstByte = isBigEndian ? (byte)0x00 : (byte)0x1D;
+        var secondByte = isBigEndian ? (byte)0x1D : (byte)0x00;
+
         for (var i = startOffset; i < data.Length - 8 && results.Count < maxResults; i++)
         {
-            // Quick check for ScriptName opcode in big-endian (0x00 0x10)
-            if (data[i] != 0x00 || data[i + 1] != 0x10) continue;
+            // Quick check for ScriptName opcode
+            if (data[i] != firstByte || data[i + 1] != secondByte) continue;
 
-            // Get the length field (big-endian)
-            var length = BinaryUtils.ReadUInt16BE(data, i + 2);
+            // Get the length field
+            var length = isBigEndian 
+                ? BinaryUtils.ReadUInt16BE(data, i + 2) 
+                : BinaryUtils.ReadUInt16LE(data, i + 2);
 
-            // ScriptName typically has length 0-4
+            // ScriptName typically has length 0-4 bytes (just padding/index data)
             if (length > 32) continue;
 
             // Try to parse as compiled script
@@ -57,6 +70,7 @@ public static class CompiledScriptScanner
                     StatementCount = result.Metadata.TryGetValue("statementCount", out var sc) ? (int)sc : 0,
                     BeginCount = result.Metadata.TryGetValue("beginCount", out var bc) ? (int)bc : 0,
                     EndCount = result.Metadata.TryGetValue("endCount", out var ec) ? (int)ec : 0,
+                    CommandCalls = result.Metadata.TryGetValue("commandCalls", out var cc) ? (int)cc : 0,
                     Confidence = CalculateConfidence(result)
                 };
 
@@ -68,6 +82,27 @@ public static class CompiledScriptScanner
         }
 
         return results;
+    }
+
+    /// <summary>
+    ///     Scan for scripts trying both endianness modes and return the best results.
+    /// </summary>
+    public static List<CompiledScriptMatch> ScanForCompiledScriptsAuto(
+        ReadOnlySpan<byte> data,
+        int startOffset = 0,
+        int maxResults = 1000)
+    {
+        // Try little-endian first (most common even on Xbox 360)
+        var leResults = ScanForCompiledScripts(data, startOffset, maxResults, isBigEndian: false);
+        
+        // Try big-endian
+        var beResults = ScanForCompiledScripts(data, startOffset, maxResults, isBigEndian: true);
+        
+        // Return whichever found more high-confidence results
+        var leHighConf = leResults.Count(m => m.Confidence >= 0.7f);
+        var beHighConf = beResults.Count(m => m.Confidence >= 0.7f);
+        
+        return leHighConf >= beHighConf ? leResults : beResults;
     }
 
     /// <summary>
@@ -99,16 +134,22 @@ public static class CompiledScriptScanner
             if (vd > 0) confidence += 0.1f;
         }
 
+        // Command calls = higher confidence
+        if (result.Metadata.TryGetValue("commandCalls", out var ccObj) && ccObj is int cc)
+        {
+            if (cc > 0) confidence += 0.05f;
+            if (cc > 5) confidence += 0.05f;
+        }
+
         return Math.Min(confidence, 1.0f);
     }
 
     /// <summary>
     ///     Analyze a compiled script and extract detailed opcode information.
-    ///     All reads are big-endian for Xbox 360.
     /// </summary>
-    public static CompiledScriptInfo? AnalyzeCompiledScript(ReadOnlySpan<byte> data, int offset)
+    public static CompiledScriptInfo? AnalyzeCompiledScript(ReadOnlySpan<byte> data, int offset, bool isBigEndian = false)
     {
-        var parser = new CompiledScriptParser();
+        var parser = new CompiledScriptParser { IsBigEndian = isBigEndian };
         var result = parser.ParseHeader(data, offset);
 
         if (result == null) return null;
@@ -126,16 +167,26 @@ public static class CompiledScriptScanner
 
         while (pos + 4 <= end && pos < data.Length)
         {
-            // Read as big-endian
-            var opcode = BinaryUtils.ReadUInt16BE(data, pos);
-            var length = BinaryUtils.ReadUInt16BE(data, pos + 2);
+            var opcode = isBigEndian 
+                ? BinaryUtils.ReadUInt16BE(data, pos) 
+                : BinaryUtils.ReadUInt16LE(data, pos);
+            
+            ushort length;
+            ushort refIdx = 0;
 
-            // Handle ReferenceFunction specially
-            if (opcode == 0x001D && pos + 8 <= end)
+            // Handle ReferenceFunction (0x1C) specially
+            if (opcode == 0x1C && pos + 8 <= end)
             {
-                var refIdx = BinaryUtils.ReadUInt16BE(data, pos + 2);
-                opcode = BinaryUtils.ReadUInt16BE(data, pos + 4);
-                length = BinaryUtils.ReadUInt16BE(data, pos + 6);
+                refIdx = isBigEndian 
+                    ? BinaryUtils.ReadUInt16BE(data, pos + 2) 
+                    : BinaryUtils.ReadUInt16LE(data, pos + 2);
+                opcode = isBigEndian 
+                    ? BinaryUtils.ReadUInt16BE(data, pos + 4) 
+                    : BinaryUtils.ReadUInt16LE(data, pos + 4);
+                length = isBigEndian 
+                    ? BinaryUtils.ReadUInt16BE(data, pos + 6) 
+                    : BinaryUtils.ReadUInt16LE(data, pos + 6);
+                    
                 info.Opcodes.Add(new OpcodeInfo
                 {
                     Offset = pos,
@@ -148,6 +199,10 @@ public static class CompiledScriptScanner
             }
             else
             {
+                length = isBigEndian 
+                    ? BinaryUtils.ReadUInt16BE(data, pos + 2) 
+                    : BinaryUtils.ReadUInt16LE(data, pos + 2);
+                    
                 info.Opcodes.Add(new OpcodeInfo
                 {
                     Offset = pos,
@@ -174,6 +229,7 @@ public class CompiledScriptMatch
     public int StatementCount { get; init; }
     public int BeginCount { get; init; }
     public int EndCount { get; init; }
+    public int CommandCalls { get; init; }
     public float Confidence { get; init; }
 }
 
@@ -200,23 +256,25 @@ public class OpcodeInfo
 
     public string OpcodeName => Opcode switch
     {
-        0x0010 => "ScriptName",
-        0x0011 => "Begin",
-        0x0012 => "End",
-        0x0013 => "short",
-        0x0014 => "long",
-        0x0015 => "float",
-        0x0016 => "Set",
-        0x0017 => "If",
-        0x0018 => "Else",
-        0x0019 => "ElseIf",
-        0x001A => "EndIf",
-        0x001B => "While",
-        0x001C => "ref",
-        0x001D => "RefFunction",
-        0x001E => "Return",
-        0x001F => "Loop",
-        >= 0x1000 => $"Command(0x{Opcode:X4})",
-        _ => $"Unknown(0x{Opcode:X4})"
+        // Statement opcodes (from xNVSE ScriptStatementCode)
+        0x10 => "Begin",
+        0x11 => "End",
+        0x12 => "Short",
+        0x13 => "Long",
+        0x14 => "Float",
+        0x15 => "SetTo",
+        0x16 => "If",
+        0x17 => "Else",
+        0x18 => "ElseIf",
+        0x19 => "EndIf",
+        0x1A => "While",
+        0x1B => "Loop",
+        0x1C => "ReferenceFunction",
+        0x1D => "ScriptName",
+        0x1E => "Return",
+        0x1F => "Ref",
+        // Commands
+        >= 0x1000 => $"Command_0x{Opcode:X4}",
+        _ => $"Unknown_0x{Opcode:X2}"
     };
 }

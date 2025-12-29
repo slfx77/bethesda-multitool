@@ -410,9 +410,9 @@ public static class Program
 
         // Scan for compiled scripts
         Console.WriteLine();
-        Console.WriteLine("Scanning for compiled script bytecode (opcode 0x0010 = ScriptName)...");
+        Console.WriteLine("Scanning for compiled script bytecode (opcode 0x1D = ScriptName)...");
 
-        var matches = CompiledScriptScanner.ScanForCompiledScripts(fileData, maxResults: 500);
+        var matches = CompiledScriptScanner.ScanForCompiledScripts(fileData, maxResults: 500, isBigEndian: true);
 
         stopwatch.Stop();
         Console.WriteLine($"Scan completed in {stopwatch.Elapsed.TotalSeconds:F2}s");
@@ -489,7 +489,8 @@ public static class Program
                 // Try to decompile
                 try
                 {
-                    var decompiler = new ScriptDecompiler(fileData, match.Offset, match.Size);
+                    // Xbox 360 uses big-endian bytecode
+                    var decompiler = new ScriptDecompiler(fileData, match.Offset, match.Size, isBigEndian: true);
                     var result = decompiler.Decompile();
 
                     if (result.Success || !string.IsNullOrEmpty(result.DecompiledText))

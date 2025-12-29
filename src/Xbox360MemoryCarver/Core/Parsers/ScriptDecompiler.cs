@@ -1,84 +1,87 @@
+using System.Globalization;
 using System.Text;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Parsers;
 
 /// <summary>
-///     Decompiler for compiled Bethesda ObScript bytecode (Xbox 360 / Big-Endian).
+///     Decompiler for compiled Bethesda ObScript bytecode.
 ///     
-///     Based on analysis of xNVSE's ScriptAnalyzer implementation.
-///     This provides basic decompilation - not all opcodes are fully supported.
-///     
+///     Based on xNVSE's ScriptAnalyzer implementation.
 ///     Reference: https://github.com/xNVSE/NVSE/blob/master/nvse/nvse/ScriptAnalyzer.cpp
+///     
+///     IMPORTANT: The bytecode format uses LITTLE-ENDIAN for opcodes and lengths,
+///     even on Xbox 360. This is because the game engine bytecode format is consistent
+///     across platforms - the endianness conversion happens at the game engine level,
+///     not in the raw bytecode.
 /// </summary>
 public class ScriptDecompiler
 {
-    // Statement opcodes
-    private const ushort Op_ScriptName = 0x0010;
-    private const ushort Op_Begin = 0x0011;
-    private const ushort Op_End = 0x0012;
-    private const ushort Op_Short = 0x0013;
-    private const ushort Op_Long = 0x0014;
-    private const ushort Op_Float = 0x0015;
-    private const ushort Op_Set = 0x0016;
-    private const ushort Op_If = 0x0017;
-    private const ushort Op_Else = 0x0018;
-    private const ushort Op_ElseIf = 0x0019;
-    private const ushort Op_EndIf = 0x001A;
-    private const ushort Op_While = 0x001B;
-    private const ushort Op_Ref = 0x001C;
-    private const ushort Op_RefFunc = 0x001D;
-    private const ushort Op_Return = 0x001E;
-    private const ushort Op_Loop = 0x001F;
+    // Statement opcodes from xNVSE ScriptAnalyzer.h
+    // These are the same on all platforms (bytecode is platform-independent)
+    private const ushort Op_Begin = 0x10;
+    private const ushort Op_End = 0x11;
+    private const ushort Op_Short = 0x12;
+    private const ushort Op_Long = 0x13;
+    private const ushort Op_Float = 0x14;
+    private const ushort Op_SetTo = 0x15;
+    private const ushort Op_If = 0x16;
+    private const ushort Op_Else = 0x17;
+    private const ushort Op_ElseIf = 0x18;
+    private const ushort Op_EndIf = 0x19;
+    private const ushort Op_ReferenceFunction = 0x1C;
+    private const ushort Op_ScriptName = 0x1D;
+    private const ushort Op_Return = 0x1E;
+    private const ushort Op_Ref = 0x1F;
 
-    // Begin block event types (partial list from Oblivion/FNV)
+    // Begin block event types (from xNVSE g_eventBlockCommandInfos, indices 0-37)
     private static readonly Dictionary<ushort, string> EventTypes = new()
     {
-        [0x0000] = "GameMode",
-        [0x0001] = "MenuMode",
-        [0x0002] = "OnActivate",
-        [0x0003] = "OnAdd",
-        [0x0004] = "OnEquip",
-        [0x0005] = "OnUnequip",
-        [0x0006] = "OnDrop",
-        [0x0007] = "SayToDone",
-        [0x0008] = "OnHit",
-        [0x0009] = "OnHitWith",
-        [0x000A] = "OnDeath",
-        [0x000B] = "OnMurder",
-        [0x000C] = "OnCombatEnd",
-        [0x000D] = "OnLoad",
-        [0x000E] = "OnMagicEffectHit",
-        [0x000F] = "OnTrigger",
-        [0x0010] = "OnTriggerEnter",
-        [0x0011] = "OnTriggerLeave",
-        [0x0012] = "OnActorEquip",
-        [0x0013] = "OnActorUnequip",
-        [0x0014] = "OnReset",
-        [0x0015] = "ScriptEffectStart",
-        [0x0016] = "ScriptEffectFinish",
-        [0x0017] = "ScriptEffectUpdate",
-        [0x0018] = "OnPackageStart",
-        [0x0019] = "OnPackageDone",
-        [0x001A] = "OnPackageChange",
-        [0x001B] = "OnStartCombat",
-        [0x001C] = "OnSell",
-        [0x001D] = "OnOpen",
-        [0x001E] = "OnClose",
-        // FNV specific
-        [0x0020] = "OnGrab",
-        [0x0021] = "OnRelease",
-        [0x0022] = "OnDestructionStageChange",
-        [0x0023] = "OnFire",
-        [0x0024] = "OnNPCActivate"
+        [0x00] = "GameMode",
+        [0x01] = "MenuMode",
+        [0x02] = "OnActivate",
+        [0x03] = "OnAdd",
+        [0x04] = "OnEquip",
+        [0x05] = "OnUnequip",
+        [0x06] = "OnDrop",
+        [0x07] = "SayToDone",
+        [0x08] = "OnHit",
+        [0x09] = "OnHitWith",
+        [0x0A] = "OnDeath",
+        [0x0B] = "OnMurder",
+        [0x0C] = "OnCombatEnd",
+        [0x0D] = "OnLoad",
+        [0x0E] = "OnMagicEffectHit",
+        [0x0F] = "OnTrigger",
+        [0x10] = "OnTriggerEnter",
+        [0x11] = "OnTriggerLeave",
+        [0x12] = "OnActorEquip",
+        [0x13] = "OnActorUnequip",
+        [0x14] = "OnReset",
+        [0x15] = "ScriptEffectStart",
+        [0x16] = "ScriptEffectFinish",
+        [0x17] = "ScriptEffectUpdate",
+        [0x18] = "OnPackageStart",
+        [0x19] = "OnPackageDone",
+        [0x1A] = "OnPackageChange",
+        [0x1B] = "OnStartCombat",
+        [0x1C] = "OnSell",
+        [0x1D] = "OnOpen",
+        [0x1E] = "OnClose",
+        [0x1F] = "OnGrab",
+        [0x20] = "OnRelease",
+        [0x21] = "OnDestructionStageChange",
+        [0x22] = "OnFire",
+        [0x23] = "OnNPCActivate",
+        [0x24] = "SayTo",
+        [0x25] = "Say"
     };
 
-    // Common command opcodes (partial list - there are hundreds)
+    // Common vanilla game command opcodes (partial list)
+    // Full list has ~500 vanilla commands + ~1500 NVSE commands
     private static readonly Dictionary<ushort, string> CommandNames = new()
     {
-        // Basic functions
-        [0x1000] = "unk1000",
-        [0x1001] = "unk1001",
+        // Vanilla commands start at 0x1000
         [0x1005] = "SetStage",
         [0x1006] = "GetStage",
         [0x1007] = "GetStageDone",
@@ -155,23 +158,46 @@ public class ScriptDecompiler
         [0x1143] = "GetInZone",
         [0x1148] = "SetEssential",
         [0x118E] = "SetWeather",
-        // NVSE commands start at higher opcodes
+        // NVSE commands start at 0x1400
         [0x1400] = "GetNVSEVersion",
-        [0x1401] = "GetNVSERevision"
+        [0x1401] = "GetNVSERevision",
     };
 
     private readonly ReadOnlyMemory<byte> _data;
     private readonly int _offset;
     private readonly int _size;
+    private readonly bool _isBigEndian;
     private readonly List<string> _variables = [];
     private readonly List<string> _refVariables = [];
     private int _indentLevel;
 
-    public ScriptDecompiler(ReadOnlyMemory<byte> data, int offset, int size)
+    /// <summary>
+    ///     Create a new script decompiler.
+    /// </summary>
+    /// <param name="data">The raw file data.</param>
+    /// <param name="offset">Offset to the start of the bytecode.</param>
+    /// <param name="size">Size of the bytecode in bytes.</param>
+    /// <param name="isBigEndian">If true, read multi-byte values as big-endian (Xbox 360). Default is false (PC/little-endian).</param>
+    public ScriptDecompiler(ReadOnlyMemory<byte> data, int offset, int size, bool isBigEndian = false)
     {
         _data = data;
         _offset = offset;
         _size = size;
+        _isBigEndian = isBigEndian;
+    }
+
+    private ushort ReadUInt16(ReadOnlySpan<byte> data, int offset)
+    {
+        return _isBigEndian 
+            ? BinaryUtils.ReadUInt16BE(data, offset) 
+            : BinaryUtils.ReadUInt16LE(data, offset);
+    }
+
+    private uint ReadUInt32(ReadOnlySpan<byte> data, int offset)
+    {
+        return _isBigEndian 
+            ? BinaryUtils.ReadUInt32BE(data, offset) 
+            : BinaryUtils.ReadUInt32LE(data, offset);
     }
 
     /// <summary>
@@ -189,19 +215,34 @@ public class ScriptDecompiler
         {
             while (pos + 4 <= end && pos < span.Length)
             {
-                var opcode = BinaryUtils.ReadUInt16BE(span, pos);
-                var length = BinaryUtils.ReadUInt16BE(span, pos + 2);
+                var opcode = ReadUInt16(span, pos);
+                ushort length;
+                ushort refIdx = 0;
                 var dataStart = pos + 4;
+
+                // Handle ReferenceFunction (0x1C) - special structure
+                if (opcode == Op_ReferenceFunction)
+                {
+                    if (pos + 8 > end) break;
+                    refIdx = ReadUInt16(span, pos + 2);
+                    opcode = ReadUInt16(span, pos + 4);
+                    length = ReadUInt16(span, pos + 6);
+                    dataStart = pos + 8;
+                }
+                else
+                {
+                    length = ReadUInt16(span, pos + 2);
+                }
 
                 // Get the statement data
                 var stmtData = length > 0 && dataStart + length <= span.Length
                     ? span.Slice(dataStart, length)
                     : ReadOnlySpan<byte>.Empty;
 
-                var line = DecompileStatement(opcode, stmtData, ref result);
+                var line = DecompileStatement(opcode, length, stmtData, refIdx, ref result);
                 if (!string.IsNullOrEmpty(line))
                 {
-                    sb.Append(new string('\t', _indentLevel));
+                    sb.Append(new string('\t', Math.Max(0, _indentLevel)));
                     sb.AppendLine(line);
                 }
 
@@ -221,8 +262,14 @@ public class ScriptDecompiler
         return result;
     }
 
-    private string DecompileStatement(ushort opcode, ReadOnlySpan<byte> data, ref DecompilationResult result)
+    private string DecompileStatement(ushort opcode, ushort length, ReadOnlySpan<byte> data, ushort refIdx, ref DecompilationResult result)
     {
+        // Check if it's a statement opcode (0x10-0x1F) or a command (0x1000+)
+        if (opcode >= 0x1000)
+        {
+            return DecompileCommand(opcode, data, refIdx);
+        }
+
         switch (opcode)
         {
             case Op_ScriptName:
@@ -240,7 +287,7 @@ public class ScriptDecompiler
                 return "End";
 
             case Op_Short:
-                var shortVar = $"sVar{_variables.Count}";
+                var shortVar = $"iVar{_variables.Count}";
                 _variables.Add(shortVar);
                 return $"short {shortVar}";
 
@@ -259,8 +306,8 @@ public class ScriptDecompiler
                 _refVariables.Add(refVar);
                 return $"ref {refVar}";
 
-            case Op_Set:
-                return DecompileSet(data);
+            case Op_SetTo:
+                return DecompileSetTo(data);
 
             case Op_If:
                 var ifLine = DecompileConditional("If", data);
@@ -268,96 +315,267 @@ public class ScriptDecompiler
                 return ifLine;
 
             case Op_ElseIf:
-                _indentLevel--;
+                _indentLevel = Math.Max(0, _indentLevel - 1);
                 var elifLine = DecompileConditional("ElseIf", data);
                 _indentLevel++;
                 return elifLine;
 
             case Op_Else:
-                _indentLevel--;
-                var elseLine = "Else";
+                _indentLevel = Math.Max(0, _indentLevel - 1);
                 _indentLevel++;
-                return elseLine;
+                return "Else";
 
             case Op_EndIf:
-                _indentLevel--;
+                _indentLevel = Math.Max(0, _indentLevel - 1);
                 return "EndIf";
-
-            case Op_While:
-                var whileLine = DecompileConditional("While", data);
-                _indentLevel++;
-                return whileLine;
-
-            case Op_Loop:
-                _indentLevel--;
-                return "Loop";
 
             case Op_Return:
                 return "Return";
 
-            case Op_RefFunc:
-                // Reference function call - structure is different
-                return "; RefFunction call (complex)";
+            case Op_ReferenceFunction:
+                // Should not reach here - handled in main loop
+                return "; ReferenceFunction (unexpected)";
 
             default:
-                // Check if it's a command
-                if (opcode >= 0x1000)
-                {
-                    return DecompileCommand(opcode, data);
-                }
-                return $"; Unknown opcode 0x{opcode:X4}";
+                return $"; Unknown statement opcode 0x{opcode:X2}";
         }
     }
 
     private string DecompileBegin(ReadOnlySpan<byte> data, ref DecompilationResult result)
     {
+        // Begin block format: eventType(2) + endJumpLength(4) + [optional args]
         if (data.Length < 6) return "Begin ; (insufficient data)";
 
-        var eventType = BinaryUtils.ReadUInt16BE(data, 0);
-        var jumpLength = BinaryUtils.ReadUInt32BE(data, 2);
+        var eventType = ReadUInt16(data, 0);
+        // var endJumpLength = ReadUInt32(data, 2); // Skip to end of block
 
-        var eventName = EventTypes.TryGetValue(eventType, out var name) ? name : $"UnknownEvent(0x{eventType:X4})";
+        var eventName = EventTypes.TryGetValue(eventType, out var name) 
+            ? name 
+            : $"UnknownEvent_0x{eventType:X2}";
 
         result.EventBlocks.Add(eventName);
 
         return $"Begin {eventName}";
     }
 
-    private string DecompileSet(ReadOnlySpan<byte> data)
+    private string DecompileSetTo(ReadOnlySpan<byte> data)
     {
-        // Set statement has: varIdx (2) + expression data
-        // This is simplified - full decompilation would need expression parsing
-        if (data.Length < 2) return "Set ; (insufficient data)";
+        // Set statement format: varType(1) + [refIdx(2) if 'r'] + varType(1) + varIdx(2) + expression
+        if (data.Length < 1) return "Set ; (insufficient data)";
 
-        var varIdx = BinaryUtils.ReadUInt16BE(data, 0);
-        var varName = varIdx < _variables.Count ? _variables[varIdx] : $"var{varIdx}";
+        var sb = new StringBuilder("Set ");
+        var pos = 0;
 
-        // TODO: Parse expression
-        return $"Set {varName} To ; (expression)";
+        // Read variable reference
+        var varType = (char)data[pos++];
+        
+        if (varType == 'r' && data.Length >= pos + 3)
+        {
+            // Reference to variable in another script
+            var scriptRefIdx = ReadUInt16(data, pos);
+            pos += 2;
+            sb.Append($"ref{scriptRefIdx}.");
+            varType = (char)data[pos++];
+        }
+
+        if ((varType == 'f' || varType == 's') && data.Length >= pos + 2)
+        {
+            var varIdx = ReadUInt16(data, pos);
+            pos += 2;
+            var varName = varIdx < _variables.Count ? _variables[varIdx] : $"var{varIdx}";
+            sb.Append(varName);
+        }
+        else if (varType == 'G' && data.Length >= pos + 2)
+        {
+            var globalRefIdx = ReadUInt16(data, pos);
+            pos += 2;
+            sb.Append($"Global{globalRefIdx}");
+        }
+        else
+        {
+            sb.Append($"unknown_{varType}");
+        }
+
+        sb.Append(" To ");
+
+        // Parse expression (simplified)
+        if (data.Length > pos + 2)
+        {
+            var exprLen = ReadUInt16(data, pos);
+            sb.Append(DecompileExpression(data.Slice(pos + 2)));
+        }
+        else
+        {
+            sb.Append("; (no expression)");
+        }
+
+        return sb.ToString();
     }
 
     private string DecompileConditional(string keyword, ReadOnlySpan<byte> data)
     {
-        // Conditional has: jumpOffset (2) + expression data
+        // Conditional format: jumpOffset(2) + expression
         if (data.Length < 2) return $"{keyword} ; (insufficient data)";
 
-        var jumpOffset = BinaryUtils.ReadUInt16BE(data, 0);
+        var jumpOffset = ReadUInt16(data, 0);
 
-        // TODO: Parse condition expression
-        return $"{keyword} ; (condition, jump={jumpOffset})";
-    }
-
-    private string DecompileCommand(ushort opcode, ReadOnlySpan<byte> data)
-    {
-        var cmdName = CommandNames.TryGetValue(opcode, out var name) ? name : $"Cmd_{opcode:X4}";
-
-        // TODO: Parse command arguments based on command info
-        if (data.Length > 0)
+        if (data.Length > 2)
         {
-            return $"{cmdName} ; ({data.Length} bytes args)";
+            var expr = DecompileExpression(data.Slice(2));
+            return $"{keyword} {expr}";
         }
 
-        return cmdName;
+        return $"{keyword} ; (jump={jumpOffset})";
+    }
+
+    private string DecompileExpression(ReadOnlySpan<byte> data)
+    {
+        // Expression format from xNVSE: 
+        // length(2) + tokens (operands/operators in postfix order)
+        if (data.Length < 2) return "; (no expression)";
+
+        var exprLen = ReadUInt16(data, 0);
+        if (exprLen == 0 || data.Length < 2 + exprLen) 
+            return "; (empty expression)";
+
+        var exprData = data.Slice(2, Math.Min(exprLen, data.Length - 2));
+        var tokens = new List<string>();
+        var pos = 0;
+
+        while (pos < exprData.Length)
+        {
+            var code = (char)exprData[pos++];
+
+            switch (code)
+            {
+                case 's': // Short variable
+                case 'l': // Long variable  
+                case 'f': // Float variable
+                    if (pos + 2 <= exprData.Length)
+                    {
+                        var varIdx = ReadUInt16(exprData, pos);
+                        pos += 2;
+                        tokens.Add(varIdx < _variables.Count ? _variables[varIdx] : $"var{varIdx}");
+                    }
+                    break;
+
+                case 'G': // Global variable
+                    if (pos + 2 <= exprData.Length)
+                    {
+                        var globalIdx = ReadUInt16(exprData, pos);
+                        pos += 2;
+                        tokens.Add($"Global{globalIdx}");
+                    }
+                    break;
+
+                case 'Z': // Form reference
+                case 'r': // Reference
+                    if (pos + 2 <= exprData.Length)
+                    {
+                        var refIdx = ReadUInt16(exprData, pos);
+                        pos += 2;
+                        tokens.Add($"Ref{refIdx}");
+                    }
+                    break;
+
+                case 'n': // Integer constant
+                    if (pos + 4 <= exprData.Length)
+                    {
+                        var intVal = (int)ReadUInt32(exprData, pos);
+                        pos += 4;
+                        tokens.Add(intVal.ToString(CultureInfo.InvariantCulture));
+                    }
+                    break;
+
+                case 'z': // Double constant
+                    if (pos + 8 <= exprData.Length)
+                    {
+                        var doubleVal = BitConverter.ToDouble(exprData.Slice(pos, 8).ToArray(), 0);
+                        pos += 8;
+                        tokens.Add(doubleVal.ToString("G", CultureInfo.InvariantCulture));
+                    }
+                    break;
+
+                case '"': // String literal
+                    if (pos + 2 <= exprData.Length)
+                    {
+                        var strLen = ReadUInt16(exprData, pos);
+                        pos += 2;
+                        if (pos + strLen <= exprData.Length)
+                        {
+                            var str = Encoding.ASCII.GetString(exprData.Slice(pos, strLen).ToArray());
+                            pos += strLen;
+                            tokens.Add($"\"{str}\"");
+                        }
+                    }
+                    break;
+
+                case 'X': // Command call
+                    if (pos + 4 <= exprData.Length)
+                    {
+                        var cmdOpcode = ReadUInt16(exprData, pos);
+                        var cmdLen = ReadUInt16(exprData, pos + 2);
+                        pos += 4 + cmdLen;
+                        var cmdName = CommandNames.TryGetValue(cmdOpcode, out var name) 
+                            ? name 
+                            : $"Cmd_0x{cmdOpcode:X4}";
+                        tokens.Add(cmdName);
+                    }
+                    break;
+
+                // Operators - standard script operators
+                case '+': tokens.Add("+"); break;
+                case '-': tokens.Add("-"); break;
+                case '*': tokens.Add("*"); break;
+                case '/': tokens.Add("/"); break;
+                case '%': tokens.Add("%"); break;
+                case '^': tokens.Add("^"); break;
+                case '|': tokens.Add("||"); break;
+                case '&': tokens.Add("&&"); break;
+                case '=': tokens.Add("=="); break;
+                case '!': tokens.Add("!="); break;
+                case '>': tokens.Add(">"); break;
+                case '<': tokens.Add("<"); break;
+                
+                default:
+                    if (code <= 0x20 || char.IsWhiteSpace(code))
+                        continue; // Skip whitespace
+                    // Unknown token - skip
+                    break;
+            }
+        }
+
+        // Join tokens (simplified - doesn't handle operator precedence properly)
+        return tokens.Count > 0 ? string.Join(" ", tokens) : "; (could not parse expression)";
+    }
+
+    private string DecompileCommand(ushort opcode, ReadOnlySpan<byte> data, ushort refIdx)
+    {
+        var sb = new StringBuilder();
+
+        // Add calling reference if present
+        if (refIdx > 0)
+        {
+            sb.Append($"Ref{refIdx}.");
+        }
+
+        // Get command name
+        var cmdName = CommandNames.TryGetValue(opcode, out var name) 
+            ? name 
+            : $"Cmd_0x{opcode:X4}";
+        sb.Append(cmdName);
+
+        // Parse arguments (simplified)
+        if (data.Length >= 2)
+        {
+            var numArgs = ReadUInt16(data, 0);
+            if (numArgs > 0 && numArgs < 20)
+            {
+                sb.Append($" ; ({numArgs} args, {data.Length - 2} bytes)");
+            }
+        }
+
+        return sb.ToString();
     }
 }
 

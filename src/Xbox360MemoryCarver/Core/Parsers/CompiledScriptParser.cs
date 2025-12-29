@@ -3,57 +3,74 @@ using Xbox360MemoryCarver.Core.Utils;
 namespace Xbox360MemoryCarver.Core.Parsers;
 
 /// <summary>
-///     Parser for compiled Bethesda ObScript bytecode (Xbox 360 / Big-Endian).
+///     Parser for compiled Bethesda ObScript bytecode.
 ///     
-///     IMPORTANT: Xbox 360 uses PowerPC (big-endian), so all multi-byte values
-///     in the bytecode are stored in big-endian format.
+///     Based on xNVSE's ScriptAnalyzer.h - the bytecode format is consistent
+///     across platforms (PC/Xbox 360).
 ///     
 ///     Compiled bytecode format (each statement):
-///     - opcode (2 bytes, BIG-ENDIAN)
-///     - length (2 bytes, BIG-ENDIAN)  
+///     - opcode (2 bytes)
+///     - length (2 bytes)  
 ///     - variable-length data
 ///     
-///     Key opcodes:
-///     - 0x0010: ScriptName
-///     - 0x0011: Begin (event block)
-///     - 0x0012: End
-///     - 0x0013-0x0015: Variable declarations (short, long, float)
-///     - 0x0016: Set ... To
-///     - 0x0017: If
-///     - 0x0018: Else
-///     - 0x0019: ElseIf  
-///     - 0x001A: EndIf
-///     - 0x001C: ref declaration
-///     - 0x001D: ReferenceFunction (calling ref.Function())
-///     - 0x001E: Return
+///     Statement opcodes (from xNVSE ScriptStatementCode):
+///     - 0x10: Begin (event block)
+///     - 0x11: End
+///     - 0x12: Short (variable declaration)
+///     - 0x13: Long (variable declaration)
+///     - 0x14: Float (variable declaration)
+///     - 0x15: SetTo
+///     - 0x16: If
+///     - 0x17: Else
+///     - 0x18: ElseIf  
+///     - 0x19: EndIf
+///     - 0x1C: ReferenceFunction (calling ref.Function())
+///     - 0x1D: ScriptName
+///     - 0x1E: Return
+///     - 0x1F: Ref (reference variable declaration)
+///     
+///     Commands are opcodes 0x1000 and higher.
 /// </summary>
 public class CompiledScriptParser : IFileParser
 {
-    // Script statement opcodes (from xNVSE/Oblivion)
-    private const ushort Opcode_ScriptName = 0x0010;
-    private const ushort Opcode_Begin = 0x0011;
-    private const ushort Opcode_End = 0x0012;
-    private const ushort Opcode_Short = 0x0013;
-    private const ushort Opcode_Long = 0x0014;
-    private const ushort Opcode_Float = 0x0015;
-    private const ushort Opcode_SetTo = 0x0016;
-    private const ushort Opcode_If = 0x0017;
-    private const ushort Opcode_Else = 0x0018;
-    private const ushort Opcode_ElseIf = 0x0019;
-    private const ushort Opcode_EndIf = 0x001A;
-    private const ushort Opcode_Ref = 0x001C;
-    private const ushort Opcode_ReferenceFunction = 0x001D;
-    private const ushort Opcode_Return = 0x001E;
+    // Statement opcodes from xNVSE ScriptAnalyzer.h
+    private const ushort Opcode_Begin = 0x10;
+    private const ushort Opcode_End = 0x11;
+    private const ushort Opcode_Short = 0x12;
+    private const ushort Opcode_Long = 0x13;
+    private const ushort Opcode_Float = 0x14;
+    private const ushort Opcode_SetTo = 0x15;
+    private const ushort Opcode_If = 0x16;
+    private const ushort Opcode_Else = 0x17;
+    private const ushort Opcode_ElseIf = 0x18;
+    private const ushort Opcode_EndIf = 0x19;
+    private const ushort Opcode_ReferenceFunction = 0x1C;
+    private const ushort Opcode_ScriptName = 0x1D;
+    private const ushort Opcode_Return = 0x1E;
+    private const ushort Opcode_Ref = 0x1F;
 
     // Valid statement opcodes range (0x10-0x1F)
     private static readonly HashSet<ushort> ValidStatementOpcodes =
     [
-        Opcode_ScriptName, Opcode_Begin, Opcode_End,
+        Opcode_Begin, Opcode_End,
         Opcode_Short, Opcode_Long, Opcode_Float,
         Opcode_SetTo, Opcode_If, Opcode_Else, Opcode_ElseIf, Opcode_EndIf,
-        Opcode_Ref, Opcode_ReferenceFunction, Opcode_Return,
-        0x001B, 0x001F // While, Loop (NVSE extensions)
+        Opcode_ReferenceFunction, Opcode_ScriptName, Opcode_Return, Opcode_Ref,
+        0x1A, 0x1B // While/Loop (NVSE extensions, may not be in vanilla)
     ];
+
+    /// <summary>
+    ///     If true, read bytecode as big-endian (Xbox 360).
+    ///     Note: The bytecode format itself is typically little-endian even on Xbox 360.
+    /// </summary>
+    public bool IsBigEndian { get; set; }
+
+    private ushort ReadUInt16(ReadOnlySpan<byte> data, int offset)
+    {
+        return IsBigEndian 
+            ? BinaryUtils.ReadUInt16BE(data, offset) 
+            : BinaryUtils.ReadUInt16LE(data, offset);
+    }
 
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
@@ -62,14 +79,14 @@ public class CompiledScriptParser : IFileParser
 
         try
         {
-            // Read opcode as BIG-ENDIAN (Xbox 360 / PowerPC)
-            var opcode = BinaryUtils.ReadUInt16BE(data, offset);
+            // Read opcode
+            var opcode = ReadUInt16(data, offset);
 
-            // Must start with ScriptName opcode (0x0010)
+            // Must start with ScriptName opcode (0x1D)
             if (opcode != Opcode_ScriptName) return null;
 
-            // Read length as BIG-ENDIAN
-            var length = BinaryUtils.ReadUInt16BE(data, offset + 2);
+            // Read length
+            var length = ReadUInt16(data, offset + 2);
 
             // ScriptName length is typically 0-4 bytes (just padding/index data)
             if (length > 64) return null;
@@ -82,21 +99,21 @@ public class CompiledScriptParser : IFileParser
             {
                 Format = "CompiledScript",
                 EstimatedSize = totalSize,
-                IsXbox360 = true,
+                IsXbox360 = IsBigEndian,
                 Metadata = new Dictionary<string, object>
                 {
                     ["isCompiled"] = true,
-                    ["isBigEndian"] = true,
+                    ["isBigEndian"] = IsBigEndian,
                     ["statementCount"] = stats.StatementCount,
                     ["beginCount"] = stats.BeginCount,
                     ["endCount"] = stats.EndCount,
-                    ["variableDeclarations"] = stats.VarDeclarations
+                    ["variableDeclarations"] = stats.VarDeclarations,
+                    ["commandCalls"] = stats.CommandCalls
                 }
             };
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[CompiledScriptParser] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
@@ -112,9 +129,8 @@ public class CompiledScriptParser : IFileParser
 
     /// <summary>
     ///     Validate compiled bytecode structure and gather statistics.
-    ///     All multi-byte reads are BIG-ENDIAN for Xbox 360.
     /// </summary>
-    private static bool ValidateCompiledBytecode(ReadOnlySpan<byte> data, int offset, out int totalSize, out BytecodeStats stats)
+    private bool ValidateCompiledBytecode(ReadOnlySpan<byte> data, int offset, out int totalSize, out BytecodeStats stats)
     {
         totalSize = 0;
         stats = new BytecodeStats();
@@ -125,30 +141,33 @@ public class CompiledScriptParser : IFileParser
 
         while (pos + 4 <= maxScan && stats.StatementCount < maxStatements)
         {
-            // Read opcode and length as BIG-ENDIAN
-            var opcode = BinaryUtils.ReadUInt16BE(data, pos);
+            // Read opcode and length
+            var opcode = ReadUInt16(data, pos);
             ushort length;
             var statementStart = pos;
 
-            // Handle ReferenceFunction (0x001D) - has different structure
+            // Handle ReferenceFunction (0x1C) - has different structure
             if (opcode == Opcode_ReferenceFunction)
             {
                 if (pos + 8 > maxScan) break;
 
-                // Structure: 0x001D (2) + refIdx (2) + actualOpcode (2) + length (2) + data
-                var refIdx = BinaryUtils.ReadUInt16BE(data, pos + 2);
-                opcode = BinaryUtils.ReadUInt16BE(data, pos + 4);
-                length = BinaryUtils.ReadUInt16BE(data, pos + 6);
+                // Structure: 0x1C (2) + refIdx (2) + actualOpcode (2) + length (2) + data
+                var refIdx = ReadUInt16(data, pos + 2);
+                var actualOpcode = ReadUInt16(data, pos + 4);
+                length = ReadUInt16(data, pos + 6);
 
                 // Validate refIdx is reasonable (< 256 refs typically)
                 if (refIdx > 512) break;
+                
+                // The actual opcode should be a command (0x1000+)
+                if (actualOpcode < 0x1000) break;
 
                 pos += 8 + length;
                 stats.CommandCalls++;
             }
             else
             {
-                length = BinaryUtils.ReadUInt16BE(data, pos + 2);
+                length = ReadUInt16(data, pos + 2);
 
                 // Validate length is reasonable
                 if (length > 4096) break;
@@ -170,6 +189,9 @@ public class CompiledScriptParser : IFileParser
                     case Opcode_Ref:
                         stats.VarDeclarations++;
                         break;
+                    case Opcode_ScriptName:
+                        // OK - expected at start
+                        break;
                     default:
                         // Check if it's a valid statement opcode or a command (0x1000+)
                         if (!ValidStatementOpcodes.Contains(opcode) && opcode < 0x1000)
@@ -182,9 +204,7 @@ public class CompiledScriptParser : IFileParser
                                 return IsValidScript(stats);
                             }
 
-                            // Continue if we haven't seen Begin yet (might be variable declarations)
-                            if (stats.BeginCount == 0 && stats.StatementCount < 50)
-                                break;
+                            break;
                         }
                         else if (opcode >= 0x1000)
                         {
@@ -199,14 +219,19 @@ public class CompiledScriptParser : IFileParser
             // Check for end of script after End opcode
             if (stats.EndCount > 0 && stats.EndCount >= stats.BeginCount)
             {
-                // Look ahead - if next opcode is 0 or ScriptName, we're done
+                // Look ahead - if next opcode looks invalid, we're done
                 if (pos + 2 <= maxScan)
                 {
-                    var nextOpcode = BinaryUtils.ReadUInt16BE(data, pos);
-                    // If next opcode is another ScriptName, we've hit a new script
-                    if (nextOpcode == Opcode_ScriptName) break;
+                    var nextOpcode = ReadUInt16(data, pos);
                     // If next opcode is 0 or looks like garbage, we're done
-                    if (nextOpcode == 0 || (nextOpcode > 0x0020 && nextOpcode < 0x1000)) break;
+                    if (nextOpcode == 0 || (nextOpcode > Opcode_Ref && nextOpcode < 0x1000))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    break;
                 }
             }
         }
@@ -227,10 +252,7 @@ public class CompiledScriptParser : IFileParser
         if (Math.Abs(stats.BeginCount - stats.EndCount) > 1) return false;
 
         // Should have a reasonable number of statements
-        if (stats.StatementCount < 2) return false;
-
-        // Should have at least some content (commands or variable declarations)
-        if (stats.CommandCalls == 0 && stats.VarDeclarations == 0 && stats.StatementCount < 5) return false;
+        if (stats.StatementCount < 3) return false;
 
         return true;
     }
