@@ -14,7 +14,7 @@ public static class Program
     /// <summary>
     ///     File path to auto-load when GUI starts (set via --file parameter).
     /// </summary>
-    public static string? AutoLoadFile { get; private set; }
+    public static string? AutoLoadFile { get; internal set; }
 
     [STAThread]
     public static async Task<int> Main(string[] args)
@@ -23,12 +23,13 @@ public static class Program
 
 #if WINDOWS_GUI
         // On Windows GUI build, check if we should launch GUI or CLI
-        var isCliMode = args.Length > 0 && (HasFlag(args, "--no-gui") || HasFlag(args, "-n"));
+        var isCliMode = args.Length > 0 && (args.Any(a => a.Equals("--no-gui", StringComparison.OrdinalIgnoreCase)) 
+                                          || args.Any(a => a.Equals("-n", StringComparison.OrdinalIgnoreCase)));
 
         if (!isCliMode)
         {
             // Check for --file parameter for GUI mode
-            AutoLoadFile = GetFlagValue(args, "--file") ?? GetFlagValue(args, "-f");
+            AutoLoadFile = GetFlagValueInternal(args, "--file") ?? GetFlagValueInternal(args, "-f");
 
             // Also check for a single positional argument that's a .dmp file
             if (string.IsNullOrEmpty(AutoLoadFile) && args.Length > 0 && !args[0].StartsWith('-'))
@@ -42,28 +43,18 @@ public static class Program
 
             return App.GuiEntryPoint.Run(args);
         }
+
+        static string? GetFlagValueInternal(string[] args, string flag)
+        {
+            for (var i = 0; i < args.Length - 1; i++)
+                if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
+                    return args[i + 1];
+            return null;
+        }
 #endif
 
         // CLI mode
         return await RunCliAsync(args);
-    }
-
-    private static bool HasFlag(string[] args, string flag)
-    {
-        return args.Any(arg => arg.Equals(flag, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string? GetFlagValue(string[] args, string flag)
-    {
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[i + 1];
-            }
-        }
-
-        return null;
     }
 
     private static async Task<int> RunCliAsync(string[] args)
@@ -72,7 +63,7 @@ public static class Program
         Console.WriteLine("Xbox 360 Memory Carver - CLI Mode");
         Console.WriteLine("=================================");
 
-        var rootCommand = new RootCommand("Xbox 360 Memory Dump File Carver & DDX Converter");
+        var rootCommand = new RootCommand("Xbox 360 Memory Dump File Carver");
 
         // Input path argument
         var inputArgument = new Argument<string?>(
@@ -172,10 +163,7 @@ public static class Program
             catch (Exception ex)
             {
                 Console.WriteLine($"Error: {ex.Message}");
-                if (verbose)
-                {
-                    Console.WriteLine(ex.StackTrace);
-                }
+                if (verbose) Console.WriteLine(ex.StackTrace);
 
                 context.ExitCode = 1;
             }
@@ -195,13 +183,9 @@ public static class Program
         var files = new List<string>();
 
         if (File.Exists(inputPath))
-        {
             files.Add(inputPath);
-        }
         else if (Directory.Exists(inputPath))
-        {
             files.AddRange(Directory.GetFiles(inputPath, "*.dmp", SearchOption.TopDirectoryOnly));
-        }
 
         if (files.Count == 0)
         {
@@ -226,10 +210,7 @@ public static class Program
 
             var progress = new Progress<double>(p =>
             {
-                if (verbose)
-                {
-                    Console.Write($"\rProgress: {p * 100:F1}%");
-                }
+                if (verbose) Console.Write($"\rProgress: {p * 100:F1}%");
             });
 
             var stopwatch = Stopwatch.StartNew();
@@ -243,12 +224,8 @@ public static class Program
             Console.WriteLine();
             Console.WriteLine("File type summary:");
             foreach (var (type, count) in carver.Stats.OrderByDescending(x => x.Value))
-            {
                 if (count > 0)
-                {
                     Console.WriteLine($"  {type}: {count}");
-                }
-            }
 
             if (convertDdx && (carver.DdxConvertedCount > 0 || carver.DdxConvertFailedCount > 0))
             {

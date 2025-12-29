@@ -33,8 +33,8 @@
         Width="16"
         Height="16"
         Margin="12,0,0,0"
-        Source="Assets/StoreLogo.png"
-        VerticalAlignment="Center" />
+        VerticalAlignment="Center"
+        Source="Assets/StoreLogo.png" />
 
       <!--  App title - vertically centered with tabs  -->
       <TextBlock
@@ -52,16 +52,21 @@
         VerticalAlignment="Stretch"
         Background="Transparent"
         IsAddTabButtonVisible="False"
-        TabWidthMode="Equal"
-        SelectedIndex="0">
-        <controls:TabView.Resources>
-        </controls:TabView.Resources>
+        SelectedIndex="0"
+        TabWidthMode="Equal">
+        <controls:TabView.Resources />
         <controls:TabView.TabStripHeader>
-          <Grid x:Name="TabStripDragRegion" Background="Transparent" />
+          <Grid
+            x:Name="TabStripDragRegion"
+            Background="Transparent" />
         </controls:TabView.TabStripHeader>
         <controls:TabView.TabItems>
-          <controls:TabViewItem Header="Single File" IsClosable="False" />
-          <controls:TabViewItem Header="Batch Mode" IsClosable="False" />
+          <controls:TabViewItem
+            Header="Single File"
+            IsClosable="False" />
+          <controls:TabViewItem
+            Header="Batch Mode"
+            IsClosable="False" />
         </controls:TabView.TabItems>
       </controls:TabView>
 
@@ -74,9 +79,15 @@
     </Grid>
 
     <!--  Main content area  -->
-    <Grid Grid.Row="1" Background="Transparent">
-      <local:SingleFileTab x:Name="SingleFileTabContent" Visibility="Visible" />
-      <local:BatchModeTab x:Name="BatchModeTabContent" Visibility="Collapsed" />
+    <Grid
+      Grid.Row="1"
+      Background="Transparent">
+      <local:SingleFileTab
+        x:Name="SingleFileTabContent"
+        Visibility="Visible" />
+      <local:BatchModeTab
+        x:Name="BatchModeTabContent"
+        Visibility="Collapsed" />
     </Grid>
   </Grid>
 </Window>

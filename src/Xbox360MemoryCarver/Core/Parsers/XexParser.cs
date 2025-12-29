@@ -13,16 +13,10 @@ public class XexParser : IFileParser
 {
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 24)
-        {
-            return null;
-        }
+        if (data.Length < offset + 24) return null;
 
         // Check for XEX2 magic (big-endian)
-        if (!data.Slice(offset, 4).SequenceEqual("XEX2"u8))
-        {
-            return null;
-        }
+        if (!data.Slice(offset, 4).SequenceEqual("XEX2"u8)) return null;
 
         try
         {
@@ -40,15 +34,9 @@ public class XexParser : IFileParser
             var optionalHeaderCount = BinaryUtils.ReadUInt32BE(data, offset + 0x14);
 
             // Basic validation
-            if (dataOffset == 0 || dataOffset > 50 * 1024 * 1024)
-            {
-                return null;
-            }
+            if (dataOffset == 0 || dataOffset > 50 * 1024 * 1024) return null;
 
-            if (optionalHeaderCount > 100)
-            {
-                return null;
-            }
+            if (optionalHeaderCount > 100) return null;
 
             // Try to find image size from optional headers
             var imageSize = FindImageSize(data, offset, optionalHeaderCount);
@@ -73,8 +61,9 @@ public class XexParser : IFileParser
                 }
             };
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[XexParser] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
@@ -91,14 +80,8 @@ public class XexParser : IFileParser
 
             // Header ID 0x00010001 contains image size info
             // Header ID 0x00018002 is file size
-            if (headerId == 0x00010001 || headerId == 0x00018002)
-            {
-                // For small headers, data is inline
-                if ((headerId & 0xFF) <= 1)
-                {
-                    return (int)headerData;
-                }
-            }
+            // For small headers (low byte <= 1), data is inline
+            if ((headerId == 0x00010001 || headerId == 0x00018002) && (headerId & 0xFF) <= 1) return (int)headerData;
 
             headerOffset += 8;
         }

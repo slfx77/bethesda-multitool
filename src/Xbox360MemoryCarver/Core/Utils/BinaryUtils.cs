@@ -118,7 +118,7 @@ public static class BinaryUtils
     /// </summary>
     public static int FindPattern(ReadOnlySpan<byte> data, ReadOnlySpan<byte> pattern, int start = 0)
     {
-        if (pattern.IsEmpty || start + pattern.Length > data.Length) return -1;
+        if (pattern.IsEmpty || data.Length < pattern.Length || start + pattern.Length > data.Length) return -1;
 
         if (pattern.Length == 1)
         {
@@ -136,6 +136,10 @@ public static class BinaryUtils
             if (idx < 0) return -1;
 
             var candidateOffset = searchOffset + idx;
+
+            // Bounds check before slicing
+            if (candidateOffset + pattern.Length > searchSpan.Length)
+                return -1;
 
             if (searchSpan.Slice(candidateOffset, pattern.Length).SequenceEqual(pattern))
                 return start + candidateOffset;

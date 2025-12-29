@@ -1,8 +1,6 @@
-using System.Diagnostics;
 using Windows.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
@@ -17,12 +15,9 @@ namespace Xbox360MemoryCarver.App;
 internal sealed class HexMinimapRenderer
 {
     private readonly Canvas _canvas;
-    private readonly Border _viewportIndicator;
-    private readonly ScrollViewer _scrollViewer;
     private readonly Func<long, FileRegion?> _findRegion;
-
-    private bool _isDragging;
-    private double _zoom = 1.0;
+    private readonly ScrollViewer _scrollViewer;
+    private readonly Border _viewportIndicator;
 
     public HexMinimapRenderer(
         Canvas canvas,
@@ -36,17 +31,9 @@ internal sealed class HexMinimapRenderer
         _findRegion = findRegion;
     }
 
-    public double Zoom
-    {
-        get => _zoom;
-        set => _zoom = value;
-    }
+    public double Zoom { get; set; } = 1.0;
 
-    public bool IsDragging
-    {
-        get => _isDragging;
-        set => _isDragging = value;
-    }
+    public bool IsDragging { get; set; }
 
     public void Render(long fileSize, double containerWidth, double containerHeight)
     {
@@ -65,7 +52,7 @@ internal sealed class HexMinimapRenderer
         }
 
         var canvasWidth = Math.Max(20, containerWidth);
-        var canvasHeight = Math.Max(containerHeight, containerHeight * _zoom);
+        var canvasHeight = Math.Max(containerHeight, containerHeight * Zoom);
         _canvas.Width = canvasWidth;
         _canvas.Height = canvasHeight;
 
@@ -159,7 +146,7 @@ internal sealed class HexMinimapRenderer
         Canvas.SetTop(_viewportIndicator, minimapTop);
         _viewportIndicator.Visibility = Visibility.Visible;
 
-        if (_zoom > 1)
+        if (Zoom > 1)
         {
             var viewportHeight = _scrollViewer.ViewportHeight;
             if (viewportHeight > 0 && viewportHeight < canvasHeight)
@@ -188,13 +175,13 @@ internal sealed class HexMinimapRenderer
 
     public void HandlePointerPressed(PointerRoutedEventArgs e)
     {
-        _isDragging = true;
+        IsDragging = true;
         _canvas.CapturePointer(e.Pointer);
     }
 
     public void HandlePointerReleased(PointerRoutedEventArgs e)
     {
-        _isDragging = false;
+        IsDragging = false;
         _canvas.ReleasePointerCapture(e.Pointer);
     }
 }

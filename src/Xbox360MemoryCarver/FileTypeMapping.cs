@@ -1,23 +1,23 @@
-using Xbox360MemoryCarver.Core.Models;
+using Xbox360MemoryCarver.Core.FileTypes;
 
 namespace Xbox360MemoryCarver.App;
 
 /// <summary>
-///     Maps display names to file signature keys for extraction filtering.
-///     Uses FileTypeMetadata from Core as single source of truth.
+///     Maps display names to file signature IDs for extraction filtering.
+///     Uses FileTypeRegistry as single source of truth.
 /// </summary>
 public static class FileTypeMapping
 {
     /// <summary>
-    ///     Display names for UI checkboxes (from Core metadata).
+    ///     Display names for UI checkboxes.
     /// </summary>
-    public static readonly string[] DisplayNames = FileTypeMetadata.DisplayNames;
+    public static IReadOnlyList<string> DisplayNames => FileTypeRegistry.DisplayNames;
 
     /// <summary>
-    ///     Get signature keys for the given display names.
+    ///     Get signature IDs for the given display names.
     /// </summary>
-    public static IEnumerable<string> GetSignatureKeys(IEnumerable<string> displayNames)
+    public static IEnumerable<string> GetSignatureIds(IEnumerable<string> displayNames)
     {
-        return FileTypeMetadata.GetSignatureKeys(displayNames);
+        return FileTypeRegistry.GetSignatureIdsForDisplayNames(displayNames);
     }
 }

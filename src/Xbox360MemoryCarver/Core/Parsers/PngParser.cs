@@ -10,33 +10,33 @@ public class PngParser : IFileParser
 
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 8)
-        {
-            return null;
-        }
+        if (data.Length < offset + 8) return null;
 
-        if (!data.Slice(offset, 8).SequenceEqual(PngMagic))
-        {
-            return null;
-        }
+        if (!data.Slice(offset, 8).SequenceEqual(PngMagic)) return null;
 
-        var searchPos = offset + 8;
-        var maxSearch = Math.Min(offset + 50 * 1024 * 1024, data.Length - 4);
-
-        while (searchPos < maxSearch)
+        try
         {
-            if (data.Slice(searchPos, 4).SequenceEqual(IendMagic))
+            var searchPos = offset + 8;
+            var maxSearch = Math.Min(offset + 50 * 1024 * 1024, data.Length - 4);
+
+            while (searchPos < maxSearch)
             {
-                return new ParseResult
-                {
-                    Format = "PNG",
-                    EstimatedSize = searchPos + 8 - offset
-                };
+                if (data.Slice(searchPos, 4).SequenceEqual(IendMagic))
+                    return new ParseResult
+                    {
+                        Format = "PNG",
+                        EstimatedSize = searchPos + 8 - offset
+                    };
+
+                searchPos++;
             }
 
-            searchPos++;
+            return null;
         }
-
-        return null;
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[PngParser] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 }

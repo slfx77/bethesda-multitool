@@ -10,17 +10,11 @@ public class DdsParser : IFileParser
 {
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 128)
-        {
-            return null;
-        }
+        if (data.Length < offset + 128) return null;
 
         var headerData = data.Slice(offset, 128);
 
-        if (!headerData[..4].SequenceEqual("DDS "u8))
-        {
-            return null;
-        }
+        if (!headerData[..4].SequenceEqual("DDS "u8)) return null;
 
         try
         {
@@ -41,14 +35,32 @@ public class DdsParser : IFileParser
                 endianness = "big";
             }
 
-            if (height == 0 || width == 0 || height > 16384 || width > 16384)
-            {
-                return null;
-            }
+            if (height == 0 || width == 0 || height > 16384 || width > 16384) return null;
 
             var fourccStr = Encoding.ASCII.GetString(fourcc).TrimEnd('\0');
             var bytesPerBlock = GetBytesPerBlock(fourccStr);
             var estimatedSize = CalculateMipmapSize((int)width, (int)height, (int)mipmapCount, bytesPerBlock);
+
+            // Try to find texture path before the DDS header
+            var texturePath = TexturePathExtractor.FindPrecedingDdsPath(data, offset);
+
+            var metadata = new Dictionary<string, object>
+            {
+                ["pitch"] = pitchOrLinearSize,
+                ["endianness"] = endianness
+            };
+
+            if (!string.IsNullOrEmpty(texturePath))
+            {
+                metadata["texturePath"] = texturePath;
+                // Extract just the filename for display
+                var fileName = Path.GetFileNameWithoutExtension(texturePath);
+                if (!string.IsNullOrEmpty(fileName))
+                {
+                    metadata["fileName"] = fileName;
+                    metadata["safeName"] = TexturePathExtractor.SanitizeFilename(fileName);
+                }
+            }
 
             return new ParseResult
             {
@@ -59,15 +71,12 @@ public class DdsParser : IFileParser
                 MipCount = (int)mipmapCount,
                 FourCc = fourccStr,
                 IsXbox360 = endianness == "big",
-                Metadata = new Dictionary<string, object>
-                {
-                    ["pitch"] = pitchOrLinearSize,
-                    ["endianness"] = endianness
-                }
+                Metadata = metadata
             };
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[DdsParser] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }

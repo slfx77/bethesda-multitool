@@ -164,6 +164,6 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- [DDXConv](https://github.com/slfx77/DDXConv) - DDX texture conversion
+- [DDXConv](https://github.com/kran27/DDXConv) - DDX texture conversion
 - [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia) - Format documentation
 - [XCompression](https://github.com/gibbed/XCompression) - LZX decompression reference

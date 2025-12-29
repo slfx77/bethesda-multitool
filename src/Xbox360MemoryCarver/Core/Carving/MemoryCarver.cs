@@ -2,14 +2,13 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
 using Xbox360MemoryCarver.Core.Converters;
-using Xbox360MemoryCarver.Core.Models;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.FileTypes;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Carving;
 
 /// <summary>
-///     High-performance memory dump file carver using Aho-Corasick multi-pattern search.
+///     High-performance memory dump file carver using multi-pattern signature matching.
 /// </summary>
 public sealed class MemoryCarver : IDisposable
 {
@@ -20,10 +19,9 @@ public sealed class MemoryCarver : IDisposable
     private readonly string _outputDir;
     private readonly ConcurrentDictionary<long, byte> _processedOffsets = new();
     private readonly bool _saveAtlas;
-    private readonly IReadOnlyDictionary<string, SignatureInfo> _signatureInfoMap;
-    private readonly AhoCorasickMatcher _signatureMatcher;
+    private readonly HashSet<string> _signatureIdsToSearch;
+    private readonly SignatureMatcher _signatureMatcher;
     private readonly ConcurrentDictionary<string, int> _stats = new();
-    private readonly bool _verbose;
     private int _ddxConvertedCount;
     private int _ddxConvertFailedCount;
     private bool _disposed;
@@ -33,24 +31,28 @@ public sealed class MemoryCarver : IDisposable
     {
         _outputDir = outputDir;
         _maxFilesPerType = maxFilesPerType;
-        _verbose = verbose;
         _saveAtlas = saveAtlas;
 
-        _signatureMatcher = new AhoCorasickMatcher();
-        _signatureInfoMap = GetSignaturesToSearch(fileTypes);
+        _signatureMatcher = new SignatureMatcher();
+        _signatureIdsToSearch = GetSignatureIdsToSearch(fileTypes);
 
-        foreach (var (name, info) in _signatureInfoMap)
+        foreach (var sigId in _signatureIdsToSearch)
         {
-            _signatureMatcher.AddPattern(name, info.Magic);
-            _stats[name] = 0;
+            var typeDef = FileTypeRegistry.GetBySignatureId(sigId);
+            var sig = typeDef?.GetSignature(sigId);
+            if (sig != null)
+            {
+                _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
+                _stats[sig.Id] = 0;
+            }
         }
+
         _signatureMatcher.Build();
 
         if (convertDdxToDds)
-        {
             try
             {
-                _ddxConverter = new DdxSubprocessConverter(_verbose, saveAtlas: _saveAtlas);
+                _ddxConverter = new DdxSubprocessConverter(verbose, saveAtlas: _saveAtlas);
                 _convertDdxToDds = true;
             }
             catch (FileNotFoundException ex)
@@ -58,7 +60,6 @@ public sealed class MemoryCarver : IDisposable
                 Console.WriteLine($"Warning: {ex.Message}");
                 _convertDdxToDds = false;
             }
-        }
     }
 
     public int DdxConvertedCount => _ddxConvertedCount;
@@ -72,14 +73,32 @@ public sealed class MemoryCarver : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private static IReadOnlyDictionary<string, SignatureInfo> GetSignaturesToSearch(List<string>? fileTypes)
+    private static HashSet<string> GetSignatureIdsToSearch(List<string>? fileTypes)
     {
-        return fileTypes == null || fileTypes.Count == 0
-            ? FileSignatures.Signatures
-            : FileSignatures.Signatures.Where(kvp => fileTypes.Any(ft =>
-                kvp.Key.Equals(ft, StringComparison.OrdinalIgnoreCase) ||
-                kvp.Key.StartsWith(ft + "_", StringComparison.OrdinalIgnoreCase)))
-              .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        if (fileTypes == null || fileTypes.Count == 0)
+            // Return all signature IDs
+            return FileTypeRegistry.AllTypes
+                .SelectMany(t => t.SignatureIds)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Filter to requested types
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var ft in fileTypes)
+        {
+            // Try to find by type ID first
+            var typeDef = FileTypeRegistry.GetByTypeId(ft);
+            if (typeDef != null)
+            {
+                foreach (var sigId in typeDef.SignatureIds) result.Add(sigId);
+                continue;
+            }
+
+            // Try by signature ID
+            typeDef = FileTypeRegistry.GetBySignatureId(ft);
+            if (typeDef != null) result.Add(ft);
+        }
+
+        return result;
     }
 
     public async Task<List<CarveEntry>> CarveDumpAsync(string dumpPath, IProgress<double>? progress = null)
@@ -98,23 +117,24 @@ public sealed class MemoryCarver : IDisposable
 
         // Phase 1: Scanning (0-50%)
         var matches = FindAllMatches(accessor, fileInfo.Length, progress);
-        
+
         // Phase 2: Extraction (50-100%)
         await ExtractMatchesAsync(accessor, fileInfo.Length, matches, outputPath, progress);
-        
+
         await CarveManifest.SaveAsync(outputPath, _manifest);
         progress?.Report(1.0);
 
         return [.. _manifest];
     }
 
-    private List<(string SigName, long Offset)> FindAllMatches(MemoryMappedViewAccessor accessor, long fileSize, IProgress<double>? progress)
+    private List<(string SignatureId, long Offset)> FindAllMatches(MemoryMappedViewAccessor accessor, long fileSize,
+        IProgress<double>? progress)
     {
         const int chunkSize = 64 * 1024 * 1024;
-        if (_signatureInfoMap.Count == 0) return [];
+        if (_signatureIdsToSearch.Count == 0) return [];
 
         var maxPatternLength = _signatureMatcher.MaxPatternLength;
-        var allMatches = new List<(string SigName, long Offset)>();
+        var allMatches = new List<(string SignatureId, long Offset)>();
         var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
 
         try
@@ -134,38 +154,47 @@ public sealed class MemoryCarver : IDisposable
                 progress?.Report(Math.Min((double)offset / fileSize * 0.5, 0.5));
             }
         }
-        finally { ArrayPool<byte>.Shared.Return(buffer); }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
 
         return allMatches.DistinctBy(m => m.Offset).OrderBy(m => m.Offset).ToList();
     }
 
     private async Task ExtractMatchesAsync(MemoryMappedViewAccessor accessor, long fileSize,
-        List<(string SigName, long Offset)> matches, string outputPath, IProgress<double>? progress)
+        List<(string SignatureId, long Offset)> matches, string outputPath, IProgress<double>? progress)
     {
         if (matches.Count == 0) return;
 
         var processedCount = 0;
         var totalMatches = matches.Count;
 
-        await Parallel.ForEachAsync(matches, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+        await Parallel.ForEachAsync(matches,
+            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
             async (match, _) =>
             {
-                if (_stats.GetValueOrDefault(match.SigName, 0) >= _maxFilesPerType) return;
+                if (_stats.GetValueOrDefault(match.SignatureId, 0) >= _maxFilesPerType) return;
                 if (!_processedOffsets.TryAdd(match.Offset, 0)) return;
 
-                var sigInfo = _signatureInfoMap[match.SigName];
-                var extraction = PrepareExtraction(accessor, fileSize, match.Offset, match.SigName, sigInfo, outputPath);
+                var typeDef = FileTypeRegistry.GetBySignatureId(match.SignatureId);
+                if (typeDef == null) return;
+
+                var extraction = PrepareExtraction(accessor, fileSize, match.Offset, match.SignatureId, typeDef,
+                    outputPath);
 
                 if (extraction != null)
                 {
-                    _stats.AddOrUpdate(match.SigName, 1, (_, v) => v + 1);
-                    await WriteFileAsync(extraction.Value.outputFile, extraction.Value.data, match.Offset, match.SigName, extraction.Value.fileSize);
+                    _stats.AddOrUpdate(match.SignatureId, 1, (_, v) => v + 1);
+                    await WriteFileAsync(extraction.Value.outputFile, extraction.Value.data, match.Offset,
+                        match.SignatureId, extraction.Value.fileSize, extraction.Value.originalPath);
                 }
 
                 // Report extraction progress (50-100% of total)
                 var currentCount = Interlocked.Increment(ref processedCount);
                 // Only report every ~1% to avoid flooding the UI
-                if (progress != null && (currentCount % Math.Max(1, totalMatches / 100) == 0 || currentCount == totalMatches))
+                if (progress != null &&
+                    (currentCount % Math.Max(1, totalMatches / 100) == 0 || currentCount == totalMatches))
                 {
                     var extractionProgress = (double)currentCount / totalMatches;
                     progress.Report(0.5 + extractionProgress * 0.5);
@@ -173,89 +202,164 @@ public sealed class MemoryCarver : IDisposable
             });
     }
 
-    private static (string outputFile, byte[] data, int fileSize)? PrepareExtraction(
-        MemoryMappedViewAccessor accessor, long fileSize, long offset, string sigName, SignatureInfo sigInfo, string outputPath)
+    private static (string outputFile, byte[] data, int fileSize, string? originalPath)? PrepareExtraction(
+        MemoryMappedViewAccessor accessor, long fileSize, long offset, string signatureId,
+        FileTypeDefinition typeDef, string outputPath)
     {
-        var headerSize = (int)Math.Min(Math.Min(sigInfo.MaxSize, 64 * 1024), fileSize - offset);
-        var headerBuffer = ArrayPool<byte>.Shared.Rent(headerSize);
+        // For DDX files, we need to read some data before the signature to find the path
+        // For scripts, we need to look for leading comments before the signature
+        // Read up to 512 bytes before and the header after
+        const int preReadSize = 512;
+        var actualPreRead = (int)Math.Min(preReadSize, offset);
+        var readStart = offset - actualPreRead;
+
+        // For DDX files, read more data to find boundaries (compressed textures can be large)
+        // For other types, 64KB is usually enough for header parsing
+        var headerScanSize = signatureId.StartsWith("ddx", StringComparison.OrdinalIgnoreCase)
+            ? Math.Min(typeDef.MaxSize, 512 * 1024) // 512KB for DDX boundary scanning
+            : Math.Min(typeDef.MaxSize, 64 * 1024); // 64KB for other types
+
+        var headerSize = (int)Math.Min(headerScanSize, fileSize - offset);
+        var totalRead = actualPreRead + headerSize;
+        var buffer = ArrayPool<byte>.Shared.Rent(totalRead);
 
         try
         {
-            accessor.ReadArray(offset, headerBuffer, 0, headerSize);
-            var headerSpan = headerBuffer.AsSpan(0, headerSize);
+            accessor.ReadArray(readStart, buffer, 0, totalRead);
+            var span = buffer.AsSpan(0, totalRead);
 
-            var parser = ParserFactory.GetParser(sigName);
+            // The signature starts at actualPreRead offset in our buffer
+            var sigOffset = actualPreRead;
+
+            var parser = ParserRegistry.GetParserForSignature(signatureId);
             int fileDataSize;
             string? customFilename = null;
+            string? originalPath = null;
+            var leadingBytes = 0;
 
             if (parser != null)
             {
-                var parseResult = parser.ParseHeader(headerSpan);
+                var parseResult = parser.ParseHeader(span, sigOffset);
                 if (parseResult == null) return null;
                 fileDataSize = parseResult.EstimatedSize;
-                if (parseResult.Metadata.TryGetValue("safeName", out var safeName)) customFilename = safeName.ToString();
+
+                // Get the safe filename for extraction
+                if (parseResult.Metadata.TryGetValue("safeName", out var safeName))
+                    customFilename = safeName.ToString();
+
+                // Get the original path for the manifest
+                if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) && pathObj is string path)
+                    originalPath = path;
+
+                // Check for leading comments (scripts with comments before the scn keyword)
+                if (parseResult.Metadata.TryGetValue("leadingCommentSize", out var leadingObj) &&
+                    leadingObj is int leading)
+                    leadingBytes = Math.Min(leading, actualPreRead); // Can't go beyond what we pre-read
             }
-            else fileDataSize = Math.Min(sigInfo.MaxSize, headerSize);
+            else
+            {
+                fileDataSize = Math.Min(typeDef.MaxSize, headerSize);
+            }
 
-            if (fileDataSize < sigInfo.MinSize || fileDataSize > sigInfo.MaxSize) return null;
-            fileDataSize = (int)Math.Min(fileDataSize, fileSize - offset);
+            // Adjust for leading bytes (e.g., comments before script signature)
+            var adjustedOffset = offset - leadingBytes;
+            var adjustedSize = fileDataSize + leadingBytes;
 
-            var typeFolder = string.IsNullOrEmpty(sigInfo.Folder) ? sigName : sigInfo.Folder;
+            if (adjustedSize < typeDef.MinSize || adjustedSize > typeDef.MaxSize) return null;
+            adjustedSize = (int)Math.Min(adjustedSize, fileSize - adjustedOffset);
+
+            var typeFolder = string.IsNullOrEmpty(typeDef.OutputFolder) ? signatureId : typeDef.OutputFolder;
             var typePath = Path.Combine(outputPath, typeFolder);
             Directory.CreateDirectory(typePath);
 
             var filename = customFilename ?? $"{offset:X8}";
-            var outputFile = Path.Combine(typePath, $"{filename}{sigInfo.Extension}");
+            var outputFile = Path.Combine(typePath, $"{filename}{typeDef.Extension}");
             var counter = 1;
-            while (File.Exists(outputFile)) outputFile = Path.Combine(typePath, $"{filename}_{counter++}{sigInfo.Extension}");
+            while (File.Exists(outputFile))
+                outputFile = Path.Combine(typePath, $"{filename}_{counter++}{typeDef.Extension}");
 
-            var fileData = fileDataSize <= headerSize ? headerSpan[..fileDataSize].ToArray() : new byte[fileDataSize];
-            if (fileDataSize > headerSize) accessor.ReadArray(offset, fileData, 0, fileDataSize);
+            // Read the actual file data (including any leading bytes)
+            var fileData = new byte[adjustedSize];
+            accessor.ReadArray(adjustedOffset, fileData, 0, adjustedSize);
 
-            return (outputFile, fileData, fileDataSize);
+            return (outputFile, fileData, adjustedSize, originalPath);
         }
-        finally { ArrayPool<byte>.Shared.Return(headerBuffer); }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
-    private async Task WriteFileAsync(string outputFile, byte[] data, long offset, string sigName, int fileSize)
+    private async Task WriteFileAsync(string outputFile, byte[] data, long offset, string signatureId, int fileSize,
+        string? originalPath)
     {
-        if (_convertDdxToDds && sigName is "ddx_3xdo" or "ddx_3xdr" && IsDdxFile(data))
+        if (_convertDdxToDds && signatureId is "ddx_3xdo" or "ddx_3xdr" && IsDdxFile(data))
         {
-            var result = await ConvertDdxAsync(data, outputFile, offset, sigName, fileSize);
+            var result = await ConvertDdxAsync(data, outputFile, offset, signatureId, fileSize, originalPath);
             if (result) return;
         }
 
         await File.WriteAllBytesAsync(outputFile, data);
-        _manifest.Add(new CarveEntry { FileType = sigName, Offset = offset, SizeInDump = fileSize, SizeOutput = fileSize, Filename = Path.GetFileName(outputFile) });
+        _manifest.Add(new CarveEntry
+        {
+            FileType = signatureId,
+            Offset = offset,
+            SizeInDump = fileSize,
+            SizeOutput = fileSize,
+            Filename = Path.GetFileName(outputFile),
+            OriginalPath = originalPath
+        });
     }
 
-    private async Task<bool> ConvertDdxAsync(byte[] data, string outputFile, long offset, string sigName, int fileSize)
+    private async Task<bool> ConvertDdxAsync(byte[] data, string outputFile, long offset, string signatureId,
+        int fileSize, string? originalPath)
     {
         if (_ddxConverter == null) return false;
 
         var is3Xdr = data.Length >= 4 && data[3] == 'R';
-        if (is3Xdr) { Interlocked.Increment(ref _ddxConvertFailedCount); return false; }
+        if (is3Xdr)
+        {
+            Interlocked.Increment(ref _ddxConvertFailedCount);
+            return false;
+        }
 
         var result = await _ddxConverter.ConvertFromMemoryWithResultAsync(data);
-        if (!result.Success || result.DdsData == null) { Interlocked.Increment(ref _ddxConvertFailedCount); return false; }
+        if (!result.Success || result.DdsData == null)
+        {
+            Interlocked.Increment(ref _ddxConvertFailedCount);
+            return false;
+        }
 
-        var ddsOutputFile = Path.ChangeExtension(outputFile.Replace(Path.DirectorySeparatorChar + "ddx" + Path.DirectorySeparatorChar,
+        var ddsOutputFile = Path.ChangeExtension(outputFile.Replace(
+            Path.DirectorySeparatorChar + "ddx" + Path.DirectorySeparatorChar,
             Path.DirectorySeparatorChar + "textures" + Path.DirectorySeparatorChar), ".dds");
         Directory.CreateDirectory(Path.GetDirectoryName(ddsOutputFile)!);
 
         await File.WriteAllBytesAsync(ddsOutputFile, result.DdsData);
-        if (result.AtlasData != null && _saveAtlas) await File.WriteAllBytesAsync(ddsOutputFile.Replace(".dds", "_full_atlas.dds"), result.AtlasData);
+        if (result.AtlasData != null && _saveAtlas)
+            await File.WriteAllBytesAsync(ddsOutputFile.Replace(".dds", "_full_atlas.dds"), result.AtlasData);
 
         _manifest.Add(new CarveEntry
         {
-            FileType = sigName, Offset = offset, SizeInDump = fileSize, SizeOutput = result.DdsData.Length,
-            Filename = Path.GetFileName(ddsOutputFile), IsCompressed = true,
-            ContentType = result.IsPartial ? "dds_partial" : "dds_converted", IsPartial = result.IsPartial, Notes = result.Notes
+            FileType = signatureId,
+            Offset = offset,
+            SizeInDump = fileSize,
+            SizeOutput = result.DdsData.Length,
+            Filename = Path.GetFileName(ddsOutputFile),
+            OriginalPath = originalPath,
+            IsCompressed = true,
+            ContentType = result.IsPartial ? "dds_partial" : "dds_converted",
+            IsPartial = result.IsPartial,
+            Notes = result.Notes
         });
 
         Interlocked.Increment(ref _ddxConvertedCount);
         return true;
     }
 
-    private static bool IsDdxFile(byte[] data) => data.Length >= 4 && data[0] == '3' && data[1] == 'X' && data[2] == 'D' && data[3] is (byte)'O' or (byte)'R';
+    private static bool IsDdxFile(byte[] data)
+    {
+        return data.Length >= 4 && data[0] == '3' && data[1] == 'X' && data[2] == 'D' &&
+               data[3] is (byte)'O' or (byte)'R';
+    }
 }

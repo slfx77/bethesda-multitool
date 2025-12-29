@@ -15,11 +15,11 @@ internal sealed class HexRowRenderer
     private const int BytesPerRow = 16;
 
     private static readonly SolidColorBrush TextBrush = new(Color.FromArgb(255, 212, 212, 212));
-
-    private readonly TextBlock _offsetTextBlock;
-    private readonly TextBlock _hexTextBlock;
     private readonly TextBlock _asciiTextBlock;
     private readonly Func<long, FileRegion?> _findRegion;
+    private readonly TextBlock _hexTextBlock;
+
+    private readonly TextBlock _offsetTextBlock;
 
     public HexRowRenderer(
         TextBlock offsetTextBlock,

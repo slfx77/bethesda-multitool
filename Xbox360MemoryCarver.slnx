@@ -6,10 +6,8 @@
     <Project Path="src/DDXConv/DDXConv/DDXConv.csproj" />
     <Project Path="src/DDXConv/XCompression/XCompression.csproj" />
   </Folder>
-  <Project Path="src/Xbox360MemoryCarver.App/Xbox360MemoryCarver.App.csproj">
+  <Project Path="src/Xbox360MemoryCarver/Xbox360MemoryCarver.csproj">
     <Platform Project="x64" />
   </Project>
-  <Project Path="src/Xbox360MemoryCarver.Core/Xbox360MemoryCarver.Core.csproj">
-    <Platform Project="x64" />
-  </Project>
+  <Project Path="tests/Xbox360MemoryCarver.Tests/Xbox360MemoryCarver.Tests.csproj" />
 </Solution>

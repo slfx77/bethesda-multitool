@@ -1,9 +1,8 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using Xbox360MemoryCarver.Core.FileTypes;
 using Xbox360MemoryCarver.Core.Minidump;
-using Xbox360MemoryCarver.Core.Models;
-using Xbox360MemoryCarver.Core.Parsers;
 
 namespace Xbox360MemoryCarver.Core;
 
@@ -12,15 +11,20 @@ namespace Xbox360MemoryCarver.Core;
 /// </summary>
 public class MemoryDumpAnalyzer
 {
-    private readonly AhoCorasickMatcher _signatureMatcher;
-    private readonly IReadOnlyDictionary<string, SignatureInfo> _signatures;
+    private readonly SignatureMatcher _signatureMatcher;
 
     public MemoryDumpAnalyzer()
     {
-        _signatures = FileSignatures.Signatures;
-        _signatureMatcher = new AhoCorasickMatcher();
+        _signatureMatcher = new SignatureMatcher();
 
-        foreach (var (name, sig) in _signatures) _signatureMatcher.AddPattern(name, sig.Magic);
+        // Register all signatures from the file type registry
+        foreach (var typeDef in FileTypeRegistry.AllTypes)
+        {
+            foreach (var sig in typeDef.Signatures)
+            {
+                _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
+            }
+        }
 
         _signatureMatcher.Build();
     }
@@ -45,35 +49,7 @@ public class MemoryDumpAnalyzer
                 $"[Minidump] {minidumpInfo.Modules.Count} modules, {minidumpInfo.MemoryRegions.Count} memory regions, Xbox 360: {minidumpInfo.IsXbox360}");
 
             // Add modules directly to results
-            foreach (var module in minidumpInfo.Modules)
-            {
-                var fileName = Path.GetFileName(module.Name);
-                var fileRange = minidumpInfo.GetModuleFileRange(module);
-
-                if (fileRange.HasValue)
-                {
-                    var captured = fileRange.Value.size;
-                    Console.WriteLine(
-                        $"[Minidump]   Module: {fileName} at 0x{fileRange.Value.fileOffset:X8}, captured: {captured:N0} bytes");
-
-                    // Determine type based on extension
-                    var fileType = fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                        ? "Xbox 360 Module (EXE)"
-                        : "Xbox 360 Module (DLL)";
-
-                    // Add module to results
-                    result.CarvedFiles.Add(new CarvedFileInfo
-                    {
-                        Offset = fileRange.Value.fileOffset,
-                        Length = captured,
-                        FileType = fileType,
-                        FileName = fileName
-                    });
-
-                    result.TypeCounts.TryGetValue("module", out var modCount);
-                    result.TypeCounts["module"] = modCount + 1;
-                }
-            }
+            AddModulesFromMinidump(result, minidumpInfo);
         }
 
         using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
@@ -89,15 +65,19 @@ public class MemoryDumpAnalyzer
         var matches = FindAllMatches(accessor, result.FileSize, progress);
 
         // Convert matches to CarvedFileInfo using proper parsers
-        // Skip XEX signatures at module offsets (already added above)
-        foreach (var (sigName, offset) in matches)
+        foreach (var (signatureId, offset) in matches)
         {
             // Skip XEX signatures at module offsets (already added above)
-            if (sigName == "xex" && moduleOffsets.Contains(offset))
-                continue;
+            if (signatureId == "xex" && moduleOffsets.Contains(offset)) continue;
 
-            var sig = _signatures[sigName];
-            var (length, fileName) = EstimateFileSizeAndExtractName(accessor, result.FileSize, offset, sigName, sig);
+            var typeDef = FileTypeRegistry.GetBySignatureId(signatureId);
+            if (typeDef == null) continue;
+
+            var signature = typeDef.GetSignature(signatureId);
+            if (signature == null) continue;
+
+            var (length, fileName) =
+                EstimateFileSizeAndExtractName(accessor, result.FileSize, offset, signatureId, typeDef);
 
             if (length > 0)
             {
@@ -105,12 +85,12 @@ public class MemoryDumpAnalyzer
                 {
                     Offset = offset,
                     Length = length,
-                    FileType = sig.Description ?? sigName,
+                    FileType = signature.Description,
                     FileName = fileName
                 });
 
-                result.TypeCounts.TryGetValue(sigName, out var count);
-                result.TypeCounts[sigName] = count + 1;
+                result.TypeCounts.TryGetValue(signatureId, out var count);
+                result.TypeCounts[signatureId] = count + 1;
             }
         }
 
@@ -125,7 +105,41 @@ public class MemoryDumpAnalyzer
         return result;
     }
 
-    private List<(string SigName, long Offset)> FindAllMatches(
+    private static void AddModulesFromMinidump(AnalysisResult result, MinidumpInfo minidumpInfo)
+    {
+        var xexTypeDef = FileTypeRegistry.GetByTypeId("xex");
+        if (xexTypeDef == null) return;
+
+        foreach (var module in minidumpInfo.Modules)
+        {
+            var fileName = Path.GetFileName(module.Name);
+            var fileRange = minidumpInfo.GetModuleFileRange(module);
+
+            if (fileRange.HasValue)
+            {
+                var captured = fileRange.Value.size;
+                Console.WriteLine(
+                    $"[Minidump]   Module: {fileName} at 0x{fileRange.Value.fileOffset:X8}, captured: {captured:N0} bytes");
+
+                // Determine description based on extension
+                var isExe = fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+                var fileType = isExe ? "Xbox 360 Module (EXE)" : "Xbox 360 Module (DLL)";
+
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = fileRange.Value.fileOffset,
+                    Length = captured,
+                    FileType = fileType,
+                    FileName = fileName
+                });
+
+                result.TypeCounts.TryGetValue("xex", out var modCount);
+                result.TypeCounts["xex"] = modCount + 1;
+            }
+        }
+    }
+
+    private List<(string SignatureId, long Offset)> FindAllMatches(
         MemoryMappedViewAccessor accessor,
         long fileSize,
         IProgress<AnalysisProgress>? progress)
@@ -133,7 +147,7 @@ public class MemoryDumpAnalyzer
         const int chunkSize = 64 * 1024 * 1024; // 64MB chunks
         var maxPatternLength = _signatureMatcher.MaxPatternLength;
 
-        var allMatches = new List<(string SigName, long Offset)>();
+        var allMatches = new List<(string SignatureId, long Offset)>();
         var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
         var progressData = new AnalysisProgress { TotalBytes = fileSize };
 
@@ -173,8 +187,8 @@ public class MemoryDumpAnalyzer
         MemoryMappedViewAccessor accessor,
         long fileSize,
         long offset,
-        string sigName,
-        SignatureInfo sig)
+        string signatureId,
+        FileTypeDefinition typeDef)
     {
         // For DDX files, we need to read some data before the signature to find the path
         // Read up to 512 bytes before and the header after
@@ -182,7 +196,7 @@ public class MemoryDumpAnalyzer
         var actualPreRead = (int)Math.Min(preReadSize, offset);
         var readStart = offset - actualPreRead;
 
-        var headerSize = Math.Min(sig.MaxSize, 64 * 1024);
+        var headerSize = Math.Min(typeDef.MaxSize, 64 * 1024);
         headerSize = (int)Math.Min(headerSize, fileSize - offset);
         var totalRead = actualPreRead + headerSize;
 
@@ -196,21 +210,31 @@ public class MemoryDumpAnalyzer
             var sigOffset = actualPreRead;
 
             // Use parser for accurate size estimation
-            var parser = ParserFactory.GetParser(sigName);
+            var parser = ParserRegistry.GetParserForSignature(signatureId);
             if (parser != null)
             {
                 var parseResult = parser.ParseHeader(span, sigOffset);
                 if (parseResult != null)
                 {
                     var estimatedSize = parseResult.EstimatedSize;
-                    if (estimatedSize >= sig.MinSize && estimatedSize <= sig.MaxSize)
+                    if (estimatedSize >= typeDef.MinSize && estimatedSize <= typeDef.MaxSize)
                     {
                         var length = Math.Min(estimatedSize, (int)(fileSize - offset));
 
-                        // Extract filename from texture path if available
+                        // Extract filename for display in the file table
+                        // Priority: fileName > scriptName > texturePath filename portion
                         string? fileName = null;
-                        if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) &&
-                            pathObj is string texturePath) fileName = texturePath;
+
+                        if (parseResult.Metadata.TryGetValue("fileName", out var fileNameObj) &&
+                            fileNameObj is string fn && !string.IsNullOrEmpty(fn))
+                            fileName = fn;
+                        else if (parseResult.Metadata.TryGetValue("scriptName", out var scriptNameObj) &&
+                                 scriptNameObj is string sn && !string.IsNullOrEmpty(sn))
+                            fileName = sn;
+                        else if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) &&
+                                 pathObj is string texturePath)
+                            // Fall back to extracting filename from path
+                            fileName = Path.GetFileName(texturePath);
 
                         return (length, fileName);
                     }
@@ -221,7 +245,7 @@ public class MemoryDumpAnalyzer
             }
 
             // Fallback for types without parsers
-            return (Math.Min(sig.MaxSize, (int)(fileSize - offset)), null);
+            return (Math.Min(typeDef.MaxSize, (int)(fileSize - offset)), null);
         }
         finally
         {

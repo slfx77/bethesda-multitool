@@ -31,23 +31,15 @@ public static class MinidumpParser
     public static MinidumpInfo Parse(Stream stream)
     {
         var headerBuffer = new byte[32];
-        if (stream.Read(headerBuffer, 0, 32) < 32)
-        {
-            return new MinidumpInfo { IsValid = false };
-        }
+        if (stream.Read(headerBuffer, 0, 32) < 32) return new MinidumpInfo { IsValid = false };
 
-        if (!headerBuffer.AsSpan(0, 4).SequenceEqual(MinidumpSignature))
-        {
-            return new MinidumpInfo { IsValid = false };
-        }
+        if (!headerBuffer.AsSpan(0, 4).SequenceEqual(MinidumpSignature)) return new MinidumpInfo { IsValid = false };
 
         var numberOfStreams = BinaryUtils.ReadUInt32LE(headerBuffer, 8);
         var streamDirectoryRva = BinaryUtils.ReadUInt32LE(headerBuffer, 12);
 
         if (numberOfStreams == 0 || numberOfStreams > 100 || streamDirectoryRva == 0)
-        {
             return new MinidumpInfo { IsValid = false };
-        }
 
         var directorySize = (int)(numberOfStreams * 12);
         var directoryBuffer = ArrayPool<byte>.Shared.Rent(directorySize);
@@ -55,9 +47,7 @@ public static class MinidumpParser
         {
             stream.Seek(streamDirectoryRva, SeekOrigin.Begin);
             if (stream.Read(directoryBuffer, 0, directorySize) < directorySize)
-            {
                 return new MinidumpInfo { IsValid = false };
-            }
 
             var result = new MinidumpInfo { IsValid = true, NumberOfStreams = numberOfStreams };
 
@@ -88,10 +78,7 @@ public static class MinidumpParser
     {
         var buffer = new byte[4];
         stream.Seek(rva, SeekOrigin.Begin);
-        if (stream.Read(buffer, 0, 4) >= 4)
-        {
-            result.ProcessorArchitecture = BinaryUtils.ReadUInt16LE(buffer);
-        }
+        if (stream.Read(buffer, 0, 4) >= 4) result.ProcessorArchitecture = BinaryUtils.ReadUInt16LE(buffer);
     }
 
     private static void ParseModuleList(Stream stream, uint rva, MinidumpInfo result)
@@ -116,10 +103,7 @@ public static class MinidumpParser
             {
                 var offset = i * moduleEntrySize;
                 var module = ParseModule(stream, modulesBuffer, offset);
-                if (module != null)
-                {
-                    result.Modules.Add(module);
-                }
+                if (module != null) result.Modules.Add(module);
             }
         }
         finally

@@ -93,7 +93,9 @@
                       Click="CopyHexMenuItem_Click"
                       Text="Copy">
                       <MenuFlyoutItem.KeyboardAccelerators>
-                        <KeyboardAccelerator Key="C" Modifiers="Control" />
+                        <KeyboardAccelerator
+                          Key="C"
+                          Modifiers="Control" />
                       </MenuFlyoutItem.KeyboardAccelerators>
                     </MenuFlyoutItem>
                   </MenuFlyout>
@@ -117,7 +119,9 @@
                       Click="CopyAsciiMenuItem_Click"
                       Text="Copy">
                       <MenuFlyoutItem.KeyboardAccelerators>
-                        <KeyboardAccelerator Key="C" Modifiers="Control" />
+                        <KeyboardAccelerator
+                          Key="C"
+                          Modifiers="Control" />
                       </MenuFlyoutItem.KeyboardAccelerators>
                     </MenuFlyoutItem>
                   </MenuFlyout>

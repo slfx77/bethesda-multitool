@@ -35,13 +35,11 @@ public class MinidumpInfo
     public long? FileOffsetToVirtualAddress(long fileOffset)
     {
         foreach (var region in MemoryRegions)
-        {
             if (fileOffset >= region.FileOffset && fileOffset < region.FileOffset + region.Size)
             {
                 var offsetInRegion = fileOffset - region.FileOffset;
                 return region.VirtualAddress + offsetInRegion;
             }
-        }
 
         return null;
     }
@@ -125,14 +123,10 @@ public class MinidumpInfo
             sb.Append(CultureInfo.InvariantCulture,
                 $"  {fileName,-30} Base: 0x{module.BaseAddress32:X8} Size: {module.Size,12:N0}");
             if (fileRange.HasValue)
-            {
                 sb.AppendLine(CultureInfo.InvariantCulture,
                     $" -> File: 0x{fileRange.Value.fileOffset:X8} ({fileRange.Value.size:N0} bytes captured)");
-            }
             else
-            {
                 sb.AppendLine(" -> NOT IN DUMP");
-            }
         }
 
         sb.AppendLine();
@@ -150,9 +144,7 @@ public class MinidumpInfo
         }
 
         if (MemoryRegions.Count > 10)
-        {
             sb.AppendLine(CultureInfo.InvariantCulture, $"  ... ({MemoryRegions.Count - 10} more regions) ...");
-        }
 
         return sb.ToString();
     }
