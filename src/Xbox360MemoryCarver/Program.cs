@@ -126,6 +126,11 @@ public static class Program
             ["--scan-scriptinfo"],
             "Scan for ScriptInfo structures to find compiled scripts (experimental)");
 
+        // Analyze bytecode files (for debugging)
+        var analyzeBytecodeOption = new Option<bool>(
+            ["--analyze-bytecode"],
+            "Analyze bytecode files in a directory to understand the format");
+
         rootCommand.AddArgument(inputArgument);
         rootCommand.AddOption(outputOption);
         rootCommand.AddOption(noGuiOption);
@@ -137,6 +142,7 @@ public static class Program
         rootCommand.AddOption(scanScriptsOption);
         rootCommand.AddOption(exportScriptsOption);
         rootCommand.AddOption(scanScriptInfoOption);
+        rootCommand.AddOption(analyzeBytecodeOption);
 
         rootCommand.SetHandler(async context =>
         {
@@ -149,6 +155,7 @@ public static class Program
             var scanScripts = context.ParseResult.GetValueForOption(scanScriptsOption);
             var exportScripts = context.ParseResult.GetValueForOption(exportScriptsOption);
             var scanScriptInfo = context.ParseResult.GetValueForOption(scanScriptInfoOption);
+            var analyzeBytecode = context.ParseResult.GetValueForOption(analyzeBytecodeOption);
 
             if (string.IsNullOrEmpty(input))
             {
@@ -163,6 +170,7 @@ public static class Program
                 Console.WriteLine("  Xbox360MemoryCarver dump.dmp -o extracted --convert-ddx -v");
                 Console.WriteLine("  Xbox360MemoryCarver dump.dmp --scan-scripts -v");
                 Console.WriteLine("  Xbox360MemoryCarver dump.dmp --scan-scriptinfo -v");
+                Console.WriteLine("  Xbox360MemoryCarver scripts_dir --analyze-bytecode");
 #if WINDOWS_GUI
                 Console.WriteLine();
                 Console.WriteLine("For GUI mode, run without arguments or with --file:");
@@ -182,7 +190,11 @@ public static class Program
 
             try
             {
-                if (scanScriptInfo)
+                if (analyzeBytecode)
+                {
+                    await BytecodeAnalyzer.AnalyzeBytecodeFilesAsync(input, maxFiles: 10);
+                }
+                else if (scanScriptInfo)
                 {
                     await ScanForScriptInfoAsync(input, output, exportScripts, verbose);
                 }
@@ -319,9 +331,8 @@ public static class Program
                     var bytecode = ScriptInfoScanner.TryExtractBytecode(fileData, match, minidump);
                     if (bytecode != null)
                     {
-                        Console.WriteLine($"    Bytecode at file offset (first 32 bytes):");
-                        var bytecodeHex = string.Join(" ", bytecode.Take(32).Select(b => b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture)));
-                        Console.WriteLine($"      {bytecodeHex}");
+                        Console.WriteLine($"    Bytecode ({bytecode.Length} bytes), first 48:");
+                        Console.WriteLine($"      {BytecodeAnalyzer.AnalyzeBytecode(bytecode, tryBothEndian: true)}");
                     }
                     else
                     {
@@ -422,7 +433,7 @@ public static class Program
         {
             Console.WriteLine("No compiled scripts found.");
             Console.WriteLine();
-            Console.WriteLine("Note: This scanner looks for bytecode starting with opcode 0x0010 (ScriptName).");
+            Console.WriteLine("Note: This scanner looks for bytecode starting with opcode 0x1D (ScriptName).");
             Console.WriteLine("If this is a Debug build dump, scripts may be in source text format instead.");
             return;
         }
