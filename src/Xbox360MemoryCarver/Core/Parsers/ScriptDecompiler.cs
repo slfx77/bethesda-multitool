@@ -497,7 +497,7 @@ public class ScriptDecompiler
 
     private string DecompileExpression(ReadOnlySpan<byte> data)
     {
-        // Expression format: length(2) + tokens
+        // Expression format: length(2) + tokens in POSTFIX notation
         if (data.Length < 2) return "(empty)";
 
         var exprLen = ReadUInt16(data, 0);
@@ -606,30 +606,99 @@ public class ScriptDecompiler
                     }
                     break;
 
-                // Operators
-                case '+': tokens.Add("+"); break;
-                case '-': tokens.Add("-"); break;
-                case '*': tokens.Add("*"); break;
-                case '/': tokens.Add("/"); break;
-                case '%': tokens.Add("%"); break;
-                case '^': tokens.Add("^"); break;
-                case '|': tokens.Add("||"); break;
-                case '&': tokens.Add("&&"); break;
-                case '=': tokens.Add("=="); break;
-                case '!': tokens.Add("!="); break;
-                case '>': tokens.Add(">"); break;
-                case '<': tokens.Add("<"); break;
+                // Multi-character operators - check for double characters
+                case '=':
+                    // Check if next char is also '=' for ==
+                    if (pos < exprData.Length && exprData[pos] == '=' )
+                    {
+                        pos++;
+                        tokens.Add("OP_EQ"); // Use marker for postfix processing
+                    }
+                    else
+                    {
+                        tokens.Add("OP_EQ");
+                    }
+                    break;
+
+                case '!':
+                    if (pos < exprData.Length && exprData[pos] == '=' )
+                    {
+                        pos++;
+                        tokens.Add("OP_NE");
+                    }
+                    else
+                    {
+                        tokens.Add("OP_NOT");
+                    }
+                    break;
+
+                case '&':
+                    if (pos < exprData.Length && exprData[pos] == '&')
+                    {
+                        pos++;
+                        tokens.Add("OP_AND");
+                    }
+                    else
+                    {
+                        tokens.Add("&");
+                    }
+                    break;
+
+                case '|':
+                    if (pos < exprData.Length && exprData[pos] == '|')
+                    {
+                        pos++;
+                        tokens.Add("OP_OR");
+                    }
+                    else
+                    {
+                        tokens.Add("|");
+                    }
+                    break;
+
+                case '<':
+                    if (pos < exprData.Length && exprData[pos] == '=')
+                    {
+                        pos++;
+                        tokens.Add("OP_LE");
+                    }
+                    else
+                    {
+                        tokens.Add("OP_LT");
+                    }
+                    break;
+
+                case '>':
+                    if (pos < exprData.Length && exprData[pos] == '=')
+                    {
+                        pos++;
+                        tokens.Add("OP_GE");
+                    }
+                    else
+                    {
+                        tokens.Add("OP_GT");
+                    }
+                    break;
+
+                // Single-character operators
+                case '+': tokens.Add("OP_ADD"); break;
+                case '-': tokens.Add("OP_SUB"); break;
+                case '*': tokens.Add("OP_MUL"); break;
+                case '/': tokens.Add("OP_DIV"); break;
+                case '%': tokens.Add("OP_MOD"); break;
+                case '^': tokens.Add("OP_POW"); break;
                 
                 default:
                     // Check if it's a numeric ASCII literal (0-9, -, .)
-                    if (code >= '0' && code <= '9' || code == '-' || code == '.')
+                    if (code >= '0' && code <= '9' || code == '.' || (code == '-' && pos < exprData.Length && exprData[pos] >= '0' && exprData[pos] <= '9'))
                     {
                         // Read the entire number as ASCII
                         var numStart = pos - 1;
                         while (pos < exprData.Length)
                         {
                             var c = exprData[pos];
-                            if ((c >= '0' && c <= '9') || c == '.' || c == '-' || c == 'e' || c == 'E')
+                            if ((c >= '0' && c <= '9') || c == '.' || c == 'e' || c == 'E' || 
+                                (c == '-' && pos > numStart && (exprData[pos-1] == 'e' || exprData[pos-1] == 'E')))
                                 pos++;
                             else
                                 break;
@@ -646,7 +715,103 @@ public class ScriptDecompiler
             }
         }
 
-        return tokens.Count > 0 ? string.Join(" ", tokens) : "(could not parse)";
+        // Convert from postfix to infix notation
+        return PostfixToInfix(tokens);
+    }
+
+    /// <summary>
+    ///     Convert postfix (RPN) token list to infix notation string.
+    /// </summary>
+    private static string PostfixToInfix(List<string> tokens)
+    {
+        if (tokens.Count == 0) return "(empty)";
+        if (tokens.Count == 1) return tokens[0];
+
+        var stack = new Stack<string>();
+        var operators = new HashSet<string>
+        {
+            "OP_EQ", "OP_NE", "OP_LT", "OP_GT", "OP_LE", "OP_GE",
+            "OP_AND", "OP_OR", "OP_NOT",
+            "OP_ADD", "OP_SUB", "OP_MUL", "OP_DIV", "OP_MOD", "OP_POW"
+        };
+
+        var opSymbols = new Dictionary<string, string>
+        {
+            ["OP_EQ"] = "==",
+            ["OP_NE"] = "!=",
+            ["OP_LT"] = "<",
+            ["OP_GT"] = ">",
+            ["OP_LE"] = "<=",
+            ["OP_GE"] = ">=",
+            ["OP_AND"] = "&&",
+            ["OP_OR"] = "||",
+            ["OP_NOT"] = "!",
+            ["OP_ADD"] = "+",
+            ["OP_SUB"] = "-",
+            ["OP_MUL"] = "*",
+            ["OP_DIV"] = "/",
+            ["OP_MOD"] = "%",
+            ["OP_POW"] = "^"
+        };
+
+        foreach (var token in tokens)
+        {
+            if (operators.Contains(token))
+            {
+                var opStr = opSymbols[token];
+                
+                if (token == "OP_NOT")
+                {
+                    // Unary operator
+                    if (stack.Count >= 1)
+                    {
+                        var operand = stack.Pop();
+                        stack.Push($"!{operand}");
+                    }
+                    else
+                    {
+                        stack.Push($"!?");
+                    }
+                }
+                else
+                {
+                    // Binary operator
+                    if (stack.Count >= 2)
+                    {
+                        var right = stack.Pop();
+                        var left = stack.Pop();
+                        stack.Push($"({left} {opStr} {right})");
+                    }
+                    else if (stack.Count == 1)
+                    {
+                        var operand = stack.Pop();
+                        stack.Push($"(? {opStr} {operand})");
+                    }
+                    else
+                    {
+                        stack.Push($"(? {opStr} ?)");
+                    }
+                }
+            }
+            else
+            {
+                // Operand - push to stack
+                stack.Push(token);
+            }
+        }
+
+        // Combine remaining items on stack
+        if (stack.Count == 1)
+        {
+            return stack.Pop();
+        }
+        else if (stack.Count > 1)
+        {
+            // Multiple items left - join them (shouldn't normally happen)
+            return string.Join(" ", stack.Reverse());
+        }
+
+        return "(parse error)";
     }
 
     private string DecompileCommand(ushort opcode, ReadOnlySpan<byte> data, ushort refIdx)
