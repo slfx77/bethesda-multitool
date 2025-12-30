@@ -168,6 +168,9 @@ public class ScriptDecompiler
     private readonly bool _isBigEndian;
     private readonly List<string> _variables = [];
     private readonly List<string> _refVariables = [];
+    private readonly Dictionary<uint, string> _variableNames = [];
+    private readonly Dictionary<uint, string> _variableTypes = [];
+    private readonly Dictionary<uint, string> _refVarNames = [];
     private int _indentLevel;
     private int _varCounter;
 
@@ -184,6 +187,53 @@ public class ScriptDecompiler
         _offset = offset;
         _size = size;
         _isBigEndian = isBigEndian;
+    }
+
+    /// <summary>
+    ///     Set a known variable name from extracted metadata.
+    /// </summary>
+    public void SetVariableName(uint index, string name, string? type = null)
+    {
+        _variableNames[index] = name;
+        if (!string.IsNullOrEmpty(type))
+            _variableTypes[index] = type;
+    }
+
+    /// <summary>
+    ///     Set a known reference variable name from extracted metadata.
+    /// </summary>
+    public void SetRefVariableName(uint index, string name)
+    {
+        _refVarNames[index] = name;
+    }
+
+    /// <summary>
+    ///     Get the display name for a variable index.
+    /// </summary>
+    private string GetVariableName(uint index, char typeHint)
+    {
+        if (_variableNames.TryGetValue(index, out var name))
+            return name;
+
+        var prefix = typeHint switch
+        {
+            'f' => "fVar",
+            's' => "iVar",
+            'l' => "iVar",
+            'r' => "rVar",
+            _ => "var"
+        };
+        return $"{prefix}{index}";
+    }
+
+    /// <summary>
+    ///     Get the display name for a reference variable index.
+    /// </summary>
+    private string GetRefName(uint index)
+    {
+        if (_refVarNames.TryGetValue(index, out var name))
+            return name;
+        return $"Ref{index}";
     }
 
     private ushort ReadUInt16(ReadOnlySpan<byte> data, int offset)

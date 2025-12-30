@@ -369,6 +369,7 @@ public static class Program
             {
                 var extracted = 0;
                 var decompiled = 0;
+                var withVarNames = 0;
                 var failed = 0;
                 
                 Console.WriteLine($"Extracting and decompiling bytecode...");
@@ -384,10 +385,38 @@ public static class Program
                         await File.WriteAllBytesAsync(Path.Combine(scriptsDir, baseName + ".bin"), bytecode);
                         extracted++;
                         
+                        // Try to extract variable names
+                        var variables = ScriptInfoScanner.TryExtractVariables(fileData, match, minidump);
+                        var refVars = ScriptInfoScanner.TryExtractRefVariables(fileData, match, minidump);
+                        
                         // Try to decompile
                         try
                         {
                             var decompiler = new ScriptDecompiler(bytecode, 0, bytecode.Length, isBigEndian: true);
+                            
+                            // Pass variable names to decompiler if available
+                            if (variables != null)
+                            {
+                                foreach (var v in variables)
+                                {
+                                    if (!string.IsNullOrEmpty(v.Name))
+                                    {
+                                        decompiler.SetVariableName(v.Index, v.Name, v.Type);
+                                    }
+                                }
+                            }
+                            
+                            if (refVars != null)
+                            {
+                                foreach (var r in refVars)
+                                {
+                                    if (!string.IsNullOrEmpty(r.Name))
+                                    {
+                                        decompiler.SetRefVariableName(r.Index, r.Name);
+                                    }
+                                }
+                            }
+                            
                             var result = decompiler.Decompile();
                             
                             if (!string.IsNullOrWhiteSpace(result.DecompiledText))
@@ -397,6 +426,29 @@ public static class Program
                                 header.AppendLine($"; Type: {match.ScriptType}");
                                 header.AppendLine($"; DataLength: {match.DataLength}, NumRefs: {match.NumRefs}, VarCount: {match.VarCount}");
                                 header.AppendLine($"; Bytecode size: {bytecode.Length} bytes");
+                                
+                                // Show variable names if found
+                                if (variables != null && variables.Count > 0)
+                                {
+                                    header.AppendLine(";");
+                                    header.AppendLine("; Variables:");
+                                    foreach (var v in variables)
+                                    {
+                                        header.AppendLine($";   [{v.Index}] {v.Type}: {v.Name ?? "(unnamed)"}");
+                                    }
+                                    withVarNames++;
+                                }
+                                
+                                if (refVars != null && refVars.Count > 0)
+                                {
+                                    header.AppendLine(";");
+                                    header.AppendLine("; References:");
+                                    foreach (var r in refVars)
+                                    {
+                                        header.AppendLine($";   [{r.Index}] {r.Name ?? "(unnamed)"} -> Form@0x{r.FormPointer:X8}");
+                                    }
+                                }
+                                
                                 if (!result.Success)
                                     header.AppendLine($"; NOTE: Partial decompilation - {result.ErrorMessage}");
                                 header.AppendLine(";");
@@ -419,7 +471,9 @@ public static class Program
                     }
                 }
 
-                Console.WriteLine($"Extracted {extracted} bytecode file(s), decompiled {decompiled}, {failed} could not be mapped");
+                Console.WriteLine($"Extracted {extracted} bytecode file(s), decompiled {decompiled}");
+                Console.WriteLine($"  {withVarNames} scripts had variable names recovered");
+                Console.WriteLine($"  {failed} could not be mapped");
             }
             else
             {
