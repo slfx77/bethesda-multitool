@@ -364,20 +364,54 @@ public static class Program
 
             Console.WriteLine($"Summary written to: {summaryPath}");
 
-            // Try to extract bytecode using minidump mapping
+            // Try to extract bytecode using minidump mapping and decompile
             if (minidump.IsValid)
             {
                 var extracted = 0;
+                var decompiled = 0;
                 var failed = 0;
                 
-                foreach (var match in matches.Take(100))
+                Console.WriteLine($"Extracting and decompiling bytecode...");
+                
+                foreach (var match in matches)
                 {
                     var bytecode = ScriptInfoScanner.TryExtractBytecode(fileData, match, minidump);
                     if (bytecode != null)
                     {
-                        var filename = $"script_0x{match.Offset:X8}_{match.ScriptType}.bin";
-                        await File.WriteAllBytesAsync(Path.Combine(scriptsDir, filename), bytecode);
+                        var baseName = $"script_0x{match.Offset:X8}_{match.ScriptType}";
+                        
+                        // Write binary
+                        await File.WriteAllBytesAsync(Path.Combine(scriptsDir, baseName + ".bin"), bytecode);
                         extracted++;
+                        
+                        // Try to decompile
+                        try
+                        {
+                            var decompiler = new ScriptDecompiler(bytecode, 0, bytecode.Length, isBigEndian: true);
+                            var result = decompiler.Decompile();
+                            
+                            if (!string.IsNullOrWhiteSpace(result.DecompiledText))
+                            {
+                                var header = new StringBuilder();
+                                header.AppendLine($"; Decompiled script from ScriptInfo at 0x{match.Offset:X8}");
+                                header.AppendLine($"; Type: {match.ScriptType}");
+                                header.AppendLine($"; DataLength: {match.DataLength}, NumRefs: {match.NumRefs}, VarCount: {match.VarCount}");
+                                header.AppendLine($"; Bytecode size: {bytecode.Length} bytes");
+                                if (!result.Success)
+                                    header.AppendLine($"; NOTE: Partial decompilation - {result.ErrorMessage}");
+                                header.AppendLine(";");
+                                header.AppendLine();
+                                
+                                await File.WriteAllTextAsync(
+                                    Path.Combine(scriptsDir, baseName + ".txt"), 
+                                    header.ToString() + result.DecompiledText);
+                                decompiled++;
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore decompile errors
+                        }
                     }
                     else
                     {
@@ -385,7 +419,7 @@ public static class Program
                     }
                 }
 
-                Console.WriteLine($"Extracted {extracted} bytecode file(s), {failed} could not be mapped");
+                Console.WriteLine($"Extracted {extracted} bytecode file(s), decompiled {decompiled}, {failed} could not be mapped");
             }
             else
             {
