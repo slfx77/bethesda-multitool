@@ -227,8 +227,11 @@ public sealed partial class SingleFileTab : UserControl
                 .ToList();
             var opts = new ExtractionOptions
             {
-                OutputPath = outputPath, ConvertDdx = ConvertDdxCheckBox.IsChecked == true,
-                SaveAtlas = SaveAtlasCheckBox.IsChecked == true, Verbose = VerboseCheckBox.IsChecked == true,
+                OutputPath = outputPath, 
+                ConvertDdx = ConvertDdxCheckBox.IsChecked == true,
+                SaveAtlas = SaveAtlasCheckBox.IsChecked == true, 
+                Verbose = VerboseCheckBox.IsChecked == true,
+                ExtractCompiledScripts = ExtractCompiledScriptsCheckBox.IsChecked == true,
                 FileTypes = types
             };
             var progress = new Progress<ExtractionProgress>(p => DispatcherQueue.TryEnqueue(() =>
@@ -243,6 +246,7 @@ public sealed partial class SingleFileTab : UserControl
 
             var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
             if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";
+            if (summary.CompiledScriptsExtracted > 0) msg += $"Compiled scripts: {summary.CompiledScriptsExtracted}\n";
             if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
                 msg += $"\nDDX conversion: {summary.DdxConverted} ok, {summary.DdxFailed} failed";
             await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {outputPath}");

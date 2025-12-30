@@ -373,6 +373,11 @@
             x:Name="SaveAtlasCheckBox"
             Content="Save Atlas Files" />
           <CheckBox
+            x:Name="ExtractCompiledScriptsCheckBox"
+            Content="Extract Compiled Scripts"
+            IsChecked="True"
+            ToolTipService.ToolTip="Extract and decompile compiled script bytecode (Object/Quest/Magic scripts)" />
+          <CheckBox
             x:Name="VerboseCheckBox"
             Content="Verbose Output" />
         </StackPanel>
