@@ -2,6 +2,11 @@
 
 This is a living document tracking research into Xbox 360 memory dump structure, with a focus on Fallout: New Vegas.
 
+## Related Documentation
+
+- [Architecture Guide](Architecture.md) - Internal codebase architecture and extensibility
+- [DDX/DDS Format Guide](DDX_DDS_Format_Guide.md) - Texture format documentation
+
 ## Overview
 
 This document captures ongoing research into:
@@ -521,16 +526,16 @@ dotnet run --project tools/RegionAnalyzer -- dump.dmp --sample 0x06EBD91E 512
 
 #### New Core Parsers
 
-| Parser             | Location                          | Description                      |
-| ------------------ | --------------------------------- | -------------------------------- |
-| `ScdaParser`       | `Core/Parsers/ScdaParser.cs`      | Compiled script bytecode (SCDA)  |
-| `EsmRecordParser`  | `Core/Parsers/EsmRecordParser.cs` | ESM record extraction (EDID/GMST/SCTX/SCRO) |
+| Parser            | Location                          | Description                                 |
+| ----------------- | --------------------------------- | ------------------------------------------- |
+| `ScdaParser`      | `Core/Parsers/ScdaParser.cs`      | Compiled script bytecode (SCDA)             |
+| `EsmRecordParser` | `Core/Parsers/EsmRecordParser.cs` | ESM record extraction (EDID/GMST/SCTX/SCRO) |
 
 #### New Analysis Module
 
-| Class          | Location                           | Description                          |
-| -------------- | ---------------------------------- | ------------------------------------ |
-| `DumpAnalyzer` | `Core/Analysis/DumpAnalyzer.cs`    | Unified dump analysis with reporting |
+| Class          | Location                        | Description                          |
+| -------------- | ------------------------------- | ------------------------------------ |
+| `DumpAnalyzer` | `Core/Analysis/DumpAnalyzer.cs` | Unified dump analysis with reporting |
 
 #### New CLI Commands
 
@@ -551,6 +556,7 @@ Xbox360MemoryCarver modules dump.dmp -f csv       # CSV export
 #### Analysis Command Output
 
 The `analyze` command provides:
+
 - Build type detection (Debug, Release Beta, Release MemDebug)
 - Module list with sizes
 - SCDA record count and source availability
@@ -560,6 +566,7 @@ The `analyze` command provides:
 #### Research Tools Deprecation
 
 The standalone tools in `tools/` remain for reference but functionality is now in the main codebase:
+
 - `ModuleCorrelator` → `Xbox360MemoryCarver modules` command
 - `ESMRecordExtractor` → `EsmRecordParser` class
 - `FormIdCorrelator` → `DumpAnalyzer.CorrelateFormIdsToNames()`

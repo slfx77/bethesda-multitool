@@ -18,6 +18,7 @@ internal sealed class HexMinimapRenderer
     private readonly Func<long, FileRegion?> _findRegion;
     private readonly ScrollViewer _scrollViewer;
     private readonly Border _viewportIndicator;
+    private double _dragOffset;
 
     public HexMinimapRenderer(
         Canvas canvas,
@@ -33,7 +34,12 @@ internal sealed class HexMinimapRenderer
 
     public double Zoom { get; set; } = 1.0;
 
-    public bool IsDragging { get; set; }
+    public bool IsDragging { get; private set; }
+
+    /// <summary>
+    ///     Gets whether the initial click was on the viewport indicator itself.
+    /// </summary>
+    public bool IsDraggingFromIndicator { get; private set; }
 
     public void Render(long fileSize, double containerWidth, double containerHeight)
     {
@@ -173,15 +179,50 @@ internal sealed class HexMinimapRenderer
         return Math.Clamp(targetRow, 0, Math.Max(0, totalRows - visibleRows));
     }
 
-    public void HandlePointerPressed(PointerRoutedEventArgs e)
+    /// <summary>
+    ///     Gets the row from a position, applying drag offset if dragging from indicator.
+    /// </summary>
+    public long? GetRowFromPositionWithOffset(double y, long totalRows, int visibleRows)
+    {
+        if (IsDraggingFromIndicator)
+        {
+            y -= _dragOffset;
+        }
+
+        return GetRowFromPosition(y, totalRows, visibleRows);
+    }
+
+    /// <summary>
+    ///     Handle pointer pressed - determines if clicking on indicator or snapping to position.
+    /// </summary>
+    public void HandlePointerPressed(PointerRoutedEventArgs e, double clickY)
     {
         IsDragging = true;
         _canvas.CapturePointer(e.Pointer);
+
+        // Check if click is within the viewport indicator bounds
+        var indicatorTop = Canvas.GetTop(_viewportIndicator);
+        var indicatorHeight = _viewportIndicator.Height;
+
+        if (clickY >= indicatorTop && clickY <= indicatorTop + indicatorHeight)
+        {
+            // Clicked on indicator - enable relative dragging
+            IsDraggingFromIndicator = true;
+            _dragOffset = clickY - (indicatorTop + indicatorHeight / 2);
+        }
+        else
+        {
+            // Clicked outside indicator - snap center to click position
+            IsDraggingFromIndicator = false;
+            _dragOffset = 0;
+        }
     }
 
     public void HandlePointerReleased(PointerRoutedEventArgs e)
     {
         IsDragging = false;
+        IsDraggingFromIndicator = false;
+        _dragOffset = 0;
         _canvas.ReleasePointerCapture(e.Pointer);
     }
 }

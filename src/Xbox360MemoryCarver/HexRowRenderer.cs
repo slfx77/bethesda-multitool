@@ -15,11 +15,16 @@ internal sealed class HexRowRenderer
     private const int BytesPerRow = 16;
 
     private static readonly SolidColorBrush TextBrush = new(Color.FromArgb(255, 212, 212, 212));
+    private static readonly SolidColorBrush HighlightBrush = new(Color.FromArgb(255, 255, 140, 0)); // Orange
     private readonly TextBlock _asciiTextBlock;
     private readonly Func<long, FileRegion?> _findRegion;
     private readonly TextBlock _hexTextBlock;
 
     private readonly TextBlock _offsetTextBlock;
+
+    // Highlight range for current search result
+    public long HighlightStart { get; set; } = -1;
+    public long HighlightEnd { get; set; } = -1;
 
     public HexRowRenderer(
         TextBlock offsetTextBlock,
@@ -90,11 +95,26 @@ internal sealed class HexRowRenderer
             {
                 var byteOffset = rowOffset + i;
                 var b = buffer[bufferOffset + i];
-                var region = _findRegion(byteOffset);
+                
+                // Check if this byte is within the highlight range (search result)
+                var isHighlighted = HighlightStart >= 0 && byteOffset >= HighlightStart && byteOffset < HighlightEnd;
+                
+                // Determine foreground color: highlighted > region color > default
+                SolidColorBrush foreground;
+                if (isHighlighted)
+                {
+                    foreground = HighlightBrush;
+                }
+                else
+                {
+                    var region = _findRegion(byteOffset);
+                    foreground = region != null ? new SolidColorBrush(region.Color) : TextBrush;
+                }
+                
                 _hexTextBlock.Inlines.Add(new Run
                 {
                     Text = $"{b:X2} ",
-                    Foreground = region != null ? new SolidColorBrush(region.Color) : TextBrush
+                    Foreground = foreground
                 });
             }
             else

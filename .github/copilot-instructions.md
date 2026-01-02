@@ -15,12 +15,13 @@ The project uses multi-targeting to produce both GUI and CLI builds from a singl
 
 ### Key Components
 
-- `MemoryCarver` - Main file carving engine with signature-based detection
-- `FileSignatures` - Defines magic bytes and file type detection rules
+- `MemoryCarver` - Main file carving engine with Aho-Corasick multi-pattern matching
+- `SignatureMatcher` - Aho-Corasick algorithm for efficient multi-signature scanning
+- `FileTypeRegistry` - Single source of truth for file types, signatures, parsers, and colors
 - `MinidumpParser` - Parses Xbox 360 minidump structures for module extraction
+- `DumpAnalyzer` - Comprehensive dump analysis with build detection and ESM record extraction
+- `ScriptExtractor` - Extracts and groups compiled scripts (SCDA) by quest name
 - `HexViewerControl` / `HexMinimapControl` - Interactive hex viewing with VS Code-style minimap
-- `FileTypeColors` - Centralized color palette for file type visualization
-- `FileTypeMetadata` - Single source of truth for file type categories and display names
 
 ### Submodules
 
@@ -155,16 +156,18 @@ dotnet publish -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-conta
 ```
 src/Xbox360MemoryCarver/
 ├── Core/                        # Cross-platform carving logic
+│   ├── Analysis/                # DumpAnalyzer - build detection, ESM extraction
 │   ├── Carving/                 # MemoryCarver, CarveManifest
 │   ├── Converters/              # DDX subprocess converter
-│   ├── Minidump/                # Minidump parsing
-│   ├── Models/                  # FileSignatures, FileTypeMetadata
-│   ├── Parsers/                 # DDX, DDS, XMA, NIF, Script parsers
+│   ├── Extractors/              # ScriptExtractor - SCDA grouping by quest
+│   ├── FileTypes/               # FileTypeRegistry, FileTypeDefinition
+│   ├── Minidump/                # MinidumpParser, MinidumpInfo
+│   ├── Parsers/                 # 16 file format parsers (IFileParser)
 │   └── Utils/                   # BinaryUtils
+├── SignatureMatcher.cs          # Aho-Corasick multi-pattern search
 ├── *.xaml / *.xaml.cs           # WinUI 3 GUI (Windows only)
 ├── Program.cs                   # Entry point (CLI/GUI switch)
 ├── GuiEntryPoint.cs             # GUI bootstrap (Windows only)
-├── FileTypeColors.cs            # UI color mappings (Windows only)
 └── Xbox360MemoryCarver.csproj   # Multi-target project file
 
 src/DDXConv/                     # DDX conversion submodule
@@ -174,10 +177,15 @@ src/DDXConv/                     # DDX conversion submodule
 
 ### Adding a New File Signature
 
-1. Add magic bytes to `Core/Models/FileSignatures.cs`
-2. Add parser to `Core/Parsers/` and register in `ParserFactory.cs`
-3. Add to `Core/Models/FileTypeMetadata.cs` with category and display name
-4. Color is automatically derived from category in `FileTypeColors.cs`
+1. Create parser in `Core/Parsers/NewFormatParser.cs` implementing `IFileParser`
+2. Register in `Core/FileTypes/FileTypeRegistry.cs` with:
+   - TypeId, DisplayName, Extension, Category
+   - MinSize/MaxSize constraints
+   - ParserType reference
+   - Signatures array with magic bytes
+3. Color is automatically derived from category (defined in `BuildCategoryColors()`)
+
+See [docs/Architecture.md](../docs/Architecture.md) for detailed extensibility guide.
 
 ### Testing CLI on Windows
 

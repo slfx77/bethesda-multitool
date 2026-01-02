@@ -35,24 +35,9 @@ xcompress64.dll
 XnaNative.dll
 
 # Output directories
-output/
-test_output/
-test_output_csharp/
-TestOutput/
-test_carve/
-test_carve*/
-test_ddxconv*/
-test_recarve*/
-test_verify/
-extracted_all/
-extracted/
-test_input.ddx
-test_quality.csx
-test_nif_validation/
-test_extract/
-
-# Tools (analysis scripts)
 tools/
+test_output/
+output/
 
 # Python remnants (if any)
 .venv/

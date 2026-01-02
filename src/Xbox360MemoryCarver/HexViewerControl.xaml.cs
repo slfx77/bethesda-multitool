@@ -37,6 +37,11 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     private long _totalRows;
     private int _visibleRows;
 
+    // Search state
+    private List<long> _searchResults = [];
+    private int _currentSearchIndex = -1;
+    private byte[]? _lastSearchPattern;
+
     public HexViewerControl()
     {
         InitializeComponent();
@@ -254,6 +259,38 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void HexViewerControl_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        var isCtrl = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
+            .HasFlag(CoreVirtualKeyStates.Down);
+        var isShift = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
+            .HasFlag(CoreVirtualKeyStates.Down);
+
+        // Ctrl+F - Open search
+        if (isCtrl && e.Key == VirtualKey.F)
+        {
+            OpenSearch();
+            e.Handled = true;
+            return;
+        }
+
+        // F3 / Shift+F3 - Find next/previous
+        if (e.Key == VirtualKey.F3)
+        {
+            if (isShift)
+                FindPrevious();
+            else
+                FindNext();
+            e.Handled = true;
+            return;
+        }
+
+        // Escape - Close search
+        if (e.Key == VirtualKey.Escape && SearchPanel.Visibility == Visibility.Visible)
+        {
+            CloseSearch();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key is VirtualKey.PageUp or VirtualKey.PageDown or VirtualKey.Home or VirtualKey.End or VirtualKey.Up
             or VirtualKey.Down)
             HexViewerControl_KeyDown(sender, e);
@@ -421,8 +458,9 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void Minimap_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        _minimapRenderer?.HandlePointerPressed(e);
-        NavigateToMinimapPosition(e.GetCurrentPoint(MinimapCanvas).Position.Y);
+        var clickY = e.GetCurrentPoint(MinimapCanvas).Position.Y;
+        _minimapRenderer?.HandlePointerPressed(e, clickY);
+        NavigateToMinimapPosition(clickY);
     }
 
     private void Minimap_PointerMoved(object sender, PointerRoutedEventArgs e)
@@ -436,7 +474,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void NavigateToMinimapPosition(double y)
     {
-        var targetRow = _minimapRenderer?.GetRowFromPosition(y, _totalRows, _visibleRows);
+        var targetRow = _minimapRenderer?.GetRowFromPositionWithOffset(y, _totalRows, _visibleRows);
         if (targetRow.HasValue)
         {
             _currentTopRow = targetRow.Value;
@@ -444,6 +482,297 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
             RenderVisibleRows();
             UpdateMinimapViewport();
         }
+    }
+
+    #endregion
+
+    #region Search
+
+    private void SearchToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SearchPanel.Visibility == Visibility.Collapsed)
+        {
+            OpenSearch();
+        }
+        else
+        {
+            CloseSearch();
+        }
+    }
+
+    private void OpenSearch()
+    {
+        SearchPanel.Visibility = Visibility.Visible;
+        OffsetPanel.CornerRadius = new CornerRadius(0, 0, 4, 4); // Only bottom rounded when search shown
+        SearchToggleButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x40, 0x88, 0x88, 0x88));
+        SearchTextBox.Focus(FocusState.Programmatic);
+        SearchTextBox.SelectAll();
+    }
+
+    private void CloseSearch()
+    {
+        SearchPanel.Visibility = Visibility.Collapsed;
+        OffsetPanel.CornerRadius = new CornerRadius(4); // All corners rounded when search hidden
+        SearchToggleButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x00, 0x00, 0x00, 0x00));
+        _searchResults.Clear();
+        _currentSearchIndex = -1;
+        SearchResultsText.Text = "";
+        
+        // Clear highlight and re-render
+        if (_rowRenderer != null)
+        {
+            _rowRenderer.HighlightStart = -1;
+            _rowRenderer.HighlightEnd = -1;
+            RenderVisibleRows();
+        }
+        Focus(FocusState.Programmatic);
+    }
+
+    private void SearchTextBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Enter)
+        {
+            var isShift = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
+                .HasFlag(CoreVirtualKeyStates.Down);
+            if (isShift)
+                FindPrevious();
+            else
+                PerformSearch();
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.Escape)
+        {
+            CloseSearch();
+            e.Handled = true;
+        }
+    }
+
+    private void SearchPrevButton_Click(object sender, RoutedEventArgs e) => FindPrevious();
+    private void SearchNextButton_Click(object sender, RoutedEventArgs e) => FindNext();
+
+    private void SearchButton_Click(object sender, RoutedEventArgs e) => PerformSearch();
+
+    private void PerformSearch()
+    {
+        var searchText = SearchTextBox.Text;
+        if (string.IsNullOrEmpty(searchText) || _fileSize == 0 || _accessor == null)
+        {
+            SearchResultsText.Text = "No results";
+            return;
+        }
+
+        var isHexMode = SearchModeHex.IsChecked == true;
+        var isCaseSensitive = SearchCaseSensitive.IsChecked == true;
+        byte[]? pattern;
+
+        if (isHexMode || searchText.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            pattern = ParseHexPattern(searchText);
+            if (pattern == null || pattern.Length == 0)
+            {
+                SearchResultsText.Text = "Invalid hex";
+                return;
+            }
+            // Hex search is always "case sensitive" (exact bytes)
+            _lastSearchPattern = pattern;
+            _searchResults = SearchForPattern(pattern);
+        }
+        else
+        {
+            // Text search - handle case sensitivity
+            if (isCaseSensitive)
+            {
+                pattern = System.Text.Encoding.ASCII.GetBytes(searchText);
+                _searchResults = SearchForPattern(pattern);
+            }
+            else
+            {
+                // Case-insensitive: search for both upper and lower case variations
+                _searchResults = SearchForTextCaseInsensitive(searchText);
+            }
+            _lastSearchPattern = System.Text.Encoding.ASCII.GetBytes(searchText);
+        }
+
+        _currentSearchIndex = _searchResults.Count > 0 ? 0 : -1;
+
+        UpdateSearchResultsDisplay();
+
+        if (_currentSearchIndex >= 0)
+        {
+            NavigateToSearchResult(_searchResults[_currentSearchIndex]);
+        }
+    }
+
+    private static byte[]? ParseHexPattern(string input)
+    {
+        // Remove "0x" prefix and whitespace
+        var hex = input.Replace("0x", "", StringComparison.OrdinalIgnoreCase)
+            .Replace(" ", "")
+            .Replace("-", "");
+
+        if (hex.Length % 2 != 0 || hex.Length == 0)
+            return null;
+
+        try
+        {
+            var bytes = new byte[hex.Length / 2];
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
+            }
+            return bytes;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private List<long> SearchForPattern(byte[] pattern)
+    {
+        var results = new List<long>();
+        if (_accessor == null || pattern.Length == 0)
+            return results;
+
+        const int chunkSize = 64 * 1024 * 1024; // 64 MB chunks
+        const int maxResults = 10000;
+
+        var buffer = new byte[chunkSize + pattern.Length - 1];
+        long offset = 0;
+
+        while (offset < _fileSize && results.Count < maxResults)
+        {
+            var toRead = (int)Math.Min(buffer.Length, _fileSize - offset);
+            _accessor.ReadArray(offset, buffer, 0, toRead);
+
+            // Search for pattern in buffer using simple byte matching
+            var searchEnd = toRead - pattern.Length + 1;
+            for (int i = 0; i < searchEnd && results.Count < maxResults; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < pattern.Length; j++)
+                {
+                    if (buffer[i + j] != pattern[j])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match)
+                {
+                    results.Add(offset + i);
+                }
+            }
+
+            // Move to next chunk, overlapping by pattern length - 1 to catch patterns spanning chunks
+            offset += chunkSize;
+        }
+
+        return results;
+    }
+
+    private List<long> SearchForTextCaseInsensitive(string searchText)
+    {
+        var results = new List<long>();
+        if (_accessor == null || searchText.Length == 0)
+            return results;
+
+        const int chunkSize = 64 * 1024 * 1024; // 64 MB chunks
+        const int maxResults = 10000;
+
+        var upperPattern = System.Text.Encoding.ASCII.GetBytes(searchText.ToUpperInvariant());
+        var lowerPattern = System.Text.Encoding.ASCII.GetBytes(searchText.ToLowerInvariant());
+        var patternLength = upperPattern.Length;
+
+        var buffer = new byte[chunkSize + patternLength - 1];
+        long offset = 0;
+
+        while (offset < _fileSize && results.Count < maxResults)
+        {
+            var toRead = (int)Math.Min(buffer.Length, _fileSize - offset);
+            _accessor.ReadArray(offset, buffer, 0, toRead);
+
+            var searchEnd = toRead - patternLength + 1;
+            for (int i = 0; i < searchEnd && results.Count < maxResults; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < patternLength; j++)
+                {
+                    var b = buffer[i + j];
+                    // Check if byte matches either upper or lower case
+                    if (b != upperPattern[j] && b != lowerPattern[j])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match)
+                {
+                    results.Add(offset + i);
+                }
+            }
+
+            offset += chunkSize;
+        }
+
+        return results;
+    }
+
+    private void FindNext()
+    {
+        if (_searchResults.Count == 0)
+        {
+            if (_lastSearchPattern != null)
+            {
+                PerformSearch();
+            }
+            return;
+        }
+
+        _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.Count;
+        UpdateSearchResultsDisplay();
+        NavigateToSearchResult(_searchResults[_currentSearchIndex]);
+    }
+
+    private void FindPrevious()
+    {
+        if (_searchResults.Count == 0)
+        {
+            if (_lastSearchPattern != null)
+            {
+                PerformSearch();
+            }
+            return;
+        }
+
+        _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
+        UpdateSearchResultsDisplay();
+        NavigateToSearchResult(_searchResults[_currentSearchIndex]);
+    }
+
+    private void UpdateSearchResultsDisplay()
+    {
+        if (_searchResults.Count == 0)
+        {
+            SearchResultsText.Text = "No results";
+        }
+        else
+        {
+            SearchResultsText.Text = $"{_currentSearchIndex + 1} of {_searchResults.Count}";
+        }
+    }
+
+    private void NavigateToSearchResult(long offset)
+    {
+        // Set highlight range for the search match
+        if (_rowRenderer != null && _lastSearchPattern != null)
+        {
+            _rowRenderer.HighlightStart = offset;
+            _rowRenderer.HighlightEnd = offset + _lastSearchPattern.Length;
+        }
+        NavigateToOffset(offset);
     }
 
     #endregion

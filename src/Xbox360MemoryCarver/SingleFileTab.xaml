@@ -5,6 +5,7 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+  xmlns:ctk="using:CommunityToolkit.WinUI.Controls"
   xmlns:local="using:Xbox360MemoryCarver.App">
 
   <Grid Padding="16">
@@ -345,12 +346,12 @@
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Stretch"
         Header="File Types to Extract">
-        <StackPanel
+        <ctk:WrapPanel
           x:Name="FileTypeCheckboxPanel"
-          Orientation="Horizontal"
-          Spacing="16">
+          HorizontalSpacing="16"
+          VerticalSpacing="8">
           <!--  Checkboxes will be generated dynamically  -->
-        </StackPanel>
+        </ctk:WrapPanel>
       </Expander>
 
       <!--  Options and Extract Button  -->
