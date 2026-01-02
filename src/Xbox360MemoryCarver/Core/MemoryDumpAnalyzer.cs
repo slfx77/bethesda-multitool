@@ -33,7 +33,7 @@ public class MemoryDumpAnalyzer
     /// <summary>
     ///     Analyze a memory dump file to identify all extractable files.
     /// </summary>
-    public AnalysisResult Analyze(string filePath, IProgress<AnalysisProgress>? progress, bool scanCompiledScripts = true)
+    public AnalysisResult Analyze(string filePath, IProgress<AnalysisProgress>? progress)
     {
         var stopwatch = Stopwatch.StartNew();
         var result = new AnalysisResult { FilePath = filePath };
@@ -95,12 +95,6 @@ public class MemoryDumpAnalyzer
             }
         }
 
-        // Scan for compiled script bytecode if requested and minidump is valid
-        if (scanCompiledScripts && minidumpInfo.IsValid)
-        {
-            ScanForCompiledScripts(result, accessor, result.FileSize, minidumpInfo);
-        }
-
         // Sort all results by offset
         var sortedFiles = result.CarvedFiles.OrderBy(f => f.Offset).ToList();
         result.CarvedFiles.Clear();
@@ -110,78 +104,6 @@ public class MemoryDumpAnalyzer
         result.AnalysisTime = stopwatch.Elapsed;
 
         return result;
-    }
-
-    /// <summary>
-    ///     Scan for compiled script bytecode using ScriptInfo structure detection.
-    /// </summary>
-    private static void ScanForCompiledScripts(
-        AnalysisResult result,
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidump)
-    {
-        Console.WriteLine("[Analysis] Scanning for compiled script bytecode...");
-        
-        // Read file data for scanning
-        var buffer = new byte[fileSize];
-        accessor.ReadArray(0, buffer, 0, (int)fileSize);
-        
-        // Scan for ScriptInfo structures
-        var scriptMatches = ScriptInfoScanner.ScanForScriptInfo(buffer, maxResults: 1000, verbose: false);
-        
-        if (scriptMatches.Count == 0)
-        {
-            Console.WriteLine("[Analysis] No compiled scripts found.");
-            return;
-        }
-        
-        Console.WriteLine($"[Analysis] Found {scriptMatches.Count} potential compiled scripts");
-        
-        var addedCount = 0;
-        foreach (var match in scriptMatches)
-        {
-            // Try to map the bytecode pointer to a file offset
-            var fileOffset = minidump.VirtualAddressToFileOffset(match.DataPointer);
-            if (!fileOffset.HasValue) continue;
-            
-            var bytecodeOffset = (long)fileOffset.Value;
-            var bytecodeLength = (int)match.DataLength;
-            
-            // Validate the bytecode is within file bounds
-            if (bytecodeOffset < 0 || bytecodeOffset + bytecodeLength > fileSize) continue;
-            
-            // Store compiled script info for extraction
-            result.CompiledScripts.Add(new CompiledScriptInfo
-            {
-                ScriptInfoOffset = match.Offset,
-                BytecodeFileOffset = bytecodeOffset,
-                BytecodeLength = bytecodeLength,
-                ScriptType = match.ScriptType,
-                NumRefs = (int)match.NumRefs,
-                VarCount = (int)match.VarCount,
-                DataPointer = match.DataPointer
-            });
-            
-            // Add to carved files list for display in UI
-            result.CarvedFiles.Add(new CarvedFileInfo
-            {
-                Offset = bytecodeOffset,
-                Length = bytecodeLength,
-                FileType = $"Compiled Script ({match.ScriptType})",
-                FileName = $"script_0x{match.Offset:X8}",
-                ScriptInfoOffset = match.Offset,
-                BytecodePointer = match.DataPointer
-            });
-            
-            addedCount++;
-        }
-        
-        if (addedCount > 0)
-        {
-            result.TypeCounts["compiled_script"] = addedCount;
-            Console.WriteLine($"[Analysis] Added {addedCount} compiled scripts to results");
-        }
     }
 
     private static void AddModulesFromMinidump(AnalysisResult result, MinidumpInfo minidumpInfo)

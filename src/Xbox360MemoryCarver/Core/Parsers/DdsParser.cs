@@ -53,12 +53,12 @@ public class DdsParser : IFileParser
             if (!string.IsNullOrEmpty(texturePath))
             {
                 metadata["texturePath"] = texturePath;
-                // Extract just the filename for display
-                var fileName = Path.GetFileNameWithoutExtension(texturePath);
+                // Extract just the filename for display (keep extension for consistency with DDX)
+                var fileName = Path.GetFileName(texturePath);
                 if (!string.IsNullOrEmpty(fileName))
                 {
                     metadata["fileName"] = fileName;
-                    metadata["safeName"] = TexturePathExtractor.SanitizeFilename(fileName);
+                    metadata["safeName"] = TexturePathExtractor.SanitizeFilename(Path.GetFileNameWithoutExtension(fileName));
                 }
             }
 

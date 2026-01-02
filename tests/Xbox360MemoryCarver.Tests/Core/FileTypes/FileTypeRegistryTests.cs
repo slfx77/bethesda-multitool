@@ -22,6 +22,7 @@ public class FileTypeRegistryTests
     [InlineData("esp")]
     [InlineData("lip")]
     [InlineData("script")]
+    [InlineData("scda")]
     public void GetByTypeId_KnownTypes_ReturnsDefinition(string typeId)
     {
         // Act
@@ -76,6 +77,7 @@ public class FileTypeRegistryTests
     [InlineData("esp")]
     [InlineData("lip")]
     [InlineData("script_scn")]
+    [InlineData("scda")]
     public void GetBySignatureId_KnownSignatures_ReturnsDefinition(string signatureId)
     {
         // Act

@@ -10,11 +10,6 @@ public class AnalysisResult
     public List<CarvedFileInfo> CarvedFiles { get; } = [];
     public Dictionary<string, int> TypeCounts { get; } = [];
     public TimeSpan AnalysisTime { get; set; }
-    
-    /// <summary>
-    ///     Compiled script bytecode found via ScriptInfo scanning.
-    /// </summary>
-    public List<CompiledScriptInfo> CompiledScripts { get; } = [];
 }
 
 /// <summary>
@@ -31,35 +26,11 @@ public class CarvedFileInfo
     public bool IsExtracted { get; set; }
     public string? ExtractedPath { get; set; }
     public string? Error { get; set; }
-    
-    /// <summary>
-    ///     For compiled scripts, stores the ScriptInfo offset for decompilation.
-    /// </summary>
-    public int ScriptInfoOffset { get; set; }
-    
-    /// <summary>
-    ///     For compiled scripts, stores the bytecode data pointer.
-    /// </summary>
-    public uint BytecodePointer { get; set; }
 
     /// <summary>
     ///     Gets a display name - filename if available, otherwise the file type.
     /// </summary>
     public string DisplayName => !string.IsNullOrEmpty(FileName) ? FileName : FileType;
-}
-
-/// <summary>
-///     Information about a compiled script found via ScriptInfo scanning.
-/// </summary>
-public class CompiledScriptInfo
-{
-    public int ScriptInfoOffset { get; init; }
-    public long BytecodeFileOffset { get; init; }
-    public int BytecodeLength { get; init; }
-    public string ScriptType { get; init; } = "Object";
-    public int NumRefs { get; init; }
-    public int VarCount { get; init; }
-    public uint DataPointer { get; init; }
 }
 
 /// <summary>
@@ -76,11 +47,12 @@ public record ExtractionOptions
     public int ChunkSize { get; init; } = 10 * 1024 * 1024;
     public int MaxFilesPerType { get; init; } = 10000;
     public List<string>? FileTypes { get; init; }
-    
+
     /// <summary>
-    ///     Extract compiled script bytecode and decompile it.
+    ///     Extract compiled scripts (SCDA records) from release dumps.
+    ///     Scripts are grouped by quest name for easier analysis.
     /// </summary>
-    public bool ExtractCompiledScripts { get; init; }
+    public bool ExtractScripts { get; init; } = true;
 }
 
 /// <summary>

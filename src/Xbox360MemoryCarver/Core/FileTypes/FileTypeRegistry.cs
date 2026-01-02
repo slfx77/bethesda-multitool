@@ -401,6 +401,29 @@ public static class FileTypeRegistry
                 ]
             },
 
+            // Compiled Scripts (SCDA) - found in release builds
+            new FileTypeDefinition
+            {
+                TypeId = "scda",
+                DisplayName = "SCDA",
+                Extension = ".scda",
+                Category = FileCategory.Script,
+                OutputFolder = "scripts",
+                MinSize = 10,
+                MaxSize = 64 * 1024,
+                DisplayPriority = 3,
+                ParserType = typeof(ScdaParser),
+                Signatures =
+                [
+                    new FileSignature
+                    {
+                        Id = "scda",
+                        MagicBytes = Encoding.ASCII.GetBytes("SCDA"),
+                        Description = "Compiled Script Bytecode (SCDA)"
+                    }
+                ]
+            },
+
             // Xbox System
             new FileTypeDefinition
             {

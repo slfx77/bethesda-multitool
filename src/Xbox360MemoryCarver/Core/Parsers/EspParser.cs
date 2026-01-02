@@ -8,8 +8,6 @@ namespace Xbox360MemoryCarver.Core.Parsers;
 /// </summary>
 public class EspParser : IFileParser
 {
-    private static readonly byte[] Tes4Signature = "TES4"u8.ToArray();
-
     public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
     {
         const int minHeaderSize = 24;
@@ -45,8 +43,6 @@ public class EspParser : IFileParser
             // For memory dumps, we likely have partial files
             // Scan for actual file boundary using the shared scanner
             var headerDataSize = (int)dataSize + 24;
-            var minSize = Math.Min(headerDataSize, 1024);
-            const int maxScan = 100 * 1024 * 1024; // ESP files can be very large
 
             // Use the shared boundary scanner, but we need special handling for TES4
             // because TES4 files contain many internal record types

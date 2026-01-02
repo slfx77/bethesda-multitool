@@ -176,9 +176,9 @@ internal static class SignatureBoundaryScanner
                 if (!excludeSignature.IsEmpty && slice.SequenceEqual(excludeSignature)) continue;
 
                 // Validate RIFF headers if requested
-                if (validateRiff && slice.SequenceEqual("RIFF"u8))
+                if (validateRiff && slice.SequenceEqual("RIFF"u8) && !IsValidRiffHeader(data, i))
                 {
-                    if (!IsValidRiffHeader(data, i)) continue;
+                    continue;
                 }
 
                 return i - offset;

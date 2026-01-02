@@ -125,7 +125,7 @@ public sealed partial class SingleFileTab : UserControl
     }
 
     private async Task ShowDialogAsync(string title, string message) => await new ContentDialog
-        { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
+    { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -193,7 +193,10 @@ public sealed partial class SingleFileTab : UserControl
             {
                 _allCarvedFiles.Add(new CarvedFileEntry
                 {
-                    Offset = entry.Offset, Length = entry.Length, FileType = entry.FileType, FileName = entry.FileName
+                    Offset = entry.Offset,
+                    Length = entry.Length,
+                    FileType = entry.FileType,
+                    FileName = entry.FileName
                 });
                 _carvedFiles.Add(_allCarvedFiles[^1]);
             }
@@ -227,11 +230,10 @@ public sealed partial class SingleFileTab : UserControl
                 .ToList();
             var opts = new ExtractionOptions
             {
-                OutputPath = outputPath, 
+                OutputPath = outputPath,
                 ConvertDdx = ConvertDdxCheckBox.IsChecked == true,
-                SaveAtlas = SaveAtlasCheckBox.IsChecked == true, 
+                SaveAtlas = SaveAtlasCheckBox.IsChecked == true,
                 Verbose = VerboseCheckBox.IsChecked == true,
-                ExtractCompiledScripts = ExtractCompiledScriptsCheckBox.IsChecked == true,
                 FileTypes = types
             };
             var progress = new Progress<ExtractionProgress>(p => DispatcherQueue.TryEnqueue(() =>
@@ -246,7 +248,7 @@ public sealed partial class SingleFileTab : UserControl
 
             var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
             if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";
-            if (summary.CompiledScriptsExtracted > 0) msg += $"Compiled scripts: {summary.CompiledScriptsExtracted}\n";
+            if (summary.ScriptsExtracted > 0) msg += $"Scripts extracted: {summary.ScriptsExtracted} ({summary.ScriptQuestsGrouped} quests grouped)\n";
             if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
                 msg += $"\nDDX conversion: {summary.DdxConverted} ok, {summary.DdxFailed} failed";
             await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {outputPath}");
@@ -313,8 +315,11 @@ public sealed partial class SingleFileTab : UserControl
             TypeSortIcon.Visibility = FilenameSortIcon.Visibility = Visibility.Collapsed;
         var icon = _currentSortColumn switch
         {
-            SortColumn.Offset => OffsetSortIcon, SortColumn.Length => LengthSortIcon,
-            SortColumn.Type => TypeSortIcon, SortColumn.Filename => FilenameSortIcon, _ => null
+            SortColumn.Offset => OffsetSortIcon,
+            SortColumn.Length => LengthSortIcon,
+            SortColumn.Type => TypeSortIcon,
+            SortColumn.Filename => FilenameSortIcon,
+            _ => null
         };
         if (icon != null)
         {

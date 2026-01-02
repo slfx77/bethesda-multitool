@@ -48,6 +48,11 @@ extracted_all/
 extracted/
 test_input.ddx
 test_quality.csx
+test_nif_validation/
+test_extract/
+
+# Tools (analysis scripts)
+tools/
 
 # Python remnants (if any)
 .venv/
@@ -66,3 +71,6 @@ comparison_test/
 
 # Reference copies (not part of the project)
 DDXConvVanilla/
+FalloutNV/
+microsoft-pdb/
+NVSE/
