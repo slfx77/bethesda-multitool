@@ -250,26 +250,34 @@ public static class Program
                     $"DDX conversions: {carver.DdxConvertedCount} successful, {carver.DdxConvertFailedCount} failed");
             }
 
-            // Extract compiled scripts (SCDA records)
-            Console.WriteLine();
-            Console.WriteLine("Scanning for compiled scripts...");
+            // Extract compiled scripts (SCDA records) - only if no type filter or script types requested
+            var shouldExtractScripts = fileTypes == null ||
+                                       fileTypes.Count == 0 ||
+                                       fileTypes.Any(t => t.Contains("scda", StringComparison.OrdinalIgnoreCase) ||
+                                                          t.Contains("script", StringComparison.OrdinalIgnoreCase));
 
-            var dumpData = await File.ReadAllBytesAsync(file);
-            var dumpName = Path.GetFileNameWithoutExtension(file);
-            var scriptsDir = Path.Combine(outputDir, SanitizeFilename(dumpName), "scripts");
-
-            var scriptProgress = verbose ? new Progress<string>(msg => Console.WriteLine($"  {msg}")) : null;
-            var scriptResult = await ScriptExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress, verbose);
-
-            if (scriptResult.TotalRecords > 0)
+            if (shouldExtractScripts)
             {
-                Console.WriteLine($"Extracted {scriptResult.TotalRecords} script records:");
-                Console.WriteLine($"  {scriptResult.GroupedQuests} quest scripts (grouped)");
-                Console.WriteLine($"  {scriptResult.UngroupedScripts} other scripts");
-            }
-            else
-            {
-                Console.WriteLine("No compiled scripts found.");
+                Console.WriteLine();
+                Console.WriteLine("Scanning for compiled scripts...");
+
+                var dumpData = await File.ReadAllBytesAsync(file);
+                var dumpName = Path.GetFileNameWithoutExtension(file);
+                var scriptsDir = Path.Combine(outputDir, SanitizeFilename(dumpName), "scripts");
+
+                var scriptProgress = verbose ? new Progress<string>(msg => Console.WriteLine($"  {msg}")) : null;
+                var scriptResult = await ScriptExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress, verbose);
+
+                if (scriptResult.TotalRecords > 0)
+                {
+                    Console.WriteLine($"Extracted {scriptResult.TotalRecords} script records:");
+                    Console.WriteLine($"  {scriptResult.GroupedQuests} quest scripts (grouped)");
+                    Console.WriteLine($"  {scriptResult.UngroupedScripts} other scripts");
+                }
+                else
+                {
+                    Console.WriteLine("No compiled scripts found.");
+                }
             }
         }
 

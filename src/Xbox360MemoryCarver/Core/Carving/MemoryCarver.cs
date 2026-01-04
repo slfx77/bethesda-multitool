@@ -187,7 +187,8 @@ public sealed class MemoryCarver : IDisposable
                 {
                     _stats.AddOrUpdate(match.SignatureId, 1, (_, v) => v + 1);
                     await WriteFileAsync(extraction.Value.outputFile, extraction.Value.data, match.Offset,
-                        match.SignatureId, extraction.Value.fileSize, extraction.Value.originalPath);
+                        match.SignatureId, extraction.Value.fileSize, extraction.Value.originalPath,
+                        extraction.Value.metadata);
                 }
 
                 // Report extraction progress (50-100% of total)
@@ -202,7 +203,7 @@ public sealed class MemoryCarver : IDisposable
             });
     }
 
-    private static (string outputFile, byte[] data, int fileSize, string? originalPath)? PrepareExtraction(
+    private static (string outputFile, byte[] data, int fileSize, string? originalPath, Dictionary<string, object>? metadata)? PrepareExtraction(
         MemoryMappedViewAccessor accessor, long fileSize, long offset, string signatureId,
         FileTypeDefinition typeDef, string outputPath)
     {
@@ -235,6 +236,7 @@ public sealed class MemoryCarver : IDisposable
             int fileDataSize;
             string? customFilename = null;
             string? originalPath = null;
+            Dictionary<string, object>? metadata = null;
             var leadingBytes = 0;
 
             if (parser != null)
@@ -242,14 +244,19 @@ public sealed class MemoryCarver : IDisposable
                 var parseResult = parser.ParseHeader(span, sigOffset);
                 if (parseResult == null) return null;
                 fileDataSize = parseResult.EstimatedSize;
+                metadata = parseResult.Metadata;
 
                 // Get the safe filename for extraction
                 if (parseResult.Metadata.TryGetValue("safeName", out var safeName))
                     customFilename = safeName.ToString();
 
-                // Get the original path for the manifest
+                // Get the original path for the manifest (DDX textures)
                 if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) && pathObj is string path)
                     originalPath = path;
+
+                // Get embedded path for XMA files
+                if (parseResult.Metadata.TryGetValue("embeddedPath", out var embeddedPathObj) && embeddedPathObj is string embeddedPath)
+                    originalPath ??= embeddedPath;
 
                 // Check for leading comments (scripts with comments before the scn keyword)
                 if (parseResult.Metadata.TryGetValue("leadingCommentSize", out var leadingObj) &&
@@ -282,7 +289,7 @@ public sealed class MemoryCarver : IDisposable
             var fileData = new byte[adjustedSize];
             accessor.ReadArray(adjustedOffset, fileData, 0, adjustedSize);
 
-            return (outputFile, fileData, adjustedSize, originalPath);
+            return (outputFile, fileData, adjustedSize, originalPath, metadata);
         }
         finally
         {
@@ -291,7 +298,7 @@ public sealed class MemoryCarver : IDisposable
     }
 
     private async Task WriteFileAsync(string outputFile, byte[] data, long offset, string signatureId, int fileSize,
-        string? originalPath)
+        string? originalPath, Dictionary<string, object>? metadata)
     {
         if (_convertDdxToDds && signatureId is "ddx_3xdo" or "ddx_3xdr" && IsDdxFile(data))
         {
@@ -299,15 +306,25 @@ public sealed class MemoryCarver : IDisposable
             if (result) return;
         }
 
-        await WriteFileWithRetryAsync(outputFile, data);
+        // Repair XMA files if needed
+        var outputData = data;
+        var isRepaired = false;
+        if (signatureId == "xma" && metadata != null)
+        {
+            outputData = Converters.XmaRepairUtil.TryRepair(data, metadata);
+            isRepaired = outputData != data;
+        }
+
+        await WriteFileWithRetryAsync(outputFile, outputData);
         _manifest.Add(new CarveEntry
         {
             FileType = signatureId,
             Offset = offset,
             SizeInDump = fileSize,
-            SizeOutput = fileSize,
+            SizeOutput = outputData.Length,
             Filename = Path.GetFileName(outputFile),
-            OriginalPath = originalPath
+            OriginalPath = originalPath,
+            Notes = isRepaired ? "Repaired" : null
         });
     }
 
