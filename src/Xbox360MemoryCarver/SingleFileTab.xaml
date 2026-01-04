@@ -52,13 +52,13 @@
         Click="OpenMinidumpButton_Click"
         Content="Browse..."/>
 
-      <!--  Output Path  -->
+      <!--  Output Directory  -->
       <TextBlock
         Grid.Row="1"
         Grid.Column="0"
         Margin="0,0,12,0"
         VerticalAlignment="Center"
-        Text="Output Path"/>
+        Text="Output Directory"/>
       <TextBox
         x:Name="OutputPathTextBox"
         Grid.Row="1"
@@ -365,17 +365,34 @@
           Grid.Column="0"
           VerticalAlignment="Center"
           Orientation="Horizontal"
-          Spacing="16">
-          <CheckBox
-            x:Name="ConvertDdxCheckBox"
-            Content="Convert DDX to DDS"
-            IsChecked="True"/>
-          <CheckBox
-            x:Name="SaveAtlasCheckBox"
-            Content="Save Atlas Files"/>
-          <CheckBox
-            x:Name="VerboseCheckBox"
-            Content="Verbose Output"/>
+          Spacing="24">
+          <!--  Texture Options  -->
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <CheckBox
+              x:Name="ConvertDdxCheckBox"
+              MinWidth="0"
+              Content="Convert DDX to DDS"
+              IsChecked="True"/>
+            <CheckBox
+              x:Name="SaveAtlasCheckBox"
+              Margin="16,0,0,0"
+              Content="Save Atlas Files"/>
+          </StackPanel>
+
+          <Border Width="1"
+                  Height="20"
+                  Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+
+          <!--  Output Options  -->
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <CheckBox
+              x:Name="VerboseCheckBox"
+              MinWidth="0"
+              Content="Verbose"
+              ToolTipService.ToolTip="Output detailed progress to the terminal (when launched from command line)"/>
+          </StackPanel>
         </StackPanel>
 
         <StackPanel

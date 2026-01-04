@@ -43,10 +43,16 @@ public class XmaParser : IFileParser
     /// </summary>
     private static int ValidateAndAdjustSize(ReadOnlySpan<byte> data, int offset, int reportedSize)
     {
+        // Ensure we have enough data to scan
+        if (offset >= data.Length) return reportedSize;
+
         // Use the shared boundary scanner to find if another file starts within the reported size
         // Start from minimum RIFF header size (44 bytes = RIFF header + fmt chunk minimum)
         const int minSize = 44;
-        var maxScan = Math.Min(data.Length - offset, reportedSize);
+        var availableData = data.Length - offset;
+        if (availableData < minSize) return Math.Min(reportedSize, availableData);
+
+        var maxScan = Math.Min(availableData, reportedSize);
 
         // Find next signature within the reported size
         var boundaryOffset = SignatureBoundaryScanner.FindNextSignatureWithRiffValidation(
@@ -64,8 +70,13 @@ public class XmaParser : IFileParser
     private static ParseResult? SearchForXmaChunks(ReadOnlySpan<byte> data, int offset, int fileSize)
     {
         var searchOffset = offset + 12;
-        while (searchOffset < Math.Min(offset + 200, data.Length - 8))
+        var maxSearchOffset = Math.Min(offset + 200, data.Length - 8);
+
+        while (searchOffset < maxSearchOffset)
         {
+            // Ensure we have enough data for chunk header (4 bytes id + 4 bytes size)
+            if (searchOffset + 8 > data.Length) break;
+
             var chunkId = data.Slice(searchOffset, 4);
 
             if (chunkId.SequenceEqual("XMA2"u8)) return CreateXmaResult(fileSize, null);
@@ -77,7 +88,12 @@ public class XmaParser : IFileParser
             }
 
             var chunkSize = BinaryUtils.ReadUInt32LE(data, searchOffset + 4);
-            searchOffset += 8 + (int)((chunkSize + 1) & ~1u);
+
+            // Prevent overflow and ensure we don't jump past bounds
+            if (chunkSize > int.MaxValue - 16) break;
+            var nextOffset = searchOffset + 8 + (int)((chunkSize + 1) & ~1u);
+            if (nextOffset <= searchOffset) break; // Overflow protection
+            searchOffset = nextOffset;
         }
 
         return null;

@@ -299,7 +299,7 @@ public sealed class MemoryCarver : IDisposable
             if (result) return;
         }
 
-        await File.WriteAllBytesAsync(outputFile, data);
+        await WriteFileWithRetryAsync(outputFile, data);
         _manifest.Add(new CarveEntry
         {
             FileType = signatureId,
@@ -335,9 +335,10 @@ public sealed class MemoryCarver : IDisposable
             Path.DirectorySeparatorChar + "textures" + Path.DirectorySeparatorChar), ".dds");
         Directory.CreateDirectory(Path.GetDirectoryName(ddsOutputFile)!);
 
-        await File.WriteAllBytesAsync(ddsOutputFile, result.DdsData);
+        // Handle file conflicts with retry logic (same texture may appear multiple times in memory)
+        await WriteFileWithRetryAsync(ddsOutputFile, result.DdsData);
         if (result.AtlasData != null && _saveAtlas)
-            await File.WriteAllBytesAsync(ddsOutputFile.Replace(".dds", "_full_atlas.dds"), result.AtlasData);
+            await WriteFileWithRetryAsync(ddsOutputFile.Replace(".dds", "_full_atlas.dds"), result.AtlasData);
 
         _manifest.Add(new CarveEntry
         {
@@ -355,6 +356,33 @@ public sealed class MemoryCarver : IDisposable
 
         Interlocked.Increment(ref _ddxConvertedCount);
         return true;
+    }
+
+    /// <summary>
+    ///     Write file with retry logic for handling concurrent access to same filename.
+    ///     If file is locked, generates a unique filename with suffix.
+    /// </summary>
+    private static async Task WriteFileWithRetryAsync(string outputFile, byte[] data, int maxRetries = 3)
+    {
+        var currentPath = outputFile;
+        for (var attempt = 0; attempt < maxRetries; attempt++)
+        {
+            try
+            {
+                await File.WriteAllBytesAsync(currentPath, data);
+                return;
+            }
+            catch (IOException) when (attempt < maxRetries - 1)
+            {
+                // File might be locked or already exists from another thread
+                // Generate a unique filename with offset-based suffix
+                var dir = Path.GetDirectoryName(outputFile)!;
+                var nameWithoutExt = Path.GetFileNameWithoutExtension(outputFile);
+                var ext = Path.GetExtension(outputFile);
+                var suffix = Guid.NewGuid().ToString("N")[..8];
+                currentPath = Path.Combine(dir, $"{nameWithoutExt}_{suffix}{ext}");
+            }
+        }
     }
 
     private static bool IsDdxFile(byte[] data)
