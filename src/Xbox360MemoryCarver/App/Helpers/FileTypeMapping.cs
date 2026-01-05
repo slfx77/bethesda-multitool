@@ -1,6 +1,6 @@
 using Xbox360MemoryCarver.Core.Formats;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Maps display names to file signature IDs for extraction filtering.

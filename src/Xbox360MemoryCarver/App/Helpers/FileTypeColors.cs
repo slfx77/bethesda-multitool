@@ -1,7 +1,7 @@
 using Windows.UI;
 using Xbox360MemoryCarver.Core.Formats;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Provides color mappings for file types in the UI.

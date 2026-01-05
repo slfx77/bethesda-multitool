@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Main application window with tabbed interface.

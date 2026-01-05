@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <UserControl
-  x:Class="Xbox360MemoryCarver.App.BatchModeTab"
+  x:Class="Xbox360MemoryCarver.BatchModeTab"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:ctk="using:CommunityToolkit.WinUI.Controls"
-  xmlns:local="using:Xbox360MemoryCarver.App">
+  xmlns:local="using:Xbox360MemoryCarver">
 
   <Grid Padding="16">
     <Grid.RowDefinitions>

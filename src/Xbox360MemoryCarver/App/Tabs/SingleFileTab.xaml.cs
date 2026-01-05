@@ -4,10 +4,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using WinRT.Interop;
-using Xbox360MemoryCarver.App.HexViewer;
+
+
+
 using Xbox360MemoryCarver.Core;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Single file analysis and extraction tab.

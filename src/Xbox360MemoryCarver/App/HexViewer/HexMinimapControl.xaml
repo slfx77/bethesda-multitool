@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <UserControl
-  x:Class="Xbox360MemoryCarver.App.HexMinimapControl"
+  x:Class="Xbox360MemoryCarver.HexMinimapControl"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 

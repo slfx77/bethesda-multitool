@@ -1,4 +1,6 @@
-namespace Xbox360MemoryCarver.App;
+
+
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Handles sorting logic for the carved files list view.

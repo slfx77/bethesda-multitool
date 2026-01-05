@@ -51,19 +51,13 @@
 
   <!-- Exclude GUI code from cross-platform build -->
   <ItemGroup Condition="!$(TargetFramework.Contains('windows'))">
-    <!-- XAML code-behind files -->
-    <Compile Remove="*.xaml.cs" />
-    <Compile Remove="GuiEntryPoint.cs" />
-    <Compile Remove="FileTypeColors.cs" />
-    <Compile Remove="ClipboardHelper.cs" />
-    <Compile Remove="FileRegion.cs" />
-    <Compile Remove="HexMinimapRenderer.cs" />
-    <Compile Remove="HexRowRenderer.cs" />
-    <Compile Remove="CarvedFileEntry.cs" />
-    <Compile Remove="FileTypeMapping.cs" />
+    <!-- All GUI code is in App/ folder -->
     <Compile Remove="App\**\*.cs" />
-    <!-- XAML files -->
-    <Page Remove="*.xaml" />
+    <!-- XAML files in App/ -->
+    <Page Remove="App\**\*.xaml" />
+    <!-- Root XAML files -->
+    <Page Remove="App.xaml" />
+    <Compile Remove="App.xaml.cs" />
     <None Remove="app.manifest" />
   </ItemGroup>
   <ItemGroup>

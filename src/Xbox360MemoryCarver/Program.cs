@@ -24,7 +24,7 @@ public static class Program
         if (!IsCliMode(args))
         {
             AutoLoadFile = GetAutoLoadFile(args);
-            return App.GuiEntryPoint.Run(args);
+            return GuiEntryPoint.Run(args);
         }
 #endif
 

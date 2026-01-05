@@ -2,7 +2,7 @@ using System.ComponentModel;
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Media;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Represents a dump file in the batch list.

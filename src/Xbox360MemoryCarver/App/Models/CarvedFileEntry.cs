@@ -2,7 +2,7 @@ using System.ComponentModel;
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Media;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Represents a carved file entry in the results table.

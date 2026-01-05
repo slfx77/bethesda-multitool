@@ -1,8 +1,8 @@
 using System.IO.MemoryMappedFiles;
-using Xbox360MemoryCarver.App;
+
 using Xbox360MemoryCarver.Core;
 
-namespace Xbox360MemoryCarver.App.HexViewer;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Manages file data loading and region mapping for the hex viewer.

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace Xbox360MemoryCarver.App.HexViewer;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Helper class for clipboard operations using Win32 interop.

@@ -1,6 +1,6 @@
 using System.IO.MemoryMappedFiles;
 
-namespace Xbox360MemoryCarver.App.HexViewer;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Handles search operations in hex viewer data.

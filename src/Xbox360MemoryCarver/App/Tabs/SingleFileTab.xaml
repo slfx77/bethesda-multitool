@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <UserControl
-  x:Class="Xbox360MemoryCarver.App.SingleFileTab"
+  x:Class="Xbox360MemoryCarver.SingleFileTab"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:controls="using:Microsoft.UI.Xaml.Controls"
   xmlns:ctk="using:CommunityToolkit.WinUI.Controls"
-  xmlns:local="using:Xbox360MemoryCarver.App">
+  xmlns:hexviewer="using:Xbox360MemoryCarver"
+  xmlns:local="using:Xbox360MemoryCarver">
 
   <Grid Padding="16">
     <Grid.RowDefinitions>
@@ -112,7 +113,7 @@
             Style="{StaticResource SubtitleTextBlockStyle}"
             Text="Memory Map" />
 
-          <local:HexViewerControl
+          <hexviewer:HexViewerControl
             x:Name="HexViewer"
             Grid.Row="1" />
         </Grid>

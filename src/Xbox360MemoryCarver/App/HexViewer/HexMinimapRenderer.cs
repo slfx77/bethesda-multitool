@@ -4,9 +4,10 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
-using Xbox360MemoryCarver.App.HexViewer;
 
-namespace Xbox360MemoryCarver.App;
+
+
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Minimap rendering and interaction logic for HexViewerControl.

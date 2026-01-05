@@ -1,6 +1,6 @@
 using Windows.UI;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Represents a colored region in the hex viewer corresponding to a detected file.

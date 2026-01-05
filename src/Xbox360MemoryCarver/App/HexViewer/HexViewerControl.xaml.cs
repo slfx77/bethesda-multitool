@@ -7,10 +7,11 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Xbox360MemoryCarver.App.HexViewer;
+
+
 using Xbox360MemoryCarver.Core;
 
-namespace Xbox360MemoryCarver.App;
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     High-performance hex viewer with virtual scrolling.

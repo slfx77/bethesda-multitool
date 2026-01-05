@@ -5,7 +5,9 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 
-namespace Xbox360MemoryCarver.App.HexViewer;
+
+
+namespace Xbox360MemoryCarver;
 
 /// <summary>
 ///     Handles rendering of hex data rows for the HexViewerControl.
