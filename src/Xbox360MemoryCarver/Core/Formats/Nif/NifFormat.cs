@@ -33,73 +33,44 @@ public sealed partial class NifFormat : FileFormatBase
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 64)
-        {
-            return null;
-        }
+        if (data.Length < offset + 64) return null;
 
         var headerMagic = data.Slice(offset, 20);
-        if (!headerMagic.SequenceEqual("Gamebryo File Format"u8))
-        {
-            return null;
-        }
+        if (!headerMagic.SequenceEqual("Gamebryo File Format"u8)) return null;
 
         try
         {
-            if (data.Length < offset + 50)
-            {
-                return null;
-            }
+            if (data.Length < offset + 50) return null;
 
             // Check for ", Version " after the magic
             var versionPrefixSpan = data.Slice(offset + 20, 10);
-            if (!versionPrefixSpan.SequenceEqual(", Version "u8))
-            {
-                return null;
-            }
+            if (!versionPrefixSpan.SequenceEqual(", Version "u8)) return null;
 
             var versionOffset = offset + 30;
 
             // Find the newline that terminates the version string
             var newlinePos = -1;
             for (var i = versionOffset; i < Math.Min(versionOffset + 20, data.Length); i++)
-            {
                 if (data[i] == 0x0A)
                 {
                     newlinePos = i;
                     break;
                 }
-            }
 
-            if (newlinePos == -1 || newlinePos <= versionOffset)
-            {
-                return null;
-            }
+            if (newlinePos == -1 || newlinePos <= versionOffset) return null;
 
             // Ensure we don't go out of bounds when slicing
-            if (newlinePos > data.Length)
-            {
-                return null;
-            }
+            if (newlinePos > data.Length) return null;
 
             var versionString = Encoding.ASCII.GetString(data[versionOffset..newlinePos]).TrimEnd('\r');
 
-            if (!VersionPattern().IsMatch(versionString))
-            {
-                return null;
-            }
+            if (!VersionPattern().IsMatch(versionString)) return null;
 
             var majorVersion = 0;
             var dotIdx = versionString.IndexOf('.');
-            if (dotIdx > 0 && int.TryParse(versionString[..dotIdx], out var major))
-            {
-                majorVersion = major;
-            }
+            if (dotIdx > 0 && int.TryParse(versionString[..dotIdx], out var major)) majorVersion = major;
 
-            if (majorVersion < 2 || majorVersion > 30)
-            {
-                return null;
-            }
+            if (majorVersion < 2 || majorVersion > 30) return null;
 
             // Note: Binary version validation removed as it was causing false negatives
             // The text-based version validation is sufficient for NIF identification

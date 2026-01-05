@@ -106,9 +106,7 @@ public sealed class DdsFormat : FileFormatBase
         IReadOnlyDictionary<string, object>? metadata = null)
     {
         if (metadata != null && metadata.TryGetValue("width", out var w) && metadata.TryGetValue("height", out var h))
-        {
             return $"DDS ({w}x{h})";
-        }
 
         return "DirectDraw Surface texture";
     }

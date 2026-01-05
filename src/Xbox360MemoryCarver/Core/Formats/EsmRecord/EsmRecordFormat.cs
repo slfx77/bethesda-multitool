@@ -5,25 +5,6 @@ using Xbox360MemoryCarver.Core.Utils;
 namespace Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 /// <summary>
-///     Extracted ESM records from a memory dump.
-/// </summary>
-public record EsmRecordScanResult
-{
-    public List<GmstRecord> GameSettings { get; init; } = [];
-    public List<EdidRecord> EditorIds { get; init; } = [];
-    public List<SctxRecord> ScriptSources { get; init; } = [];
-    public List<ScroRecord> FormIdReferences { get; init; } = [];
-}
-
-public record GmstRecord(string Name, long Offset, int Length);
-
-public record EdidRecord(string Name, long Offset);
-
-public record SctxRecord(string Text, long Offset, int Length);
-
-public record ScroRecord(uint FormId, long Offset);
-
-/// <summary>
 ///     ESM record fragment format module.
 ///     Scans memory dumps for GMST, EDID, SCTX, and SCRO records.
 ///     This format doesn't participate in normal carving (ShowInFilterUI = false)
@@ -39,31 +20,22 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     public override int MinSize => 8;
     public override int MaxSize => 64 * 1024;
     public override int DisplayPriority => 100;
-    public override bool ShowInFilterUI => false; // Analysis-only format
+    public override bool ShowInFilterUI => false;
 
-    // ESM record format doesn't have signatures for normal carving
-    // It scans for multiple record types during dump analysis
     public override IReadOnlyList<FormatSignature> Signatures { get; } = [];
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
-        // ESM records aren't carved individually - this is analysis-only
         return null;
     }
 
     #region IDumpScanner
 
-    /// <summary>
-    ///     Scan a memory dump for all ESM record fragments.
-    /// </summary>
     public object ScanDump(byte[] data)
     {
         return ScanForRecords(data);
     }
 
-    /// <summary>
-    ///     Scan a memory dump for all ESM record fragments.
-    /// </summary>
     public static EsmRecordScanResult ScanForRecords(byte[] data)
     {
         var result = new EsmRecordScanResult();
@@ -71,34 +43,26 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         var seenFormIds = new HashSet<uint>();
 
         for (var i = 0; i <= data.Length - 8; i++)
-            // Check for EDID records
-            if (MatchesEdidSignature(data, i))
+            if (MatchesSignature(data, i, "EDID"u8))
                 TryAddEdidRecord(data, i, result.EditorIds, seenEdids);
-            // Check for GMST records
-            else if (MatchesGmstSignature(data, i))
+            else if (MatchesSignature(data, i, "GMST"u8))
                 TryAddGmstRecord(data, i, result.GameSettings);
-            // Check for SCTX records
-            else if (MatchesSctxSignature(data, i))
+            else if (MatchesSignature(data, i, "SCTX"u8))
                 TryAddSctxRecord(data, i, result.ScriptSources);
-            // Check for SCRO records
-            else if (MatchesScroSignature(data, i)) TryAddScroRecord(data, i, result.FormIdReferences, seenFormIds);
+            else if (MatchesSignature(data, i, "SCRO"u8))
+                TryAddScroRecord(data, i, result.FormIdReferences, seenFormIds);
 
         return result;
     }
 
-    /// <summary>
-    ///     Correlate FormIDs with their editor ID names.
-    /// </summary>
     public static Dictionary<uint, string> CorrelateFormIdsToNames(byte[] data,
         EsmRecordScanResult? existingScan = null)
     {
         var scan = existingScan ?? ScanForRecords(data);
         var correlations = new Dictionary<uint, string>();
 
-        // Look for ESM record headers that contain both EDID and FormID
         foreach (var edid in scan.EditorIds)
         {
-            // Look backwards from EDID for a record header containing FormID
             var formId = FindRecordFormId(data, (int)edid.Offset);
             if (formId != 0 && !correlations.ContainsKey(formId)) correlations[formId] = edid.Name;
         }
@@ -106,28 +70,25 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         return correlations;
     }
 
+    /// <summary>
+    ///     Export ESM records to files. Delegates to EsmRecordExporter.
+    /// </summary>
+    public static Task ExportRecordsAsync(
+        EsmRecordScanResult records,
+        Dictionary<uint, string> formIdMap,
+        string outputDir,
+        bool verbose = false)
+    {
+        return EsmRecordExporter.ExportRecordsAsync(records, formIdMap, outputDir, verbose);
+    }
+
     #endregion
 
     #region Private Implementation
 
-    private static bool MatchesEdidSignature(byte[] data, int i)
+    private static bool MatchesSignature(byte[] data, int i, ReadOnlySpan<byte> sig)
     {
-        return data[i] == 'E' && data[i + 1] == 'D' && data[i + 2] == 'I' && data[i + 3] == 'D';
-    }
-
-    private static bool MatchesGmstSignature(byte[] data, int i)
-    {
-        return data[i] == 'G' && data[i + 1] == 'M' && data[i + 2] == 'S' && data[i + 3] == 'T';
-    }
-
-    private static bool MatchesSctxSignature(byte[] data, int i)
-    {
-        return data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'T' && data[i + 3] == 'X';
-    }
-
-    private static bool MatchesScroSignature(byte[] data, int i)
-    {
-        return data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'R' && data[i + 3] == 'O';
+        return data[i] == sig[0] && data[i + 1] == sig[1] && data[i + 2] == sig[2] && data[i + 3] == sig[3];
     }
 
     private static void TryAddEdidRecord(byte[] data, int i, List<EdidRecord> records, HashSet<string> seen)
@@ -163,8 +124,6 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         if (len != 4 || i + 10 > data.Length) return;
 
         var formId = BinaryUtils.ReadUInt32LE(data, i + 6);
-
-        // Valid FormIDs have mod index in high byte (0x00-0x0F for base game)
         if (formId == 0 || formId == 0xFFFFFFFF || formId >> 24 > 0x0F) return;
 
         if (seen.Add(formId)) records.Add(new ScroRecord(formId, i));
@@ -172,10 +131,6 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
 
     private static uint FindRecordFormId(byte[] data, int edidOffset)
     {
-        // ESM record structure: Type(4) + Size(4) + Flags(4) + FormID(4) + ... subrecords
-        // The FormID is at offset +12 from the record start
-        // Search backwards for a record header
-
         var searchStart = Math.Max(0, edidOffset - 200);
         for (var checkOffset = edidOffset - 4; checkOffset >= searchStart; checkOffset--)
         {
@@ -189,18 +144,12 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     private static uint TryExtractFormIdFromRecordHeader(byte[] data, int checkOffset, int edidOffset)
     {
         if (checkOffset + 24 >= data.Length) return 0;
-
-        // Check if this looks like a record type (4 ASCII letters)
         if (!IsRecordTypeMarker(data, checkOffset)) return 0;
 
         var formId = BinaryUtils.ReadUInt32LE(data, checkOffset + 12);
-
-        // Validate FormID
         if (formId == 0 || formId == 0xFFFFFFFF || formId >> 24 > 0x0F) return 0;
 
         var size = BinaryUtils.ReadUInt32LE(data, checkOffset + 4);
-
-        // Check if EDID is within this record's data
         if (size > 0 && size < 10_000_000 && edidOffset < checkOffset + 24 + size) return formId;
 
         return 0;
@@ -219,14 +168,12 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     {
         var end = offset;
         while (end < offset + maxLen && end < data.Length && data[end] != 0) end++;
-
         return Encoding.ASCII.GetString(data, offset, end - offset);
     }
 
     private static bool IsValidEditorId(string name)
     {
         if (string.IsNullOrEmpty(name) || name.Length < 2 || name.Length > 200) return false;
-
         if (!char.IsLetter(name[0])) return false;
 
         var validChars = name.Count(c => char.IsLetterOrDigit(c) || c == '_');
@@ -237,14 +184,12 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     {
         if (string.IsNullOrEmpty(name) || name.Length < 2) return false;
 
-        // GMST names typically start with f, i, s, b (float, int, string, bool)
         var firstChar = char.ToLower(name[0], CultureInfo.InvariantCulture);
         return firstChar is 'f' or 'i' or 's' or 'b' && name.All(c => char.IsLetterOrDigit(c) || c == '_');
     }
 
     private static bool ContainsScriptKeywords(string text)
     {
-        // Check for common script keywords
         return text.Contains("Enable", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("Disable", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("MoveTo", StringComparison.OrdinalIgnoreCase) ||

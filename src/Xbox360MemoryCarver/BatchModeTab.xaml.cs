@@ -1,10 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Windows.Storage.Pickers;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using WinRT.Interop;
 using Xbox360MemoryCarver.Core;
 
@@ -17,10 +15,9 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
 {
     private readonly ObservableCollection<DumpFileEntry> _dumpFiles = [];
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
-    private CancellationTokenSource? _cancellationTokenSource;
-    private BatchSortColumn _currentSortColumn = BatchSortColumn.None;
-    private bool _disposed;
+    private CancellationTokenSource? _cts;
     private bool _sortAscending = true;
+    private BatchSortColumn _sortColumn = BatchSortColumn.None;
 
     public BatchModeTab()
     {
@@ -29,6 +26,8 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         InitializeFileTypeCheckboxes();
         ParallelCountBox.Maximum = Environment.ProcessorCount;
     }
+
+    public void Dispose() => _cts?.Dispose();
 
     private void InitializeFileTypeCheckboxes()
     {
@@ -42,86 +41,50 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         }
     }
 
-    /// <summary>
-    ///     Dispose managed resources.
-    /// </summary>
-    public void Dispose()
-    {
-        if (!_disposed)
-        {
-            _cancellationTokenSource?.Dispose();
-            _cancellationTokenSource = null;
-            _disposed = true;
-        }
-    }
-
     private void UpdateButtonStates()
     {
-        var hasOutputDir = !string.IsNullOrEmpty(OutputDirectoryTextBox.Text);
-        var hasSelectedFiles = _dumpFiles.Any(f => f.IsSelected);
-
-        ExtractButton.IsEnabled = hasOutputDir && hasSelectedFiles;
+        ExtractButton.IsEnabled = !string.IsNullOrEmpty(OutputDirectoryTextBox.Text)
+                                  && _dumpFiles.Any(f => f.IsSelected);
     }
 
-#pragma warning disable CA1822 // Event handler cannot be static
+#pragma warning disable CA1822, S2325 // Event handler cannot be static
     private void ParallelCountBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
-        // Reset to default value (2) if the user clears the box or enters an invalid value
-        if (double.IsNaN(args.NewValue))
-        {
-            sender.Value = 2;
-        }
+        if (double.IsNaN(args.NewValue)) sender.Value = 2;
     }
-#pragma warning restore CA1822
+#pragma warning restore CA1822, S2325
 
     private async Task ShowDialogAsync(string title, string message)
     {
         var dialog = new ContentDialog
-        {
-            Title = title,
-            Content = message,
-            CloseButtonText = "OK",
-            XamlRoot = XamlRoot
-        };
+            { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot };
         await dialog.ShowAsync();
     }
 
-#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
+#pragma warning disable RCS1163
     private async void BrowseInputButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker
-        {
-            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
-        };
+        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-
-        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
-        InitializeWithWindow.Initialize(picker, hwnd);
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
-        if (folder != null)
+        if (folder == null) return;
+
+        InputDirectoryTextBox.Text = folder.Path;
+        if (string.IsNullOrEmpty(OutputDirectoryTextBox.Text))
         {
-            InputDirectoryTextBox.Text = folder.Path;
-
-            // Auto-set output if not set
-            if (string.IsNullOrEmpty(OutputDirectoryTextBox.Text))
-                OutputDirectoryTextBox.Text = Path.Combine(folder.Path, "extracted");
-
-            // Auto-scan for dump files
-            ScanForDumpFiles();
+            OutputDirectoryTextBox.Text = Path.Combine(folder.Path, "extracted");
         }
+
+        ScanForDumpFiles();
     }
 
     private async void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker
-        {
-            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
-        };
+        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-
-        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
-        InitializeWithWindow.Initialize(picker, hwnd);
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
@@ -134,23 +97,19 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     private void ScanForDumpFiles()
     {
         _dumpFiles.Clear();
-
         if (!Directory.Exists(InputDirectoryTextBox.Text)) return;
 
-        var dmpFiles = Directory.GetFiles(InputDirectoryTextBox.Text, "*.dmp", SearchOption.AllDirectories);
-
-        foreach (var file in dmpFiles)
+        foreach (var file in Directory.GetFiles(InputDirectoryTextBox.Text, "*.dmp", SearchOption.AllDirectories))
         {
-            var fileInfo = new FileInfo(file);
+            var info = new FileInfo(file);
             var entry = new DumpFileEntry
             {
                 FilePath = file,
-                FileName = Path.GetFileName(file),
-                Size = fileInfo.Length,
-                IsSelected = true,
-                Status = "Pending"
+                FileName = info.Name,
+                Size = info.Length,
+                IsSelected = true
             };
-            entry.PropertyChanged += OnEntryPropertyChanged;
+            entry.PropertyChanged += (_, _) => UpdateButtonStates();
             _dumpFiles.Add(entry);
         }
 
@@ -158,89 +117,64 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         UpdateButtonStates();
     }
 
-    private void OnEntryPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        UpdateButtonStates();
-    }
-
     private void SelectAllButton_Click(object sender, RoutedEventArgs e)
     {
         foreach (var entry in _dumpFiles) entry.IsSelected = true;
-        UpdateButtonStates();
     }
 
     private void SelectNoneButton_Click(object sender, RoutedEventArgs e)
     {
         foreach (var entry in _dumpFiles) entry.IsSelected = false;
-        UpdateButtonStates();
     }
 
     #region Sorting
 
-    private void SortByFilename_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(BatchSortColumn.Filename);
-    }
-
-    private void SortBySize_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(BatchSortColumn.Size);
-    }
-
-    private void SortByStatus_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(BatchSortColumn.Status);
-    }
+    private void SortByFilename_Click(object sender, RoutedEventArgs e) => ApplySort(BatchSortColumn.Filename);
+    private void SortBySize_Click(object sender, RoutedEventArgs e) => ApplySort(BatchSortColumn.Size);
+    private void SortByStatus_Click(object sender, RoutedEventArgs e) => ApplySort(BatchSortColumn.Status);
 
     private void ApplySort(BatchSortColumn column)
     {
-        if (_currentSortColumn == column)
+        if (_sortColumn == column)
         {
             _sortAscending = !_sortAscending;
         }
         else
         {
-            _currentSortColumn = column;
+            _sortColumn = column;
             _sortAscending = true;
         }
 
         UpdateSortIcons();
 
-        var sorted = _currentSortColumn switch
+        var sorted = _sortColumn switch
         {
             BatchSortColumn.Filename => _sortAscending
-                ? _dumpFiles.OrderBy(f => f.FileName).ToList()
-                : _dumpFiles.OrderByDescending(f => f.FileName).ToList(),
+                ? _dumpFiles.OrderBy(f => f.FileName)
+                : _dumpFiles.OrderByDescending(f => f.FileName),
             BatchSortColumn.Size => _sortAscending
-                ? _dumpFiles.OrderBy(f => f.Size).ToList()
-                : _dumpFiles.OrderByDescending(f => f.Size).ToList(),
+                ? _dumpFiles.OrderBy(f => f.Size)
+                : _dumpFiles.OrderByDescending(f => f.Size),
             BatchSortColumn.Status => _sortAscending
-                ? _dumpFiles.OrderBy(f => f.Status).ToList()
-                : _dumpFiles.OrderByDescending(f => f.Status).ToList(),
-            _ => _dumpFiles.ToList()
+                ? _dumpFiles.OrderBy(f => f.Status)
+                : _dumpFiles.OrderByDescending(f => f.Status),
+            _ => _dumpFiles.AsEnumerable()
         };
 
+        var list = sorted.ToList();
         _dumpFiles.Clear();
-        foreach (var item in sorted)
-        {
-            _dumpFiles.Add(item);
-        }
+        foreach (var item in list) _dumpFiles.Add(item);
     }
 
     private void UpdateSortIcons()
     {
-        var glyph = _sortAscending ? "\uE70D" : "\uE70E"; // Up or Down arrow
-
+        var glyph = _sortAscending ? "\uE70D" : "\uE70E";
         FilenameSortIcon.Visibility =
-            _currentSortColumn == BatchSortColumn.Filename ? Visibility.Visible : Visibility.Collapsed;
+            _sortColumn == BatchSortColumn.Filename ? Visibility.Visible : Visibility.Collapsed;
         FilenameSortIcon.Glyph = glyph;
-
-        SizeSortIcon.Visibility =
-            _currentSortColumn == BatchSortColumn.Size ? Visibility.Visible : Visibility.Collapsed;
+        SizeSortIcon.Visibility = _sortColumn == BatchSortColumn.Size ? Visibility.Visible : Visibility.Collapsed;
         SizeSortIcon.Glyph = glyph;
-
-        StatusSortIcon.Visibility =
-            _currentSortColumn == BatchSortColumn.Status ? Visibility.Visible : Visibility.Collapsed;
+        StatusSortIcon.Visibility = _sortColumn == BatchSortColumn.Status ? Visibility.Visible : Visibility.Collapsed;
         StatusSortIcon.Glyph = glyph;
     }
 
@@ -251,106 +185,37 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         var selectedFiles = _dumpFiles.Where(f => f.IsSelected).ToList();
         if (selectedFiles.Count == 0) return;
 
-        SemaphoreSlim? semaphore = null;
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var semaphore = new SemaphoreSlim((int)ParallelCountBox.Value);
 
         try
         {
-            _cancellationTokenSource = new CancellationTokenSource();
-            var token = _cancellationTokenSource.Token;
+            SetUIExtracting(true);
 
-            ExtractButton.IsEnabled = false;
-            CancelButton.IsEnabled = true;
-            BatchProgressBar.Visibility = Visibility.Visible;
-            BatchProgressBar.Value = 0;
-            ProgressTextBlock.Visibility = Visibility.Visible;
-            ProgressTextBlock.Text = "Starting...";
-
-            // Get selected file types
             var selectedTypes = FileTypeMapping
-                .GetSignatureIds(_fileTypeCheckboxes
-                    .Where(kvp => kvp.Value.IsChecked == true)
-                    .Select(kvp => kvp.Key))
+                .GetSignatureIds(_fileTypeCheckboxes.Where(kvp => kvp.Value.IsChecked is true).Select(kvp => kvp.Key))
                 .ToList();
 
             var options = new ExtractionOptions
             {
                 OutputPath = OutputDirectoryTextBox.Text,
-                ConvertDdx = BatchConvertDdxCheckBox.IsChecked == true,
-                SaveAtlas = BatchSaveAtlasCheckBox.IsChecked == true,
-                Verbose = BatchVerboseCheckBox.IsChecked == true,
+                ConvertDdx = BatchConvertDdxCheckBox.IsChecked is true,
+                SaveAtlas = BatchSaveAtlasCheckBox.IsChecked is true,
+                Verbose = BatchVerboseCheckBox.IsChecked is true,
                 FileTypes = selectedTypes.Count > 0 ? selectedTypes : null
             };
 
-            var parallelCount = (int)ParallelCountBox.Value;
-            var skipExisting = SkipExistingCheckBox.IsChecked == true;
-            var processed = 0;
-            var total = selectedFiles.Count;
+            int processed = 0;
+            int total = selectedFiles.Count;
+            bool skipExisting = SkipExistingCheckBox.IsChecked is true;
 
-            semaphore = new SemaphoreSlim(parallelCount);
-            var tasks = new List<Task>();
-
-            foreach (var entry in selectedFiles)
-            {
-                if (token.IsCancellationRequested) break;
-
-                await semaphore.WaitAsync(token);
-
-                var task = Task.Run(async () =>
-                {
-                    try
-                    {
-                        // Check if already extracted
-                        var outputSubdir = Path.Combine(options.OutputPath,
-                            Path.GetFileNameWithoutExtension(entry.FileName));
-
-                        if (skipExisting && Directory.Exists(outputSubdir))
-                        {
-                            DispatcherQueue.TryEnqueue(() => { entry.Status = "Skipped"; });
-                            return;
-                        }
-
-                        DispatcherQueue.TryEnqueue(() => { entry.Status = "Processing..."; });
-
-                        var entryOptions = options with
-                        {
-                            OutputPath = outputSubdir
-                        };
-
-                        await MemoryDumpExtractor.Extract(entry.FilePath, entryOptions, null);
-
-                        DispatcherQueue.TryEnqueue(() => { entry.Status = "Complete"; });
-                    }
-                    catch (Exception ex)
-                    {
-                        DispatcherQueue.TryEnqueue(() => { entry.Status = $"Error: {ex.Message}"; });
-                    }
-                    finally
-                    {
-                        try
-                        {
-                            semaphore.Release();
-                        }
-                        catch (ObjectDisposedException)
-                        {
-                            // Semaphore was disposed during cancellation, ignore
-                        }
-
-                        var current = Interlocked.Increment(ref processed);
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            BatchProgressBar.Value = current * 100.0 / total;
-                            ProgressTextBlock.Text = $"Processing {current}/{total}...";
-                        });
-                    }
-                }, token);
-
-                tasks.Add(task);
-            }
+            var tasks = selectedFiles.Select(entry => ProcessEntryAsync(
+                entry, options, skipExisting, semaphore,
+                () => UpdateProgress(Interlocked.Increment(ref processed), total), token));
 
             await Task.WhenAll(tasks);
-
             StatusTextBlock.Text = $"Completed processing {processed} file(s)";
-            ProgressTextBlock.Text = "";
         }
         catch (OperationCanceledException)
         {
@@ -362,92 +227,81 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         }
         finally
         {
-            ExtractButton.IsEnabled = true;
-            CancelButton.IsEnabled = false;
-            BatchProgressBar.Visibility = Visibility.Collapsed;
-            ProgressTextBlock.Visibility = Visibility.Collapsed;
+            SetUIExtracting(false);
+            _cts?.Dispose();
+            _cts = null;
+            semaphore.Dispose();
+        }
+    }
+
+    private async Task ProcessEntryAsync(
+        DumpFileEntry entry, ExtractionOptions options, bool skipExisting,
+        SemaphoreSlim semaphore, Action onComplete, CancellationToken token)
+    {
+        await semaphore.WaitAsync(token);
+        try
+        {
+            var outputSubdir = Path.Combine(options.OutputPath, Path.GetFileNameWithoutExtension(entry.FileName));
+            if (skipExisting && Directory.Exists(outputSubdir))
+            {
+                DispatcherQueue.TryEnqueue(() => entry.Status = "Skipped");
+                return;
+            }
+
+            DispatcherQueue.TryEnqueue(() => entry.Status = "Processing...");
+            await MemoryDumpExtractor.Extract(entry.FilePath, options with { OutputPath = outputSubdir }, null);
+            DispatcherQueue.TryEnqueue(() => entry.Status = "Complete");
+        }
+        catch (Exception ex)
+        {
+            DispatcherQueue.TryEnqueue(() => entry.Status = $"Error: {ex.Message}");
+        }
+        finally
+        {
+            try
+            {
+                semaphore.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Semaphore disposed during cancellation - safe to ignore
+            }
+
+            onComplete();
+        }
+    }
+
+    private void SetUIExtracting(bool extracting)
+    {
+        ExtractButton.IsEnabled = !extracting;
+        CancelButton.IsEnabled = extracting;
+        BatchProgressBar.Visibility = extracting ? Visibility.Visible : Visibility.Collapsed;
+        ProgressTextBlock.Visibility = extracting ? Visibility.Visible : Visibility.Collapsed;
+        if (extracting)
+        {
+            BatchProgressBar.Value = 0;
+            ProgressTextBlock.Text = "Starting...";
+        }
+        else
+        {
             ProgressTextBlock.Text = "";
-            _cancellationTokenSource?.Dispose();
-            _cancellationTokenSource = null;
-            semaphore?.Dispose();
             UpdateButtonStates();
         }
     }
 
+    private void UpdateProgress(int current, int total)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            BatchProgressBar.Value = current * 100.0 / total;
+            ProgressTextBlock.Text = $"Processing {current}/{total}...";
+        });
+    }
+
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
-        _cancellationTokenSource?.Cancel();
+        _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
     }
 #pragma warning restore RCS1163
-}
-
-/// <summary>
-///     Represents a dump file in the batch list.
-/// </summary>
-public partial class DumpFileEntry : INotifyPropertyChanged
-{
-    private bool _isSelected;
-
-    private string _status = "Pending";
-    public string FilePath { get; set; } = "";
-    public string FileName { get; set; } = "";
-    public long Size { get; set; }
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set
-        {
-            if (_isSelected != value)
-            {
-                _isSelected = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
-            }
-        }
-    }
-
-    public string Status
-    {
-        get => _status;
-        set
-        {
-            if (_status != value)
-            {
-                _status = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusColor)));
-            }
-        }
-    }
-
-    public string SizeFormatted => Size switch
-    {
-        >= 1024 * 1024 * 1024 => $"{Size / (1024.0 * 1024.0 * 1024.0):F2} GB",
-        >= 1024 * 1024 => $"{Size / (1024.0 * 1024.0):F2} MB",
-        >= 1024 => $"{Size / 1024.0:F2} KB",
-        _ => $"{Size} B"
-    };
-
-    public Brush StatusColor => Status switch
-    {
-        "Complete" => new SolidColorBrush(Colors.Green),
-        "Skipped" => new SolidColorBrush(Colors.Gray),
-        "Processing..." => new SolidColorBrush(Colors.Blue),
-        _ when Status.StartsWith("Error", StringComparison.Ordinal) => new SolidColorBrush(Colors.Red),
-        _ => new SolidColorBrush(Colors.Gray)
-    };
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-}
-
-/// <summary>
-///     Sort columns for the batch dump files list.
-/// </summary>
-public enum BatchSortColumn
-{
-    None,
-    Filename,
-    Size,
-    Status
 }

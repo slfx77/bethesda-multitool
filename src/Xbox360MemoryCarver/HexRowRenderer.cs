@@ -22,10 +22,6 @@ internal sealed class HexRowRenderer
 
     private readonly TextBlock _offsetTextBlock;
 
-    // Highlight range for current search result
-    public long HighlightStart { get; set; } = -1;
-    public long HighlightEnd { get; set; } = -1;
-
     public HexRowRenderer(
         TextBlock offsetTextBlock,
         TextBlock hexTextBlock,
@@ -37,6 +33,10 @@ internal sealed class HexRowRenderer
         _asciiTextBlock = asciiTextBlock;
         _findRegion = findRegion;
     }
+
+    // Highlight range for current search result
+    public long HighlightStart { get; set; } = -1;
+    public long HighlightEnd { get; set; } = -1;
 
     public void Clear()
     {

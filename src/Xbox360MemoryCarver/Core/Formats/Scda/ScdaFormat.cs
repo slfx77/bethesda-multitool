@@ -4,29 +4,6 @@ using Xbox360MemoryCarver.Core.Utils;
 namespace Xbox360MemoryCarver.Core.Formats.Scda;
 
 /// <summary>
-///     Parsed SCDA record with bytecode and optional source text.
-/// </summary>
-public record ScdaRecord
-{
-    public required long Offset { get; init; }
-    public int BytecodeSize => Bytecode.Length;
-    public int BytecodeLength => Bytecode.Length;
-    public required byte[] Bytecode { get; init; }
-    public string? SourceText { get; init; }
-    public long SourceOffset { get; init; }
-    public bool HasAssociatedSctx => !string.IsNullOrEmpty(SourceText);
-    public List<uint> FormIdReferences { get; init; } = [];
-}
-
-/// <summary>
-///     Results from scanning a dump for SCDA records.
-/// </summary>
-public record ScdaScanResult
-{
-    public List<ScdaRecord> Records { get; init; } = [];
-}
-
-/// <summary>
 ///     Bethesda compiled script bytecode (SCDA) format module.
 /// </summary>
 public sealed class ScdaFormat : FileFormatBase, IDumpScanner
@@ -134,10 +111,7 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
         var bytecode = new byte[length];
         Array.Copy(data, offset + 6, bytecode, 0, length);
 
-        // Look for associated SCTX (source text) nearby
         var (sourceText, sourceOffset) = FindAssociatedSctx(data, offset + 6 + length);
-
-        // Look for SCRO FormID references
         var formIds = FindAssociatedScro(data, offset + 6 + length);
 
         return new ScdaRecord
@@ -152,7 +126,6 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
 
     private static (string? Text, long Offset) FindAssociatedSctx(byte[] data, int searchStart)
     {
-        // Look for SCTX within 200 bytes after SCDA
         var searchEnd = Math.Min(searchStart + 200, data.Length - 10);
 
         for (var i = searchStart; i < searchEnd; i++)
@@ -192,13 +165,12 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
     {
         if (bytecode.Length < 4) return false;
 
-        // First two bytes should be an opcode (typically 0x1D for ScriptName or 0x10 for Begin)
         var firstOpcode = BinaryUtils.ReadUInt16LE(bytecode);
 
-        // Opcode 0x0000 is not valid (this would be padding/empty data)
+        // Opcode 0x0000 is not valid (padding/empty data)
         if (firstOpcode == 0) return false;
 
-        // Valid opcodes are in range 0x01-0x1F (core) and 0x100-0x12FF (FUNCTION_*)
+        // Valid opcodes: 0x01-0x1F (core) and 0x100-0x12FF (FUNCTION_*)
         if (firstOpcode > 0x20 && (firstOpcode < 0x100 || firstOpcode > 0x2000)) return false;
 
         return true;

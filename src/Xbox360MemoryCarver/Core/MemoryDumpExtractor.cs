@@ -1,6 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using Xbox360MemoryCarver.Core.Carving;
-using Xbox360MemoryCarver.Core.Extractors;
+using Xbox360MemoryCarver.Core.Formats.Scda;
 using Xbox360MemoryCarver.Core.Minidump;
 
 namespace Xbox360MemoryCarver.Core;
@@ -53,7 +53,7 @@ public static class MemoryDumpExtractor
             .ToHashSet();
 
         // Extract compiled scripts if requested
-        var scriptResult = new ScriptExtractor.ScriptExtractionResult();
+        var scriptResult = new ScdaExtractionResult();
         if (options.ExtractScripts) scriptResult = await ExtractScriptsAsync(filePath, options, progress);
 
         // Return summary
@@ -73,7 +73,7 @@ public static class MemoryDumpExtractor
     /// <summary>
     ///     Extract compiled scripts (SCDA records) from the dump.
     /// </summary>
-    private static async Task<ScriptExtractor.ScriptExtractionResult> ExtractScriptsAsync(
+    private static async Task<ScdaExtractionResult> ExtractScriptsAsync(
         string filePath,
         ExtractionOptions options,
         IProgress<ExtractionProgress>? progress)
@@ -100,7 +100,7 @@ public static class MemoryDumpExtractor
             }))
             : null;
 
-        var result = await ScriptExtractor.ExtractGroupedAsync(dumpData, scriptsDir, stringProgress, options.Verbose);
+        var result = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, stringProgress, options.Verbose);
 
         progress?.Report(new ExtractionProgress
         {
@@ -129,36 +129,24 @@ public static class MemoryDumpExtractor
                                        t.Equals("xex", StringComparison.OrdinalIgnoreCase) ||
                                        t.Contains("module", StringComparison.OrdinalIgnoreCase));
 
-        if (!shouldExtractModules)
-        {
-            return 0;
-        }
+        if (!shouldExtractModules) return 0;
 
         var minidumpInfo = MinidumpParser.Parse(filePath);
         if (!minidumpInfo.IsValid)
         {
-            if (options.Verbose)
-            {
-                Console.WriteLine("[Module] Minidump is not valid");
-            }
+            if (options.Verbose) Console.WriteLine("[Module] Minidump is not valid");
 
             return 0;
         }
 
         if (minidumpInfo.Modules.Count == 0)
         {
-            if (options.Verbose)
-            {
-                Console.WriteLine("[Module] No modules found in minidump");
-            }
+            if (options.Verbose) Console.WriteLine("[Module] No modules found in minidump");
 
             return 0;
         }
 
-        if (options.Verbose)
-        {
-            Console.WriteLine($"[Module] Found {minidumpInfo.Modules.Count} modules in minidump");
-        }
+        if (options.Verbose) Console.WriteLine($"[Module] Found {minidumpInfo.Modules.Count} modules in minidump");
 
         // Create modules output directory matching the MemoryCarver pattern:
         // {output_dir}/{dmp_filename}/modules/
@@ -179,9 +167,7 @@ public static class MemoryDumpExtractor
             if (!fileRange.HasValue || fileRange.Value.size <= 0)
             {
                 if (options.Verbose)
-                {
                     Console.WriteLine($"[Module] Skipping {Path.GetFileName(module.Name)} - not captured in dump");
-                }
 
                 continue;
             }
@@ -207,10 +193,7 @@ public static class MemoryDumpExtractor
                 await File.WriteAllBytesAsync(outputPath, buffer);
                 extractedCount++;
 
-                if (options.Verbose)
-                {
-                    Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
-                }
+                if (options.Verbose) Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
 
                 progress?.Report(new ExtractionProgress
                 {
@@ -221,10 +204,7 @@ public static class MemoryDumpExtractor
             }
             catch (Exception ex)
             {
-                if (options.Verbose)
-                {
-                    Console.WriteLine($"[Module] Failed to extract {fileName}: {ex.Message}");
-                }
+                if (options.Verbose) Console.WriteLine($"[Module] Failed to extract {fileName}: {ex.Message}");
             }
         }
 

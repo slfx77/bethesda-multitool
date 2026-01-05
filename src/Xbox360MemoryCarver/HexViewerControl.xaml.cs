@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.IO.MemoryMappedFiles;
 using Windows.System;
 using Windows.UI;
 using Windows.UI.Core;
@@ -16,31 +14,22 @@ namespace Xbox360MemoryCarver.App;
 
 /// <summary>
 ///     High-performance hex viewer with virtual scrolling.
-///     Only renders visible rows - true lazy loading.
 /// </summary>
 public sealed partial class HexViewerControl : UserControl, IDisposable
 {
     private const int BytesPerRow = 16;
 
-    private readonly List<FileRegion> _fileRegions = [];
-    private MemoryMappedViewAccessor? _accessor;
-    private AnalysisResult? _analysisResult;
+    private readonly HexDataManager _dataManager = new();
     private long _currentTopRow;
     private bool _disposed;
-    private string? _filePath;
-    private long _fileSize;
+    private bool _hasData;
     private double _lastMinimapContainerHeight;
     private HexMinimapRenderer? _minimapRenderer;
-    private MemoryMappedFile? _mmf;
     private double _rowHeight;
     private HexRowRenderer? _rowRenderer;
+    private HexSearcher? _searcher;
     private long _totalRows;
     private int _visibleRows;
-
-    // Search state
-    private List<long> _searchResults = [];
-    private int _currentSearchIndex = -1;
-    private byte[]? _lastSearchPattern;
 
     public HexViewerControl()
     {
@@ -48,10 +37,8 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         BuildLegend();
-
-        HexDisplayArea.AddHandler(PointerWheelChangedEvent,
-            new PointerEventHandler(HexDisplayArea_PointerWheelChanged), true);
-
+        HexDisplayArea.AddHandler(PointerWheelChangedEvent, new PointerEventHandler(HexDisplayArea_PointerWheelChanged),
+            true);
         KeyDown += HexViewerControl_KeyDown;
         PreviewKeyDown += HexViewerControl_PreviewKeyDown;
         IsTabStop = true;
@@ -63,7 +50,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        CleanupMemoryMapping();
+        _dataManager.Dispose();
     }
 
     private void BuildLegend()
@@ -91,20 +78,16 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        _minimapRenderer =
-            new HexMinimapRenderer(MinimapCanvas, ViewportIndicator, MinimapScrollViewer, FindRegionForOffset);
-        _rowRenderer = new HexRowRenderer(OffsetTextBlock, HexTextBlock, AsciiTextBlock, FindRegionForOffset);
-
+        _minimapRenderer = new HexMinimapRenderer(MinimapCanvas, ViewportIndicator, MinimapScrollViewer,
+            _dataManager.FindRegionForOffset);
+        _rowRenderer =
+            new HexRowRenderer(OffsetTextBlock, HexTextBlock, AsciiTextBlock, _dataManager.FindRegionForOffset);
+        _searcher = new HexSearcher(() => _dataManager.Accessor, () => _dataManager.FileSize);
         DispatcherQueue.TryEnqueue(() =>
         {
             CalculateRowHeight();
             UpdateVisibleRowCount();
-            if (_analysisResult != null)
-            {
-                RenderVisibleRows();
-                RenderMinimap();
-                UpdateMinimapViewport();
-            }
+            if (_hasData) RenderAll();
         });
     }
 
@@ -124,7 +107,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         if (Math.Abs(e.NewSize.Height - e.PreviousSize.Height) > 1)
         {
             UpdateVisibleRowCount();
-            if (_analysisResult != null) RenderVisibleRows();
+            if (_hasData) RenderVisibleRows();
         }
     }
 
@@ -137,23 +120,11 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         VirtualScrollBar.StepFrequency = 1;
     }
 
-    private void CleanupMemoryMapping()
-    {
-        _accessor?.Dispose();
-        _accessor = null;
-        _mmf?.Dispose();
-        _mmf = null;
-    }
-
     public void Clear()
     {
-        CleanupMemoryMapping();
-        _filePath = null;
-        _analysisResult = null;
-        _fileSize = 0;
-        _fileRegions.Clear();
-        _currentTopRow = 0;
-        _totalRows = 0;
+        _dataManager.Clear();
+        _hasData = false;
+        _currentTopRow = _totalRows = 0;
         _rowRenderer?.Clear();
         MinimapCanvas.Children.Clear();
         ViewportIndicator.Visibility = Visibility.Collapsed;
@@ -162,7 +133,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     public void NavigateToOffset(long offset)
     {
-        if (_fileSize == 0 || _totalRows == 0) return;
+        if (_dataManager.FileSize == 0 || _totalRows == 0) return;
         var targetRow = Math.Clamp(offset / BytesPerRow, 0, Math.Max(0, _totalRows - _visibleRows));
         _currentTopRow = targetRow;
         VirtualScrollBar.Value = targetRow;
@@ -172,66 +143,17 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     public void LoadData(string filePath, AnalysisResult analysisResult)
     {
-        CleanupMemoryMapping();
-        _filePath = filePath;
-        _analysisResult = analysisResult;
-        _fileSize = new FileInfo(filePath).Length;
-        BuildFileRegions();
-
-        try
-        {
-            _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            _accessor = _mmf.CreateViewAccessor(0, _fileSize, MemoryMappedFileAccess.Read);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[HexViewer] Memory mapping failed: {ex.Message}");
-        }
-
-        _totalRows = (_fileSize + BytesPerRow - 1) / BytesPerRow;
+        _dataManager.Load(filePath, analysisResult);
+        _hasData = true;
+        _totalRows = (_dataManager.FileSize + BytesPerRow - 1) / BytesPerRow;
         _currentTopRow = 0;
         if (_rowHeight <= 0) CalculateRowHeight();
         UpdateVisibleRowCount();
         VirtualScrollBar.Minimum = 0;
         VirtualScrollBar.Maximum = Math.Max(0, _totalRows - _visibleRows);
         VirtualScrollBar.Value = 0;
-        RenderVisibleRows();
-        RenderMinimap();
+        RenderAll();
         DispatcherQueue.TryEnqueue(UpdateMinimapViewport);
-    }
-
-    private void BuildFileRegions()
-    {
-        _fileRegions.Clear();
-        if (_analysisResult == null) return;
-
-        var sortedFiles = _analysisResult.CarvedFiles.Where(f => f.Length > 0)
-            .OrderBy(f => f.Offset).ThenBy(f => FileTypeColors.GetPriority(f.FileType)).ToList();
-
-        var occupiedRanges = new List<(long Start, long End, int Priority)>();
-        foreach (var file in sortedFiles)
-        {
-            var start = file.Offset;
-            var end = file.Offset + file.Length;
-            var priority = FileTypeColors.GetPriority(file.FileType);
-
-            if (occupiedRanges.Any(r => start < r.End && end > r.Start && r.Priority <= priority))
-            {
-                continue;
-            }
-
-            _fileRegions.Add(new FileRegion
-            {
-                Start = start,
-                End = end,
-                TypeName = file.FileType,
-                Color = FileTypeColors.GetColor(file.FileType)
-            });
-            occupiedRanges.Add((start, end, priority));
-        }
-
-        // Sort regions by start offset for binary search
-        _fileRegions.Sort((a, b) => a.Start.CompareTo(b.Start));
     }
 
     private void VirtualScrollBar_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -245,17 +167,67 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     private void UpdatePositionIndicator()
     {
         var offset = _currentTopRow * BytesPerRow;
-        var endOffset = Math.Min(offset + _visibleRows * BytesPerRow, _fileSize);
+        var endOffset = Math.Min(offset + _visibleRows * BytesPerRow, _dataManager.FileSize);
         PositionIndicator.Text = $"Offset: 0x{offset:X8} - 0x{endOffset:X8} ({offset:N0} - {endOffset:N0})";
     }
+
+    private void RenderAll()
+    {
+        RenderVisibleRows();
+        RenderMinimap();
+        UpdateMinimapViewport();
+    }
+
+    private void RenderVisibleRows()
+    {
+        if (_dataManager.FileSize == 0 || _rowRenderer == null) return;
+        var endRow = Math.Min(_currentTopRow + _visibleRows, _totalRows);
+        var startOffset = _currentTopRow * BytesPerRow;
+        var bytesToRead = (int)(Math.Min(endRow * BytesPerRow, _dataManager.FileSize) - startOffset);
+        if (bytesToRead <= 0)
+        {
+            _rowRenderer.Clear();
+            return;
+        }
+
+        var buffer = new byte[bytesToRead];
+        _dataManager.ReadBytes(startOffset, buffer);
+        _rowRenderer.RenderRows(buffer, _currentTopRow, endRow, startOffset, _dataManager.FileSize);
+    }
+
+    private void ScrollByRows(long delta)
+    {
+        var newVal = Math.Clamp(_currentTopRow + delta, 0, (long)VirtualScrollBar.Maximum);
+        if (newVal != _currentTopRow)
+        {
+            _currentTopRow = newVal;
+            VirtualScrollBar.Value = newVal;
+            RenderVisibleRows();
+            UpdateMinimapViewport();
+            UpdatePositionIndicator();
+        }
+    }
+
+    private void ScrollToRow(long row)
+    {
+        var newVal = Math.Clamp(row, 0, (long)VirtualScrollBar.Maximum);
+        if (newVal != _currentTopRow)
+        {
+            _currentTopRow = newVal;
+            VirtualScrollBar.Value = newVal;
+            RenderVisibleRows();
+            UpdateMinimapViewport();
+            UpdatePositionIndicator();
+        }
+    }
+
+    #region Input Handling
 
     private void HexDisplayArea_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
         var isCtrl = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
             .HasFlag(CoreVirtualKeyStates.Down);
-        var delta = e.GetCurrentPoint(HexDisplayArea).Properties.MouseWheelDelta;
-        var scrollAmount = isCtrl ? 10 : 1;
-        ScrollByRows(delta > 0 ? -scrollAmount : scrollAmount);
+        ScrollByRows((e.GetCurrentPoint(HexDisplayArea).Properties.MouseWheelDelta > 0 ? -1 : 1) * (isCtrl ? 10 : 1));
         e.Handled = true;
     }
 
@@ -263,10 +235,6 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     {
         var isCtrl = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control)
             .HasFlag(CoreVirtualKeyStates.Down);
-        var isShift = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
-            .HasFlag(CoreVirtualKeyStates.Down);
-
-        // Ctrl+F - Open search
         if (isCtrl && e.Key == VirtualKey.F)
         {
             OpenSearch();
@@ -274,18 +242,15 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
             return;
         }
 
-        // F3 / Shift+F3 - Find next/previous
         if (e.Key == VirtualKey.F3)
         {
-            if (isShift)
+            if (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(CoreVirtualKeyStates.Down))
                 FindPrevious();
-            else
-                FindNext();
+            else FindNext();
             e.Handled = true;
             return;
         }
 
-        // Escape - Close search
         if (e.Key == VirtualKey.Escape && SearchPanel.Visibility == Visibility.Visible)
         {
             CloseSearch();
@@ -294,39 +259,23 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
 
         if (e.Key is VirtualKey.PageUp or VirtualKey.PageDown or VirtualKey.Home or VirtualKey.End or VirtualKey.Up
-            or VirtualKey.Down)
-            HexViewerControl_KeyDown(sender, e);
+            or VirtualKey.Down) HexViewerControl_KeyDown(sender, e);
     }
 
     private void HexViewerControl_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         switch (e.Key)
         {
-            case VirtualKey.PageUp:
-                ScrollByRows(-_visibleRows);
-                e.Handled = true;
-                break;
-            case VirtualKey.PageDown:
-                ScrollByRows(_visibleRows);
-                e.Handled = true;
-                break;
-            case VirtualKey.Home:
-                ScrollToRow(0);
-                e.Handled = true;
-                break;
-            case VirtualKey.End:
-                ScrollToRow(Math.Max(0, _totalRows - _visibleRows));
-                e.Handled = true;
-                break;
-            case VirtualKey.Up:
-                ScrollByRows(-1);
-                e.Handled = true;
-                break;
-            case VirtualKey.Down:
-                ScrollByRows(1);
-                e.Handled = true;
-                break;
+            case VirtualKey.PageUp: ScrollByRows(-_visibleRows); break;
+            case VirtualKey.PageDown: ScrollByRows(_visibleRows); break;
+            case VirtualKey.Home: ScrollToRow(0); break;
+            case VirtualKey.End: ScrollToRow(Math.Max(0, _totalRows - _visibleRows)); break;
+            case VirtualKey.Up: ScrollByRows(-1); break;
+            case VirtualKey.Down: ScrollByRows(1); break;
+            default: return;
         }
+
+        e.Handled = true;
     }
 
     private void CopyHexMenuItem_Click(object sender, RoutedEventArgs e) => CopySelectedText(HexTextBlock);
@@ -343,86 +292,14 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
     }
 
-    private static void CopySelectedText(TextBlock textBlock)
+    private static void CopySelectedText(TextBlock tb)
     {
-        var text = textBlock.SelectedText;
+        var text = tb.SelectedText;
         if (!string.IsNullOrEmpty(text))
-            ClipboardHelper.CopyText(textBlock.Name.Contains("Ascii")
-                ? text.Replace("\n", "").Replace("\r", "")
-                : text);
+            ClipboardHelper.CopyText(tb.Name.Contains("Ascii") ? text.Replace("\n", "").Replace("\r", "") : text);
     }
 
-    private void ScrollByRows(long delta)
-    {
-        var newValue = Math.Clamp(_currentTopRow + delta, 0, (long)VirtualScrollBar.Maximum);
-        if (newValue != _currentTopRow)
-        {
-            _currentTopRow = newValue;
-            VirtualScrollBar.Value = newValue;
-            RenderVisibleRows();
-            UpdateMinimapViewport();
-            UpdatePositionIndicator();
-        }
-    }
-
-    private void ScrollToRow(long row)
-    {
-        var newValue = Math.Clamp(row, 0, (long)VirtualScrollBar.Maximum);
-        if (newValue != _currentTopRow)
-        {
-            _currentTopRow = newValue;
-            VirtualScrollBar.Value = newValue;
-            RenderVisibleRows();
-            UpdateMinimapViewport();
-            UpdatePositionIndicator();
-        }
-    }
-
-    private void RenderVisibleRows()
-    {
-        if (_fileSize == 0 || _filePath == null || _rowRenderer == null) return;
-
-        var endRow = Math.Min(_currentTopRow + _visibleRows, _totalRows);
-        var startOffset = _currentTopRow * BytesPerRow;
-        var endOffset = Math.Min(endRow * BytesPerRow, _fileSize);
-        var bytesToRead = (int)(endOffset - startOffset);
-        if (bytesToRead <= 0)
-        {
-            _rowRenderer.Clear();
-            return;
-        }
-
-        var buffer = new byte[bytesToRead];
-        ReadBytes(startOffset, buffer);
-        _rowRenderer.RenderRows(buffer, _currentTopRow, endRow, startOffset, _fileSize);
-    }
-
-    private void ReadBytes(long offset, byte[] buffer)
-    {
-        if (_accessor != null) _accessor.ReadArray(offset, buffer, 0, buffer.Length);
-        else if (_filePath != null)
-        {
-            using var fs = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            fs.Seek(offset, SeekOrigin.Begin);
-            fs.ReadExactly(buffer);
-        }
-    }
-
-    private FileRegion? FindRegionForOffset(long offset)
-    {
-        if (_fileRegions.Count == 0) return null;
-        int left = 0, right = _fileRegions.Count - 1;
-        while (left <= right)
-        {
-            var mid = left + (right - left) / 2;
-            var region = _fileRegions[mid];
-            if (offset >= region.Start && offset < region.End) return region;
-            if (region.Start > offset) right = mid - 1;
-            else left = mid + 1;
-        }
-
-        return null;
-    }
+    #endregion
 
     #region Minimap
 
@@ -431,11 +308,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         if (Math.Abs(e.NewSize.Height - _lastMinimapContainerHeight) > 1)
         {
             _lastMinimapContainerHeight = e.NewSize.Height;
-            if (_analysisResult != null)
-            {
-                RenderMinimap();
-                UpdateMinimapViewport();
-            }
+            if (_hasData) RenderAll();
         }
     }
 
@@ -444,25 +317,21 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         if (_minimapRenderer != null)
         {
             _minimapRenderer.Zoom = e.NewValue;
-            if (_analysisResult != null)
-            {
-                RenderMinimap();
-                UpdateMinimapViewport();
-            }
+            if (_hasData) RenderAll();
         }
     }
 
-    private void RenderMinimap() =>
-        _minimapRenderer?.Render(_fileSize, MinimapContainer.ActualWidth - 8, MinimapContainer.ActualHeight - 8);
+    private void RenderMinimap() => _minimapRenderer?.Render(_dataManager.FileSize, MinimapContainer.ActualWidth - 8,
+        MinimapContainer.ActualHeight - 8);
 
-    private void UpdateMinimapViewport() =>
-        _minimapRenderer?.UpdateViewport(_fileSize, _totalRows, _currentTopRow, _visibleRows, BytesPerRow);
+    private void UpdateMinimapViewport() => _minimapRenderer?.UpdateViewport(_dataManager.FileSize, _totalRows,
+        _currentTopRow, _visibleRows, BytesPerRow);
 
     private void Minimap_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        var clickY = e.GetCurrentPoint(MinimapCanvas).Position.Y;
-        _minimapRenderer?.HandlePointerPressed(e, clickY);
-        NavigateToMinimapPosition(clickY);
+        var y = e.GetCurrentPoint(MinimapCanvas).Position.Y;
+        _minimapRenderer?.HandlePointerPressed(e, y);
+        NavigateToMinimapPosition(y);
     }
 
     private void Minimap_PointerMoved(object sender, PointerRoutedEventArgs e)
@@ -476,11 +345,11 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void NavigateToMinimapPosition(double y)
     {
-        var targetRow = _minimapRenderer?.GetRowFromPositionWithOffset(y, _totalRows, _visibleRows);
-        if (targetRow.HasValue)
+        var row = _minimapRenderer?.GetRowFromPositionWithOffset(y, _totalRows, _visibleRows);
+        if (row.HasValue)
         {
-            _currentTopRow = targetRow.Value;
-            VirtualScrollBar.Value = targetRow.Value;
+            _currentTopRow = row.Value;
+            VirtualScrollBar.Value = row.Value;
             RenderVisibleRows();
             UpdateMinimapViewport();
         }
@@ -492,20 +361,14 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void SearchToggleButton_Click(object sender, RoutedEventArgs e)
     {
-        if (SearchPanel.Visibility == Visibility.Collapsed)
-        {
-            OpenSearch();
-        }
-        else
-        {
-            CloseSearch();
-        }
+        if (SearchPanel.Visibility == Visibility.Collapsed) OpenSearch();
+        else CloseSearch();
     }
 
     private void OpenSearch()
     {
         SearchPanel.Visibility = Visibility.Visible;
-        OffsetPanel.CornerRadius = new CornerRadius(0, 0, 4, 4); // Only bottom rounded when search shown
+        OffsetPanel.CornerRadius = new CornerRadius(0, 0, 4, 4);
         SearchToggleButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x40, 0x88, 0x88, 0x88));
         SearchTextBox.Focus(FocusState.Programmatic);
         SearchTextBox.SelectAll();
@@ -514,19 +377,17 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     private void CloseSearch()
     {
         SearchPanel.Visibility = Visibility.Collapsed;
-        OffsetPanel.CornerRadius = new CornerRadius(4); // All corners rounded when search hidden
+        OffsetPanel.CornerRadius = new CornerRadius(4);
         SearchToggleButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x00, 0x00, 0x00, 0x00));
-        _searchResults.Clear();
-        _currentSearchIndex = -1;
+        _searcher?.Clear();
         SearchResultsText.Text = "";
-
-        // Clear highlight and re-render
         if (_rowRenderer != null)
         {
             _rowRenderer.HighlightStart = -1;
             _rowRenderer.HighlightEnd = -1;
             RenderVisibleRows();
         }
+
         Focus(FocusState.Programmatic);
     }
 
@@ -536,10 +397,8 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         {
             var isShift = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
                 .HasFlag(CoreVirtualKeyStates.Down);
-            if (isShift)
-                FindPrevious();
-            else
-                PerformSearch();
+            if (isShift) FindPrevious();
+            else PerformSearch();
             e.Handled = true;
         }
         else if (e.Key == VirtualKey.Escape)
@@ -551,229 +410,59 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     private void SearchPrevButton_Click(object sender, RoutedEventArgs e) => FindPrevious();
     private void SearchNextButton_Click(object sender, RoutedEventArgs e) => FindNext();
-
     private void SearchButton_Click(object sender, RoutedEventArgs e) => PerformSearch();
 
     private void PerformSearch()
     {
-        var searchText = SearchTextBox.Text;
-        if (string.IsNullOrEmpty(searchText) || _fileSize == 0 || _accessor == null)
-        {
-            SearchResultsText.Text = "No results";
-            return;
-        }
-
-        var isHexMode = SearchModeHex.IsChecked == true;
-        var isCaseSensitive = SearchCaseSensitive.IsChecked == true;
-        byte[]? pattern;
-
-        if (isHexMode || searchText.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            pattern = ParseHexPattern(searchText);
-            if (pattern == null || pattern.Length == 0)
-            {
-                SearchResultsText.Text = "Invalid hex";
-                return;
-            }
-            // Hex search is always "case sensitive" (exact bytes)
-            _lastSearchPattern = pattern;
-            _searchResults = SearchForPattern(pattern);
-        }
-        else
-        {
-            // Text search - handle case sensitivity
-            if (isCaseSensitive)
-            {
-                pattern = System.Text.Encoding.ASCII.GetBytes(searchText);
-                _searchResults = SearchForPattern(pattern);
-            }
-            else
-            {
-                // Case-insensitive: search for both upper and lower case variations
-                _searchResults = SearchForTextCaseInsensitive(searchText);
-            }
-            _lastSearchPattern = System.Text.Encoding.ASCII.GetBytes(searchText);
-        }
-
-        _currentSearchIndex = _searchResults.Count > 0 ? 0 : -1;
-
-        UpdateSearchResultsDisplay();
-
-        if (_currentSearchIndex >= 0)
-        {
-            NavigateToSearchResult(_searchResults[_currentSearchIndex]);
-        }
-    }
-
-    private static byte[]? ParseHexPattern(string input)
-    {
-        // Remove "0x" prefix and whitespace
-        var hex = input.Replace("0x", "", StringComparison.OrdinalIgnoreCase)
-            .Replace(" ", "")
-            .Replace("-", "");
-
-        if (hex.Length % 2 != 0 || hex.Length == 0)
-            return null;
-
-        try
-        {
-            var bytes = new byte[hex.Length / 2];
-            for (int i = 0; i < bytes.Length; i++)
-            {
-                bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
-            }
-            return bytes;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private List<long> SearchForPattern(byte[] pattern)
-    {
-        var results = new List<long>();
-        if (_accessor == null || pattern.Length == 0)
-            return results;
-
-        const int chunkSize = 64 * 1024 * 1024; // 64 MB chunks
-        const int maxResults = 10000;
-
-        var buffer = new byte[chunkSize + pattern.Length - 1];
-        long offset = 0;
-
-        while (offset < _fileSize && results.Count < maxResults)
-        {
-            var toRead = (int)Math.Min(buffer.Length, _fileSize - offset);
-            _accessor.ReadArray(offset, buffer, 0, toRead);
-
-            // Search for pattern in buffer using simple byte matching
-            var searchEnd = toRead - pattern.Length + 1;
-            for (int i = 0; i < searchEnd && results.Count < maxResults; i++)
-            {
-                bool match = true;
-                for (int j = 0; j < pattern.Length; j++)
-                {
-                    if (buffer[i + j] != pattern[j])
-                    {
-                        match = false;
-                        break;
-                    }
-                }
-
-                if (match)
-                {
-                    results.Add(offset + i);
-                }
-            }
-
-            // Move to next chunk, overlapping by pattern length - 1 to catch patterns spanning chunks
-            offset += chunkSize;
-        }
-
-        return results;
-    }
-
-    private List<long> SearchForTextCaseInsensitive(string searchText)
-    {
-        var results = new List<long>();
-        if (_accessor == null || searchText.Length == 0)
-            return results;
-
-        const int chunkSize = 64 * 1024 * 1024; // 64 MB chunks
-        const int maxResults = 10000;
-
-        var upperPattern = System.Text.Encoding.ASCII.GetBytes(searchText.ToUpperInvariant());
-        var lowerPattern = System.Text.Encoding.ASCII.GetBytes(searchText.ToLowerInvariant());
-        var patternLength = upperPattern.Length;
-
-        var buffer = new byte[chunkSize + patternLength - 1];
-        long offset = 0;
-
-        while (offset < _fileSize && results.Count < maxResults)
-        {
-            var toRead = (int)Math.Min(buffer.Length, _fileSize - offset);
-            _accessor.ReadArray(offset, buffer, 0, toRead);
-
-            var searchEnd = toRead - patternLength + 1;
-            for (int i = 0; i < searchEnd && results.Count < maxResults; i++)
-            {
-                bool match = true;
-                for (int j = 0; j < patternLength; j++)
-                {
-                    var b = buffer[i + j];
-                    // Check if byte matches either upper or lower case
-                    if (b != upperPattern[j] && b != lowerPattern[j])
-                    {
-                        match = false;
-                        break;
-                    }
-                }
-
-                if (match)
-                {
-                    results.Add(offset + i);
-                }
-            }
-
-            offset += chunkSize;
-        }
-
-        return results;
+        if (_searcher == null) return;
+        var result = _searcher.Search(SearchTextBox.Text, SearchModeHex.IsChecked == true,
+            SearchCaseSensitive.IsChecked == true);
+        SearchResultsText.Text = result.IsInvalidHex ? "Invalid hex" : _searcher.GetResultsText();
+        if (result.HasResults && result.MatchOffset.HasValue) NavigateToSearchResult(result.MatchOffset.Value);
     }
 
     private void FindNext()
     {
-        if (_searchResults.Count == 0)
+        if (_searcher == null) return;
+        if (_searcher.SearchResults.Count == 0 && _searcher.LastSearchPattern != null)
         {
-            if (_lastSearchPattern != null)
-            {
-                PerformSearch();
-            }
+            PerformSearch();
             return;
         }
 
-        _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.Count;
-        UpdateSearchResultsDisplay();
-        NavigateToSearchResult(_searchResults[_currentSearchIndex]);
+        var offset = _searcher.FindNext();
+        if (offset.HasValue)
+        {
+            SearchResultsText.Text = _searcher.GetResultsText();
+            NavigateToSearchResult(offset.Value);
+        }
     }
 
     private void FindPrevious()
     {
-        if (_searchResults.Count == 0)
+        if (_searcher == null) return;
+        if (_searcher.SearchResults.Count == 0 && _searcher.LastSearchPattern != null)
         {
-            if (_lastSearchPattern != null)
-            {
-                PerformSearch();
-            }
+            PerformSearch();
             return;
         }
 
-        _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
-        UpdateSearchResultsDisplay();
-        NavigateToSearchResult(_searchResults[_currentSearchIndex]);
-    }
-
-    private void UpdateSearchResultsDisplay()
-    {
-        if (_searchResults.Count == 0)
+        var offset = _searcher.FindPrevious();
+        if (offset.HasValue)
         {
-            SearchResultsText.Text = "No results";
-        }
-        else
-        {
-            SearchResultsText.Text = $"{_currentSearchIndex + 1} of {_searchResults.Count}";
+            SearchResultsText.Text = _searcher.GetResultsText();
+            NavigateToSearchResult(offset.Value);
         }
     }
 
     private void NavigateToSearchResult(long offset)
     {
-        // Set highlight range for the search match
-        if (_rowRenderer != null && _lastSearchPattern != null)
+        if (_rowRenderer != null && _searcher?.LastSearchPattern != null)
         {
             _rowRenderer.HighlightStart = offset;
-            _rowRenderer.HighlightEnd = offset + _lastSearchPattern.Length;
+            _rowRenderer.HighlightEnd = offset + _searcher.LastSearchPattern.Length;
         }
+
         NavigateToOffset(offset);
     }
 

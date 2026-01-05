@@ -61,6 +61,7 @@
     <Compile Remove="HexRowRenderer.cs" />
     <Compile Remove="CarvedFileEntry.cs" />
     <Compile Remove="FileTypeMapping.cs" />
+    <Compile Remove="App\**\*.cs" />
     <!-- XAML files -->
     <Page Remove="*.xaml" />
     <None Remove="app.manifest" />
