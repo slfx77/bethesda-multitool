@@ -1,15 +1,22 @@
+using System.Diagnostics;
 using System.Text;
+using Xbox360MemoryCarver.Core.Converters;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Xma;
 
 /// <summary>
 ///     Xbox Media Audio (XMA) format module.
-///     Handles parsing, repair, and XMA1→XMA2 conversion.
+///     Handles parsing, repair, XMA1→XMA2 conversion, and XMA→WAV decoding.
 /// </summary>
-public sealed class XmaFormat : FileFormatBase, IFileRepairer
+public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
 {
     private static readonly ushort[] XmaFormatCodes = [0x0165, 0x0166];
+    private int _convertedCount;
+    private int _failedCount;
+    private bool _initialized;
+    private bool _verbose;
+    private string? _ffmpegPath;
 
     public override string FormatId => "xma";
     public override string DisplayName => "XMA";
@@ -63,13 +70,21 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer
     public override string GetDisplayDescription(string signatureId,
         IReadOnlyDictionary<string, object>? metadata = null)
     {
+        var baseName = "Xbox Media Audio";
+
         if (metadata?.TryGetValue("embeddedPath", out var path) == true && path is string pathStr)
         {
             var fileName = Path.GetFileName(pathStr);
-            if (!string.IsNullOrEmpty(fileName)) return $"XMA ({fileName})";
+            if (!string.IsNullOrEmpty(fileName)) baseName = $"XMA ({fileName})";
         }
 
-        return "Xbox Media Audio (RIFF/XMA)";
+        // Add quality indicator based on usable percentage (audio before first corruption)
+        if (metadata?.TryGetValue("usablePercent", out var usable) == true && usable is int usablePct && usablePct < 80)
+        {
+            return $"{baseName} [~{usablePct}% playable]";
+        }
+
+        return baseName;
     }
 
     #region IFileRepairer
@@ -78,6 +93,8 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer
     {
         if (metadata == null) return false;
 
+        // Don't repair corrupted files - we'll convert them to WAV instead
+        // which preserves all recoverable audio
         var needsRepair = metadata.TryGetValue("needsRepair", out var repair) && repair is true;
         var needsSeek = metadata.TryGetValue("hasSeekChunk", out var hasSeek) && hasSeek is false;
         var isXma1 = metadata.TryGetValue("formatTag", out var fmt) && fmt is ushort tag && tag == 0x0165;
@@ -91,12 +108,13 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer
         var needsSeek = metadata?.TryGetValue("hasSeekChunk", out var hasSeek) == true && hasSeek is false;
         var isXma1 = metadata?.TryGetValue("formatTag", out var fmt) == true && fmt is ushort tag && tag == 0x0165;
 
+        // Don't do truncation repair here - corrupted files will be converted to WAV
         if (!needsRepair && !needsSeek && !isXma1) return data;
 
         try
         {
-            if (needsRepair) return RepairCorruptedXma(data);
-
+            // Only do structural repairs (XMA1→XMA2, add seek table)
+            // Corrupted files are handled by WAV conversion which preserves all recoverable audio
             if (isXma1 || needsSeek) return AddSeekTable(data, isXma1);
 
             return data;
@@ -106,6 +124,207 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer
             Console.WriteLine($"[XmaFormat] Repair failed: {ex.Message}");
             return data;
         }
+    }
+
+    #endregion
+
+    #region IFileConverter - XMA to WAV decoding
+
+    public string TargetExtension => ".wav";
+    public string TargetFolder => "audio_wav";
+    public bool IsInitialized => _initialized;
+    public int ConvertedCount => _convertedCount;
+    public int FailedCount => _failedCount;
+
+    public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
+    {
+        _verbose = verbose;
+
+        // Look for FFmpeg in PATH or common locations
+        _ffmpegPath = FindFfmpeg();
+
+        if (_ffmpegPath == null)
+        {
+            if (verbose)
+            {
+                Console.WriteLine("[XmaFormat] FFmpeg not found - XMA to WAV conversion disabled");
+                Console.WriteLine("[XmaFormat] Install FFmpeg and add to PATH for XMA→WAV conversion");
+            }
+            return false;
+        }
+
+        if (verbose)
+        {
+            Console.WriteLine($"[XmaFormat] FFmpeg found at: {_ffmpegPath}");
+        }
+
+        _initialized = true;
+        return true;
+    }
+
+    public bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata)
+    {
+        // Convert corrupted files to WAV - this extracts all recoverable audio
+        if (metadata?.TryGetValue("likelyCorrupted", out var corrupt) == true && corrupt is true)
+        {
+            return true;
+        }
+
+        // Also convert any XMA that user wants as WAV
+        return metadata?.TryGetValue("convertToWav", out var convert) == true && convert is true;
+    }
+
+    public async Task<DdxConversionResult> ConvertAsync(byte[] data,
+        IReadOnlyDictionary<string, object>? metadata = null)
+    {
+        if (!_initialized || _ffmpegPath == null)
+        {
+            return new DdxConversionResult { Success = false, Notes = "FFmpeg not available" };
+        }
+
+        try
+        {
+            var result = await DecodeXmaToWavAsync(data);
+
+            if (result.Success)
+            {
+                Interlocked.Increment(ref _convertedCount);
+            }
+            else
+            {
+                Interlocked.Increment(ref _failedCount);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Increment(ref _failedCount);
+            return new DdxConversionResult { Success = false, Notes = $"Exception: {ex.Message}" };
+        }
+    }
+
+    /// <summary>
+    ///     Decodes XMA audio to WAV using FFmpeg.
+    ///     Extracts whatever audio is recoverable before corruption.
+    /// </summary>
+    private async Task<DdxConversionResult> DecodeXmaToWavAsync(byte[] xmaData)
+    {
+        // Create temp files for input and output
+        var tempDir = Path.GetTempPath();
+        var inputPath = Path.Combine(tempDir, $"xma_decode_{Guid.NewGuid():N}.xma");
+        var outputPath = Path.Combine(tempDir, $"xma_decode_{Guid.NewGuid():N}.wav");
+
+        try
+        {
+            // Write XMA data to temp file
+            await File.WriteAllBytesAsync(inputPath, xmaData);
+
+            // Run FFmpeg to decode XMA to WAV
+            // -y: overwrite output
+            // -hide_banner: reduce noise
+            // -loglevel error: only show errors
+            // -i: input file
+            // -c:a pcm_s16le: output as 16-bit PCM WAV
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _ffmpegPath,
+                Arguments = $"-y -hide_banner -loglevel error -i \"{inputPath}\" -c:a pcm_s16le \"{outputPath}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using var process = new Process { StartInfo = startInfo };
+            process.Start();
+
+            var stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0 || !File.Exists(outputPath))
+            {
+                // FFmpeg failed completely
+                if (_verbose && !string.IsNullOrEmpty(stderr))
+                {
+                    Console.WriteLine($"[XmaFormat] FFmpeg error: {stderr.Trim()}");
+                }
+                return new DdxConversionResult { Success = false, Notes = "FFmpeg decode failed" };
+            }
+
+            // Read the output WAV
+            var wavData = await File.ReadAllBytesAsync(outputPath);
+
+            // Check if we got any audio (WAV header is 44 bytes minimum)
+            if (wavData.Length <= 44)
+            {
+                return new DdxConversionResult { Success = false, Notes = "No audio decoded" };
+            }
+
+            if (_verbose)
+            {
+                var duration = EstimateWavDuration(wavData);
+                Console.WriteLine($"[XmaFormat] Decoded {xmaData.Length} bytes XMA → {wavData.Length} bytes WAV ({duration:F2}s)");
+            }
+
+            return new DdxConversionResult
+            {
+                Success = true,
+                DdsData = wavData, // Reusing DdsData field for WAV output
+                Notes = "Decoded to WAV"
+            };
+        }
+        finally
+        {
+            // Clean up temp files - ignore deletion failures (file may be locked or already deleted)
+            try { if (File.Exists(inputPath)) File.Delete(inputPath); } catch { /* Cleanup failures are non-critical */ }
+            try { if (File.Exists(outputPath)) File.Delete(outputPath); } catch { /* Cleanup failures are non-critical */ }
+        }
+    }
+
+    private static string? FindFfmpeg()
+    {
+        // Check if ffmpeg is in PATH
+        var pathDirs = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
+
+        foreach (var dir in pathDirs)
+        {
+            var ffmpegPath = Path.Combine(dir, "ffmpeg.exe");
+            if (File.Exists(ffmpegPath)) return ffmpegPath;
+
+            // Also check without .exe for cross-platform
+            ffmpegPath = Path.Combine(dir, "ffmpeg");
+            if (File.Exists(ffmpegPath)) return ffmpegPath;
+        }
+
+        // Check common Windows locations using environment-based paths where possible
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var systemDrive = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:";
+
+        var commonPaths = new[]
+        {
+            Path.Combine(systemDrive, "ffmpeg", "bin", "ffmpeg.exe"),
+            Path.Combine(programFiles, "ffmpeg", "bin", "ffmpeg.exe"),
+            Path.Combine(programFilesX86, "ffmpeg", "bin", "ffmpeg.exe"),
+            Path.Combine(localAppData, "ffmpeg", "bin", "ffmpeg.exe")
+        };
+
+        return commonPaths.FirstOrDefault(File.Exists);
+    }
+
+    private static double EstimateWavDuration(byte[] wavData)
+    {
+        if (wavData.Length < 44) return 0;
+
+        // WAV header: bytes 28-31 = byte rate
+        var byteRate = BitConverter.ToInt32(wavData, 28);
+        if (byteRate <= 0) return 0;
+
+        // Data size is file size minus header (approximately)
+        var dataSize = wavData.Length - 44;
+        return (double)dataSize / byteRate;
     }
 
     #endregion
@@ -205,11 +424,18 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer
             actualSize = boundarySize;
         }
 
+        // Estimate data quality by checking for corruption patterns
+        var (totalQuality, usablePercent) = dataChunkOffset.HasValue && dataChunkSize.HasValue
+            ? EstimateDataQuality(data, dataChunkOffset.Value + 8, dataChunkSize.Value)
+            : (100, 100);
+
         var metadata = new Dictionary<string, object>
         {
             ["isXma"] = true,
             ["formatTag"] = formatTag.Value,
-            ["hasSeekChunk"] = hasSeekChunk
+            ["hasSeekChunk"] = hasSeekChunk,
+            ["qualityEstimate"] = totalQuality,
+            ["usablePercent"] = usablePercent
         };
 
         if (embeddedPath != null)
@@ -224,6 +450,12 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer
             metadata["reportedSize"] = reportedSize;
         }
 
+        // Flag potentially corrupted files (low usable audio)
+        if (usablePercent < 50)
+        {
+            metadata["likelyCorrupted"] = true;
+        }
+
         string? fileName = null;
         if (metadata.TryGetValue("safeName", out var safeName) && safeName is string safeNameStr)
             fileName = safeNameStr + ".xma";
@@ -235,6 +467,100 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer
             FileName = fileName,
             Metadata = metadata
         };
+    }
+
+    /// <summary>
+    ///     Estimates data quality by detecting corruption patterns.
+    ///     Memory dumps often contain partially overwritten audio buffers.
+    /// </summary>
+    /// <param name="data">The data buffer.</param>
+    /// <param name="dataStart">Start offset of the audio data.</param>
+    /// <param name="dataSize">Size of the audio data.</param>
+    /// <returns>
+    ///     Tuple of (totalQuality, usablePercent) where:
+    ///     - totalQuality: percentage of data that isn't corrupted (0-100)
+    ///     - usablePercent: percentage of data before first major corruption (0-100)
+    /// </returns>
+    private static (int TotalQuality, int UsablePercent) EstimateDataQuality(ReadOnlySpan<byte> data, int dataStart,
+        int dataSize)
+    {
+        if (dataSize <= 0 || dataStart >= data.Length)
+            return (100, 100);
+
+        var corruptBytes = 0;
+        var endOffset = Math.Min(dataStart + dataSize, data.Length);
+
+        // Track first corruption location
+        var firstCorruptionOffset = -1;
+
+        // Scan for 8+ consecutive 0xFF or 0x00 bytes (common corruption patterns)
+        var runLength = 0;
+        byte? runByte = null;
+        var runStart = dataStart;
+
+        for (var i = dataStart; i < endOffset; i++)
+        {
+            var b = data[i];
+
+            if (b == 0xFF || b == 0x00)
+            {
+                if (runByte == b)
+                {
+                    runLength++;
+                }
+                else
+                {
+                    // End of previous run - count it if it was long enough
+                    if (runLength >= 8)
+                    {
+                        corruptBytes += runLength;
+                        if (firstCorruptionOffset < 0)
+                            firstCorruptionOffset = runStart;
+                    }
+
+                    runByte = b;
+                    runLength = 1;
+                    runStart = i;
+                }
+            }
+            else
+            {
+                // End of any potential run
+                if (runLength >= 8)
+                {
+                    corruptBytes += runLength;
+                    if (firstCorruptionOffset < 0)
+                        firstCorruptionOffset = runStart;
+                }
+
+                runByte = null;
+                runLength = 0;
+            }
+        }
+
+        // Handle final run
+        if (runLength >= 8)
+        {
+            corruptBytes += runLength;
+            if (firstCorruptionOffset < 0)
+                firstCorruptionOffset = runStart;
+        }
+
+        var totalQuality = dataSize > 0 ? Math.Max(0, 100 - (corruptBytes * 100 / dataSize)) : 100;
+
+        // Calculate usable percent (clean data before first corruption)
+        int usablePercent;
+        if (firstCorruptionOffset < 0)
+        {
+            usablePercent = 100;
+        }
+        else
+        {
+            var cleanBytes = firstCorruptionOffset - dataStart;
+            usablePercent = dataSize > 0 ? Math.Max(0, cleanBytes * 100 / dataSize) : 100;
+        }
+
+        return (totalQuality, usablePercent);
     }
 
     private static string? TryExtractPath(ReadOnlySpan<byte> data)
@@ -306,30 +632,6 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer
         0x04, // EncoderVersion
         0x00, 0x10 // BlockCount
     ];
-
-    private static byte[] RepairCorruptedXma(byte[] data)
-    {
-        var dataChunkOffset = FindChunk(data, "data"u8);
-        if (dataChunkOffset < 0)
-        {
-            Console.WriteLine("[XmaFormat] No data chunk found, cannot repair");
-            return data;
-        }
-
-        var dataChunkSize = BinaryUtils.ReadUInt32LE(data.AsSpan(), dataChunkOffset + 4);
-        var dataStart = dataChunkOffset + 8;
-        var dataEnd = Math.Min(dataStart + (int)dataChunkSize, data.Length);
-        var actualDataSize = dataEnd - dataStart;
-
-        if (actualDataSize <= 0)
-        {
-            Console.WriteLine("[XmaFormat] Data chunk is empty, cannot repair");
-            return data;
-        }
-
-        var seekTable = GenerateSeekTable(actualDataSize);
-        return BuildXmaFile(data.AsSpan(dataStart, actualDataSize), seekTable, 1, DefaultSampleRate);
-    }
 
     private static byte[] AddSeekTable(byte[] data, bool convertToXma2)
     {

@@ -23,6 +23,11 @@ public class CarveEntry
     public string? ContentType { get; set; }
     public bool IsPartial { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>
+    ///     Format-specific metadata (e.g., qualityEstimate for XMA files).
+    /// </summary>
+    public Dictionary<string, object>? Metadata { get; set; }
 }
 
 /// <summary>

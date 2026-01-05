@@ -378,7 +378,8 @@ public sealed class MemoryCarver : IDisposable
             SizeOutput = outputData.Length,
             Filename = Path.GetFileName(outputFile),
             OriginalPath = originalPath,
-            Notes = isRepaired ? "Repaired" : null
+            Notes = isRepaired ? "Repaired" : null,
+            Metadata = metadata
         });
     }
 
@@ -414,7 +415,8 @@ public sealed class MemoryCarver : IDisposable
             IsCompressed = true,
             ContentType = result.IsPartial ? "converted_partial" : "converted",
             IsPartial = result.IsPartial,
-            Notes = result.Notes
+            Notes = result.Notes,
+            Metadata = metadata
         });
 
         return true;
