@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Formats.Scda;
 
 namespace Xbox360MemoryCarver.Core.Extractors;
 
@@ -11,18 +11,6 @@ namespace Xbox360MemoryCarver.Core.Extractors;
 /// </summary>
 public static partial class ScriptExtractor
 {
-    /// <summary>
-    ///     Summary of script extraction results.
-    /// </summary>
-    public record ScriptExtractionResult
-    {
-        public int TotalRecords { get; init; }
-        public int GroupedQuests { get; init; }
-        public int UngroupedScripts { get; init; }
-        public int TotalBytecodeBytes { get; init; }
-        public int RecordsWithSource { get; init; }
-    }
-
     /// <summary>
     ///     Extract all SCDA records from a dump, grouping by quest name.
     /// </summary>
@@ -35,20 +23,17 @@ public static partial class ScriptExtractor
         Directory.CreateDirectory(outputDir);
 
         progress?.Report("Scanning for SCDA records...");
-        var records = ScdaParser.ScanForRecords(dumpData);
+        var records = ScdaFormat.ScanForRecords(dumpData);
 
-        if (records.Count == 0)
-        {
-            return new ScriptExtractionResult();
-        }
+        if (records.Records.Count == 0) return new ScriptExtractionResult();
 
-        progress?.Report($"Found {records.Count} SCDA records, grouping by quest...");
+        progress?.Report($"Found {records.Records.Count} SCDA records, grouping by quest...");
 
         // First pass: Group records by detected quest name
-        var groups = new Dictionary<string, List<ScdaParser.ScdaRecord>>();
-        var ungrouped = new List<ScdaParser.ScdaRecord>();
+        var groups = new Dictionary<string, List<ScdaRecord>>();
+        var ungrouped = new List<ScdaRecord>();
 
-        foreach (var record in records)
+        foreach (var record in records.Records)
         {
             var questName = ExtractQuestName(record.SourceText);
 
@@ -59,6 +44,7 @@ public static partial class ScriptExtractor
                     list = [];
                     groups[questName] = list;
                 }
+
                 list.Add(record);
             }
             else
@@ -69,7 +55,7 @@ public static partial class ScriptExtractor
 
         // Second pass: Try to assign ungrouped scripts by offset proximity
         // If an ungrouped script falls within the offset range of a group, assign it there
-        var stillUngrouped = new List<ScdaParser.ScdaRecord>();
+        var stillUngrouped = new List<ScdaRecord>();
         foreach (var record in ungrouped)
         {
             string? assignedGroup = null;
@@ -90,20 +76,13 @@ public static partial class ScriptExtractor
             }
 
             if (assignedGroup != null)
-            {
                 groups[assignedGroup].Add(record);
-            }
             else
-            {
                 stillUngrouped.Add(record);
-            }
         }
 
         // Sort each group by offset
-        foreach (var list in groups.Values)
-        {
-            list.Sort((a, b) => a.Offset.CompareTo(b.Offset));
-        }
+        foreach (var list in groups.Values) list.Sort((a, b) => a.Offset.CompareTo(b.Offset));
 
         ungrouped = stillUngrouped;
         progress?.Report($"Grouped into {groups.Count} quests, {ungrouped.Count} ungrouped");
@@ -116,13 +95,12 @@ public static partial class ScriptExtractor
             await File.WriteAllTextAsync(scriptPath, content);
 
             if (verbose)
-            {
-                Console.WriteLine($"  [Script] {questName}: {stages.Count} stages ({stages.Sum(s => s.BytecodeLength)} bytes)");
-            }
+                Console.WriteLine(
+                    $"  [Script] {questName}: {stages.Count} stages ({stages.Sum(s => s.BytecodeLength)} bytes)");
         }
 
         // Write ungrouped as individual files
-        for (int i = 0; i < ungrouped.Count; i++)
+        for (var i = 0; i < ungrouped.Count; i++)
         {
             var record = ungrouped[i];
             var baseName = ExtractScriptNameFromSource(record.SourceText) ?? $"unknown_{i:D3}";
@@ -133,11 +111,11 @@ public static partial class ScriptExtractor
 
         return new ScriptExtractionResult
         {
-            TotalRecords = records.Count,
+            TotalRecords = records.Records.Count,
             GroupedQuests = groups.Count,
             UngroupedScripts = ungrouped.Count,
-            TotalBytecodeBytes = records.Sum(r => r.BytecodeLength),
-            RecordsWithSource = records.Count(r => r.HasAssociatedSctx)
+            TotalBytecodeBytes = records.Records.Sum(r => r.BytecodeLength),
+            RecordsWithSource = records.Records.Count(r => r.HasAssociatedSctx)
         };
     }
 
@@ -169,9 +147,7 @@ public static partial class ScriptExtractor
                 !name.StartsWith("Get", StringComparison.OrdinalIgnoreCase) &&
                 !name.StartsWith("Set", StringComparison.OrdinalIgnoreCase) &&
                 name.Length > 3)
-            {
                 return name;
-            }
         }
 
         return null;
@@ -209,37 +185,36 @@ public static partial class ScriptExtractor
     /// <summary>
     ///     Format a grouped quest script with all stages.
     /// </summary>
-    private static string FormatGroupedScript(string questName, List<ScdaParser.ScdaRecord> stages)
+    private static string FormatGroupedScript(string questName, List<ScdaRecord> stages)
     {
         var sb = new StringBuilder();
 
         sb.AppendLine(CultureInfo.InvariantCulture, $"; Quest: {questName}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"; Stage count: {stages.Count}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"; Total bytecode: {stages.Sum(s => s.BytecodeLength)} bytes");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"; Offset range: 0x{stages[0].Offset:X8} - 0x{stages[^1].Offset:X8}");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"; Offset range: 0x{stages[0].Offset:X8} - 0x{stages[^1].Offset:X8}");
         sb.AppendLine();
 
-        int stageNum = 0;
+        var stageNum = 0;
         foreach (var stage in stages)
         {
             stageNum++;
             sb.AppendLine("; ═══════════════════════════════════════════════════════════════");
-            sb.AppendLine(CultureInfo.InvariantCulture, $"; Stage {stageNum} - SCDA at 0x{stage.Offset:X8} ({stage.BytecodeLength} bytes)");
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"; Stage {stageNum} - SCDA at 0x{stage.Offset:X8} ({stage.BytecodeLength} bytes)");
             sb.AppendLine("; ═══════════════════════════════════════════════════════════════");
 
             if (stage.FormIdReferences.Count > 0)
-            {
-                sb.AppendLine(CultureInfo.InvariantCulture, $"; SCRO References: {string.Join(", ", stage.FormIdReferences.Select((id, i) => $"#{i + 1}=0x{id:X8}"))}");
-            }
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $"; SCRO References: {string.Join(", ", stage.FormIdReferences.Select((id, i) => $"#{i + 1}=0x{id:X8}"))}");
 
             if (stage.HasAssociatedSctx)
             {
                 sb.AppendLine();
                 sb.AppendLine("; Source:");
                 foreach (var line in stage.SourceText!.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries))
-                {
                     sb.Append(";   ").AppendLine(line.Trim());
-                }
             }
 
             sb.AppendLine();
@@ -254,21 +229,22 @@ public static partial class ScriptExtractor
     /// <summary>
     ///     Format a single ungrouped script.
     /// </summary>
-    private static string FormatSingleScript(ScdaParser.ScdaRecord record)
+    private static string FormatSingleScript(ScdaRecord record)
     {
         var sb = new StringBuilder();
 
         sb.AppendLine("; Ungrouped script");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"; SCDA offset: 0x{record.Offset:X8}, size: {record.BytecodeLength} bytes");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"; SCDA offset: 0x{record.Offset:X8}, size: {record.BytecodeLength} bytes");
 
         if (record.FormIdReferences.Count > 0)
         {
             sb.AppendLine(CultureInfo.InvariantCulture, $"; SCRO References ({record.FormIdReferences.Count}):");
-            for (int j = 0; j < record.FormIdReferences.Count; j++)
-            {
-                sb.AppendLine(CultureInfo.InvariantCulture, $";   SCRO#{j + 1} = FormID 0x{record.FormIdReferences[j]:X8}");
-            }
+            for (var j = 0; j < record.FormIdReferences.Count; j++)
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $";   SCRO#{j + 1} = FormID 0x{record.FormIdReferences[j]:X8}");
         }
+
         sb.AppendLine();
 
         if (record.HasAssociatedSctx)
@@ -288,20 +264,31 @@ public static partial class ScriptExtractor
     {
         var invalid = Path.GetInvalidFileNameChars();
         var sb = new StringBuilder();
-        foreach (var c in name)
-        {
-            sb.Append(invalid.Contains(c) ? '_' : c);
-        }
+        foreach (var c in name) sb.Append(invalid.Contains(c) ? '_' : c);
         return sb.ToString();
     }
 
-    [GeneratedRegex(@"\b(V(?:MS|CG|Free|Dialogue|ES|MQ)\d{2,4}[A-Za-z0-9]*|NVDLC\d+[A-Za-z0-9]+)\b", RegexOptions.Compiled)]
+    [GeneratedRegex(@"\b(V(?:MS|CG|Free|Dialogue|ES|MQ)\d{2,4}[A-Za-z0-9]*|NVDLC\d+[A-Za-z0-9]+)\b",
+        RegexOptions.Compiled)]
     private static partial Regex QuestNamePattern();
 
     // Pattern for quest names in commands like "SetObjectiveDisplayed VFreeformCampGolf 10 1"
-    [GeneratedRegex(@"(?:SetObjective\w+|setstage|CompleteQuest|StartQuest)\s+(V[A-Za-z]+[A-Za-z0-9]*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?:SetObjective\w+|setstage|CompleteQuest|StartQuest)\s+(V[A-Za-z]+[A-Za-z0-9]*)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex CommandQuestPattern();
 
     [GeneratedRegex(@"([A-Z][a-zA-Z0-9]+)\.[a-z][A-Za-z0-9]+", RegexOptions.Compiled)]
     private static partial Regex VariableAccessPattern();
+
+    /// <summary>
+    ///     Summary of script extraction results.
+    /// </summary>
+    public record ScriptExtractionResult
+    {
+        public int TotalRecords { get; init; }
+        public int GroupedQuests { get; init; }
+        public int UngroupedScripts { get; init; }
+        public int TotalBytecodeBytes { get; init; }
+        public int RecordsWithSource { get; init; }
+    }
 }

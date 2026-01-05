@@ -1,8 +1,7 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
-using Xbox360MemoryCarver.Core.Converters;
-using Xbox360MemoryCarver.Core.FileTypes;
+using Xbox360MemoryCarver.Core.Formats;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Carving;
@@ -12,8 +11,8 @@ namespace Xbox360MemoryCarver.Core.Carving;
 /// </summary>
 public sealed class MemoryCarver : IDisposable
 {
-    private readonly bool _convertDdxToDds;
-    private readonly DdxSubprocessConverter? _ddxConverter;
+    private readonly Dictionary<string, IFileConverter> _converters = new();
+    private readonly bool _enableConversion;
     private readonly ConcurrentBag<CarveEntry> _manifest = [];
     private readonly int _maxFilesPerType;
     private readonly string _outputDir;
@@ -22,8 +21,6 @@ public sealed class MemoryCarver : IDisposable
     private readonly HashSet<string> _signatureIdsToSearch;
     private readonly SignatureMatcher _signatureMatcher;
     private readonly ConcurrentDictionary<string, int> _stats = new();
-    private int _ddxConvertedCount;
-    private int _ddxConvertFailedCount;
     private bool _disposed;
 
     public MemoryCarver(string outputDir, int maxFilesPerType = 10000, bool convertDdxToDds = true,
@@ -32,14 +29,15 @@ public sealed class MemoryCarver : IDisposable
         _outputDir = outputDir;
         _maxFilesPerType = maxFilesPerType;
         _saveAtlas = saveAtlas;
+        _enableConversion = convertDdxToDds;
 
         _signatureMatcher = new SignatureMatcher();
         _signatureIdsToSearch = GetSignatureIdsToSearch(fileTypes);
 
         foreach (var sigId in _signatureIdsToSearch)
         {
-            var typeDef = FileTypeRegistry.GetBySignatureId(sigId);
-            var sig = typeDef?.GetSignature(sigId);
+            var format = FormatRegistry.GetBySignatureId(sigId);
+            var sig = format?.Signatures.FirstOrDefault(s => s.Id.Equals(sigId, StringComparison.OrdinalIgnoreCase));
             if (sig != null)
             {
                 _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
@@ -49,21 +47,24 @@ public sealed class MemoryCarver : IDisposable
 
         _signatureMatcher.Build();
 
-        if (convertDdxToDds)
-            try
-            {
-                _ddxConverter = new DdxSubprocessConverter(verbose, saveAtlas: _saveAtlas);
-                _convertDdxToDds = true;
-            }
-            catch (FileNotFoundException ex)
-            {
-                Console.WriteLine($"Warning: {ex.Message}");
-                _convertDdxToDds = false;
-            }
+        // Initialize converters from format modules
+        if (_enableConversion) InitializeConverters(verbose);
     }
 
-    public int DdxConvertedCount => _ddxConvertedCount;
-    public int DdxConvertFailedCount => _ddxConvertFailedCount;
+    /// <summary>
+    ///     Total count of converted files across all converters.
+    /// </summary>
+    public int TotalConvertedCount => _converters.Values.Sum(c => c.ConvertedCount);
+
+    /// <summary>
+    ///     Total count of failed conversions across all converters.
+    /// </summary>
+    public int TotalConvertFailedCount => _converters.Values.Sum(c => c.FailedCount);
+
+    // Legacy properties for backward compatibility
+    public int DdxConvertedCount => _converters.TryGetValue("ddx", out var c) ? c.ConvertedCount : 0;
+    public int DdxConvertFailedCount => _converters.TryGetValue("ddx", out var c) ? c.FailedCount : 0;
+
     public IReadOnlyDictionary<string, int> Stats => _stats;
 
     public void Dispose()
@@ -73,29 +74,41 @@ public sealed class MemoryCarver : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    private void InitializeConverters(bool verbose)
+    {
+        var options = new Dictionary<string, object> { ["saveAtlas"] = _saveAtlas };
+
+        foreach (var format in FormatRegistry.All)
+            if (format is IFileConverter converter && converter.Initialize(verbose, options))
+                _converters[format.FormatId] = converter;
+    }
+
     private static HashSet<string> GetSignatureIdsToSearch(List<string>? fileTypes)
     {
         if (fileTypes == null || fileTypes.Count == 0)
-            // Return all signature IDs
-            return FileTypeRegistry.AllTypes
-                .SelectMany(t => t.SignatureIds)
+        {
+            // Return signature IDs from formats that have signature scanning enabled
+            return FormatRegistry.All
+                .Where(f => f.EnableSignatureScanning)
+                .SelectMany(f => f.Signatures.Select(s => s.Id))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
 
-        // Filter to requested types
+        // Filter to requested types (user explicitly requested, so include even if scanning disabled)
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var ft in fileTypes)
         {
-            // Try to find by type ID first
-            var typeDef = FileTypeRegistry.GetByTypeId(ft);
-            if (typeDef != null)
+            // Try to find by format ID first
+            var format = FormatRegistry.GetByFormatId(ft);
+            if (format != null)
             {
-                foreach (var sigId in typeDef.SignatureIds) result.Add(sigId);
+                foreach (var sig in format.Signatures) result.Add(sig.Id);
                 continue;
             }
 
             // Try by signature ID
-            typeDef = FileTypeRegistry.GetBySignatureId(ft);
-            if (typeDef != null) result.Add(ft);
+            format = FormatRegistry.GetBySignatureId(ft);
+            if (format != null) result.Add(ft);
         }
 
         return result;
@@ -131,7 +144,10 @@ public sealed class MemoryCarver : IDisposable
         IProgress<double>? progress)
     {
         const int chunkSize = 64 * 1024 * 1024;
-        if (_signatureIdsToSearch.Count == 0) return [];
+        if (_signatureIdsToSearch.Count == 0)
+        {
+            return [];
+        }
 
         var maxPatternLength = _signatureMatcher.MaxPatternLength;
         var allMatches = new List<(string SignatureId, long Offset)>();
@@ -146,8 +162,12 @@ public sealed class MemoryCarver : IDisposable
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
                 foreach (var (name, _, position) in _signatureMatcher.Search(buffer.AsSpan(0, toRead), offset))
+                {
                     if (_stats.GetValueOrDefault(name, 0) < _maxFilesPerType)
+                    {
                         allMatches.Add((name, position));
+                    }
+                }
 
                 offset += chunkSize;
                 // Scanning is 0-50% of total progress
@@ -159,13 +179,18 @@ public sealed class MemoryCarver : IDisposable
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        return allMatches.DistinctBy(m => m.Offset).OrderBy(m => m.Offset).ToList();
+        var result = allMatches.DistinctBy(m => m.Offset).OrderBy(m => m.Offset).ToList();
+
+        return result;
     }
 
     private async Task ExtractMatchesAsync(MemoryMappedViewAccessor accessor, long fileSize,
         List<(string SignatureId, long Offset)> matches, string outputPath, IProgress<double>? progress)
     {
-        if (matches.Count == 0) return;
+        if (matches.Count == 0)
+        {
+            return;
+        }
 
         var processedCount = 0;
         var totalMatches = matches.Count;
@@ -174,13 +199,23 @@ public sealed class MemoryCarver : IDisposable
             new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
             async (match, _) =>
             {
-                if (_stats.GetValueOrDefault(match.SignatureId, 0) >= _maxFilesPerType) return;
-                if (!_processedOffsets.TryAdd(match.Offset, 0)) return;
+                if (_stats.GetValueOrDefault(match.SignatureId, 0) >= _maxFilesPerType)
+                {
+                    return;
+                }
 
-                var typeDef = FileTypeRegistry.GetBySignatureId(match.SignatureId);
-                if (typeDef == null) return;
+                if (!_processedOffsets.TryAdd(match.Offset, 0))
+                {
+                    return;
+                }
 
-                var extraction = PrepareExtraction(accessor, fileSize, match.Offset, match.SignatureId, typeDef,
+                var format = FormatRegistry.GetBySignatureId(match.SignatureId);
+                if (format == null)
+                {
+                    return;
+                }
+
+                var extraction = PrepareExtraction(accessor, fileSize, match.Offset, match.SignatureId, format,
                     outputPath);
 
                 if (extraction != null)
@@ -203,9 +238,10 @@ public sealed class MemoryCarver : IDisposable
             });
     }
 
-    private static (string outputFile, byte[] data, int fileSize, string? originalPath, Dictionary<string, object>? metadata)? PrepareExtraction(
-        MemoryMappedViewAccessor accessor, long fileSize, long offset, string signatureId,
-        FileTypeDefinition typeDef, string outputPath)
+    private static (string outputFile, byte[] data, int fileSize, string? originalPath, Dictionary<string, object>?
+        metadata)? PrepareExtraction(
+            MemoryMappedViewAccessor accessor, long fileSize, long offset, string signatureId,
+            IFileFormat format, string outputPath)
     {
         // For DDX files, we need to read some data before the signature to find the path
         // For scripts, we need to look for leading comments before the signature
@@ -217,8 +253,8 @@ public sealed class MemoryCarver : IDisposable
         // For DDX files, read more data to find boundaries (compressed textures can be large)
         // For other types, 64KB is usually enough for header parsing
         var headerScanSize = signatureId.StartsWith("ddx", StringComparison.OrdinalIgnoreCase)
-            ? Math.Min(typeDef.MaxSize, 512 * 1024) // 512KB for DDX boundary scanning
-            : Math.Min(typeDef.MaxSize, 64 * 1024); // 64KB for other types
+            ? Math.Min(format.MaxSize, 512 * 1024) // 512KB for DDX boundary scanning
+            : Math.Min(format.MaxSize, 64 * 1024); // 64KB for other types
 
         var headerSize = (int)Math.Min(headerScanSize, fileSize - offset);
         var totalRead = actualPreRead + headerSize;
@@ -229,61 +265,71 @@ public sealed class MemoryCarver : IDisposable
             accessor.ReadArray(readStart, buffer, 0, totalRead);
             var span = buffer.AsSpan(0, totalRead);
 
-            // The signature starts at actualPreRead offset in our buffer
             var sigOffset = actualPreRead;
 
-            var parser = ParserRegistry.GetParserForSignature(signatureId);
             int fileDataSize;
             string? customFilename = null;
             string? originalPath = null;
             Dictionary<string, object>? metadata = null;
             var leadingBytes = 0;
 
-            if (parser != null)
+            var parseResult = format.Parse(span, sigOffset);
+            if (parseResult == null)
             {
-                var parseResult = parser.ParseHeader(span, sigOffset);
-                if (parseResult == null) return null;
-                fileDataSize = parseResult.EstimatedSize;
-                metadata = parseResult.Metadata;
-
-                // Get the safe filename for extraction
-                if (parseResult.Metadata.TryGetValue("safeName", out var safeName))
-                    customFilename = safeName.ToString();
-
-                // Get the original path for the manifest (DDX textures)
-                if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) && pathObj is string path)
-                    originalPath = path;
-
-                // Get embedded path for XMA files
-                if (parseResult.Metadata.TryGetValue("embeddedPath", out var embeddedPathObj) && embeddedPathObj is string embeddedPath)
-                    originalPath ??= embeddedPath;
-
-                // Check for leading comments (scripts with comments before the scn keyword)
-                if (parseResult.Metadata.TryGetValue("leadingCommentSize", out var leadingObj) &&
-                    leadingObj is int leading)
-                    leadingBytes = Math.Min(leading, actualPreRead); // Can't go beyond what we pre-read
+                return null;
             }
-            else
+
+            fileDataSize = parseResult.EstimatedSize;
+            metadata = parseResult.Metadata;
+
+            // Get the safe filename for extraction
+            if (parseResult.Metadata.TryGetValue("safeName", out var safeName))
             {
-                fileDataSize = Math.Min(typeDef.MaxSize, headerSize);
+                customFilename = safeName.ToString();
+            }
+
+            // Get the original path for the manifest (DDX textures)
+            if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) && pathObj is string path)
+            {
+                originalPath = path;
+            }
+
+            // Get embedded path for XMA files
+            if (parseResult.Metadata.TryGetValue("embeddedPath", out var embeddedPathObj) &&
+                embeddedPathObj is string embeddedPath)
+            {
+                originalPath ??= embeddedPath;
+            }
+
+            // Check for leading comments (scripts with comments before the scn keyword)
+            if (parseResult.Metadata.TryGetValue("leadingCommentSize", out var leadingObj) &&
+                leadingObj is int leading)
+            {
+                leadingBytes = Math.Min(leading, actualPreRead); // Can't go beyond what we pre-read
             }
 
             // Adjust for leading bytes (e.g., comments before script signature)
             var adjustedOffset = offset - leadingBytes;
             var adjustedSize = fileDataSize + leadingBytes;
 
-            if (adjustedSize < typeDef.MinSize || adjustedSize > typeDef.MaxSize) return null;
+            if (adjustedSize < format.MinSize || adjustedSize > format.MaxSize)
+            {
+                return null;
+            }
+
             adjustedSize = (int)Math.Min(adjustedSize, fileSize - adjustedOffset);
 
-            var typeFolder = string.IsNullOrEmpty(typeDef.OutputFolder) ? signatureId : typeDef.OutputFolder;
+            var typeFolder = string.IsNullOrEmpty(format.OutputFolder) ? signatureId : format.OutputFolder;
             var typePath = Path.Combine(outputPath, typeFolder);
             Directory.CreateDirectory(typePath);
 
             var filename = customFilename ?? $"{offset:X8}";
-            var outputFile = Path.Combine(typePath, $"{filename}{typeDef.Extension}");
+            var outputFile = Path.Combine(typePath, $"{filename}{format.Extension}");
             var counter = 1;
             while (File.Exists(outputFile))
-                outputFile = Path.Combine(typePath, $"{filename}_{counter++}{typeDef.Extension}");
+            {
+                outputFile = Path.Combine(typePath, $"{filename}_{counter++}{format.Extension}");
+            }
 
             // Read the actual file data (including any leading bytes)
             var fileData = new byte[adjustedSize];
@@ -300,18 +346,26 @@ public sealed class MemoryCarver : IDisposable
     private async Task WriteFileAsync(string outputFile, byte[] data, long offset, string signatureId, int fileSize,
         string? originalPath, Dictionary<string, object>? metadata)
     {
-        if (_convertDdxToDds && signatureId is "ddx_3xdo" or "ddx_3xdr" && IsDdxFile(data))
+        var format = FormatRegistry.GetBySignatureId(signatureId);
+
+        // Try conversion if available for this format
+        if (_enableConversion && format != null && _converters.TryGetValue(format.FormatId, out var converter) &&
+            converter.CanConvert(signatureId, metadata))
         {
-            var result = await ConvertDdxAsync(data, outputFile, offset, signatureId, fileSize, originalPath);
-            if (result) return;
+            var convertResult = await TryConvertAsync(converter, data, outputFile, offset, signatureId, fileSize,
+                originalPath, metadata);
+            if (convertResult)
+            {
+                return;
+            }
         }
 
-        // Repair XMA files if needed
+        // Repair files if needed using IFileRepairer interface
         var outputData = data;
         var isRepaired = false;
-        if (signatureId == "xma" && metadata != null)
+        if (format is IFileRepairer repairer && repairer.NeedsRepair(metadata))
         {
-            outputData = Converters.XmaRepairUtil.TryRepair(data, metadata);
+            outputData = repairer.Repair(data, metadata);
             isRepaired = outputData != data;
         }
 
@@ -328,34 +382,26 @@ public sealed class MemoryCarver : IDisposable
         });
     }
 
-    private async Task<bool> ConvertDdxAsync(byte[] data, string outputFile, long offset, string signatureId,
-        int fileSize, string? originalPath)
+    private async Task<bool> TryConvertAsync(IFileConverter converter, byte[] data, string outputFile, long offset,
+        string signatureId, int fileSize, string? originalPath, Dictionary<string, object>? metadata)
     {
-        if (_ddxConverter == null) return false;
+        var result = await converter.ConvertAsync(data, metadata);
+        if (!result.Success || result.DdsData == null) return false;
 
-        var is3Xdr = data.Length >= 4 && data[3] == 'R';
-        if (is3Xdr)
-        {
-            Interlocked.Increment(ref _ddxConvertFailedCount);
-            return false;
-        }
+        var format = FormatRegistry.GetBySignatureId(signatureId);
+        var originalFolder = format?.OutputFolder ?? signatureId;
+        var targetFolder = converter.TargetFolder;
 
-        var result = await _ddxConverter.ConvertFromMemoryWithResultAsync(data);
-        if (!result.Success || result.DdsData == null)
-        {
-            Interlocked.Increment(ref _ddxConvertFailedCount);
-            return false;
-        }
+        var convertedOutputFile = Path.ChangeExtension(outputFile.Replace(
+            Path.DirectorySeparatorChar + originalFolder + Path.DirectorySeparatorChar,
+            Path.DirectorySeparatorChar + targetFolder + Path.DirectorySeparatorChar), converter.TargetExtension);
+        Directory.CreateDirectory(Path.GetDirectoryName(convertedOutputFile)!);
 
-        var ddsOutputFile = Path.ChangeExtension(outputFile.Replace(
-            Path.DirectorySeparatorChar + "ddx" + Path.DirectorySeparatorChar,
-            Path.DirectorySeparatorChar + "textures" + Path.DirectorySeparatorChar), ".dds");
-        Directory.CreateDirectory(Path.GetDirectoryName(ddsOutputFile)!);
+        await WriteFileWithRetryAsync(convertedOutputFile, result.DdsData);
 
-        // Handle file conflicts with retry logic (same texture may appear multiple times in memory)
-        await WriteFileWithRetryAsync(ddsOutputFile, result.DdsData);
+        // Save atlas if available
         if (result.AtlasData != null && _saveAtlas)
-            await WriteFileWithRetryAsync(ddsOutputFile.Replace(".dds", "_full_atlas.dds"), result.AtlasData);
+            await WriteFileWithRetryAsync(convertedOutputFile.Replace(".dds", "_full_atlas.dds"), result.AtlasData);
 
         _manifest.Add(new CarveEntry
         {
@@ -363,15 +409,14 @@ public sealed class MemoryCarver : IDisposable
             Offset = offset,
             SizeInDump = fileSize,
             SizeOutput = result.DdsData.Length,
-            Filename = Path.GetFileName(ddsOutputFile),
+            Filename = Path.GetFileName(convertedOutputFile),
             OriginalPath = originalPath,
             IsCompressed = true,
-            ContentType = result.IsPartial ? "dds_partial" : "dds_converted",
+            ContentType = result.IsPartial ? "converted_partial" : "converted",
             IsPartial = result.IsPartial,
             Notes = result.Notes
         });
 
-        Interlocked.Increment(ref _ddxConvertedCount);
         return true;
     }
 
@@ -383,7 +428,6 @@ public sealed class MemoryCarver : IDisposable
     {
         var currentPath = outputFile;
         for (var attempt = 0; attempt < maxRetries; attempt++)
-        {
             try
             {
                 await File.WriteAllBytesAsync(currentPath, data);
@@ -399,12 +443,5 @@ public sealed class MemoryCarver : IDisposable
                 var suffix = Guid.NewGuid().ToString("N")[..8];
                 currentPath = Path.Combine(dir, $"{nameWithoutExt}_{suffix}{ext}");
             }
-        }
-    }
-
-    private static bool IsDdxFile(byte[] data)
-    {
-        return data.Length >= 4 && data[0] == '3' && data[1] == 'X' && data[2] == 'D' &&
-               data[3] is (byte)'O' or (byte)'R';
     }
 }

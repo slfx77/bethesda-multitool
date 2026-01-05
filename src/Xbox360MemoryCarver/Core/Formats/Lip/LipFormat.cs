@@ -1,56 +1,60 @@
 using Xbox360MemoryCarver.Core.Utils;
 
-namespace Xbox360MemoryCarver.Core.Parsers;
+namespace Xbox360MemoryCarver.Core.Formats.Lip;
 
 /// <summary>
-///     Parser for Bethesda LIP (lip-sync) files.
-///     LIP files contain facial animation data for dialogue.
+///     Bethesda LIP (lip-sync animation) format module.
 /// </summary>
-public class LipParser : IFileParser
+public sealed class LipFormat : FileFormatBase
 {
-    private static readonly byte[] LipsSignature = "LIPS"u8.ToArray();
+    public override string FormatId => "lip";
+    public override string DisplayName => "LIP";
+    public override string Extension => ".lip";
+    public override FileCategory Category => FileCategory.Audio;
+    public override string OutputFolder => "lipsync";
+    public override int MinSize => 20;
+    public override int MaxSize => 5 * 1024 * 1024;
+    public override int DisplayPriority => 1;
 
-    public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
+    public override IReadOnlyList<FormatSignature> Signatures { get; } =
+    [
+        new()
+        {
+            Id = "lip",
+            MagicBytes = "LIPS"u8.ToArray(),
+            Description = "Lip-sync animation"
+        }
+    ];
+
+    public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         const int minHeaderSize = 12;
         if (data.Length < offset + minHeaderSize) return null;
 
-        // Check magic "LIPS"
         var magic = data.Slice(offset, 4);
         if (!magic.SequenceEqual("LIPS"u8)) return null;
 
         try
         {
-            // LIP file structure (little-endian):
-            // 0x00: Magic "LIPS" (4 bytes)
-            // 0x04: Version (4 bytes) - typically 1
-            // 0x08: File size or data length (4 bytes)
-            // Rest: Timing/phoneme data
-
             var version = BinaryUtils.ReadUInt32LE(data, offset + 4);
-
-            // Version should be reasonable (1-10)
             if (version == 0 || version > 10) return null;
 
-            // Try to read file size from header
             var reportedSize = BinaryUtils.ReadUInt32LE(data, offset + 8);
 
             int estimatedSize;
             if (reportedSize > minHeaderSize && reportedSize < 5 * 1024 * 1024)
             {
-                // Reported size seems valid
                 estimatedSize = (int)reportedSize;
             }
             else
             {
-                // Fall back to scanning for boundary using shared scanner
                 const int minSize = 20;
-                const int maxScan = 1 * 1024 * 1024; // LIP files are typically small
-                const int defaultSize = 64 * 1024; // Default to 64KB
+                const int maxScan = 1 * 1024 * 1024;
+                const int defaultSize = 64 * 1024;
 
                 estimatedSize = SignatureBoundaryScanner.FindBoundary(
                     data, offset, minSize, maxScan, defaultSize,
-                    excludeSignature: LipsSignature, validateRiff: false);
+                    "LIPS"u8, false);
             }
 
             return new ParseResult
@@ -65,7 +69,7 @@ public class LipParser : IFileParser
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[LipParser] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine($"[LipFormat] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }

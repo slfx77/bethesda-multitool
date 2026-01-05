@@ -35,9 +35,9 @@ This document describes the internal architecture of the Xbox 360 Memory Carver,
 ├──────────────────────────────────┴─────────────────────────────────────────┤
 │                              Core Layer                                    │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────────────────────┐ │
-│  │  Carving/   │ │  Parsers/   │ │  Analysis/  │ │    FileTypes/         │ │
-│  │MemoryCarver │ │ 16 parsers  │ │DumpAnalyzer │ │ FileTypeRegistry      │ │
-│  │CarveManifest│ │ IFileParser │ │             │ │ FileTypeDefinition    │ │
+│  │  Carving/   │ │  Formats/   │ │  Analysis/  │ │   FormatRegistry      │ │
+│  │MemoryCarver │ │ 13 modules  │ │DumpAnalyzer │ │   IFileFormat         │ │
+│  │CarveManifest│ │IFileFormat  │ │             │ │   FileFormatBase      │ │
 │  └─────────────┘ └─────────────┘ └─────────────┘ └───────────────────────┘ │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────────────────────┐ │
 │  │  Minidump/  │ │ Converters/ │ │ Extractors/ │ │ SignatureMatcher      │ │
@@ -61,34 +61,31 @@ src/Xbox360MemoryCarver/
 │   │   └── DdxSubprocessConverter.cs
 │   ├── Extractors/         # Specialized extraction logic
 │   │   └── ScriptExtractor.cs
-│   ├── FileTypes/          # File type registry system
-│   │   ├── FileTypeDefinition.cs
-│   │   ├── FileTypeRegistry.cs
-│   │   ├── ParserRegistry.cs
-│   │   └── TextureFormats.cs
+│   ├── Formats/            # Self-contained format modules
+│   │   ├── FormatRegistry.cs   # Auto-discovers format modules
+│   │   ├── IFileFormat.cs      # Base interface + IFileConverter, IDumpScanner
+│   │   ├── FileFormatBase.cs   # Base class with common implementation
+│   │   ├── Dds/DdsFormat.cs
+│   │   ├── Ddx/DdxFormat.cs    # Implements IFileConverter
+│   │   ├── EsmRecord/EsmRecordFormat.cs  # Implements IDumpScanner
+│   │   ├── Esp/EspFormat.cs
+│   │   ├── Lip/LipFormat.cs
+│   │   ├── Nif/NifFormat.cs
+│   │   ├── Png/PngFormat.cs
+│   │   ├── Scda/ScdaFormat.cs  # Implements IDumpScanner
+│   │   ├── Script/ScriptFormat.cs
+│   │   ├── Xdbf/XdbfFormat.cs
+│   │   ├── Xex/XexFormat.cs
+│   │   ├── Xma/XmaFormat.cs    # Implements IFileRepairer
+│   │   └── Xui/XuiFormat.cs
 │   ├── Minidump/           # Minidump format parsing
 │   │   ├── MinidumpInfo.cs
 │   │   ├── MinidumpModels.cs
 │   │   └── MinidumpParser.cs
-│   ├── Parsers/            # File format parsers
-│   │   ├── DdsParser.cs
-│   │   ├── DdxParser.cs
-│   │   ├── EsmRecordParser.cs
-│   │   ├── EspParser.cs
-│   │   ├── IFileParser.cs
-│   │   ├── LipParser.cs
-│   │   ├── NifParser.cs
-│   │   ├── PngParser.cs
-│   │   ├── ScdaParser.cs
-│   │   ├── ScriptParser.cs
-│   │   ├── SignatureBoundaryScanner.cs
-│   │   ├── TexturePathExtractor.cs
-│   │   ├── XdbfParser.cs
-│   │   ├── XexParser.cs
-│   │   ├── XmaParser.cs
-│   │   └── XuiParser.cs
 │   ├── Utils/              # Utility classes
-│   │   └── BinaryUtils.cs
+│   │   ├── BinaryUtils.cs
+│   │   ├── SignatureBoundaryScanner.cs
+│   │   └── TexturePathExtractor.cs
 │   ├── SignatureMatcher.cs # Aho-Corasick multi-pattern search
 │   └── Models.cs           # Shared model types
 ├── *.xaml / *.xaml.cs      # WinUI 3 GUI components
@@ -181,14 +178,16 @@ MinidumpInfo
 
 ## File Type System
 
-### FileTypeRegistry
+### FormatRegistry
 
-Central registry of all supported file types. Provides:
+Central registry of all supported file formats. Auto-discovers format modules at runtime via reflection.
 
+**Key Features:**
+
+- Auto-discovery of `IFileFormat` implementations in `Core.Formats` namespace
 - Type definitions with signatures, extensions, and size constraints
 - Category-based organization and coloring
-- Parser type resolution
-- Signature ID normalization
+- Support for optional interfaces: `IFileConverter`, `IFileRepairer`, `IDumpScanner`
 
 **File Categories:**
 
@@ -203,115 +202,95 @@ Central registry of all supported file types. Provides:
 | Xbox     | `#3498DB` (Blue)   | XDBF, XUI system files  |
 | Plugin   | `#FF6B9D` (Pink)   | ESP/ESM plugin files    |
 
-### FileTypeDefinition
+### IFileFormat Interface
 
-Defines a single file type with all its variants.
+Base interface for all format modules. Each format is self-contained with parsing, metadata, and optional capabilities.
 
 ```csharp
-FileTypeDefinition
-├── TypeId: string          // Unique identifier (e.g., "ddx")
-├── DisplayName: string     // UI display name (e.g., "DDX")
-├── Extension: string       // Output file extension
-├── Category: FileCategory  // Category for coloring
-├── OutputFolder: string    // Subdirectory for output
-├── MinSize / MaxSize: int  // Size constraints
-├── DisplayPriority: int    // Overlap resolution priority
-├── ParserType: Type        // Associated IFileParser implementation
-└── Signatures: FileSignature[]
-    ├── Id: string          // Signature ID (e.g., "ddx_3xdo")
-    ├── MagicBytes: byte[]  // Magic bytes to match
-    └── Description: string // Human-readable description
+public interface IFileFormat
+{
+    string FormatId { get; }           // Unique identifier (e.g., "ddx")
+    string DisplayName { get; }        // UI display name (e.g., "DDX")
+    string Extension { get; }          // Output file extension
+    FileCategory Category { get; }     // Category for coloring
+    string OutputFolder { get; }       // Subdirectory for output
+    int MinSize { get; }               // Minimum valid file size
+    int MaxSize { get; }               // Maximum valid file size
+    int DisplayPriority { get; }       // Overlap resolution priority
+    IReadOnlyList<FormatSignature> Signatures { get; }  // Magic byte patterns
+
+    ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0);
+}
+```
+
+### Optional Capability Interfaces
+
+Formats can implement additional interfaces for extended functionality:
+
+```csharp
+// For formats that support file conversion (e.g., DDX → DDS)
+public interface IFileConverter
+{
+    string TargetExtension { get; }
+    string TargetFolder { get; }
+    bool IsInitialized { get; }
+    int ConvertedCount { get; }
+    int FailedCount { get; }
+
+    bool Initialize(bool verbose = false, Dictionary<string, object>? options = null);
+    bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata);
+    Task<DdxConversionResult> ConvertAsync(byte[] data, IReadOnlyDictionary<string, object>? metadata = null);
+}
+
+// For formats that support file repair (e.g., XMA seek table)
+public interface IFileRepairer
+{
+    bool NeedsRepair(IReadOnlyDictionary<string, object>? metadata);
+    byte[] Repair(byte[] data, IReadOnlyDictionary<string, object>? metadata);
+}
+
+// For formats that provide dump-wide scanning (e.g., SCDA, ESM records)
+public interface IDumpScanner
+{
+    Task<object> ScanDumpAsync(string dumpPath, IProgress<double>? progress = null);
+}
 ```
 
 ---
 
-## Parser Architecture
+## Format Module Architecture
 
-All parsers implement the `IFileParser` interface:
+All format modules extend `FileFormatBase` and are self-contained in their own folders.
+
+### Format Module Structure
+
+| Format Module     | Location                  | Capabilities                           |
+| ----------------- | ------------------------- | -------------------------------------- |
+| `DdsFormat`       | `Core/Formats/Dds/`       | Parsing only                           |
+| `DdxFormat`       | `Core/Formats/Ddx/`       | Parsing + `IFileConverter`             |
+| `EsmRecordFormat` | `Core/Formats/EsmRecord/` | `IDumpScanner` (ESM record extraction) |
+| `EspFormat`       | `Core/Formats/Esp/`       | Parsing only                           |
+| `LipFormat`       | `Core/Formats/Lip/`       | Parsing only                           |
+| `NifFormat`       | `Core/Formats/Nif/`       | Parsing with version validation        |
+| `PngFormat`       | `Core/Formats/Png/`       | Parsing only                           |
+| `ScdaFormat`      | `Core/Formats/Scda/`      | Parsing + `IDumpScanner`               |
+| `ScriptFormat`    | `Core/Formats/Script/`    | Parsing only                           |
+| `XdbfFormat`      | `Core/Formats/Xdbf/`      | Parsing only                           |
+| `XexFormat`       | `Core/Formats/Xex/`       | Parsing only                           |
+| `XmaFormat`       | `Core/Formats/Xma/`       | Parsing + `IFileRepairer`              |
+| `XuiFormat`       | `Core/Formats/Xui/`       | Parsing only                           |
+
+### ParseResult
+
+Common result type returned by all format parsers:
 
 ```csharp
-public interface IFileParser
-{
-    ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0);
-}
-
 public record ParseResult
 {
     public required string Format { get; init; }
     public required int EstimatedSize { get; init; }
     public string? FileName { get; init; }
     public Dictionary<string, object> Metadata { get; init; } = [];
-}
-```
-
-### Registered Parsers
-
-| Parser            | File Types       | Key Features                                          |
-| ----------------- | ---------------- | ----------------------------------------------------- |
-| `DdsParser`       | DDS              | Reads DX9/DX10 headers, calculates mip chain size     |
-| `DdxParser`       | DDX (3XDO, 3XDR) | Xbox 360 texture headers, chunk detection             |
-| `PngParser`       | PNG              | IEND chunk detection for size                         |
-| `XmaParser`       | XMA              | RIFF format, XMA2 codec validation                    |
-| `LipParser`       | LIP              | Lip-sync animation files                              |
-| `NifParser`       | NIF              | Gamebryo version validation, false positive filtering |
-| `XexParser`       | XEX              | Xbox executable header parsing                        |
-| `ScriptParser`    | ObScript         | Source text boundary detection                        |
-| `ScdaParser`      | SCDA             | Compiled bytecode + associated SCTX                   |
-| `EspParser`       | ESP/ESM          | TES4 plugin header                                    |
-| `XdbfParser`      | XDBF             | Xbox Dashboard files                                  |
-| `XuiParser`       | XUI              | Xbox UI (XUIS, XUIB variants)                         |
-| `EsmRecordParser` | N/A (analysis)   | Extracts EDID, GMST, SCTX, SCRO fragments             |
-
-### Adding a New Parser
-
-1. Create `Core/Parsers/NewFormatParser.cs`:
-
-```csharp
-public class NewFormatParser : IFileParser
-{
-    private static readonly byte[] Signature = "NEWF"u8.ToArray();
-
-    public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
-    {
-        if (data.Length < offset + 16) return null;
-        var span = data[offset..];
-        if (!span[..4].SequenceEqual(Signature)) return null;
-
-        var size = BinaryUtils.ReadUInt32LE(span, 4);
-        return new ParseResult
-        {
-            Format = "NEWF",
-            EstimatedSize = (int)size,
-            Metadata = new Dictionary<string, object>
-            {
-                ["version"] = BinaryUtils.ReadUInt16LE(span, 8)
-            }
-        };
-    }
-}
-```
-
-2. Register in `FileTypeRegistry.cs`:
-
-```csharp
-new FileTypeDefinition
-{
-    TypeId = "newformat",
-    DisplayName = "NEWF",
-    Extension = ".newf",
-    Category = FileCategory.Data,
-    OutputFolder = "newformat",
-    MinSize = 16,
-    MaxSize = 10 * 1024 * 1024,
-    ParserType = typeof(NewFormatParser),
-    Signatures = [
-        new FileSignature
-        {
-            Id = "newformat",
-            MagicBytes = Encoding.ASCII.GetBytes("NEWF"),
-            Description = "New Format File"
-        }
-    ]
 }
 ```
 
@@ -415,9 +394,54 @@ private void CancelOperation() => _cts?.Cancel();
 
 ## Extensibility Guide
 
-### Adding a New File Type
+### Adding a New File Format
 
-See [Adding a New File Signature](../.github/copilot-instructions.md#adding-a-new-file-signature) in the Copilot instructions.
+1. Create a new folder `Core/Formats/NewFormat/`
+2. Create `NewFormatFormat.cs` extending `FileFormatBase`:
+
+```csharp
+public sealed class NewFormatFormat : FileFormatBase
+{
+    public override string FormatId => "newformat";
+    public override string DisplayName => "NEWF";
+    public override string Extension => ".newf";
+    public override FileCategory Category => FileCategory.Data;
+    public override string OutputFolder => "newformat";
+    public override int MinSize => 16;
+    public override int MaxSize => 10 * 1024 * 1024;
+
+    public override IReadOnlyList<FormatSignature> Signatures { get; } =
+    [
+        new FormatSignature
+        {
+            Id = "newformat",
+            MagicBytes = "NEWF"u8.ToArray(),
+            Description = "New Format File"
+        }
+    ];
+
+    public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        if (data.Length < offset + 16) return null;
+        if (!data.Slice(offset, 4).SequenceEqual("NEWF"u8)) return null;
+
+        var size = BinaryUtils.ReadUInt32LE(data, offset + 4);
+        return new ParseResult
+        {
+            Format = "NEWF",
+            EstimatedSize = (int)size,
+            Metadata = new Dictionary<string, object>
+            {
+                ["version"] = BinaryUtils.ReadUInt16LE(data, offset + 8)
+            }
+        };
+    }
+}
+```
+
+3. The format is auto-discovered by `FormatRegistry` via reflection
+4. For conversion/repair capabilities, implement `IFileConverter` or `IFileRepairer`
+5. For dump-wide scanning, implement `IDumpScanner`
 
 ### Adding a New CLI Command
 

@@ -1,9 +1,9 @@
 using System.CommandLine;
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
+using Xbox360MemoryCarver.Core;
 using Xbox360MemoryCarver.Core.Analysis;
-using Xbox360MemoryCarver.Core.Carving;
-using Xbox360MemoryCarver.Core.Extractors;
 using Xbox360MemoryCarver.Core.Minidump;
 
 namespace Xbox360MemoryCarver;
@@ -17,7 +17,7 @@ public static class Program
     /// <summary>
     ///     Cached JSON serializer options for consistent formatting.
     /// </summary>
-    private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     /// <summary>
     ///     File path to auto-load when GUI starts (set via --file parameter).
@@ -173,13 +173,16 @@ public static class Program
 
             try
             {
-                await CarveFilesAsync(input, output, types?.ToList(), convertDdx, verbose, maxFiles);
+                await ExtractFilesAsync(input, output, types?.ToList(), convertDdx, verbose, maxFiles);
                 context.ExitCode = 0;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error: {ex.Message}");
-                if (verbose) Console.WriteLine(ex.StackTrace);
+                if (verbose)
+                {
+                    Console.WriteLine(ex.StackTrace);
+                }
 
                 context.ExitCode = 1;
             }
@@ -188,7 +191,7 @@ public static class Program
         return await rootCommand.InvokeAsync(args);
     }
 
-    private static async Task CarveFilesAsync(
+    private static async Task ExtractFilesAsync(
         string inputPath,
         string outputDir,
         List<string>? fileTypes,
@@ -199,9 +202,13 @@ public static class Program
         var files = new List<string>();
 
         if (File.Exists(inputPath))
+        {
             files.Add(inputPath);
+        }
         else if (Directory.Exists(inputPath))
+        {
             files.AddRange(Directory.GetFiles(inputPath, "*.dmp", SearchOption.TopDirectoryOnly));
+        }
 
         if (files.Count == 0)
         {
@@ -217,78 +224,75 @@ public static class Program
             Console.WriteLine($"Processing: {Path.GetFileName(file)}");
             Console.WriteLine(new string('-', 50));
 
-            var carver = new MemoryCarver(
-                outputDir,
-                maxFiles,
-                convertDdx,
-                fileTypes,
-                verbose);
+            var stopwatch = Stopwatch.StartNew();
 
-            var progress = new Progress<double>(p =>
+            // Use the same extraction logic as the GUI
+            var options = new ExtractionOptions
             {
-                if (verbose) Console.Write($"\rProgress: {p * 100:F1}%");
+                OutputPath = outputDir,
+                ConvertDdx = convertDdx,
+                FileTypes = fileTypes,
+                Verbose = verbose,
+                MaxFilesPerType = maxFiles,
+                ExtractScripts = fileTypes == null ||
+                                 fileTypes.Count == 0 ||
+                                 fileTypes.Any(t => t.Contains("scda", StringComparison.OrdinalIgnoreCase) ||
+                                                    t.Contains("script", StringComparison.OrdinalIgnoreCase))
+            };
+
+            var progress = new Progress<ExtractionProgress>(p =>
+            {
+                if (verbose)
+                {
+                    Console.Write($"\rProgress: {p.PercentComplete:F1}% - {p.CurrentOperation}");
+                }
             });
 
-            var stopwatch = Stopwatch.StartNew();
-            var results = await carver.CarveDumpAsync(file, progress);
+            var summary = await MemoryDumpExtractor.Extract(file, options, progress);
+
             stopwatch.Stop();
 
-            Console.WriteLine();
-            Console.WriteLine($"Extracted {results.Count} files in {stopwatch.Elapsed.TotalSeconds:F2}s");
-
-            // Print stats
-            Console.WriteLine();
-            Console.WriteLine("File type summary:");
-            foreach (var (type, count) in carver.Stats.OrderByDescending(x => x.Value))
-                if (count > 0)
-                    Console.WriteLine($"  {type}: {count}");
-
-            if (convertDdx && (carver.DdxConvertedCount > 0 || carver.DdxConvertFailedCount > 0))
+            if (verbose)
             {
-                Console.WriteLine();
-                Console.WriteLine(
-                    $"DDX conversions: {carver.DdxConvertedCount} successful, {carver.DdxConvertFailedCount} failed");
+                Console.WriteLine(); // Clear progress line
             }
 
-            // Extract compiled scripts (SCDA records) - only if no type filter or script types requested
-            var shouldExtractScripts = fileTypes == null ||
-                                       fileTypes.Count == 0 ||
-                                       fileTypes.Any(t => t.Contains("scda", StringComparison.OrdinalIgnoreCase) ||
-                                                          t.Contains("script", StringComparison.OrdinalIgnoreCase));
+            Console.WriteLine($"Extracted {summary.TotalExtracted} files in {stopwatch.Elapsed.TotalSeconds:F2}s");
 
-            if (shouldExtractScripts)
+            // Print stats
+            if (summary.TypeCounts.Count > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine("Scanning for compiled scripts...");
-
-                var dumpData = await File.ReadAllBytesAsync(file);
-                var dumpName = Path.GetFileNameWithoutExtension(file);
-                var scriptsDir = Path.Combine(outputDir, SanitizeFilename(dumpName), "scripts");
-
-                var scriptProgress = verbose ? new Progress<string>(msg => Console.WriteLine($"  {msg}")) : null;
-                var scriptResult = await ScriptExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress, verbose);
-
-                if (scriptResult.TotalRecords > 0)
+                Console.WriteLine("File type summary:");
+                foreach (var (type, count) in summary.TypeCounts.OrderByDescending(x => x.Value))
                 {
-                    Console.WriteLine($"Extracted {scriptResult.TotalRecords} script records:");
-                    Console.WriteLine($"  {scriptResult.GroupedQuests} quest scripts (grouped)");
-                    Console.WriteLine($"  {scriptResult.UngroupedScripts} other scripts");
+                    if (count > 0)
+                    {
+                        Console.WriteLine($"  {type}: {count}");
+                    }
                 }
-                else
-                {
-                    Console.WriteLine("No compiled scripts found.");
-                }
+            }
+
+            if (summary.ModulesExtracted > 0)
+            {
+                Console.WriteLine($"  modules: {summary.ModulesExtracted}");
+            }
+
+            if (convertDdx && (summary.DdxConverted > 0 || summary.DdxFailed > 0))
+            {
+                Console.WriteLine();
+                Console.WriteLine($"DDX conversions: {summary.DdxConverted} successful, {summary.DdxFailed} failed");
+            }
+
+            if (summary.ScriptsExtracted > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Scripts: {summary.ScriptsExtracted} records ({summary.ScriptQuestsGrouped} quests grouped)");
             }
         }
 
         Console.WriteLine();
         Console.WriteLine("Done!");
-    }
-
-    private static string SanitizeFilename(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        return string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c));
     }
 
     private static Command CreateAnalyzeCommand()
@@ -320,10 +324,10 @@ public static class Program
 
             var result = await DumpAnalyzer.AnalyzeAsync(input, progress: progress);
 
-            string report = format.ToLowerInvariant() switch
+            var report = format.ToLowerInvariant() switch
             {
                 "md" or "markdown" => DumpAnalyzer.GenerateReport(result),
-                "json" => System.Text.Json.JsonSerializer.Serialize(result, JsonOptions),
+                "json" => JsonSerializer.Serialize(result, JsonOptions),
                 _ => DumpAnalyzer.GenerateSummary(result)
             };
 
@@ -413,7 +417,8 @@ public static class Program
         foreach (var module in info.Modules.OrderBy(m => m.BaseAddress32))
         {
             var fileName = Path.GetFileName(module.Name);
-            Console.WriteLine($"{fileName},0x{module.BaseAddress32:X8},{module.Size},{module.Checksum},0x{module.TimeDateStamp:X8}");
+            Console.WriteLine(
+                $"{fileName},0x{module.BaseAddress32:X8},{module.Size},{module.Checksum},0x{module.TimeDateStamp:X8}");
         }
     }
 

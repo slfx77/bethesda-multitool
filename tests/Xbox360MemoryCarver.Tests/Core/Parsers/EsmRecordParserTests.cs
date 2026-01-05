@@ -1,5 +1,5 @@
 using Xunit;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
@@ -12,7 +12,7 @@ public class EsmRecordParserTests
         var data = Array.Empty<byte>();
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.EditorIds);
@@ -28,7 +28,7 @@ public class EsmRecordParserTests
         var data = new byte[] { 0x00, 0x01, 0x02, 0x03 };
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.EditorIds);
@@ -51,7 +51,7 @@ public class EsmRecordParserTests
         Array.Copy(editorIdBytes, 0, data, 6, editorIdBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.EditorIds);
@@ -89,7 +89,7 @@ public class EsmRecordParserTests
         Array.Copy(editorIdBytes, 0, data, offset, editorIdBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.EditorIds); // Deduplicated
@@ -110,7 +110,7 @@ public class EsmRecordParserTests
         data[7] = 0x00;
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.EditorIds);
@@ -133,7 +133,7 @@ public class EsmRecordParserTests
         Array.Copy(editorIdBytes, 0, data, 6, editorIdBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.EditorIds);
@@ -156,7 +156,7 @@ public class EsmRecordParserTests
         Array.Copy(settingBytes, 0, data, 6, settingBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.GameSettings);
@@ -183,7 +183,7 @@ public class EsmRecordParserTests
         Array.Copy(settingBytes, 0, data, 6, settingBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.GameSettings);
@@ -206,7 +206,7 @@ public class EsmRecordParserTests
         Array.Copy(settingBytes, 0, data, 6, settingBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.GameSettings);
@@ -229,7 +229,7 @@ public class EsmRecordParserTests
         Array.Copy(scriptBytes, 0, data, 6, scriptBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.ScriptSources);
@@ -253,7 +253,7 @@ public class EsmRecordParserTests
         Array.Copy(textBytes, 0, data, 6, textBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.ScriptSources);
@@ -277,7 +277,7 @@ public class EsmRecordParserTests
         data[10] = 0x00;
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.ScriptSources);
@@ -300,7 +300,7 @@ public class EsmRecordParserTests
         data[9] = 0x00;
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.FormIdReferences);
@@ -324,7 +324,7 @@ public class EsmRecordParserTests
         data[9] = 0x00;
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.FormIdReferences);
@@ -347,7 +347,7 @@ public class EsmRecordParserTests
         data[9] = 0xFF; // High byte = 0xFF (invalid mod index)
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.FormIdReferences);
@@ -366,7 +366,7 @@ public class EsmRecordParserTests
         data[5] = 0x00;
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Empty(result.FormIdReferences);
@@ -406,7 +406,7 @@ public class EsmRecordParserTests
         data[offset] = 0x00;
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.FormIdReferences);
@@ -456,7 +456,7 @@ public class EsmRecordParserTests
         data[offset] = 0x00;
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.EditorIds);
@@ -471,7 +471,7 @@ public class EsmRecordParserTests
         var data = Array.Empty<byte>();
 
         // Act
-        var result = EsmRecordParser.CorrelateFormIdsToNames(data);
+        var result = EsmRecordFormat.CorrelateFormIdsToNames(data);
 
         // Assert
         Assert.Empty(result);
@@ -482,13 +482,13 @@ public class EsmRecordParserTests
     {
         // Arrange
         var data = new byte[10];
-        var existingScan = new EsmRecordParser.EsmRecordScanResult
+        var existingScan = new EsmRecordScanResult
         {
-            EditorIds = [new EsmRecordParser.EdidRecord("TestItem", 50)]
+            EditorIds = [new EdidRecord("TestItem", 50)]
         };
 
         // Act
-        var result = EsmRecordParser.CorrelateFormIdsToNames(data, existingScan);
+        var result = EsmRecordFormat.CorrelateFormIdsToNames(data, existingScan);
 
         // Assert - Should use existing scan, not rescan
         Assert.Empty(result); // No FormID found at offset 50 - 200
@@ -519,9 +519,10 @@ public class EsmRecordParserTests
         Array.Copy(scriptBytes, 0, data, 6, scriptBytes.Length);
 
         // Act
-        var result = EsmRecordParser.ScanForRecords(data);
+        var result = EsmRecordFormat.ScanForRecords(data);
 
         // Assert
         Assert.Single(result.ScriptSources);
     }
 }
+

@@ -17,7 +17,8 @@ The project uses multi-targeting to produce both GUI and CLI builds from a singl
 
 - `MemoryCarver` - Main file carving engine with Aho-Corasick multi-pattern matching
 - `SignatureMatcher` - Aho-Corasick algorithm for efficient multi-signature scanning
-- `FileTypeRegistry` - Single source of truth for file types, signatures, parsers, and colors
+- `FormatRegistry` - Auto-discovers and registers format modules from `Core/Formats/`
+- `IFileFormat` - Interface for self-contained format modules (parsing, conversion, repair)
 - `MinidumpParser` - Parses Xbox 360 minidump structures for module extraction
 - `DumpAnalyzer` - Comprehensive dump analysis with build detection and ESM record extraction
 - `ScriptExtractor` - Extracts and groups compiled scripts (SCDA) by quest name
@@ -160,10 +161,24 @@ src/Xbox360MemoryCarver/
 │   ├── Carving/                 # MemoryCarver, CarveManifest
 │   ├── Converters/              # DDX subprocess converter
 │   ├── Extractors/              # ScriptExtractor - SCDA grouping by quest
-│   ├── FileTypes/               # FileTypeRegistry, FileTypeDefinition
+│   ├── Formats/                 # Self-contained format modules
+│   │   ├── FormatRegistry.cs    # Auto-discovers format modules
+│   │   ├── IFileFormat.cs       # Base interface for formats
+│   │   ├── Dds/DdsFormat.cs     # DDS texture format
+│   │   ├── Ddx/DdxFormat.cs     # DDX Xbox 360 texture (w/ conversion)
+│   │   ├── EsmRecord/           # ESM record scanning
+│   │   ├── Esp/EspFormat.cs     # ESP/ESM plugin format
+│   │   ├── Lip/LipFormat.cs     # Lip sync format
+│   │   ├── Nif/NifFormat.cs     # NetImmerse model format
+│   │   ├── Png/PngFormat.cs     # PNG image format
+│   │   ├── Scda/ScdaFormat.cs   # Compiled script bytecode
+│   │   ├── Script/ScriptFormat.cs # Uncompiled script source
+│   │   ├── Xdbf/XdbfFormat.cs   # Xbox Dashboard format
+│   │   ├── Xex/XexFormat.cs     # Xbox executable format
+│   │   ├── Xma/XmaFormat.cs     # Xbox Media Audio (w/ repair)
+│   │   └── Xui/XuiFormat.cs     # Xbox UI format
 │   ├── Minidump/                # MinidumpParser, MinidumpInfo
-│   ├── Parsers/                 # 16 file format parsers (IFileParser)
-│   └── Utils/                   # BinaryUtils
+│   └── Utils/                   # BinaryUtils, SignatureBoundaryScanner
 ├── SignatureMatcher.cs          # Aho-Corasick multi-pattern search
 ├── *.xaml / *.xaml.cs           # WinUI 3 GUI (Windows only)
 ├── Program.cs                   # Entry point (CLI/GUI switch)
@@ -175,15 +190,41 @@ src/DDXConv/                     # DDX conversion submodule
 
 ## Common Tasks
 
-### Adding a New File Signature
+### Adding a New File Format
 
-1. Create parser in `Core/Parsers/NewFormatParser.cs` implementing `IFileParser`
-2. Register in `Core/FileTypes/FileTypeRegistry.cs` with:
-   - TypeId, DisplayName, Extension, Category
-   - MinSize/MaxSize constraints
-   - ParserType reference
-   - Signatures array with magic bytes
-3. Color is automatically derived from category (defined in `BuildCategoryColors()`)
+1. Create a new folder `Core/Formats/NewFormat/`
+2. Create `NewFormatFormat.cs` extending `FileFormatBase`:
+
+```csharp
+public sealed class NewFormatFormat : FileFormatBase
+{
+    public override string FormatId => "newformat";
+    public override string DisplayName => "NEWF";
+    public override string Extension => ".newf";
+    public override FileCategory Category => FileCategory.Data;
+    public override string OutputFolder => "newformat";
+    public override int MinSize => 16;
+    public override int MaxSize => 10 * 1024 * 1024;
+
+    public override IReadOnlyList<FormatSignature> Signatures { get; } =
+    [
+        new FormatSignature
+        {
+            Id = "newformat",
+            MagicBytes = "NEWF"u8.ToArray(),
+            Description = "New Format File"
+        }
+    ];
+
+    public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        // Parse and return file info
+    }
+}
+```
+
+3. The format is auto-discovered by `FormatRegistry` via reflection
+4. Color is automatically derived from category
 
 See [docs/Architecture.md](../docs/Architecture.md) for detailed extensibility guide.
 

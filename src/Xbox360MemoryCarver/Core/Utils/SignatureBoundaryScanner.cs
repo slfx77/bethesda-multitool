@@ -1,35 +1,28 @@
-using Xbox360MemoryCarver.Core.Utils;
+using Xbox360MemoryCarver.Core.Formats;
 
-namespace Xbox360MemoryCarver.Core.Parsers;
+namespace Xbox360MemoryCarver.Core.Utils;
 
 /// <summary>
 ///     Utility for finding file boundaries by scanning for known signatures.
 /// </summary>
-internal static class SignatureBoundaryScanner
+public static class SignatureBoundaryScanner
 {
-    /// <summary>
-    ///     Known file signatures to scan for when determining file boundaries.
-    /// </summary>
-    private static readonly byte[][] KnownSignatures =
-    [
-        "3XDO"u8.ToArray(), // DDX texture
-        "3XDR"u8.ToArray(), // DDX texture
-        "RIFF"u8.ToArray(), // Audio (XMA, WAV)
-        "XEX2"u8.ToArray(), // Xbox Executable
-        "XUIS"u8.ToArray(), // XUI Scene
-        "XUIB"u8.ToArray(), // XUI Binary
-        "XDBF"u8.ToArray(), // Dashboard file
-        "TES4"u8.ToArray(), // ESP/ESM plugin
-        "LIPS"u8.ToArray(), // Lip sync
-        "scn "u8.ToArray(), // Script
-        "DDS "u8.ToArray(), // DDS texture
-        [0x89, 0x50, 0x4E, 0x47] // PNG
-    ];
-
     /// <summary>
     ///     Gamebryo/NIF signature (20 bytes).
     /// </summary>
     private static readonly byte[] GamebryoSignature = "Gamebryo File Format"u8.ToArray();
+
+    /// <summary>
+    ///     Get all known signatures from the FormatRegistry for boundary scanning.
+    /// </summary>
+    private static byte[][] GetKnownSignatures()
+    {
+        // Dynamically get all signatures from registered formats
+        return FormatRegistry.All
+            .SelectMany(f => f.Signatures)
+            .Select(s => s.MagicBytes)
+            .ToArray();
+    }
 
     /// <summary>
     ///     Scan for the next file signature starting from a given position.
@@ -47,7 +40,7 @@ internal static class SignatureBoundaryScanner
         int maxSize,
         ReadOnlySpan<byte> excludeSignature = default)
     {
-        return FindNextSignatureCore(data, offset, minSize, maxSize, excludeSignature, validateRiff: false);
+        return FindNextSignatureCore(data, offset, minSize, maxSize, excludeSignature, false);
     }
 
     /// <summary>
@@ -67,7 +60,7 @@ internal static class SignatureBoundaryScanner
         int maxSize,
         ReadOnlySpan<byte> excludeSignature = default)
     {
-        return FindNextSignatureCore(data, offset, minSize, maxSize, excludeSignature, validateRiff: true);
+        return FindNextSignatureCore(data, offset, minSize, maxSize, excludeSignature, true);
     }
 
     /// <summary>
@@ -95,10 +88,7 @@ internal static class SignatureBoundaryScanner
             ? FindNextSignatureWithRiffValidation(data, offset, minSize, maxSize, excludeSignature)
             : FindNextSignature(data, offset, minSize, maxSize, excludeSignature);
 
-        if (boundaryOffset > 0)
-        {
-            return boundaryOffset;
-        }
+        if (boundaryOffset > 0) return boundaryOffset;
 
         // No boundary found, use default but cap at available data
         var availableData = Math.Min(data.Length - offset, maxSize);
@@ -110,14 +100,15 @@ internal static class SignatureBoundaryScanner
     /// </summary>
     public static bool IsKnownSignature(ReadOnlySpan<byte> data, int position)
     {
-        if (position + 4 > data.Length) return false;
-
-        var slice = data.Slice(position, 4);
+        var knownSignatures = GetKnownSignatures();
 
 #pragma warning disable S3267 // Loops should be simplified using LINQ - cannot use Span in lambda
-        foreach (var sig in KnownSignatures)
-            if (slice.SequenceEqual(sig))
+        foreach (var sig in knownSignatures)
+        {
+            if (position + sig.Length > data.Length) continue;
+            if (data.Slice(position, sig.Length).SequenceEqual(sig))
                 return true;
+        }
 #pragma warning restore S3267
 
         // Check Gamebryo
@@ -161,25 +152,26 @@ internal static class SignatureBoundaryScanner
     {
         var scanStart = offset + minSize;
         var scanEnd = Math.Min(offset + maxSize, data.Length - 4);
+        var knownSignatures = GetKnownSignatures();
 
         for (var i = scanStart; i < scanEnd; i++)
         {
             // Check 4-byte signatures
-            var slice = data.Slice(i, 4);
+            var slice = data.Slice(i, Math.Min(4, data.Length - i));
 
 #pragma warning disable S3267 // Loops should be simplified using LINQ - cannot use Span in lambda
-            foreach (var sig in KnownSignatures)
+            foreach (var sig in knownSignatures)
             {
-                if (!slice.SequenceEqual(sig)) continue;
+                if (sig.Length > slice.Length) continue;
+                if (!slice[..sig.Length].SequenceEqual(sig)) continue;
 
-                // Skip if this is the excluded signature
-                if (!excludeSignature.IsEmpty && slice.SequenceEqual(excludeSignature)) continue;
+                // Skip if this signature matches the excluded signature
+                if (!excludeSignature.IsEmpty &&
+                    sig.Length == excludeSignature.Length &&
+                    excludeSignature.SequenceEqual(sig)) continue;
 
                 // Validate RIFF headers if requested
-                if (validateRiff && slice.SequenceEqual("RIFF"u8) && !IsValidRiffHeader(data, i))
-                {
-                    continue;
-                }
+                if (validateRiff && slice.SequenceEqual("RIFF"u8) && !IsValidRiffHeader(data, i)) continue;
 
                 return i - offset;
             }

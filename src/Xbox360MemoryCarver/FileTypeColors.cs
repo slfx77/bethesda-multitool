@@ -1,32 +1,32 @@
 using Windows.UI;
-using Xbox360MemoryCarver.Core.FileTypes;
+using Xbox360MemoryCarver.Core.Formats;
 
 namespace Xbox360MemoryCarver.App;
 
 /// <summary>
 ///     Provides color mappings for file types in the UI.
-///     Wraps the FileTypeRegistry for WinUI color types.
+///     Wraps the FormatRegistry for WinUI color types.
 /// </summary>
 public static class FileTypeColors
 {
     /// <summary>
     ///     Color used for unknown/untyped regions.
     /// </summary>
-    public static readonly Color UnknownColor = FromArgb(FileTypeRegistry.UnknownColor);
+    public static readonly Color UnknownColor = FromArgb(FormatRegistry.UnknownColor);
 
     /// <summary>
     ///     Legend categories for UI display.
     /// </summary>
     public static readonly LegendCategory[] LegendCategories =
     [
-        new("Texture", FromArgb(FileTypeRegistry.CategoryColors[FileCategory.Texture])),
-        new("PNG", FromArgb(FileTypeRegistry.CategoryColors[FileCategory.Image])),
-        new("Audio", FromArgb(FileTypeRegistry.CategoryColors[FileCategory.Audio])),
-        new("Model", FromArgb(FileTypeRegistry.CategoryColors[FileCategory.Model])),
-        new("Module", FromArgb(FileTypeRegistry.CategoryColors[FileCategory.Module])),
-        new("Script", FromArgb(FileTypeRegistry.CategoryColors[FileCategory.Script])),
-        new("Xbox/XUI", FromArgb(FileTypeRegistry.CategoryColors[FileCategory.Xbox])),
-        new("Plugin", FromArgb(FileTypeRegistry.CategoryColors[FileCategory.Plugin]))
+        new("Texture", FromArgb(FormatRegistry.CategoryColors[FileCategory.Texture])),
+        new("PNG", FromArgb(FormatRegistry.CategoryColors[FileCategory.Image])),
+        new("Audio", FromArgb(FormatRegistry.CategoryColors[FileCategory.Audio])),
+        new("Model", FromArgb(FormatRegistry.CategoryColors[FileCategory.Model])),
+        new("Module", FromArgb(FormatRegistry.CategoryColors[FileCategory.Module])),
+        new("Script", FromArgb(FormatRegistry.CategoryColors[FileCategory.Script])),
+        new("Xbox/XUI", FromArgb(FormatRegistry.CategoryColors[FileCategory.Xbox])),
+        new("Plugin", FromArgb(FormatRegistry.CategoryColors[FileCategory.Plugin]))
     ];
 
     /// <summary>
@@ -34,8 +34,8 @@ public static class FileTypeColors
     /// </summary>
     public static Color GetColor(string fileType)
     {
-        var sigId = FileTypeRegistry.NormalizeToSignatureId(fileType);
-        return FromArgb(FileTypeRegistry.GetColor(sigId));
+        var sigId = FormatRegistry.NormalizeToSignatureId(fileType);
+        return FromArgb(FormatRegistry.GetColor(sigId));
     }
 
     /// <summary>
@@ -43,7 +43,7 @@ public static class FileTypeColors
     /// </summary>
     public static string NormalizeTypeName(string fileType)
     {
-        return FileTypeRegistry.NormalizeToSignatureId(fileType);
+        return FormatRegistry.NormalizeToSignatureId(fileType);
     }
 
     /// <summary>
@@ -51,8 +51,8 @@ public static class FileTypeColors
     /// </summary>
     public static int GetPriority(string fileType)
     {
-        var sigId = FileTypeRegistry.NormalizeToSignatureId(fileType);
-        return FileTypeRegistry.GetDisplayPriority(sigId);
+        var sigId = FormatRegistry.NormalizeToSignatureId(fileType);
+        return FormatRegistry.GetDisplayPriority(sigId);
     }
 
     private static Color FromArgb(uint argb)

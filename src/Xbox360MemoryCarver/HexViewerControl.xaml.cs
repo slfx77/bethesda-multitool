@@ -73,13 +73,15 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
             var itemPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
             itemPanel.Children.Add(new Border
             {
-                Width = 12, Height = 12,
+                Width = 12,
+                Height = 12,
                 Background = new SolidColorBrush(category.Color),
                 CornerRadius = new CornerRadius(2)
             });
             itemPanel.Children.Add(new TextBlock
             {
-                Text = category.Name, FontSize = 10,
+                Text = category.Name,
+                FontSize = 10,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = new SolidColorBrush(Color.FromArgb(255, 204, 204, 204))
             });
@@ -517,7 +519,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         _searchResults.Clear();
         _currentSearchIndex = -1;
         SearchResultsText.Text = "";
-        
+
         // Clear highlight and re-render
         if (_rowRenderer != null)
         {

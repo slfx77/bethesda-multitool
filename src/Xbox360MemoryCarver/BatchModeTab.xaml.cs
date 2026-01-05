@@ -18,8 +18,8 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     private readonly ObservableCollection<DumpFileEntry> _dumpFiles = [];
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
     private CancellationTokenSource? _cancellationTokenSource;
-    private bool _disposed;
     private BatchSortColumn _currentSortColumn = BatchSortColumn.None;
+    private bool _disposed;
     private bool _sortAscending = true;
 
     public BatchModeTab()
@@ -63,6 +63,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         ExtractButton.IsEnabled = hasOutputDir && hasSelectedFiles;
     }
 
+#pragma warning disable CA1822 // Event handler cannot be static
     private void ParallelCountBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         // Reset to default value (2) if the user clears the box or enters an invalid value
@@ -71,6 +72,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
             sender.Value = 2;
         }
     }
+#pragma warning restore CA1822
 
     private async Task ShowDialogAsync(string title, string message)
     {
@@ -229,13 +231,16 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     {
         var glyph = _sortAscending ? "\uE70D" : "\uE70E"; // Up or Down arrow
 
-        FilenameSortIcon.Visibility = _currentSortColumn == BatchSortColumn.Filename ? Visibility.Visible : Visibility.Collapsed;
+        FilenameSortIcon.Visibility =
+            _currentSortColumn == BatchSortColumn.Filename ? Visibility.Visible : Visibility.Collapsed;
         FilenameSortIcon.Glyph = glyph;
 
-        SizeSortIcon.Visibility = _currentSortColumn == BatchSortColumn.Size ? Visibility.Visible : Visibility.Collapsed;
+        SizeSortIcon.Visibility =
+            _currentSortColumn == BatchSortColumn.Size ? Visibility.Visible : Visibility.Collapsed;
         SizeSortIcon.Glyph = glyph;
 
-        StatusSortIcon.Visibility = _currentSortColumn == BatchSortColumn.Status ? Visibility.Visible : Visibility.Collapsed;
+        StatusSortIcon.Visibility =
+            _currentSortColumn == BatchSortColumn.Status ? Visibility.Visible : Visibility.Collapsed;
         StatusSortIcon.Glyph = glyph;
     }
 

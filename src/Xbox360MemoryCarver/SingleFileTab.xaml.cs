@@ -125,7 +125,7 @@ public sealed partial class SingleFileTab : UserControl
     }
 
     private async Task ShowDialogAsync(string title, string message) => await new ContentDialog
-    { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
+        { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -248,7 +248,9 @@ public sealed partial class SingleFileTab : UserControl
 
             var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
             if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";
-            if (summary.ScriptsExtracted > 0) msg += $"Scripts extracted: {summary.ScriptsExtracted} ({summary.ScriptQuestsGrouped} quests grouped)\n";
+            if (summary.ScriptsExtracted > 0)
+                msg +=
+                    $"Scripts extracted: {summary.ScriptsExtracted} ({summary.ScriptQuestsGrouped} quests grouped)\n";
             if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
                 msg += $"\nDDX conversion: {summary.DdxConverted} ok, {summary.DdxFailed} failed";
             await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {outputPath}");

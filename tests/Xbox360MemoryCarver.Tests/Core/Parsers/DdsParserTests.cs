@@ -1,15 +1,15 @@
 using System.Text;
 using Xunit;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Formats.Dds;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for DdsParser.
+/// Tests for DdsFormat.
 /// </summary>
-public class DdsParserTests
+public class DdsFormatTests
 {
-    private readonly DdsParser _parser = new();
+    private readonly DdsFormat _parser = new();
 
     #region Magic Bytes Tests
 
@@ -20,7 +20,7 @@ public class DdsParserTests
         var data = CreateDdsHeader(256, 256, "DXT1");
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -35,7 +35,7 @@ public class DdsParserTests
         "XXXX"u8.CopyTo(data.AsSpan(0));
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -49,7 +49,7 @@ public class DdsParserTests
         "DDS "u8.CopyTo(data.AsSpan(0));
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -73,12 +73,12 @@ public class DdsParserTests
         var data = CreateDdsHeader(width, height, "DXT1");
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(width, result.Width);
-        Assert.Equal(height, result.Height);
+        Assert.Equal(width, result.Metadata["width"]);
+        Assert.Equal(height, result.Metadata["height"]);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public class DdsParserTests
         var data = CreateDdsHeader(0, 0, "DXT1");
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -101,7 +101,7 @@ public class DdsParserTests
         var data = CreateDdsHeader(32768, 32768, "DXT1");
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -121,11 +121,11 @@ public class DdsParserTests
         var data = CreateDdsHeader(256, 256, fourcc);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(fourcc, result.FourCc);
+        Assert.Equal(fourcc, (string)result.Metadata["fourCc"]);
     }
 
     #endregion
@@ -140,7 +140,7 @@ public class DdsParserTests
         var data = CreateDdsHeader(256, 256, "DXT1", mipCount: 1);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -155,7 +155,7 @@ public class DdsParserTests
         var data = CreateDdsHeader(256, 256, "DXT5", mipCount: 1);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -169,7 +169,7 @@ public class DdsParserTests
         var data = CreateDdsHeader(256, 256, "DXT1", mipCount: 9); // 256 -> 1 = 9 levels
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -188,12 +188,12 @@ public class DdsParserTests
         var data = CreateDdsHeader(256, 256, "DXT1");
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
         Assert.Equal("little", result.Metadata["endianness"]);
-        Assert.False(result.IsXbox360);
+        Assert.False((bool)result.Metadata["isXbox360"]);
     }
 
     #endregion

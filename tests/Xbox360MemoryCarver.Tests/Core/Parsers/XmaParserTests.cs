@@ -1,15 +1,15 @@
 using System.Text;
 using Xunit;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Formats.Xma;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for XmaParser.
+/// Tests for XmaFormat.
 /// </summary>
-public class XmaParserTests
+public class XmaFormatTests
 {
-    private readonly XmaParser _parser = new();
+    private readonly XmaFormat _parser = new();
 
     #region Magic Bytes Tests
 
@@ -20,12 +20,12 @@ public class XmaParserTests
         var data = CreateXmaHeader(useXma2Chunk: true);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
         Assert.Equal("XMA", result.Format);
-        Assert.True(result.IsXbox360);
+        Assert.True((bool)result.Metadata["isXma"]);
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public class XmaParserTests
         var data = CreateXmaHeader(useXma2Chunk: false, formatTag: 0x0165);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -49,7 +49,7 @@ public class XmaParserTests
         var data = CreateXmaHeader(useXma2Chunk: false, formatTag: 0x0166);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -64,7 +64,7 @@ public class XmaParserTests
         "XXXX"u8.CopyTo(data.AsSpan(0));
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -80,7 +80,7 @@ public class XmaParserTests
         "AVI "u8.CopyTo(data.AsSpan(8));
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -93,7 +93,7 @@ public class XmaParserTests
         var data = CreateXmaHeader(useXma2Chunk: false, formatTag: 0x0001); // PCM
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -110,7 +110,7 @@ public class XmaParserTests
         var data = CreateXmaHeader(riffSize: 5000);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -124,7 +124,7 @@ public class XmaParserTests
         var data = CreateXmaHeader(riffSize: 20);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -137,7 +137,7 @@ public class XmaParserTests
         var data = CreateXmaHeader(riffSize: 150 * 1024 * 1024);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -154,7 +154,7 @@ public class XmaParserTests
         var data = CreateXmaHeader(useXma2Chunk: true);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -168,7 +168,7 @@ public class XmaParserTests
         var data = CreateXmaHeader(useXma2Chunk: false, formatTag: 0x0165);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);

@@ -1,14 +1,14 @@
 using Xunit;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Formats.Png;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for PngParser.
+/// Tests for PngFormat.
 /// </summary>
-public class PngParserTests
+public class PngFormatTests
 {
-    private readonly PngParser _parser = new();
+    private readonly PngFormat _parser = new();
 
     #region Magic Bytes Tests
 
@@ -19,7 +19,7 @@ public class PngParserTests
         var data = CreateMinimalPng();
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -34,7 +34,7 @@ public class PngParserTests
         data[0] = 0x00; // Wrong magic
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -47,7 +47,7 @@ public class PngParserTests
         byte[] data = [0x89, 0x50, 0x4E, 0x47];
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -64,7 +64,7 @@ public class PngParserTests
         var data = CreateMinimalPng();
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -83,7 +83,7 @@ public class PngParserTests
         ];
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -102,7 +102,7 @@ public class PngParserTests
         png.CopyTo(data, 50);
 
         // Act
-        var result = _parser.ParseHeader(data, offset: 50);
+        var result = _parser.Parse(data, offset: 50);
 
         // Assert
         Assert.NotNull(result);

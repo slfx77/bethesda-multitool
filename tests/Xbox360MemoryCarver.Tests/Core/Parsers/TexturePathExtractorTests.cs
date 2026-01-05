@@ -1,5 +1,5 @@
 using Xunit;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 

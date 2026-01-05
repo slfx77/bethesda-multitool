@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Xbox360MemoryCarver.Core.Parsers;
+namespace Xbox360MemoryCarver.Core.Utils;
 
 /// <summary>
 ///     Helper for extracting texture paths from memory dumps.
@@ -31,7 +31,6 @@ internal static class TexturePathExtractor
 
         // Look for the extension - start from end of search area
         for (var i = searchLength - extBytes.Length; i >= 0; i--)
-        {
             if (IsExtensionMatch(searchArea, i, extBytes))
             {
                 var pathEnd = i + extBytes.Length;
@@ -48,7 +47,6 @@ internal static class TexturePathExtractor
                     }
                 }
             }
-        }
 
         return null;
     }

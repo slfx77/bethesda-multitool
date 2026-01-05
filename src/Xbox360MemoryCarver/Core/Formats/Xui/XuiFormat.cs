@@ -1,14 +1,29 @@
 using Xbox360MemoryCarver.Core.Utils;
 
-namespace Xbox360MemoryCarver.Core.Parsers;
+namespace Xbox360MemoryCarver.Core.Formats.Xui;
 
 /// <summary>
-///     Parser for Xbox XUI (Xbox User Interface) files.
+///     Xbox XUI (Xbox User Interface) format module.
 ///     Handles both XUIS (scene) and XUIB (binary) formats.
 /// </summary>
-public class XuiParser : IFileParser
+public sealed class XuiFormat : FileFormatBase
 {
-    public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
+    public override string FormatId => "xui";
+    public override string DisplayName => "XUI";
+    public override string Extension => ".xui";
+    public override FileCategory Category => FileCategory.Xbox;
+    public override string OutputFolder => "xbox";
+    public override int MinSize => 24;
+    public override int MaxSize => 5 * 1024 * 1024;
+    public override int DisplayPriority => 3;
+
+    public override IReadOnlyList<FormatSignature> Signatures { get; } =
+    [
+        new() { Id = "xui_scene", MagicBytes = "XUIS"u8.ToArray(), Description = "XUI Scene" },
+        new() { Id = "xui_binary", MagicBytes = "XUIB"u8.ToArray(), Description = "XUI Binary" }
+    ];
+
+    public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         const int minHeaderSize = 16;
         if (data.Length < offset + minHeaderSize) return null;
@@ -21,32 +36,22 @@ public class XuiParser : IFileParser
 
         try
         {
-            // XUI header structure (big-endian on Xbox 360):
-            // 0x00: Magic (4 bytes) - "XUIS" or "XUIB"
-            // 0x04: Version (4 bytes)
-            // 0x08: File size (4 bytes) - total file size including header
-            // 0x0C: Various flags/counts
-
             var version = BinaryUtils.ReadUInt32BE(data, offset + 4);
             var fileSize = BinaryUtils.ReadUInt32BE(data, offset + 8);
 
-            // Validate the reported size
-            if (fileSize < minHeaderSize || fileSize > 10 * 1024 * 1024) // Max 10MB sanity check
+            if (fileSize < minHeaderSize || fileSize > 10 * 1024 * 1024)
             {
-                // Try little-endian interpretation
                 fileSize = BinaryUtils.ReadUInt32LE(data, offset + 8);
                 if (fileSize < minHeaderSize || fileSize > 10 * 1024 * 1024)
                 {
-                    // Fall back to scanning for next signature using shared scanner
-                    const int minSize = 1024; // Minimum reasonable XUI size
+                    const int minSize = 1024;
                     const int maxScan = 5 * 1024 * 1024;
-                    const int defaultSize = 256 * 1024; // Default to 256KB
+                    const int defaultSize = 256 * 1024;
 
-                    // Exclude the current XUI signature type from detection
                     var excludeSig = isScene ? "XUIS"u8 : "XUIB"u8;
                     fileSize = (uint)SignatureBoundaryScanner.FindBoundary(
                         data, offset, minSize, maxScan, defaultSize,
-                        excludeSignature: excludeSig, validateRiff: false);
+                        excludeSig, false);
                 }
             }
 
@@ -63,8 +68,14 @@ public class XuiParser : IFileParser
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[XuiParser] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine($"[XuiFormat] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
+    }
+
+    public override string GetDisplayDescription(string signatureId,
+        IReadOnlyDictionary<string, object>? metadata = null)
+    {
+        return signatureId == "xui_binary" ? "XUI Binary" : "XUI Scene";
     }
 }

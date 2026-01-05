@@ -1,19 +1,37 @@
 using System.Text;
 using Xbox360MemoryCarver.Core.Utils;
 
-namespace Xbox360MemoryCarver.Core.Parsers;
+namespace Xbox360MemoryCarver.Core.Formats.Dds;
 
 /// <summary>
-///     Parser for DDS (DirectDraw Surface) texture files.
+///     DirectDraw Surface (DDS) texture format module.
 /// </summary>
-public class DdsParser : IFileParser
+public sealed class DdsFormat : FileFormatBase
 {
-    public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
+    public override string FormatId => "dds";
+    public override string DisplayName => "DDS";
+    public override string Extension => ".dds";
+    public override FileCategory Category => FileCategory.Texture;
+    public override string OutputFolder => "textures";
+    public override int MinSize => 128;
+    public override int MaxSize => 50 * 1024 * 1024;
+    public override int DisplayPriority => 1;
+
+    public override IReadOnlyList<FormatSignature> Signatures { get; } =
+    [
+        new()
+        {
+            Id = "dds",
+            MagicBytes = "DDS "u8.ToArray(),
+            Description = "DirectDraw Surface texture"
+        }
+    ];
+
+    public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         if (data.Length < offset + 128) return null;
 
         var headerData = data.Slice(offset, 128);
-
         if (!headerData[..4].SequenceEqual("DDS "u8)) return null;
 
         try
@@ -26,6 +44,7 @@ public class DdsParser : IFileParser
             var fourcc = headerData.Slice(84, 4);
             var endianness = "little";
 
+            // Check if big-endian (Xbox 360)
             if (height > 16384 || width > 16384 || headerSize != 124)
             {
                 height = BinaryUtils.ReadUInt32BE(headerData, 12);
@@ -47,18 +66,24 @@ public class DdsParser : IFileParser
             var metadata = new Dictionary<string, object>
             {
                 ["pitch"] = pitchOrLinearSize,
-                ["endianness"] = endianness
+                ["endianness"] = endianness,
+                ["width"] = (int)width,
+                ["height"] = (int)height,
+                ["mipCount"] = (int)mipmapCount,
+                ["fourCc"] = fourccStr,
+                ["isXbox360"] = endianness == "big"
             };
 
+            string? fileName = null;
             if (!string.IsNullOrEmpty(texturePath))
             {
                 metadata["texturePath"] = texturePath;
-                // Extract just the filename for display (keep extension for consistency with DDX)
-                var fileName = Path.GetFileName(texturePath);
-                if (!string.IsNullOrEmpty(fileName))
+                var fn = Path.GetFileName(texturePath);
+                if (!string.IsNullOrEmpty(fn))
                 {
-                    metadata["fileName"] = fileName;
-                    metadata["safeName"] = TexturePathExtractor.SanitizeFilename(Path.GetFileNameWithoutExtension(fileName));
+                    metadata["fileName"] = fn;
+                    metadata["safeName"] = TexturePathExtractor.SanitizeFilename(Path.GetFileNameWithoutExtension(fn));
+                    fileName = fn;
                 }
             }
 
@@ -66,19 +91,26 @@ public class DdsParser : IFileParser
             {
                 Format = "DDS",
                 EstimatedSize = estimatedSize + 128,
-                Width = (int)width,
-                Height = (int)height,
-                MipCount = (int)mipmapCount,
-                FourCc = fourccStr,
-                IsXbox360 = endianness == "big",
+                FileName = fileName,
                 Metadata = metadata
             };
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[DdsParser] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine($"[DdsFormat] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
+    }
+
+    public override string GetDisplayDescription(string signatureId,
+        IReadOnlyDictionary<string, object>? metadata = null)
+    {
+        if (metadata != null && metadata.TryGetValue("width", out var w) && metadata.TryGetValue("height", out var h))
+        {
+            return $"DDS ({w}x{h})";
+        }
+
+        return "DirectDraw Surface texture";
     }
 
     private static int GetBytesPerBlock(string fourcc)
@@ -99,17 +131,15 @@ public class DdsParser : IFileParser
         var blocksHigh = (height + 3) / 4;
         var estimatedSize = blocksWide * blocksHigh * bytesPerBlock;
 
-        if (mipmapCount > 1)
+        var mipWidth = width;
+        var mipHeight = height;
+        for (var i = 1; i < mipmapCount && i < 13; i++)
         {
-            int mipWidth = width, mipHeight = height;
-            for (var i = 1; i < Math.Min(mipmapCount, 16); i++)
-            {
-                mipWidth = Math.Max(1, mipWidth / 2);
-                mipHeight = Math.Max(1, mipHeight / 2);
-                var mipBlocksWide = Math.Max(1, (mipWidth + 3) / 4);
-                var mipBlocksHigh = Math.Max(1, (mipHeight + 3) / 4);
-                estimatedSize += mipBlocksWide * mipBlocksHigh * bytesPerBlock;
-            }
+            mipWidth = Math.Max(1, mipWidth / 2);
+            mipHeight = Math.Max(1, mipHeight / 2);
+            blocksWide = Math.Max(1, (mipWidth + 3) / 4);
+            blocksHigh = Math.Max(1, (mipHeight + 3) / 4);
+            estimatedSize += blocksWide * blocksHigh * bytesPerBlock;
         }
 
         return estimatedSize;

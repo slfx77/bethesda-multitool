@@ -1,6 +1,6 @@
 using System.Collections.Frozen;
 
-namespace Xbox360MemoryCarver.Core.FileTypes;
+namespace Xbox360MemoryCarver.Core.Formats.Ddx;
 
 /// <summary>
 ///     Constants for Xbox 360 texture formats.

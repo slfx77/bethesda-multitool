@@ -1,11 +1,11 @@
 using Xunit;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Formats.Scda;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 public class ScdaParserTests
 {
-    private readonly ScdaParser _parser = new();
+    private readonly ScdaFormat _parser = new();
 
     [Fact]
     public void ParseHeader_ValidScdaRecord_ReturnsParseResult()
@@ -19,7 +19,7 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -41,12 +41,13 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
         Assert.Equal("SCDA", result.Format);
     }
+
 
     [Fact]
     public void ParseHeader_InvalidMagic_ReturnsNull()
@@ -60,7 +61,7 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -78,7 +79,7 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -96,7 +97,7 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -114,7 +115,7 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -132,7 +133,7 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -145,7 +146,7 @@ public class ScdaParserTests
         var data = new byte[] { (byte)'S', (byte)'C', (byte)'D', (byte)'A', 0x04, 0x00 };
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -164,7 +165,7 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.ParseHeader(data, offset: 4);
+        var result = _parser.Parse(data, offset: 4);
 
         // Assert
         Assert.NotNull(result);
@@ -178,10 +179,10 @@ public class ScdaParserTests
         var data = Array.Empty<byte>();
 
         // Act
-        var records = ScdaParser.ScanForRecords(data);
+        var records = ScdaFormat.ScanForRecords(data);
 
         // Assert
-        Assert.Empty(records);
+        Assert.Empty(records.Records);
     }
 
     [Fact]
@@ -192,10 +193,10 @@ public class ScdaParserTests
         Array.Fill(data, (byte)0xFF);
 
         // Act
-        var records = ScdaParser.ScanForRecords(data);
+        var records = ScdaFormat.ScanForRecords(data);
 
         // Assert
-        Assert.Empty(records);
+        Assert.Empty(records.Records);
     }
 
     [Fact]
@@ -211,13 +212,13 @@ public class ScdaParserTests
         };
 
         // Act
-        var records = ScdaParser.ScanForRecords(data);
+        var records = ScdaFormat.ScanForRecords(data);
 
         // Assert
-        Assert.Single(records);
-        Assert.Equal(0, records[0].Offset);
-        Assert.Equal(6, records[0].BytecodeLength);
-        Assert.False(records[0].HasAssociatedSctx);
+        Assert.Single(records.Records);
+        Assert.Equal(0, records.Records[0].Offset);
+        Assert.Equal(6, records.Records[0].BytecodeLength);
+        Assert.False(records.Records[0].HasAssociatedSctx);
     }
 
     [Fact]
@@ -254,12 +255,12 @@ public class ScdaParserTests
         Array.Copy(sourceBytes, 0, data, offset, sourceBytes.Length);
 
         // Act
-        var records = ScdaParser.ScanForRecords(data);
+        var records = ScdaFormat.ScanForRecords(data);
 
         // Assert
-        Assert.Single(records);
-        Assert.True(records[0].HasAssociatedSctx);
-        Assert.Equal(sourceText, records[0].SourceText);
+        Assert.Single(records.Records);
+        Assert.True(records.Records[0].HasAssociatedSctx);
+        Assert.Equal(sourceText, records.Records[0].SourceText);
     }
 
     [Fact]
@@ -296,12 +297,12 @@ public class ScdaParserTests
         data[offset] = 0x00;
 
         // Act
-        var records = ScdaParser.ScanForRecords(data);
+        var records = ScdaFormat.ScanForRecords(data);
 
         // Assert
-        Assert.Single(records);
-        Assert.Single(records[0].FormIdReferences);
-        Assert.Equal(0x0012AB34u, records[0].FormIdReferences[0]);
+        Assert.Single(records.Records);
+        Assert.Single(records.Records[0].FormIdReferences);
+        Assert.Equal(0x0012AB34u, records.Records[0].FormIdReferences[0]);
     }
 
     [Fact]
@@ -339,19 +340,19 @@ public class ScdaParserTests
         data[offset] = 0x03;
 
         // Act
-        var records = ScdaParser.ScanForRecords(data);
+        var records = ScdaFormat.ScanForRecords(data);
 
         // Assert
-        Assert.Equal(2, records.Count);
-        Assert.Equal(0, records[0].Offset);
-        Assert.Equal(15, records[1].Offset);
+        Assert.Equal(2, records.Records.Count);
+        Assert.Equal(0, records.Records[0].Offset);
+        Assert.Equal(15, records.Records[1].Offset);
     }
 
     [Fact]
     public void ScdaRecord_BytecodeSize_MatchesBytecodeLength()
     {
         // Arrange
-        var record = new ScdaParser.ScdaRecord
+        var record = new ScdaRecord
         {
             Offset = 0,
             Bytecode = new byte[] { 0x10, 0x01, 0x02, 0x03, 0x04 }
@@ -363,3 +364,6 @@ public class ScdaParserTests
         Assert.Equal(record.BytecodeSize, record.BytecodeLength);
     }
 }
+
+
+

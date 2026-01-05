@@ -95,10 +95,10 @@ internal sealed class HexRowRenderer
             {
                 var byteOffset = rowOffset + i;
                 var b = buffer[bufferOffset + i];
-                
+
                 // Check if this byte is within the highlight range (search result)
                 var isHighlighted = HighlightStart >= 0 && byteOffset >= HighlightStart && byteOffset < HighlightEnd;
-                
+
                 // Determine foreground color: highlighted > region color > default
                 SolidColorBrush foreground;
                 if (isHighlighted)
@@ -110,7 +110,7 @@ internal sealed class HexRowRenderer
                     var region = _findRegion(byteOffset);
                     foreground = region != null ? new SolidColorBrush(region.Color) : TextBrush;
                 }
-                
+
                 _hexTextBlock.Inlines.Add(new Run
                 {
                     Text = $"{b:X2} ",

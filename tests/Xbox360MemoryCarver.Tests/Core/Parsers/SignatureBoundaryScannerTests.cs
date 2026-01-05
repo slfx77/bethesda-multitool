@@ -1,5 +1,5 @@
 using Xunit;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
@@ -169,8 +169,8 @@ public class SignatureBoundaryScannerTests
     [Fact]
     public void IsKnownSignature_PngSignature_ReturnsTrue()
     {
-        // Arrange
-        byte[] data = [0x89, 0x50, 0x4E, 0x47];
+        // Arrange - Full 8-byte PNG signature
+        byte[] data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
         // Act
         var result = SignatureBoundaryScanner.IsKnownSignature(data, 0);

@@ -1,57 +1,67 @@
 using System.Text;
 using Xbox360MemoryCarver.Core.Utils;
 
-namespace Xbox360MemoryCarver.Core.Parsers;
+namespace Xbox360MemoryCarver.Core.Formats.Scda;
 
 /// <summary>
-///     Parser for Bethesda compiled script bytecode (SCDA records).
-///     Used in release builds where scripts are compiled rather than stored as source.
+///     Parsed SCDA record with bytecode and optional source text.
 /// </summary>
-public class ScdaParser : IFileParser
+public record ScdaRecord
 {
-    private static readonly byte[] ScdaSignature = "SCDA"u8.ToArray();
+    public required long Offset { get; init; }
+    public int BytecodeSize => Bytecode.Length;
+    public int BytecodeLength => Bytecode.Length;
+    public required byte[] Bytecode { get; init; }
+    public string? SourceText { get; init; }
+    public long SourceOffset { get; init; }
+    public bool HasAssociatedSctx => !string.IsNullOrEmpty(SourceText);
+    public List<uint> FormIdReferences { get; init; } = [];
+}
 
-    /// <summary>
-    ///     Parsed SCDA record with bytecode and optional source text.
-    /// </summary>
-    public record ScdaRecord
-    {
-        public required long Offset { get; init; }
-        public int BytecodeSize => Bytecode.Length;
-        public int BytecodeLength => Bytecode.Length;
-        public required byte[] Bytecode { get; init; }
-        public string? SourceText { get; init; }
-        public long SourceOffset { get; init; }
-        public bool HasAssociatedSctx => !string.IsNullOrEmpty(SourceText);
-        public List<uint> FormIdReferences { get; init; } = [];
-    }
+/// <summary>
+///     Results from scanning a dump for SCDA records.
+/// </summary>
+public record ScdaScanResult
+{
+    public List<ScdaRecord> Records { get; init; } = [];
+}
 
-    public ParseResult? ParseHeader(ReadOnlySpan<byte> data, int offset = 0)
-    {
-        if (data.Length < offset + 10)
+/// <summary>
+///     Bethesda compiled script bytecode (SCDA) format module.
+/// </summary>
+public sealed class ScdaFormat : FileFormatBase, IDumpScanner
+{
+    public override string FormatId => "scda";
+    public override string DisplayName => "SCDA";
+    public override string Extension => ".scda";
+    public override FileCategory Category => FileCategory.Script;
+    public override string OutputFolder => "scripts";
+    public override int MinSize => 10;
+    public override int MaxSize => 64 * 1024;
+    public override int DisplayPriority => 3;
+
+    public override IReadOnlyList<FormatSignature> Signatures { get; } =
+    [
+        new()
         {
-            return null;
+            Id = "scda",
+            MagicBytes = "SCDA"u8.ToArray(),
+            Description = "Compiled Script Bytecode (SCDA)"
         }
+    ];
+
+    public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        if (data.Length < offset + 10) return null;
 
         var span = data[offset..];
-        if (!span[..4].SequenceEqual(ScdaSignature))
-        {
-            return null;
-        }
+        if (!span[..4].SequenceEqual("SCDA"u8)) return null;
 
-        // SCDA format: "SCDA" (4) + length (2) + bytecode data
         var length = BinaryUtils.ReadUInt16LE(span, 4);
-        if (length == 0 || length > 65535 || offset + 6 + length > data.Length)
-        {
-            return null;
-        }
+        if (length == 0 || length > 65535 || offset + 6 + length > data.Length) return null;
 
-        // Validate that this looks like bytecode (not random data)
         var bytecode = span.Slice(6, length);
-        if (!ValidateBytecode(bytecode))
-        {
-            return null;
-        }
+        if (!ValidateBytecode(bytecode)) return null;
 
         return new ParseResult
         {
@@ -64,13 +74,23 @@ public class ScdaParser : IFileParser
         };
     }
 
+    #region IDumpScanner
+
     /// <summary>
     ///     Scan an entire memory dump for all SCDA records.
     /// </summary>
-    public static List<ScdaRecord> ScanForRecords(byte[] data)
+    public object ScanDump(byte[] data)
+    {
+        return ScanForRecords(data);
+    }
+
+    /// <summary>
+    ///     Scan an entire memory dump for all SCDA records.
+    /// </summary>
+    public static ScdaScanResult ScanForRecords(byte[] data)
     {
         var records = new List<ScdaRecord>();
-        int i = 0;
+        var i = 0;
 
         while (i <= data.Length - 10)
         {
@@ -88,8 +108,12 @@ public class ScdaParser : IFileParser
             i++;
         }
 
-        return records;
+        return new ScdaScanResult { Records = records };
     }
+
+    #endregion
+
+    #region Private Implementation
 
     private static bool MatchesScdaSignature(byte[] data, int offset)
     {
@@ -102,10 +126,10 @@ public class ScdaParser : IFileParser
     private static ScdaRecord? TryParseScdaRecord(byte[] data, int offset)
     {
         var length = BinaryUtils.ReadUInt16LE(data, offset + 4);
-        if (length == 0 || length >= 65535 || offset + 6 + length > data.Length)
-        {
-            return null;
-        }
+        if (length == 0 || length >= 65535 || offset + 6 + length > data.Length) return null;
+
+        var bytecodeSpan = data.AsSpan(offset + 6, length);
+        if (!ValidateBytecode(bytecodeSpan)) return null;
 
         var bytecode = new byte[length];
         Array.Copy(data, offset + 6, bytecode, 0, length);
@@ -131,8 +155,7 @@ public class ScdaParser : IFileParser
         // Look for SCTX within 200 bytes after SCDA
         var searchEnd = Math.Min(searchStart + 200, data.Length - 10);
 
-        for (int i = searchStart; i < searchEnd; i++)
-        {
+        for (var i = searchStart; i < searchEnd; i++)
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'T' && data[i + 3] == 'X')
             {
                 var length = BinaryUtils.ReadUInt16LE(data, i + 4);
@@ -142,7 +165,6 @@ public class ScdaParser : IFileParser
                     return (text, i);
                 }
             }
-        }
 
         return (null, 0);
     }
@@ -152,52 +174,35 @@ public class ScdaParser : IFileParser
         var formIds = new List<uint>();
         var searchEnd = Math.Min(searchStart + 500, data.Length - 10);
 
-        for (int i = searchStart; i < searchEnd; i++)
-        {
+        for (var i = searchStart; i < searchEnd; i++)
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'R' && data[i + 3] == 'O')
             {
                 var length = BinaryUtils.ReadUInt16LE(data, i + 4);
                 if (length == 4 && i + 10 <= data.Length)
                 {
                     var formId = BinaryUtils.ReadUInt32LE(data, i + 6);
-                    if (formId != 0 && formId != 0xFFFFFFFF && (formId >> 24) <= 0x0F)
-                    {
-                        formIds.Add(formId);
-                    }
+                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F) formIds.Add(formId);
                 }
             }
-        }
 
         return formIds;
     }
 
     private static bool ValidateBytecode(ReadOnlySpan<byte> bytecode)
     {
-        if (bytecode.Length < 4)
-        {
-            return false;
-        }
+        if (bytecode.Length < 4) return false;
 
-        // Basic validation: check if first bytes look like bytecode
-        // Valid bytecode typically starts with opcodes in certain ranges
-        var firstByte = bytecode[0];
+        // First two bytes should be an opcode (typically 0x1D for ScriptName or 0x10 for Begin)
+        var firstOpcode = BinaryUtils.ReadUInt16LE(bytecode);
 
-        // Common starting opcodes: 0x10-0x1F (control flow), or function opcodes
-        if (firstByte is >= 0x10 and <= 0x1F)
-        {
-            return true;
-        }
+        // Opcode 0x0000 is not valid (this would be padding/empty data)
+        if (firstOpcode == 0) return false;
 
-        // Could be a high opcode (FUNCTION_*)
-        if (bytecode.Length >= 2)
-        {
-            var word = BinaryUtils.ReadUInt16LE(bytecode, 0);
-            if (word is >= 0x100 and < 0x2000)
-            {
-                return true;
-            }
-        }
+        // Valid opcodes are in range 0x01-0x1F (core) and 0x100-0x12FF (FUNCTION_*)
+        if (firstOpcode > 0x20 && (firstOpcode < 0x100 || firstOpcode > 0x2000)) return false;
 
-        return false;
+        return true;
     }
+
+    #endregion
 }

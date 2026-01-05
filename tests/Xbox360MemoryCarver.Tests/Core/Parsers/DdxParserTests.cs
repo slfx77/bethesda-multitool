@@ -1,15 +1,15 @@
 using System.Text;
 using Xunit;
-using Xbox360MemoryCarver.Core.Parsers;
+using Xbox360MemoryCarver.Core.Formats.Ddx;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for DdxParser.
+/// Tests for DdxFormat.
 /// </summary>
-public class DdxParserTests
+public class DdxFormatTests
 {
-    private readonly DdxParser _parser = new();
+    private readonly DdxFormat _parser = new();
 
     #region Magic Bytes Tests
 
@@ -20,12 +20,13 @@ public class DdxParserTests
         var data = Create3XdoHeader(256, 256);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
         Assert.Equal("3XDO", result.Format);
-        Assert.True(result.IsXbox360);
+        // DDX is implicitly Xbox 360 format
+        Assert.True(result.Metadata.ContainsKey("width"));
     }
 
     [Fact]
@@ -35,12 +36,13 @@ public class DdxParserTests
         var data = Create3XdrHeader(256, 256);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
         Assert.Equal("3XDR", result.Format);
-        Assert.True(result.IsXbox360);
+        // DDX is implicitly Xbox 360 format
+        Assert.True(result.Metadata.ContainsKey("width"));
     }
 
     [Fact]
@@ -51,7 +53,7 @@ public class DdxParserTests
         "XXXX"u8.CopyTo(data.AsSpan(0));
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -77,12 +79,12 @@ public class DdxParserTests
         var data = Create3XdoHeader(width, height);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(width, result.Width);
-        Assert.Equal(height, result.Height);
+        Assert.Equal(width, result.Metadata["width"]);
+        Assert.Equal(height, result.Metadata["height"]);
     }
 
     [Fact]
@@ -92,7 +94,7 @@ public class DdxParserTests
         var data = Create3XdoHeader(8192, 8192);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -109,7 +111,7 @@ public class DdxParserTests
         var data = Create3XdoHeader(256, 256, version: 4);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);
@@ -123,7 +125,7 @@ public class DdxParserTests
         var data = Create3XdoHeader(256, 256, version: 2);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
@@ -140,7 +142,7 @@ public class DdxParserTests
         var data = Create3XdoHeader(256, 256);
 
         // Act
-        var result = _parser.ParseHeader(data);
+        var result = _parser.Parse(data);
 
         // Assert
         Assert.NotNull(result);

@@ -1,9 +1,8 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
-using Xbox360MemoryCarver.Core.FileTypes;
+using Xbox360MemoryCarver.Core.Formats;
 using Xbox360MemoryCarver.Core.Minidump;
-using Xbox360MemoryCarver.Core.Parsers;
 
 namespace Xbox360MemoryCarver.Core;
 
@@ -18,10 +17,11 @@ public class MemoryDumpAnalyzer
     {
         _signatureMatcher = new SignatureMatcher();
 
-        // Register all signatures from the file type registry
-        foreach (var typeDef in FileTypeRegistry.AllTypes)
+        // Register all signatures from the format registry for analysis
+        // (includes all formats for visualization, even those with scanning disabled)
+        foreach (var format in FormatRegistry.All)
         {
-            foreach (var sig in typeDef.Signatures)
+            foreach (var sig in format.Signatures)
             {
                 _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
             }
@@ -71,14 +71,15 @@ public class MemoryDumpAnalyzer
             // Skip XEX signatures at module offsets (already added above)
             if (signatureId == "xex" && moduleOffsets.Contains(offset)) continue;
 
-            var typeDef = FileTypeRegistry.GetBySignatureId(signatureId);
-            if (typeDef == null) continue;
+            var format = FormatRegistry.GetBySignatureId(signatureId);
+            if (format == null) continue;
 
-            var signature = typeDef.GetSignature(signatureId);
+            var signature =
+                format.Signatures.FirstOrDefault(s => s.Id.Equals(signatureId, StringComparison.OrdinalIgnoreCase));
             if (signature == null) continue;
 
             var (length, fileName) =
-                EstimateFileSizeAndExtractName(accessor, result.FileSize, offset, signatureId, typeDef);
+                EstimateFileSizeAndExtractName(accessor, result.FileSize, offset, format);
 
             if (length > 0)
             {
@@ -108,8 +109,8 @@ public class MemoryDumpAnalyzer
 
     private static void AddModulesFromMinidump(AnalysisResult result, MinidumpInfo minidumpInfo)
     {
-        var xexTypeDef = FileTypeRegistry.GetByTypeId("xex");
-        if (xexTypeDef == null) return;
+        var xexFormat = FormatRegistry.GetByFormatId("xex");
+        if (xexFormat == null) return;
 
         foreach (var module in minidumpInfo.Modules)
         {
@@ -188,8 +189,7 @@ public class MemoryDumpAnalyzer
         MemoryMappedViewAccessor accessor,
         long fileSize,
         long offset,
-        string signatureId,
-        FileTypeDefinition typeDef)
+        IFileFormat format)
     {
         // For DDX files, we need to read some data before the signature to find the path
         // Read up to 512 bytes before and the header after
@@ -197,7 +197,7 @@ public class MemoryDumpAnalyzer
         var actualPreRead = (int)Math.Min(preReadSize, offset);
         var readStart = offset - actualPreRead;
 
-        var headerSize = Math.Min(typeDef.MaxSize, 64 * 1024);
+        var headerSize = Math.Min(format.MaxSize, 64 * 1024);
         headerSize = (int)Math.Min(headerSize, fileSize - offset);
         var totalRead = actualPreRead + headerSize;
 
@@ -210,43 +210,36 @@ public class MemoryDumpAnalyzer
             // The signature starts at actualPreRead offset in our buffer
             var sigOffset = actualPreRead;
 
-            // Use parser for accurate size estimation
-            var parser = ParserRegistry.GetParserForSignature(signatureId);
-            if (parser != null)
+            // Use format module for accurate size estimation
+            var parseResult = format.Parse(span, sigOffset);
+            if (parseResult != null)
             {
-                var parseResult = parser.ParseHeader(span, sigOffset);
-                if (parseResult != null)
+                var estimatedSize = parseResult.EstimatedSize;
+                if (estimatedSize >= format.MinSize && estimatedSize <= format.MaxSize)
                 {
-                    var estimatedSize = parseResult.EstimatedSize;
-                    if (estimatedSize >= typeDef.MinSize && estimatedSize <= typeDef.MaxSize)
-                    {
-                        var length = Math.Min(estimatedSize, (int)(fileSize - offset));
+                    var length = Math.Min(estimatedSize, (int)(fileSize - offset));
 
-                        // Extract filename for display in the file table
-                        // Priority: fileName > scriptName > texturePath filename portion
-                        string? fileName = null;
+                    // Extract filename for display in the file table
+                    // Priority: fileName > scriptName > texturePath filename portion
+                    string? fileName = null;
 
-                        if (parseResult.Metadata.TryGetValue("fileName", out var fileNameObj) &&
-                            fileNameObj is string fn && !string.IsNullOrEmpty(fn))
-                            fileName = fn;
-                        else if (parseResult.Metadata.TryGetValue("scriptName", out var scriptNameObj) &&
-                                 scriptNameObj is string sn && !string.IsNullOrEmpty(sn))
-                            fileName = sn;
-                        else if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) &&
-                                 pathObj is string texturePath)
-                            // Fall back to extracting filename from path
-                            fileName = Path.GetFileName(texturePath);
+                    if (parseResult.Metadata.TryGetValue("fileName", out var fileNameObj) &&
+                        fileNameObj is string fn && !string.IsNullOrEmpty(fn))
+                        fileName = fn;
+                    else if (parseResult.Metadata.TryGetValue("scriptName", out var scriptNameObj) &&
+                             scriptNameObj is string sn && !string.IsNullOrEmpty(sn))
+                        fileName = sn;
+                    else if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) &&
+                             pathObj is string texturePath)
+                        // Fall back to extracting filename from path
+                        fileName = Path.GetFileName(texturePath);
 
-                        return (length, fileName);
-                    }
+                    return (length, fileName);
                 }
-
-                // Parser returned null - invalid file, skip it
-                return (0, null);
             }
 
-            // Fallback for types without parsers
-            return (Math.Min(typeDef.MaxSize, (int)(fileSize - offset)), null);
+            // Format returned null - invalid file, skip it
+            return (0, null);
         }
         finally
         {

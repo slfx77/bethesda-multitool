@@ -1,23 +1,23 @@
-using Xbox360MemoryCarver.Core.FileTypes;
+using Xbox360MemoryCarver.Core.Formats;
 
 namespace Xbox360MemoryCarver.App;
 
 /// <summary>
 ///     Maps display names to file signature IDs for extraction filtering.
-///     Uses FileTypeRegistry as single source of truth.
+///     Uses FormatRegistry as single source of truth.
 /// </summary>
 public static class FileTypeMapping
 {
     /// <summary>
     ///     Display names for UI checkboxes.
     /// </summary>
-    public static IReadOnlyList<string> DisplayNames => FileTypeRegistry.DisplayNames;
+    public static IReadOnlyList<string> DisplayNames => FormatRegistry.DisplayNames;
 
     /// <summary>
     ///     Get signature IDs for the given display names.
     /// </summary>
     public static IEnumerable<string> GetSignatureIds(IEnumerable<string> displayNames)
     {
-        return FileTypeRegistry.GetSignatureIdsForDisplayNames(displayNames);
+        return FormatRegistry.GetSignatureIdsForDisplayNames(displayNames);
     }
 }

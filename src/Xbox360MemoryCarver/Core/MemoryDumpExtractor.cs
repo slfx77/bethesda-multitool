@@ -54,10 +54,7 @@ public static class MemoryDumpExtractor
 
         // Extract compiled scripts if requested
         var scriptResult = new ScriptExtractor.ScriptExtractionResult();
-        if (options.ExtractScripts)
-        {
-            scriptResult = await ExtractScriptsAsync(filePath, options, progress);
-        }
+        if (options.ExtractScripts) scriptResult = await ExtractScriptsAsync(filePath, options, progress);
 
         // Return summary
         return new ExtractionSummary
@@ -123,10 +120,45 @@ public static class MemoryDumpExtractor
         IProgress<ExtractionProgress>? progress)
     {
         // Check if module extraction is requested
-        if (options.FileTypes != null && !options.FileTypes.Contains("xex")) return 0;
+        // Modules are extracted if:
+        // - No file type filter is specified (null or empty), OR
+        // - The filter includes "xex" or "module"
+        var shouldExtractModules = options.FileTypes == null ||
+                                   options.FileTypes.Count == 0 ||
+                                   options.FileTypes.Any(t =>
+                                       t.Equals("xex", StringComparison.OrdinalIgnoreCase) ||
+                                       t.Contains("module", StringComparison.OrdinalIgnoreCase));
+
+        if (!shouldExtractModules)
+        {
+            return 0;
+        }
 
         var minidumpInfo = MinidumpParser.Parse(filePath);
-        if (!minidumpInfo.IsValid || minidumpInfo.Modules.Count == 0) return 0;
+        if (!minidumpInfo.IsValid)
+        {
+            if (options.Verbose)
+            {
+                Console.WriteLine("[Module] Minidump is not valid");
+            }
+
+            return 0;
+        }
+
+        if (minidumpInfo.Modules.Count == 0)
+        {
+            if (options.Verbose)
+            {
+                Console.WriteLine("[Module] No modules found in minidump");
+            }
+
+            return 0;
+        }
+
+        if (options.Verbose)
+        {
+            Console.WriteLine($"[Module] Found {minidumpInfo.Modules.Count} modules in minidump");
+        }
 
         // Create modules output directory matching the MemoryCarver pattern:
         // {output_dir}/{dmp_filename}/modules/
@@ -145,7 +177,14 @@ public static class MemoryDumpExtractor
         {
             var fileRange = minidumpInfo.GetModuleFileRange(module);
             if (!fileRange.HasValue || fileRange.Value.size <= 0)
+            {
+                if (options.Verbose)
+                {
+                    Console.WriteLine($"[Module] Skipping {Path.GetFileName(module.Name)} - not captured in dump");
+                }
+
                 continue;
+            }
 
             var fileName = Path.GetFileName(module.Name);
             var outputPath = Path.Combine(modulesDir, fileName);
@@ -168,7 +207,10 @@ public static class MemoryDumpExtractor
                 await File.WriteAllBytesAsync(outputPath, buffer);
                 extractedCount++;
 
-                if (options.Verbose) Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
+                if (options.Verbose)
+                {
+                    Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
+                }
 
                 progress?.Report(new ExtractionProgress
                 {
@@ -179,7 +221,10 @@ public static class MemoryDumpExtractor
             }
             catch (Exception ex)
             {
-                if (options.Verbose) Console.WriteLine($"[Module] Failed to extract {fileName}: {ex.Message}");
+                if (options.Verbose)
+                {
+                    Console.WriteLine($"[Module] Failed to extract {fileName}: {ex.Message}");
+                }
             }
         }
 
