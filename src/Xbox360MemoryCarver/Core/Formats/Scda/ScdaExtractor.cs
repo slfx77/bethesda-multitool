@@ -16,9 +16,14 @@ public static partial class ScdaExtractor
         byte[] dumpData,
         string outputDir,
         IProgress<string>? progress = null,
-        bool verbose = false)
+        bool verbose = false,
+        string? opcodeTablePath = null)
     {
         Directory.CreateDirectory(outputDir);
+
+        // Initialize decompiler with opcode table
+        progress?.Report("Initializing decompiler...");
+        await ScdaFormatter.InitializeAsync(opcodeTablePath);
 
         progress?.Report("Scanning for SCDA records...");
         var records = ScdaFormat.ScanForRecords(dumpData);
@@ -33,14 +38,60 @@ public static partial class ScdaExtractor
         await WriteGroupedFilesAsync(groups, outputDir, verbose);
         await WriteUngroupedFilesAsync(ungrouped, outputDir);
 
+        // Build script info list for analysis
+        var scripts = BuildScriptInfoList(groups, ungrouped);
+
         return new ScdaExtractionResult
         {
             TotalRecords = records.Records.Count,
             GroupedQuests = groups.Count,
             UngroupedScripts = ungrouped.Count,
             TotalBytecodeBytes = records.Records.Sum(r => r.BytecodeLength),
-            RecordsWithSource = records.Records.Count(r => r.HasAssociatedSctx)
+            RecordsWithSource = records.Records.Count(r => r.HasAssociatedSctx),
+            Scripts = scripts
         };
+    }
+
+    private static List<ScriptInfo> BuildScriptInfoList(
+        Dictionary<string, List<ScdaRecord>> groups,
+        List<ScdaRecord> ungrouped)
+    {
+        var scripts = new List<ScriptInfo>();
+
+        // Add grouped scripts with quest names
+        foreach (var (questName, records) in groups)
+        {
+            foreach (var record in records)
+            {
+                var scriptName = ExtractScriptNameFromSource(record.SourceText);
+                scripts.Add(new ScriptInfo
+                {
+                    Offset = record.Offset,
+                    BytecodeSize = record.BytecodeLength,
+                    ScriptName = scriptName,
+                    QuestName = questName,
+                    HasSource = record.HasAssociatedSctx
+                });
+            }
+        }
+
+        // Add ungrouped scripts
+        foreach (var record in ungrouped)
+        {
+            var scriptName = ExtractScriptNameFromSource(record.SourceText);
+            scripts.Add(new ScriptInfo
+            {
+                Offset = record.Offset,
+                BytecodeSize = record.BytecodeLength,
+                ScriptName = scriptName,
+                QuestName = null,
+                HasSource = record.HasAssociatedSctx
+            });
+        }
+
+        // Sort by offset
+        scripts.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+        return scripts;
     }
 
     private static (Dictionary<string, List<ScdaRecord>> Groups, List<ScdaRecord> Ungrouped) GroupRecordsByQuest(
@@ -131,11 +182,11 @@ public static partial class ScdaExtractor
 
     private static async Task WriteUngroupedFilesAsync(List<ScdaRecord> ungrouped, string outputDir)
     {
-        for (var i = 0; i < ungrouped.Count; i++)
+        foreach (var record in ungrouped)
         {
-            var record = ungrouped[i];
-            var baseName = ExtractScriptNameFromSource(record.SourceText) ?? $"unknown_{i:D3}";
-            var scriptPath = Path.Combine(outputDir, $"ungrouped_{SanitizeFilename(baseName)}.txt");
+            // Use script name from source if available, otherwise use offset as hex identifier
+            var baseName = ExtractScriptNameFromSource(record.SourceText) ?? $"{record.Offset:X8}";
+            var scriptPath = Path.Combine(outputDir, $"{SanitizeFilename(baseName)}.txt");
             var content = ScdaFormatter.FormatSingleScript(record);
             await File.WriteAllTextAsync(scriptPath, content);
         }
@@ -195,6 +246,11 @@ public static partial class ScdaExtractor
                !name.StartsWith("Get", StringComparison.OrdinalIgnoreCase) &&
                !name.StartsWith("Set", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    ///     Public wrapper for extracting script name from source text.
+    /// </summary>
+    public static string? ExtractScriptNameFromSourcePublic(string? source) => ExtractScriptNameFromSource(source);
 
     private static string? ExtractScriptNameFromSource(string? source)
     {

@@ -38,6 +38,7 @@ XnaNative.dll
 tools/
 test_output/
 output/
+TestOutput/
 
 # Python remnants (if any)
 .venv/
@@ -50,12 +51,10 @@ Sample/
 # SonarQube
 .sonarqube/
 
-# Old/comparison code
-Xbox360MemoryCarverCLI/
-comparison_test/
-
 # Reference copies (not part of the project)
 DDXConvVanilla/
 FalloutNV/
 microsoft-pdb/
 NVSE/
+Xbox360MemoryCarverCLI/
+comparison_test/

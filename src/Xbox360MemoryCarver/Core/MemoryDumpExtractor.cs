@@ -62,6 +62,8 @@ public static class MemoryDumpExtractor
             TotalExtracted = entries.Count + moduleCount + scriptResult.GroupedQuests + scriptResult.UngroupedScripts,
             DdxConverted = carver.DdxConvertedCount,
             DdxFailed = carver.DdxConvertFailedCount,
+            XurConverted = carver.XurConvertedCount,
+            XurFailed = carver.XurConvertFailedCount,
             TypeCounts = carver.Stats.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
             ExtractedOffsets = extractedOffsets,
             ModulesExtracted = moduleCount,
@@ -231,6 +233,8 @@ public class ExtractionSummary
     public int TotalExtracted { get; init; }
     public int DdxConverted { get; init; }
     public int DdxFailed { get; init; }
+    public int XurConverted { get; init; }
+    public int XurFailed { get; init; }
     public int ModulesExtracted { get; init; }
     public int ScriptsExtracted { get; init; }
     public int ScriptQuestsGrouped { get; init; }

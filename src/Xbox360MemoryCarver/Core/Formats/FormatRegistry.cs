@@ -186,7 +186,6 @@ public static class FormatRegistry
             .ThenBy(f => f.DisplayName)
             .ToList();
 
-        Console.WriteLine($"[FormatRegistry] Discovered {formats.Count} format modules");
         return formats;
     }
 

@@ -49,9 +49,8 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
             var boundarySize = ValidateAndAdjustSize(data, offset, reportedFileSize);
             return XmaParser.ParseXmaChunks(data, offset, reportedFileSize, boundarySize);
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[XmaFormat] Exception at offset {offset}: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
@@ -121,9 +120,8 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
             if (isXma1 || needsSeek) return XmaRepairer.AddSeekTable(data, isXma1);
             return data;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[XmaFormat] Repair failed: {ex.Message}");
             return data;
         }
     }

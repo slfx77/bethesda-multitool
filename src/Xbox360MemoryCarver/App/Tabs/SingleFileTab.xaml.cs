@@ -4,9 +4,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using WinRT.Interop;
-
-
-
 using Xbox360MemoryCarver.Core;
 
 namespace Xbox360MemoryCarver;
@@ -95,7 +92,7 @@ public sealed partial class SingleFileTab : UserControl
     }
 
     private async Task ShowDialogAsync(string title, string message) => await new ContentDialog
-        { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
+    { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -156,13 +153,16 @@ public sealed partial class SingleFileTab : UserControl
                 AnalysisProgressBar.IsIndeterminate = false;
                 AnalysisProgressBar.Value = p.PercentComplete;
             }));
-            _analysisResult = await Task.Run(() => new MemoryDumpAnalyzer().Analyze(filePath, progress));
+            _analysisResult = await new MemoryDumpAnalyzer().AnalyzeAsync(filePath, progress, includeMetadata: true);
 
             foreach (var entry in _analysisResult.CarvedFiles)
             {
                 var item = new CarvedFileEntry
                 {
-                    Offset = entry.Offset, Length = entry.Length, FileType = entry.FileType, FileName = entry.FileName
+                    Offset = entry.Offset,
+                    Length = entry.Length,
+                    FileType = entry.FileType,
+                    FileName = entry.FileName
                 };
                 _allCarvedFiles.Add(item);
                 _carvedFiles.Add(item);

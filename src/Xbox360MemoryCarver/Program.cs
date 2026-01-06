@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Text;
+using Spectre.Console;
 using Xbox360MemoryCarver.CLI;
 
 namespace Xbox360MemoryCarver;
@@ -71,8 +72,12 @@ public static class Program
     private static async Task<int> RunCliAsync(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
-        Console.WriteLine("Xbox 360 Memory Carver - CLI Mode");
-        Console.WriteLine("=================================");
+
+        AnsiConsole.Write(
+            new FigletText("Xbox360 Carver")
+                .Color(Color.Green));
+        AnsiConsole.MarkupLine("[grey]Memory Dump File Carver - CLI Mode[/]");
+        AnsiConsole.WriteLine();
 
         var rootCommand = BuildRootCommand();
 
@@ -91,8 +96,8 @@ public static class Program
         var outputOption = new Option<string>(["-o", "--output"], () => "output", "Output directory for carved files");
         var noGuiOption = new Option<bool>(["-n", "--no-gui"], "Run in command-line mode without GUI (Windows only)");
         var ddxOption = new Option<bool>(["--ddx"], "Convert DDX textures to DDS format instead of carving");
-        var convertDdxOption = new Option<bool>(["--convert-ddx"], () => true,
-            "Automatically convert carved DDX textures to DDS format");
+        var convertDdxOption = new Option<bool>(["--convert-ddx", "--convert"], () => true,
+            "Enable format conversions (DDX→DDS textures, XUR→XUI interfaces)");
         var typesOption = new Option<string[]>(["-t", "--types"], "File types to extract (e.g., dds ddx xma nif)");
         var verboseOption = new Option<bool>(["-v", "--verbose"], "Enable verbose output");
         var maxFilesOption = new Option<int>(["--max-files"], () => 10000, "Maximum files to extract per type");
@@ -124,7 +129,7 @@ public static class Program
 
             if (!File.Exists(input) && !Directory.Exists(input))
             {
-                Console.WriteLine($"Error: Input path not found: {input}");
+                AnsiConsole.MarkupLine($"[red]Error:[/] Input path not found: {input}");
                 context.ExitCode = 1;
                 return;
             }
@@ -136,8 +141,11 @@ public static class Program
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error: {ex.Message}");
-                if (verbose) Console.WriteLine(ex.StackTrace);
+                AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+                if (verbose)
+                {
+                    AnsiConsole.WriteException(ex);
+                }
 
                 context.ExitCode = 1;
             }
@@ -148,20 +156,20 @@ public static class Program
 
     private static void PrintUsage()
     {
-        Console.WriteLine("Error: Input path is required.");
-        Console.WriteLine();
-        Console.WriteLine("Usage:");
-        Console.WriteLine("  Xbox360MemoryCarver <input.dmp> -o <output_dir> [options]");
-        Console.WriteLine();
-        Console.WriteLine("Examples:");
-        Console.WriteLine("  Xbox360MemoryCarver dump.dmp -o extracted");
-        Console.WriteLine("  Xbox360MemoryCarver dump.dmp -o extracted -t ddx xma nif");
-        Console.WriteLine("  Xbox360MemoryCarver dump.dmp -o extracted --convert-ddx -v");
+        AnsiConsole.MarkupLine("[red]Error:[/] Input path is required.");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[bold]Usage:[/]");
+        AnsiConsole.MarkupLine("  Xbox360MemoryCarver [green]<input.dmp>[/] -o [blue]<output_dir>[/] [options]");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[bold]Examples:[/]");
+        AnsiConsole.MarkupLine("  Xbox360MemoryCarver [green]dump.dmp[/] -o [blue]extracted[/]");
+        AnsiConsole.MarkupLine("  Xbox360MemoryCarver [green]dump.dmp[/] -o [blue]extracted[/] -t ddx xma nif");
+        AnsiConsole.MarkupLine("  Xbox360MemoryCarver [green]dump.dmp[/] -o [blue]extracted[/] --convert-ddx -v");
 #if WINDOWS_GUI
-        Console.WriteLine();
-        Console.WriteLine("For GUI mode, run without arguments or with --file:");
-        Console.WriteLine("  Xbox360MemoryCarver");
-        Console.WriteLine("  Xbox360MemoryCarver --file dump.dmp");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[bold]For GUI mode:[/]");
+        AnsiConsole.MarkupLine("  Xbox360MemoryCarver");
+        AnsiConsole.MarkupLine("  Xbox360MemoryCarver --file [green]dump.dmp[/]");
 #endif
     }
 }

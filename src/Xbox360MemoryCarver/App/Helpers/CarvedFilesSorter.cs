@@ -1,5 +1,3 @@
-
-
 namespace Xbox360MemoryCarver;
 
 /// <summary>

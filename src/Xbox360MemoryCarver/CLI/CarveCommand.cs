@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+using Spectre.Console;
 using Xbox360MemoryCarver.Core;
 
 namespace Xbox360MemoryCarver.CLI;
@@ -19,22 +21,29 @@ public static class CarveCommand
         var files = new List<string>();
 
         if (File.Exists(inputPath))
+        {
             files.Add(inputPath);
+        }
         else if (Directory.Exists(inputPath))
+        {
             files.AddRange(Directory.GetFiles(inputPath, "*.dmp", SearchOption.TopDirectoryOnly));
+        }
 
         if (files.Count == 0)
         {
-            Console.WriteLine("No dump files found.");
+            AnsiConsole.MarkupLine("[red]No dump files found.[/]");
             return;
         }
 
-        Console.WriteLine($"Found {files.Count} file(s) to process");
+        AnsiConsole.MarkupLine($"[blue]Found[/] {files.Count} file(s) to process");
 
-        foreach (var file in files) await ProcessFileAsync(file, outputDir, fileTypes, convertDdx, verbose, maxFiles);
+        foreach (var file in files)
+        {
+            await ProcessFileAsync(file, outputDir, fileTypes, convertDdx, verbose, maxFiles);
+        }
 
-        Console.WriteLine();
-        Console.WriteLine("Done!");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[green]Done![/]");
     }
 
     private static async Task ProcessFileAsync(
@@ -45,9 +54,8 @@ public static class CarveCommand
         bool verbose,
         int maxFiles)
     {
-        Console.WriteLine();
-        Console.WriteLine($"Processing: {Path.GetFileName(file)}");
-        Console.WriteLine(new string('-', 50));
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(new Rule($"[blue]{Path.GetFileName(file)}[/]").LeftJustified());
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -64,46 +72,153 @@ public static class CarveCommand
                                                 t.Contains("script", StringComparison.OrdinalIgnoreCase))
         };
 
-        var progress = new Progress<ExtractionProgress>(p =>
-        {
-            if (verbose) Console.Write($"\rProgress: {p.PercentComplete:F1}% - {p.CurrentOperation}");
-        });
+        ExtractionSummary? summary = null;
 
-        var summary = await MemoryDumpExtractor.Extract(file, options, progress);
+        await AnsiConsole.Progress()
+            .AutoClear(false)
+            .Columns(
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new SpinnerColumn())
+            .StartAsync(async ctx =>
+            {
+                var task = ctx.AddTask("[yellow]Extracting files[/]", maxValue: 100);
+
+                var progress = new Progress<ExtractionProgress>(p =>
+                {
+                    task.Value = p.PercentComplete;
+                    task.Description = $"[yellow]{p.CurrentOperation}[/]";
+                });
+
+                summary = await MemoryDumpExtractor.Extract(file, options, progress);
+                task.Value = 100;
+                task.Description = "[green]Complete[/]";
+            });
 
         stopwatch.Stop();
 
-        if (verbose) Console.WriteLine(); // Clear progress line
+        if (summary is null)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] Extraction failed");
+            return;
+        }
 
-        Console.WriteLine($"Extracted {summary.TotalExtracted} files in {stopwatch.Elapsed.TotalSeconds:F2}s");
+        AnsiConsole.MarkupLine(
+            $"[green]Extracted[/] {summary.TotalExtracted} files in [blue]{stopwatch.Elapsed.TotalSeconds:F2}s[/]");
 
         PrintSummary(summary, convertDdx);
     }
+
+    /// <summary>
+    /// Maps signature IDs to display categories for cleaner output.
+    /// </summary>
+    private static readonly Dictionary<string, string> CategoryMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Uncompiled scripts (debug builds only)
+        ["script_scn"] = "Uncompiled Scripts",
+        ["script_scriptname"] = "Uncompiled Scripts",
+        ["script_scn_tab"] = "Uncompiled Scripts",
+        ["script_scriptname_lower"] = "Uncompiled Scripts",
+
+        // Compiled scripts
+        ["scda"] = "Compiled Scripts",
+
+        // Textures
+        ["ddx_3xdo"] = "DDX Textures",
+        ["ddx_3xdr"] = "DDX Textures",
+        ["dds"] = "DDS Textures",
+        ["png"] = "PNG Images",
+
+        // UI
+        ["xui_scene"] = "XUI Scenes",
+        ["xui_binary"] = "XUI Binary",
+
+        // Audio
+        ["xma"] = "XMA Audio",
+        ["lip"] = "LIP Sync",
+
+        // Models
+        ["nif"] = "NIF Models",
+
+        // Executables
+        ["xex"] = "XEX Modules",
+
+        // Data
+        ["esp"] = "ESP/ESM Plugins",
+        ["xdbf"] = "XDBF Files"
+    };
 
     private static void PrintSummary(ExtractionSummary summary, bool convertDdx)
     {
         if (summary.TypeCounts.Count > 0)
         {
-            Console.WriteLine();
-            Console.WriteLine("File type summary:");
-            foreach (var (type, count) in summary.TypeCounts.OrderByDescending(x => x.Value))
+            AnsiConsole.WriteLine();
+
+            // Group by category
+            var categorized = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (type, count) in summary.TypeCounts)
+            {
+                var category = CategoryMap.TryGetValue(type, out var cat) ? cat : type;
+                categorized.TryGetValue(category, out var existing);
+                categorized[category] = existing + count;
+            }
+
+            var table = new Table();
+            table.Border(TableBorder.Rounded);
+            table.AddColumn(new TableColumn("[bold]Category[/]").LeftAligned());
+            table.AddColumn(new TableColumn("[bold]Count[/]").RightAligned());
+
+            foreach (var (category, count) in categorized.OrderByDescending(x => x.Value))
+            {
                 if (count > 0)
-                    Console.WriteLine($"  {type}: {count}");
+                {
+                    table.AddRow(category, count.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            if (summary.ModulesExtracted > 0)
+            {
+                table.AddRow("[grey]Modules (from header)[/]", summary.ModulesExtracted.ToString(CultureInfo.InvariantCulture));
+            }
+
+            AnsiConsole.Write(table);
         }
 
-        if (summary.ModulesExtracted > 0) Console.WriteLine($"  modules: {summary.ModulesExtracted}");
-
-        if (convertDdx && (summary.DdxConverted > 0 || summary.DdxFailed > 0))
+        if (convertDdx)
         {
-            Console.WriteLine();
-            Console.WriteLine($"DDX conversions: {summary.DdxConverted} successful, {summary.DdxFailed} failed");
+            // DDX conversion stats
+            if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
+            {
+                AnsiConsole.WriteLine();
+                var converted = summary.DdxConverted > 0
+                    ? $"[green]{summary.DdxConverted} successful[/]"
+                    : "0 successful";
+                var failed = summary.DdxFailed > 0
+                    ? $"[red]{summary.DdxFailed} failed[/]"
+                    : "0 failed";
+                AnsiConsole.MarkupLine($"DDX → DDS conversions: {converted}, {failed}");
+            }
+
+            // XUR conversion stats
+            if (summary.XurConverted > 0 || summary.XurFailed > 0)
+            {
+                var xurConverted = summary.XurConverted > 0
+                    ? $"[green]{summary.XurConverted} successful[/]"
+                    : "0 successful";
+                var xurFailed = summary.XurFailed > 0
+                    ? $"[red]{summary.XurFailed} failed[/]"
+                    : "0 failed";
+                AnsiConsole.MarkupLine($"XUR → XUI conversions: {xurConverted}, {xurFailed}");
+            }
         }
 
         if (summary.ScriptsExtracted > 0)
         {
-            Console.WriteLine();
-            Console.WriteLine(
-                $"Scripts: {summary.ScriptsExtracted} records ({summary.ScriptQuestsGrouped} quests grouped)");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine(
+                $"[yellow]Scripts:[/] {summary.ScriptsExtracted} records ({summary.ScriptQuestsGrouped} quests grouped)");
         }
     }
 }

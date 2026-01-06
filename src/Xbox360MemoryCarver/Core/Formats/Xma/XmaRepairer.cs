@@ -41,7 +41,6 @@ internal static class XmaRepairer
 
         if (fmtOffset < 0 || dataOffset < 0)
         {
-            Console.WriteLine("[XmaFormat] Missing fmt or data chunk");
             return data;
         }
 
@@ -55,8 +54,6 @@ internal static class XmaRepairer
         var seekTable = GenerateSeekTable(actualDataSize);
         var result = BuildXmaFile(data.AsSpan(dataStart, actualDataSize), seekTable, channels, sampleRate);
 
-        Console.WriteLine(
-            $"[XmaFormat] Added seek table: {data.Length} -> {result.Length} bytes, {channels} ch, {sampleRate} Hz");
         return result;
     }
 
@@ -76,8 +73,6 @@ internal static class XmaRepairer
                 ? (int)BinaryUtils.ReadUInt32LE(data.AsSpan(), fmtOffset + 24)
                 : DefaultSampleRate;
             channels = data.Length > fmtOffset + 37 ? data[fmtOffset + 37] : 1;
-
-            Console.WriteLine($"[XmaFormat] XMA1 detected: {channels} channels, {sampleRate} Hz");
         }
         else
         {

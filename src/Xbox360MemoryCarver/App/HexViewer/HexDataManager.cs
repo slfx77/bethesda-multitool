@@ -1,5 +1,4 @@
 using System.IO.MemoryMappedFiles;
-
 using Xbox360MemoryCarver.Core;
 
 namespace Xbox360MemoryCarver;

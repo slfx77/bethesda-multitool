@@ -49,6 +49,8 @@ public sealed class MemoryCarver : IDisposable
     public int TotalConvertFailedCount => _converters.Values.Sum(c => c.FailedCount);
     public int DdxConvertedCount => _converters.TryGetValue("ddx", out var c) ? c.ConvertedCount : 0;
     public int DdxConvertFailedCount => _converters.TryGetValue("ddx", out var c) ? c.FailedCount : 0;
+    public int XurConvertedCount => _converters.TryGetValue("xui", out var c) ? c.ConvertedCount : 0;
+    public int XurConvertFailedCount => _converters.TryGetValue("xui", out var c) ? c.FailedCount : 0;
     public IReadOnlyDictionary<string, int> Stats => _stats;
 
     public void Dispose()

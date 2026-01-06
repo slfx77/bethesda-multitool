@@ -1,5 +1,6 @@
 using System.CommandLine;
-using Xbox360MemoryCarver.Core.Analysis;
+using Spectre.Console;
+using Xbox360MemoryCarver.Core;
 using Xbox360MemoryCarver.Core.Minidump;
 
 namespace Xbox360MemoryCarver.CLI;
@@ -28,7 +29,7 @@ public static class ModulesCommand
     {
         if (!File.Exists(input))
         {
-            Console.WriteLine($"Error: File not found: {input}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {input}");
             return;
         }
 
@@ -36,13 +37,15 @@ public static class ModulesCommand
 
         if (!info.IsValid)
         {
-            Console.WriteLine("Error: Invalid minidump file");
+            AnsiConsole.MarkupLine("[red]Error:[/] Invalid minidump file");
             return;
         }
 
-        Console.WriteLine($"Modules in {Path.GetFileName(input)}:");
-        Console.WriteLine($"Build Type: {DumpAnalyzer.DetectBuildType(info) ?? "Unknown"}");
-        Console.WriteLine();
+        var buildType = MemoryDumpAnalyzer.DetectBuildType(info) ?? "Unknown";
+
+        AnsiConsole.MarkupLine($"[blue]Modules in[/] {Path.GetFileName(input)}");
+        AnsiConsole.MarkupLine($"[blue]Build Type:[/] {buildType}");
+        AnsiConsole.WriteLine();
 
         PrintModules(info, format);
     }
@@ -61,9 +64,33 @@ public static class ModulesCommand
                 break;
 
             default:
-                PrintModulesText(info);
+                PrintModulesTable(info);
                 break;
         }
+    }
+
+    private static void PrintModulesTable(MinidumpInfo info)
+    {
+        var table = new Table();
+        table.Border(TableBorder.Rounded);
+        table.AddColumn(new TableColumn("[bold]Module[/]").LeftAligned());
+        table.AddColumn(new TableColumn("[bold]Base Address[/]").RightAligned());
+        table.AddColumn(new TableColumn("[bold]Size[/]").RightAligned());
+
+        foreach (var module in info.Modules.OrderBy(m => m.BaseAddress32))
+        {
+            var fileName = Path.GetFileName(module.Name);
+            var isExe = fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+            var nameMarkup = isExe ? $"[green]{fileName}[/]" : $"[grey]{fileName}[/]";
+
+            table.AddRow(
+                nameMarkup,
+                $"0x{module.BaseAddress32:X8}",
+                $"{module.Size / 1024.0:F0} KB"
+            );
+        }
+
+        AnsiConsole.Write(table);
     }
 
     private static void PrintModulesMarkdown(MinidumpInfo info)
@@ -85,15 +112,6 @@ public static class ModulesCommand
             var fileName = Path.GetFileName(module.Name);
             Console.WriteLine(
                 $"{fileName},0x{module.BaseAddress32:X8},{module.Size},{module.Checksum},0x{module.TimeDateStamp:X8}");
-        }
-    }
-
-    private static void PrintModulesText(MinidumpInfo info)
-    {
-        foreach (var module in info.Modules.OrderBy(m => m.BaseAddress32))
-        {
-            var fileName = Path.GetFileName(module.Name);
-            Console.WriteLine($"  {fileName,-35} 0x{module.BaseAddress32:X8}  {module.Size / 1024.0,8:F0} KB");
         }
     }
 }

@@ -4,10 +4,44 @@ using System.Text;
 namespace Xbox360MemoryCarver.Core.Formats.Scda;
 
 /// <summary>
-///     Formats SCDA records for text output.
+///     Formats SCDA records for text output with bytecode decompilation.
 /// </summary>
 public static class ScdaFormatter
 {
+    private static ScdaDecompiler? _decompiler;
+
+    /// <summary>
+    ///     Initialize the decompiler with opcode table.
+    /// </summary>
+    public static async Task InitializeAsync(string? opcodeTablePath = null)
+    {
+        _decompiler = new ScdaDecompiler();
+
+        // Try to load opcode table from tools folder or provided path
+        if (opcodeTablePath != null && File.Exists(opcodeTablePath))
+        {
+            await _decompiler.LoadOpcodeTableAsync(opcodeTablePath);
+        }
+        else
+        {
+            // Try common locations
+            var locations = new[]
+            {
+                Path.Combine(AppContext.BaseDirectory, "tools", "opcode_table.csv"),
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tools", "opcode_table.csv"),
+                @"tools\opcode_table.csv"
+            };
+
+            foreach (var path in locations.Where(File.Exists))
+            {
+                await _decompiler.LoadOpcodeTableAsync(path);
+                break;
+            }
+        }
+    }
+
+    private static ScdaDecompiler Decompiler => _decompiler ??= new ScdaDecompiler();
+
     /// <summary>
     ///     Format a grouped quest script with all stages.
     /// </summary>
@@ -41,7 +75,7 @@ public static class ScdaFormatter
         AppendFormIdReferences(sb, record.FormIdReferences);
         sb.AppendLine();
         AppendSourceText(sb, record);
-        AppendBytecode(sb, record.Bytecode);
+        AppendDecompiledBytecode(sb, record.Bytecode);
 
         return sb.ToString();
     }
@@ -69,8 +103,7 @@ public static class ScdaFormatter
 
         AppendSourceTextInline(sb, stage);
         sb.AppendLine();
-        sb.AppendLine("; Bytecode (hex):");
-        sb.Append(";   ").AppendLine(Convert.ToHexString(stage.Bytecode));
+        AppendDecompiledBytecode(sb, stage.Bytecode);
         sb.AppendLine();
     }
 
@@ -104,9 +137,18 @@ public static class ScdaFormatter
         }
     }
 
-    private static void AppendBytecode(StringBuilder sb, byte[] bytecode)
+    private static void AppendDecompiledBytecode(StringBuilder sb, byte[] bytecode)
     {
-        sb.AppendLine("; === Bytecode (hex) ===");
-        sb.AppendLine(Convert.ToHexString(bytecode));
+        sb.AppendLine("; === Decompiled Bytecode ===");
+        try
+        {
+            var decompiled = Decompiler.Decompile(bytecode);
+            sb.Append(decompiled);
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine($"; Decompilation failed: {ex.Message}");
+            sb.AppendLine("; Raw hex: " + Convert.ToHexString(bytecode));
+        }
     }
 }

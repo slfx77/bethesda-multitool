@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Text.Json;
-using Xbox360MemoryCarver.Core.Analysis;
+using Spectre.Console;
+using Xbox360MemoryCarver.Core;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Formats.Scda;
 
@@ -40,32 +41,57 @@ public static class AnalyzeCommand
     {
         if (!File.Exists(input))
         {
-            Console.WriteLine($"Error: File not found: {input}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {input}");
             return;
         }
 
-        var progress = verbose ? new Progress<string>(msg => Console.WriteLine($"  {msg}")) : null;
+        AnsiConsole.MarkupLine($"[blue]Analyzing:[/] {Path.GetFileName(input)}");
+        AnsiConsole.WriteLine();
 
-        Console.WriteLine($"Analyzing: {Path.GetFileName(input)}");
-        Console.WriteLine();
+        var analyzer = new MemoryDumpAnalyzer();
+        AnalysisResult result = null!;
 
-        var result = await DumpAnalyzer.AnalyzeAsync(input, progress: progress);
+        // Run analysis with progress bar
+        await AnsiConsole.Progress()
+            .AutoClear(false)
+            .Columns(
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new SpinnerColumn())
+            .StartAsync(async ctx =>
+            {
+                var task = ctx.AddTask("[green]Scanning[/]", maxValue: 100);
+
+                var progress = new Progress<AnalysisProgress>(p =>
+                {
+                    task.Value = p.PercentComplete;
+                    var filesInfo = p.FilesFound > 0 ? $" ({p.FilesFound} files)" : "";
+                    task.Description = $"[green]{p.Phase}[/][grey]{filesInfo}[/]";
+                });
+
+                result = await analyzer.AnalyzeAsync(input, progress, includeMetadata: true);
+                task.Value = 100;
+                task.Description = $"[green]Complete[/] [grey]({result.CarvedFiles.Count} files)[/]";
+            });
+
+        AnsiConsole.WriteLine();
 
         var report = format.ToLowerInvariant() switch
         {
-            "md" or "markdown" => DumpAnalyzer.GenerateReport(result),
+            "md" or "markdown" => MemoryDumpAnalyzer.GenerateReport(result),
             "json" => JsonSerializer.Serialize(result, JsonOptions),
-            _ => DumpAnalyzer.GenerateSummary(result)
+            _ => MemoryDumpAnalyzer.GenerateSummary(result)
         };
 
         if (!string.IsNullOrEmpty(output))
         {
             await File.WriteAllTextAsync(output, report);
-            Console.WriteLine($"Report saved to: {output}");
+            AnsiConsole.MarkupLine($"[green]Report saved to:[/] {output}");
         }
         else
         {
-            Console.WriteLine(report);
+            AnsiConsole.WriteLine(report);
         }
 
         if (!string.IsNullOrEmpty(extractEsm) && result.EsmRecords != null)
@@ -73,27 +99,27 @@ public static class AnalyzeCommand
     }
 
     private static async Task ExtractEsmRecordsAsync(string input, string extractEsm,
-        DumpAnalyzer.AnalysisResult result, bool verbose)
+        AnalysisResult result, bool verbose)
     {
-        Console.WriteLine();
-        Console.WriteLine($"Exporting ESM records to: {extractEsm}");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[blue]Exporting ESM records to:[/] {extractEsm}");
         await EsmRecordFormat.ExportRecordsAsync(
             result.EsmRecords!,
             result.FormIdMap,
             extractEsm,
             verbose);
-        Console.WriteLine("ESM export complete.");
+        AnsiConsole.MarkupLine("[green]ESM export complete.[/]");
 
         if (result.ScdaRecords.Count > 0)
         {
-            Console.WriteLine();
-            Console.WriteLine("Extracting compiled scripts (SCDA)...");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[blue]Extracting compiled scripts (SCDA)...[/]");
             var dumpData = await File.ReadAllBytesAsync(input);
             var scriptsDir = Path.Combine(extractEsm, "scripts");
-            var scriptProgress = verbose ? new Progress<string>(msg => Console.WriteLine($"  {msg}")) : null;
+            var scriptProgress = verbose ? new Progress<string>(msg => AnsiConsole.MarkupLine($"  [grey]{msg}[/]")) : null;
             var scriptResult = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress, verbose);
-            Console.WriteLine(
-                $"Scripts extracted: {scriptResult.TotalRecords} records ({scriptResult.GroupedQuests} quests, {scriptResult.UngroupedScripts} ungrouped)");
+            AnsiConsole.MarkupLine(
+                $"[green]Scripts extracted:[/] {scriptResult.TotalRecords} records ({scriptResult.GroupedQuests} quests, {scriptResult.UngroupedScripts} ungrouped)");
         }
     }
 }

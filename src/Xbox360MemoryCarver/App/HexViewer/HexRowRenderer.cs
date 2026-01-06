@@ -6,7 +6,6 @@ using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 
 
-
 namespace Xbox360MemoryCarver;
 
 /// <summary>

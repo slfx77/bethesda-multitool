@@ -1,15 +1,34 @@
+using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using Xbox360MemoryCarver.Core.Formats.Scda;
+using Xbox360MemoryCarver.Core.Minidump;
+
 namespace Xbox360MemoryCarver.Core;
 
 /// <summary>
-///     Result of analyzing a memory dump.
+///     Unified result of analyzing a memory dump.
+///     Contains both carved file information (for visualization) and metadata (for reporting).
 /// </summary>
 public class AnalysisResult
 {
+    // File identification
     public string FilePath { get; set; } = "";
     public long FileSize { get; set; }
+    public TimeSpan AnalysisTime { get; set; }
+
+    // Carved files for visualization
     public List<CarvedFileInfo> CarvedFiles { get; } = [];
     public Dictionary<string, int> TypeCounts { get; } = [];
-    public TimeSpan AnalysisTime { get; set; }
+
+    // Minidump metadata
+    public MinidumpInfo? MinidumpInfo { get; set; }
+    public string? BuildType { get; set; }
+
+    // Script data (SCDA records)
+    public List<ScdaRecord> ScdaRecords { get; set; } = [];
+
+    // ESM record data
+    public EsmRecordScanResult? EsmRecords { get; set; }
+    public Dictionary<uint, string> FormIdMap { get; set; } = [];
 }
 
 /// <summary>
@@ -64,7 +83,16 @@ public class AnalysisProgress
     public long TotalBytes { get; set; }
     public int FilesFound { get; set; }
     public string CurrentType { get; set; } = "";
-    public double PercentComplete => TotalBytes > 0 ? BytesProcessed * 100.0 / TotalBytes : 0;
+
+    /// <summary>
+    ///     Current phase of analysis (e.g., "Scanning", "Parsing", "Metadata").
+    /// </summary>
+    public string Phase { get; set; } = "Scanning";
+
+    /// <summary>
+    ///     Overall progress percentage across all phases (0-100).
+    /// </summary>
+    public double PercentComplete { get; set; }
 }
 
 /// <summary>
