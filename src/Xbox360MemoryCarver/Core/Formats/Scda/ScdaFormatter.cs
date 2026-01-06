@@ -24,7 +24,7 @@ public static class ScdaFormatter
         }
         else
         {
-            // Try common locations
+            // Try common locations, load from first one that exists
             var locations = new[]
             {
                 Path.Combine(AppContext.BaseDirectory, "tools", "opcode_table.csv"),
@@ -32,10 +32,10 @@ public static class ScdaFormatter
                 @"tools\opcode_table.csv"
             };
 
-            foreach (var path in locations.Where(File.Exists))
+            var foundPath = locations.FirstOrDefault(File.Exists);
+            if (foundPath != null)
             {
-                await _decompiler.LoadOpcodeTableAsync(path);
-                break;
+                await _decompiler.LoadOpcodeTableAsync(foundPath);
             }
         }
     }

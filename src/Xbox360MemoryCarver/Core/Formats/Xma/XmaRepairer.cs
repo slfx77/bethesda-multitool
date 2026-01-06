@@ -57,6 +57,7 @@ internal static class XmaRepairer
         return result;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Audio parameter extraction requires multiple format-specific branches")]
     private static (int channels, int sampleRate) ExtractAudioParams(byte[] data, int fmtOffset, bool convertToXma2)
     {
         var formatTag = data.Length > fmtOffset + 10

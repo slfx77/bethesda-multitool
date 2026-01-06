@@ -39,6 +39,7 @@ public sealed class MemoryDumpAnalyzer
     /// <param name="progress">Optional progress callback for scan progress.</param>
     /// <param name="includeMetadata">Whether to include SCDA/ESM metadata extraction (default: true).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Multi-phase analysis pipeline requires coordinating several analysis stages")]
     public async Task<AnalysisResult> AnalyzeAsync(
         string filePath,
         IProgress<AnalysisProgress>? progress = null,

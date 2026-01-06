@@ -9,6 +9,7 @@ public class XurSubprocessConverter
 {
     private const string XuiHelperExeName = "XUIHelper.CLI.exe";
     private const string XuiHelperFolderName = "XUIHelper";
+    private const string XuiHelperCliProject = "XUIHelper.CLI";
     private const string TargetFramework = "net8.0";
 
     private readonly bool _verbose;
@@ -65,16 +66,16 @@ public class XurSubprocessConverter
         if (!string.IsNullOrEmpty(workspaceRoot))
         {
             // From workspace root - CLI project output
-            candidates.Add(Path.Combine(workspaceRoot, "src", XuiHelperFolderName, "XUIHelper.CLI", "bin", "Release",
+            candidates.Add(Path.Combine(workspaceRoot, "src", XuiHelperFolderName, XuiHelperCliProject, "bin", "Release",
                 TargetFramework, XuiHelperExeName));
-            candidates.Add(Path.Combine(workspaceRoot, "src", XuiHelperFolderName, "XUIHelper.CLI", "bin", "Debug",
+            candidates.Add(Path.Combine(workspaceRoot, "src", XuiHelperFolderName, XuiHelperCliProject, "bin", "Debug",
                 TargetFramework, XuiHelperExeName));
         }
 
         // Relative paths from bin output
-        candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "..", XuiHelperFolderName, "XUIHelper.CLI",
+        candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "..", XuiHelperFolderName, XuiHelperCliProject,
             "bin", "Release", TargetFramework, XuiHelperExeName));
-        candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "..", XuiHelperFolderName, "XUIHelper.CLI",
+        candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "..", XuiHelperFolderName, XuiHelperCliProject,
             "bin", "Debug", TargetFramework, XuiHelperExeName));
 
         return candidates;
@@ -127,14 +128,13 @@ public class XurSubprocessConverter
             return 0;
         }
 
-        // Check magic: XUIB (0x58554942) in big-endian
-        if (data[0] != 'X' || data[1] != 'U' || data[2] != 'I' || data[3] != 'B')
+        // Check magic: XUIB (0x58554942) or XUIS (scene) in big-endian
+        var isXuib = data[0] == 'X' && data[1] == 'U' && data[2] == 'I' && data[3] == 'B';
+        var isXuis = data[0] == 'X' && data[1] == 'U' && data[2] == 'I' && data[3] == 'S';
+
+        if (!isXuib && !isXuis)
         {
-            // Try alternative magic: XUIS (scene)
-            if (data[0] != 'X' || data[1] != 'U' || data[2] != 'I' || data[3] != 'S')
-            {
-                return 0;
-            }
+            return 0;
         }
 
         // Version is at offset 4-7, big-endian

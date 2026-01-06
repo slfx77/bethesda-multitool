@@ -98,11 +98,14 @@ public static class CarveCommand
 
         stopwatch.Stop();
 
+        // Null check is defensive - summary is set inside async lambda which the analyzer can't verify
+#pragma warning disable S2583 // Conditionally executed code should be reachable
         if (summary is null)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] Extraction failed");
             return;
         }
+#pragma warning restore S2583
 
         AnsiConsole.MarkupLine(
             $"[green]Extracted[/] {summary.TotalExtracted} files in [blue]{stopwatch.Elapsed.TotalSeconds:F2}s[/]");
@@ -113,13 +116,15 @@ public static class CarveCommand
     /// <summary>
     /// Maps signature IDs to display categories for cleaner output.
     /// </summary>
+    private const string UncompiledScriptsCategory = "Uncompiled Scripts";
+
     private static readonly Dictionary<string, string> CategoryMap = new(StringComparer.OrdinalIgnoreCase)
     {
         // Uncompiled scripts (debug builds only)
-        ["script_scn"] = "Uncompiled Scripts",
-        ["script_scriptname"] = "Uncompiled Scripts",
-        ["script_scn_tab"] = "Uncompiled Scripts",
-        ["script_scriptname_lower"] = "Uncompiled Scripts",
+        ["script_scn"] = UncompiledScriptsCategory,
+        ["script_scriptname"] = UncompiledScriptsCategory,
+        ["script_scn_tab"] = UncompiledScriptsCategory,
+        ["script_scriptname_lower"] = UncompiledScriptsCategory,
 
         // Compiled scripts
         ["scda"] = "Compiled Scripts",
@@ -149,6 +154,7 @@ public static class CarveCommand
         ["xdbf"] = "XDBF Files"
     };
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Summary output logic with multiple stats categories is inherently branched")]
     private static void PrintSummary(ExtractionSummary summary, bool convertDdx)
     {
         if (summary.TypeCounts.Count > 0)

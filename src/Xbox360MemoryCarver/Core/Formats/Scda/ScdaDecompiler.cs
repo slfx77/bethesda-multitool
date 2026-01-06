@@ -11,9 +11,7 @@ namespace Xbox360MemoryCarver.Core.Formats.Scda;
 public sealed class ScdaDecompiler
 {
     private readonly Dictionary<ushort, (string Name, string Category)> _opcodeTable = new();
-
-    [ThreadStatic]
-    private static string? _currentRef;
+    private string? _currentRef;
 
     public ScdaDecompiler()
     {
@@ -41,6 +39,7 @@ public sealed class ScdaDecompiler
     /// <summary>
     ///     Decompile bytecode to readable script format.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Bytecode decompiler requires complex switch logic")]
     public string Decompile(byte[] bytecode)
     {
         var sb = new StringBuilder();
@@ -246,6 +245,7 @@ public sealed class ScdaDecompiler
         return ($"SCRO#{refIdx}.{varType}Local{varIdx}", 6);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Expression parsing requires complex switch logic")]
     private string ParseExpression(byte[] bytes, int offset, int length)
     {
         var stack = new Stack<string>();
@@ -275,7 +275,7 @@ public sealed class ScdaDecompiler
                     continue;
 
                 case 0x7A when pos + 9 <= length: // Float param (double)
-                    stack.Push(BitConverter.ToDouble(bytes, offset + pos + 1).ToString("G"));
+                    stack.Push(BitConverter.ToDouble(bytes, offset + pos + 1).ToString("G", CultureInfo.InvariantCulture));
                     pos += 9;
                     continue;
 
@@ -305,6 +305,7 @@ public sealed class ScdaDecompiler
         return stack.Count > 0 ? string.Join(" ", stack.Reverse()) : "0";
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Push value parsing requires complex conditional logic")]
     private void ParsePushValue(byte[] bytes, int offset, int length, ref int pos, Stack<string> stack)
     {
         if (offset + pos >= bytes.Length) return;
@@ -370,7 +371,7 @@ public sealed class ScdaDecompiler
         if (TryParseOperator(bytes, offset, length, ref pos, stack)) return;
 
         // Other literal values
-        stack.Push(next.ToString());
+        stack.Push(next.ToString(CultureInfo.InvariantCulture));
         pos++;
     }
 
@@ -488,7 +489,7 @@ public sealed class ScdaDecompiler
         };
     }
 
-    private string ParseParameters(byte[] bytes, int offset, int length, int count)
+    private static string ParseParameters(byte[] bytes, int offset, int length, int count)
     {
         var parts = new List<string>();
         var pos = 0;

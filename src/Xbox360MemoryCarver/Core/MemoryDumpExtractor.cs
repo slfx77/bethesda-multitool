@@ -116,6 +116,7 @@ public static class MemoryDumpExtractor
     /// <summary>
     ///     Extract modules from minidump metadata.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Module extraction handles multiple data sources and edge cases")]
     private static async Task<int> ExtractModulesAsync(
         string filePath,
         ExtractionOptions options,
