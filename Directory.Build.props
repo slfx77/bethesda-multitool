@@ -1,5 +1,14 @@
 <Project>
-  <PropertyGroup>
+  <!-- Skip all build customizations for external submodules (XUIHelper, XCompression) -->
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('XUIHelper')) OR $(MSBuildProjectDirectory.Contains('XCompression'))">
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="!$(MSBuildProjectDirectory.Contains('XUIHelper')) AND !$(MSBuildProjectDirectory.Contains('XCompression'))">
     <!-- Enable .NET analyzers -->
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
@@ -30,7 +39,7 @@
     <RunAnalyzersDuringLiveAnalysis>true</RunAnalyzersDuringLiveAnalysis>
   </PropertyGroup>
   
-  <!-- Code analysis packages applied to App and Core projects only -->
+  <!-- Code analysis packages applied to Xbox360MemoryCarver projects only (excludes submodules) -->
   <ItemGroup Condition="$(MSBuildProjectName.StartsWith('Xbox360MemoryCarver'))">
     <PackageReference Include="SonarAnalyzer.CSharp" Version="10.4.0.108396">
       <PrivateAssets>all</PrivateAssets>

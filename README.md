@@ -193,10 +193,23 @@ Contributions are welcome! Please ensure:
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License** - See [LICENSE](LICENSE) file for details.
+
+### Third-Party Components
+
+This project uses the following external components:
+
+| Component | License | Usage |
+| --------- | ------- | ----- |
+| [DDXConv](https://github.com/kran27/DDXConv) | Unlicensed | DDX→DDS texture conversion (forked, built-in) |
+| [XCompression](https://github.com/gibbed/XCompression) | zlib | LZX decompression (submodule, called as subprocess) |
+| [XUIHelper](https://github.com/ClementDrepworx/XUIHelper) | GPLv3 | XUR→XUI conversion (submodule, called as subprocess) |
+
+**Note**: XUIHelper is licensed under GPLv3. Since it is invoked as a separate subprocess (not linked), this project remains MIT licensed. XUIHelper's GPLv3 license applies only to the XUIHelper component itself.
 
 ## Acknowledgments
 
-- [DDXConv](https://github.com/kran27/DDXConv) - DDX texture conversion
-- [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia) - Format documentation
-- [XCompression](https://github.com/gibbed/XCompression) - LZX decompression reference
+- [kran27/DDXConv](https://github.com/kran27/DDXConv) - Original DDX texture conversion tool
+- [gibbed/XCompression](https://github.com/gibbed/XCompression) - Xbox LZX decompression library
+- [ClementDrepworx/XUIHelper](https://github.com/ClementDrepworx/XUIHelper) - Xbox UI format conversion tool
+- [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia) - Format documentation and research
