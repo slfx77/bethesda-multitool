@@ -1,10 +1,11 @@
-using Xunit;
+using System.Text;
 using Xbox360MemoryCarver.Core.Utils;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for SignatureBoundaryScanner utility methods.
+///     Tests for SignatureBoundaryScanner utility methods.
 /// </summary>
 public class SignatureBoundaryScannerTests
 {
@@ -157,7 +158,7 @@ public class SignatureBoundaryScannerTests
     {
         // Arrange
         var data = new byte[4];
-        System.Text.Encoding.ASCII.GetBytes(signature).CopyTo(data, 0);
+        Encoding.ASCII.GetBytes(signature).CopyTo(data, 0);
 
         // Act
         var result = SignatureBoundaryScanner.IsKnownSignature(data, 0);
@@ -260,7 +261,7 @@ public class SignatureBoundaryScannerTests
         "3XDR"u8.CopyTo(data.AsSpan(50));
 
         // Act
-        var result = SignatureBoundaryScanner.FindNextSignature(data, 0, 10, 100, excludeSignature: "3XDO"u8);
+        var result = SignatureBoundaryScanner.FindNextSignature(data, 0, 10, 100, "3XDO"u8);
 
         // Assert
         Assert.Equal(50, result);

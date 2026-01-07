@@ -70,7 +70,7 @@ public static class AnalyzeCommand
                     task.Description = $"[green]{p.Phase}[/][grey]{filesInfo}[/]";
                 });
 
-                result = await analyzer.AnalyzeAsync(input, progress, includeMetadata: true);
+                result = await analyzer.AnalyzeAsync(input, progress, true);
                 task.Value = 100;
                 task.Description = $"[green]Complete[/] [grey]({result.CarvedFiles.Count} files)[/]";
             });
@@ -116,7 +116,8 @@ public static class AnalyzeCommand
             AnsiConsole.MarkupLine("[blue]Extracting compiled scripts (SCDA)...[/]");
             var dumpData = await File.ReadAllBytesAsync(input);
             var scriptsDir = Path.Combine(extractEsm, "scripts");
-            var scriptProgress = verbose ? new Progress<string>(msg => AnsiConsole.MarkupLine($"  [grey]{msg}[/]")) : null;
+            var scriptProgress =
+                verbose ? new Progress<string>(msg => AnsiConsole.MarkupLine($"  [grey]{msg}[/]")) : null;
             var scriptResult = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress, verbose);
             AnsiConsole.MarkupLine(
                 $"[green]Scripts extracted:[/] {scriptResult.TotalRecords} records ({scriptResult.GroupedQuests} quests, {scriptResult.UngroupedScripts} ungrouped)");

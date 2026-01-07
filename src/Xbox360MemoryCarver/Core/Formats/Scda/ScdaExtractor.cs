@@ -60,19 +60,17 @@ public static partial class ScdaExtractor
 
         // Add grouped scripts with quest names
         foreach (var (questName, records) in groups)
+        foreach (var record in records)
         {
-            foreach (var record in records)
+            var scriptName = ExtractScriptNameFromSource(record.SourceText);
+            scripts.Add(new ScriptInfo
             {
-                var scriptName = ExtractScriptNameFromSource(record.SourceText);
-                scripts.Add(new ScriptInfo
-                {
-                    Offset = record.Offset,
-                    BytecodeSize = record.BytecodeLength,
-                    ScriptName = scriptName,
-                    QuestName = questName,
-                    HasSource = record.HasAssociatedSctx
-                });
-            }
+                Offset = record.Offset,
+                BytecodeSize = record.BytecodeLength,
+                ScriptName = scriptName,
+                QuestName = questName,
+                HasSource = record.HasAssociatedSctx
+            });
         }
 
         // Add ungrouped scripts
@@ -250,7 +248,10 @@ public static partial class ScdaExtractor
     /// <summary>
     ///     Public wrapper for extracting script name from source text.
     /// </summary>
-    public static string? ExtractScriptNameFromSourcePublic(string? source) => ExtractScriptNameFromSource(source);
+    public static string? ExtractScriptNameFromSourcePublic(string? source)
+    {
+        return ExtractScriptNameFromSource(source);
+    }
 
     private static string? ExtractScriptNameFromSource(string? source)
     {

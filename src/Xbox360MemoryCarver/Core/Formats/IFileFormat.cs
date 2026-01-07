@@ -59,6 +59,12 @@ public sealed class ParseResult
     public string? FileName { get; init; }
 
     /// <summary>
+    ///     Optional override for the output folder (e.g., "anims" vs "meshes" for NIF files).
+    ///     If null, the format's default OutputFolder is used.
+    /// </summary>
+    public string? OutputFolderOverride { get; init; }
+
+    /// <summary>
     ///     Additional metadata (dimensions, format details, flags, etc.).
     /// </summary>
     public Dictionary<string, object> Metadata { get; init; } = [];

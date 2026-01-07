@@ -20,9 +20,7 @@ public class XurSubprocessConverter
         XuiHelperPath = xuiHelperPath ?? FindXuiHelperPath();
 
         if (string.IsNullOrEmpty(XuiHelperPath) || !File.Exists(XuiHelperPath))
-        {
             throw new FileNotFoundException($"{XuiHelperExeName} not found.", XuiHelperPath ?? XuiHelperExeName);
-        }
     }
 
     public int Processed { get; private set; }
@@ -33,10 +31,7 @@ public class XurSubprocessConverter
     private static string FindXuiHelperPath()
     {
         var envPath = Environment.GetEnvironmentVariable("XUIHELPER_PATH");
-        if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath))
-        {
-            return envPath;
-        }
+        if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath)) return envPath;
 
         var assemblyDir = AppContext.BaseDirectory;
         var workspaceRoot = FindWorkspaceRoot(assemblyDir);
@@ -44,10 +39,7 @@ public class XurSubprocessConverter
         foreach (var path in BuildCandidatePaths(assemblyDir, workspaceRoot))
         {
             var fullPath = Path.GetFullPath(path);
-            if (File.Exists(fullPath))
-            {
-                return fullPath;
-            }
+            if (File.Exists(fullPath)) return fullPath;
         }
 
         return string.Empty;
@@ -66,7 +58,8 @@ public class XurSubprocessConverter
         if (!string.IsNullOrEmpty(workspaceRoot))
         {
             // From workspace root - CLI project output
-            candidates.Add(Path.Combine(workspaceRoot, "src", XuiHelperFolderName, XuiHelperCliProject, "bin", "Release",
+            candidates.Add(Path.Combine(workspaceRoot, "src", XuiHelperFolderName, XuiHelperCliProject, "bin",
+                "Release",
                 TargetFramework, XuiHelperExeName));
             candidates.Add(Path.Combine(workspaceRoot, "src", XuiHelperFolderName, XuiHelperCliProject, "bin", "Debug",
                 TargetFramework, XuiHelperExeName));
@@ -86,16 +79,10 @@ public class XurSubprocessConverter
         var dir = startDir;
         while (!string.IsNullOrEmpty(dir))
         {
-            if (Directory.GetFiles(dir, "*.slnx").Length > 0 || Directory.GetFiles(dir, "*.sln").Length > 0)
-            {
-                return dir;
-            }
+            if (Directory.GetFiles(dir, "*.slnx").Length > 0 || Directory.GetFiles(dir, "*.sln").Length > 0) return dir;
 
             var parent = Directory.GetParent(dir);
-            if (parent == null)
-            {
-                break;
-            }
+            if (parent == null) break;
 
             dir = parent.FullName;
         }
@@ -123,19 +110,13 @@ public class XurSubprocessConverter
     /// <returns>XUR version (5 or 8), or 0 if not a valid XUR</returns>
     public static int DetectXurVersion(ReadOnlySpan<byte> data)
     {
-        if (data.Length < 8)
-        {
-            return 0;
-        }
+        if (data.Length < 8) return 0;
 
         // Check magic: XUIB (0x58554942) or XUIS (scene) in big-endian
         var isXuib = data[0] == 'X' && data[1] == 'U' && data[2] == 'I' && data[3] == 'B';
         var isXuis = data[0] == 'X' && data[1] == 'U' && data[2] == 'I' && data[3] == 'S';
 
-        if (!isXuib && !isXuis)
-        {
-            return 0;
-        }
+        if (!isXuib && !isXuis) return 0;
 
         // Version is at offset 4-7, big-endian
         var version = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
@@ -167,10 +148,7 @@ public class XurSubprocessConverter
                 version = DetectXurVersion(data);
                 if (version == 0)
                 {
-                    if (_verbose)
-                    {
-                        Console.WriteLine($"[XurConverter] Could not detect XUR version for {inputPath}");
-                    }
+                    if (_verbose) Console.WriteLine($"[XurConverter] Could not detect XUR version for {inputPath}");
 
                     Failed++;
                     return false;
@@ -191,17 +169,11 @@ public class XurSubprocessConverter
             var stderr = process.StandardError.ReadToEnd();
             process.WaitForExit();
 
-            if (_verbose && !string.IsNullOrEmpty(stdout))
-            {
-                Console.WriteLine(stdout);
-            }
+            if (_verbose && !string.IsNullOrEmpty(stdout)) Console.WriteLine(stdout);
 
             if (process.ExitCode != 0 || !File.Exists(outputPath))
             {
-                if (_verbose)
-                {
-                    Console.WriteLine($"[XurConverter] Conversion failed: {stderr}");
-                }
+                if (_verbose) Console.WriteLine($"[XurConverter] Conversion failed: {stderr}");
 
                 Failed++;
                 return false;
@@ -278,10 +250,7 @@ public class XurSubprocessConverter
             process.WaitForExit();
 
             var consoleOutput = stdout + (string.IsNullOrEmpty(stderr) ? "" : $"\nSTDERR: {stderr}");
-            if (_verbose && !string.IsNullOrWhiteSpace(stdout))
-            {
-                Console.WriteLine(stdout.TrimEnd());
-            }
+            if (_verbose && !string.IsNullOrWhiteSpace(stdout)) Console.WriteLine(stdout.TrimEnd());
 
             if (!File.Exists(tempOutputPath))
             {
@@ -320,15 +289,9 @@ public class XurSubprocessConverter
     {
         try
         {
-            if (input != null && File.Exists(input))
-            {
-                File.Delete(input);
-            }
+            if (input != null && File.Exists(input)) File.Delete(input);
 
-            if (output != null && File.Exists(output))
-            {
-                File.Delete(output);
-            }
+            if (output != null && File.Exists(output)) File.Delete(output);
         }
         catch
         {

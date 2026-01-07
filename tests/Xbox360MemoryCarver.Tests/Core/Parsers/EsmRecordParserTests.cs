@@ -1,5 +1,6 @@
-using Xunit;
+using System.Text;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
@@ -39,14 +40,14 @@ public class EsmRecordParserTests
     {
         // Arrange - EDID record with "TestItem" as editor ID
         var editorId = "TestItem";
-        var editorIdBytes = System.Text.Encoding.ASCII.GetBytes(editorId + "\0");
+        var editorIdBytes = Encoding.ASCII.GetBytes(editorId + "\0");
 
         var data = new byte[50];
         data[0] = (byte)'E';
         data[1] = (byte)'D';
         data[2] = (byte)'I';
         data[3] = (byte)'D';
-        data[4] = (byte)(editorIdBytes.Length); // Length low
+        data[4] = (byte)editorIdBytes.Length; // Length low
         data[5] = 0x00; // Length high
         Array.Copy(editorIdBytes, 0, data, 6, editorIdBytes.Length);
 
@@ -64,7 +65,7 @@ public class EsmRecordParserTests
     {
         // Arrange - Two identical EDID records
         var editorId = "TestItem";
-        var editorIdBytes = System.Text.Encoding.ASCII.GetBytes(editorId + "\0");
+        var editorIdBytes = Encoding.ASCII.GetBytes(editorId + "\0");
 
         var data = new byte[100];
         var offset = 0;
@@ -121,7 +122,7 @@ public class EsmRecordParserTests
     {
         // Arrange - EDID starting with number (invalid)
         var editorId = "123Test";
-        var editorIdBytes = System.Text.Encoding.ASCII.GetBytes(editorId + "\0");
+        var editorIdBytes = Encoding.ASCII.GetBytes(editorId + "\0");
 
         var data = new byte[30];
         data[0] = (byte)'E';
@@ -144,7 +145,7 @@ public class EsmRecordParserTests
     {
         // Arrange - GMST record with "fActorStrengthMultiplier"
         var settingName = "fActorStrengthMultiplier";
-        var settingBytes = System.Text.Encoding.ASCII.GetBytes(settingName + "\0");
+        var settingBytes = Encoding.ASCII.GetBytes(settingName + "\0");
 
         var data = new byte[50];
         data[0] = (byte)'G';
@@ -171,7 +172,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_ValidGmstPrefixes_Accepted(string settingName)
     {
         // Arrange
-        var settingBytes = System.Text.Encoding.ASCII.GetBytes(settingName + "\0");
+        var settingBytes = Encoding.ASCII.GetBytes(settingName + "\0");
 
         var data = new byte[50];
         data[0] = (byte)'G';
@@ -194,7 +195,7 @@ public class EsmRecordParserTests
     {
         // Arrange - GMST with invalid prefix
         var settingName = "xInvalidPrefix";
-        var settingBytes = System.Text.Encoding.ASCII.GetBytes(settingName + "\0");
+        var settingBytes = Encoding.ASCII.GetBytes(settingName + "\0");
 
         var data = new byte[50];
         data[0] = (byte)'G';
@@ -217,7 +218,7 @@ public class EsmRecordParserTests
     {
         // Arrange - SCTX with script source containing keywords
         var scriptText = "if GetStage MyQuest >= 10\n  Enable\nendif";
-        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(scriptText);
+        var scriptBytes = Encoding.ASCII.GetBytes(scriptText);
 
         var data = new byte[100];
         data[0] = (byte)'S';
@@ -241,7 +242,7 @@ public class EsmRecordParserTests
     {
         // Arrange - SCTX without any recognized keywords
         var text = "some random text without script keywords";
-        var textBytes = System.Text.Encoding.ASCII.GetBytes(text);
+        var textBytes = Encoding.ASCII.GetBytes(text);
 
         var data = new byte[100];
         data[0] = (byte)'S';
@@ -507,7 +508,7 @@ public class EsmRecordParserTests
     {
         // Arrange - Pad to ensure length > 10
         var paddedContent = scriptContent.PadRight(15);
-        var scriptBytes = System.Text.Encoding.ASCII.GetBytes(paddedContent);
+        var scriptBytes = Encoding.ASCII.GetBytes(paddedContent);
 
         var data = new byte[50];
         data[0] = (byte)'S';
@@ -525,4 +526,3 @@ public class EsmRecordParserTests
         Assert.Single(result.ScriptSources);
     }
 }
-

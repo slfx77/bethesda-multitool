@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Xma;
@@ -39,10 +40,7 @@ internal static class XmaRepairer
         var fmtOffset = FindChunk(data, "fmt "u8);
         var dataOffset = FindChunk(data, "data"u8);
 
-        if (fmtOffset < 0 || dataOffset < 0)
-        {
-            return data;
-        }
+        if (fmtOffset < 0 || dataOffset < 0) return data;
 
         var (channels, sampleRate) = ExtractAudioParams(data, fmtOffset, convertToXma2);
         var dataSize = BinaryUtils.ReadUInt32LE(data.AsSpan(), dataOffset + 4);
@@ -57,7 +55,8 @@ internal static class XmaRepairer
         return result;
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Audio parameter extraction requires multiple format-specific branches")]
+    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
+        Justification = "Audio parameter extraction requires multiple format-specific branches")]
     private static (int channels, int sampleRate) ExtractAudioParams(byte[] data, int fmtOffset, bool convertToXma2)
     {
         var formatTag = data.Length > fmtOffset + 10

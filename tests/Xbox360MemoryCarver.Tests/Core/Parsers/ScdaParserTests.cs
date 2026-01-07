@@ -1,5 +1,6 @@
-using Xunit;
+using System.Text;
 using Xbox360MemoryCarver.Core.Formats.Scda;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
@@ -165,7 +166,7 @@ public class ScdaParserTests
         };
 
         // Act
-        var result = _parser.Parse(data, offset: 4);
+        var result = _parser.Parse(data, 4);
 
         // Assert
         Assert.NotNull(result);
@@ -226,7 +227,7 @@ public class ScdaParserTests
     {
         // Arrange - SCDA followed by SCTX within 200 bytes
         var sourceText = "SetStage MyQuest 10";
-        var sourceBytes = System.Text.Encoding.ASCII.GetBytes(sourceText);
+        var sourceBytes = Encoding.ASCII.GetBytes(sourceText);
 
         var data = new byte[100];
         var offset = 0;
@@ -364,6 +365,3 @@ public class ScdaParserTests
         Assert.Equal(record.BytecodeSize, record.BytecodeLength);
     }
 }
-
-
-

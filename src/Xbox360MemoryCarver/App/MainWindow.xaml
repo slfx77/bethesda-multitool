@@ -67,6 +67,9 @@
           <controls:TabViewItem
             Header="Batch Mode"
             IsClosable="False" />
+          <controls:TabViewItem
+            Header="NIF Converter"
+            IsClosable="False" />
         </controls:TabView.TabItems>
       </controls:TabView>
 
@@ -87,6 +90,9 @@
         Visibility="Visible" />
       <tabs:BatchModeTab
         x:Name="BatchModeTabContent"
+        Visibility="Collapsed" />
+      <tabs:NifConverterTab
+        x:Name="NifConverterTabContent"
         Visibility="Collapsed" />
     </Grid>
   </Grid>

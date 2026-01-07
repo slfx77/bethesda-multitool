@@ -1,11 +1,10 @@
-using System.Text;
-using Xunit;
 using Xbox360MemoryCarver.Core.Formats.Xma;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for XmaFormat.
+///     Tests for XmaFormat.
 /// </summary>
 public class XmaFormatTests
 {
@@ -17,7 +16,7 @@ public class XmaFormatTests
     public void ParseHeader_ValidRiffWave_WithXma2Chunk_ReturnsResult()
     {
         // Arrange
-        var data = CreateXmaHeader(useXma2Chunk: true);
+        var data = CreateXmaHeader(true);
 
         // Act
         var result = _parser.Parse(data);
@@ -32,7 +31,7 @@ public class XmaFormatTests
     public void ParseHeader_ValidRiffWave_WithFmtXmaFormat_ReturnsResult()
     {
         // Arrange
-        var data = CreateXmaHeader(useXma2Chunk: false, formatTag: 0x0165);
+        var data = CreateXmaHeader(false, 0x0165);
 
         // Act
         var result = _parser.Parse(data);
@@ -46,7 +45,7 @@ public class XmaFormatTests
     public void ParseHeader_ValidRiffWave_WithXma2Format_ReturnsResult()
     {
         // Arrange
-        var data = CreateXmaHeader(useXma2Chunk: false, formatTag: 0x0166);
+        var data = CreateXmaHeader(false, 0x0166);
 
         // Act
         var result = _parser.Parse(data);
@@ -90,7 +89,7 @@ public class XmaFormatTests
     public void ParseHeader_RiffWave_ButNotXma_ReturnsNull()
     {
         // Arrange - RIFF WAVE with PCM format (not XMA)
-        var data = CreateXmaHeader(useXma2Chunk: false, formatTag: 0x0001); // PCM
+        var data = CreateXmaHeader(false, 0x0001); // PCM
 
         // Act
         var result = _parser.Parse(data);
@@ -151,7 +150,7 @@ public class XmaFormatTests
     public void ParseHeader_SetsIsXmaMetadata()
     {
         // Arrange
-        var data = CreateXmaHeader(useXma2Chunk: true);
+        var data = CreateXmaHeader(true);
 
         // Act
         var result = _parser.Parse(data);
@@ -165,7 +164,7 @@ public class XmaFormatTests
     public void ParseHeader_WithFmtChunk_IncludesFormatTag()
     {
         // Arrange
-        var data = CreateXmaHeader(useXma2Chunk: false, formatTag: 0x0165);
+        var data = CreateXmaHeader(false, 0x0165);
 
         // Act
         var result = _parser.Parse(data);

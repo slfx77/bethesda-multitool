@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core;
@@ -10,6 +11,47 @@ namespace Xbox360MemoryCarver.CLI;
 /// </summary>
 public static class CarveCommand
 {
+    /// <summary>
+    ///     Maps signature IDs to display categories for cleaner output.
+    /// </summary>
+    private const string UncompiledScriptsCategory = "Uncompiled Scripts";
+
+    private static readonly Dictionary<string, string> CategoryMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Uncompiled scripts (debug builds only)
+        ["script_scn"] = UncompiledScriptsCategory,
+        ["script_scriptname"] = UncompiledScriptsCategory,
+        ["script_scn_tab"] = UncompiledScriptsCategory,
+        ["script_scriptname_lower"] = UncompiledScriptsCategory,
+
+        // Compiled scripts
+        ["scda"] = "Compiled Scripts",
+
+        // Textures
+        ["ddx_3xdo"] = "DDX Textures",
+        ["ddx_3xdr"] = "DDX Textures",
+        ["dds"] = "DDS Textures",
+        ["png"] = "PNG Images",
+
+        // UI
+        ["xui_scene"] = "XUI Scenes",
+        ["xui_binary"] = "XUI Binary",
+
+        // Audio
+        ["xma"] = "XMA Audio",
+        ["lip"] = "LIP Sync",
+
+        // Models
+        ["nif"] = "NIF Models",
+
+        // Executables
+        ["xex"] = "XEX Modules",
+
+        // Data
+        ["esp"] = "ESP/ESM Plugins",
+        ["xdbf"] = "XDBF Files"
+    };
+
     public static async Task ExecuteAsync(
         string inputPath,
         string outputDir,
@@ -21,13 +63,9 @@ public static class CarveCommand
         var files = new List<string>();
 
         if (File.Exists(inputPath))
-        {
             files.Add(inputPath);
-        }
         else if (Directory.Exists(inputPath))
-        {
             files.AddRange(Directory.GetFiles(inputPath, "*.dmp", SearchOption.TopDirectoryOnly));
-        }
 
         if (files.Count == 0)
         {
@@ -37,10 +75,7 @@ public static class CarveCommand
 
         AnsiConsole.MarkupLine($"[blue]Found[/] {files.Count} file(s) to process");
 
-        foreach (var file in files)
-        {
-            await ProcessFileAsync(file, outputDir, fileTypes, convertDdx, verbose, maxFiles);
-        }
+        foreach (var file in files) await ProcessFileAsync(file, outputDir, fileTypes, convertDdx, verbose, maxFiles);
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[green]Done![/]");
@@ -113,48 +148,8 @@ public static class CarveCommand
         PrintSummary(summary, convertDdx);
     }
 
-    /// <summary>
-    /// Maps signature IDs to display categories for cleaner output.
-    /// </summary>
-    private const string UncompiledScriptsCategory = "Uncompiled Scripts";
-
-    private static readonly Dictionary<string, string> CategoryMap = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Uncompiled scripts (debug builds only)
-        ["script_scn"] = UncompiledScriptsCategory,
-        ["script_scriptname"] = UncompiledScriptsCategory,
-        ["script_scn_tab"] = UncompiledScriptsCategory,
-        ["script_scriptname_lower"] = UncompiledScriptsCategory,
-
-        // Compiled scripts
-        ["scda"] = "Compiled Scripts",
-
-        // Textures
-        ["ddx_3xdo"] = "DDX Textures",
-        ["ddx_3xdr"] = "DDX Textures",
-        ["dds"] = "DDS Textures",
-        ["png"] = "PNG Images",
-
-        // UI
-        ["xui_scene"] = "XUI Scenes",
-        ["xui_binary"] = "XUI Binary",
-
-        // Audio
-        ["xma"] = "XMA Audio",
-        ["lip"] = "LIP Sync",
-
-        // Models
-        ["nif"] = "NIF Models",
-
-        // Executables
-        ["xex"] = "XEX Modules",
-
-        // Data
-        ["esp"] = "ESP/ESM Plugins",
-        ["xdbf"] = "XDBF Files"
-    };
-
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Summary output logic with multiple stats categories is inherently branched")]
+    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
+        Justification = "Summary output logic with multiple stats categories is inherently branched")]
     private static void PrintSummary(ExtractionSummary summary, bool convertDdx)
     {
         if (summary.TypeCounts.Count > 0)
@@ -177,17 +172,12 @@ public static class CarveCommand
             table.AddColumn(new TableColumn("[bold]Count[/]").RightAligned());
 
             foreach (var (category, count) in categorized.OrderByDescending(x => x.Value))
-            {
                 if (count > 0)
-                {
                     table.AddRow(category, count.ToString(CultureInfo.InvariantCulture));
-                }
-            }
 
             if (summary.ModulesExtracted > 0)
-            {
-                table.AddRow("[grey]Modules (from header)[/]", summary.ModulesExtracted.ToString(CultureInfo.InvariantCulture));
-            }
+                table.AddRow("[grey]Modules (from header)[/]",
+                    summary.ModulesExtracted.ToString(CultureInfo.InvariantCulture));
 
             AnsiConsole.Write(table);
         }

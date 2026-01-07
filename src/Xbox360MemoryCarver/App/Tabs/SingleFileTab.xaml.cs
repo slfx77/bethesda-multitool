@@ -92,7 +92,7 @@ public sealed partial class SingleFileTab : UserControl
     }
 
     private async Task ShowDialogAsync(string title, string message) => await new ContentDialog
-    { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
+        { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

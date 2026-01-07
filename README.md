@@ -199,11 +199,12 @@ This project is licensed under the **MIT License** - See [LICENSE](LICENSE) file
 
 This project uses the following external components:
 
-| Component | License | Usage |
-| --------- | ------- | ----- |
-| [DDXConv](https://github.com/kran27/DDXConv) | Unlicensed | DDX→DDS texture conversion (forked, built-in) |
-| [XCompression](https://github.com/gibbed/XCompression) | zlib | LZX decompression (submodule, called as subprocess) |
-| [XUIHelper](https://github.com/ClementDrepworx/XUIHelper) | GPLv3 | XUR→XUI conversion (submodule, called as subprocess) |
+| Component                                                 | License    | Usage                                                |
+| --------------------------------------------------------- | ---------- | ---------------------------------------------------- |
+| [DDXConv](https://github.com/kran27/DDXConv)              | Unlicensed | DDX→DDS texture conversion (forked, built-in)        |
+| [XCompression](https://github.com/gibbed/XCompression)    | zlib       | LZX decompression (submodule, called as subprocess)  |
+| [XUIHelper](https://github.com/ClementDrepworx/XUIHelper) | GPLv3      | XUR→XUI conversion (submodule, called as subprocess) |
+| [NifSkope nif.xml](https://github.com/niftools/nifskope)  | BSD-3      | NIF format schema for endian conversion (embedded)   |
 
 **Note**: XUIHelper is licensed under GPLv3. Since it is invoked as a separate subprocess (not linked), this project remains MIT licensed. XUIHelper's GPLv3 license applies only to the XUIHelper component itself.
 
@@ -212,4 +213,5 @@ This project uses the following external components:
 - [kran27/DDXConv](https://github.com/kran27/DDXConv) - Original DDX texture conversion tool
 - [gibbed/XCompression](https://github.com/gibbed/XCompression) - Xbox LZX decompression library
 - [ClementDrepworx/XUIHelper](https://github.com/ClementDrepworx/XUIHelper) - Xbox UI format conversion tool
+- [NifTools/NifSkope](https://github.com/niftools/nifskope) - NIF format schema (nif.xml) for block-by-block endian conversion
 - [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia) - Format documentation and research

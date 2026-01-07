@@ -1,10 +1,10 @@
-using Xunit;
 using Xbox360MemoryCarver.Core.Utils;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for TexturePathExtractor utility methods.
+///     Tests for TexturePathExtractor utility methods.
 /// </summary>
 public class TexturePathExtractorTests
 {
@@ -36,6 +36,50 @@ public class TexturePathExtractorTests
 
         // Assert
         Assert.Equal(expected, result);
+    }
+
+    #endregion
+
+    #region FindPrecedingDdxPath Tests
+
+    [Fact]
+    public void FindPrecedingDdxPath_CallsFindPrecedingPathWithDdxExtension()
+    {
+        // Arrange
+        var pathBytes = "textures\\test.ddx"u8.ToArray();
+        var data = new byte[pathBytes.Length + 100];
+        pathBytes.CopyTo(data, 0);
+
+        var headerOffset = pathBytes.Length + 50;
+
+        // Act
+        var result = TexturePathExtractor.FindPrecedingDdxPath(data, headerOffset);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.EndsWith(".ddx", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    #endregion
+
+    #region FindPrecedingDdsPath Tests
+
+    [Fact]
+    public void FindPrecedingDdsPath_CallsFindPrecedingPathWithDdsExtension()
+    {
+        // Arrange
+        var pathBytes = "textures\\test.dds"u8.ToArray();
+        var data = new byte[pathBytes.Length + 100];
+        pathBytes.CopyTo(data, 0);
+
+        var headerOffset = pathBytes.Length + 50;
+
+        // Act
+        var result = TexturePathExtractor.FindPrecedingDdsPath(data, headerOffset);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.EndsWith(".dds", result, StringComparison.OrdinalIgnoreCase);
     }
 
     #endregion
@@ -217,50 +261,6 @@ public class TexturePathExtractorTests
         // Assert
         Assert.NotNull(result);
         Assert.StartsWith("textures", result);
-    }
-
-    #endregion
-
-    #region FindPrecedingDdxPath Tests
-
-    [Fact]
-    public void FindPrecedingDdxPath_CallsFindPrecedingPathWithDdxExtension()
-    {
-        // Arrange
-        var pathBytes = "textures\\test.ddx"u8.ToArray();
-        var data = new byte[pathBytes.Length + 100];
-        pathBytes.CopyTo(data, 0);
-
-        var headerOffset = pathBytes.Length + 50;
-
-        // Act
-        var result = TexturePathExtractor.FindPrecedingDdxPath(data, headerOffset);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.EndsWith(".ddx", result, StringComparison.OrdinalIgnoreCase);
-    }
-
-    #endregion
-
-    #region FindPrecedingDdsPath Tests
-
-    [Fact]
-    public void FindPrecedingDdsPath_CallsFindPrecedingPathWithDdsExtension()
-    {
-        // Arrange
-        var pathBytes = "textures\\test.dds"u8.ToArray();
-        var data = new byte[pathBytes.Length + 100];
-        pathBytes.CopyTo(data, 0);
-
-        var headerOffset = pathBytes.Length + 50;
-
-        // Act
-        var result = TexturePathExtractor.FindPrecedingDdsPath(data, headerOffset);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.EndsWith(".dds", result, StringComparison.OrdinalIgnoreCase);
     }
 
     #endregion

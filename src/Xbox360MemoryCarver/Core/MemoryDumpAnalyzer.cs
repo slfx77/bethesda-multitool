@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
@@ -25,8 +26,12 @@ public sealed class MemoryDumpAnalyzer
         // Register all signatures from the format registry for analysis
         // (includes all formats for visualization, even those with scanning disabled)
         foreach (var format in FormatRegistry.All)
+        {
             foreach (var sig in format.Signatures)
+            {
                 _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
+            }
+        }
 
         _signatureMatcher.Build();
     }
@@ -39,7 +44,8 @@ public sealed class MemoryDumpAnalyzer
     /// <param name="progress">Optional progress callback for scan progress.</param>
     /// <param name="includeMetadata">Whether to include SCDA/ESM metadata extraction (default: true).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Multi-phase analysis pipeline requires coordinating several analysis stages")]
+    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
+        Justification = "Multi-phase analysis pipeline requires coordinating several analysis stages")]
     public async Task<AnalysisResult> AnalyzeAsync(
         string filePath,
         IProgress<AnalysisProgress>? progress = null,
@@ -100,7 +106,8 @@ public sealed class MemoryDumpAnalyzer
 
         var matches = await Task.Run(() =>
         {
-            using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
             return FindAllMatches(accessor, result.FileSize, scanProgress);
         }, cancellationToken);
@@ -110,7 +117,8 @@ public sealed class MemoryDumpAnalyzer
 
         await Task.Run(() =>
         {
-            using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
 
             var processed = 0;
@@ -148,7 +156,7 @@ public sealed class MemoryDumpAnalyzer
                 processed++;
                 if (progress != null && processed % 100 == 0)
                 {
-                    var parsePercent = 50 + (processed * 20.0 / matches.Count);
+                    var parsePercent = 50 + processed * 20.0 / matches.Count;
                     progress.Report(new AnalysisProgress
                     {
                         Phase = "Parsing",
@@ -168,23 +176,24 @@ public sealed class MemoryDumpAnalyzer
         if (includeMetadata)
         {
             // Phase 3: Loading dump data (70-75%)
-            progress?.Report(new AnalysisProgress { Phase = "Loading", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
+            progress?.Report(new AnalysisProgress
+            { Phase = "Loading", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
             var data = await File.ReadAllBytesAsync(filePath, cancellationToken);
 
             // Phase 4: SCDA scan (75-85%)
-            progress?.Report(new AnalysisProgress { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 75 });
+            progress?.Report(new AnalysisProgress
+            { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 75 });
             await Task.Run(() =>
             {
                 var scdaScanResult = ScdaFormat.ScanForRecords(data);
                 foreach (var record in scdaScanResult.Records)
-                {
                     record.ScriptName = ScdaExtractor.ExtractScriptNameFromSourcePublic(record.SourceText);
-                }
                 result.ScdaRecords = scdaScanResult.Records;
             }, cancellationToken);
 
             // Phase 5: ESM scan (85-95%)
-            progress?.Report(new AnalysisProgress { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 85 });
+            progress?.Report(new AnalysisProgress
+            { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 85 });
             await Task.Run(() =>
             {
                 var esmRecords = EsmRecordFormat.ScanForRecords(data);
@@ -192,296 +201,21 @@ public sealed class MemoryDumpAnalyzer
             }, cancellationToken);
 
             // Phase 6: FormID mapping (95-100%)
-            progress?.Report(new AnalysisProgress { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 95 });
-            await Task.Run(() =>
-            {
-                result.FormIdMap = EsmRecordFormat.CorrelateFormIdsToNames(data, result.EsmRecords!);
-            }, cancellationToken);
+            progress?.Report(new AnalysisProgress
+            { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 95 });
+            await Task.Run(
+                () => { result.FormIdMap = EsmRecordFormat.CorrelateFormIdsToNames(data, result.EsmRecords!); },
+                cancellationToken);
         }
 
-        progress?.Report(new AnalysisProgress { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
+        progress?.Report(new AnalysisProgress
+        { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
 
         stopwatch.Stop();
         result.AnalysisTime = stopwatch.Elapsed;
 
         return result;
     }
-
-    /// <summary>
-    ///     Synchronous wrapper for AnalyzeAsync. Prefer AnalyzeAsync for new code.
-    /// </summary>
-    [Obsolete("Use AnalyzeAsync instead for better async support.")]
-    public AnalysisResult Analyze(string filePath, IProgress<AnalysisProgress>? progress)
-    {
-        return AnalyzeAsync(filePath, progress, includeMetadata: true).GetAwaiter().GetResult();
-    }
-
-    #region Build Type Detection
-
-    /// <summary>
-    ///     Detect the build type (Debug, Release Beta, Release MemDebug) from minidump modules.
-    /// </summary>
-    public static string? DetectBuildType(MinidumpInfo info)
-    {
-        foreach (var module in info.Modules)
-        {
-            var name = Path.GetFileName(module.Name);
-            if (name.Contains("Debug", StringComparison.OrdinalIgnoreCase) &&
-                !name.Contains("MemDebug", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Debug";
-            }
-
-            if (name.Contains("MemDebug", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Release MemDebug";
-            }
-
-            if (name.Contains("Release_Beta", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("ReleaseBeta", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Release Beta";
-            }
-        }
-
-        // Default to Release if game exe found but no debug indicators
-        if (info.Modules.Any(m => Path.GetFileName(m.Name).StartsWith("Fallout", StringComparison.OrdinalIgnoreCase)))
-        {
-            return "Release";
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    ///     Find the game executable module (Fallout*.exe).
-    /// </summary>
-    public static MinidumpModule? FindGameModule(MinidumpInfo info)
-    {
-        return info.Modules.FirstOrDefault(m =>
-            Path.GetFileName(m.Name).StartsWith("Fallout", StringComparison.OrdinalIgnoreCase) &&
-            Path.GetFileName(m.Name).EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
-    }
-
-    #endregion
-
-    #region Report Generation
-
-    /// <summary>
-    ///     Generate a markdown report from analysis results.
-    /// </summary>
-    public static string GenerateReport(AnalysisResult result)
-    {
-        var sb = new StringBuilder();
-
-        AppendHeader(sb, result);
-        AppendCarvedFilesSection(sb, result);
-        AppendModuleSection(sb, result);
-        AppendScriptSection(sb, result);
-        AppendEsmSection(sb, result);
-        AppendFormIdSection(sb, result);
-
-        return sb.ToString();
-    }
-
-    /// <summary>
-    ///     Generate a brief text summary suitable for console output.
-    /// </summary>
-    public static string GenerateSummary(AnalysisResult result)
-    {
-        var sb = new StringBuilder();
-
-        sb.AppendLine(CultureInfo.InvariantCulture, $"Dump: {Path.GetFileName(result.FilePath)}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"Size: {result.FileSize / (1024.0 * 1024.0):F2} MB");
-
-        if (result.MinidumpInfo?.IsValid == true)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"Build: {result.BuildType ?? "Unknown"}");
-            sb.AppendLine(CultureInfo.InvariantCulture, $"Modules: {result.MinidumpInfo.Modules.Count}");
-
-            var gameModule = FindGameModule(result.MinidumpInfo);
-            if (gameModule != null)
-            {
-                sb.AppendLine(CultureInfo.InvariantCulture,
-                    $"Game: {Path.GetFileName(gameModule.Name)} ({gameModule.Size / 1024.0:F0} KB)");
-            }
-        }
-
-        if (result.CarvedFiles.Count > 0)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"Carved Files: {result.CarvedFiles.Count}");
-        }
-
-        if (result.ScdaRecords.Count > 0)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"SCDA Records: {result.ScdaRecords.Count}");
-            var withSource = result.ScdaRecords.Count(s => s.HasAssociatedSctx);
-            if (withSource > 0)
-            {
-                sb.AppendLine(CultureInfo.InvariantCulture, $"With Source: {withSource}");
-            }
-        }
-
-        if (result.EsmRecords != null)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"Editor IDs: {result.EsmRecords.EditorIds.Count}");
-            sb.AppendLine(CultureInfo.InvariantCulture, $"FormID Map: {result.FormIdMap.Count}");
-        }
-
-        return sb.ToString();
-    }
-
-    private static void AppendHeader(StringBuilder sb, AnalysisResult result)
-    {
-        sb.AppendLine("# Memory Dump Analysis Report");
-        sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**File**: {Path.GetFileName(result.FilePath)}");
-        sb.AppendLine(CultureInfo.InvariantCulture,
-            $"**Size**: {result.FileSize:N0} bytes ({result.FileSize / (1024.0 * 1024.0):F2} MB)");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**Analysis Time**: {result.AnalysisTime.TotalSeconds:F2}s");
-    }
-
-    private static void AppendCarvedFilesSection(StringBuilder sb, AnalysisResult result)
-    {
-        if (result.CarvedFiles.Count == 0)
-        {
-            return;
-        }
-
-        sb.AppendLine();
-        sb.AppendLine("## Carved Files Summary");
-        sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**Total Files**: {result.CarvedFiles.Count}");
-        sb.AppendLine();
-
-        // Group by type
-        var byType = result.TypeCounts.OrderByDescending(kv => kv.Value).ToList();
-        sb.AppendLine("| File Type | Count |");
-        sb.AppendLine("|-----------|-------|");
-        foreach (var (type, count) in byType)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"| {type} | {count} |");
-        }
-
-        sb.AppendLine();
-    }
-
-    private static void AppendModuleSection(StringBuilder sb, AnalysisResult result)
-    {
-        if (result.MinidumpInfo?.IsValid != true)
-        {
-            return;
-        }
-
-        var info = result.MinidumpInfo;
-        sb.AppendLine(CultureInfo.InvariantCulture,
-            $"**Architecture**: {(info.IsXbox360 ? "Xbox 360 (PowerPC)" : "Other")}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**Build Type**: {result.BuildType ?? "Unknown"}");
-        sb.AppendLine();
-
-        sb.AppendLine("## Loaded Modules");
-        sb.AppendLine();
-        sb.AppendLine("| Module | Base Address | Size |");
-        sb.AppendLine("|--------|-------------|------|");
-
-        foreach (var module in info.Modules.OrderBy(m => m.BaseAddress32))
-        {
-            var fileName = Path.GetFileName(module.Name);
-            var sizeKB = module.Size / 1024.0;
-            sb.AppendLine(CultureInfo.InvariantCulture,
-                $"| {fileName} | 0x{module.BaseAddress32:X8} | {sizeKB:F0} KB |");
-        }
-
-        sb.AppendLine();
-
-        var totalMemory = info.MemoryRegions.Sum(r => r.Size);
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**Memory Regions**: {info.MemoryRegions.Count}");
-        sb.AppendLine(CultureInfo.InvariantCulture,
-            $"**Total Captured**: {totalMemory:N0} bytes ({totalMemory / (1024.0 * 1024.0):F2} MB)");
-        sb.AppendLine();
-    }
-
-    private static void AppendScriptSection(StringBuilder sb, AnalysisResult result)
-    {
-        sb.AppendLine("## Compiled Scripts (SCDA)");
-        sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**Total SCDA Records**: {result.ScdaRecords.Count}");
-
-        var withSource = result.ScdaRecords.Count(s => s.HasAssociatedSctx);
-        var withNames = result.ScdaRecords.Count(s => !string.IsNullOrEmpty(s.ScriptName));
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**With Source (SCTX)**: {withSource}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**With Script Names**: {withNames}");
-        sb.AppendLine();
-
-        if (result.ScdaRecords.Count == 0)
-        {
-            return;
-        }
-
-        sb.AppendLine("| Offset | Script Name | Bytecode Size | Has Source |");
-        sb.AppendLine("|--------|-------------|--------------|------------|");
-
-        foreach (var scda in result.ScdaRecords.Take(30))
-        {
-            var name = !string.IsNullOrEmpty(scda.ScriptName) ? scda.ScriptName : "-";
-            sb.AppendLine(CultureInfo.InvariantCulture,
-                $"| 0x{scda.Offset:X8} | {name} | {scda.BytecodeLength} bytes | {(scda.HasAssociatedSctx ? "Yes" : "No")} |");
-        }
-
-        if (result.ScdaRecords.Count > 30)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"| ... | ... | ({result.ScdaRecords.Count - 30} more) | ... |");
-        }
-
-        sb.AppendLine();
-    }
-
-    private static void AppendEsmSection(StringBuilder sb, AnalysisResult result)
-    {
-        if (result.EsmRecords == null)
-        {
-            return;
-        }
-
-        sb.AppendLine("## ESM Records");
-        sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**Editor IDs (EDID)**: {result.EsmRecords.EditorIds.Count}");
-        sb.AppendLine(CultureInfo.InvariantCulture,
-            $"**Game Settings (GMST)**: {result.EsmRecords.GameSettings.Count}");
-        sb.AppendLine(CultureInfo.InvariantCulture,
-            $"**Script Sources (SCTX)**: {result.EsmRecords.ScriptSources.Count}");
-        sb.AppendLine(CultureInfo.InvariantCulture,
-            $"**FormID Refs (SCRO)**: {result.EsmRecords.FormIdReferences.Count}");
-        sb.AppendLine();
-    }
-
-    private static void AppendFormIdSection(StringBuilder sb, AnalysisResult result)
-    {
-        if (result.FormIdMap.Count == 0)
-        {
-            return;
-        }
-
-        sb.AppendLine("## FormID Correlations");
-        sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**Mapped FormIDs**: {result.FormIdMap.Count}");
-        sb.AppendLine();
-
-        sb.AppendLine("| FormID | Editor ID |");
-        sb.AppendLine("|--------|-----------|");
-
-        foreach (var (formId, name) in result.FormIdMap.Take(30).OrderBy(kv => kv.Key))
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"| 0x{formId:X8} | {name} |");
-        }
-
-        if (result.FormIdMap.Count > 30)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"| ... | ({result.FormIdMap.Count - 30} more) |");
-        }
-    }
-
-    #endregion
 
     private static void AddModulesFromMinidump(AnalysisResult result, MinidumpInfo minidumpInfo)
     {
@@ -628,4 +362,232 @@ public sealed class MemoryDumpAnalyzer
             ArrayPool<byte>.Shared.Return(buffer);
         }
     }
+
+    #region Build Type Detection
+
+    /// <summary>
+    ///     Detect the build type (Debug, Release Beta, Release MemDebug) from minidump modules.
+    /// </summary>
+    public static string? DetectBuildType(MinidumpInfo info)
+    {
+        foreach (var module in info.Modules)
+        {
+            var name = Path.GetFileName(module.Name);
+            if (name.Contains("Debug", StringComparison.OrdinalIgnoreCase) &&
+                !name.Contains("MemDebug", StringComparison.OrdinalIgnoreCase))
+                return "Debug";
+
+            if (name.Contains("MemDebug", StringComparison.OrdinalIgnoreCase)) return "Release MemDebug";
+
+            if (name.Contains("Release_Beta", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("ReleaseBeta", StringComparison.OrdinalIgnoreCase))
+                return "Release Beta";
+        }
+
+        // Default to Release if game exe found but no debug indicators
+        if (info.Modules.Any(m => Path.GetFileName(m.Name).StartsWith("Fallout", StringComparison.OrdinalIgnoreCase)))
+            return "Release";
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Find the game executable module (Fallout*.exe).
+    /// </summary>
+    public static MinidumpModule? FindGameModule(MinidumpInfo info)
+    {
+        return info.Modules.FirstOrDefault(m =>
+            Path.GetFileName(m.Name).StartsWith("Fallout", StringComparison.OrdinalIgnoreCase) &&
+            Path.GetFileName(m.Name).EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+    }
+
+    #endregion
+
+    #region Report Generation
+
+    /// <summary>
+    ///     Generate a markdown report from analysis results.
+    /// </summary>
+    public static string GenerateReport(AnalysisResult result)
+    {
+        var sb = new StringBuilder();
+
+        AppendHeader(sb, result);
+        AppendCarvedFilesSection(sb, result);
+        AppendModuleSection(sb, result);
+        AppendScriptSection(sb, result);
+        AppendEsmSection(sb, result);
+        AppendFormIdSection(sb, result);
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    ///     Generate a brief text summary suitable for console output.
+    /// </summary>
+    public static string GenerateSummary(AnalysisResult result)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Dump: {Path.GetFileName(result.FilePath)}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Size: {result.FileSize / (1024.0 * 1024.0):F2} MB");
+
+        if (result.MinidumpInfo?.IsValid == true)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Build: {result.BuildType ?? "Unknown"}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Modules: {result.MinidumpInfo.Modules.Count}");
+
+            var gameModule = FindGameModule(result.MinidumpInfo);
+            if (gameModule != null)
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $"Game: {Path.GetFileName(gameModule.Name)} ({gameModule.Size / 1024.0:F0} KB)");
+        }
+
+        if (result.CarvedFiles.Count > 0)
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Carved Files: {result.CarvedFiles.Count}");
+
+        if (result.ScdaRecords.Count > 0)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"SCDA Records: {result.ScdaRecords.Count}");
+            var withSource = result.ScdaRecords.Count(s => s.HasAssociatedSctx);
+            if (withSource > 0) sb.AppendLine(CultureInfo.InvariantCulture, $"With Source: {withSource}");
+        }
+
+        if (result.EsmRecords != null)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Editor IDs: {result.EsmRecords.EditorIds.Count}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"FormID Map: {result.FormIdMap.Count}");
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendHeader(StringBuilder sb, AnalysisResult result)
+    {
+        sb.AppendLine("# Memory Dump Analysis Report");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**File**: {Path.GetFileName(result.FilePath)}");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"**Size**: {result.FileSize:N0} bytes ({result.FileSize / (1024.0 * 1024.0):F2} MB)");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**Analysis Time**: {result.AnalysisTime.TotalSeconds:F2}s");
+    }
+
+    private static void AppendCarvedFilesSection(StringBuilder sb, AnalysisResult result)
+    {
+        if (result.CarvedFiles.Count == 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine("## Carved Files Summary");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**Total Files**: {result.CarvedFiles.Count}");
+        sb.AppendLine();
+
+        // Group by type
+        var byType = result.TypeCounts.OrderByDescending(kv => kv.Value).ToList();
+        sb.AppendLine("| File Type | Count |");
+        sb.AppendLine("|-----------|-------|");
+        foreach (var (type, count) in byType) sb.AppendLine(CultureInfo.InvariantCulture, $"| {type} | {count} |");
+
+        sb.AppendLine();
+    }
+
+    private static void AppendModuleSection(StringBuilder sb, AnalysisResult result)
+    {
+        if (result.MinidumpInfo?.IsValid != true) return;
+
+        var info = result.MinidumpInfo;
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"**Architecture**: {(info.IsXbox360 ? "Xbox 360 (PowerPC)" : "Other")}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**Build Type**: {result.BuildType ?? "Unknown"}");
+        sb.AppendLine();
+
+        sb.AppendLine("## Loaded Modules");
+        sb.AppendLine();
+        sb.AppendLine("| Module | Base Address | Size |");
+        sb.AppendLine("|--------|-------------|------|");
+
+        foreach (var module in info.Modules.OrderBy(m => m.BaseAddress32))
+        {
+            var fileName = Path.GetFileName(module.Name);
+            var sizeKB = module.Size / 1024.0;
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"| {fileName} | 0x{module.BaseAddress32:X8} | {sizeKB:F0} KB |");
+        }
+
+        sb.AppendLine();
+
+        var totalMemory = info.MemoryRegions.Sum(r => r.Size);
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**Memory Regions**: {info.MemoryRegions.Count}");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"**Total Captured**: {totalMemory:N0} bytes ({totalMemory / (1024.0 * 1024.0):F2} MB)");
+        sb.AppendLine();
+    }
+
+    private static void AppendScriptSection(StringBuilder sb, AnalysisResult result)
+    {
+        sb.AppendLine("## Compiled Scripts (SCDA)");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**Total SCDA Records**: {result.ScdaRecords.Count}");
+
+        var withSource = result.ScdaRecords.Count(s => s.HasAssociatedSctx);
+        var withNames = result.ScdaRecords.Count(s => !string.IsNullOrEmpty(s.ScriptName));
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**With Source (SCTX)**: {withSource}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**With Script Names**: {withNames}");
+        sb.AppendLine();
+
+        if (result.ScdaRecords.Count == 0) return;
+
+        sb.AppendLine("| Offset | Script Name | Bytecode Size | Has Source |");
+        sb.AppendLine("|--------|-------------|--------------|------------|");
+
+        foreach (var scda in result.ScdaRecords.Take(30))
+        {
+            var name = !string.IsNullOrEmpty(scda.ScriptName) ? scda.ScriptName : "-";
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"| 0x{scda.Offset:X8} | {name} | {scda.BytecodeLength} bytes | {(scda.HasAssociatedSctx ? "Yes" : "No")} |");
+        }
+
+        if (result.ScdaRecords.Count > 30)
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"| ... | ... | ({result.ScdaRecords.Count - 30} more) | ... |");
+
+        sb.AppendLine();
+    }
+
+    private static void AppendEsmSection(StringBuilder sb, AnalysisResult result)
+    {
+        if (result.EsmRecords == null) return;
+
+        sb.AppendLine("## ESM Records");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**Editor IDs (EDID)**: {result.EsmRecords.EditorIds.Count}");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"**Game Settings (GMST)**: {result.EsmRecords.GameSettings.Count}");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"**Script Sources (SCTX)**: {result.EsmRecords.ScriptSources.Count}");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"**FormID Refs (SCRO)**: {result.EsmRecords.FormIdReferences.Count}");
+        sb.AppendLine();
+    }
+
+    private static void AppendFormIdSection(StringBuilder sb, AnalysisResult result)
+    {
+        if (result.FormIdMap.Count == 0) return;
+
+        sb.AppendLine("## FormID Correlations");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"**Mapped FormIDs**: {result.FormIdMap.Count}");
+        sb.AppendLine();
+
+        sb.AppendLine("| FormID | Editor ID |");
+        sb.AppendLine("|--------|-----------|");
+
+        foreach (var (formId, name) in result.FormIdMap.Take(30).OrderBy(kv => kv.Key))
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| 0x{formId:X8} | {name} |");
+
+        if (result.FormIdMap.Count > 30)
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| ... | ({result.FormIdMap.Count - 30} more) |");
+    }
+
+    #endregion
 }

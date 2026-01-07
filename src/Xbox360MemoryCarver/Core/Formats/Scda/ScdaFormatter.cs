@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 
@@ -9,6 +10,8 @@ namespace Xbox360MemoryCarver.Core.Formats.Scda;
 public static class ScdaFormatter
 {
     private static ScdaDecompiler? _decompiler;
+
+    private static ScdaDecompiler Decompiler => _decompiler ??= new ScdaDecompiler();
 
     /// <summary>
     ///     Initialize the decompiler with opcode table.
@@ -33,14 +36,9 @@ public static class ScdaFormatter
             };
 
             var foundPath = locations.FirstOrDefault(File.Exists);
-            if (foundPath != null)
-            {
-                await _decompiler.LoadOpcodeTableAsync(foundPath);
-            }
+            if (foundPath != null) await _decompiler.LoadOpcodeTableAsync(foundPath);
         }
     }
-
-    private static ScdaDecompiler Decompiler => _decompiler ??= new ScdaDecompiler();
 
     /// <summary>
     ///     Format a grouped quest script with all stages.
@@ -137,6 +135,8 @@ public static class ScdaFormatter
         }
     }
 
+    [SuppressMessage("Globalization", "CA1305:Specify IFormatProvider",
+        Justification = "Script code output is not culture-sensitive")]
     private static void AppendDecompiledBytecode(StringBuilder sb, byte[] bytecode)
     {
         sb.AppendLine("; === Decompiled Bytecode ===");

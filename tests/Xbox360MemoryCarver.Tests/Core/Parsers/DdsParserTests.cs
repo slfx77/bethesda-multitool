@@ -1,15 +1,55 @@
 using System.Text;
-using Xunit;
 using Xbox360MemoryCarver.Core.Formats.Dds;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for DdsFormat.
+///     Tests for DdsFormat.
 /// </summary>
 public class DdsFormatTests
 {
     private readonly DdsFormat _parser = new();
+
+    #region FourCC Tests
+
+    [Theory]
+    [InlineData("DXT1")]
+    [InlineData("DXT3")]
+    [InlineData("DXT5")]
+    public void ParseHeader_ValidFourCC_ReturnsCorrectFormat(string fourcc)
+    {
+        // Arrange
+        var data = CreateDdsHeader(256, 256, fourcc);
+
+        // Act
+        var result = _parser.Parse(data);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(fourcc, (string)result.Metadata["fourCc"]);
+    }
+
+    #endregion
+
+    #region Endianness Detection Tests
+
+    [Fact]
+    public void ParseHeader_LittleEndian_DetectsCorrectly()
+    {
+        // Arrange
+        var data = CreateDdsHeader(256, 256, "DXT1");
+
+        // Act
+        var result = _parser.Parse(data);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("little", result.Metadata["endianness"]);
+        Assert.False((bool)result.Metadata["isXbox360"]);
+    }
+
+    #endregion
 
     #region Magic Bytes Tests
 
@@ -109,27 +149,6 @@ public class DdsFormatTests
 
     #endregion
 
-    #region FourCC Tests
-
-    [Theory]
-    [InlineData("DXT1")]
-    [InlineData("DXT3")]
-    [InlineData("DXT5")]
-    public void ParseHeader_ValidFourCC_ReturnsCorrectFormat(string fourcc)
-    {
-        // Arrange
-        var data = CreateDdsHeader(256, 256, fourcc);
-
-        // Act
-        var result = _parser.Parse(data);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal(fourcc, (string)result.Metadata["fourCc"]);
-    }
-
-    #endregion
-
     #region Size Estimation Tests
 
     [Fact]
@@ -137,7 +156,7 @@ public class DdsFormatTests
     {
         // Arrange - DXT1 is 8 bytes per 4x4 block
         // 256x256 = 64x64 blocks = 4096 blocks * 8 bytes = 32768 bytes + 128 header
-        var data = CreateDdsHeader(256, 256, "DXT1", mipCount: 1);
+        var data = CreateDdsHeader(256, 256, "DXT1", 1);
 
         // Act
         var result = _parser.Parse(data);
@@ -152,7 +171,7 @@ public class DdsFormatTests
     {
         // Arrange - DXT5 is 16 bytes per 4x4 block
         // 256x256 = 64x64 blocks = 4096 blocks * 16 bytes = 65536 bytes + 128 header
-        var data = CreateDdsHeader(256, 256, "DXT5", mipCount: 1);
+        var data = CreateDdsHeader(256, 256, "DXT5", 1);
 
         // Act
         var result = _parser.Parse(data);
@@ -166,7 +185,7 @@ public class DdsFormatTests
     public void ParseHeader_WithMipmaps_IncludesMipmapSize()
     {
         // Arrange - 256x256 DXT1 with mipmaps
-        var data = CreateDdsHeader(256, 256, "DXT1", mipCount: 9); // 256 -> 1 = 9 levels
+        var data = CreateDdsHeader(256, 256, "DXT1", 9); // 256 -> 1 = 9 levels
 
         // Act
         var result = _parser.Parse(data);
@@ -175,25 +194,6 @@ public class DdsFormatTests
         Assert.NotNull(result);
         // Size should be larger than just the base level
         Assert.True(result.EstimatedSize > 32768 + 128);
-    }
-
-    #endregion
-
-    #region Endianness Detection Tests
-
-    [Fact]
-    public void ParseHeader_LittleEndian_DetectsCorrectly()
-    {
-        // Arrange
-        var data = CreateDdsHeader(256, 256, "DXT1");
-
-        // Act
-        var result = _parser.Parse(data);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal("little", result.Metadata["endianness"]);
-        Assert.False((bool)result.Metadata["isXbox360"]);
     }
 
     #endregion

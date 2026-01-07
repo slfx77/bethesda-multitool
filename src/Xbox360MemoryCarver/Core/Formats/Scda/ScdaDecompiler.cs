@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using Xbox360MemoryCarver.Core.Utils;
@@ -30,23 +31,27 @@ public sealed class ScdaDecompiler
         {
             var parts = line.Split(',');
             if (parts.Length >= 4 && ushort.TryParse(parts[0], out var opcode))
-            {
                 _opcodeTable[opcode] = (parts[2], parts[3]);
-            }
         }
     }
 
     /// <summary>
     ///     Decompile bytecode to readable script format.
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Bytecode decompiler requires complex switch logic")]
+    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
+        Justification = "Bytecode decompiler requires complex switch logic")]
+    [SuppressMessage("Globalization", "CA1305:Specify IFormatProvider",
+        Justification = "Script code output is not culture-sensitive")]
     public string Decompile(byte[] bytecode)
     {
         var sb = new StringBuilder();
         var indent = 0;
         var pos = 0;
 
-        string Indent() => new('\t', indent);
+        string Indent()
+        {
+            return new string('\t', indent);
+        }
 
         while (pos < bytecode.Length - 1)
         {
@@ -245,7 +250,8 @@ public sealed class ScdaDecompiler
         return ($"SCRO#{refIdx}.{varType}Local{varIdx}", 6);
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Expression parsing requires complex switch logic")]
+    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
+        Justification = "Expression parsing requires complex switch logic")]
     private string ParseExpression(byte[] bytes, int offset, int length)
     {
         var stack = new Stack<string>();
@@ -270,12 +276,14 @@ public sealed class ScdaDecompiler
                     continue;
 
                 case 0x6E when pos + 5 <= length: // Long param
-                    stack.Push(((int)BinaryUtils.ReadUInt32LE(bytes, offset + pos + 1)).ToString(CultureInfo.InvariantCulture));
+                    stack.Push(((int)BinaryUtils.ReadUInt32LE(bytes, offset + pos + 1)).ToString(CultureInfo
+                        .InvariantCulture));
                     pos += 5;
                     continue;
 
                 case 0x7A when pos + 9 <= length: // Float param (double)
-                    stack.Push(BitConverter.ToDouble(bytes, offset + pos + 1).ToString("G", CultureInfo.InvariantCulture));
+                    stack.Push(BitConverter.ToDouble(bytes, offset + pos + 1)
+                        .ToString("G", CultureInfo.InvariantCulture));
                     pos += 9;
                     continue;
 
@@ -305,7 +313,8 @@ public sealed class ScdaDecompiler
         return stack.Count > 0 ? string.Join(" ", stack.Reverse()) : "0";
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Sonar", "S3776:Cognitive Complexity", Justification = "Push value parsing requires complex conditional logic")]
+    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
+        Justification = "Push value parsing requires complex conditional logic")]
     private void ParsePushValue(byte[] bytes, int offset, int length, ref int pos, Stack<string> stack)
     {
         if (offset + pos >= bytes.Length) return;
@@ -412,7 +421,8 @@ public sealed class ScdaDecompiler
 
         for (var p = 0; p < paramCount && pos < paramEnd && pos < length; p++)
         {
-            var (arg, consumed) = ParseSingleValue(bytes, offset + pos, Math.Min(length - pos, bytes.Length - offset - pos));
+            var (arg, consumed) =
+                ParseSingleValue(bytes, offset + pos, Math.Min(length - pos, bytes.Length - offset - pos));
             args.Add(arg);
             pos += consumed;
         }
@@ -429,7 +439,7 @@ public sealed class ScdaDecompiler
         var hasNext = pos + 1 < length && offset + pos + 1 < bytes.Length;
         var next = hasNext ? bytes[offset + pos + 1] : (byte)0;
 
-        string? op = (marker, next) switch
+        var op = (marker, next) switch
         {
             (0x26, 0x26) => "&&",
             (0x7C, 0x7C) => "||",
@@ -480,8 +490,10 @@ public sealed class ScdaDecompiler
         var marker = bytes[offset];
         return marker switch
         {
-            0x6E when maxLen >= 5 => (((int)BinaryUtils.ReadUInt32LE(bytes, offset + 1)).ToString(CultureInfo.InvariantCulture), 5),
-            0x7A when maxLen >= 9 => (BitConverter.ToDouble(bytes, offset + 1).ToString("G", CultureInfo.InvariantCulture), 9),
+            0x6E when maxLen >= 5 => (
+                ((int)BinaryUtils.ReadUInt32LE(bytes, offset + 1)).ToString(CultureInfo.InvariantCulture), 5),
+            0x7A when maxLen >= 9 => (
+                BitConverter.ToDouble(bytes, offset + 1).ToString("G", CultureInfo.InvariantCulture), 9),
             0x72 when maxLen >= 3 => ($"SCRO#{BinaryUtils.ReadUInt16LE(bytes, offset + 1)}", 3),
             0x73 when maxLen >= 3 => ($"iLocal{BinaryUtils.ReadUInt16LE(bytes, offset + 1)}", 3),
             0x66 when maxLen >= 3 => ($"fLocal{BinaryUtils.ReadUInt16LE(bytes, offset + 1)}", 3),
@@ -568,12 +580,9 @@ public sealed class ScdaDecompiler
             (0x1087, "GetAV"),
             (0x1088, "SetAV"),
             (0x1086, "ModAV"),
-            (0x1085, "ForceAV"),
+            (0x1085, "ForceAV")
         };
 
-        foreach (var (opcode, name) in defaults)
-        {
-            _opcodeTable[opcode] = (name, "Function");
-        }
+        foreach (var (opcode, name) in defaults) _opcodeTable[opcode] = (name, "Function");
     }
 }

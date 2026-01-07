@@ -11,10 +11,10 @@
 
   <Grid Padding="16">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
     <!--  TOP: File Input Section - transparent for Mica  -->
@@ -23,13 +23,13 @@
       Margin="0,0,0,8"
       RowSpacing="8">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
 
       <!--  Minidump Path  -->
@@ -38,7 +38,7 @@
         Grid.Column="0"
         Margin="0,0,12,0"
         VerticalAlignment="Center"
-        Text="Minidump Path"/>
+        Text="Minidump Path" />
       <TextBox
         x:Name="MinidumpPathTextBox"
         Grid.Row="0"
@@ -46,12 +46,12 @@
         Margin="0,0,8,0"
         AllowDrop="True"
         PlaceholderText="Select or enter a .dmp file path..."
-        TextChanged="MinidumpPathTextBox_TextChanged"/>
+        TextChanged="MinidumpPathTextBox_TextChanged" />
       <Button
         Grid.Row="0"
         Grid.Column="2"
         Click="OpenMinidumpButton_Click"
-        Content="Browse..."/>
+        Content="Browse..." />
 
       <!--  Output Directory  -->
       <TextBlock
@@ -59,7 +59,7 @@
         Grid.Column="0"
         Margin="0,0,12,0"
         VerticalAlignment="Center"
-        Text="Output Directory"/>
+        Text="Output Directory" />
       <TextBox
         x:Name="OutputPathTextBox"
         Grid.Row="1"
@@ -67,12 +67,12 @@
         Margin="0,0,8,0"
         AllowDrop="True"
         PlaceholderText="Select or enter output directory..."
-        TextChanged="OutputPathTextBox_TextChanged"/>
+        TextChanged="OutputPathTextBox_TextChanged" />
       <Button
         Grid.Row="1"
         Grid.Column="2"
         Click="BrowseOutputButton_Click"
-        Content="Browse..."/>
+        Content="Browse..." />
     </Grid>
 
     <!--  Progress Bar  -->
@@ -81,18 +81,18 @@
       Grid.Row="1"
       Margin="0,0,0,8"
       IsIndeterminate="True"
-      Visibility="Collapsed"/>
+      Visibility="Collapsed" />
 
     <!--  MIDDLE: Memory Map and Discovered Files side-by-side - darker semi-transparent for Mica  -->
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
         <ColumnDefinition
           Width="*"
-          MinWidth="500"/>
-        <ColumnDefinition Width="8"/>
+          MinWidth="500" />
+        <ColumnDefinition Width="8" />
         <ColumnDefinition
           Width="*"
-          MinWidth="400"/>
+          MinWidth="400" />
       </Grid.ColumnDefinitions>
 
       <!--  Memory Map (Hex Viewer)  -->
@@ -103,24 +103,24 @@
         CornerRadius="8">
         <Grid>
           <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
           </Grid.RowDefinitions>
 
           <TextBlock
             Grid.Row="0"
             Margin="0,0,0,8"
             Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Memory Map"/>
+            Text="Memory Map" />
 
           <hexviewer:HexViewerControl
             x:Name="HexViewer"
-            Grid.Row="1"/>
+            Grid.Row="1" />
         </Grid>
       </Border>
 
       <!--  Splitter space  -->
-      <controls:ContentPresenter Grid.Column="1"/>
+      <controls:ContentPresenter Grid.Column="1" />
 
       <!--  Discovered Files Table  -->
       <Border
@@ -130,16 +130,16 @@
         CornerRadius="8">
         <Grid>
           <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
           </Grid.RowDefinitions>
 
           <TextBlock
             Grid.Row="0"
             Margin="0,0,0,8"
             Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Discovered Files"/>
+            Text="Discovered Files" />
 
           <!--  Sticky column headers  -->
           <Grid
@@ -149,11 +149,11 @@
             Background="{ThemeResource SystemControlBackgroundListLowBrush}"
             CornerRadius="4">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="90"/>
-              <ColumnDefinition Width="70"/>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="50"/>
+              <ColumnDefinition Width="90" />
+              <ColumnDefinition Width="70" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="50" />
             </Grid.ColumnDefinitions>
             <Button
               Grid.Column="0"
@@ -167,12 +167,12 @@
                 Spacing="4">
                 <TextBlock
                   FontWeight="SemiBold"
-                  Text="Offset"/>
+                  Text="Offset" />
                 <FontIcon
                   x:Name="OffsetSortIcon"
                   FontSize="10"
                   Glyph=""
-                  Visibility="Collapsed"/>
+                  Visibility="Collapsed" />
               </StackPanel>
             </Button>
             <Button
@@ -187,12 +187,12 @@
                 Spacing="4">
                 <TextBlock
                   FontWeight="SemiBold"
-                  Text="Size"/>
+                  Text="Size" />
                 <FontIcon
                   x:Name="LengthSortIcon"
                   FontSize="10"
                   Glyph=""
-                  Visibility="Collapsed"/>
+                  Visibility="Collapsed" />
               </StackPanel>
             </Button>
             <Button
@@ -207,12 +207,12 @@
                 Spacing="4">
                 <TextBlock
                   FontWeight="SemiBold"
-                  Text="Type"/>
+                  Text="Type" />
                 <FontIcon
                   x:Name="TypeSortIcon"
                   FontSize="10"
                   Glyph=""
-                  Visibility="Collapsed"/>
+                  Visibility="Collapsed" />
               </StackPanel>
             </Button>
             <Button
@@ -227,18 +227,18 @@
                 Spacing="4">
                 <TextBlock
                   FontWeight="SemiBold"
-                  Text="Filename"/>
+                  Text="Filename" />
                 <FontIcon
                   x:Name="FilenameSortIcon"
                   FontSize="10"
                   Glyph=""
-                  Visibility="Collapsed"/>
+                  Visibility="Collapsed" />
               </StackPanel>
             </Button>
             <TextBlock
               Grid.Column="4"
               FontWeight="SemiBold"
-              Text=""/>
+              Text="" />
           </Grid>
 
           <!--  Scrollable file list  -->
@@ -255,7 +255,7 @@
                   Click="GoToStart_Click"
                   Text="Go to Start">
                   <MenuFlyoutItem.Icon>
-                    <FontIcon Glyph="&#xE76B;"/>
+                    <FontIcon Glyph="&#xE76B;" />
                   </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutItem
@@ -263,16 +263,16 @@
                   Click="GoToEnd_Click"
                   Text="Go to End">
                   <MenuFlyoutItem.Icon>
-                    <FontIcon Glyph="&#xE76C;"/>
+                    <FontIcon Glyph="&#xE76C;" />
                   </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
-                <MenuFlyoutSeparator/>
+                <MenuFlyoutSeparator />
                 <MenuFlyoutItem
                   x:Name="CopyOffsetMenuItem"
                   Click="CopyOffset_Click"
                   Text="Copy Offset">
                   <MenuFlyoutItem.Icon>
-                    <FontIcon Glyph="&#xE8C8;"/>
+                    <FontIcon Glyph="&#xE8C8;" />
                   </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutItem
@@ -280,7 +280,7 @@
                   Click="CopyFilename_Click"
                   Text="Copy Filename">
                   <MenuFlyoutItem.Icon>
-                    <FontIcon Glyph="&#xE8C8;"/>
+                    <FontIcon Glyph="&#xE8C8;" />
                   </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
               </MenuFlyout>
@@ -289,40 +289,40 @@
               <DataTemplate x:DataType="local:CarvedFileEntry">
                 <Grid Padding="8,4">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="90"/>
-                    <ColumnDefinition Width="70"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="50"/>
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="70" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="50" />
                   </Grid.ColumnDefinitions>
                   <TextBlock
                     Grid.Column="0"
                     FontFamily="Consolas"
                     FontSize="11"
-                    Text="{x:Bind OffsetHex}"/>
+                    Text="{x:Bind OffsetHex}" />
                   <TextBlock
                     Grid.Column="1"
                     FontSize="11"
-                    Text="{x:Bind LengthFormatted}"/>
+                    Text="{x:Bind LengthFormatted}" />
                   <TextBlock
                     Grid.Column="2"
                     FontSize="11"
                     Text="{x:Bind FileType}"
                     TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind FileType}"/>
+                    ToolTipService.ToolTip="{x:Bind FileType}" />
                   <TextBlock
                     Grid.Column="3"
                     FontSize="11"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Text="{x:Bind FileNameDisplay}"
                     TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind FileNameDisplay}"/>
+                    ToolTipService.ToolTip="{x:Bind FileNameDisplay}" />
                   <FontIcon
                     Grid.Column="4"
                     HorizontalAlignment="Center"
                     FontSize="12"
                     Foreground="{x:Bind ExtractedColor, Mode=OneWay}"
-                    Glyph="{x:Bind ExtractedGlyph, Mode=OneWay}"/>
+                    Glyph="{x:Bind ExtractedGlyph, Mode=OneWay}" />
                 </Grid>
               </DataTemplate>
             </ListView.ItemTemplate>
@@ -336,8 +336,8 @@
       Grid.Row="3"
       Margin="0,8,0,0">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
       <!--  File Type Filters  -->
@@ -358,8 +358,8 @@
       <!--  Options and Extract Button  -->
       <Grid Grid.Row="1">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <StackPanel
@@ -375,16 +375,16 @@
               MinWidth="0"
               Content="Convert Formats"
               ToolTipService.ToolTip="Convert DDX→DDS textures and XUR→XUI interfaces"
-              IsChecked="True"/>
+              IsChecked="True" />
             <CheckBox
               x:Name="SaveAtlasCheckBox"
               Margin="16,0,0,0"
-              Content="Save Atlas Files"/>
+              Content="Save Atlas Files" />
           </StackPanel>
 
           <Border Width="1"
                   Height="20"
-                  Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                  Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
 
           <!--  Output Options  -->
           <StackPanel Orientation="Horizontal"
@@ -393,7 +393,7 @@
               x:Name="VerboseCheckBox"
               MinWidth="0"
               Content="Verbose"
-              ToolTipService.ToolTip="Output detailed progress to the terminal (when launched from command line)"/>
+              ToolTipService.ToolTip="Output detailed progress to the terminal (when launched from command line)" />
           </StackPanel>
         </StackPanel>
 
@@ -407,14 +407,14 @@
             Click="AnalyzeButton_Click"
             Content="Analyze"
             IsEnabled="False"
-            Style="{StaticResource AccentButtonStyle}"/>
+            Style="{StaticResource AccentButtonStyle}" />
           <Button
             x:Name="ExtractButton"
             MinWidth="120"
             Click="ExtractButton_Click"
             Content="Extract Files"
             IsEnabled="False"
-            Style="{StaticResource AccentButtonStyle}"/>
+            Style="{StaticResource AccentButtonStyle}" />
         </StackPanel>
       </Grid>
     </Grid>

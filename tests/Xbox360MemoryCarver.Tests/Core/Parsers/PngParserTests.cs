@@ -1,14 +1,69 @@
-using Xunit;
 using Xbox360MemoryCarver.Core.Formats.Png;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for PngFormat.
+///     Tests for PngFormat.
 /// </summary>
 public class PngFormatTests
 {
     private readonly PngFormat _parser = new();
+
+    #region Offset Tests
+
+    [Fact]
+    public void ParseHeader_WithOffset_ParsesCorrectly()
+    {
+        // Arrange
+        var png = CreateMinimalPng();
+        var data = new byte[50 + png.Length];
+        png.CopyTo(data, 50);
+
+        // Act
+        var result = _parser.Parse(data, 50);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("PNG", result.Format);
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private static byte[] CreateMinimalPng()
+    {
+        // Minimal valid PNG structure:
+        // - PNG signature (8 bytes)
+        // - IHDR chunk (13 bytes data + 12 bytes overhead = 25 bytes)
+        // - IEND chunk (0 bytes data + 12 bytes overhead = 12 bytes)
+        var data = new List<byte>();
+
+        // PNG signature
+        data.AddRange([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+        // IHDR chunk
+        data.AddRange([0x00, 0x00, 0x00, 0x0D]); // Length: 13
+        data.AddRange([0x49, 0x48, 0x44, 0x52]); // "IHDR"
+        data.AddRange([0x00, 0x00, 0x00, 0x01]); // Width: 1
+        data.AddRange([0x00, 0x00, 0x00, 0x01]); // Height: 1
+        data.Add(0x08); // Bit depth: 8
+        data.Add(0x02); // Color type: RGB
+        data.Add(0x00); // Compression method
+        data.Add(0x00); // Filter method
+        data.Add(0x00); // Interlace method
+        data.AddRange([0x90, 0x77, 0x53, 0xDE]); // CRC (dummy)
+
+        // IEND chunk
+        data.AddRange([0x00, 0x00, 0x00, 0x00]); // Length: 0
+        data.AddRange([0x49, 0x45, 0x4E, 0x44]); // "IEND"
+        data.AddRange([0xAE, 0x42, 0x60, 0x82]); // CRC
+
+        return [.. data];
+    }
+
+    #endregion
 
     #region Magic Bytes Tests
 
@@ -87,61 +142,6 @@ public class PngFormatTests
 
         // Assert
         Assert.Null(result);
-    }
-
-    #endregion
-
-    #region Offset Tests
-
-    [Fact]
-    public void ParseHeader_WithOffset_ParsesCorrectly()
-    {
-        // Arrange
-        var png = CreateMinimalPng();
-        var data = new byte[50 + png.Length];
-        png.CopyTo(data, 50);
-
-        // Act
-        var result = _parser.Parse(data, offset: 50);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal("PNG", result.Format);
-    }
-
-    #endregion
-
-    #region Helper Methods
-
-    private static byte[] CreateMinimalPng()
-    {
-        // Minimal valid PNG structure:
-        // - PNG signature (8 bytes)
-        // - IHDR chunk (13 bytes data + 12 bytes overhead = 25 bytes)
-        // - IEND chunk (0 bytes data + 12 bytes overhead = 12 bytes)
-        var data = new List<byte>();
-
-        // PNG signature
-        data.AddRange([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-
-        // IHDR chunk
-        data.AddRange([0x00, 0x00, 0x00, 0x0D]); // Length: 13
-        data.AddRange([0x49, 0x48, 0x44, 0x52]); // "IHDR"
-        data.AddRange([0x00, 0x00, 0x00, 0x01]); // Width: 1
-        data.AddRange([0x00, 0x00, 0x00, 0x01]); // Height: 1
-        data.Add(0x08); // Bit depth: 8
-        data.Add(0x02); // Color type: RGB
-        data.Add(0x00); // Compression method
-        data.Add(0x00); // Filter method
-        data.Add(0x00); // Interlace method
-        data.AddRange([0x90, 0x77, 0x53, 0xDE]); // CRC (dummy)
-
-        // IEND chunk
-        data.AddRange([0x00, 0x00, 0x00, 0x00]); // Length: 0
-        data.AddRange([0x49, 0x45, 0x4E, 0x44]); // "IEND"
-        data.AddRange([0xAE, 0x42, 0x60, 0x82]); // CRC
-
-        return [.. data];
     }
 
     #endregion

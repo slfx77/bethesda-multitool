@@ -1,15 +1,33 @@
 using System.Text;
-using Xunit;
 using Xbox360MemoryCarver.Core.Formats.Ddx;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Parsers;
 
 /// <summary>
-/// Tests for DdxFormat.
+///     Tests for DdxFormat.
 /// </summary>
 public class DdxFormatTests
 {
     private readonly DdxFormat _parser = new();
+
+    #region Size Estimation Tests
+
+    [Fact]
+    public void ParseHeader_ReturnsPositiveEstimatedSize()
+    {
+        // Arrange
+        var data = Create3XdoHeader(256, 256);
+
+        // Act
+        var result = _parser.Parse(data);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.EstimatedSize > 0);
+    }
+
+    #endregion
 
     #region Magic Bytes Tests
 
@@ -108,7 +126,7 @@ public class DdxFormatTests
     public void ParseHeader_ValidVersion_ReturnsResult()
     {
         // Arrange - version 4 is common
-        var data = Create3XdoHeader(256, 256, version: 4);
+        var data = Create3XdoHeader(256, 256, 4);
 
         // Act
         var result = _parser.Parse(data);
@@ -122,31 +140,13 @@ public class DdxFormatTests
     public void ParseHeader_InvalidVersion_ReturnsNull()
     {
         // Arrange - version < 3 is invalid
-        var data = Create3XdoHeader(256, 256, version: 2);
+        var data = Create3XdoHeader(256, 256, 2);
 
         // Act
         var result = _parser.Parse(data);
 
         // Assert
         Assert.Null(result);
-    }
-
-    #endregion
-
-    #region Size Estimation Tests
-
-    [Fact]
-    public void ParseHeader_ReturnsPositiveEstimatedSize()
-    {
-        // Arrange
-        var data = Create3XdoHeader(256, 256);
-
-        // Act
-        var result = _parser.Parse(data);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.True(result.EstimatedSize > 0);
     }
 
     #endregion
@@ -181,7 +181,7 @@ public class DdxFormatTests
         // Format dword at 0x28 (big-endian) - includes mip count
         // Low byte is format, bits 16-19 are mip count - 1
         var formatDword = (uint)0x52; // DXT1 format
-        formatDword |= (uint)((1 - 1) << 16); // 1 mip level
+        formatDword |= (1 - 1) << 16; // 1 mip level
         data[0x28] = (byte)((formatDword >> 24) & 0xFF);
         data[0x29] = (byte)((formatDword >> 16) & 0xFF);
         data[0x2A] = (byte)((formatDword >> 8) & 0xFF);

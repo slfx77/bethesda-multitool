@@ -57,7 +57,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     private async Task ShowDialogAsync(string title, string message)
     {
         var dialog = new ContentDialog
-            { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot };
+        { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot };
         await dialog.ShowAsync();
     }
 
@@ -249,7 +249,15 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
             }
 
             DispatcherQueue.TryEnqueue(() => entry.Status = "Processing...");
-            await MemoryDumpExtractor.Extract(entry.FilePath, options with { OutputPath = outputSubdir }, null);
+
+            // Run extraction on background thread to avoid blocking UI
+            await Task.Run(
+                async () => await MemoryDumpExtractor.Extract(
+                    entry.FilePath,
+                    options with { OutputPath = outputSubdir },
+                    null),
+                token);
+
             DispatcherQueue.TryEnqueue(() => entry.Status = "Complete");
         }
         catch (Exception ex)

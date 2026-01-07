@@ -1,13 +1,86 @@
-using Xunit;
 using Xbox360MemoryCarver.Core.Utils;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Utils;
 
 /// <summary>
-/// Tests for BinaryUtils helper methods.
+///     Tests for BinaryUtils helper methods.
 /// </summary>
 public class BinaryUtilsTests
 {
+    #region FormatSize Tests
+
+    [Theory]
+    [InlineData(0, "0.00 B")]
+    [InlineData(512, "512.00 B")]
+    [InlineData(1024, "1.00 KB")]
+    [InlineData(1536, "1.50 KB")]
+    [InlineData(1048576, "1.00 MB")]
+    [InlineData(1073741824, "1.00 GB")]
+    public void FormatSize_ReturnsCorrectFormat(long size, string expected)
+    {
+        // Act
+        var result = BinaryUtils.FormatSize(size);
+
+        // Assert
+        Assert.Equal(expected, result);
+    }
+
+    #endregion
+
+    #region AlignOffset Tests
+
+    [Theory]
+    [InlineData(0, 4, 0)]
+    [InlineData(1, 4, 4)]
+    [InlineData(4, 4, 4)]
+    [InlineData(5, 4, 8)]
+    [InlineData(100, 16, 112)]
+    public void AlignOffset_ReturnsAlignedValue(long offset, int alignment, long expected)
+    {
+        // Act
+        var result = BinaryUtils.AlignOffset(offset, alignment);
+
+        // Assert
+        Assert.Equal(expected, result);
+    }
+
+    #endregion
+
+    #region SwapBytes16 Tests
+
+    [Fact]
+    public void SwapBytes16_SwapsCorrectly()
+    {
+        // Arrange - AA BB CC DD -> BB AA DD CC
+        byte[] data = [0xAA, 0xBB, 0xCC, 0xDD];
+
+        // Act
+        BinaryUtils.SwapBytes16(data);
+
+        // Assert
+        Assert.Equal([0xBB, 0xAA, 0xDD, 0xCC], data);
+    }
+
+    #endregion
+
+    #region SwapBytes32 Tests
+
+    [Fact]
+    public void SwapBytes32_SwapsCorrectly()
+    {
+        // Arrange - 12 34 56 78 -> 78 56 34 12
+        byte[] data = [0x12, 0x34, 0x56, 0x78];
+
+        // Act
+        BinaryUtils.SwapBytes32(data);
+
+        // Assert
+        Assert.Equal([0x78, 0x56, 0x34, 0x12], data);
+    }
+
+    #endregion
+
     #region ReadUInt32LE Tests
 
     [Fact]
@@ -160,7 +233,7 @@ public class BinaryUtilsTests
     public void IsPrintableText_AllPrintable_ReturnsTrue()
     {
         // Arrange
-        byte[] data = "Hello, World!"u8.ToArray();
+        var data = "Hello, World!"u8.ToArray();
 
         // Act
         var result = BinaryUtils.IsPrintableText(data);
@@ -173,7 +246,7 @@ public class BinaryUtilsTests
     public void IsPrintableText_WithTabs_ReturnsTrue()
     {
         // Arrange
-        byte[] data = "Hello\tWorld"u8.ToArray();
+        var data = "Hello\tWorld"u8.ToArray();
 
         // Act
         var result = BinaryUtils.IsPrintableText(data);
@@ -186,7 +259,7 @@ public class BinaryUtilsTests
     public void IsPrintableText_WithNewlines_ReturnsTrue()
     {
         // Arrange
-        byte[] data = "Hello\r\nWorld"u8.ToArray();
+        var data = "Hello\r\nWorld"u8.ToArray();
 
         // Act
         var result = BinaryUtils.IsPrintableText(data);
@@ -262,26 +335,6 @@ public class BinaryUtilsTests
 
     #endregion
 
-    #region FormatSize Tests
-
-    [Theory]
-    [InlineData(0, "0.00 B")]
-    [InlineData(512, "512.00 B")]
-    [InlineData(1024, "1.00 KB")]
-    [InlineData(1536, "1.50 KB")]
-    [InlineData(1048576, "1.00 MB")]
-    [InlineData(1073741824, "1.00 GB")]
-    public void FormatSize_ReturnsCorrectFormat(long size, string expected)
-    {
-        // Act
-        var result = BinaryUtils.FormatSize(size);
-
-        // Assert
-        Assert.Equal(expected, result);
-    }
-
-    #endregion
-
     #region FindPattern Tests
 
     [Fact]
@@ -320,7 +373,7 @@ public class BinaryUtilsTests
         byte[] pattern = [0x41, 0x42];
 
         // Act
-        var result = BinaryUtils.FindPattern(data, pattern, start: 2);
+        var result = BinaryUtils.FindPattern(data, pattern, 2);
 
         // Assert
         Assert.Equal(3, result);
@@ -352,59 +405,6 @@ public class BinaryUtilsTests
 
         // Assert
         Assert.Equal(2, result);
-    }
-
-    #endregion
-
-    #region AlignOffset Tests
-
-    [Theory]
-    [InlineData(0, 4, 0)]
-    [InlineData(1, 4, 4)]
-    [InlineData(4, 4, 4)]
-    [InlineData(5, 4, 8)]
-    [InlineData(100, 16, 112)]
-    public void AlignOffset_ReturnsAlignedValue(long offset, int alignment, long expected)
-    {
-        // Act
-        var result = BinaryUtils.AlignOffset(offset, alignment);
-
-        // Assert
-        Assert.Equal(expected, result);
-    }
-
-    #endregion
-
-    #region SwapBytes16 Tests
-
-    [Fact]
-    public void SwapBytes16_SwapsCorrectly()
-    {
-        // Arrange - AA BB CC DD -> BB AA DD CC
-        byte[] data = [0xAA, 0xBB, 0xCC, 0xDD];
-
-        // Act
-        BinaryUtils.SwapBytes16(data);
-
-        // Assert
-        Assert.Equal([0xBB, 0xAA, 0xDD, 0xCC], data);
-    }
-
-    #endregion
-
-    #region SwapBytes32 Tests
-
-    [Fact]
-    public void SwapBytes32_SwapsCorrectly()
-    {
-        // Arrange - 12 34 56 78 -> 78 56 34 12
-        byte[] data = [0x12, 0x34, 0x56, 0x78];
-
-        // Act
-        BinaryUtils.SwapBytes32(data);
-
-        // Assert
-        Assert.Equal([0x78, 0x56, 0x34, 0x12], data);
     }
 
     #endregion

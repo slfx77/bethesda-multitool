@@ -16,83 +16,18 @@ public sealed class XuiFormat : FileFormatBase, IFileConverter
 
     public override string FormatId => "xui";
     public override string DisplayName => "XUI";
-    public override string Extension => ".xur";  // Output as .xur (binary format)
+    public override string Extension => ".xur"; // Output as .xur (binary format)
     public override FileCategory Category => FileCategory.Xbox;
-    public override string OutputFolder => "xur";  // Changed to xur folder
+    public override string OutputFolder => "xur"; // Changed to xur folder
     public override int MinSize => 24;
     public override int MaxSize => 5 * 1024 * 1024;
     public override int DisplayPriority => 3;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [
-        new() { Id = "xui_scene", MagicBytes = "XUIS"u8.ToArray(), Description = "XUI Scene (not convertible)" },
-        new() { Id = "xui_binary", MagicBytes = "XUIB"u8.ToArray(), Description = "XUR Binary (v5/v8, convertible)" }
+        new() { Id = "xui_scene", MagicBytes = "XUIS"u8.ToArray(), Description = "XUI Scene" },
+        new() { Id = "xui_binary", MagicBytes = "XUIB"u8.ToArray(), Description = "XUR Binary" }
     ];
-
-    #region IFileConverter
-
-    public string TargetExtension => ".xui";  // Converted output is readable XML
-    public string TargetFolder => "xui";
-    public bool IsInitialized => _converter != null;
-    public int ConvertedCount => _convertedCount;
-    public int FailedCount => _failedCount;
-
-    public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
-    {
-        try
-        {
-            _converter = new XurSubprocessConverter(verbose);
-            return true;
-        }
-        catch (FileNotFoundException ex)
-        {
-            if (verbose)
-            {
-                Console.WriteLine($"Warning: {ex.Message}");
-            }
-
-            return false;
-        }
-    }
-
-    public bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata)
-    {
-        // XUIHelper only supports XUIB format (XUR v5/v8), not XUIS (Scene format)
-        // XUIS appears to be a different scene format not supported by XUIHelper
-        return signatureId == "xui_binary";
-    }
-
-    public async Task<DdxConversionResult> ConvertAsync(byte[] data,
-        IReadOnlyDictionary<string, object>? metadata = null)
-    {
-        if (_converter == null)
-        {
-            return new DdxConversionResult { Success = false, Notes = "Converter not initialized" };
-        }
-
-        var result = await _converter.ConvertFromMemoryWithResultAsync(data);
-
-        if (result.Success)
-        {
-            Interlocked.Increment(ref _convertedCount);
-            return new DdxConversionResult
-            {
-                Success = true,
-                DdsData = result.XuiData,  // Using DdsData to hold XUI XML data
-                Notes = $"XUR v{result.XurVersion} → XUI v12"
-            };
-        }
-
-        Interlocked.Increment(ref _failedCount);
-        return new DdxConversionResult
-        {
-            Success = false,
-            Notes = result.Notes,
-            ConsoleOutput = result.ConsoleOutput
-        };
-    }
-
-    #endregion
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
@@ -156,4 +91,63 @@ public sealed class XuiFormat : FileFormatBase, IFileConverter
     {
         return signatureId == "xui_binary" ? "XUI Binary" : "XUI Scene";
     }
+
+    #region IFileConverter
+
+    public string TargetExtension => ".xui"; // Converted output is readable XML
+    public string TargetFolder => "xui";
+    public bool IsInitialized => _converter != null;
+    public int ConvertedCount => _convertedCount;
+    public int FailedCount => _failedCount;
+
+    public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
+    {
+        try
+        {
+            _converter = new XurSubprocessConverter(verbose);
+            return true;
+        }
+        catch (FileNotFoundException ex)
+        {
+            if (verbose) Console.WriteLine($"Warning: {ex.Message}");
+
+            return false;
+        }
+    }
+
+    public bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata)
+    {
+        // XUIHelper only supports XUIB format (XUR v5/v8), not XUIS (Scene format)
+        // XUIS appears to be a different scene format not supported by XUIHelper
+        return signatureId == "xui_binary";
+    }
+
+    public async Task<DdxConversionResult> ConvertAsync(byte[] data,
+        IReadOnlyDictionary<string, object>? metadata = null)
+    {
+        if (_converter == null) return new DdxConversionResult { Success = false, Notes = "Converter not initialized" };
+
+        var result = await _converter.ConvertFromMemoryWithResultAsync(data);
+
+        if (result.Success)
+        {
+            Interlocked.Increment(ref _convertedCount);
+            return new DdxConversionResult
+            {
+                Success = true,
+                DdsData = result.XuiData, // Using DdsData to hold XUI XML data
+                Notes = $"XUR v{result.XurVersion} → XUI v12"
+            };
+        }
+
+        Interlocked.Increment(ref _failedCount);
+        return new DdxConversionResult
+        {
+            Success = false,
+            Notes = result.Notes,
+            ConsoleOutput = result.ConsoleOutput
+        };
+    }
+
+    #endregion
 }
