@@ -12,6 +12,20 @@ public sealed class NifXmlSchema
     private static NifXmlSchema? _instance;
     private static readonly object Lock = new();
 
+    private NifXmlSchema(
+        Dictionary<string, int> basicTypes,
+        Dictionary<string, string> enumTypes,
+        Dictionary<string, string> bitflagTypes,
+        Dictionary<string, NifStruct> structs,
+        Dictionary<string, NifBlock> blocks)
+    {
+        BasicTypes = basicTypes;
+        EnumTypes = enumTypes;
+        BitflagTypes = bitflagTypes;
+        Structs = structs;
+        Blocks = blocks;
+    }
+
     /// <summary>Basic types with their sizes in bytes.</summary>
     public IReadOnlyDictionary<string, int> BasicTypes { get; }
 
@@ -33,29 +47,13 @@ public sealed class NifXmlSchema
         get
         {
             if (_instance is null)
-            {
                 lock (Lock)
                 {
                     _instance ??= LoadFromEmbeddedResource();
                 }
-            }
 
             return _instance;
         }
-    }
-
-    private NifXmlSchema(
-        Dictionary<string, int> basicTypes,
-        Dictionary<string, string> enumTypes,
-        Dictionary<string, string> bitflagTypes,
-        Dictionary<string, NifStruct> structs,
-        Dictionary<string, NifBlock> blocks)
-    {
-        BasicTypes = basicTypes;
-        EnumTypes = enumTypes;
-        BitflagTypes = bitflagTypes;
-        Structs = structs;
-        Blocks = blocks;
     }
 
     private static NifXmlSchema LoadFromEmbeddedResource()
@@ -123,10 +121,7 @@ public sealed class NifXmlSchema
             var name = element.Attribute("name")?.Value;
             var sizeStr = element.Attribute("size")?.Value;
 
-            if (name is not null && int.TryParse(sizeStr, out var size))
-            {
-                types[name] = size;
-            }
+            if (name is not null && int.TryParse(sizeStr, out var size)) types[name] = size;
         }
 
         return types;
@@ -141,10 +136,7 @@ public sealed class NifXmlSchema
             var name = element.Attribute("name")?.Value;
             var storage = element.Attribute("storage")?.Value ?? "uint";
 
-            if (name is not null)
-            {
-                enums[name] = storage;
-            }
+            if (name is not null) enums[name] = storage;
         }
 
         return enums;
@@ -159,10 +151,7 @@ public sealed class NifXmlSchema
             var name = element.Attribute("name")?.Value;
             var storage = element.Attribute("storage")?.Value ?? "uint";
 
-            if (name is not null)
-            {
-                bitflags[name] = storage;
-            }
+            if (name is not null) bitflags[name] = storage;
         }
 
         return bitflags;
@@ -175,10 +164,7 @@ public sealed class NifXmlSchema
         foreach (var element in root.Elements("struct"))
         {
             var name = element.Attribute("name")?.Value;
-            if (name is null)
-            {
-                continue;
-            }
+            if (name is null) continue;
 
             var fields = ParseFields(element);
             structs[name] = new NifStruct(name, fields);
@@ -194,10 +180,7 @@ public sealed class NifXmlSchema
         foreach (var element in root.Elements("niobject"))
         {
             var name = element.Attribute("name")?.Value;
-            if (name is null)
-            {
-                continue;
-            }
+            if (name is null) continue;
 
             var inherit = element.Attribute("inherit")?.Value;
             var isAbstract = element.Attribute("abstract")?.Value == "true";
@@ -236,45 +219,36 @@ public sealed class NifXmlSchema
     public int GetTypeSize(string typeName)
     {
         // Check basic types first
-        if (BasicTypes.TryGetValue(typeName, out var size))
-        {
-            return size;
-        }
+        if (BasicTypes.TryGetValue(typeName, out var size)) return size;
 
         // Check enums (use storage type)
-        if (EnumTypes.TryGetValue(typeName, out var enumStorage))
-        {
-            return GetTypeSize(enumStorage);
-        }
+        if (EnumTypes.TryGetValue(typeName, out var enumStorage)) return GetTypeSize(enumStorage);
 
         // Check bitflags (use storage type)
-        if (BitflagTypes.TryGetValue(typeName, out var bitflagStorage))
-        {
-            return GetTypeSize(bitflagStorage);
-        }
+        if (BitflagTypes.TryGetValue(typeName, out var bitflagStorage)) return GetTypeSize(bitflagStorage);
 
         // Known compound types with fixed sizes
         return typeName switch
         {
-            "Vector3" => 12,       // 3 floats
-            "Vector4" => 16,       // 4 floats
-            "Quaternion" => 16,    // 4 floats
-            "Matrix33" => 36,      // 9 floats
-            "Matrix44" => 64,      // 16 floats
-            "Color3" => 12,        // 3 floats
-            "Color4" => 16,        // 4 floats
-            "ByteColor3" => 3,     // 3 bytes
-            "ByteColor4" => 4,     // 4 bytes
-            "NiBound" => 16,       // Vector3 + float (center + radius)
-            "TexCoord" => 8,       // 2 floats
-            "Triangle" => 6,       // 3 ushorts
-            "MatchGroup" => 0,     // Variable
-            "SizedString" => 0,    // Variable (4 byte length + chars)
-            "string" => 0,         // Variable
-            "ShortString" => 0,    // Variable (1 byte length + chars)
-            "ByteArray" => 0,      // Variable
-            "ByteMatrix" => 0,     // Variable
-            _ => 0                 // Unknown or variable
+            "Vector3" => 12, // 3 floats
+            "Vector4" => 16, // 4 floats
+            "Quaternion" => 16, // 4 floats
+            "Matrix33" => 36, // 9 floats
+            "Matrix44" => 64, // 16 floats
+            "Color3" => 12, // 3 floats
+            "Color4" => 16, // 4 floats
+            "ByteColor3" => 3, // 3 bytes
+            "ByteColor4" => 4, // 4 bytes
+            "NiBound" => 16, // Vector3 + float (center + radius)
+            "TexCoord" => 8, // 2 floats
+            "Triangle" => 6, // 3 ushorts
+            "MatchGroup" => 0, // Variable
+            "SizedString" => 0, // Variable (4 byte length + chars)
+            "string" => 0, // Variable
+            "ShortString" => 0, // Variable (1 byte length + chars)
+            "ByteArray" => 0, // Variable
+            "ByteMatrix" => 0, // Variable
+            _ => 0 // Unknown or variable
         };
     }
 
@@ -299,18 +273,12 @@ public sealed class NifXmlSchema
 
     private void CollectFields(string typeName, List<NifField> fields, HashSet<string> visited)
     {
-        if (!visited.Add(typeName))
-        {
-            return; // Prevent cycles
-        }
+        if (!visited.Add(typeName)) return; // Prevent cycles
 
         if (Blocks.TryGetValue(typeName, out var block))
         {
             // First collect inherited fields
-            if (block.Inherit is not null)
-            {
-                CollectFields(block.Inherit, fields, visited);
-            }
+            if (block.Inherit is not null) CollectFields(block.Inherit, fields, visited);
 
             // Then add this block's fields
             fields.AddRange(block.Fields);

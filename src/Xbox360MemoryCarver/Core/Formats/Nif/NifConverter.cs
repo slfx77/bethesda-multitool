@@ -11,7 +11,6 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 ///     Xbox 360 NIFs use BSPackedAdditionalGeometryData to store vertex data as half-floats
 ///     in a GPU-optimized interleaved format. PC NIFs store this data as full floats
 ///     directly in NiTriStripsData/NiTriShapeData blocks.
-/// 
 ///     This converter:
 ///     1. Converts endianness (BE to LE)
 ///     2. Extracts half-float geometry from BSPackedAdditionalGeometryData
@@ -28,45 +27,6 @@ public sealed class NifConverter
     }
 
     /// <summary>
-    ///     Result of a NIF conversion operation.
-    /// </summary>
-    public sealed class ConversionResult
-    {
-        public required bool Success { get; init; }
-        public byte[]? OutputData { get; init; }
-        public string? ErrorMessage { get; init; }
-        public NifInfo? SourceInfo { get; init; }
-        public NifInfo? OutputInfo { get; init; }
-    }
-
-    /// <summary>
-    ///     Information about a NIF file.
-    /// </summary>
-    public sealed class NifInfo
-    {
-        public string HeaderString { get; set; } = "";
-        public uint BinaryVersion { get; set; }
-        public bool IsBigEndian { get; set; }
-        public uint UserVersion { get; set; }
-        public uint BsVersion { get; set; }
-        public int BlockCount { get; set; }
-        public List<BlockInfo> Blocks { get; } = [];
-        public List<string> BlockTypeNames { get; } = [];
-    }
-
-    /// <summary>
-    ///     Information about a single block.
-    /// </summary>
-    public sealed class BlockInfo
-    {
-        public int Index { get; set; }
-        public ushort TypeIndex { get; set; }
-        public string TypeName { get; set; } = "";
-        public int Size { get; set; }
-        public int DataOffset { get; set; }
-    }
-
-    /// <summary>
     ///     Converts an Xbox 360 NIF file to PC format.
     /// </summary>
     public ConversionResult Convert(byte[] data)
@@ -76,17 +36,14 @@ public sealed class NifConverter
             // Parse the source file
             var sourceInfo = ParseNif(data);
             if (sourceInfo == null)
-            {
                 return new ConversionResult
                 {
                     Success = false,
                     ErrorMessage = "Failed to parse NIF header"
                 };
-            }
 
             // If already little-endian, just return the data as-is
             if (!sourceInfo.IsBigEndian)
-            {
                 return new ConversionResult
                 {
                     Success = true,
@@ -95,7 +52,6 @@ public sealed class NifConverter
                     OutputInfo = sourceInfo,
                     ErrorMessage = "File is already little-endian (PC format)"
                 };
-            }
 
             // Check if there are any BSPackedAdditionalGeometryData blocks
             var packedBlocks = sourceInfo.Blocks
@@ -128,19 +84,13 @@ public sealed class NifConverter
     /// </summary>
     private NifInfo? ParseNif(byte[] data)
     {
-        if (data.Length < 50)
-        {
-            return null;
-        }
+        if (data.Length < 50) return null;
 
         var info = new NifInfo();
 
         // Find header string (ends with newline)
         var newlinePos = Array.IndexOf(data, (byte)0x0A, 0, Math.Min(60, data.Length));
-        if (newlinePos < 0)
-        {
-            return null;
-        }
+        if (newlinePos < 0) return null;
 
         info.HeaderString = Encoding.ASCII.GetString(data, 0, newlinePos);
         var pos = newlinePos + 1;
@@ -191,7 +141,7 @@ public sealed class NifConverter
                 ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
                 : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
             pos += 4;
-            
+
             info.BlockTypeNames.Add(Encoding.ASCII.GetString(data, pos, (int)strLen));
             pos += (int)strLen;
         }
@@ -222,10 +172,7 @@ public sealed class NifConverter
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
         pos += 4;
 
-        // Max string length
-        var maxStrLen = info.IsBigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        // Max string length (skip)
         pos += 4;
 
         // Strings
@@ -274,14 +221,12 @@ public sealed class NifConverter
         var result = legacyConverter.ConvertToLittleEndian(data);
 
         if (result == null)
-        {
             return new ConversionResult
             {
                 Success = false,
                 ErrorMessage = "Endian conversion failed",
                 SourceInfo = sourceInfo
             };
-        }
 
         var outputInfo = ParseNif(result);
         return new ConversionResult
@@ -300,7 +245,7 @@ public sealed class NifConverter
     {
         // Step 1: Extract geometry data from all BSPackedAdditionalGeometryData blocks
         var geometryDataByBlock = new Dictionary<int, PackedGeometryData>();
-        
+
         foreach (var packedBlock in packedBlocks)
         {
             var packedData = ExtractPackedGeometryData(data, packedBlock);
@@ -308,17 +253,15 @@ public sealed class NifConverter
             {
                 geometryDataByBlock[packedBlock.Index] = packedData;
                 if (_verbose)
-                {
-                    Console.WriteLine($"Extracted geometry from block {packedBlock.Index}: {packedData.NumVertices} vertices");
-                }
+                    Console.WriteLine(
+                        $"Extracted geometry from block {packedBlock.Index}: {packedData.NumVertices} vertices");
             }
         }
 
         // Step 2: Find geometry blocks that reference the packed data and calculate size changes
         var geometryBlocksToExpand = new Dictionary<int, GeometryBlockExpansion>();
-        
+
         foreach (var block in sourceInfo.Blocks)
-        {
             if (block.TypeName is "NiTriStripsData" or "NiTriShapeData")
             {
                 var expansion = AnalyzeGeometryBlock(data, block, sourceInfo, geometryDataByBlock);
@@ -326,12 +269,10 @@ public sealed class NifConverter
                 {
                     geometryBlocksToExpand[block.Index] = expansion;
                     if (_verbose)
-                    {
-                        Console.WriteLine($"Block {block.Index} ({block.TypeName}) will expand by {expansion.SizeIncrease} bytes");
-                    }
+                        Console.WriteLine(
+                            $"Block {block.Index} ({block.TypeName}) will expand by {expansion.SizeIncrease} bytes");
                 }
             }
-        }
 
         // Step 3: Build the output file
         var output = BuildConvertedOutput(data, sourceInfo, packedBlocks, geometryBlocksToExpand, geometryDataByBlock);
@@ -344,32 +285,6 @@ public sealed class NifConverter
             SourceInfo = sourceInfo,
             OutputInfo = outputInfo
         };
-    }
-
-    /// <summary>
-    ///     Geometry data extracted from BSPackedAdditionalGeometryData.
-    /// </summary>
-    private sealed class PackedGeometryData
-    {
-        public ushort NumVertices { get; set; }
-        public float[]? Positions { get; set; }     // numVerts * 3
-        public float[]? Normals { get; set; }       // numVerts * 3
-        public float[]? Tangents { get; set; }      // numVerts * 3
-        public float[]? Bitangents { get; set; }    // numVerts * 3
-        public float[]? UVs { get; set; }           // numVerts * 2
-        public ushort BsDataFlags { get; set; }     // Flags indicating what data is present
-    }
-
-    /// <summary>
-    ///     Information about how a geometry block needs to be expanded.
-    /// </summary>
-    private sealed class GeometryBlockExpansion
-    {
-        public int BlockIndex { get; set; }
-        public int PackedBlockIndex { get; set; }
-        public int SizeIncrease { get; set; }
-        public int OriginalSize { get; set; }
-        public int NewSize { get; set; }
     }
 
     /// <summary>
@@ -421,10 +336,7 @@ public sealed class NifConverter
                 var hasData = data[pos];
                 pos += 1;
 
-                if (hasData == 0)
-                {
-                    continue;
-                }
+                if (hasData == 0) continue;
 
                 // BSPacked format (arg=1)
                 var blockSize = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos));
@@ -450,10 +362,7 @@ public sealed class NifConverter
                 pos += 8;
             }
 
-            if (rawDataOffset < 0 || streams.Count == 0)
-            {
-                return null;
-            }
+            if (rawDataOffset < 0 || streams.Count == 0) return null;
 
             // Now extract the actual geometry data
             var result = new PackedGeometryData { NumVertices = numVertices };
@@ -463,65 +372,58 @@ public sealed class NifConverter
             {
                 Console.WriteLine($"  Block has {streams.Count} data streams, stride={stride}:");
                 for (var i = 0; i < streams.Count; i++)
-                {
-                    Console.WriteLine($"    Stream[{i}]: type={streams[i].Type}, unitSize={streams[i].UnitSize}, offset={streams[i].BlockOffset}");
-                }
+                    Console.WriteLine(
+                        $"    Stream[{i}]: type={streams[i].Type}, unitSize={streams[i].UnitSize}, offset={streams[i].BlockOffset}");
             }
 
             // Identify streams by their type and position
             // Type 16 (E_FLOAT) = half4 (tangents, bitangents, normals, positions)
             // Type 14 (E_TEXTCOORD) = half2 (UVs)
             // Type 28 (E_UBYTE4) = vertex colors or other byte data
-            
+
             // Find all half4 streams (type 16) and half2 streams (type 14)
             var half4Streams = streams.Where(s => s.Type == 16 && s.UnitSize == 8).OrderBy(s => s.BlockOffset).ToList();
             var half2Streams = streams.Where(s => s.Type == 14 && s.UnitSize == 4).OrderBy(s => s.BlockOffset).ToList();
-            
+
             // CORRECTED LAYOUT (verified against PC reference):
             // Offset 0:  Position (half4) - The FIRST half4 stream, NOT the last!
             // Offset 8:  Tangent (half4)
             // Offset 16: UV (half2)
             // Offset 20: Bitangent (half4)
             // Offset 28: Normal (half4) - The LAST half4 stream
-            
+
             // Extract UVs (first half2 stream)
             if (half2Streams.Count > 0)
             {
                 var uvIdx = streams.IndexOf(half2Streams[0]);
                 result.UVs = ExtractHalf2Stream(data, rawDataOffset, numVertices, stride, streams, uvIdx);
             }
-            
+
             // For half4 streams, assign based on actual offset values
             // Position is at offset 0 (first half4 stream)
             // Tangent is at offset 8 (second half4 stream)
             // Bitangent is at offset 20 (third half4 stream, after UVs)
             // Normal is at offset 28 (fourth half4 stream)
             if (half4Streams.Count >= 1)
-            {
                 // Offset 0 is Position
-                result.Positions = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, streams, streams.IndexOf(half4Streams[0]));
-            }
+                result.Positions = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, streams,
+                    streams.IndexOf(half4Streams[0]));
             if (half4Streams.Count >= 2)
-            {
                 // Offset 8 is Tangent
-                result.Tangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, streams, streams.IndexOf(half4Streams[1]));
-            }
+                result.Tangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, streams,
+                    streams.IndexOf(half4Streams[1]));
             if (half4Streams.Count >= 3)
-            {
                 // Offset 20 is Bitangent
-                result.Bitangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, streams, streams.IndexOf(half4Streams[2]));
-            }
+                result.Bitangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, streams,
+                    streams.IndexOf(half4Streams[2]));
             if (half4Streams.Count >= 4)
-            {
                 // Offset 28 is Normal
-                result.Normals = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, streams, streams.IndexOf(half4Streams[3]));
-            }
-            
+                result.Normals = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, streams,
+                    streams.IndexOf(half4Streams[3]));
+
             if (_verbose)
-            {
                 Console.WriteLine($"  Extracted: verts={result.Positions != null}, normals={result.Normals != null}, " +
-                    $"tangents={result.Tangents != null}, bitangents={result.Bitangents != null}, uvs={result.UVs != null}");
-            }
+                                  $"tangents={result.Tangents != null}, bitangents={result.Bitangents != null}, uvs={result.UVs != null}");
 
             // Build bsDataFlags based on what we have
             result.BsDataFlags = 0;
@@ -532,40 +434,22 @@ public sealed class NifConverter
         }
         catch (Exception ex)
         {
-            if (_verbose)
-            {
-                Console.WriteLine($"Error extracting packed geometry: {ex.Message}");
-            }
+            if (_verbose) Console.WriteLine($"Error extracting packed geometry: {ex.Message}");
             return null;
         }
-    }
-
-    private sealed class DataStreamInfo
-    {
-        public uint Type { get; set; }
-        public uint UnitSize { get; set; }
-        public uint TotalSize { get; set; }
-        public uint Stride { get; set; }
-        public uint BlockIndex { get; set; }
-        public uint BlockOffset { get; set; }
-        public byte Flags { get; set; }
     }
 
     /// <summary>
     ///     Extract a half4 stream (4 half-floats = 8 bytes per vertex) as Vector3 floats.
     /// </summary>
-    private float[]? ExtractHalf4Stream(byte[] data, int rawDataOffset, int numVertices, int stride, List<DataStreamInfo> streams, int streamIndex)
+    private float[]? ExtractHalf4Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
+        List<DataStreamInfo> streams, int streamIndex)
     {
-        if (streamIndex >= streams.Count)
-        {
-            return null;
-        }
+        if (streamIndex >= streams.Count) return null;
 
         var stream = streams[streamIndex];
         if (stream.UnitSize != 8) // half4 = 8 bytes
-        {
             return null;
-        }
 
         var result = new float[numVertices * 3];
         var offset = (int)stream.BlockOffset;
@@ -573,7 +457,7 @@ public sealed class NifConverter
         for (var v = 0; v < numVertices; v++)
         {
             var vertexOffset = rawDataOffset + v * stride + offset;
-            
+
             // Read 3 half-floats (ignore the 4th)
             result[v * 3 + 0] = HalfToFloat(BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(vertexOffset)));
             result[v * 3 + 1] = HalfToFloat(BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(vertexOffset + 2)));
@@ -586,18 +470,14 @@ public sealed class NifConverter
     /// <summary>
     ///     Extract a half2 stream (2 half-floats = 4 bytes per vertex) as Vector2 floats.
     /// </summary>
-    private float[]? ExtractHalf2Stream(byte[] data, int rawDataOffset, int numVertices, int stride, List<DataStreamInfo> streams, int streamIndex)
+    private float[]? ExtractHalf2Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
+        List<DataStreamInfo> streams, int streamIndex)
     {
-        if (streamIndex >= streams.Count)
-        {
-            return null;
-        }
+        if (streamIndex >= streams.Count) return null;
 
         var stream = streams[streamIndex];
         if (stream.UnitSize != 4) // half2 = 4 bytes
-        {
             return null;
-        }
 
         var result = new float[numVertices * 2];
         var offset = (int)stream.BlockOffset;
@@ -605,7 +485,7 @@ public sealed class NifConverter
         for (var v = 0; v < numVertices; v++)
         {
             var vertexOffset = rawDataOffset + v * stride + offset;
-            
+
             result[v * 2 + 0] = HalfToFloat(BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(vertexOffset)));
             result[v * 2 + 1] = HalfToFloat(BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(vertexOffset + 2)));
         }
@@ -616,7 +496,8 @@ public sealed class NifConverter
     /// <summary>
     ///     Analyze a geometry block to determine if/how it needs to be expanded.
     /// </summary>
-    private GeometryBlockExpansion? AnalyzeGeometryBlock(byte[] data, BlockInfo block, NifInfo sourceInfo, Dictionary<int, PackedGeometryData> geometryDataByBlock)
+    private GeometryBlockExpansion? AnalyzeGeometryBlock(byte[] data, BlockInfo block, NifInfo sourceInfo,
+        Dictionary<int, PackedGeometryData> geometryDataByBlock)
     {
         var pos = block.DataOffset;
 
@@ -636,10 +517,7 @@ public sealed class NifConverter
         pos += 1;
 
         // If hasVertices, skip vertex array
-        if (hasVertices != 0)
-        {
-            pos += numVertices * 12;
-        }
+        if (hasVertices != 0) pos += numVertices * 12;
 
         // bsDataFlags (ushort BE)
         var bsDataFlags = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos));
@@ -653,12 +531,9 @@ public sealed class NifConverter
         if (hasNormals != 0)
         {
             pos += numVertices * 12;
-            
+
             // Tangents/bitangents if flag set
-            if ((bsDataFlags & 4096) != 0)
-            {
-                pos += numVertices * 24;
-            }
+            if ((bsDataFlags & 4096) != 0) pos += numVertices * 24;
         }
 
         // center (Vector3), radius (float)
@@ -669,17 +544,11 @@ public sealed class NifConverter
         pos += 1;
 
         // Skip vertex colors if present
-        if (hasVertexColors != 0)
-        {
-            pos += numVertices * 16;
-        }
+        if (hasVertexColors != 0) pos += numVertices * 16;
 
         // UV sets
         var numUVSets = bsDataFlags & 1;
-        if (numUVSets != 0)
-        {
-            pos += numVertices * 8;
-        }
+        if (numUVSets != 0) pos += numVertices * 8;
 
         // consistency (ushort BE)
         pos += 2;
@@ -687,10 +556,8 @@ public sealed class NifConverter
         // additionalData ref (int BE)
         var additionalDataRef = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos));
 
-        if (additionalDataRef < 0 || !geometryDataByBlock.ContainsKey(additionalDataRef))
-        {
-            return null; // No packed data reference
-        }
+        if (additionalDataRef < 0 ||
+            !geometryDataByBlock.ContainsKey(additionalDataRef)) return null; // No packed data reference
 
         var packedData = geometryDataByBlock[additionalDataRef];
 
@@ -698,36 +565,21 @@ public sealed class NifConverter
         var sizeIncrease = 0;
 
         // If hasVertices=0, we need to add vertex positions
-        if (hasVertices == 0 && packedData.Positions != null)
-        {
-            sizeIncrease += numVertices * 12; // Vector3 positions
-        }
+        if (hasVertices == 0 && packedData.Positions != null) sizeIncrease += numVertices * 12; // Vector3 positions
 
         // If hasNormals=0, we need to add normals (and possibly tangents/bitangents)
         if (hasNormals == 0 && packedData.Normals != null)
         {
             sizeIncrease += numVertices * 12; // Vector3 normals
-            
-            if (packedData.Tangents != null)
-            {
-                sizeIncrease += numVertices * 12; // Vector3 tangents
-            }
-            if (packedData.Bitangents != null)
-            {
-                sizeIncrease += numVertices * 12; // Vector3 bitangents
-            }
+
+            if (packedData.Tangents != null) sizeIncrease += numVertices * 12; // Vector3 tangents
+            if (packedData.Bitangents != null) sizeIncrease += numVertices * 12; // Vector3 bitangents
         }
 
         // If no UVs, we need to add them
-        if (numUVSets == 0 && packedData.UVs != null)
-        {
-            sizeIncrease += numVertices * 8; // TexCoord UVs
-        }
+        if (numUVSets == 0 && packedData.UVs != null) sizeIncrease += numVertices * 8; // TexCoord UVs
 
-        if (sizeIncrease == 0)
-        {
-            return null;
-        }
+        if (sizeIncrease == 0) return null;
 
         return new GeometryBlockExpansion
         {
@@ -742,29 +594,24 @@ public sealed class NifConverter
     /// <summary>
     ///     Build the final converted output.
     /// </summary>
-    private byte[] BuildConvertedOutput(byte[] data, NifInfo sourceInfo, List<BlockInfo> packedBlocks, 
-        Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand, Dictionary<int, PackedGeometryData> geometryDataByBlock)
+    private byte[] BuildConvertedOutput(byte[] data, NifInfo sourceInfo, List<BlockInfo> packedBlocks,
+        Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand,
+        Dictionary<int, PackedGeometryData> geometryDataByBlock)
     {
         // Calculate new file size
         var packedBlockIndices = new HashSet<int>(packedBlocks.Select(b => b.Index));
-        
+
         // Calculate header size changes
         var removedBlockCount = packedBlocks.Count;
         var headerSizeDelta = -(removedBlockCount * 6); // 2 bytes type index + 4 bytes size per block
-        
+
         // Calculate total block size change
         long totalBlockSizeDelta = 0;
         foreach (var block in sourceInfo.Blocks)
-        {
             if (packedBlockIndices.Contains(block.Index))
-            {
                 totalBlockSizeDelta -= block.Size;
-            }
             else if (geometryBlocksToExpand.TryGetValue(block.Index, out var expansion))
-            {
                 totalBlockSizeDelta += expansion.SizeIncrease;
-            }
-        }
 
         var newSize = data.Length + headerSizeDelta + totalBlockSizeDelta;
         var output = new byte[newSize];
@@ -773,29 +620,19 @@ public sealed class NifConverter
         var blockRemap = new int[sourceInfo.BlockCount];
         var newBlockIndex = 0;
         for (var i = 0; i < sourceInfo.BlockCount; i++)
-        {
             if (packedBlockIndices.Contains(i))
-            {
                 blockRemap[i] = -1;
-            }
             else
-            {
                 blockRemap[i] = newBlockIndex++;
-            }
-        }
-
-        var newBlockCount = newBlockIndex;
 
         // Copy and convert header
-        var outPos = WriteConvertedHeader(data, output, sourceInfo, blockRemap, packedBlockIndices, geometryBlocksToExpand);
+        var outPos = WriteConvertedHeader(data, output, sourceInfo, blockRemap, packedBlockIndices,
+            geometryBlocksToExpand);
 
         // Convert each block
         foreach (var block in sourceInfo.Blocks)
         {
-            if (packedBlockIndices.Contains(block.Index))
-            {
-                continue; // Skip packed blocks
-            }
+            if (packedBlockIndices.Contains(block.Index)) continue; // Skip packed blocks
 
             if (geometryBlocksToExpand.TryGetValue(block.Index, out var expansion))
             {
@@ -814,10 +651,7 @@ public sealed class NifConverter
         outPos = WriteConvertedFooter(data, output, outPos, sourceInfo, blockRemap);
 
         // Trim output if we allocated too much
-        if (outPos < output.Length)
-        {
-            Array.Resize(ref output, outPos);
-        }
+        if (outPos < output.Length) Array.Resize(ref output, outPos);
 
         return output;
     }
@@ -878,19 +712,8 @@ public sealed class NifConverter
 
         // NumBlockTypes (convert BE to LE)
         var numBlockTypes = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos));
-        
-        // Check if we need to remove BSPackedAdditionalGeometryData from type list
-        var typeIndexToRemove = -1;
-        for (var i = 0; i < sourceInfo.BlockTypeNames.Count; i++)
-        {
-            if (sourceInfo.BlockTypeNames[i] == "BSPackedAdditionalGeometryData")
-            {
-                typeIndexToRemove = i;
-                break;
-            }
-        }
 
-        // For simplicity, keep all type names but they won't be used
+        // Keep all type names (BSPackedAdditionalGeometryData entries will remain but won't be referenced)
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numBlockTypes);
         pos += 2;
         outPos += 2;
@@ -916,6 +739,7 @@ public sealed class NifConverter
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), block.TypeIndex);
                 outPos += 2;
             }
+
             pos += 2;
         }
 
@@ -925,13 +749,11 @@ public sealed class NifConverter
             if (!packedBlockIndices.Contains(block.Index))
             {
                 var size = (uint)block.Size;
-                if (geometryBlocksToExpand.TryGetValue(block.Index, out var expansion))
-                {
-                    size = (uint)expansion.NewSize;
-                }
+                if (geometryBlocksToExpand.TryGetValue(block.Index, out var expansion)) size = (uint)expansion.NewSize;
                 BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), size);
                 outPos += 4;
             }
+
             pos += 4;
         }
 
@@ -981,14 +803,15 @@ public sealed class NifConverter
     /// <summary>
     ///     Write a regular block with proper per-type endian conversion.
     /// </summary>
-    private int WriteConvertedBlock(byte[] data, byte[] output, int outPos, BlockInfo block, NifInfo sourceInfo, int[] blockRemap)
+    private int WriteConvertedBlock(byte[] data, byte[] output, int outPos, BlockInfo block, NifInfo sourceInfo,
+        int[] blockRemap)
     {
         // Copy block data first
         Array.Copy(data, block.DataOffset, output, outPos, block.Size);
-        
+
         // Convert in-place using proper per-block-type handling
         ConvertBlockInPlace(output, outPos, block.Size, block.TypeName, blockRemap);
-        
+
         return outPos + block.Size;
     }
 
@@ -1132,6 +955,430 @@ public sealed class NifConverter
         }
     }
 
+    /// <summary>
+    ///     Write an expanded geometry block with unpacked data.
+    /// </summary>
+    private int WriteExpandedGeometryBlock(byte[] data, byte[] output, int outPos, BlockInfo block,
+        NifInfo sourceInfo, PackedGeometryData packedData, int[] blockRemap)
+    {
+        var srcPos = block.DataOffset;
+
+        // groupId (int BE -> LE)
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos),
+            BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(srcPos)));
+        srcPos += 4;
+        outPos += 4;
+
+        // numVertices (ushort BE -> LE)
+        var numVertices = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
+        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numVertices);
+        srcPos += 2;
+        outPos += 2;
+
+        // keepFlags, compressFlags (bytes - no conversion)
+        output[outPos++] = data[srcPos++];
+        output[outPos++] = data[srcPos++];
+
+        // hasVertices - set to 1 if we have positions
+        var origHasVertices = data[srcPos++];
+        var newHasVertices = (byte)(packedData.Positions != null ? 1 : origHasVertices);
+        output[outPos++] = newHasVertices;
+
+        // Write vertices if we have them
+        if (newHasVertices != 0 && packedData.Positions != null && origHasVertices == 0)
+            // Write unpacked positions
+            for (var v = 0; v < numVertices; v++)
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 0]);
+                outPos += 4;
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 1]);
+                outPos += 4;
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 2]);
+                outPos += 4;
+            }
+        else if (origHasVertices != 0)
+            // Copy and convert existing vertices
+            for (var v = 0; v < numVertices; v++)
+                for (var c = 0; c < 3; c++)
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                        BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
+                    srcPos += 4;
+                    outPos += 4;
+                }
+
+        // bsDataFlags - update to include tangent flag if we have tangents
+        var origBsDataFlags = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
+        var newBsDataFlags = origBsDataFlags;
+        if (packedData.Tangents != null) newBsDataFlags |= 4096; // Tangent flag
+        if (packedData.UVs != null) newBsDataFlags |= 1; // UV flag
+        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), newBsDataFlags);
+        srcPos += 2;
+        outPos += 2;
+
+        // hasNormals - set to 1 if we have normals
+        var origHasNormals = data[srcPos++];
+        var newHasNormals = (byte)(packedData.Normals != null ? 1 : origHasNormals);
+        output[outPos++] = newHasNormals;
+
+        // Write normals
+        if (newHasNormals != 0 && packedData.Normals != null && origHasNormals == 0)
+        {
+            for (var v = 0; v < numVertices; v++)
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Normals[v * 3 + 0]);
+                outPos += 4;
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Normals[v * 3 + 1]);
+                outPos += 4;
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Normals[v * 3 + 2]);
+                outPos += 4;
+            }
+
+            // Write tangents if we have them
+            if ((newBsDataFlags & 4096) != 0 && packedData.Tangents != null)
+                for (var v = 0; v < numVertices; v++)
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Tangents[v * 3 + 0]);
+                    outPos += 4;
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Tangents[v * 3 + 1]);
+                    outPos += 4;
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Tangents[v * 3 + 2]);
+                    outPos += 4;
+                }
+
+            // Write bitangents if we have them
+            if ((newBsDataFlags & 4096) != 0 && packedData.Bitangents != null)
+                for (var v = 0; v < numVertices; v++)
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 0]);
+                    outPos += 4;
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 1]);
+                    outPos += 4;
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 2]);
+                    outPos += 4;
+                }
+        }
+        else if (origHasNormals != 0)
+        {
+            // Copy and convert existing normals
+            for (var v = 0; v < numVertices; v++)
+                for (var c = 0; c < 3; c++)
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                        BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
+                    srcPos += 4;
+                    outPos += 4;
+                }
+
+            // Copy existing tangents/bitangents
+            if ((origBsDataFlags & 4096) != 0)
+                for (var v = 0; v < numVertices * 6; v++) // 3 floats tangent + 3 floats bitangent
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                        BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
+                    srcPos += 4;
+                    outPos += 4;
+                }
+        }
+
+        // center (Vector3 BE -> LE)
+        for (var i = 0; i < 3; i++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
+            srcPos += 4;
+            outPos += 4;
+        }
+
+        // radius (float BE -> LE)
+        BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+            BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
+        srcPos += 4;
+        outPos += 4;
+
+        // hasVertexColors (byte)
+        var hasVertexColors = data[srcPos++];
+        output[outPos++] = hasVertexColors;
+
+        // Copy vertex colors if present
+        if (hasVertexColors != 0)
+            for (var v = 0; v < numVertices * 4; v++) // Color4 = 4 floats
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                    BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
+                srcPos += 4;
+                outPos += 4;
+            }
+
+        // UV sets
+        var origNumUVSets = origBsDataFlags & 1;
+        var newNumUVSets = newBsDataFlags & 1;
+
+        if (newNumUVSets != 0 && origNumUVSets == 0 && packedData.UVs != null)
+            // Write unpacked UVs
+            for (var v = 0; v < numVertices; v++)
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.UVs[v * 2 + 0]);
+                outPos += 4;
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.UVs[v * 2 + 1]);
+                outPos += 4;
+            }
+        else if (origNumUVSets != 0)
+            // Copy and convert existing UVs
+            for (var v = 0; v < numVertices * 2; v++) // TexCoord = 2 floats
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                    BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
+                srcPos += 4;
+                outPos += 4;
+            }
+
+        // consistency (ushort BE -> LE)
+        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+            BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
+        srcPos += 2;
+        outPos += 2;
+
+        // additionalData ref - set to -1 (no reference)
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos), -1);
+        srcPos += 4;
+        outPos += 4;
+
+        // Copy remaining block data (NiTriStripsData/NiTriShapeData specific fields)
+        var remainingBytes = block.Size - (srcPos - block.DataOffset);
+        if (remainingBytes > 0)
+            // Copy and convert remaining data
+            outPos = CopyAndConvertTriStripSpecificData(data, output, srcPos, outPos, remainingBytes, block.TypeName,
+                blockRemap);
+
+        return outPos;
+    }
+
+    /// <summary>
+    ///     Copy and convert NiTriStripsData/NiTriShapeData specific fields.
+    /// </summary>
+    private int CopyAndConvertTriStripSpecificData(byte[] data, byte[] output, int srcPos, int outPos,
+        int remainingBytes, string blockType, int[] blockRemap)
+    {
+        if (blockType == "NiTriStripsData")
+        {
+            // numTriangles (ushort BE -> LE)
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
+            srcPos += 2;
+            outPos += 2;
+
+            // numStrips (ushort BE -> LE)
+            var numStrips = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numStrips);
+            srcPos += 2;
+            outPos += 2;
+
+            // stripLengths[numStrips] (ushort array)
+            var stripLengths = new ushort[numStrips];
+            for (var i = 0; i < numStrips; i++)
+            {
+                stripLengths[i] = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
+                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), stripLengths[i]);
+                srcPos += 2;
+                outPos += 2;
+            }
+
+            // hasPoints (byte)
+            var hasPoints = data[srcPos++];
+            output[outPos++] = hasPoints;
+
+            // points[numStrips][stripLengths[i]] (ushort arrays)
+            if (hasPoints != 0)
+                for (var i = 0; i < numStrips; i++)
+                    for (var j = 0; j < stripLengths[i]; j++)
+                    {
+                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                            BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
+                        srcPos += 2;
+                        outPos += 2;
+                    }
+        }
+        else if (blockType == "NiTriShapeData")
+        {
+            // numTriangles (ushort BE -> LE)
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
+            var numTriangles = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
+            srcPos += 2;
+            outPos += 2;
+
+            // numTrianglePoints (uint BE -> LE)
+            BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos),
+                BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(srcPos)));
+            srcPos += 4;
+            outPos += 4;
+
+            // hasTriangles (byte)
+            var hasTriangles = data[srcPos++];
+            output[outPos++] = hasTriangles;
+
+            // triangles[numTriangles] (Triangle = 3 ushorts)
+            if (hasTriangles != 0)
+                for (var i = 0; i < numTriangles * 3; i++)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                        BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
+                    srcPos += 2;
+                    outPos += 2;
+                }
+
+            // matchGroups handling would go here if needed
+        }
+
+        return outPos;
+    }
+
+    /// <summary>
+    ///     Write the footer with remapped block references.
+    /// </summary>
+    private int WriteConvertedFooter(byte[] data, byte[] output, int outPos, NifInfo sourceInfo, int[] blockRemap)
+    {
+        // Find footer position
+        var footerPos = sourceInfo.Blocks.Count > 0
+            ? sourceInfo.Blocks.Last().DataOffset + sourceInfo.Blocks.Last().Size
+            : data.Length;
+
+        if (footerPos >= data.Length) return outPos;
+
+        // numRoots (uint BE -> LE)
+        var numRoots = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(footerPos));
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), numRoots);
+        footerPos += 4;
+        outPos += 4;
+
+        // root indices (int array BE -> LE with remapping)
+        for (var i = 0; i < numRoots; i++)
+        {
+            var rootIdx = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(footerPos));
+            var newRootIdx = rootIdx >= 0 && rootIdx < blockRemap.Length ? blockRemap[rootIdx] : rootIdx;
+            BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos), newRootIdx);
+            footerPos += 4;
+            outPos += 4;
+        }
+
+        return outPos;
+    }
+
+    /// <summary>
+    ///     Convert half-float (16-bit) to single-precision float (32-bit).
+    /// </summary>
+    private static float HalfToFloat(ushort half)
+    {
+        var sign = (half >> 15) & 1;
+        var exp = (half >> 10) & 0x1F;
+        var mant = half & 0x3FF;
+
+        if (exp == 0)
+        {
+            if (mant == 0)
+                // Zero
+                return sign == 1 ? -0.0f : 0.0f;
+
+            // Subnormal
+            var value = (float)Math.Pow(2, -14) * (mant / 1024.0f);
+            return sign == 1 ? -value : value;
+        }
+
+        if (exp == 31)
+            // Infinity or NaN
+            return mant == 0
+                ? sign == 1 ? float.NegativeInfinity : float.PositiveInfinity
+                : float.NaN;
+
+        {
+            // Normalized
+            var value = (float)Math.Pow(2, exp - 15) * (1 + mant / 1024.0f);
+            return sign == 1 ? -value : value;
+        }
+    }
+
+    private static bool IsBethesdaVersion(uint binaryVersion, uint userVersion)
+    {
+        return binaryVersion == 0x14020007 && (userVersion == 11 || userVersion == 12);
+    }
+
+    /// <summary>
+    ///     Result of a NIF conversion operation.
+    /// </summary>
+    public sealed class ConversionResult
+    {
+        public required bool Success { get; init; }
+        public byte[]? OutputData { get; init; }
+        public string? ErrorMessage { get; init; }
+        public NifInfo? SourceInfo { get; init; }
+        public NifInfo? OutputInfo { get; init; }
+    }
+
+    /// <summary>
+    ///     Information about a NIF file.
+    /// </summary>
+    public sealed class NifInfo
+    {
+        public string HeaderString { get; set; } = "";
+        public uint BinaryVersion { get; set; }
+        public bool IsBigEndian { get; set; }
+        public uint UserVersion { get; set; }
+        public uint BsVersion { get; set; }
+        public int BlockCount { get; set; }
+        public List<BlockInfo> Blocks { get; } = [];
+        public List<string> BlockTypeNames { get; } = [];
+    }
+
+    /// <summary>
+    ///     Information about a single block.
+    /// </summary>
+    public sealed class BlockInfo
+    {
+        public int Index { get; set; }
+        public ushort TypeIndex { get; set; }
+        public string TypeName { get; set; } = "";
+        public int Size { get; set; }
+        public int DataOffset { get; set; }
+    }
+
+    /// <summary>
+    ///     Geometry data extracted from BSPackedAdditionalGeometryData.
+    /// </summary>
+    private sealed class PackedGeometryData
+    {
+        public ushort NumVertices { get; set; }
+        public float[]? Positions { get; set; } // numVerts * 3
+        public float[]? Normals { get; set; } // numVerts * 3
+        public float[]? Tangents { get; set; } // numVerts * 3
+        public float[]? Bitangents { get; set; } // numVerts * 3
+        public float[]? UVs { get; set; } // numVerts * 2
+        public ushort BsDataFlags { get; set; } // Flags indicating what data is present
+    }
+
+    /// <summary>
+    ///     Information about how a geometry block needs to be expanded.
+    /// </summary>
+    private sealed class GeometryBlockExpansion
+    {
+        public int BlockIndex { get; set; }
+        public int PackedBlockIndex { get; set; }
+        public int SizeIncrease { get; set; }
+        public int OriginalSize { get; set; }
+        public int NewSize { get; set; }
+    }
+
+    private sealed class DataStreamInfo
+    {
+        public uint Type { get; set; }
+        public uint UnitSize { get; set; }
+        public uint TotalSize { get; set; }
+        public uint Stride { get; set; }
+        public uint BlockIndex { get; set; }
+        public uint BlockOffset { get; set; }
+        public byte Flags { get; set; }
+    }
+
     #region Block-Specific Conversion Methods
 
     private static void SwapUInt32InPlace(byte[] buf, int pos)
@@ -1169,10 +1416,7 @@ public sealed class NifConverter
             var strLen = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
             pos += 4;
 
-            if (strLen > 0 && pos + strLen <= end)
-            {
-                pos += (int)strLen; // string bytes don't need swapping
-            }
+            if (strLen > 0 && pos + strLen <= end) pos += (int)strLen; // string bytes don't need swapping
         }
     }
 
@@ -1561,7 +1805,7 @@ public sealed class NifConverter
         SwapUInt32InPlace(buf, pos);
         var strLen = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
         pos += 4;
-        
+
         // String content doesn't need swapping, just skip it
         pos += (int)strLen;
 
@@ -1732,7 +1976,6 @@ public sealed class NifConverter
 
             // vertexWeights (if hasWeights)
             if (hasWeights != 0)
-            {
                 for (var v = 0; v < numVerts && pos + 6 <= end; v++)
                 {
                     SwapUInt16InPlace(buf, pos); // vertexIndex
@@ -1740,7 +1983,6 @@ public sealed class NifConverter
                     SwapUInt32InPlace(buf, pos); // weight (float)
                     pos += 4;
                 }
-            }
         }
     }
 
@@ -1758,17 +2000,22 @@ public sealed class NifConverter
         {
             // numVertices, numTriangles, numBones, numStrips, numWeightsPerVertex
             if (pos + 10 > end) return;
-            SwapUInt16InPlace(buf, pos); pos += 2;
+            SwapUInt16InPlace(buf, pos);
+            pos += 2;
             var numTris = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
-            SwapUInt16InPlace(buf, pos); pos += 2;
+            SwapUInt16InPlace(buf, pos);
+            pos += 2;
             numTris = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos - 2));
             var numBones = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
-            SwapUInt16InPlace(buf, pos); pos += 2;
+            SwapUInt16InPlace(buf, pos);
+            pos += 2;
             numBones = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos - 2));
             var numStrips = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
-            SwapUInt16InPlace(buf, pos); pos += 2;
+            SwapUInt16InPlace(buf, pos);
+            pos += 2;
             numStrips = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos - 2));
-            SwapUInt16InPlace(buf, pos); pos += 2; // numWeightsPerVertex
+            SwapUInt16InPlace(buf, pos);
+            pos += 2; // numWeightsPerVertex
 
             // bones array
             for (var i = 0; i < numBones && pos + 2 <= end; i++)
@@ -1934,130 +2181,142 @@ public sealed class NifConverter
     private static void ConvertNiTriStripsDataInPlace(byte[] buf, int pos, int size, int[] blockRemap)
     {
         var end = pos + size;
-        
+
         // groupId
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
         pos += 4;
-        
+
         // numVertices
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         var numVerts = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
         pos += 2;
-        
+
         // keepFlags, compressFlags
         if (pos + 2 > end) return;
         pos += 2;
-        
+
         // hasVertices
         if (pos + 1 > end) return;
         var hasVerts = buf[pos++];
-        
+
         // vertices (12 bytes each - 3 floats)
         if (hasVerts != 0)
-        {
             for (var i = 0; i < numVerts && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
-        
+
         // bsDataFlags
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         var dataFlags = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
         pos += 2;
-        
+
         // materialCRC
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
         pos += 4;
-        
+
         // hasNormals
         if (pos + 1 > end) return;
         var hasNormals = buf[pos++];
-        
+
         // normals (12 bytes each - 3 floats)
         if (hasNormals != 0)
         {
             for (var i = 0; i < numVerts && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-            
+
             // tangents and bitangents if flag set (0x1000 = has tangents)
             if ((dataFlags & 0x1000) != 0)
             {
                 // tangents
                 for (var i = 0; i < numVerts && pos + 12 <= end; i++)
                 {
-                    SwapUInt32InPlace(buf, pos); pos += 4;
-                    SwapUInt32InPlace(buf, pos); pos += 4;
-                    SwapUInt32InPlace(buf, pos); pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
                 }
+
                 // bitangents
                 for (var i = 0; i < numVerts && pos + 12 <= end; i++)
                 {
-                    SwapUInt32InPlace(buf, pos); pos += 4;
-                    SwapUInt32InPlace(buf, pos); pos += 4;
-                    SwapUInt32InPlace(buf, pos); pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
                 }
             }
         }
-        
+
         // center (3 floats) + radius (1 float)
         if (pos + 16 > end) return;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+
         // hasVertexColors
         if (pos + 1 > end) return;
         var hasColors = buf[pos++];
-        
+
         // vertex colors (4 bytes each - RGBA, no swap needed for bytes)
-        if (hasColors != 0)
-        {
-            pos += numVerts * 4; // Skip color bytes - no swap needed
-        }
-        
+        if (hasColors != 0) pos += numVerts * 4; // Skip color bytes - no swap needed
+
         // numUVSets (derived from dataFlags bits 0-5, but also stored)
         // UV sets count is in lower 6 bits of dataFlags
         var numUVSets = dataFlags & 0x3F;
-        
+
         // UV sets (8 bytes each per vertex - 2 floats)
         for (var uvSet = 0; uvSet < numUVSets && pos < end; uvSet++)
-        {
             for (var i = 0; i < numVerts && pos + 8 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4; // U
-                SwapUInt32InPlace(buf, pos); pos += 4; // V
+                SwapUInt32InPlace(buf, pos);
+                pos += 4; // U
+                SwapUInt32InPlace(buf, pos);
+                pos += 4; // V
             }
-        }
-        
+
         // consistencyFlags
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         pos += 2;
-        
+
         // additionalData ref
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
         RemapBlockRefInPlace(buf, pos, blockRemap);
         pos += 4;
-        
+
         // numStrips
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         var numStrips = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
         pos += 2;
-        
+
         // stripLengths (ushort array)
         var stripLengths = new ushort[numStrips];
         for (var i = 0; i < numStrips && pos + 2 <= end; i++)
@@ -2066,179 +2325,188 @@ public sealed class NifConverter
             stripLengths[i] = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
             pos += 2;
         }
-        
+
         // hasPoints
         if (pos + 1 > end) return;
         var hasPoints = buf[pos++];
-        
+
         // points (ushort arrays for each strip)
         if (hasPoints != 0)
-        {
             for (var s = 0; s < numStrips && pos < end; s++)
-            {
                 for (var p = 0; p < stripLengths[s] && pos + 2 <= end; p++)
                 {
                     SwapUInt16InPlace(buf, pos);
                     pos += 2;
                 }
-            }
-        }
     }
 
     private static void ConvertNiTriShapeDataInPlace(byte[] buf, int pos, int size, int[] blockRemap)
     {
         var end = pos + size;
-        
+
         // groupId
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
         pos += 4;
-        
+
         // numVertices
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         var numVerts = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
         pos += 2;
-        
+
         // keepFlags, compressFlags
         if (pos + 2 > end) return;
         pos += 2;
-        
+
         // hasVertices
         if (pos + 1 > end) return;
         var hasVerts = buf[pos++];
-        
+
         // vertices (12 bytes each - 3 floats)
         if (hasVerts != 0)
-        {
             for (var i = 0; i < numVerts && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
-        
+
         // bsDataFlags
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         var dataFlags = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
         pos += 2;
-        
+
         // materialCRC
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
         pos += 4;
-        
+
         // hasNormals
         if (pos + 1 > end) return;
         var hasNormals = buf[pos++];
-        
+
         // normals (12 bytes each - 3 floats)
         if (hasNormals != 0)
         {
             for (var i = 0; i < numVerts && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-            
+
             // tangents and bitangents if flag set
             if ((dataFlags & 0x1000) != 0)
             {
                 for (var i = 0; i < numVerts && pos + 12 <= end; i++)
                 {
-                    SwapUInt32InPlace(buf, pos); pos += 4;
-                    SwapUInt32InPlace(buf, pos); pos += 4;
-                    SwapUInt32InPlace(buf, pos); pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
                 }
+
                 for (var i = 0; i < numVerts && pos + 12 <= end; i++)
                 {
-                    SwapUInt32InPlace(buf, pos); pos += 4;
-                    SwapUInt32InPlace(buf, pos); pos += 4;
-                    SwapUInt32InPlace(buf, pos); pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
                 }
             }
         }
-        
+
         // center + radius
         if (pos + 16 > end) return;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+
         // hasVertexColors
         if (pos + 1 > end) return;
         var hasColors = buf[pos++];
-        
+
         // vertex colors (4 bytes each - RGBA bytes, no swap)
-        if (hasColors != 0)
-        {
-            pos += numVerts * 4;
-        }
-        
+        if (hasColors != 0) pos += numVerts * 4;
+
         // UV sets
         var numUVSets = dataFlags & 0x3F;
         for (var uvSet = 0; uvSet < numUVSets && pos < end; uvSet++)
-        {
             for (var i = 0; i < numVerts && pos + 8 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
-        
+
         // consistencyFlags
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         pos += 2;
-        
+
         // additionalData ref
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
         RemapBlockRefInPlace(buf, pos, blockRemap);
         pos += 4;
-        
+
         // numTriangles
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         var numTris = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
         pos += 2;
-        
+
         // numTrianglePoints (total indices = numTris * 3)
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
         pos += 4;
-        
+
         // hasTriangles
         if (pos + 1 > end) return;
         var hasTris = buf[pos++];
-        
+
         // triangles (3 ushorts per triangle)
         if (hasTris != 0)
-        {
             for (var i = 0; i < numTris && pos + 6 <= end; i++)
             {
-                SwapUInt16InPlace(buf, pos); pos += 2;
-                SwapUInt16InPlace(buf, pos); pos += 2;
-                SwapUInt16InPlace(buf, pos); pos += 2;
+                SwapUInt16InPlace(buf, pos);
+                pos += 2;
+                SwapUInt16InPlace(buf, pos);
+                pos += 2;
+                SwapUInt16InPlace(buf, pos);
+                pos += 2;
             }
-        }
-        
+
         // matchGroups (optional, at end)
         if (pos + 2 > end) return;
         SwapUInt16InPlace(buf, pos);
         var numMatchGroups = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
         pos += 2;
-        
+
         for (var g = 0; g < numMatchGroups && pos + 2 <= end; g++)
         {
             SwapUInt16InPlace(buf, pos);
             var numMatches = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
             pos += 2;
-            
+
             for (var m = 0; m < numMatches && pos + 2 <= end; m++)
             {
                 SwapUInt16InPlace(buf, pos);
@@ -2258,393 +2526,4 @@ public sealed class NifConverter
     }
 
     #endregion
-
-    /// <summary>
-    ///     Write an expanded geometry block with unpacked data.
-    /// </summary>
-    private int WriteExpandedGeometryBlock(byte[] data, byte[] output, int outPos, BlockInfo block,
-        NifInfo sourceInfo, PackedGeometryData packedData, int[] blockRemap)
-    {
-        var srcPos = block.DataOffset;
-        var startOutPos = outPos;
-
-        // groupId (int BE -> LE)
-        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos),
-            BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(srcPos)));
-        srcPos += 4;
-        outPos += 4;
-
-        // numVertices (ushort BE -> LE)
-        var numVertices = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
-        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numVertices);
-        srcPos += 2;
-        outPos += 2;
-
-        // keepFlags, compressFlags (bytes - no conversion)
-        output[outPos++] = data[srcPos++];
-        output[outPos++] = data[srcPos++];
-
-        // hasVertices - set to 1 if we have positions
-        var origHasVertices = data[srcPos++];
-        var newHasVertices = (byte)(packedData.Positions != null ? 1 : origHasVertices);
-        output[outPos++] = newHasVertices;
-
-        // Write vertices if we have them
-        if (newHasVertices != 0 && packedData.Positions != null && origHasVertices == 0)
-        {
-            // Write unpacked positions
-            for (var v = 0; v < numVertices; v++)
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 0]);
-                outPos += 4;
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 1]);
-                outPos += 4;
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 2]);
-                outPos += 4;
-            }
-        }
-        else if (origHasVertices != 0)
-        {
-            // Copy and convert existing vertices
-            for (var v = 0; v < numVertices; v++)
-            {
-                for (var c = 0; c < 3; c++)
-                {
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                        BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
-                    srcPos += 4;
-                    outPos += 4;
-                }
-            }
-        }
-
-        // bsDataFlags - update to include tangent flag if we have tangents
-        var origBsDataFlags = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
-        var newBsDataFlags = origBsDataFlags;
-        if (packedData.Tangents != null)
-        {
-            newBsDataFlags |= 4096; // Tangent flag
-        }
-        if (packedData.UVs != null)
-        {
-            newBsDataFlags |= 1; // UV flag
-        }
-        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), newBsDataFlags);
-        srcPos += 2;
-        outPos += 2;
-
-        // hasNormals - set to 1 if we have normals
-        var origHasNormals = data[srcPos++];
-        var newHasNormals = (byte)(packedData.Normals != null ? 1 : origHasNormals);
-        output[outPos++] = newHasNormals;
-
-        // Write normals
-        if (newHasNormals != 0 && packedData.Normals != null && origHasNormals == 0)
-        {
-            for (var v = 0; v < numVertices; v++)
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Normals[v * 3 + 0]);
-                outPos += 4;
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Normals[v * 3 + 1]);
-                outPos += 4;
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Normals[v * 3 + 2]);
-                outPos += 4;
-            }
-
-            // Write tangents if we have them
-            if ((newBsDataFlags & 4096) != 0 && packedData.Tangents != null)
-            {
-                for (var v = 0; v < numVertices; v++)
-                {
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Tangents[v * 3 + 0]);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Tangents[v * 3 + 1]);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Tangents[v * 3 + 2]);
-                    outPos += 4;
-                }
-            }
-
-            // Write bitangents if we have them
-            if ((newBsDataFlags & 4096) != 0 && packedData.Bitangents != null)
-            {
-                for (var v = 0; v < numVertices; v++)
-                {
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 0]);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 1]);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 2]);
-                    outPos += 4;
-                }
-            }
-        }
-        else if (origHasNormals != 0)
-        {
-            // Copy and convert existing normals
-            for (var v = 0; v < numVertices; v++)
-            {
-                for (var c = 0; c < 3; c++)
-                {
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                        BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
-                    srcPos += 4;
-                    outPos += 4;
-                }
-            }
-
-            // Copy existing tangents/bitangents
-            if ((origBsDataFlags & 4096) != 0)
-            {
-                for (var v = 0; v < numVertices * 6; v++) // 3 floats tangent + 3 floats bitangent
-                {
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                        BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
-                    srcPos += 4;
-                    outPos += 4;
-                }
-            }
-        }
-
-        // center (Vector3 BE -> LE)
-        for (var i = 0; i < 3; i++)
-        {
-            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
-            srcPos += 4;
-            outPos += 4;
-        }
-
-        // radius (float BE -> LE)
-        BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-            BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
-        srcPos += 4;
-        outPos += 4;
-
-        // hasVertexColors (byte)
-        var hasVertexColors = data[srcPos++];
-        output[outPos++] = hasVertexColors;
-
-        // Copy vertex colors if present
-        if (hasVertexColors != 0)
-        {
-            for (var v = 0; v < numVertices * 4; v++) // Color4 = 4 floats
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                    BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
-                srcPos += 4;
-                outPos += 4;
-            }
-        }
-
-        // UV sets
-        var origNumUVSets = origBsDataFlags & 1;
-        var newNumUVSets = newBsDataFlags & 1;
-
-        if (newNumUVSets != 0 && origNumUVSets == 0 && packedData.UVs != null)
-        {
-            // Write unpacked UVs
-            for (var v = 0; v < numVertices; v++)
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.UVs[v * 2 + 0]);
-                outPos += 4;
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.UVs[v * 2 + 1]);
-                outPos += 4;
-            }
-        }
-        else if (origNumUVSets != 0)
-        {
-            // Copy and convert existing UVs
-            for (var v = 0; v < numVertices * 2; v++) // TexCoord = 2 floats
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                    BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(srcPos)));
-                srcPos += 4;
-                outPos += 4;
-            }
-        }
-
-        // consistency (ushort BE -> LE)
-        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-            BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
-        srcPos += 2;
-        outPos += 2;
-
-        // additionalData ref - set to -1 (no reference)
-        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos), -1);
-        srcPos += 4;
-        outPos += 4;
-
-        // Copy remaining block data (NiTriStripsData/NiTriShapeData specific fields)
-        var remainingBytes = block.Size - (srcPos - block.DataOffset);
-        if (remainingBytes > 0)
-        {
-            // Copy and convert remaining data
-            outPos = CopyAndConvertTriStripSpecificData(data, output, srcPos, outPos, remainingBytes, block.TypeName, blockRemap);
-        }
-
-        return outPos;
-    }
-
-    /// <summary>
-    ///     Copy and convert NiTriStripsData/NiTriShapeData specific fields.
-    /// </summary>
-    private int CopyAndConvertTriStripSpecificData(byte[] data, byte[] output, int srcPos, int outPos, int remainingBytes, string blockType, int[] blockRemap)
-    {
-        if (blockType == "NiTriStripsData")
-        {
-            // numTriangles (ushort BE -> LE)
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
-            srcPos += 2;
-            outPos += 2;
-
-            // numStrips (ushort BE -> LE)
-            var numStrips = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numStrips);
-            srcPos += 2;
-            outPos += 2;
-
-            // stripLengths[numStrips] (ushort array)
-            var stripLengths = new ushort[numStrips];
-            for (var i = 0; i < numStrips; i++)
-            {
-                stripLengths[i] = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
-                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), stripLengths[i]);
-                srcPos += 2;
-                outPos += 2;
-            }
-
-            // hasPoints (byte)
-            var hasPoints = data[srcPos++];
-            output[outPos++] = hasPoints;
-
-            // points[numStrips][stripLengths[i]] (ushort arrays)
-            if (hasPoints != 0)
-            {
-                for (var i = 0; i < numStrips; i++)
-                {
-                    for (var j = 0; j < stripLengths[i]; j++)
-                    {
-                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                            BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
-                        srcPos += 2;
-                        outPos += 2;
-                    }
-                }
-            }
-        }
-        else if (blockType == "NiTriShapeData")
-        {
-            // numTriangles (ushort BE -> LE)
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
-            var numTriangles = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
-            srcPos += 2;
-            outPos += 2;
-
-            // numTrianglePoints (uint BE -> LE)
-            BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos),
-                BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(srcPos)));
-            srcPos += 4;
-            outPos += 4;
-
-            // hasTriangles (byte)
-            var hasTriangles = data[srcPos++];
-            output[outPos++] = hasTriangles;
-
-            // triangles[numTriangles] (Triangle = 3 ushorts)
-            if (hasTriangles != 0)
-            {
-                for (var i = 0; i < numTriangles * 3; i++)
-                {
-                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                        BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
-                    srcPos += 2;
-                    outPos += 2;
-                }
-            }
-
-            // matchGroups handling would go here if needed
-        }
-
-        return outPos;
-    }
-
-    /// <summary>
-    ///     Write the footer with remapped block references.
-    /// </summary>
-    private int WriteConvertedFooter(byte[] data, byte[] output, int outPos, NifInfo sourceInfo, int[] blockRemap)
-    {
-        // Find footer position
-        var footerPos = sourceInfo.Blocks.Count > 0
-            ? sourceInfo.Blocks.Last().DataOffset + sourceInfo.Blocks.Last().Size
-            : data.Length;
-
-        if (footerPos >= data.Length)
-        {
-            return outPos;
-        }
-
-        // numRoots (uint BE -> LE)
-        var numRoots = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(footerPos));
-        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), numRoots);
-        footerPos += 4;
-        outPos += 4;
-
-        // root indices (int array BE -> LE with remapping)
-        for (var i = 0; i < numRoots; i++)
-        {
-            var rootIdx = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(footerPos));
-            var newRootIdx = rootIdx >= 0 && rootIdx < blockRemap.Length ? blockRemap[rootIdx] : rootIdx;
-            BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos), newRootIdx);
-            footerPos += 4;
-            outPos += 4;
-        }
-
-        return outPos;
-    }
-
-    /// <summary>
-    ///     Convert half-float (16-bit) to single-precision float (32-bit).
-    /// </summary>
-    private static float HalfToFloat(ushort half)
-    {
-        var sign = (half >> 15) & 1;
-        var exp = (half >> 10) & 0x1F;
-        var mant = half & 0x3FF;
-
-        if (exp == 0)
-        {
-            if (mant == 0)
-            {
-                // Zero
-                return sign == 1 ? -0.0f : 0.0f;
-            }
-            else
-            {
-                // Subnormal
-                var value = (float)Math.Pow(2, -14) * (mant / 1024.0f);
-                return sign == 1 ? -value : value;
-            }
-        }
-        else if (exp == 31)
-        {
-            // Infinity or NaN
-            return mant == 0
-                ? (sign == 1 ? float.NegativeInfinity : float.PositiveInfinity)
-                : float.NaN;
-        }
-        else
-        {
-            // Normalized
-            var value = (float)Math.Pow(2, exp - 15) * (1 + mant / 1024.0f);
-            return sign == 1 ? -value : value;
-        }
-    }
-
-    private static bool IsBethesdaVersion(uint binaryVersion, uint userVersion)
-    {
-        return binaryVersion == 0x14020007 && (userVersion == 11 || userVersion == 12);
-    }
 }

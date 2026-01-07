@@ -61,15 +61,15 @@ public sealed class ScdaDecompiler
             switch (opcode)
             {
                 case 0x0010: // Begin
-                    {
-                        var modeLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                        var mode = modeLen > 0 ? BinaryUtils.ReadUInt16LE(bytecode, pos + 4) : 0;
-                        var blockName = GetBlockTypeName(mode);
-                        sb.AppendLine($"{Indent()}Begin {blockName}");
-                        indent++;
-                        pos += 4 + modeLen;
-                        continue;
-                    }
+                {
+                    var modeLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
+                    var mode = modeLen > 0 ? BinaryUtils.ReadUInt16LE(bytecode, pos + 4) : 0;
+                    var blockName = GetBlockTypeName(mode);
+                    sb.AppendLine($"{Indent()}Begin {blockName}");
+                    indent++;
+                    pos += 4 + modeLen;
+                    continue;
+                }
 
                 case 0x0011: // End
                     indent = Math.Max(0, indent - 1);
@@ -78,50 +78,50 @@ public sealed class ScdaDecompiler
                     continue;
 
                 case 0x0015: // Set
-                    {
-                        var setLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                        var (varName, varBytes) = ParseVariable(bytecode, pos + 4);
-                        var exprLenOffset = pos + 4 + varBytes;
-                        var exprLen = BinaryUtils.ReadUInt16LE(bytecode, exprLenOffset);
-                        var exprStart = exprLenOffset + 2;
-                        var expr = ParseExpression(bytecode, exprStart, exprLen);
-                        sb.AppendLine($"{Indent()}set {varName} to {expr}");
-                        pos += 4 + setLen;
-                        continue;
-                    }
+                {
+                    var setLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
+                    var (varName, varBytes) = ParseVariable(bytecode, pos + 4);
+                    var exprLenOffset = pos + 4 + varBytes;
+                    var exprLen = BinaryUtils.ReadUInt16LE(bytecode, exprLenOffset);
+                    var exprStart = exprLenOffset + 2;
+                    var expr = ParseExpression(bytecode, exprStart, exprLen);
+                    sb.AppendLine($"{Indent()}set {varName} to {expr}");
+                    pos += 4 + setLen;
+                    continue;
+                }
 
                 case 0x0016: // If
-                    {
-                        var compLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                        var exprLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 6);
-                        var expr = ParseExpression(bytecode, pos + 8, exprLen);
-                        sb.AppendLine($"{Indent()}if ({expr})");
-                        indent++;
-                        pos += 4 + compLen;
-                        continue;
-                    }
+                {
+                    var compLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
+                    var exprLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 6);
+                    var expr = ParseExpression(bytecode, pos + 8, exprLen);
+                    sb.AppendLine($"{Indent()}if ({expr})");
+                    indent++;
+                    pos += 4 + compLen;
+                    continue;
+                }
 
                 case 0x0017: // Else
-                    {
-                        var elseLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                        indent = Math.Max(0, indent - 1);
-                        sb.AppendLine($"{Indent()}else");
-                        indent++;
-                        pos += 4 + elseLen;
-                        continue;
-                    }
+                {
+                    var elseLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
+                    indent = Math.Max(0, indent - 1);
+                    sb.AppendLine($"{Indent()}else");
+                    indent++;
+                    pos += 4 + elseLen;
+                    continue;
+                }
 
                 case 0x0018: // ElseIf
-                    {
-                        var elifLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                        var exprLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 6);
-                        var expr = ParseExpression(bytecode, pos + 8, exprLen);
-                        indent = Math.Max(0, indent - 1);
-                        sb.AppendLine($"{Indent()}elseif ({expr})");
-                        indent++;
-                        pos += 4 + elifLen;
-                        continue;
-                    }
+                {
+                    var elifLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
+                    var exprLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 6);
+                    var expr = ParseExpression(bytecode, pos + 8, exprLen);
+                    indent = Math.Max(0, indent - 1);
+                    sb.AppendLine($"{Indent()}elseif ({expr})");
+                    indent++;
+                    pos += 4 + elifLen;
+                    continue;
+                }
 
                 case 0x0019: // EndIf
                     indent = Math.Max(0, indent - 1);
@@ -130,12 +130,12 @@ public sealed class ScdaDecompiler
                     continue;
 
                 case 0x001C: // SetRef - sets implicit reference for next call
-                    {
-                        var refIdx = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                        _currentRef = $"SCRO#{refIdx}";
-                        pos += 4;
-                        continue;
-                    }
+                {
+                    var refIdx = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
+                    _currentRef = $"SCRO#{refIdx}";
+                    pos += 4;
+                    continue;
+                }
 
                 case 0x001D: // ScriptName
                     sb.AppendLine($"{Indent()}ScriptName");

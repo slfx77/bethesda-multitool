@@ -15,11 +15,11 @@ namespace Xbox360MemoryCarver;
 /// </summary>
 public sealed class NifFileEntry : INotifyPropertyChanged
 {
+    private SolidColorBrush _formatColor = new(Colors.Gray);
+    private string _formatDescription = "";
     private bool _isSelected = true;
     private string _status = "Pending";
-    private string _formatDescription = "";
     private SolidColorBrush _statusColor = new(Colors.Gray);
-    private SolidColorBrush _formatColor = new(Colors.Gray);
 
     public required string FullPath { get; init; }
     public required string RelativePath { get; init; }
@@ -110,8 +110,8 @@ public sealed class NifFileEntry : INotifyPropertyChanged
 /// </summary>
 public sealed partial class NifConverterTab : UserControl, IDisposable
 {
-    private readonly ObservableCollection<NifFileEntry> _nifFiles = [];
     private readonly NifConverter _converter = new(verbose: false);
+    private readonly ObservableCollection<NifFileEntry> _nifFiles = [];
     private CancellationTokenSource? _cts;
 
     public NifConverterTab()
@@ -260,7 +260,8 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
 
         UpdateFileCount();
         UpdateButtonStates();
-        StatusTextBlock.Text = $"Found {_nifFiles.Count} NIF files. {_nifFiles.Count(f => f.FormatDescription == "Xbox 360 (BE)")} require conversion.";
+        StatusTextBlock.Text =
+            $"Found {_nifFiles.Count} NIF files. {_nifFiles.Count(f => f.FormatDescription == "Xbox 360 (BE)")} require conversion.";
     }
 
     private void SelectAllButton_Click(object sender, RoutedEventArgs e)
@@ -269,6 +270,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         {
             file.IsSelected = true;
         }
+
         UpdateFileCount();
         UpdateButtonStates();
     }
@@ -279,6 +281,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         {
             file.IsSelected = false;
         }
+
         UpdateFileCount();
         UpdateButtonStates();
     }

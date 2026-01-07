@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-.NET 10.0 application for Xbox 360 memory dump analysis, file carving, and DDX texture conversion. Features both a **WinUI 3 GUI** (Windows only) and a **cross-platform CLI** for batch processing.
+.NET 10.0 application for Xbox 360 memory dump analysis, file carving, and format conversion. Features both a **WinUI 3 GUI** (Windows only) and a **cross-platform CLI** for batch processing.
 
 ## Architecture
 
@@ -22,6 +22,7 @@ The project uses multi-targeting to produce both GUI and CLI builds from a singl
 - `MinidumpParser` - Parses Xbox 360 minidump structures for module extraction
 - `DumpAnalyzer` - Comprehensive dump analysis with build detection and ESM record extraction
 - `ScriptExtractor` - Extracts and groups compiled scripts (SCDA) by quest name
+- `NifEndianConverter` - Converts Xbox 360 NIF models (big-endian) to PC format (little-endian)
 - `HexViewerControl` / `HexMinimapControl` - Interactive hex viewing with VS Code-style minimap
 
 ### Submodules
@@ -55,7 +56,7 @@ Located in `Fallout New Vegas (July 21, 2010)/FalloutNV/`:
 ## CLI Mode (Cross-platform)
 
 ```bash
-# Linux/macOS - Carve files
+# Linux/macOS - Carve files from memory dump
 ./Xbox360MemoryCarver dump.dmp -o output_dir -v
 
 # Windows (force CLI mode)
@@ -70,6 +71,11 @@ Xbox360MemoryCarver analyze dump.dmp -f md -o report.md  # Save report
 Xbox360MemoryCarver modules dump.dmp              # Text output
 Xbox360MemoryCarver modules dump.dmp -f md        # Markdown table
 Xbox360MemoryCarver modules dump.dmp -f csv       # CSV export
+
+# Convert Xbox 360 NIF models to PC format
+Xbox360MemoryCarver convert-nif model.nif -o output_dir
+Xbox360MemoryCarver convert-nif meshes_folder/ -r -v    # Recursive, verbose
+Xbox360MemoryCarver convert-nif meshes/ -o converted/ --overwrite
 ```
 
 ## Build Commands
@@ -96,6 +102,7 @@ dotnet publish -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-conta
 ### Xbox 360 Specifics
 
 - **DDX Formats**: 3XDO (standard compressed), 3XDR (alternate tiling - experimental)
+- **NIF Models**: Xbox 360 NIFs use big-endian byte order; conversion strips platform-specific blocks
 - **Architecture**: PowerPC (processor type 0x3 in minidumps)
 - **Texture Tiling**: Morton-order (Z-order) swizzling on Xbox 360 GPU
 - **Compression**: XMemCompress/XMemDecompress via XnaNative.dll or xcompress64.dll
@@ -110,10 +117,19 @@ dotnet publish -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-conta
 
 - **Textures**: DDX (3XDO/3XDR), DDS, PNG
 - **Audio**: XMA (Xbox Media Audio), LIP (lip sync)
-- **Models**: NIF (NetImmerse/Gamebryo)
+- **Models**: NIF (NetImmerse/Gamebryo) - with BE→LE conversion
 - **Executables**: XEX (Xbox Executable)
-- **Scripts**: Uncompiled ObScript (`scn`/`ScriptName` format) - debug builds; Compiled bytecode (SCDA) - release builds via ScriptDisassembler tool
+- **Scripts**: Uncompiled ObScript (`scn`/`ScriptName` format) - debug builds; Compiled bytecode (SCDA) - release builds
 - **Data**: ESP/ESM (Bethesda plugins), XUI (Xbox UI), XDBF
+
+### NIF Conversion Notes
+
+Xbox 360 NIF files use big-endian byte order and may contain platform-specific blocks:
+
+- **BSPackedAdditionalGeometryData** - Xbox 360-specific geometry blocks (stripped during conversion)
+- Header fields are converted to little-endian
+- Block data byte order is swapped where possible
+- For best results, use [Noesis](https://richwhitehouse.com/index.php?content=inc_projects.php&showproject=91) or [NifSkope](https://github.com/niftools/nifskope) for further processing
 
 ## Code Style & Quality
 
@@ -151,15 +167,21 @@ dotnet publish -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-conta
 | Microsoft.WindowsAppSDK | 1.6.x       | WinUI 3 framework (Windows only)         |
 | CommunityToolkit.WinUI  | 8.x         | Additional WinUI controls (Windows only) |
 | System.CommandLine      | 2.0.0-beta4 | CLI argument parsing                     |
+| Spectre.Console         | 0.49.x      | Rich CLI output and progress bars        |
 
 ## Project Structure
 
 ```
 src/Xbox360MemoryCarver/
+├── CLI/                         # Command-line interface commands
+│   ├── AnalyzeCommand.cs        # Dump analysis command
+│   ├── CarveCommand.cs          # File extraction command
+│   ├── ConvertNifCommand.cs     # NIF conversion command
+│   └── ModulesCommand.cs        # Module listing command
 ├── Core/                        # Cross-platform carving logic
 │   ├── Analysis/                # DumpAnalyzer - build detection, ESM extraction
 │   ├── Carving/                 # MemoryCarver, CarveManifest
-│   ├── Converters/              # DDX subprocess converter
+│   ├── Converters/              # DDX subprocess converter, NIF endian converter
 │   ├── Extractors/              # ScriptExtractor - SCDA grouping by quest
 │   ├── Formats/                 # Self-contained format modules
 │   │   ├── FormatRegistry.cs    # Auto-discovers format modules
@@ -169,7 +191,7 @@ src/Xbox360MemoryCarver/
 │   │   ├── EsmRecord/           # ESM record scanning
 │   │   ├── Esp/EspFormat.cs     # ESP/ESM plugin format
 │   │   ├── Lip/LipFormat.cs     # Lip sync format
-│   │   ├── Nif/NifFormat.cs     # NetImmerse model format
+│   │   ├── Nif/NifFormat.cs     # NetImmerse model format (w/ conversion)
 │   │   ├── Png/PngFormat.cs     # PNG image format
 │   │   ├── Scda/ScdaFormat.cs   # Compiled script bytecode
 │   │   ├── Script/ScriptFormat.cs # Uncompiled script source
@@ -179,11 +201,19 @@ src/Xbox360MemoryCarver/
 │   │   └── Xui/XuiFormat.cs     # Xbox UI format
 │   ├── Minidump/                # MinidumpParser, MinidumpInfo
 │   └── Utils/                   # BinaryUtils, SignatureBoundaryScanner
+├── App/                         # WinUI 3 GUI (Windows only)
 ├── SignatureMatcher.cs          # Aho-Corasick multi-pattern search
-├── *.xaml / *.xaml.cs           # WinUI 3 GUI (Windows only)
 ├── Program.cs                   # Entry point (CLI/GUI switch)
 ├── GuiEntryPoint.cs             # GUI bootstrap (Windows only)
 └── Xbox360MemoryCarver.csproj   # Multi-target project file
+
+tests/Xbox360MemoryCarver.Tests/
+├── Core/
+│   ├── Converters/              # NifEndianConverterTests
+│   ├── Formats/                 # NifFormatTests
+│   ├── Parsers/                 # Parser tests (DDS, DDX, PNG, XMA, etc.)
+│   └── Utils/                   # BinaryUtilsTests
+└── Xbox360MemoryCarver.Tests.csproj
 
 src/DDXConv/                     # DDX conversion submodule
 ```
@@ -234,4 +264,3 @@ The Windows build defaults to GUI mode. Force CLI with `--no-gui`:
 
 ```bash
 Xbox360MemoryCarver.exe --no-gui dump.dmp -o output -v
-```

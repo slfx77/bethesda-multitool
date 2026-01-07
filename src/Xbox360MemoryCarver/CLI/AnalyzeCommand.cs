@@ -70,7 +70,7 @@ public static class AnalyzeCommand
                     task.Description = $"[green]{p.Phase}[/][grey]{filesInfo}[/]";
                 });
 
-                result = await analyzer.AnalyzeAsync(input, progress, true);
+                result = await analyzer.AnalyzeAsync(input, progress);
                 task.Value = 100;
                 task.Description = $"[green]Complete[/] [grey]({result.CarvedFiles.Count} files)[/]";
             });

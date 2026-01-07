@@ -16,7 +16,8 @@
     </Grid.RowDefinitions>
 
     <!-- Header with description -->
-    <StackPanel Grid.Row="0" Margin="0,0,0,16">
+    <StackPanel Grid.Row="0"
+                Margin="0,0,0,16">
       <TextBlock
         Style="{StaticResource SubtitleTextBlockStyle}"
         Text="Xbox 360 NIF Converter" />
@@ -84,7 +85,8 @@
     </Grid>
 
     <!-- Progress Section -->
-    <Grid Grid.Row="2" Margin="0,0,0,8">
+    <Grid Grid.Row="2"
+          Margin="0,0,0,8">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
@@ -115,12 +117,14 @@
           <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,8">
+        <Grid Grid.Row="0"
+              Margin="0,0,0,8">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <StackPanel Orientation="Horizontal" Spacing="8">
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
             <TextBlock
               Style="{StaticResource SubtitleTextBlockStyle}"
               Text="NIF Files" />
@@ -144,7 +148,8 @@
         </Grid>
 
         <!-- Column headers -->
-        <Grid Grid.Row="1" Margin="0,0,0,4">
+        <Grid Grid.Row="1"
+              Margin="0,0,0,4">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="40" />
             <ColumnDefinition Width="*" />
@@ -152,11 +157,21 @@
             <ColumnDefinition Width="120" />
             <ColumnDefinition Width="120" />
           </Grid.ColumnDefinitions>
-          <TextBlock Grid.Column="0" FontWeight="SemiBold" Text="" />
-          <TextBlock Grid.Column="1" FontWeight="SemiBold" Text="File Path" />
-          <TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Size" />
-          <TextBlock Grid.Column="3" FontWeight="SemiBold" Text="Format" />
-          <TextBlock Grid.Column="4" FontWeight="SemiBold" Text="Status" />
+          <TextBlock Grid.Column="0"
+                     FontWeight="SemiBold"
+                     Text="" />
+          <TextBlock Grid.Column="1"
+                     FontWeight="SemiBold"
+                     Text="File Path" />
+          <TextBlock Grid.Column="2"
+                     FontWeight="SemiBold"
+                     Text="Size" />
+          <TextBlock Grid.Column="3"
+                     FontWeight="SemiBold"
+                     Text="Format" />
+          <TextBlock Grid.Column="4"
+                     FontWeight="SemiBold"
+                     Text="Status" />
         </Grid>
 
         <!-- Files ListView -->

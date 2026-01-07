@@ -29,7 +29,6 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 ///     - Groups: uint[]
 ///     - [Blocks data...]
 ///     - Footer
-///     
 ///     XBOX 360 NIF LIMITATIONS:
 ///     - Xbox 360 NIFs use big-endian byte order for most data
 ///     - Header fields (version, userVersion, numBlocks, bsVersion) are always little-endian
@@ -40,6 +39,24 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 /// </remarks>
 public sealed partial class NifFormat : FileFormatBase, IFileConverter
 {
+    // Block type names that indicate geometry meshes
+    private static readonly HashSet<string> GeometryBlockTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "BSFadeNode", "NiNode", "NiTriStrips", "NiTriStripsData", "NiTriShape", "NiTriShapeData",
+        "bhkRigidBody", "bhkCollisionObject", "bhkCompressedMeshShape", "bhkMoppBvTreeShape",
+        "BSShaderPPLightingProperty", "BSShaderTextureSet", "NiMaterialProperty",
+        "BSPackedAdditionalGeometryData", "NiSkinInstance", "NiSkinData", "NiSkinPartition"
+    };
+
+    // Block type names that indicate animation controllers
+    private static readonly HashSet<string> AnimationBlockTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "NiControllerSequence", "NiTransformInterpolator", "NiTransformData",
+        "NiBSplineCompTransformInterpolator", "NiBSplineData", "NiBSplineBasisData",
+        "NiTextKeyExtraData", "NiStringPalette", "NiControllerManager",
+        "NiMultiTargetTransformController", "NiBlendTransformInterpolator"
+    };
+
     public override string FormatId => "nif";
     public override string DisplayName => "NIF";
     public override string Extension => ".nif";
@@ -62,24 +79,6 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     [GeneratedRegex(@"^\d{1,2}\.\d{1,2}\.\d{1,2}\.\d{1,2}$")]
     private static partial Regex VersionPattern();
 
-    // Block type names that indicate geometry meshes
-    private static readonly HashSet<string> GeometryBlockTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "BSFadeNode", "NiNode", "NiTriStrips", "NiTriStripsData", "NiTriShape", "NiTriShapeData",
-        "bhkRigidBody", "bhkCollisionObject", "bhkCompressedMeshShape", "bhkMoppBvTreeShape",
-        "BSShaderPPLightingProperty", "BSShaderTextureSet", "NiMaterialProperty",
-        "BSPackedAdditionalGeometryData", "NiSkinInstance", "NiSkinData", "NiSkinPartition"
-    };
-
-    // Block type names that indicate animation controllers
-    private static readonly HashSet<string> AnimationBlockTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "NiControllerSequence", "NiTransformInterpolator", "NiTransformData",
-        "NiBSplineCompTransformInterpolator", "NiBSplineData", "NiBSplineBasisData",
-        "NiTextKeyExtraData", "NiStringPalette", "NiControllerManager",
-        "NiMultiTargetTransformController", "NiBlendTransformInterpolator"
-    };
-
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         if (data.Length < offset + 64) return null;
@@ -100,13 +99,11 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             // Find the newline that terminates the version string
             var newlinePos = -1;
             for (var i = versionOffset; i < Math.Min(versionOffset + 20, data.Length); i++)
-            {
                 if (data[i] == 0x0A)
                 {
                     newlinePos = i;
                     break;
                 }
-            }
 
             if (newlinePos == -1 || newlinePos <= versionOffset) return null;
 
@@ -175,11 +172,6 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     }
 
     /// <summary>
-    ///     Result from parsing NIF header.
-    /// </summary>
-    private readonly record struct NifHeaderInfo(int Size, bool IsBigEndian, List<string> BlockTypes);
-
-    /// <summary>
     ///     Parse the NIF header to calculate accurate file size and extract block type names.
     ///     Returns NifHeaderInfo with size=-1 if the file is not a valid NIF.
     /// </summary>
@@ -202,10 +194,7 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             // Validate binary version - should be a known NIF version
             // Common versions: 0x14020007 (20.2.0.7), 0x14000005 (20.0.0.5), 0x14000004 (20.0.0.4)
             // Reject if it looks like garbage (e.g., UTF-16 text with alternating nulls)
-            if (binaryVersion < 0x04000000 || binaryVersion > 0x20000000)
-            {
-                return new NifHeaderInfo(-1, false, []);
-            }
+            if (binaryVersion < 0x04000000 || binaryVersion > 0x20000000) return new NifHeaderInfo(-1, false, []);
 
             // Endian type (1 byte) - present in version >= 20.0.0.3
             // 0 = big-endian (Xbox 360), 1 = little-endian (PC)
@@ -215,10 +204,7 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             var endianByte = data[pos];
 
             // Validate endian byte - must be 0 or 1
-            if (endianByte > 1)
-            {
-                return new NifHeaderInfo(-1, false, []);
-            }
+            if (endianByte > 1) return new NifHeaderInfo(-1, false, []);
             pos += 1;
 
             // Endian byte determines byte order for post-header data only
@@ -229,15 +215,14 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             pos += 4;
 
             // Num blocks (4 bytes) - ALWAYS little-endian in Bethesda NIFs
-            if (pos + 4 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            if (pos + 4 > data.Length)
+                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
             var numBlocks = BinaryUtils.ReadUInt32LE(data, pos);
             pos += 4;
 
             // Sanity check: numBlocks should be reasonable (< 100000)
             if (numBlocks == 0 || numBlocks > 100000)
-            {
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-            }
 
             // Check if this is a Bethesda file (user version indicates Bethesda stream header)
             // Bethesda versions: user version is typically 11, 12, or similar
@@ -254,38 +239,40 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
                 // - Export Script: ExportString
                 // - Max Filepath: ExportString (if BS Version >= 103)
 
-                if (pos + 4 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+                if (pos + 4 > data.Length)
+                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
                 var bsVersion = BinaryUtils.ReadUInt32LE(data, pos); // Always little-endian!
                 pos += 4;
 
                 // Skip Author string (ExportString: 1 byte length + chars including null)
-                if (pos + 1 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+                if (pos + 1 > data.Length)
+                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
                 var authorLen = data[pos];
                 pos += 1 + authorLen;
 
                 // If bsVersion > 130, there's an unknown int
-                if (bsVersion > 130)
-                {
-                    pos += 4;
-                }
+                if (bsVersion > 130) pos += 4;
 
                 // Skip Process Script (if BS Version < 131)
                 if (bsVersion < 131)
                 {
-                    if (pos + 1 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+                    if (pos + 1 > data.Length)
+                        return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
                     var processScriptLen = data[pos];
                     pos += 1 + processScriptLen;
                 }
 
                 // Skip Export Script
-                if (pos + 1 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+                if (pos + 1 > data.Length)
+                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
                 var exportScriptLen = data[pos];
                 pos += 1 + exportScriptLen;
 
                 // Skip Max Filepath (if BS Version >= 103)
                 if (bsVersion >= 103)
                 {
-                    if (pos + 1 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+                    if (pos + 1 > data.Length)
+                        return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
                     var maxFilepathLen = data[pos];
                     pos += 1 + maxFilepathLen;
                 }
@@ -307,15 +294,13 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
                         ? BinaryUtils.ReadUInt16BE(data, pos + 1)
                         : BinaryUtils.ReadUInt16LE(data, pos + 1);
 
-                    if (testNumBlockTypes2 > 0 && testNumBlockTypes2 < 500)
-                    {
-                        pos += 1; // Skip the padding byte
-                    }
+                    if (testNumBlockTypes2 > 0 && testNumBlockTypes2 < 500) pos += 1; // Skip the padding byte
                 }
             }
 
             // Num Block Types (2 bytes)
-            if (pos + 2 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            if (pos + 2 > data.Length)
+                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
             var numBlockTypes = isBigEndian
                 ? BinaryUtils.ReadUInt16BE(data, pos)
                 : BinaryUtils.ReadUInt16LE(data, pos);
@@ -323,15 +308,14 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
             // Sanity check
             if (numBlockTypes == 0 || numBlockTypes > 1000)
-            {
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-            }
 
             // Read Block Types (SizedString array) and collect their names
             // NIF SizedString: uint32 length + chars (no null terminator in string data)
             for (var i = 0; i < numBlockTypes; i++)
             {
-                if (pos + 4 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+                if (pos + 4 > data.Length)
+                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
                 var strLen = isBigEndian
                     ? BinaryUtils.ReadUInt32BE(data, pos)
                     : BinaryUtils.ReadUInt32LE(data, pos);
@@ -357,7 +341,8 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
             // Block Size array (uint[numBlocks]) - this is what we need!
             // Present in version 20.2.0.5+
-            if (pos + numBlocks * 4 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            if (pos + numBlocks * 4 > data.Length)
+                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
 
             long totalBlockSize = 0;
             for (var i = 0; i < numBlocks; i++)
@@ -369,15 +354,14 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
                 // Sanity check individual block size
                 if (blockSize > 50 * 1024 * 1024) // 50 MB max per block
-                {
                     return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-                }
 
                 totalBlockSize += blockSize;
             }
 
             // Skip Num Strings, Max String Length, Strings array
-            if (pos + 8 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            if (pos + 8 > data.Length)
+                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
 
             var numStrings = isBigEndian
                 ? BinaryUtils.ReadUInt32BE(data, pos)
@@ -461,6 +445,11 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             "Gamebryo File Format"u8);
     }
 
+    /// <summary>
+    ///     Result from parsing NIF header.
+    /// </summary>
+    private readonly record struct NifHeaderInfo(int Size, bool IsBigEndian, List<string> BlockTypes);
+
     #region IFileConverter Implementation
 
     /// <inheritdoc />
@@ -490,9 +479,7 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     {
         // Only convert big-endian NIF files
         if (metadata?.TryGetValue("bigEndian", out var beValue) == true && beValue is bool isBigEndian)
-        {
             return isBigEndian;
-        }
 
         return false;
     }

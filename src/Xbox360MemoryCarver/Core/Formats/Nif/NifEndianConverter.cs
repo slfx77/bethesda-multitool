@@ -10,29 +10,27 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 /// <remarks>
 ///     Xbox 360 NIFs have a hybrid endianness:
 ///     - Fields BEFORE the endian byte (binary version, user version, numBlocks, BS Version) are ALWAYS little-endian
-///     - Fields AFTER the endian byte follow its setting: NumBlockTypes, Block Types, Block Sizes, strings, block data, footer
-///     
+///     - Fields AFTER the endian byte follow its setting: NumBlockTypes, Block Types, Block Sizes, strings, block data,
+///     footer
 ///     This converter performs full endian conversion using the nif.xml schema from NifSkope:
 ///     1. Header fields after endian byte (NumBlockTypes, Block Types, Block Type Index, Block Sizes, Strings, Num Groups)
 ///     2. Block data - parsed field-by-field using type definitions from nif.xml
 ///     3. Footer (Num Roots, Root indices)
-///     
 ///     Xbox 360-specific blocks like BSPackedAdditionalGeometryData are stripped (references nulled)
 ///     because NifSkope doesn't support them.
 /// </remarks>
 public sealed class NifEndianConverter
 {
+    // Set of block indices that are BSPackedAdditionalGeometryData (to be stripped)
+    private readonly HashSet<int> _blocksToStrip = [];
     private readonly NifXmlSchema _schema;
     private readonly bool _verbose;
 
     // Parsed header info needed for block conversion
     private uint _binaryVersion;
-    private uint _userVersion;
-    private uint _bsVersion;
     private string[] _blockTypeNames = [];
-    
-    // Set of block indices that are BSPackedAdditionalGeometryData (to be stripped)
-    private HashSet<int> _blocksToStrip = [];
+    private uint _bsVersion;
+    private uint _userVersion;
 
     public NifEndianConverter(bool verbose = false)
     {
@@ -47,23 +45,14 @@ public sealed class NifEndianConverter
     /// </summary>
     public byte[]? ConvertToLittleEndian(byte[] data)
     {
-        if (data.Length < 50)
-        {
-            return null;
-        }
+        if (data.Length < 50) return null;
 
         // Find header string end (newline)
         var newlinePos = FindNewline(data, 0, Math.Min(60, data.Length));
-        if (newlinePos == -1)
-        {
-            return null;
-        }
+        if (newlinePos == -1) return null;
 
         var pos = newlinePos + 1;
-        if (pos + 9 > data.Length)
-        {
-            return null;
-        }
+        if (pos + 9 > data.Length) return null;
 
         // Read binary version (always LE)
         _binaryVersion = BinaryUtils.ReadUInt32LE(data, pos);
@@ -73,16 +62,10 @@ public sealed class NifEndianConverter
         var endianByte = data[endianBytePos];
 
         // If already little-endian, no conversion needed
-        if (endianByte == 1)
-        {
-            return null;
-        }
+        if (endianByte == 1) return null;
 
         // If not big-endian (0), something is wrong
-        if (endianByte != 0)
-        {
-            return null;
-        }
+        if (endianByte != 0) return null;
 
         try
         {
@@ -95,10 +78,7 @@ public sealed class NifEndianConverter
             // Num blocks (already LE)
             var numBlocks = BinaryUtils.ReadUInt32LE(data, numBlocksPos);
 
-            if (numBlocks == 0 || numBlocks > 100000)
-            {
-                return null;
-            }
+            if (numBlocks == 0 || numBlocks > 100000) return null;
 
             pos = numBlocksPos + 4;
 
@@ -131,10 +111,7 @@ public sealed class NifEndianConverter
             var numBlockTypesPos = pos;
             pos += 2;
 
-            if (numBlockTypes == 0 || numBlockTypes > 1000)
-            {
-                return null;
-            }
+            if (numBlockTypes == 0 || numBlockTypes > 1000) return null;
 
             // Block Types (SizedString array) - string lengths are BE
             _blockTypeNames = new string[numBlockTypes];
@@ -150,8 +127,6 @@ public sealed class NifEndianConverter
                 _blockTypeNames[i] = Encoding.ASCII.GetString(data, pos, (int)strLen);
                 pos += (int)strLen;
             }
-
-            var blockTypeIndicesPos = pos;
 
             // Block Type Index (ushort[numBlocks]) - BE
             var blockTypeIndices = new ushort[numBlocks];
@@ -179,7 +154,7 @@ public sealed class NifEndianConverter
             _blocksToStrip.Clear();
             var blockRemap = new int[numBlocks]; // oldIndex -> newIndex (-1 if removed)
             var newBlockCount = 0;
-            
+
             for (var i = 0; i < numBlocks; i++)
             {
                 var typeIdx = blockTypeIndices[i];
@@ -187,10 +162,7 @@ public sealed class NifEndianConverter
                 {
                     _blocksToStrip.Add(i);
                     blockRemap[i] = -1;
-                    if (_verbose)
-                    {
-                        Console.WriteLine($"Block {i} is BSPackedAdditionalGeometryData - will be removed");
-                    }
+                    if (_verbose) Console.WriteLine($"Block {i} is BSPackedAdditionalGeometryData - will be removed");
                 }
                 else
                 {
@@ -210,7 +182,7 @@ public sealed class NifEndianConverter
 
             // Create output buffer with reduced size
             var output = new byte[data.Length - removedSize];
-            
+
             // Copy header up to and including endian byte position
             Array.Copy(data, 0, output, 0, endianBytePos + 1);
             output[endianBytePos] = 1; // Set to little-endian
@@ -263,23 +235,19 @@ public sealed class NifEndianConverter
 
             // Write new block type indices (only non-removed blocks)
             for (var i = 0; i < numBlocks; i++)
-            {
                 if (!_blocksToStrip.Contains(i))
                 {
                     WriteUInt16LE(output, outPos, blockTypeIndices[i]);
                     outPos += 2;
                 }
-            }
 
             // Write new block sizes (only non-removed blocks)
             for (var i = 0; i < numBlocks; i++)
-            {
                 if (!_blocksToStrip.Contains(i))
                 {
                     WriteUInt32LE(output, outPos, blockSizes[i]);
                     outPos += 4;
                 }
-            }
 
             // Find strings section start
             pos = blockSizesPos + (int)(numBlocks * 4);
@@ -305,7 +273,7 @@ public sealed class NifEndianConverter
                 pos += 4;
 
                 if (strLen > 4096) break;
-                
+
                 Array.Copy(data, pos, output, outPos, (int)strLen);
                 outPos += (int)strLen;
                 pos += (int)strLen;
@@ -351,12 +319,12 @@ public sealed class NifEndianConverter
                 }
 
                 if (_verbose)
-                {
-                    Console.WriteLine($"Converting block {blockIdx} -> {blockRemap[blockIdx]}: {blockTypeName}, size={blockSize}");
-                }
+                    Console.WriteLine(
+                        $"Converting block {blockIdx} -> {blockRemap[blockIdx]}: {blockTypeName}, size={blockSize}");
 
                 // Convert this block, passing the remap for reference adjustment
-                var bytesWritten = ConvertBlockWithRemap(data, output, pos, outPos, blockSize, blockTypeName, blockRemap);
+                var bytesWritten =
+                    ConvertBlockWithRemap(data, output, pos, outPos, blockSize, blockTypeName, blockRemap);
 
                 pos += blockSize;
                 outPos += bytesWritten;
@@ -381,10 +349,7 @@ public sealed class NifEndianConverter
             }
 
             // Trim output if we didn't use all of it
-            if (outPos < output.Length)
-            {
-                Array.Resize(ref output, outPos);
-            }
+            if (outPos < output.Length) Array.Resize(ref output, outPos);
 
             return output;
         }
@@ -400,11 +365,9 @@ public sealed class NifEndianConverter
     ///     Converts a single block's fields from BE to LE, remapping block references.
     ///     Returns the number of bytes written.
     /// </summary>
-    private int ConvertBlockWithRemap(byte[] input, byte[] output, int inPos, int outPos, int blockSize, string blockTypeName, int[] blockRemap)
+    private int ConvertBlockWithRemap(byte[] input, byte[] output, int inPos, int outPos, int blockSize,
+        string blockTypeName, int[] blockRemap)
     {
-        var blockEnd = inPos + blockSize;
-        var outStart = outPos;
-
         // First, copy the block data
         Array.Copy(input, inPos, output, outPos, blockSize);
 
@@ -503,10 +466,7 @@ public sealed class NifEndianConverter
             var strLen = BinaryUtils.ReadUInt32LE(buf, pos);
             pos += 4;
 
-            if (strLen > 0 && pos + strLen <= end)
-            {
-                pos += (int)strLen;
-            }
+            if (strLen > 0 && pos + strLen <= end) pos += (int)strLen;
         }
     }
 
@@ -529,7 +489,8 @@ public sealed class NifEndianConverter
 
         if (strLen > 0 && pos + strLen <= end)
         {
-            pos += (int)strLen;
+            // Skip the string data - already in correct byte order
+            _ = pos + (int)strLen;
         }
     }
 
@@ -579,10 +540,7 @@ public sealed class NifEndianConverter
             var strLen = BinaryUtils.ReadUInt32LE(buf, pos);
             pos += 4;
 
-            if (strLen > 0 && pos + strLen <= end)
-            {
-                pos += (int)strLen;
-            }
+            if (strLen > 0 && pos + strLen <= end) pos += (int)strLen;
         }
     }
 
@@ -610,10 +568,7 @@ public sealed class NifEndianConverter
             var strLen = BinaryUtils.ReadUInt32LE(buf, pos);
             pos += 4;
 
-            if (strLen > 0 && pos + strLen <= end)
-            {
-                pos += (int)strLen;
-            }
+            if (strLen > 0 && pos + strLen <= end) pos += (int)strLen;
         }
         else
         {
@@ -661,14 +616,15 @@ public sealed class NifEndianConverter
 
         // Vector3[numVertices] vertices
         if (hasVertices == 1)
-        {
             for (var i = 0; i < numVertices && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
 
         // UV sets count: bsDataFlags & 1 (0 or 1 for FO3/FNV)
         var numUvSets = bsDataFlags & 1;
@@ -680,38 +636,50 @@ public sealed class NifEndianConverter
 
         // Vector3[numVertices] normals
         if (hasNormals == 1)
-        {
             for (var i = 0; i < numVertices && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
 
         // Tangents and Bitangents (if hasNormals && bsDataFlags & 0x1000)
         if (hasNormals == 1 && (bsDataFlags & 0x1000) != 0)
         {
             for (var i = 0; i < numVertices && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
+
             for (var i = 0; i < numVertices && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
         }
 
         // BoundingSphere center (Vector3) + radius (float)
         if (pos + 16 > end) return;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
 
         // byte hasVertexColors
         if (pos >= end) return;
@@ -720,21 +688,25 @@ public sealed class NifEndianConverter
 
         // Color4[numVertices] vertexColors
         if (hasVertexColors == 1)
-        {
             for (var i = 0; i < numVertices && pos + 16 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
 
         // TexCoord[numVertices * numUvSets] uvSets
         for (var i = 0; i < numVertices * numUvSets && pos + 8 <= end; i++)
         {
-            SwapUInt32InPlace(buf, pos); pos += 4;
-            SwapUInt32InPlace(buf, pos); pos += 4;
+            SwapUInt32InPlace(buf, pos);
+            pos += 4;
+            SwapUInt32InPlace(buf, pos);
+            pos += 4;
         }
 
         // ushort consistencyFlags
@@ -751,6 +723,7 @@ public sealed class NifEndianConverter
             var newRef = blockRemap[additionalData];
             WriteUInt32LE(buf, pos, unchecked((uint)newRef));
         }
+
         pos += 4;
 
         // NiTriBasedGeomData: ushort numTriangles
@@ -778,9 +751,8 @@ public sealed class NifEndianConverter
         pos += 1;
 
         // Read stripLengths again to get total points
-        var stripLengthsStart = pos - 1 - (numStrips * 2);
+        var stripLengthsStart = pos - 1 - numStrips * 2;
         if (hasPoints == 1)
-        {
             for (var s = 0; s < numStrips && stripLengthsStart + s * 2 + 2 <= end; s++)
             {
                 var stripLen = BinaryUtils.ReadUInt16LE(buf, stripLengthsStart + s * 2);
@@ -790,7 +762,6 @@ public sealed class NifEndianConverter
                     pos += 2;
                 }
             }
-        }
     }
 
     /// <summary>
@@ -820,14 +791,15 @@ public sealed class NifEndianConverter
         pos += 1;
 
         if (hasVertices == 1)
-        {
             for (var i = 0; i < numVertices && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
 
         var numUvSets = bsDataFlags & 1;
 
@@ -836,56 +808,72 @@ public sealed class NifEndianConverter
         pos += 1;
 
         if (hasNormals == 1)
-        {
             for (var i = 0; i < numVertices && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
 
         if (hasNormals == 1 && (bsDataFlags & 0x1000) != 0)
         {
             for (var i = 0; i < numVertices && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
+
             for (var i = 0; i < numVertices && pos + 12 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
         }
 
         if (pos + 16 > end) return;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
-        SwapUInt32InPlace(buf, pos); pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
 
         if (pos >= end) return;
         var hasVertexColors = buf[pos];
         pos += 1;
 
         if (hasVertexColors == 1)
-        {
             for (var i = 0; i < numVertices && pos + 16 <= end; i++)
             {
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
-                SwapUInt32InPlace(buf, pos); pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
+                SwapUInt32InPlace(buf, pos);
+                pos += 4;
             }
-        }
 
         for (var i = 0; i < numVertices * numUvSets && pos + 8 <= end; i++)
         {
-            SwapUInt32InPlace(buf, pos); pos += 4;
-            SwapUInt32InPlace(buf, pos); pos += 4;
+            SwapUInt32InPlace(buf, pos);
+            pos += 4;
+            SwapUInt32InPlace(buf, pos);
+            pos += 4;
         }
 
         if (pos + 2 > end) return;
@@ -901,6 +889,7 @@ public sealed class NifEndianConverter
             var newRef = blockRemap[additionalData];
             WriteUInt32LE(buf, pos, unchecked((uint)newRef));
         }
+
         pos += 4;
 
         // NiTriBasedGeomData: ushort numTriangles
@@ -916,14 +905,15 @@ public sealed class NifEndianConverter
 
         // Triangle[numTriangles] triangles
         if (hasTriangles == 1)
-        {
             for (var i = 0; i < numTriangles && pos + 6 <= end; i++)
             {
-                SwapUInt16InPlace(buf, pos); pos += 2;
-                SwapUInt16InPlace(buf, pos); pos += 2;
-                SwapUInt16InPlace(buf, pos); pos += 2;
+                SwapUInt16InPlace(buf, pos);
+                pos += 2;
+                SwapUInt16InPlace(buf, pos);
+                pos += 2;
+                SwapUInt16InPlace(buf, pos);
+                pos += 2;
             }
-        }
 
         // ushort[numTriangles] matchGroups - bulk swap remaining
         while (pos + 4 <= end)
@@ -936,7 +926,8 @@ public sealed class NifEndianConverter
     /// <summary>
     ///     Converts a single field value from BE to LE.
     /// </summary>
-    private int ConvertField(byte[] input, byte[] output, int pos, string typeName, ConversionContext context, int maxPos)
+    private int ConvertField(byte[] input, byte[] output, int pos, string typeName, ConversionContext context,
+        int maxPos)
     {
         if (pos >= maxPos) return pos;
 
@@ -944,19 +935,16 @@ public sealed class NifEndianConverter
 
         // Handle compound types recursively
         if (typeSize == 0)
-        {
             // Check if it's a known compound type
             return ConvertCompoundType(input, output, pos, typeName, context, maxPos);
-        }
 
         // Simple type - swap bytes based on size
         // Also check against input.Length to avoid array bounds issues
         if (pos + typeSize > maxPos || pos + typeSize > input.Length)
         {
             if (_verbose)
-            {
-                Console.WriteLine($"  ConvertField: pos={pos}, typeSize={typeSize}, maxPos={maxPos}, input.Length={input.Length} - SKIPPING");
-            }
+                Console.WriteLine(
+                    $"  ConvertField: pos={pos}, typeSize={typeSize}, maxPos={maxPos}, input.Length={input.Length} - SKIPPING");
             return maxPos;
         }
 
@@ -977,7 +965,7 @@ public sealed class NifEndianConverter
                 WriteUInt64LE(output, pos, val64);
                 break;
 
-            // 1-byte values don't need swapping
+                // 1-byte values don't need swapping
         }
 
         return pos + typeSize;
@@ -986,7 +974,8 @@ public sealed class NifEndianConverter
     /// <summary>
     ///     Converts a compound type (struct) field by field.
     /// </summary>
-    private int ConvertCompoundType(byte[] input, byte[] output, int pos, string typeName, ConversionContext context, int maxPos)
+    private int ConvertCompoundType(byte[] input, byte[] output, int pos, string typeName, ConversionContext context,
+        int maxPos)
     {
         // Handle well-known compound types
         switch (typeName)
@@ -999,6 +988,7 @@ public sealed class NifEndianConverter
                     WriteUInt32LE(output, pos, val);
                     pos += 4;
                 }
+
                 return pos;
 
             case "Vector4":
@@ -1011,6 +1001,7 @@ public sealed class NifEndianConverter
                     WriteUInt32LE(output, pos, val);
                     pos += 4;
                 }
+
                 return pos;
 
             case "Matrix33":
@@ -1021,6 +1012,7 @@ public sealed class NifEndianConverter
                     WriteUInt32LE(output, pos, val);
                     pos += 4;
                 }
+
                 return pos;
 
             case "Matrix44":
@@ -1031,6 +1023,7 @@ public sealed class NifEndianConverter
                     WriteUInt32LE(output, pos, val);
                     pos += 4;
                 }
+
                 return pos;
 
             case "Color3":
@@ -1041,6 +1034,7 @@ public sealed class NifEndianConverter
                     WriteUInt32LE(output, pos, val);
                     pos += 4;
                 }
+
                 return pos;
 
             case "NiBound":
@@ -1051,6 +1045,7 @@ public sealed class NifEndianConverter
                     WriteUInt32LE(output, pos, val);
                     pos += 4;
                 }
+
                 return pos;
 
             case "TexCoord":
@@ -1061,6 +1056,7 @@ public sealed class NifEndianConverter
                     WriteUInt32LE(output, pos, val);
                     pos += 4;
                 }
+
                 return pos;
 
             case "Triangle":
@@ -1071,6 +1067,7 @@ public sealed class NifEndianConverter
                     WriteUInt16LE(output, pos, val);
                     pos += 2;
                 }
+
                 return pos;
 
             case "ByteColor3":
@@ -1120,6 +1117,7 @@ public sealed class NifEndianConverter
                         if (pos >= maxPos) break;
                         pos = ConvertField(input, output, pos, field.Type, context, maxPos);
                     }
+
                     return pos;
                 }
 
@@ -1128,83 +1126,8 @@ public sealed class NifEndianConverter
         }
     }
 
-    /// <summary>
-    ///     Attempts to convert an unknown block type using heuristics.
-    /// </summary>
-    private static int ConvertUnknownBlock(byte[] input, byte[] output, int pos, int blockSize)
-    {
-        var blockEnd = pos + blockSize;
-
-        // For unknown blocks, we make educated guesses based on alignment
-        // Most NIF values are 4-byte aligned (uint, int, float, Ref)
-        // We'll swap all 4-byte aligned values as a best effort
-
-        while (pos + 4 <= blockEnd)
-        {
-            var val = BinaryUtils.ReadUInt32BE(input, pos);
-            WriteUInt32LE(output, pos, val);
-            pos += 4;
-        }
-
-        // Handle any remaining bytes
-        return blockEnd;
-    }
-
-    /// <summary>
-    ///     Evaluates a simple version condition.
-    /// </summary>
-    private static bool EvaluateVersionCondition(string? condition, ConversionContext context)
-    {
-        if (string.IsNullOrEmpty(condition)) return true;
-
-        // Handle common Bethesda version conditions
-        // These are simplified checks - full implementation would parse the condition syntax
-
-        if (condition.Contains("#BETHESDA#") || condition.Contains("#BS_GTE_FO3#") || condition.Contains("#FO3_AND_LATER#"))
-        {
-            return context.BsVersion >= 34; // FO3/FNV BS version
-        }
-
-        if (condition.Contains("#NI_BS_LT_FO4#"))
-        {
-            return context.BsVersion < 130; // Before FO4
-        }
-
-        if (condition.Contains("#BS202#"))
-        {
-            return context.BinaryVersion == 0x14020007; // 20.2.0.7
-        }
-
-        // Default to including the field
-        return true;
-    }
-
-    /// <summary>
-    ///     Evaluates an array length expression.
-    /// </summary>
-    private int EvaluateArrayLength(string lengthExpr, byte[] data, ConversionContext context, int pos, int maxPos)
-    {
-        // Simple cases: numeric literal
-        if (int.TryParse(lengthExpr, out var literal))
-        {
-            return literal;
-        }
-
-        // Field references like "Num Vertices" - we need to track these during parsing
-        // For now, return a safe default based on common patterns
-        return lengthExpr switch
-        {
-            "Num Children" => Math.Min(ReadCountValue(data, pos, maxPos, -8), 1000),
-            "Num Effects" => Math.Min(ReadCountValue(data, pos, maxPos, -4), 100),
-            "Num Vertices" => Math.Min(context.GetFieldValue("Num Vertices", 0), 65535),
-            "Num Triangles" => Math.Min(context.GetFieldValue("Num Triangles", 0), 65535),
-            "Num Strips" => Math.Min(context.GetFieldValue("Num Strips", 0), 1000),
-            "Num Block Types" => _blockTypeNames.Length,
-            "Num Blocks" => _blockTypeNames.Length,
-            "Num Block Infos" => Math.Min(ReadCountValue(data, pos, maxPos, -4), 100),
-            _ => 0 // Unknown reference, skip
-        };
-    }
+    // Note: ConvertUnknownBlock, EvaluateVersionCondition, and EvaluateArrayLength
+    // are reserved for future schema-driven conversion but not currently used
 
     /// <summary>
     ///     Reads a count value from nearby data (already converted to LE).
@@ -1226,9 +1149,8 @@ public sealed class NifEndianConverter
     private static int FindNewline(byte[] data, int start, int end)
     {
         for (var i = start; i < end; i++)
-        {
-            if (data[i] == 0x0A) return i;
-        }
+            if (data[i] == 0x0A)
+                return i;
         return -1;
     }
 
@@ -1270,15 +1192,6 @@ public sealed class NifEndianConverter
     /// </summary>
     private sealed class ConversionContext
     {
-        public uint BinaryVersion { get; init; }
-        public uint UserVersion { get; init; }
         public uint BsVersion { get; init; }
-        public string BlockTypeName { get; init; } = "";
-
-        private readonly Dictionary<string, int> _fieldValues = new(StringComparer.OrdinalIgnoreCase);
-
-        public void SetFieldValue(string name, int value) => _fieldValues[name] = value;
-        public int GetFieldValue(string name, int defaultValue) =>
-            _fieldValues.TryGetValue(name, out var val) ? val : defaultValue;
     }
 }

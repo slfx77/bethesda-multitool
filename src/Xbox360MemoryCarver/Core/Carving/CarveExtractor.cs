@@ -54,7 +54,8 @@ internal static class CarveExtractor
 
             adjustedSize = (int)Math.Min(adjustedSize, fileSize - adjustedOffset);
 
-            var outputFile = BuildOutputPath(outputPath, signatureId, format, customFilename, offset, parseResult.OutputFolderOverride);
+            var outputFile = BuildOutputPath(outputPath, signatureId, format, customFilename, offset,
+                parseResult.OutputFolderOverride);
 
             // Read the actual file data (including any leading bytes)
             var fileData = new byte[adjustedSize];
@@ -100,7 +101,8 @@ internal static class CarveExtractor
         string? customFilename, long offset, string? outputFolderOverride = null)
     {
         // Use override if provided, otherwise fall back to format default
-        var typeFolder = outputFolderOverride ?? (string.IsNullOrEmpty(format.OutputFolder) ? signatureId : format.OutputFolder);
+        var typeFolder = outputFolderOverride ??
+                         (string.IsNullOrEmpty(format.OutputFolder) ? signatureId : format.OutputFolder);
         var typePath = Path.Combine(outputPath, typeFolder);
         Directory.CreateDirectory(typePath);
 

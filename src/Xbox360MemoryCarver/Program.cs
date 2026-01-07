@@ -83,6 +83,7 @@ public static class Program
 
         rootCommand.AddCommand(AnalyzeCommand.Create());
         rootCommand.AddCommand(ModulesCommand.Create());
+        rootCommand.AddCommand(ConvertNifCommand.Create());
 
         return await rootCommand.InvokeAsync(args);
     }
