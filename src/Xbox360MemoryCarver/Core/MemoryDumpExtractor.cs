@@ -25,7 +25,7 @@ public static class MemoryDumpExtractor
         Directory.CreateDirectory(options.OutputPath);
 
         // Extract modules from minidump first
-        var moduleCount = await ExtractModulesAsync(filePath, options, progress);
+        var (moduleCount, moduleOffsets) = await ExtractModulesAsync(filePath, options, progress);
 
         // Create carver with options for signature-based extraction
         using var carver = new MemoryCarver(
@@ -53,6 +53,9 @@ public static class MemoryDumpExtractor
             .Select(e => e.Offset)
             .ToHashSet();
 
+        // Build set of failed conversion offsets
+        var failedConversionOffsets = carver.FailedConversionOffsets.ToHashSet();
+
         // Extract compiled scripts if requested
         var scriptResult = new ScdaExtractionResult();
         if (options.ExtractScripts) scriptResult = await ExtractScriptsAsync(filePath, options, progress);
@@ -67,6 +70,8 @@ public static class MemoryDumpExtractor
             XurFailed = carver.XurConvertFailedCount,
             TypeCounts = carver.Stats.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
             ExtractedOffsets = extractedOffsets,
+            FailedConversionOffsets = failedConversionOffsets,
+            ExtractedModuleOffsets = moduleOffsets,
             ModulesExtracted = moduleCount,
             ScriptsExtracted = scriptResult.TotalRecords,
             ScriptQuestsGrouped = scriptResult.GroupedQuests
@@ -119,11 +124,13 @@ public static class MemoryDumpExtractor
     /// </summary>
     [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
         Justification = "Module extraction handles multiple data sources and edge cases")]
-    private static async Task<int> ExtractModulesAsync(
+    private static async Task<(int count, HashSet<long> offsets)> ExtractModulesAsync(
         string filePath,
         ExtractionOptions options,
         IProgress<ExtractionProgress>? progress)
     {
+        var extractedOffsets = new HashSet<long>();
+
         // Check if module extraction is requested
         // Modules are extracted if:
         // - No file type filter is specified (null or empty), OR
@@ -134,21 +141,21 @@ public static class MemoryDumpExtractor
                                        t.Equals("xex", StringComparison.OrdinalIgnoreCase) ||
                                        t.Contains("module", StringComparison.OrdinalIgnoreCase));
 
-        if (!shouldExtractModules) return 0;
+        if (!shouldExtractModules) return (0, extractedOffsets);
 
         var minidumpInfo = MinidumpParser.Parse(filePath);
         if (!minidumpInfo.IsValid)
         {
             if (options.Verbose) Console.WriteLine("[Module] Minidump is not valid");
 
-            return 0;
+            return (0, extractedOffsets);
         }
 
         if (minidumpInfo.Modules.Count == 0)
         {
             if (options.Verbose) Console.WriteLine("[Module] No modules found in minidump");
 
-            return 0;
+            return (0, extractedOffsets);
         }
 
         if (options.Verbose) Console.WriteLine($"[Module] Found {minidumpInfo.Modules.Count} modules in minidump");
@@ -197,6 +204,7 @@ public static class MemoryDumpExtractor
 
                 await File.WriteAllBytesAsync(outputPath, buffer);
                 extractedCount++;
+                extractedOffsets.Add(fileRange.Value.fileOffset);
 
                 if (options.Verbose) Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
 
@@ -213,7 +221,7 @@ public static class MemoryDumpExtractor
             }
         }
 
-        return extractedCount;
+        return (extractedCount, extractedOffsets);
     }
 
     /// <summary>
@@ -243,4 +251,15 @@ public class ExtractionSummary
     public int ScriptQuestsGrouped { get; init; }
     public Dictionary<string, int> TypeCounts { get; init; } = [];
     public HashSet<long> ExtractedOffsets { get; init; } = [];
+
+    /// <summary>
+    ///     Offsets of files that failed conversion (DDX→DDS, XMA→WAV, etc.).
+    ///     These files were extracted but conversion failed.
+    /// </summary>
+    public HashSet<long> FailedConversionOffsets { get; init; } = [];
+
+    /// <summary>
+    ///     File offsets of extracted modules from minidump metadata.
+    /// </summary>
+    public HashSet<long> ExtractedModuleOffsets { get; init; } = [];
 }

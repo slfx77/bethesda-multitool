@@ -217,8 +217,25 @@ public sealed partial class SingleFileTab : UserControl
             }));
             var summary = await Task.Run(() => MemoryDumpExtractor.Extract(filePath, opts, progress));
 
+            // Update status for extracted files
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedOffsets.Contains(x.Offset)))
+            {
+                // Check if conversion failed for this file
+                if (summary.FailedConversionOffsets.Contains(entry.Offset))
+                {
+                    entry.Status = ExtractionStatus.Failed;
+                }
+                else
+                {
+                    entry.Status = ExtractionStatus.Extracted;
+                }
+            }
+
+            // Update status for extracted modules (from minidump metadata)
+            foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedModuleOffsets.Contains(x.Offset)))
+            {
                 entry.Status = ExtractionStatus.Extracted;
+            }
 
             var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
             if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";

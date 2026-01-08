@@ -22,6 +22,7 @@ public sealed class MemoryCarver : IDisposable
     private readonly SignatureMatcher _signatureMatcher;
     private readonly ConcurrentDictionary<string, int> _stats = new();
     private bool _disposed;
+    private CarveWriter? _writer;
 
     public MemoryCarver(
         string outputDir,
@@ -52,6 +53,11 @@ public sealed class MemoryCarver : IDisposable
     public int XurConvertedCount => _converters.TryGetValue("xui", out var c) ? c.ConvertedCount : 0;
     public int XurConvertFailedCount => _converters.TryGetValue("xui", out var c) ? c.FailedCount : 0;
     public IReadOnlyDictionary<string, int> Stats => _stats;
+
+    /// <summary>
+    ///     Offsets of files that failed conversion (DDX→DDS, etc.).
+    /// </summary>
+    public IReadOnlyCollection<long> FailedConversionOffsets => _writer?.FailedConversionOffsets ?? [];
 
     public void Dispose()
     {
@@ -180,7 +186,7 @@ public sealed class MemoryCarver : IDisposable
     {
         if (matches.Count == 0) return;
 
-        var writer = new CarveWriter(_converters, _enableConversion, _saveAtlas, _manifest.Add);
+        _writer = new CarveWriter(_converters, _enableConversion, _saveAtlas, _manifest.Add);
         var processedCount = 0;
         var totalMatches = matches.Count;
 
@@ -200,7 +206,7 @@ public sealed class MemoryCarver : IDisposable
                 if (extraction != null)
                 {
                     _stats.AddOrUpdate(match.SignatureId, 1, (_, v) => v + 1);
-                    await writer.WriteFileAsync(extraction.Value.OutputFile, extraction.Value.Data, match.Offset,
+                    await _writer.WriteFileAsync(extraction.Value.OutputFile, extraction.Value.Data, match.Offset,
                         match.SignatureId, extraction.Value.FileSize, extraction.Value.OriginalPath,
                         extraction.Value.Metadata);
                 }

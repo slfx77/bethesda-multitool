@@ -58,3 +58,4 @@ microsoft-pdb/
 NVSE/
 Xbox360MemoryCarverCLI/
 nifskope/
+*.cobertura.xml

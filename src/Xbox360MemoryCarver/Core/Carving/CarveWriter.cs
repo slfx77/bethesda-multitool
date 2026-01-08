@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Xbox360MemoryCarver.Core.Formats;
 
 namespace Xbox360MemoryCarver.Core.Carving;
@@ -10,7 +11,13 @@ internal sealed class CarveWriter
     private readonly Action<CarveEntry> _addToManifest;
     private readonly Dictionary<string, IFileConverter> _converters;
     private readonly bool _enableConversion;
+    private readonly ConcurrentBag<long> _failedConversionOffsets = [];
     private readonly bool _saveAtlas;
+
+    /// <summary>
+    ///     Offsets of files that failed conversion (DDX→DDS, XMA→WAV, etc.).
+    /// </summary>
+    public IReadOnlyCollection<long> FailedConversionOffsets => _failedConversionOffsets;
 
     public CarveWriter(
         Dictionary<string, IFileConverter> converters,
@@ -78,7 +85,12 @@ internal sealed class CarveWriter
         Dictionary<string, object>? metadata)
     {
         var result = await converter.ConvertAsync(data, metadata);
-        if (!result.Success || result.DdsData == null) return false;
+        if (!result.Success || result.DdsData == null)
+        {
+            // Track that this file failed conversion
+            _failedConversionOffsets.Add(offset);
+            return false;
+        }
 
         var format = FormatRegistry.GetBySignatureId(signatureId);
         var originalFolder = format?.OutputFolder ?? signatureId;
