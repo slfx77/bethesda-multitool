@@ -14,7 +14,6 @@ public sealed class ScriptFormat : FileFormatBase
     public override string OutputFolder => "scripts";
     public override int MinSize => 20;
     public override int MaxSize => 100 * 1024;
-    public override int DisplayPriority => 3;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

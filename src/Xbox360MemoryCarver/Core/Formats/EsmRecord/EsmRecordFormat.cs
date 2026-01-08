@@ -19,7 +19,6 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     public override string OutputFolder => "esm_records";
     public override int MinSize => 8;
     public override int MaxSize => 64 * 1024;
-    public override int DisplayPriority => 100;
     public override bool ShowInFilterUI => false;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } = [];

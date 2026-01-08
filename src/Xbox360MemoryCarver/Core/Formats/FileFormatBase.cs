@@ -13,7 +13,6 @@ public abstract class FileFormatBase : IFileFormat
     public abstract string OutputFolder { get; }
     public abstract int MinSize { get; }
     public abstract int MaxSize { get; }
-    public virtual int DisplayPriority => 5;
     public virtual bool ShowInFilterUI => true;
     public virtual bool EnableSignatureScanning => true;
     public abstract IReadOnlyList<FormatSignature> Signatures { get; }

@@ -149,7 +149,10 @@
 
         <!-- Column headers -->
         <Grid Grid.Row="1"
-              Margin="0,0,0,4">
+              Margin="0,0,0,4"
+              Padding="8,4"
+              Background="{ThemeResource SystemControlBackgroundListLowBrush}"
+              CornerRadius="4">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="40"/>
             <ColumnDefinition Width="*"/>
@@ -167,8 +170,10 @@
             Background="Transparent"
             BorderThickness="0"
             Click="SortByFilePath_Click">
-            <StackPanel Orientation="Horizontal" Spacing="4">
-              <TextBlock FontWeight="SemiBold" Text="File Path"/>
+            <StackPanel Orientation="Horizontal"
+                Spacing="4">
+              <TextBlock FontWeight="SemiBold"
+                  Text="File Path"/>
               <FontIcon
                 x:Name="FilePathSortIcon"
                 FontSize="10"
@@ -183,8 +188,10 @@
             Background="Transparent"
             BorderThickness="0"
             Click="SortBySize_Click">
-            <StackPanel Orientation="Horizontal" Spacing="4">
-              <TextBlock FontWeight="SemiBold" Text="Size"/>
+            <StackPanel Orientation="Horizontal"
+                Spacing="4">
+              <TextBlock FontWeight="SemiBold"
+                  Text="Size"/>
               <FontIcon
                 x:Name="SizeSortIcon"
                 FontSize="10"
@@ -199,8 +206,10 @@
             Background="Transparent"
             BorderThickness="0"
             Click="SortByFormat_Click">
-            <StackPanel Orientation="Horizontal" Spacing="4">
-              <TextBlock FontWeight="SemiBold" Text="Format"/>
+            <StackPanel Orientation="Horizontal"
+                Spacing="4">
+              <TextBlock FontWeight="SemiBold"
+                  Text="Format"/>
               <FontIcon
                 x:Name="FormatSortIcon"
                 FontSize="10"
@@ -215,8 +224,10 @@
             Background="Transparent"
             BorderThickness="0"
             Click="SortByStatus_Click">
-            <StackPanel Orientation="Horizontal" Spacing="4">
-              <TextBlock FontWeight="SemiBold" Text="Status"/>
+            <StackPanel Orientation="Horizontal"
+                Spacing="4">
+              <TextBlock FontWeight="SemiBold"
+                  Text="Status"/>
               <FontIcon
                 x:Name="StatusSortIcon"
                 FontSize="10"

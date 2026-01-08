@@ -1,3 +1,4 @@
+using Xbox360MemoryCarver.Core.Formats;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Formats.Scda;
 using Xbox360MemoryCarver.Core.Minidump;
@@ -45,6 +46,17 @@ public class CarvedFileInfo
     public bool IsExtracted { get; set; }
     public string? ExtractedPath { get; set; }
     public string? Error { get; set; }
+
+    /// <summary>
+    ///     The signature ID used to identify this file (e.g., "xui_scene", "ddx_3xdo").
+    ///     Used for efficient color lookup without string matching.
+    /// </summary>
+    public string? SignatureId { get; set; }
+
+    /// <summary>
+    ///     The file category for color coding.
+    /// </summary>
+    public FileCategory Category { get; set; }
 
     /// <summary>
     ///     Gets a display name - filename if available, otherwise the file type.

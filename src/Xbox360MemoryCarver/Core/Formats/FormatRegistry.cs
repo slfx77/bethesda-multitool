@@ -74,6 +74,10 @@ public static class FormatRegistry
     /// </summary>
     public static FileCategory GetCategory(string signatureId)
     {
+        // Special pseudo-signatures that aren't registered formats
+        if (signatureId.Equals("minidump_header", StringComparison.OrdinalIgnoreCase))
+            return FileCategory.Header;
+
         return GetBySignatureId(signatureId)?.Category ?? FileCategory.Texture;
     }
 
@@ -84,14 +88,6 @@ public static class FormatRegistry
     {
         var category = GetCategory(signatureId);
         return CategoryColors.TryGetValue(category, out var color) ? color : 0xFF555555;
-    }
-
-    /// <summary>
-    ///     Get the display priority for overlap resolution.
-    /// </summary>
-    public static int GetDisplayPriority(string signatureId)
-    {
-        return GetBySignatureId(signatureId)?.DisplayPriority ?? 5;
     }
 
     /// <summary>
@@ -134,6 +130,7 @@ public static class FormatRegistry
             "elder scrolls plugin" => "esp",
             "lip-sync animation" => "lip",
             "bethesda obscript (scn format)" or "script" => "script_scn",
+            "minidump header" => "minidump_header",
             _ => FallbackNormalize(lower)
         };
     }
@@ -182,8 +179,7 @@ public static class FormatRegistry
             })
             .Where(f => f != null)
             .Cast<IFileFormat>()
-            .OrderBy(f => f.DisplayPriority)
-            .ThenBy(f => f.DisplayName)
+            .OrderBy(f => f.DisplayName)
             .ToList();
 
         return formats;
@@ -216,7 +212,8 @@ public static class FormatRegistry
             [FileCategory.Module] = 0xFF9B59B6, // Purple
             [FileCategory.Script] = 0xFFE67E22, // Orange
             [FileCategory.Xbox] = 0xFF3498DB, // Blue
-            [FileCategory.Plugin] = 0xFFFF6B9D // Pink/Magenta
+            [FileCategory.Plugin] = 0xFFFF6B9D, // Pink/Magenta
+            [FileCategory.Header] = 0xFF607D8B // Blue-gray (visible in dark mode)
         }.ToFrozenDictionary();
     }
 }

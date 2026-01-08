@@ -15,7 +15,6 @@ public sealed class PngFormat : FileFormatBase
     public override string OutputFolder => "images";
     public override int MinSize => 67; // Min valid PNG
     public override int MaxSize => 50 * 1024 * 1024;
-    public override int DisplayPriority => 1;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

@@ -263,32 +263,6 @@ public class FormatRegistryTests
 
     #endregion
 
-    #region GetDisplayPriority Tests
-
-    [Fact]
-    public void GetDisplayPriority_KnownSignature_ReturnsValue()
-    {
-        // Act
-        var priority = FormatRegistry.GetDisplayPriority("dds");
-
-        // Assert - Should return the format's priority
-        var format = FormatRegistry.GetBySignatureId("dds");
-        Assert.NotNull(format);
-        Assert.Equal(format.DisplayPriority, priority);
-    }
-
-    [Fact]
-    public void GetDisplayPriority_UnknownSignature_ReturnsDefault()
-    {
-        // Act
-        var priority = FormatRegistry.GetDisplayPriority("nonexistent");
-
-        // Assert - Default is 5
-        Assert.Equal(5, priority);
-    }
-
-    #endregion
-
     #region DisplayNames Tests
 
     [Fact]

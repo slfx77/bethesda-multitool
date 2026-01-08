@@ -14,7 +14,6 @@ public sealed class LipFormat : FileFormatBase
     public override string OutputFolder => "lipsync";
     public override int MinSize => 20;
     public override int MaxSize => 5 * 1024 * 1024;
-    public override int DisplayPriority => 1;
 
     // Disabled: LIP files are loaded on-demand during dialogue playback and aren't resident in crash dumps.
     // The "LIPS" magic appears in dumps only as asset path strings (e.g., "sound/voice/actor.lip"),

@@ -26,33 +26,26 @@ public static class FileTypeColors
         new("Module", FromArgb(FormatRegistry.CategoryColors[FileCategory.Module])),
         new("Script", FromArgb(FormatRegistry.CategoryColors[FileCategory.Script])),
         new("Xbox/XUI", FromArgb(FormatRegistry.CategoryColors[FileCategory.Xbox])),
-        new("Plugin", FromArgb(FormatRegistry.CategoryColors[FileCategory.Plugin]))
+        new("Plugin", FromArgb(FormatRegistry.CategoryColors[FileCategory.Plugin])),
+        new("Header", FromArgb(FormatRegistry.CategoryColors[FileCategory.Header]))
     ];
 
     /// <summary>
-    ///     Get color for a file type by signature ID or description.
+    ///     Get color for a CarvedFileInfo using its Category.
     /// </summary>
-    public static Color GetColor(string fileType)
+    public static Color GetColor(Core.CarvedFileInfo file)
     {
-        var sigId = FormatRegistry.NormalizeToSignatureId(fileType);
-        return FromArgb(FormatRegistry.GetColor(sigId));
+        return GetColorByCategory(file.Category);
     }
 
     /// <summary>
-    ///     Normalize a file type description to a standard signature ID.
+    ///     Get color directly from a category (most efficient).
     /// </summary>
-    public static string NormalizeTypeName(string fileType)
+    public static Color GetColorByCategory(FileCategory category)
     {
-        return FormatRegistry.NormalizeToSignatureId(fileType);
-    }
-
-    /// <summary>
-    ///     Get priority for overlap resolution. Lower number = higher priority.
-    /// </summary>
-    public static int GetPriority(string fileType)
-    {
-        var sigId = FormatRegistry.NormalizeToSignatureId(fileType);
-        return FormatRegistry.GetDisplayPriority(sigId);
+        return FromArgb(FormatRegistry.CategoryColors.TryGetValue(category, out var color)
+            ? color
+            : FormatRegistry.UnknownColor);
     }
 
     private static Color FromArgb(uint argb)

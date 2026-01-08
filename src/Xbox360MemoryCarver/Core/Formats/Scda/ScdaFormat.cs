@@ -15,7 +15,6 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
     public override string OutputFolder => "scripts";
     public override int MinSize => 10;
     public override int MaxSize => 64 * 1024;
-    public override int DisplayPriority => 3;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

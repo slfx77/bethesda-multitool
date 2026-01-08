@@ -112,21 +112,58 @@ public sealed partial class HexMinimapControl : UserControl
 
         if (_analysisResult == null) return;
 
-        foreach (var file in _analysisResult.CarvedFiles.OrderBy(f => f.Offset))
-        {
-            if (file.Length <= 0) continue;
+        // Sort by size ascending - smaller files processed first get priority
+        // This ensures files contained within larger files are visible
+        var sortedFiles = _analysisResult.CarvedFiles
+            .Where(f => f.Length > 0)
+            .OrderBy(f => f.Length)
+            .ToList();
 
-            var typeName = FileTypeColors.NormalizeTypeName(file.FileType);
-            var color = FileTypeColors.GetColor(typeName);
+        var occupiedRanges = new List<(long Start, long End)>();
+
+        foreach (var file in sortedFiles)
+        {
+            var start = file.Offset;
+            var end = file.Offset + file.Length;
+
+            // Check if this file's range is already fully covered by existing regions
+            if (IsRangeFullyCovered(start, end, occupiedRanges))
+            {
+                continue;
+            }
 
             _fileRegions.Add(new FileRegion
             {
-                Start = file.Offset,
-                End = file.Offset + file.Length,
+                Start = start,
+                End = end,
                 TypeName = file.FileType,
-                Color = color
+                Color = FileTypeColors.GetColor(file)
             });
+            occupiedRanges.Add((start, end));
         }
+
+        _fileRegions.Sort((a, b) => a.Start.CompareTo(b.Start));
+    }
+
+    private static bool IsRangeFullyCovered(long start, long end, List<(long Start, long End)> ranges)
+    {
+        // Check if every byte in [start, end) is covered by existing ranges
+        var relevantRanges = ranges
+            .Where(r => r.Start < end && r.End > start)
+            .OrderBy(r => r.Start)
+            .ToList();
+
+        if (relevantRanges.Count == 0) return false;
+
+        var currentPos = start;
+        foreach (var range in relevantRanges)
+        {
+            if (range.Start > currentPos) return false; // Gap found
+            currentPos = Math.Max(currentPos, range.End);
+            if (currentPos >= end) return true; // Fully covered
+        }
+
+        return currentPos >= end;
     }
 
 #pragma warning disable RCS1163 // Unused parameter - required for event handler signature
@@ -135,6 +172,7 @@ public sealed partial class HexMinimapControl : UserControl
         if (_analysisResult != null) Render();
     }
 #pragma warning restore RCS1163
+
 
     private void Render()
     {

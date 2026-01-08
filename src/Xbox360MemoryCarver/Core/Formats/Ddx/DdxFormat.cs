@@ -20,7 +20,6 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     public override string OutputFolder => "ddx";
     public override int MinSize => 68;
     public override int MaxSize => 50 * 1024 * 1024;
-    public override int DisplayPriority => 1;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

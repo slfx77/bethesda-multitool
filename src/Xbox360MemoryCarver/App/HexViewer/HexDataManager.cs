@@ -97,17 +97,22 @@ internal sealed class HexDataManager : IDisposable
     {
         _fileRegions.Clear();
 
-        var sortedFiles = analysisResult.CarvedFiles.Where(f => f.Length > 0)
-            .OrderBy(f => f.Offset).ThenBy(f => FileTypeColors.GetPriority(f.FileType)).ToList();
+        // Sort by size ascending - smaller files processed first get priority
+        // This ensures files contained within larger files are visible
+        var sortedFiles = analysisResult.CarvedFiles
+            .Where(f => f.Length > 0)
+            .OrderBy(f => f.Length)
+            .ToList();
 
-        var occupiedRanges = new List<(long Start, long End, int Priority)>();
+        var occupiedRanges = new List<(long Start, long End)>();
+
         foreach (var file in sortedFiles)
         {
             var start = file.Offset;
             var end = file.Offset + file.Length;
-            var priority = FileTypeColors.GetPriority(file.FileType);
 
-            if (occupiedRanges.Any(r => start < r.End && end > r.Start && r.Priority <= priority))
+            // Check if this file's range is already fully covered by existing regions
+            if (IsRangeFullyCovered(start, end, occupiedRanges))
             {
                 continue;
             }
@@ -117,11 +122,32 @@ internal sealed class HexDataManager : IDisposable
                 Start = start,
                 End = end,
                 TypeName = file.FileType,
-                Color = FileTypeColors.GetColor(file.FileType)
+                Color = FileTypeColors.GetColor(file)
             });
-            occupiedRanges.Add((start, end, priority));
+            occupiedRanges.Add((start, end));
         }
 
         _fileRegions.Sort((a, b) => a.Start.CompareTo(b.Start));
+    }
+
+    private static bool IsRangeFullyCovered(long start, long end, List<(long Start, long End)> ranges)
+    {
+        // Check if every byte in [start, end) is covered by existing ranges
+        var relevantRanges = ranges
+            .Where(r => r.Start < end && r.End > start)
+            .OrderBy(r => r.Start)
+            .ToList();
+
+        if (relevantRanges.Count == 0) return false;
+
+        var currentPos = start;
+        foreach (var range in relevantRanges)
+        {
+            if (range.Start > currentPos) return false; // Gap found
+            currentPos = Math.Max(currentPos, range.End);
+            if (currentPos >= end) return true; // Fully covered
+        }
+
+        return currentPos >= end;
     }
 }

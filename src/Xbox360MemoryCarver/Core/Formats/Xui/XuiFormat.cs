@@ -21,7 +21,6 @@ public sealed class XuiFormat : FileFormatBase, IFileConverter
     public override string OutputFolder => "xur"; // Changed to xur folder
     public override int MinSize => 24;
     public override int MaxSize => 5 * 1024 * 1024;
-    public override int DisplayPriority => 3;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

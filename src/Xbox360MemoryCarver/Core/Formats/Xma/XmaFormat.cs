@@ -20,7 +20,6 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
     public override string OutputFolder => "audio";
     public override int MinSize => 44;
     public override int MaxSize => 100 * 1024 * 1024;
-    public override int DisplayPriority => 1;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

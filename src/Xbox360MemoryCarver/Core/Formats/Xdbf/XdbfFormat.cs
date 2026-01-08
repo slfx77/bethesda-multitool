@@ -14,7 +14,6 @@ public sealed class XdbfFormat : FileFormatBase
     public override string OutputFolder => "xbox";
     public override int MinSize => 24;
     public override int MaxSize => 10 * 1024 * 1024;
-    public override int DisplayPriority => 3;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

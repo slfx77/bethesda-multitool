@@ -14,7 +14,6 @@ public sealed class EspFormat : FileFormatBase
     public override string OutputFolder => "plugins";
     public override int MinSize => 24;
     public override int MaxSize => 500 * 1024 * 1024;
-    public override int DisplayPriority => 3;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

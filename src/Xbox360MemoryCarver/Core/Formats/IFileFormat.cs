@@ -14,7 +14,8 @@ public enum FileCategory
     Module,
     Script,
     Xbox,
-    Plugin
+    Plugin,
+    Header
 }
 
 /// <summary>
@@ -110,11 +111,6 @@ public interface IFileFormat
     ///     Maximum valid file size in bytes.
     /// </summary>
     int MaxSize { get; }
-
-    /// <summary>
-    ///     Priority for overlap resolution (lower = higher priority).
-    /// </summary>
-    int DisplayPriority { get; }
 
     /// <summary>
     ///     Whether to show in UI filter checkboxes.

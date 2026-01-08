@@ -64,7 +64,6 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     public override string OutputFolder => "models";
     public override int MinSize => 100;
     public override int MaxSize => 20 * 1024 * 1024;
-    public override int DisplayPriority => 2;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [

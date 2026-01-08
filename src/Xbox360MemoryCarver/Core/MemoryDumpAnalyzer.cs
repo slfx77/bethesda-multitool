@@ -76,6 +76,20 @@ public sealed class MemoryDumpAnalyzer
             Console.WriteLine(
                 $"[Minidump] {minidumpInfo.Modules.Count} modules, {minidumpInfo.MemoryRegions.Count} memory regions, Xbox 360: {minidumpInfo.IsXbox360}");
 
+            // Add minidump header as a colored region
+            if (minidumpInfo.HeaderSize > 0)
+            {
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = 0,
+                    Length = minidumpInfo.HeaderSize,
+                    FileType = "Minidump Header",
+                    FileName = "minidump_header",
+                    SignatureId = "minidump_header",
+                    Category = FileCategory.Header
+                });
+            }
+
             // Add modules directly to results
             AddModulesFromMinidump(result, minidumpInfo);
         }
@@ -146,7 +160,9 @@ public sealed class MemoryDumpAnalyzer
                         Offset = offset,
                         Length = length,
                         FileType = signature.Description,
-                        FileName = fileName
+                        FileName = fileName,
+                        SignatureId = signatureId,
+                        Category = format.Category
                     });
 
                     result.TypeCounts.TryGetValue(signatureId, out var count);
@@ -239,7 +255,9 @@ public sealed class MemoryDumpAnalyzer
                     Offset = fileRange.Value.fileOffset,
                     Length = captured,
                     FileType = fileType,
-                    FileName = fileName
+                    FileName = fileName,
+                    SignatureId = "module",
+                    Category = FileCategory.Module
                 });
 
                 result.TypeCounts.TryGetValue("module", out var modCount);

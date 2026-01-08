@@ -20,6 +20,13 @@ public class MinidumpInfo
     public bool IsXbox360 => ProcessorArchitecture == 0x03; // PowerPC
 
     /// <summary>
+    ///     Size of the minidump header and directory (before memory data starts).
+    /// </summary>
+    public long HeaderSize => MemoryRegions.Count > 0
+        ? MemoryRegions.Min(r => r.FileOffset)
+        : 0;
+
+    /// <summary>
     ///     Find a module by virtual address.
     /// </summary>
     public MinidumpModule? FindModuleByVirtualAddress(long virtualAddress)
