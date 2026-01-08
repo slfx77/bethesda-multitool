@@ -22,7 +22,39 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="coverlet.msbuild" Version="6.0.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
+
+  <!-- Coverage settings -->
+  <PropertyGroup>
+    <!-- Exclude GUI code from coverage (requires UI automation to test) -->
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+    <!-- Exclude: App (GUI), CLI commands, entry points, generated code -->
+    <Exclude>
+      [Xbox360MemoryCarver]Xbox360MemoryCarver.App.*,[Xbox360MemoryCarver]Xbox360MemoryCarver.CLI.*,[Xbox360MemoryCarver]System.Text.RegularExpressions.Generated.*</Exclude>
+    <ExcludeByFile>**/App/**/*,**/CLI/**/*,**/GuiEntryPoint.cs,**/Program.cs</ExcludeByFile>
+    <!-- 
+      Coverage threshold for Core logic:
+      - Current: ~22% line coverage for Core (after App/CLI exclusions)
+      - Target: 95% (requires significant test additions)
+      - Threshold: 22% (updated baseline after adding stable core tests)
+      
+      TODO: Increase threshold as coverage improves:
+      - Add tests for NifConverter, NifEndianConverter (~2000 lines each)
+      - Add tests for MemoryCarver, DumpAnalyzer, ScriptExtractor
+      
+      NOTE: Textures (DDX/DDS conversion), SCDA (disassembly), and NIF (conversion)
+      are documented as incomplete features. Tests for these modules should focus
+      on detection/parsing (stable) rather than conversion (incomplete).
+    -->
+    <Threshold>22</Threshold>
+    <ThresholdType>line</ThresholdType>
+    <ThresholdStat>total</ThresholdStat>
+  </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Xbox360MemoryCarver\Xbox360MemoryCarver.csproj" />

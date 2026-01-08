@@ -82,7 +82,7 @@ public sealed class NifConverter
     /// <summary>
     ///     Parse NIF file and extract header/block information.
     /// </summary>
-    private NifInfo? ParseNif(byte[] data)
+    private static NifInfo? ParseNif(byte[] data)
     {
         if (data.Length < 50) return null;
 
@@ -261,18 +261,17 @@ public sealed class NifConverter
         // Step 2: Find geometry blocks that reference the packed data and calculate size changes
         var geometryBlocksToExpand = new Dictionary<int, GeometryBlockExpansion>();
 
-        foreach (var block in sourceInfo.Blocks)
-            if (block.TypeName is "NiTriStripsData" or "NiTriShapeData")
+        foreach (var block in sourceInfo.Blocks.Where(b => b.TypeName is "NiTriStripsData" or "NiTriShapeData"))
+        {
+            var expansion = AnalyzeGeometryBlock(data, block, geometryDataByBlock);
+            if (expansion != null)
             {
-                var expansion = AnalyzeGeometryBlock(data, block, sourceInfo, geometryDataByBlock);
-                if (expansion != null)
-                {
-                    geometryBlocksToExpand[block.Index] = expansion;
-                    if (_verbose)
-                        Console.WriteLine(
-                            $"Block {block.Index} ({block.TypeName}) will expand by {expansion.SizeIncrease} bytes");
-                }
+                geometryBlocksToExpand[block.Index] = expansion;
+                if (_verbose)
+                    Console.WriteLine(
+                        $"Block {block.Index} ({block.TypeName}) will expand by {expansion.SizeIncrease} bytes");
             }
+        }
 
         // Step 3: Build the output file
         var output = BuildConvertedOutput(data, sourceInfo, packedBlocks, geometryBlocksToExpand, geometryDataByBlock);
@@ -442,7 +441,7 @@ public sealed class NifConverter
     /// <summary>
     ///     Extract a half4 stream (4 half-floats = 8 bytes per vertex) as Vector3 floats.
     /// </summary>
-    private float[]? ExtractHalf4Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
+    private static float[]? ExtractHalf4Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
         List<DataStreamInfo> streams, int streamIndex)
     {
         if (streamIndex >= streams.Count) return null;
@@ -470,7 +469,7 @@ public sealed class NifConverter
     /// <summary>
     ///     Extract a half2 stream (2 half-floats = 4 bytes per vertex) as Vector2 floats.
     /// </summary>
-    private float[]? ExtractHalf2Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
+    private static float[]? ExtractHalf2Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
         List<DataStreamInfo> streams, int streamIndex)
     {
         if (streamIndex >= streams.Count) return null;
@@ -496,7 +495,7 @@ public sealed class NifConverter
     /// <summary>
     ///     Analyze a geometry block to determine if/how it needs to be expanded.
     /// </summary>
-    private GeometryBlockExpansion? AnalyzeGeometryBlock(byte[] data, BlockInfo block, NifInfo sourceInfo,
+    private static GeometryBlockExpansion? AnalyzeGeometryBlock(byte[] data, BlockInfo block,
         Dictionary<int, PackedGeometryData> geometryDataByBlock)
     {
         var pos = block.DataOffset;
@@ -557,9 +556,8 @@ public sealed class NifConverter
         var additionalDataRef = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos));
 
         if (additionalDataRef < 0 ||
-            !geometryDataByBlock.ContainsKey(additionalDataRef)) return null; // No packed data reference
-
-        var packedData = geometryDataByBlock[additionalDataRef];
+            !geometryDataByBlock.TryGetValue(additionalDataRef, out var packedData))
+            return null; // No packed data reference
 
         // Calculate size increase
         var sizeIncrease = 0;
@@ -594,7 +592,7 @@ public sealed class NifConverter
     /// <summary>
     ///     Build the final converted output.
     /// </summary>
-    private byte[] BuildConvertedOutput(byte[] data, NifInfo sourceInfo, List<BlockInfo> packedBlocks,
+    private static byte[] BuildConvertedOutput(byte[] data, NifInfo sourceInfo, List<BlockInfo> packedBlocks,
         Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand,
         Dictionary<int, PackedGeometryData> geometryDataByBlock)
     {
@@ -626,7 +624,7 @@ public sealed class NifConverter
                 blockRemap[i] = newBlockIndex++;
 
         // Copy and convert header
-        var outPos = WriteConvertedHeader(data, output, sourceInfo, blockRemap, packedBlockIndices,
+        var outPos = WriteConvertedHeader(data, output, sourceInfo, packedBlockIndices,
             geometryBlocksToExpand);
 
         // Convert each block
@@ -638,12 +636,12 @@ public sealed class NifConverter
             {
                 // Expand geometry block with unpacked data
                 var packedData = geometryDataByBlock[expansion.PackedBlockIndex];
-                outPos = WriteExpandedGeometryBlock(data, output, outPos, block, sourceInfo, packedData, blockRemap);
+                outPos = WriteExpandedGeometryBlock(data, output, outPos, block, packedData);
             }
             else
             {
                 // Regular block - just convert endianness
-                outPos = WriteConvertedBlock(data, output, outPos, block, sourceInfo, blockRemap);
+                outPos = WriteConvertedBlock(data, output, outPos, block, blockRemap);
             }
         }
 
@@ -659,7 +657,7 @@ public sealed class NifConverter
     /// <summary>
     ///     Write the converted header to output.
     /// </summary>
-    private int WriteConvertedHeader(byte[] data, byte[] output, NifInfo sourceInfo, int[] blockRemap,
+    private static int WriteConvertedHeader(byte[] data, byte[] output, NifInfo sourceInfo,
         HashSet<int> packedBlockIndices, Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand)
     {
         var pos = 0;
@@ -803,7 +801,7 @@ public sealed class NifConverter
     /// <summary>
     ///     Write a regular block with proper per-type endian conversion.
     /// </summary>
-    private int WriteConvertedBlock(byte[] data, byte[] output, int outPos, BlockInfo block, NifInfo sourceInfo,
+    private static int WriteConvertedBlock(byte[] data, byte[] output, int outPos, BlockInfo block,
         int[] blockRemap)
     {
         // Copy block data first
@@ -906,7 +904,7 @@ public sealed class NifConverter
                 break;
 
             case "NiSkinData":
-                ConvertNiSkinDataInPlace(buf, pos, size, blockRemap);
+                ConvertNiSkinDataInPlace(buf, pos, size);
                 break;
 
             case "NiSkinPartition":
@@ -958,8 +956,8 @@ public sealed class NifConverter
     /// <summary>
     ///     Write an expanded geometry block with unpacked data.
     /// </summary>
-    private int WriteExpandedGeometryBlock(byte[] data, byte[] output, int outPos, BlockInfo block,
-        NifInfo sourceInfo, PackedGeometryData packedData, int[] blockRemap)
+    private static int WriteExpandedGeometryBlock(byte[] data, byte[] output, int outPos, BlockInfo block,
+        PackedGeometryData packedData)
     {
         var srcPos = block.DataOffset;
 
@@ -1145,11 +1143,9 @@ public sealed class NifConverter
         outPos += 4;
 
         // Copy remaining block data (NiTriStripsData/NiTriShapeData specific fields)
-        var remainingBytes = block.Size - (srcPos - block.DataOffset);
-        if (remainingBytes > 0)
+        if (block.Size - (srcPos - block.DataOffset) > 0)
             // Copy and convert remaining data
-            outPos = CopyAndConvertTriStripSpecificData(data, output, srcPos, outPos, remainingBytes, block.TypeName,
-                blockRemap);
+            outPos = CopyAndConvertTriStripSpecificData(data, output, srcPos, outPos, block.TypeName);
 
         return outPos;
     }
@@ -1157,8 +1153,8 @@ public sealed class NifConverter
     /// <summary>
     ///     Copy and convert NiTriStripsData/NiTriShapeData specific fields.
     /// </summary>
-    private int CopyAndConvertTriStripSpecificData(byte[] data, byte[] output, int srcPos, int outPos,
-        int remainingBytes, string blockType, int[] blockRemap)
+    private static int CopyAndConvertTriStripSpecificData(byte[] data, byte[] output, int srcPos, int outPos,
+        string blockType)
     {
         if (blockType == "NiTriStripsData")
         {
@@ -1237,11 +1233,11 @@ public sealed class NifConverter
     /// <summary>
     ///     Write the footer with remapped block references.
     /// </summary>
-    private int WriteConvertedFooter(byte[] data, byte[] output, int outPos, NifInfo sourceInfo, int[] blockRemap)
+    private static int WriteConvertedFooter(byte[] data, byte[] output, int outPos, NifInfo sourceInfo, int[] blockRemap)
     {
-        // Find footer position
+        // Find footer position - use indexer instead of .Last() for performance
         var footerPos = sourceInfo.Blocks.Count > 0
-            ? sourceInfo.Blocks.Last().DataOffset + sourceInfo.Blocks.Last().Size
+            ? sourceInfo.Blocks[^1].DataOffset + sourceInfo.Blocks[^1].Size
             : data.Length;
 
         if (footerPos >= data.Length) return outPos;
@@ -1286,16 +1282,16 @@ public sealed class NifConverter
         }
 
         if (exp == 31)
-            // Infinity or NaN
-            return mant == 0
-                ? sign == 1 ? float.NegativeInfinity : float.PositiveInfinity
-                : float.NaN;
-
         {
-            // Normalized
-            var value = (float)Math.Pow(2, exp - 15) * (1 + mant / 1024.0f);
-            return sign == 1 ? -value : value;
+            // Infinity or NaN
+            if (mant == 0)
+                return sign == 1 ? float.NegativeInfinity : float.PositiveInfinity;
+            return float.NaN;
         }
+
+        // Normalized
+        var normalizedValue = (float)Math.Pow(2, exp - 15) * (1 + mant / 1024.0f);
+        return sign == 1 ? -normalizedValue : normalizedValue;
     }
 
     private static bool IsBethesdaVersion(uint binaryVersion, uint userVersion)
@@ -1431,12 +1427,11 @@ public sealed class NifConverter
         if (pos + 4 > end) return;
 
         SwapUInt32InPlace(buf, pos); // strLen
-        var strLen = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
-        pos += 4;
-
         // String content doesn't need swapping
     }
 
+    // S4144: Intentionally identical to ConvertNiStringExtraDataInPlace - these block types have the same binary layout
+#pragma warning disable S4144
     private static void ConvertBSBehaviorGraphExtraDataInPlace(byte[] buf, int pos, int size)
     {
         var end = pos + size;
@@ -1447,17 +1442,9 @@ public sealed class NifConverter
 
         if (pos + 4 > end) return;
 
-        SwapUInt32InPlace(buf, pos); // strLen
-        var strLen = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
-        pos += 4;
-
-        pos += (int)strLen; // string content
-
-        if (pos + 1 <= end)
-        {
-            // byte controlsBaseSkeleton - no swap needed
-        }
+        SwapUInt32InPlace(buf, pos); // strLen - string + bool byte follow but don't need conversion
     }
+#pragma warning restore S4144
 
     private static void ConvertNiTextKeyExtraDataInPlace(byte[] buf, int pos, int size)
     {
@@ -1495,20 +1482,12 @@ public sealed class NifConverter
         pos += 4;
 
         if (pos + 1 > end) return;
-        var useExternal = buf[pos++];
+        pos++; // useExternal byte
 
-        if (useExternal != 0)
-        {
-            if (pos + 4 > end) return;
-            SwapUInt32InPlace(buf, pos); // fileNameIdx (string index)
-            pos += 4;
-        }
-        else
-        {
-            if (pos + 4 > end) return;
-            SwapUInt32InPlace(buf, pos); // internalTextureRef
-            pos += 4;
-        }
+        // Both branches (useExternal or not) have the same operation: swap a 4-byte ref
+        if (pos + 4 > end) return;
+        SwapUInt32InPlace(buf, pos); // fileNameIdx or internalTextureRef
+        pos += 4;
 
         // formatPrefs
         if (pos + 8 > end) return;
@@ -1520,18 +1499,7 @@ public sealed class NifConverter
         // alphaFormat
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
-        pos += 4;
-
-        // isStatic
-        if (pos + 1 > end) return;
-        pos++;
-
-        // directRender
-        if (pos + 1 > end) return;
-        pos++;
-
-        // persistRenderData
-        if (pos + 1 > end) return;
+        // Remaining bytes (isStatic, directRender, persistRenderData) don't need swapping
     }
 
     private static void ConvertNiNodeInPlace(byte[] buf, int pos, int size, int[] blockRemap)
@@ -1930,7 +1898,7 @@ public sealed class NifConverter
         ConvertBulkSwap4InPlace(buf, pos, end - pos);
     }
 
-    private static void ConvertNiSkinDataInPlace(byte[] buf, int pos, int size, int[] blockRemap)
+    private static void ConvertNiSkinDataInPlace(byte[] buf, int pos, int size)
     {
         var end = pos + size;
 
@@ -1996,45 +1964,36 @@ public sealed class NifConverter
         var numPartitions = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
         pos += 4;
 
-        for (var p = 0; p < numPartitions && pos < end; p++)
+        if (numPartitions == 0 || pos >= end) return;
+
+        // Process only the first partition - complex structure, bail after one for safety
+        // numVertices, numTriangles, numBones, numStrips, numWeightsPerVertex
+        if (pos + 10 > end) return;
+        SwapUInt16InPlace(buf, pos);
+        pos += 2;
+        SwapUInt16InPlace(buf, pos);
+        pos += 2;
+        SwapUInt16InPlace(buf, pos);
+        var numBones = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos - 2));
+        pos += 2;
+        SwapUInt16InPlace(buf, pos);
+        pos += 2;
+        SwapUInt16InPlace(buf, pos);
+        pos += 2; // numWeightsPerVertex
+
+        // bones array
+        for (var i = 0; i < numBones && pos + 2 <= end; i++)
         {
-            // numVertices, numTriangles, numBones, numStrips, numWeightsPerVertex
-            if (pos + 10 > end) return;
             SwapUInt16InPlace(buf, pos);
             pos += 2;
-            var numTris = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
-            SwapUInt16InPlace(buf, pos);
-            pos += 2;
-            numTris = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos - 2));
-            var numBones = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
-            SwapUInt16InPlace(buf, pos);
-            pos += 2;
-            numBones = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos - 2));
-            var numStrips = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
-            SwapUInt16InPlace(buf, pos);
-            pos += 2;
-            numStrips = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos - 2));
-            SwapUInt16InPlace(buf, pos);
-            pos += 2; // numWeightsPerVertex
-
-            // bones array
-            for (var i = 0; i < numBones && pos + 2 <= end; i++)
-            {
-                SwapUInt16InPlace(buf, pos);
-                pos += 2;
-            }
-
-            // hasVertexMap, hasVertexWeights, hasStrips, hasFaces
-            if (pos + 4 > end) return;
-            var hasVMap = buf[pos++];
-            var hasVWeights = buf[pos++];
-            var hasStripsFlag = buf[pos++];
-            var hasFaces = buf[pos++];
-
-            // Rest is complex - bulk swap remainder
-            ConvertBulkSwap4InPlace(buf, pos, end - pos);
-            return; // Complex structure - bail after first partition for safety
         }
+
+        // Skip hasVertexMap, hasVertexWeights, hasStrips, hasFaces (4 bytes, no swap needed)
+        if (pos + 4 > end) return;
+        pos += 4;
+
+        // Rest is complex - bulk swap remainder
+        ConvertBulkSwap4InPlace(buf, pos, end - pos);
     }
 
     private static void ConvertNiControllerSequenceInPlace(byte[] buf, int pos, int size, int[] blockRemap)
@@ -2125,6 +2084,8 @@ public sealed class NifConverter
         ConvertBulkSwap4InPlace(buf, pos, size);
     }
 
+    // S4144: Intentionally has same layout as ConvertNiStringExtraDataInPlace - these block types share binary structure
+#pragma warning disable S4144
     private static void ConvertNiFloatInterpolatorInPlace(byte[] buf, int pos, int size)
     {
         var end = pos + size;
@@ -2138,6 +2099,7 @@ public sealed class NifConverter
         if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
     }
+#pragma warning restore S4144
 
     private static void ConvertNiFloatDataInPlace(byte[] buf, int pos, int size)
     {

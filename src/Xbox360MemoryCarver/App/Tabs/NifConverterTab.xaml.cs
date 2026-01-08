@@ -112,12 +112,21 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
 {
     private readonly NifConverter _converter = new(verbose: false);
     private readonly ObservableCollection<NifFileEntry> _nifFiles = [];
+    private readonly List<NifFileEntry> _allNifFiles = [];
+    private readonly NifFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
 
     public NifConverterTab()
     {
         InitializeComponent();
         NifFilesListView.ItemsSource = _nifFiles;
+        SetupTextBoxContextMenus();
+    }
+
+    private void SetupTextBoxContextMenus()
+    {
+        TextBoxContextMenuHelper.AttachContextMenu(InputDirectoryTextBox);
+        TextBoxContextMenuHelper.AttachContextMenu(OutputDirectoryTextBox);
     }
 
     public void Dispose() => _cts?.Dispose();
@@ -170,6 +179,33 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         await ScanForNifFilesAsync(folder.Path);
     }
 
+    private async void InputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var path = InputDirectoryTextBox.Text;
+        if (Directory.Exists(path))
+        {
+            if (string.IsNullOrEmpty(OutputDirectoryTextBox.Text))
+            {
+                OutputDirectoryTextBox.Text = Path.Combine(path, "converted_pc");
+            }
+            await ScanForNifFilesAsync(path);
+        }
+        else
+        {
+            _nifFiles.Clear();
+            _allNifFiles.Clear();
+            _sorter.Reset();
+            UpdateSortIcons();
+            UpdateFileCount();
+            UpdateButtonStates();
+        }
+    }
+
+    private void OutputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateButtonStates();
+    }
+
     private async void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
@@ -187,6 +223,9 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     private async Task ScanForNifFilesAsync(string directory)
     {
         _nifFiles.Clear();
+        _allNifFiles.Clear();
+        _sorter.Reset();
+        UpdateSortIcons();
         StatusTextBlock.Text = "Scanning for NIF files...";
 
         await Task.Run(() =>
@@ -201,7 +240,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
 
                 // Quick check for Xbox 360 format - determine format on background thread
                 string formatDesc;
-                byte endianByte = 255; // Invalid default
                 try
                 {
                     var headerBytes = new byte[50];
@@ -211,8 +249,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
                     var newlinePos = Array.IndexOf(headerBytes, (byte)0x0A, 0, 50);
                     if (newlinePos > 0 && newlinePos + 5 < 50)
                     {
-                        endianByte = headerBytes[newlinePos + 5];
-                        formatDesc = endianByte switch
+                        formatDesc = headerBytes[newlinePos + 5] switch
                         {
                             0 => "Xbox 360 (BE)",
                             1 => "PC (LE)",
@@ -253,6 +290,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
                         IsSelected = isXbox360
                     };
 
+                    _allNifFiles.Add(entry);
                     _nifFiles.Add(entry);
                 });
             }
@@ -285,6 +323,60 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         UpdateFileCount();
         UpdateButtonStates();
     }
+
+    #region Sorting
+
+    private void SortByFilePath_Click(object sender, RoutedEventArgs e) => ApplySort(NifFilesSorter.SortColumn.FilePath);
+    private void SortBySize_Click(object sender, RoutedEventArgs e) => ApplySort(NifFilesSorter.SortColumn.Size);
+    private void SortByFormat_Click(object sender, RoutedEventArgs e) => ApplySort(NifFilesSorter.SortColumn.Format);
+    private void SortByStatus_Click(object sender, RoutedEventArgs e) => ApplySort(NifFilesSorter.SortColumn.Status);
+
+    private void ApplySort(NifFilesSorter.SortColumn column)
+    {
+        _sorter.CycleSortState(column);
+        UpdateSortIcons();
+        RefreshSortedList();
+    }
+
+    private void UpdateSortIcons()
+    {
+        FilePathSortIcon.Visibility = SizeSortIcon.Visibility =
+            FormatSortIcon.Visibility = StatusSortIcon.Visibility = Visibility.Collapsed;
+
+        var icon = _sorter.CurrentColumn switch
+        {
+            NifFilesSorter.SortColumn.FilePath => FilePathSortIcon,
+            NifFilesSorter.SortColumn.Size => SizeSortIcon,
+            NifFilesSorter.SortColumn.Format => FormatSortIcon,
+            NifFilesSorter.SortColumn.Status => StatusSortIcon,
+            _ => null
+        };
+
+        if (icon != null)
+        {
+            icon.Visibility = Visibility.Visible;
+            icon.Glyph = _sorter.IsAscending ? "\uE70E" : "\uE70D";
+        }
+    }
+
+    private void RefreshSortedList()
+    {
+        var selectedItem = NifFilesListView.SelectedItem as NifFileEntry;
+        var sorted = _sorter.Sort(_allNifFiles);
+        _nifFiles.Clear();
+        foreach (var file in sorted)
+        {
+            _nifFiles.Add(file);
+        }
+
+        if (selectedItem != null && _nifFiles.Contains(selectedItem))
+        {
+            NifFilesListView.SelectedItem = selectedItem;
+            NifFilesListView.ScrollIntoView(selectedItem, ScrollIntoViewAlignment.Leading);
+        }
+    }
+
+    #endregion
 
     private async void ConvertButton_Click(object sender, RoutedEventArgs e)
     {

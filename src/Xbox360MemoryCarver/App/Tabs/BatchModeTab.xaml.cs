@@ -24,7 +24,14 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         InitializeComponent();
         DumpFilesListView.ItemsSource = _dumpFiles;
         InitializeFileTypeCheckboxes();
+        SetupTextBoxContextMenus();
         ParallelCountBox.Maximum = Environment.ProcessorCount;
+    }
+
+    private void SetupTextBoxContextMenus()
+    {
+        TextBoxContextMenuHelper.AttachContextMenu(InputDirectoryTextBox);
+        TextBoxContextMenuHelper.AttachContextMenu(OutputDirectoryTextBox);
     }
 
     public void Dispose() => _cts?.Dispose();
@@ -57,7 +64,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     private async Task ShowDialogAsync(string title, string message)
     {
         var dialog = new ContentDialog
-            { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot };
+        { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot };
         await dialog.ShowAsync();
     }
 
@@ -114,6 +121,29 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         }
 
         StatusTextBlock.Text = $"Found {_dumpFiles.Count} dump file(s)";
+        UpdateButtonStates();
+    }
+
+    private void InputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (Directory.Exists(InputDirectoryTextBox.Text))
+        {
+            if (string.IsNullOrEmpty(OutputDirectoryTextBox.Text))
+            {
+                OutputDirectoryTextBox.Text = Path.Combine(InputDirectoryTextBox.Text, "extracted");
+            }
+            ScanForDumpFiles();
+        }
+        else
+        {
+            _dumpFiles.Clear();
+            StatusTextBlock.Text = "";
+            UpdateButtonStates();
+        }
+    }
+
+    private void OutputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
         UpdateButtonStates();
     }
 

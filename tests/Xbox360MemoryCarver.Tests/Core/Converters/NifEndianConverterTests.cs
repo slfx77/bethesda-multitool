@@ -138,7 +138,7 @@ public class NifEndianConverterTests
         data[pos++] = 0x00;
         data[pos++] = 0x00;
         data[pos++] = 0x00;
-        _ = data[pos++] = 0x00; // Final increment (suppress unused warning)
+        data[pos] = 0x00; // Final byte - no increment needed
 
         // Act
         var result = converter.ConvertToLittleEndian(data);

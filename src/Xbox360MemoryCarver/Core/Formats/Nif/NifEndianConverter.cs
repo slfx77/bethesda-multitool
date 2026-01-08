@@ -26,12 +26,6 @@ public sealed class NifEndianConverter
     private readonly NifXmlSchema _schema;
     private readonly bool _verbose;
 
-    // Parsed header info needed for block conversion
-    private uint _binaryVersion;
-    private string[] _blockTypeNames = [];
-    private uint _bsVersion;
-    private uint _userVersion;
-
     public NifEndianConverter(bool verbose = false)
     {
         _schema = NifXmlSchema.Instance;
@@ -55,7 +49,7 @@ public sealed class NifEndianConverter
         if (pos + 9 > data.Length) return null;
 
         // Read binary version (always LE)
-        _binaryVersion = BinaryUtils.ReadUInt32LE(data, pos);
+        var binaryVersion = BinaryUtils.ReadUInt32LE(data, pos);
 
         // Check endian byte
         var endianBytePos = pos + 4;
@@ -72,7 +66,7 @@ public sealed class NifEndianConverter
             pos = endianBytePos + 1;
 
             // User version (already LE)
-            _userVersion = BinaryUtils.ReadUInt32LE(data, pos);
+            var userVersion = BinaryUtils.ReadUInt32LE(data, pos);
             var numBlocksPos = pos + 4;
 
             // Num blocks (already LE)
@@ -83,12 +77,12 @@ public sealed class NifEndianConverter
             pos = numBlocksPos + 4;
 
             // Check for Bethesda header
-            var hasBsHeader = IsBethesdaVersion(_binaryVersion, _userVersion);
+            var hasBsHeader = IsBethesdaVersion(binaryVersion, userVersion);
 
             if (hasBsHeader)
             {
-                // BS Version (already LE)
-                _bsVersion = BinaryUtils.ReadUInt32LE(data, pos);
+                // BS Version (already LE) - read and advance position
+                _ = BinaryUtils.ReadUInt32LE(data, pos);
                 pos += 4;
 
                 // Skip Author string (ShortString: 1 byte len + chars)
@@ -114,7 +108,7 @@ public sealed class NifEndianConverter
             if (numBlockTypes == 0 || numBlockTypes > 1000) return null;
 
             // Block Types (SizedString array) - string lengths are BE
-            _blockTypeNames = new string[numBlockTypes];
+            var blockTypeNames = new string[numBlockTypes];
             for (var i = 0; i < numBlockTypes; i++)
             {
                 if (pos + 4 > data.Length) return null;
@@ -124,7 +118,7 @@ public sealed class NifEndianConverter
 
                 if (strLen > 256) return null;
 
-                _blockTypeNames[i] = Encoding.ASCII.GetString(data, pos, (int)strLen);
+                blockTypeNames[i] = Encoding.ASCII.GetString(data, pos, (int)strLen);
                 pos += (int)strLen;
             }
 
@@ -158,7 +152,7 @@ public sealed class NifEndianConverter
             for (var i = 0; i < numBlocks; i++)
             {
                 var typeIdx = blockTypeIndices[i];
-                if (typeIdx < _blockTypeNames.Length && _blockTypeNames[typeIdx] == "BSPackedAdditionalGeometryData")
+                if (typeIdx < blockTypeNames.Length && blockTypeNames[typeIdx] == "BSPackedAdditionalGeometryData")
                 {
                     _blocksToStrip.Add(i);
                     blockRemap[i] = -1;
@@ -301,7 +295,7 @@ public sealed class NifEndianConverter
             {
                 var blockSize = (int)blockSizes[blockIdx];
                 var typeIdx = blockTypeIndices[blockIdx];
-                var blockTypeName = typeIdx < _blockTypeNames.Length ? _blockTypeNames[typeIdx] : "Unknown";
+                var blockTypeName = typeIdx < blockTypeNames.Length ? blockTypeNames[typeIdx] : "Unknown";
 
                 if (_blocksToStrip.Contains(blockIdx))
                 {
@@ -365,7 +359,7 @@ public sealed class NifEndianConverter
     ///     Converts a single block's fields from BE to LE, remapping block references.
     ///     Returns the number of bytes written.
     /// </summary>
-    private int ConvertBlockWithRemap(byte[] input, byte[] output, int inPos, int outPos, int blockSize,
+    private static int ConvertBlockWithRemap(byte[] input, byte[] output, int inPos, int outPos, int blockSize,
         string blockTypeName, int[] blockRemap)
     {
         // First, copy the block data
@@ -508,10 +502,7 @@ public sealed class NifEndianConverter
         if (pos + 4 > end) return;
 
         SwapUInt32InPlace(buf, pos); // strLen
-        var strLen = BinaryUtils.ReadUInt32LE(buf, pos);
-        pos += 4;
-
-        // Skip string + bool
+        // String bytes + bool byte follow but don't need conversion
     }
 
     /// <summary>
@@ -590,7 +581,7 @@ public sealed class NifEndianConverter
     ///     NiTriStripsData in-place conversion with reference remapping.
     ///     Note: additionalData Ref pointing to stripped blocks is set to -1.
     /// </summary>
-    private void ConvertNiTriStripsDataInPlace(byte[] buf, int pos, int blockSize, int[] blockRemap)
+    private static void ConvertNiTriStripsDataInPlace(byte[] buf, int pos, int blockSize, int[] blockRemap)
     {
         var end = pos + blockSize;
         if (pos + 4 > end) return;
@@ -767,7 +758,7 @@ public sealed class NifEndianConverter
     /// <summary>
     ///     NiTriShapeData in-place conversion with reference remapping.
     /// </summary>
-    private void ConvertNiTriShapeDataInPlace(byte[] buf, int pos, int blockSize, int[] blockRemap)
+    private static void ConvertNiTriShapeDataInPlace(byte[] buf, int pos, int blockSize, int[] blockRemap)
     {
         var end = pos + blockSize;
         if (pos + 4 > end) return;
@@ -1129,17 +1120,6 @@ public sealed class NifEndianConverter
     // Note: ConvertUnknownBlock, EvaluateVersionCondition, and EvaluateArrayLength
     // are reserved for future schema-driven conversion but not currently used
 
-    /// <summary>
-    ///     Reads a count value from nearby data (already converted to LE).
-    /// </summary>
-    private static int ReadCountValue(byte[] data, int pos, int maxPos, int offset)
-    {
-        var readPos = pos + offset;
-        if (readPos < 0 || readPos + 4 > maxPos) return 0;
-
-        return (int)BinaryUtils.ReadUInt32LE(data, readPos);
-    }
-
     private static bool IsBethesdaVersion(uint binaryVersion, uint userVersion)
     {
         return binaryVersion is 0x14020007 or 0x14000005 or 0x14000004
@@ -1189,9 +1169,9 @@ public sealed class NifEndianConverter
 
     /// <summary>
     ///     Context for field conversion, tracking parsed values.
+    ///     Reserved for future schema-driven conversion support.
     /// </summary>
-    private sealed class ConversionContext
-    {
-        public uint BsVersion { get; init; }
-    }
+#pragma warning disable S2094 // Empty class reserved for future schema-driven conversion
+    private sealed class ConversionContext;
+#pragma warning restore S2094
 }

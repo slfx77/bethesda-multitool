@@ -43,6 +43,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         IsTabStop = true;
         HexTextBlock.KeyDown += TextBlock_KeyDown;
         AsciiTextBlock.KeyDown += TextBlock_KeyDown;
+        TextBoxContextMenuHelper.AttachContextMenu(SearchTextBox);
     }
 
     public void Dispose()

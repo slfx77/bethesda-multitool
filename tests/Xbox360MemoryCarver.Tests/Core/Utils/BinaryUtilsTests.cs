@@ -407,5 +407,142 @@ public class BinaryUtilsTests
         Assert.Equal(2, result);
     }
 
+    [Fact]
+    public void FindPattern_PatternAtEnd_ReturnsCorrectOffset()
+    {
+        // Arrange
+        byte[] data = [0x00, 0x00, 0x00, 0x41, 0x42, 0x43];
+        byte[] pattern = [0x41, 0x42, 0x43];
+
+        // Act
+        var result = BinaryUtils.FindPattern(data, pattern);
+
+        // Assert
+        Assert.Equal(3, result);
+    }
+
+    [Fact]
+    public void FindPattern_DataShorterThanPattern_ReturnsMinusOne()
+    {
+        // Arrange
+        byte[] data = [0x41, 0x42];
+        byte[] pattern = [0x41, 0x42, 0x43, 0x44];
+
+        // Act
+        var result = BinaryUtils.FindPattern(data, pattern);
+
+        // Assert
+        Assert.Equal(-1, result);
+    }
+
+    [Fact]
+    public void FindPattern_StartOffsetBeyondMatch_ReturnsMinusOne()
+    {
+        // Arrange
+        byte[] data = [0x41, 0x42, 0x43, 0x00, 0x00];
+        byte[] pattern = [0x41, 0x42, 0x43];
+
+        // Act
+        var result = BinaryUtils.FindPattern(data, pattern, 2);
+
+        // Assert
+        Assert.Equal(-1, result);
+    }
+
+    #endregion
+
+    #region ExtractNullTerminatedString Tests
+
+    [Fact]
+    public void ExtractNullTerminatedString_ValidString_ReturnsString()
+    {
+        // Arrange
+        byte[] data = [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00, 0x00]; // "Hello\0\0"
+
+        // Act
+        var result = BinaryUtils.ExtractNullTerminatedString(data);
+
+        // Assert
+        Assert.Equal("Hello", result);
+    }
+
+    [Fact]
+    public void ExtractNullTerminatedString_WithOffset_ReturnsCorrectString()
+    {
+        // Arrange
+        byte[] data = [0x00, 0x00, 0x48, 0x69, 0x00]; // "\0\0Hi\0"
+
+        // Act
+        var result = BinaryUtils.ExtractNullTerminatedString(data, offset: 2);
+
+        // Assert
+        Assert.Equal("Hi", result);
+    }
+
+    [Fact]
+    public void ExtractNullTerminatedString_NoNullTerminator_ReturnsNull()
+    {
+        // Arrange - No null terminator within maxLength
+        byte[] data = [0x48, 0x65, 0x6C, 0x6C, 0x6F]; // "Hello" with no null
+
+        // Act
+        var result = BinaryUtils.ExtractNullTerminatedString(data, maxLength: 5);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ExtractNullTerminatedString_OffsetBeyondData_ReturnsNull()
+    {
+        // Arrange
+        byte[] data = [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00];
+
+        // Act
+        var result = BinaryUtils.ExtractNullTerminatedString(data, offset: 100);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ExtractNullTerminatedString_NonPrintableContent_ReturnsNull()
+    {
+        // Arrange - Non-printable binary data with null terminator
+        byte[] data = [0x00, 0x01, 0x02, 0x03, 0x00];
+
+        // Act
+        var result = BinaryUtils.ExtractNullTerminatedString(data);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ExtractNullTerminatedString_EmptyString_ReturnsNull()
+    {
+        // Arrange - Immediate null terminator
+        byte[] data = [0x00, 0x41, 0x42, 0x43];
+
+        // Act
+        var result = BinaryUtils.ExtractNullTerminatedString(data);
+
+        // Assert - Empty strings fail IsPrintableText check
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ExtractNullTerminatedString_FilePath_ReturnsPath()
+    {
+        // Arrange - Common file path string
+        var pathBytes = "textures/architecture/wall.dds\0"u8.ToArray();
+
+        // Act
+        var result = BinaryUtils.ExtractNullTerminatedString(pathBytes);
+
+        // Assert
+        Assert.Equal("textures/architecture/wall.dds", result);
+    }
+
     #endregion
 }
