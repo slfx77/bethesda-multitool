@@ -146,7 +146,6 @@ public class SignatureBoundaryScannerTests
     [InlineData("3XDO")]
     [InlineData("3XDR")]
     [InlineData("RIFF")]
-    [InlineData("XEX2")]
     [InlineData("XUIS")]
     [InlineData("XUIB")]
     [InlineData("XDBF")]

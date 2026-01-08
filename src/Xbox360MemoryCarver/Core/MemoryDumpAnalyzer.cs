@@ -126,8 +126,8 @@ public sealed class MemoryDumpAnalyzer
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Skip XEX signatures at module offsets (already added above)
-                if (signatureId == "xex" && moduleOffsets.Contains(offset)) continue;
+                // Skip signatures at module offsets (modules are added from minidump metadata)
+                if (moduleOffsets.Contains(offset)) continue;
 
                 var format = FormatRegistry.GetBySignatureId(signatureId);
                 if (format == null) continue;
@@ -219,9 +219,6 @@ public sealed class MemoryDumpAnalyzer
 
     private static void AddModulesFromMinidump(AnalysisResult result, MinidumpInfo minidumpInfo)
     {
-        var xexFormat = FormatRegistry.GetByFormatId("xex");
-        if (xexFormat == null) return;
-
         foreach (var module in minidumpInfo.Modules)
         {
             var fileName = Path.GetFileName(module.Name);
@@ -245,8 +242,8 @@ public sealed class MemoryDumpAnalyzer
                     FileName = fileName
                 });
 
-                result.TypeCounts.TryGetValue("xex", out var modCount);
-                result.TypeCounts["xex"] = modCount + 1;
+                result.TypeCounts.TryGetValue("module", out var modCount);
+                result.TypeCounts["module"] = modCount + 1;
             }
         }
     }

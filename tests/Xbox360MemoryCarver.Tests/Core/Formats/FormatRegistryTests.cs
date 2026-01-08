@@ -34,7 +34,7 @@ public class FormatRegistryTests
         Assert.Contains("png", formatIds);
         Assert.Contains("nif", formatIds);
         Assert.Contains("xma", formatIds);
-        Assert.Contains("xex", formatIds);
+        // Note: xex format removed - modules are extracted from minidump metadata instead
     }
 
     [Fact]
@@ -80,7 +80,6 @@ public class FormatRegistryTests
     [InlineData("png")]
     [InlineData("nif")]
     [InlineData("xma")]
-    [InlineData("xex")]
     public void GetByFormatId_KnownFormat_ReturnsFormat(string formatId)
     {
         // Act
@@ -128,7 +127,6 @@ public class FormatRegistryTests
     [InlineData("png")]
     [InlineData("nif")]
     [InlineData("xma")]
-    [InlineData("xex")]
     public void GetBySignatureId_KnownSignature_ReturnsFormat(string signatureId)
     {
         // Act
@@ -159,7 +157,6 @@ public class FormatRegistryTests
     [InlineData("png", FileCategory.Image)]
     [InlineData("xma", FileCategory.Audio)]
     [InlineData("nif", FileCategory.Model)]
-    [InlineData("xex", FileCategory.Module)]
     public void GetCategory_KnownSignature_ReturnsCorrectCategory(string signatureId, FileCategory expectedCategory)
     {
         // Act
@@ -240,7 +237,6 @@ public class FormatRegistryTests
     [InlineData("something with texture", "dds")]  // Keyword fallback
     [InlineData("some audio file", "xma")]         // Keyword fallback
     [InlineData("a model file", "nif")]            // Keyword fallback
-    [InlineData("an executable", "xex")]           // Keyword fallback
     public void NormalizeToSignatureId_KnownInputs_ReturnsNormalized(string input, string expected)
     {
         // Act

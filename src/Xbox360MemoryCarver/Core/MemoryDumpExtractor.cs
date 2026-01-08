@@ -131,17 +131,8 @@ public static class MemoryDumpExtractor
     {
         var extractedOffsets = new HashSet<long>();
 
-        // Check if module extraction is requested
-        // Modules are extracted if:
-        // - No file type filter is specified (null or empty), OR
-        // - The filter includes "xex" or "module"
-        var shouldExtractModules = options.FileTypes == null ||
-                                   options.FileTypes.Count == 0 ||
-                                   options.FileTypes.Any(t =>
-                                       t.Equals("xex", StringComparison.OrdinalIgnoreCase) ||
-                                       t.Contains("module", StringComparison.OrdinalIgnoreCase));
-
-        if (!shouldExtractModules) return (0, extractedOffsets);
+        // Modules are always extracted from minidump metadata
+        // (they don't use signature scanning, so they bypass the file type filter)
 
         var minidumpInfo = MinidumpParser.Parse(filePath);
         if (!minidumpInfo.IsValid)
