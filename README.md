@@ -212,6 +212,6 @@ This project uses the following external components:
 
 - [kran27/DDXConv](https://github.com/kran27/DDXConv) - Original DDX texture conversion tool
 - [gibbed/XCompression](https://github.com/gibbed/XCompression) - Xbox LZX decompression library
-- [ClementDrepworx/XUIHelper](https://github.com/ClementDrepworx/XUIHelper) - Xbox UI format conversion tool
+- [SGCSam/XUIHelper](https://github.com/SGCSam/XUIHelper) - Xbox UI format conversion tool
 - [NifTools/NifSkope](https://github.com/niftools/nifskope) - NIF format schema (nif.xml) for block-by-block endian conversion
 - [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia) - Format documentation and research
