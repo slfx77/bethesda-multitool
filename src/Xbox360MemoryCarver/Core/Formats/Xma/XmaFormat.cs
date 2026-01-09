@@ -101,7 +101,7 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
 
         var needsRepair = metadata.TryGetValue("needsRepair", out var repair) && repair is true;
         var needsSeek = metadata.TryGetValue("hasSeekChunk", out var hasSeek) && hasSeek is false;
-        var isXma1 = metadata.TryGetValue("formatTag", out var fmt) && fmt is ushort tag && tag == 0x0165;
+        var isXma1 = metadata.TryGetValue("formatTag", out var fmt) && fmt is int tag && tag == 0x0165;
 
         return needsRepair || needsSeek || isXma1;
     }
@@ -110,7 +110,7 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
     {
         var needsRepair = metadata?.TryGetValue("needsRepair", out var repair) == true && repair is true;
         var needsSeek = metadata?.TryGetValue("hasSeekChunk", out var hasSeek) == true && hasSeek is false;
-        var isXma1 = metadata?.TryGetValue("formatTag", out var fmt) == true && fmt is ushort tag && tag == 0x0165;
+        var isXma1 = metadata?.TryGetValue("formatTag", out var fmt) == true && fmt is int tag && tag == 0x0165;
 
         if (!needsRepair && !needsSeek && !isXma1) return data;
 

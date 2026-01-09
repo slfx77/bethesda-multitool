@@ -63,31 +63,41 @@ internal static class NifWriter
             }
         }
 
-        // NumBlockTypes
+        // Build block type remap: old index -> new index (or -1 if removed)
+        // This removes the "BSPackedAdditionalGeometryData" block type if it's no longer used
+        var blockTypeRemap = BuildBlockTypeRemap(sourceInfo, packedBlockIndices);
+        var newBlockTypeCount = blockTypeRemap.Values.Count(v => v >= 0);
+
+        // NumBlockTypes (write new count)
         var numBlockTypes = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos));
-        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numBlockTypes);
+        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), (ushort)newBlockTypeCount);
         pos += 2;
         outPos += 2;
 
-        // Block type names
+        // Block type names (skip removed types)
         for (var i = 0; i < numBlockTypes; i++)
         {
             var strLen = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos));
-            BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), strLen);
             pos += 4;
-            outPos += 4;
 
-            Array.Copy(data, pos, output, outPos, (int)strLen);
+            if (blockTypeRemap[i] >= 0)
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), strLen);
+                outPos += 4;
+                Array.Copy(data, pos, output, outPos, (int)strLen);
+                outPos += (int)strLen;
+            }
+
             pos += (int)strLen;
-            outPos += (int)strLen;
         }
 
-        // Block type indices
+        // Block type indices (remapped)
         foreach (var block in sourceInfo.Blocks)
         {
             if (!packedBlockIndices.Contains(block.Index))
             {
-                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), block.TypeIndex);
+                var newTypeIndex = blockTypeRemap[block.TypeIndex];
+                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), (ushort)newTypeIndex);
                 outPos += 2;
             }
 
@@ -112,6 +122,30 @@ internal static class NifWriter
         outPos = CopyStringTable(data, output, pos, outPos);
 
         return outPos;
+    }
+
+    /// <summary>
+    ///     Builds a mapping from old block type indices to new indices.
+    ///     Types that are no longer used (like BSPackedAdditionalGeometryData) get -1.
+    /// </summary>
+    private static Dictionary<int, int> BuildBlockTypeRemap(NifInfo sourceInfo, HashSet<int> packedBlockIndices)
+    {
+        // Find which block types are still in use after removing packed blocks
+        var usedTypeIndices = new HashSet<int>();
+        foreach (var block in sourceInfo.Blocks)
+            if (!packedBlockIndices.Contains(block.Index))
+                usedTypeIndices.Add(block.TypeIndex);
+
+        // Build remap: old index -> new index (or -1 if not used)
+        var remap = new Dictionary<int, int>();
+        var newIndex = 0;
+        for (var i = 0; i < sourceInfo.BlockTypeNames.Count; i++)
+            if (usedTypeIndices.Contains(i))
+                remap[i] = newIndex++;
+            else
+                remap[i] = -1;
+
+        return remap;
     }
 
     private static int CopyStringTable(byte[] data, byte[] output, int pos, int outPos)

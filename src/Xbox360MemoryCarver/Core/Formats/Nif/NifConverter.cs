@@ -251,7 +251,23 @@ public sealed class NifConverter
         Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand)
     {
         var packedBlockIndices = new HashSet<int>(packedBlocks.Select(b => b.Index));
+
+        // Calculate header size changes:
+        // - Each removed block loses 2 bytes (block type index) + 4 bytes (block size) = 6 bytes
+        // - Removed block type string loses 4 bytes (length) + string length
         var headerSizeDelta = -(packedBlocks.Count * 6);
+
+        // Calculate removed block type strings
+        var usedTypeIndices = new HashSet<int>();
+        foreach (var block in sourceInfo.Blocks)
+            if (!packedBlockIndices.Contains(block.Index))
+                usedTypeIndices.Add(block.TypeIndex);
+
+        for (var i = 0; i < sourceInfo.BlockTypeNames.Count; i++)
+            if (!usedTypeIndices.Contains(i))
+                // This block type is no longer used - subtract its string from header
+                // (4 bytes for length prefix + string content)
+                headerSizeDelta -= 4 + sourceInfo.BlockTypeNames[i].Length;
 
         long totalBlockSizeDelta = 0;
         foreach (var block in sourceInfo.Blocks)

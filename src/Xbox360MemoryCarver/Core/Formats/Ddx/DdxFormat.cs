@@ -149,7 +149,7 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
 
         var metadata = new Dictionary<string, object>
         {
-            ["version"] = version,
+            ["version"] = (int)version,
             ["gpuFormat"] = formatByte,
             ["isTiled"] = isTiled,
             ["dataOffset"] = 0x44,

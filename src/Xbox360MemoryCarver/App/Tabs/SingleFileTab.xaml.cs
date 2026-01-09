@@ -101,10 +101,16 @@ public sealed partial class SingleFileTab : UserControl
         ExtractButton.IsEnabled = valid && _analysisResult != null && !string.IsNullOrEmpty(OutputPathTextBox.Text);
     }
 
-    private async Task ShowDialogAsync(string title, string message)
+    private async Task ShowDialogAsync(string title, string message, bool isError = false)
     {
-        await new ContentDialog
-            { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
+        if (isError)
+        {
+            await ErrorDialogHelper.ShowErrorAsync(title, message, XamlRoot);
+        }
+        else
+        {
+            await ErrorDialogHelper.ShowInfoAsync(title, message, XamlRoot);
+        }
     }
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -186,7 +192,8 @@ public sealed partial class SingleFileTab : UserControl
         }
         catch (Exception ex)
         {
-            await ShowDialogAsync("Analysis Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}");
+            await ShowDialogAsync("Analysis Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
+                isError: true);
         }
         finally
         {
@@ -246,7 +253,8 @@ public sealed partial class SingleFileTab : UserControl
         }
         catch (Exception ex)
         {
-            await ShowDialogAsync("Extraction Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}");
+            await ShowDialogAsync("Extraction Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
+                isError: true);
         }
         finally
         {

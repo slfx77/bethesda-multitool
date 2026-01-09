@@ -55,10 +55,9 @@ public sealed class MemoryDumpAnalyzer
         // Progress phases and their weight (totals 100%):
         // - Scanning: 0-50%
         // - Parsing: 50-70%
-        // - Loading: 70-75% (if metadata enabled)
-        // - SCDA scan: 75-85%
-        // - ESM scan: 85-95%
-        // - FormID map: 95-100%
+        // - SCDA scan: 70-80% (if metadata enabled)
+        // - ESM scan: 80-90%
+        // - FormID map: 90-100%
 
         var stopwatch = Stopwatch.StartNew();
         var result = new AnalysisResult { FilePath = filePath };
@@ -99,6 +98,10 @@ public sealed class MemoryDumpAnalyzer
                 .Where(r => r.HasValue)
                 .Select(r => r!.Value.fileOffset));
 
+        // Use a single memory-mapped file for all operations
+        using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
+
         // Phase 1: Signature scanning (0-50%)
         var scanProgress = progress != null
             ? new Progress<AnalysisProgress>(p =>
@@ -116,23 +119,13 @@ public sealed class MemoryDumpAnalyzer
             })
             : null;
 
-        var matches = await Task.Run(() =>
-        {
-            using var mmf =
-                MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
-            return FindAllMatches(accessor, result.FileSize, scanProgress);
-        }, cancellationToken);
+        var matches = await Task.Run(() => FindAllMatches(accessor, result.FileSize, scanProgress), cancellationToken);
 
         // Phase 2: Parsing matches (50-70%)
         progress?.Report(new AnalysisProgress { Phase = "Parsing", FilesFound = matches.Count, PercentComplete = 50 });
 
         await Task.Run(() =>
         {
-            using var mmf =
-                MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
-
             var processed = 0;
             foreach (var (signatureId, offset) in matches)
             {
@@ -186,39 +179,39 @@ public sealed class MemoryDumpAnalyzer
         result.CarvedFiles.Clear();
         foreach (var file in sortedFiles) result.CarvedFiles.Add(file);
 
-        // Extract metadata (SCDA records, ESM records, FormID mapping)
+        // Extract metadata (SCDA records, ESM records, FormID mapping) using memory-mapped access
         if (includeMetadata)
         {
-            // Phase 3: Loading dump data (70-75%)
+            // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
             progress?.Report(new AnalysisProgress
-                { Phase = "Loading", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
-            var data = await File.ReadAllBytesAsync(filePath, cancellationToken);
-
-            // Phase 4: SCDA scan (75-85%)
-            progress?.Report(new AnalysisProgress
-                { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 75 });
+                { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
             await Task.Run(() =>
             {
-                var scdaScanResult = ScdaFormat.ScanForRecords(data);
+                var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
                 foreach (var record in scdaScanResult.Records)
                     record.ScriptName = ScdaExtractor.ExtractScriptNameFromSourcePublic(record.SourceText);
                 result.ScdaRecords = scdaScanResult.Records;
             }, cancellationToken);
 
-            // Phase 5: ESM scan (85-95%)
+            // Phase 4: ESM scan (80-90%) - now using memory-mapped access
             progress?.Report(new AnalysisProgress
-                { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 85 });
+                { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
             await Task.Run(() =>
             {
-                var esmRecords = EsmRecordFormat.ScanForRecords(data);
+                var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
                 result.EsmRecords = esmRecords;
             }, cancellationToken);
 
-            // Phase 6: FormID mapping (95-100%)
+            // Phase 5: FormID mapping (90-100%) - now using memory-mapped access
             progress?.Report(new AnalysisProgress
-                { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 95 });
+                { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
             await Task.Run(
-                () => { result.FormIdMap = EsmRecordFormat.CorrelateFormIdsToNames(data, result.EsmRecords!); },
+                () =>
+                {
+                    result.FormIdMap =
+                        EsmRecordFormat.CorrelateFormIdsToNamesMemoryMapped(accessor, result.FileSize,
+                            result.EsmRecords!);
+                },
                 cancellationToken);
         }
 

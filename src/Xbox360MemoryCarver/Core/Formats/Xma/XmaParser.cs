@@ -109,7 +109,7 @@ internal static class XmaParser
         var metadata = new Dictionary<string, object>
         {
             ["isXma"] = true,
-            ["formatTag"] = state.FormatTag!.Value,
+            ["formatTag"] = (int)state.FormatTag!.Value,
             ["hasSeekChunk"] = state.HasSeekChunk,
             ["qualityEstimate"] = totalQuality,
             ["usablePercent"] = usablePercent

@@ -133,7 +133,7 @@ public class DdxFormatTests
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal((ushort)4, result.Metadata["version"]);
+        Assert.Equal(4, result.Metadata["version"]);
     }
 
     [Fact]

@@ -90,16 +90,23 @@
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
       <ProgressBar
-        x:Name="ConversionProgressBar"
+        x:Name="ScanProgressBar"
         Grid.Row="0"
+        Margin="0,0,0,4"
+        Visibility="Collapsed"
+        Value="0" />
+      <ProgressBar
+        x:Name="ConversionProgressBar"
+        Grid.Row="1"
         Margin="0,0,0,4"
         Visibility="Collapsed"
         Value="0" />
       <TextBlock
         x:Name="StatusTextBlock"
-        Grid.Row="1"
+        Grid.Row="2"
         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         Text="" />
     </Grid>
@@ -268,13 +275,13 @@
                 <TextBlock
                   Grid.Column="3"
                   VerticalAlignment="Center"
-                  Foreground="{x:Bind FormatColor}"
-                  Text="{x:Bind FormatDescription}" />
+                  Foreground="{x:Bind FormatColor, Mode=OneWay}"
+                  Text="{x:Bind FormatDescription, Mode=OneWay}" />
                 <TextBlock
                   Grid.Column="4"
                   VerticalAlignment="Center"
-                  Foreground="{x:Bind StatusColor}"
-                  Text="{x:Bind Status}" />
+                  Foreground="{x:Bind StatusColor, Mode=OneWay}"
+                  Text="{x:Bind Status, Mode=OneWay}" />
               </Grid>
             </DataTemplate>
           </ListView.ItemTemplate>

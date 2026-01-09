@@ -171,7 +171,7 @@ public class XmaFormatTests
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal((ushort)0x0165, result.Metadata["formatTag"]);
+        Assert.Equal(0x0165, result.Metadata["formatTag"]);
     }
 
     #endregion

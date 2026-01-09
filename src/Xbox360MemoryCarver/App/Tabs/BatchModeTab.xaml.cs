@@ -63,11 +63,16 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     }
 #pragma warning restore CA1822, S2325
 
-    private async Task ShowDialogAsync(string title, string message)
+    private async Task ShowDialogAsync(string title, string message, bool isError = false)
     {
-        var dialog = new ContentDialog
-            { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot };
-        await dialog.ShowAsync();
+        if (isError)
+        {
+            await ErrorDialogHelper.ShowErrorAsync(title, message, XamlRoot);
+        }
+        else
+        {
+            await ErrorDialogHelper.ShowInfoAsync(title, message, XamlRoot);
+        }
     }
 
 #pragma warning disable RCS1163
@@ -104,9 +109,16 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     private void ScanForDumpFiles()
     {
         _dumpFiles.Clear();
-        if (!Directory.Exists(InputDirectoryTextBox.Text)) return;
+        var directory = InputDirectoryTextBox.Text;
 
-        foreach (var file in Directory.GetFiles(InputDirectoryTextBox.Text, "*.dmp", SearchOption.AllDirectories))
+        if (!Directory.Exists(directory))
+        {
+            StatusTextBlock.Text = "";
+            UpdateButtonStates();
+            return;
+        }
+
+        foreach (var file in Directory.GetFiles(directory, "*.dmp", SearchOption.AllDirectories))
         {
             var info = new FileInfo(file);
             var entry = new DumpFileEntry
@@ -201,8 +213,12 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         };
 
         var list = sorted.ToList();
+
+        // Batch update - suspend UI binding during sort refresh
+        DumpFilesListView.ItemsSource = null;
         _dumpFiles.Clear();
         foreach (var item in list) _dumpFiles.Add(item);
+        DumpFilesListView.ItemsSource = _dumpFiles;
     }
 
     private void UpdateSortIcons()
@@ -262,7 +278,8 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         }
         catch (Exception ex)
         {
-            await ShowDialogAsync("Batch Processing Failed", ex.Message);
+            await ShowDialogAsync("Batch Processing Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
+                isError: true);
         }
         finally
         {

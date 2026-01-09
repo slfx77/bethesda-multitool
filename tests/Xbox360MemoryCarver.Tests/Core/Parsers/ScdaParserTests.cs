@@ -27,7 +27,7 @@ public class ScdaParserTests
         Assert.Equal("SCDA", result.Format);
         Assert.Equal(14, result.EstimatedSize); // 6 header + 8 bytecode
         Assert.True(result.Metadata.ContainsKey("bytecodeSize"));
-        Assert.Equal((ushort)8, result.Metadata["bytecodeSize"]);
+        Assert.Equal(8, result.Metadata["bytecodeSize"]);
     }
 
     [Fact]
