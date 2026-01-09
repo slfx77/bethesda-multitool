@@ -5,16 +5,14 @@ namespace Xbox360MemoryCarver;
 /// </summary>
 internal sealed class NifFilesSorter
 {
-    private SortColumn _currentSortColumn = SortColumn.None;
-    private bool _sortAscending = true;
+    public SortColumn CurrentColumn { get; private set; } = SortColumn.None;
 
-    public SortColumn CurrentColumn => _currentSortColumn;
-    public bool IsAscending => _sortAscending;
+    public bool IsAscending { get; private set; } = true;
 
     public void Reset()
     {
-        _currentSortColumn = SortColumn.None;
-        _sortAscending = true;
+        CurrentColumn = SortColumn.None;
+        IsAscending = true;
     }
 
     /// <summary>
@@ -22,41 +20,41 @@ internal sealed class NifFilesSorter
     /// </summary>
     public void CycleSortState(SortColumn column)
     {
-        if (_currentSortColumn == column)
+        if (CurrentColumn == column)
         {
-            if (_sortAscending)
+            if (IsAscending)
             {
-                _sortAscending = false;
+                IsAscending = false;
             }
             else
             {
-                _currentSortColumn = SortColumn.None;
-                _sortAscending = true;
+                CurrentColumn = SortColumn.None;
+                IsAscending = true;
             }
         }
         else
         {
-            _currentSortColumn = column;
-            _sortAscending = true;
+            CurrentColumn = column;
+            IsAscending = true;
         }
     }
 
     public IEnumerable<NifFileEntry> Sort(IList<NifFileEntry> files)
     {
-        return _currentSortColumn switch
+        return CurrentColumn switch
         {
-            SortColumn.FilePath => _sortAscending
+            SortColumn.FilePath => IsAscending
                 ? files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
                 : files.OrderByDescending(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
-            SortColumn.Size => _sortAscending
+            SortColumn.Size => IsAscending
                 ? files.OrderBy(f => f.FileSize)
                 : files.OrderByDescending(f => f.FileSize),
-            SortColumn.Format => _sortAscending
+            SortColumn.Format => IsAscending
                 ? files.OrderBy(f => f.FormatDescription, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
                 : files.OrderByDescending(f => f.FormatDescription, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
-            SortColumn.Status => _sortAscending
+            SortColumn.Status => IsAscending
                 ? files.OrderBy(f => f.Status, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
                 : files.OrderByDescending(f => f.Status, StringComparer.OrdinalIgnoreCase)

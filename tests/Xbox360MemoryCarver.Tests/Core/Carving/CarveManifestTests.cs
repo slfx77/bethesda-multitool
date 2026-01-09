@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Xbox360MemoryCarver.Core.Carving;
 using Xunit;
@@ -19,10 +20,7 @@ public sealed class CarveManifestTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_testDir))
-        {
-            Directory.Delete(_testDir, recursive: true);
-        }
+        if (Directory.Exists(_testDir)) Directory.Delete(_testDir, true);
 
         GC.SuppressFinalize(this);
     }
@@ -80,7 +78,7 @@ public sealed class CarveManifestTests : IDisposable
         Assert.False(entry.IsPartial);
         Assert.Equal("Test note", entry.Notes);
         Assert.NotNull(entry.Metadata);
-        Assert.Equal(512, Convert.ToInt32(entry.Metadata["width"], System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(512, Convert.ToInt32(entry.Metadata["width"], CultureInfo.InvariantCulture));
     }
 
     #endregion

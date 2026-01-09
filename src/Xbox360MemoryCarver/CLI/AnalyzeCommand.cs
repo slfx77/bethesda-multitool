@@ -4,6 +4,7 @@ using Spectre.Console;
 using Xbox360MemoryCarver.Core;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Formats.Scda;
+using Xbox360MemoryCarver.Core.Json;
 
 namespace Xbox360MemoryCarver.CLI;
 
@@ -12,8 +13,6 @@ namespace Xbox360MemoryCarver.CLI;
 /// </summary>
 public static class AnalyzeCommand
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-
     public static Command Create()
     {
         var command = new Command("analyze", "Analyze memory dump structure and extract metadata");
@@ -80,7 +79,7 @@ public static class AnalyzeCommand
         var report = format.ToLowerInvariant() switch
         {
             "md" or "markdown" => MemoryDumpAnalyzer.GenerateReport(result),
-            "json" => JsonSerializer.Serialize(result, JsonOptions),
+            "json" => SerializeResultToJson(result),
             _ => MemoryDumpAnalyzer.GenerateSummary(result)
         };
 
@@ -96,6 +95,48 @@ public static class AnalyzeCommand
 
         if (!string.IsNullOrEmpty(extractEsm) && result.EsmRecords != null)
             await ExtractEsmRecordsAsync(input, extractEsm, result, verbose);
+    }
+
+    /// <summary>
+    ///     Serialize analysis result to JSON using source-generated serializer.
+    /// </summary>
+    private static string SerializeResultToJson(AnalysisResult result)
+    {
+        // Convert to the trim-compatible JSON types
+        var jsonResult = new JsonAnalysisResult
+        {
+            FilePath = result.FilePath,
+            FileSize = result.FileSize,
+            BuildType = result.BuildType,
+            IsXbox360 = result.MinidumpInfo?.IsXbox360 ?? false,
+            ModuleCount = result.MinidumpInfo?.Modules.Count ?? 0,
+            MemoryRegionCount = result.MinidumpInfo?.MemoryRegions.Count ?? 0,
+            CarvedFiles = result.CarvedFiles.Select(cf => new JsonCarvedFileInfo
+            {
+                FileType = cf.FileType,
+                Offset = cf.Offset,
+                Length = cf.Length,
+                FileName = cf.FileName
+            }).ToList(),
+            EsmRecords = result.EsmRecords != null
+                ? new JsonEsmRecordSummary
+                {
+                    EdidCount = result.EsmRecords.EditorIds.Count,
+                    GmstCount = result.EsmRecords.GameSettings.Count,
+                    SctxCount = result.EsmRecords.ScriptSources.Count,
+                    ScroCount = result.EsmRecords.FormIdReferences.Count
+                }
+                : null,
+            ScdaRecords = result.ScdaRecords.Select(sr => new JsonScdaRecordInfo
+            {
+                Offset = sr.Offset,
+                BytecodeLength = sr.BytecodeLength,
+                ScriptName = sr.ScriptName
+            }).ToList(),
+            FormIdMap = result.FormIdMap
+        };
+
+        return JsonSerializer.Serialize(jsonResult, CarverJsonContext.Default.JsonAnalysisResult);
     }
 
     private static async Task ExtractEsmRecordsAsync(string input, string extractEsm,

@@ -156,7 +156,7 @@ public class DdsFormatTests
     {
         // Arrange - DXT1 is 8 bytes per 4x4 block
         // 256x256 = 64x64 blocks = 4096 blocks * 8 bytes = 32768 bytes + 128 header
-        var data = CreateDdsHeader(256, 256, "DXT1", 1);
+        var data = CreateDdsHeader(256, 256, "DXT1");
 
         // Act
         var result = _parser.Parse(data);
@@ -171,7 +171,7 @@ public class DdsFormatTests
     {
         // Arrange - DXT5 is 16 bytes per 4x4 block
         // 256x256 = 64x64 blocks = 4096 blocks * 16 bytes = 65536 bytes + 128 header
-        var data = CreateDdsHeader(256, 256, "DXT5", 1);
+        var data = CreateDdsHeader(256, 256, "DXT5");
 
         // Act
         var result = _parser.Parse(data);

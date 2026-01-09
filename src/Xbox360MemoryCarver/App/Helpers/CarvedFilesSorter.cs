@@ -5,16 +5,14 @@ namespace Xbox360MemoryCarver;
 /// </summary>
 internal sealed class CarvedFilesSorter
 {
-    private SortColumn _currentSortColumn = SortColumn.None;
-    private bool _sortAscending = true;
+    public SortColumn CurrentColumn { get; private set; } = SortColumn.None;
 
-    public SortColumn CurrentColumn => _currentSortColumn;
-    public bool IsAscending => _sortAscending;
+    public bool IsAscending { get; private set; } = true;
 
     public void Reset()
     {
-        _currentSortColumn = SortColumn.None;
-        _sortAscending = true;
+        CurrentColumn = SortColumn.None;
+        IsAscending = true;
     }
 
     /// <summary>
@@ -22,39 +20,39 @@ internal sealed class CarvedFilesSorter
     /// </summary>
     public void CycleSortState(SortColumn column)
     {
-        if (_currentSortColumn == column)
+        if (CurrentColumn == column)
         {
-            if (_sortAscending)
+            if (IsAscending)
             {
-                _sortAscending = false;
+                IsAscending = false;
             }
             else
             {
-                _currentSortColumn = SortColumn.None;
-                _sortAscending = true;
+                CurrentColumn = SortColumn.None;
+                IsAscending = true;
             }
         }
         else
         {
-            _currentSortColumn = column;
-            _sortAscending = true;
+            CurrentColumn = column;
+            IsAscending = true;
         }
     }
 
     public IEnumerable<CarvedFileEntry> Sort(IList<CarvedFileEntry> files)
     {
-        return _currentSortColumn switch
+        return CurrentColumn switch
         {
-            SortColumn.Offset => _sortAscending
+            SortColumn.Offset => IsAscending
                 ? files.OrderBy(f => f.Offset)
                 : files.OrderByDescending(f => f.Offset),
-            SortColumn.Length => _sortAscending
+            SortColumn.Length => IsAscending
                 ? files.OrderBy(f => f.Length)
                 : files.OrderByDescending(f => f.Length),
-            SortColumn.Type => _sortAscending
+            SortColumn.Type => IsAscending
                 ? files.OrderBy(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset)
                 : files.OrderByDescending(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset),
-            SortColumn.Filename => _sortAscending
+            SortColumn.Filename => IsAscending
                 ? files.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
                     .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset)
                 : files.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)

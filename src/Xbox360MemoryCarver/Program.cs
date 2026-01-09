@@ -32,43 +32,6 @@ public static class Program
         return await RunCliAsync(args);
     }
 
-#if WINDOWS_GUI
-    private static bool IsCliMode(string[] args)
-    {
-        return args.Length > 0 && (
-            args.Any(a => a.Equals("--no-gui", StringComparison.OrdinalIgnoreCase)) ||
-            args.Any(a => a.Equals("-n", StringComparison.OrdinalIgnoreCase)));
-    }
-
-    private static string? GetAutoLoadFile(string[] args)
-    {
-        var fileArg = GetFlagValue(args, "--file") ?? GetFlagValue(args, "-f");
-
-        if (string.IsNullOrEmpty(fileArg) && args.Length > 0 && !args[0].StartsWith('-'))
-        {
-            var potentialFile = args[0];
-            if (File.Exists(potentialFile) && potentialFile.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase))
-            {
-                return potentialFile;
-            }
-        }
-
-        return fileArg;
-    }
-
-    private static string? GetFlagValue(string[] args, string flag)
-    {
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[i + 1];
-            }
-        }
-        return null;
-    }
-#endif
-
     private static async Task<int> RunCliAsync(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
@@ -170,4 +133,36 @@ public static class Program
         AnsiConsole.MarkupLine("  Xbox360MemoryCarver --file [green]dump.dmp[/]");
 #endif
     }
+
+#if WINDOWS_GUI
+    private static bool IsCliMode(string[] args)
+    {
+        return args.Length > 0 && (
+            args.Any(a => a.Equals("--no-gui", StringComparison.OrdinalIgnoreCase)) ||
+            args.Any(a => a.Equals("-n", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static string? GetAutoLoadFile(string[] args)
+    {
+        var fileArg = GetFlagValue(args, "--file") ?? GetFlagValue(args, "-f");
+
+        if (string.IsNullOrEmpty(fileArg) && args.Length > 0 && !args[0].StartsWith('-'))
+        {
+            var potentialFile = args[0];
+            if (File.Exists(potentialFile) && potentialFile.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase))
+                return potentialFile;
+        }
+
+        return fileArg;
+    }
+
+    private static string? GetFlagValue(string[] args, string flag)
+    {
+        for (var i = 0; i < args.Length - 1; i++)
+            if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
+                return args[i + 1];
+
+        return null;
+    }
+#endif
 }

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **NIF Converter Refactoring**: Modularized NIF converter into specialized components
+  - `NifParser` - Header and block structure parsing
+  - `NifConverter` - Conversion orchestration
+  - `NifWriter` - Output file writing
+  - `NifGeometryExtractor` - BSPackedAdditionalGeometryData extraction
+  - `NifGeometryWriter` - Expanded geometry block output
+  - `NifGeometryDataConverter` - Geometry data endian conversion
+  - `NifBlockConverters` - Type-specific block converters
+  - `NifEndianUtils` - Low-level byte-swapping utilities
+  - `NifTypes` - Shared type definitions
+- Added JSON source generation contexts for AOT compatibility
+- Improved code style consistency with enforced curly braces on all control flow statements
+
+### Removed
+
+- `NifEndianConverter.cs` - Replaced by modular components
+- `NifXmlSchema.cs` - No longer needed with new parsing approach
+
+### Fixed
+
+- Build warnings for missing curly braces in foreach/for loops (S3973)
+
 ## [0.2.0-alpha.1] - 2026-01-07
 
 ### Added

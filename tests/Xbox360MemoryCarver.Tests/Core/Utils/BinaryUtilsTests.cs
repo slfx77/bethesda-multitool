@@ -473,7 +473,7 @@ public class BinaryUtilsTests
         byte[] data = [0x00, 0x00, 0x48, 0x69, 0x00]; // "\0\0Hi\0"
 
         // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(data, offset: 2);
+        var result = BinaryUtils.ExtractNullTerminatedString(data, 2);
 
         // Assert
         Assert.Equal("Hi", result);
@@ -499,7 +499,7 @@ public class BinaryUtilsTests
         byte[] data = [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00];
 
         // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(data, offset: 100);
+        var result = BinaryUtils.ExtractNullTerminatedString(data, 100);
 
         // Assert
         Assert.Null(result);

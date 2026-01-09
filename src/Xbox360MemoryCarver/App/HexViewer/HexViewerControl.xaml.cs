@@ -100,7 +100,10 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         _rowHeight = lineHeight;
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs e) => Dispose();
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        Dispose();
+    }
 
     private void HexDisplayArea_SizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -278,8 +281,15 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         e.Handled = true;
     }
 
-    private void CopyHexMenuItem_Click(object sender, RoutedEventArgs e) => CopySelectedText(HexTextBlock);
-    private void CopyAsciiMenuItem_Click(object sender, RoutedEventArgs e) => CopySelectedText(AsciiTextBlock);
+    private void CopyHexMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        CopySelectedText(HexTextBlock);
+    }
+
+    private void CopyAsciiMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        CopySelectedText(AsciiTextBlock);
+    }
 
     private static void TextBlock_KeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -321,11 +331,17 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
     }
 
-    private void RenderMinimap() => _minimapRenderer?.Render(_dataManager.FileSize, MinimapContainer.ActualWidth - 8,
-        MinimapContainer.ActualHeight - 8);
+    private void RenderMinimap()
+    {
+        _minimapRenderer?.Render(_dataManager.FileSize, MinimapContainer.ActualWidth - 8,
+            MinimapContainer.ActualHeight - 8);
+    }
 
-    private void UpdateMinimapViewport() => _minimapRenderer?.UpdateViewport(_dataManager.FileSize, _totalRows,
-        _currentTopRow, _visibleRows, BytesPerRow);
+    private void UpdateMinimapViewport()
+    {
+        _minimapRenderer?.UpdateViewport(_dataManager.FileSize, _totalRows,
+            _currentTopRow, _visibleRows, BytesPerRow);
+    }
 
     private void Minimap_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
@@ -340,8 +356,10 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
             NavigateToMinimapPosition(e.GetCurrentPoint(MinimapCanvas).Position.Y);
     }
 
-    private void Minimap_PointerReleased(object sender, PointerRoutedEventArgs e) =>
+    private void Minimap_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
         _minimapRenderer?.HandlePointerReleased(e);
+    }
 
     private void NavigateToMinimapPosition(double y)
     {
@@ -369,7 +387,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     {
         SearchPanel.Visibility = Visibility.Visible;
         OffsetPanel.CornerRadius = new CornerRadius(0, 0, 4, 4);
-        SearchToggleButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x40, 0x88, 0x88, 0x88));
+        SearchToggleButton.Background = new SolidColorBrush(Color.FromArgb(0x40, 0x88, 0x88, 0x88));
         SearchTextBox.Focus(FocusState.Programmatic);
         SearchTextBox.SelectAll();
     }
@@ -378,7 +396,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     {
         SearchPanel.Visibility = Visibility.Collapsed;
         OffsetPanel.CornerRadius = new CornerRadius(4);
-        SearchToggleButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x00, 0x00, 0x00, 0x00));
+        SearchToggleButton.Background = new SolidColorBrush(Color.FromArgb(0x00, 0x00, 0x00, 0x00));
         _searcher?.Clear();
         SearchResultsText.Text = "";
         if (_rowRenderer != null)
@@ -408,9 +426,20 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
     }
 
-    private void SearchPrevButton_Click(object sender, RoutedEventArgs e) => FindPrevious();
-    private void SearchNextButton_Click(object sender, RoutedEventArgs e) => FindNext();
-    private void SearchButton_Click(object sender, RoutedEventArgs e) => PerformSearch();
+    private void SearchPrevButton_Click(object sender, RoutedEventArgs e)
+    {
+        FindPrevious();
+    }
+
+    private void SearchNextButton_Click(object sender, RoutedEventArgs e)
+    {
+        FindNext();
+    }
+
+    private void SearchButton_Click(object sender, RoutedEventArgs e)
+    {
+        PerformSearch();
+    }
 
     private void PerformSearch()
     {

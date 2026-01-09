@@ -81,7 +81,10 @@ public sealed partial class SingleFileTab : UserControl
         UpdateButtonStates();
     }
 
-    private void OutputPathTextBox_TextChanged(object sender, TextChangedEventArgs e) => UpdateButtonStates();
+    private void OutputPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateButtonStates();
+    }
 
     private void UpdateOutputPathFromInput(string inputPath)
     {
@@ -98,8 +101,11 @@ public sealed partial class SingleFileTab : UserControl
         ExtractButton.IsEnabled = valid && _analysisResult != null && !string.IsNullOrEmpty(OutputPathTextBox.Text);
     }
 
-    private async Task ShowDialogAsync(string title, string message) => await new ContentDialog
-    { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
+    private async Task ShowDialogAsync(string title, string message)
+    {
+        await new ContentDialog
+            { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot }.ShowAsync();
+    }
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -160,7 +166,7 @@ public sealed partial class SingleFileTab : UserControl
                 AnalysisProgressBar.IsIndeterminate = false;
                 AnalysisProgressBar.Value = p.PercentComplete;
             }));
-            _analysisResult = await new MemoryDumpAnalyzer().AnalyzeAsync(filePath, progress, includeMetadata: true);
+            _analysisResult = await new MemoryDumpAnalyzer().AnalyzeAsync(filePath, progress);
 
             foreach (var entry in _analysisResult.CarvedFiles)
             {
@@ -219,23 +225,15 @@ public sealed partial class SingleFileTab : UserControl
 
             // Update status for extracted files
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedOffsets.Contains(x.Offset)))
-            {
                 // Check if conversion failed for this file
                 if (summary.FailedConversionOffsets.Contains(entry.Offset))
-                {
                     entry.Status = ExtractionStatus.Failed;
-                }
                 else
-                {
                     entry.Status = ExtractionStatus.Extracted;
-                }
-            }
 
             // Update status for extracted modules (from minidump metadata)
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedModuleOffsets.Contains(x.Offset)))
-            {
                 entry.Status = ExtractionStatus.Extracted;
-            }
 
             var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
             if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";
@@ -260,12 +258,25 @@ public sealed partial class SingleFileTab : UserControl
 
     #region Sorting
 
-    private void SortByOffset_Click(object sender, RoutedEventArgs e) => ApplySort(CarvedFilesSorter.SortColumn.Offset);
-    private void SortByLength_Click(object sender, RoutedEventArgs e) => ApplySort(CarvedFilesSorter.SortColumn.Length);
-    private void SortByType_Click(object sender, RoutedEventArgs e) => ApplySort(CarvedFilesSorter.SortColumn.Type);
+    private void SortByOffset_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(CarvedFilesSorter.SortColumn.Offset);
+    }
 
-    private void SortByFilename_Click(object sender, RoutedEventArgs e) =>
+    private void SortByLength_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(CarvedFilesSorter.SortColumn.Length);
+    }
+
+    private void SortByType_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(CarvedFilesSorter.SortColumn.Type);
+    }
+
+    private void SortByFilename_Click(object sender, RoutedEventArgs e)
+    {
         ApplySort(CarvedFilesSorter.SortColumn.Filename);
+    }
 
     private void ApplySort(CarvedFilesSorter.SortColumn col)
     {

@@ -1,4 +1,3 @@
-using System.Text;
 using Xbox360MemoryCarver.Core;
 using Xunit;
 
@@ -9,6 +8,29 @@ namespace Xbox360MemoryCarver.Tests.Core;
 /// </summary>
 public class SignatureMatcherTests
 {
+    #region Pattern Data Preservation Tests
+
+    [Fact]
+    public void Search_ReturnsCorrectPatternBytes()
+    {
+        // Arrange
+        var pattern = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+        var matcher = new SignatureMatcher();
+        matcher.AddPattern("test", pattern);
+        matcher.Build();
+
+        var data = new byte[] { 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00 };
+
+        // Act
+        var results = matcher.Search(data);
+
+        // Assert
+        Assert.Single(results);
+        Assert.Equal(pattern, results[0].Pattern);
+    }
+
+    #endregion
+
     #region Construction and Properties
 
     [Fact]
@@ -405,8 +427,8 @@ public class SignatureMatcherTests
 
         // Simulate a memory dump with multiple signatures
         var data = new byte[200];
-        "3XDO"u8.ToArray().CopyTo(data, 0);   // DDX texture
-        "DDS "u8.ToArray().CopyTo(data, 50);  // DDS texture
+        "3XDO"u8.ToArray().CopyTo(data, 0); // DDX texture
+        "DDS "u8.ToArray().CopyTo(data, 50); // DDS texture
         "XEX2"u8.ToArray().CopyTo(data, 100); // Xbox executable
         "3XDR"u8.ToArray().CopyTo(data, 150); // DDX variant
 
@@ -461,29 +483,6 @@ public class SignatureMatcherTests
         Assert.Equal(2, results.Count);
         Assert.Contains(results, r => r.Name == "nif_game" && r.Position == 10);
         Assert.Contains(results, r => r.Name == "nif_ni" && r.Position == 60);
-    }
-
-    #endregion
-
-    #region Pattern Data Preservation Tests
-
-    [Fact]
-    public void Search_ReturnsCorrectPatternBytes()
-    {
-        // Arrange
-        var pattern = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
-        var matcher = new SignatureMatcher();
-        matcher.AddPattern("test", pattern);
-        matcher.Build();
-
-        var data = new byte[] { 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00 };
-
-        // Act
-        var results = matcher.Search(data);
-
-        // Assert
-        Assert.Single(results);
-        Assert.Equal(pattern, results[0].Pattern);
     }
 
     #endregion

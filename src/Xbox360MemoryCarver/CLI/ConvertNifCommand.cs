@@ -11,10 +11,12 @@ public static class ConvertNifCommand
 {
     public static Command Create()
     {
-        var command = new Command("convert-nif", "Convert Xbox 360 NIF files (big-endian) to PC format (little-endian)");
+        var command = new Command("convert-nif",
+            "Convert Xbox 360 NIF files (big-endian) to PC format (little-endian)");
 
         var inputArgument = new Argument<string>("input", "Path to NIF file or directory containing NIF files");
-        var outputOption = new Option<string>(["-o", "--output"], "Output directory (default: input directory with '_converted' suffix)");
+        var outputOption = new Option<string>(["-o", "--output"],
+            "Output directory (default: input directory with '_converted' suffix)");
         var recursiveOption = new Option<bool>(["-r", "--recursive"], "Process directories recursively");
         var verboseOption = new Option<bool>(["-v", "--verbose"], "Enable verbose output");
         var overwriteOption = new Option<bool>(["--overwrite"], "Overwrite existing files");
@@ -25,10 +27,11 @@ public static class ConvertNifCommand
         command.AddOption(verboseOption);
         command.AddOption(overwriteOption);
 
-        command.SetHandler(async (input, output, recursive, verbose, overwrite) =>
-        {
-            await ExecuteAsync(input, output, recursive, verbose, overwrite);
-        }, inputArgument, outputOption, recursiveOption, verboseOption, overwriteOption);
+        command.SetHandler(
+            async (input, output, recursive, verbose, overwrite) =>
+            {
+                await ExecuteAsync(input, output, recursive, verbose, overwrite);
+            }, inputArgument, outputOption, recursiveOption, verboseOption, overwriteOption);
 
         return command;
     }
@@ -66,7 +69,7 @@ public static class ConvertNifCommand
         AnsiConsole.MarkupLine($"[blue]Output:[/] {output}");
         AnsiConsole.WriteLine();
 
-        var converter = new NifEndianConverter(verbose);
+        var converter = new NifConverter(verbose);
         var converted = 0;
         var skipped = 0;
         var failed = 0;
@@ -93,45 +96,40 @@ public static class ConvertNifCommand
 
                         if (File.Exists(outputPath) && !overwrite)
                         {
-                            if (verbose)
-                            {
-                                AnsiConsole.MarkupLine($"[grey]Skipping (exists):[/] {fileName}");
-                            }
+                            if (verbose) AnsiConsole.MarkupLine($"[grey]Skipping (exists):[/] {fileName}");
                             skipped++;
                             task.Increment(1);
                             continue;
                         }
 
                         var data = await File.ReadAllBytesAsync(file);
-                        var result = converter.ConvertToLittleEndian(data);
+                        var result = converter.Convert(data);
 
-                        if (result != null)
+                        if (result.Success && result.OutputData != null)
                         {
-                            await File.WriteAllBytesAsync(outputPath, result);
+                            await File.WriteAllBytesAsync(outputPath, result.OutputData);
                             converted++;
 
                             if (verbose)
                             {
                                 AnsiConsole.MarkupLine($"[green]Converted:[/] {fileName}");
+                                if (!string.IsNullOrEmpty(result.ErrorMessage))
+                                    AnsiConsole.MarkupLine($"[dim]  {result.ErrorMessage}[/]");
                             }
                         }
                         else
                         {
                             // File might already be little-endian or invalid
                             if (verbose)
-                            {
-                                AnsiConsole.MarkupLine($"[yellow]Skipped (already LE or invalid):[/] {fileName}");
-                            }
+                                AnsiConsole.MarkupLine(
+                                    $"[yellow]Skipped:[/] {fileName} - {result.ErrorMessage ?? "already LE or invalid"}");
                             skipped++;
                         }
                     }
                     catch (Exception ex)
                     {
                         failed++;
-                        if (verbose)
-                        {
-                            AnsiConsole.MarkupLine($"[red]Failed:[/] {fileName} - {ex.Message}");
-                        }
+                        if (verbose) AnsiConsole.MarkupLine($"[red]Failed:[/] {fileName} - {ex.Message}");
                     }
 
                     task.Increment(1);
@@ -143,18 +141,12 @@ public static class ConvertNifCommand
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[green]Converted:[/] {converted}");
 
-        if (skipped > 0)
-        {
-            AnsiConsole.MarkupLine($"[yellow]Skipped:[/] {skipped}");
-        }
+        if (skipped > 0) AnsiConsole.MarkupLine($"[yellow]Skipped:[/] {skipped}");
 
-        if (failed > 0)
-        {
-            AnsiConsole.MarkupLine($"[red]Failed:[/] {failed}");
-        }
+        if (failed > 0) AnsiConsole.MarkupLine($"[red]Failed:[/] {failed}");
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Note: Xbox 360 NIFs may contain platform-specific blocks.[/]");
-        AnsiConsole.MarkupLine("[dim]For best results, use Noesis or NifSkope for further processing.[/]");
+        AnsiConsole.MarkupLine("[dim]Xbox 360 NIFs have been converted with geometry unpacking.[/]");
+        AnsiConsole.MarkupLine("[dim]For best results, verify output with NifSkope.[/]");
     }
 }

@@ -54,15 +54,9 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
     {
         get
         {
-            if (Length >= 1024 * 1024)
-            {
-                return $"{Length / (1024.0 * 1024.0):F2} MB";
-            }
+            if (Length >= 1024 * 1024) return $"{Length / (1024.0 * 1024.0):F2} MB";
 
-            if (Length >= 1024)
-            {
-                return $"{Length / 1024.0:F2} KB";
-            }
+            if (Length >= 1024) return $"{Length / 1024.0:F2} KB";
 
             return $"{Length} B";
         }

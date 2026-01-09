@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- Multi-target: cross-platform CLI + Windows GUI -->
@@ -12,6 +12,20 @@
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
+  <!-- Single-file and trimming options for CLI builds -->
+  <PropertyGroup Condition="!$(TargetFramework.Contains('windows'))">
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+    <!-- Single-file bundles runtime into one exe -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <!-- Compress the single-file bundle -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Enable trimming for smaller builds -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <!-- Suppress trim warnings from third-party packages (Spectre.Console) -->
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
   <ItemGroup>
     <Compile Remove="Core\Models\**" />
     <EmbeddedResource Remove="Core\Models\**" />
@@ -23,11 +37,6 @@
     <InternalsVisibleTo Include="Xbox360MemoryCarver.Tests" />
   </ItemGroup>
 
-  <!-- Cross-platform (CLI) settings -->
-  <PropertyGroup Condition="!$(TargetFramework.Contains('windows'))">
-    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
-  </PropertyGroup>
-
   <!-- Windows GUI settings -->
   <PropertyGroup Condition="$(TargetFramework.Contains('windows'))">
     <OutputType>WinExe</OutputType>
@@ -37,10 +46,15 @@
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <EnableMsixTooling>true</EnableMsixTooling>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN;WINDOWS_GUI</DefineConstants>
+    <!-- Single-file for GUI (bundles into one exe, ~66 MB compressed) -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Note: WinUI 3 does not support IL trimming -->
   </PropertyGroup>
 
   <!-- Shared packages -->

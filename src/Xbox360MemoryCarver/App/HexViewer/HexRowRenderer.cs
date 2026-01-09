@@ -5,7 +5,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 
-
 namespace Xbox360MemoryCarver;
 
 /// <summary>
@@ -58,17 +57,11 @@ internal sealed class HexRowRenderer
             var rowOffset = row * BytesPerRow;
             var bufferOffset = (int)(rowOffset - startOffset);
             var rowBytes = (int)Math.Min(BytesPerRow, fileSize - rowOffset);
-            if (rowBytes <= 0)
-            {
-                break;
-            }
+            if (rowBytes <= 0) break;
 
             // Offset column
             offsetBuilder.Append(CultureInfo.InvariantCulture, $"{rowOffset:X8}");
-            if (row < endRow - 1)
-            {
-                offsetBuilder.Append('\n');
-            }
+            if (row < endRow - 1) offsetBuilder.Append('\n');
 
             // Hex bytes with per-byte coloring
             RenderHexRow(buffer, bufferOffset, rowOffset, rowBytes);
@@ -91,7 +84,6 @@ internal sealed class HexRowRenderer
     private void RenderHexRow(byte[] buffer, int bufferOffset, long rowOffset, int rowBytes)
     {
         for (var i = 0; i < BytesPerRow; i++)
-        {
             if (i < rowBytes && bufferOffset + i < buffer.Length)
             {
                 var byteOffset = rowOffset + i;
@@ -122,7 +114,6 @@ internal sealed class HexRowRenderer
             {
                 _hexTextBlock.Inlines.Add(new Run { Text = "   ", Foreground = TextBrush });
             }
-        }
     }
 
     private static void RenderAsciiRow(StringBuilder asciiBuilder, byte[] buffer, int bufferOffset, int rowBytes)

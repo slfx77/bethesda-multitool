@@ -78,7 +78,6 @@ public sealed class MemoryDumpAnalyzer
 
             // Add minidump header as a colored region
             if (minidumpInfo.HeaderSize > 0)
-            {
                 result.CarvedFiles.Add(new CarvedFileInfo
                 {
                     Offset = 0,
@@ -88,7 +87,6 @@ public sealed class MemoryDumpAnalyzer
                     SignatureId = "minidump_header",
                     Category = FileCategory.Header
                 });
-            }
 
             // Add modules directly to results
             AddModulesFromMinidump(result, minidumpInfo);
@@ -193,12 +191,12 @@ public sealed class MemoryDumpAnalyzer
         {
             // Phase 3: Loading dump data (70-75%)
             progress?.Report(new AnalysisProgress
-            { Phase = "Loading", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
+                { Phase = "Loading", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
             var data = await File.ReadAllBytesAsync(filePath, cancellationToken);
 
             // Phase 4: SCDA scan (75-85%)
             progress?.Report(new AnalysisProgress
-            { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 75 });
+                { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 75 });
             await Task.Run(() =>
             {
                 var scdaScanResult = ScdaFormat.ScanForRecords(data);
@@ -209,7 +207,7 @@ public sealed class MemoryDumpAnalyzer
 
             // Phase 5: ESM scan (85-95%)
             progress?.Report(new AnalysisProgress
-            { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 85 });
+                { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 85 });
             await Task.Run(() =>
             {
                 var esmRecords = EsmRecordFormat.ScanForRecords(data);
@@ -218,14 +216,14 @@ public sealed class MemoryDumpAnalyzer
 
             // Phase 6: FormID mapping (95-100%)
             progress?.Report(new AnalysisProgress
-            { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 95 });
+                { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 95 });
             await Task.Run(
                 () => { result.FormIdMap = EsmRecordFormat.CorrelateFormIdsToNames(data, result.EsmRecords!); },
                 cancellationToken);
         }
 
         progress?.Report(new AnalysisProgress
-        { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
+            { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
 
         stopwatch.Stop();
         result.AnalysisTime = stopwatch.Elapsed;

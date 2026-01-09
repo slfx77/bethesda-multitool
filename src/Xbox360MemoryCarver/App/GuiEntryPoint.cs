@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;
+using UnhandledExceptionEventArgs = System.UnhandledExceptionEventArgs;
 
 namespace Xbox360MemoryCarver;
 
@@ -52,7 +53,7 @@ public static class GuiEntryPoint
         }
     }
 
-    private static void OnUnhandledException(object sender, System.UnhandledExceptionEventArgs e)
+    private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         var ex = e.ExceptionObject as Exception;
         Console.WriteLine($"[FATAL] Unhandled domain exception: {ex?.GetType().Name ?? "Unknown"}");

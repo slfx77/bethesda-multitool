@@ -8,6 +8,25 @@ namespace Xbox360MemoryCarver.Tests.Core.Formats;
 /// </summary>
 public class FormatRegistryTests
 {
+    #region GetCategory Tests
+
+    [Theory]
+    [InlineData("dds", FileCategory.Texture)]
+    [InlineData("ddx_3xdo", FileCategory.Texture)]
+    [InlineData("png", FileCategory.Image)]
+    [InlineData("xma", FileCategory.Audio)]
+    [InlineData("nif", FileCategory.Model)]
+    public void GetCategory_KnownSignature_ReturnsCorrectCategory(string signatureId, FileCategory expectedCategory)
+    {
+        // Act
+        var category = FormatRegistry.GetCategory(signatureId);
+
+        // Assert
+        Assert.Equal(expectedCategory, category);
+    }
+
+    #endregion
+
     #region Format Discovery Tests
 
     [Fact]
@@ -43,7 +62,7 @@ public class FormatRegistryTests
         // Act & Assert
         foreach (var format in FormatRegistry.All)
         {
-            Assert.False(string.IsNullOrWhiteSpace(format.FormatId), $"FormatId is empty");
+            Assert.False(string.IsNullOrWhiteSpace(format.FormatId), "FormatId is empty");
             Assert.False(string.IsNullOrWhiteSpace(format.DisplayName), $"DisplayName is empty for {format.FormatId}");
             Assert.False(string.IsNullOrWhiteSpace(format.Extension), $"Extension is empty for {format.FormatId}");
             // Note: Some formats (e.g., EsmRecordFormat) are dump scanners without signatures
@@ -149,25 +168,6 @@ public class FormatRegistryTests
 
     #endregion
 
-    #region GetCategory Tests
-
-    [Theory]
-    [InlineData("dds", FileCategory.Texture)]
-    [InlineData("ddx_3xdo", FileCategory.Texture)]
-    [InlineData("png", FileCategory.Image)]
-    [InlineData("xma", FileCategory.Audio)]
-    [InlineData("nif", FileCategory.Model)]
-    public void GetCategory_KnownSignature_ReturnsCorrectCategory(string signatureId, FileCategory expectedCategory)
-    {
-        // Act
-        var category = FormatRegistry.GetCategory(signatureId);
-
-        // Assert
-        Assert.Equal(expectedCategory, category);
-    }
-
-    #endregion
-
     #region GetColor Tests
 
     [Fact]
@@ -234,9 +234,9 @@ public class FormatRegistryTests
     [InlineData("3xdo", "ddx_3xdo")]
     [InlineData("3XDO", "ddx_3xdo")]
     [InlineData("3xdr", "ddx_3xdr")]
-    [InlineData("something with texture", "dds")]  // Keyword fallback
-    [InlineData("some audio file", "xma")]         // Keyword fallback
-    [InlineData("a model file", "nif")]            // Keyword fallback
+    [InlineData("something with texture", "dds")] // Keyword fallback
+    [InlineData("some audio file", "xma")] // Keyword fallback
+    [InlineData("a model file", "nif")] // Keyword fallback
     public void NormalizeToSignatureId_KnownInputs_ReturnsNormalized(string input, string expected)
     {
         // Act
@@ -288,10 +288,7 @@ public class FormatRegistryTests
 
         // Assert
         Assert.Equal(expectedNames.Count, names.Count);
-        foreach (var name in expectedNames)
-        {
-            Assert.Contains(name, names);
-        }
+        foreach (var name in expectedNames) Assert.Contains(name, names);
     }
 
     #endregion

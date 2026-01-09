@@ -5,7 +5,6 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 
-
 namespace Xbox360MemoryCarver;
 
 /// <summary>
@@ -52,10 +51,7 @@ internal sealed class HexMinimapRenderer
             return;
         }
 
-        if (containerWidth <= 0 || containerHeight <= 0)
-        {
-            return;
-        }
+        if (containerWidth <= 0 || containerHeight <= 0) return;
 
         var canvasWidth = Math.Max(20, containerWidth);
         var canvasHeight = Math.Max(containerHeight, containerHeight * Zoom);
@@ -95,10 +91,7 @@ internal sealed class HexMinimapRenderer
             }
         }
 
-        if (currentColor != null)
-        {
-            AddRect(canvasWidth, currentStartY, canvasHeight - currentStartY, currentColor.Value);
-        }
+        if (currentColor != null) AddRect(canvasWidth, currentStartY, canvasHeight - currentStartY, currentColor.Value);
 
         _canvas.Children.Remove(_viewportIndicator);
         _canvas.Children.Add(_viewportIndicator);
@@ -132,10 +125,7 @@ internal sealed class HexMinimapRenderer
 
         var canvasHeight = _canvas.Height;
         var canvasWidth = _canvas.Width;
-        if (double.IsNaN(canvasHeight) || canvasHeight <= 0)
-        {
-            return;
-        }
+        if (double.IsNaN(canvasHeight) || canvasHeight <= 0) return;
 
         var viewStartOffset = currentTopRow * bytesPerRow;
         var viewEndOffset = Math.Min((currentTopRow + visibleRows) * bytesPerRow, fileSize);
@@ -169,10 +159,7 @@ internal sealed class HexMinimapRenderer
     public long? GetRowFromPosition(double y, long totalRows, int visibleRows)
     {
         var canvasHeight = _canvas.Height;
-        if (canvasHeight <= 0 || totalRows == 0)
-        {
-            return null;
-        }
+        if (canvasHeight <= 0 || totalRows == 0) return null;
 
         var fraction = Math.Clamp(y / canvasHeight, 0, 1);
         var targetRow = (long)(fraction * totalRows) - visibleRows / 2;
@@ -184,10 +171,7 @@ internal sealed class HexMinimapRenderer
     /// </summary>
     public long? GetRowFromPositionWithOffset(double y, long totalRows, int visibleRows)
     {
-        if (IsDraggingFromIndicator)
-        {
-            y -= _dragOffset;
-        }
+        if (IsDraggingFromIndicator) y -= _dragOffset;
 
         return GetRowFromPosition(y, totalRows, visibleRows);
     }

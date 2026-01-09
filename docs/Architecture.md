@@ -271,7 +271,7 @@ All format modules extend `FileFormatBase` and are self-contained in their own f
 | `EsmRecordFormat` | `Core/Formats/EsmRecord/` | `IDumpScanner` (ESM record extraction) |
 | `EspFormat`       | `Core/Formats/Esp/`       | Parsing only                           |
 | `LipFormat`       | `Core/Formats/Lip/`       | Parsing only                           |
-| `NifFormat`       | `Core/Formats/Nif/`       | Parsing with version validation        |
+| `NifFormat`       | `Core/Formats/Nif/`       | Parsing + BE→LE conversion             |
 | `PngFormat`       | `Core/Formats/Png/`       | Parsing only                           |
 | `ScdaFormat`      | `Core/Formats/Scda/`      | Parsing + `IDumpScanner`               |
 | `ScriptFormat`    | `Core/Formats/Script/`    | Parsing only                           |
@@ -279,6 +279,23 @@ All format modules extend `FileFormatBase` and are self-contained in their own f
 | `XexFormat`       | `Core/Formats/Xex/`       | Parsing only                           |
 | `XmaFormat`       | `Core/Formats/Xma/`       | Parsing + `IFileRepairer`              |
 | `XuiFormat`       | `Core/Formats/Xui/`       | Parsing only                           |
+
+### NIF Converter Module Structure
+
+The NIF converter has been modularized into specialized components:
+
+| Component               | Purpose                                                |
+| ----------------------- | ------------------------------------------------------ |
+| `NifFormat`             | Main format module with signature and parsing          |
+| `NifParser`             | Parses NIF header, block types, and block offsets      |
+| `NifConverter`          | Orchestrates conversion from Xbox 360 to PC format     |
+| `NifWriter`             | Writes converted header, blocks, and footer            |
+| `NifGeometryExtractor`  | Extracts geometry from BSPackedAdditionalGeometryData  |
+| `NifGeometryWriter`     | Writes expanded geometry blocks with unpacked data     |
+| `NifGeometryDataConverter` | Endian conversion for NiTriStripsData/NiTriShapeData |
+| `NifBlockConverters`    | Type-specific block endian converters                  |
+| `NifEndianUtils`        | Low-level byte-swapping utilities                      |
+| `NifTypes`              | Shared types: NifInfo, BlockInfo, ConversionResult     |
 
 ### ParseResult
 
@@ -541,4 +558,3 @@ dotnet run -f net10.0 -- analyze Sample/MemoryDump/test.dmp -f md
 
 ```bash
 dotnet test --collect:"XPlat Code Coverage"
-```

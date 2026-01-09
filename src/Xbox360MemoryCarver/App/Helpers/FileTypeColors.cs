@@ -1,4 +1,5 @@
 using Windows.UI;
+using Xbox360MemoryCarver.Core;
 using Xbox360MemoryCarver.Core.Formats;
 
 namespace Xbox360MemoryCarver;
@@ -33,7 +34,7 @@ public static class FileTypeColors
     /// <summary>
     ///     Get color for a CarvedFileInfo using its Category.
     /// </summary>
-    public static Color GetColor(Core.CarvedFileInfo file)
+    public static Color GetColor(CarvedFileInfo file)
     {
         return GetColorByCategory(file.Category);
     }

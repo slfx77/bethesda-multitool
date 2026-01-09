@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Xbox360MemoryCarver.Core.Json;
 
 namespace Xbox360MemoryCarver.Core.Carving;
 
@@ -32,18 +33,17 @@ public class CarveEntry
 
 /// <summary>
 ///     Manages the carving manifest and serialization.
+///     Uses source-generated JSON serialization for trim compatibility.
 /// </summary>
 public static class CarveManifest
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-
     /// <summary>
     ///     Save the manifest to a JSON file.
     /// </summary>
     public static async Task SaveAsync(string outputPath, IEnumerable<CarveEntry> entries)
     {
         var manifestPath = Path.Combine(outputPath, "manifest.json");
-        var json = JsonSerializer.Serialize(entries.ToList(), JsonOptions);
+        var json = JsonSerializer.Serialize(entries.ToList(), CarverJsonContext.Default.ListCarveEntry);
         await File.WriteAllTextAsync(manifestPath, json);
     }
 
@@ -53,6 +53,6 @@ public static class CarveManifest
     public static async Task<List<CarveEntry>> LoadAsync(string manifestPath)
     {
         var json = await File.ReadAllTextAsync(manifestPath);
-        return JsonSerializer.Deserialize<List<CarveEntry>>(json) ?? [];
+        return JsonSerializer.Deserialize(json, CarverJsonContext.Default.ListCarveEntry) ?? [];
     }
 }

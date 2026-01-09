@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using Windows.Storage.Pickers;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -28,13 +27,16 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         ParallelCountBox.Maximum = Environment.ProcessorCount;
     }
 
+    public void Dispose()
+    {
+        _cts?.Dispose();
+    }
+
     private void SetupTextBoxContextMenus()
     {
         TextBoxContextMenuHelper.AttachContextMenu(InputDirectoryTextBox);
         TextBoxContextMenuHelper.AttachContextMenu(OutputDirectoryTextBox);
     }
-
-    public void Dispose() => _cts?.Dispose();
 
     private void InitializeFileTypeCheckboxes()
     {
@@ -64,7 +66,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     private async Task ShowDialogAsync(string title, string message)
     {
         var dialog = new ContentDialog
-        { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot };
+            { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = XamlRoot };
         await dialog.ShowAsync();
     }
 
@@ -80,9 +82,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
 
         InputDirectoryTextBox.Text = folder.Path;
         if (string.IsNullOrEmpty(OutputDirectoryTextBox.Text))
-        {
             OutputDirectoryTextBox.Text = Path.Combine(folder.Path, "extracted");
-        }
 
         ScanForDumpFiles();
     }
@@ -129,9 +129,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         if (Directory.Exists(InputDirectoryTextBox.Text))
         {
             if (string.IsNullOrEmpty(OutputDirectoryTextBox.Text))
-            {
                 OutputDirectoryTextBox.Text = Path.Combine(InputDirectoryTextBox.Text, "extracted");
-            }
             ScanForDumpFiles();
         }
         else
@@ -159,9 +157,20 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
 
     #region Sorting
 
-    private void SortByFilename_Click(object sender, RoutedEventArgs e) => ApplySort(BatchSortColumn.Filename);
-    private void SortBySize_Click(object sender, RoutedEventArgs e) => ApplySort(BatchSortColumn.Size);
-    private void SortByStatus_Click(object sender, RoutedEventArgs e) => ApplySort(BatchSortColumn.Status);
+    private void SortByFilename_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(BatchSortColumn.Filename);
+    }
+
+    private void SortBySize_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(BatchSortColumn.Size);
+    }
+
+    private void SortByStatus_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(BatchSortColumn.Status);
+    }
 
     private void ApplySort(BatchSortColumn column)
     {
@@ -236,9 +245,9 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
                 FileTypes = selectedTypes.Count > 0 ? selectedTypes : null
             };
 
-            int processed = 0;
-            int total = selectedFiles.Count;
-            bool skipExisting = SkipExistingCheckBox.IsChecked is true;
+            var processed = 0;
+            var total = selectedFiles.Count;
+            var skipExisting = SkipExistingCheckBox.IsChecked is true;
 
             var tasks = selectedFiles.Select(entry => ProcessEntryAsync(
                 entry, options, skipExisting, semaphore,

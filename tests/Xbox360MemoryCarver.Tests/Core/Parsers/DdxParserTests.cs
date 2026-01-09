@@ -126,7 +126,7 @@ public class DdxFormatTests
     public void ParseHeader_ValidVersion_ReturnsResult()
     {
         // Arrange - version 4 is common
-        var data = Create3XdoHeader(256, 256, 4);
+        var data = Create3XdoHeader(256, 256);
 
         // Act
         var result = _parser.Parse(data);

@@ -9,15 +9,15 @@ namespace Xbox360MemoryCarver;
 internal sealed class HexDataManager : IDisposable
 {
     private readonly List<FileRegion> _fileRegions = [];
-    private MemoryMappedViewAccessor? _accessor;
     private bool _disposed;
-    private string? _filePath;
-    private long _fileSize;
     private MemoryMappedFile? _mmf;
 
-    public MemoryMappedViewAccessor? Accessor => _accessor;
-    public string? FilePath => _filePath;
-    public long FileSize => _fileSize;
+    public MemoryMappedViewAccessor? Accessor { get; private set; }
+
+    public string? FilePath { get; private set; }
+
+    public long FileSize { get; private set; }
+
     public IReadOnlyList<FileRegion> FileRegions => _fileRegions;
 
     public void Dispose()
@@ -29,8 +29,8 @@ internal sealed class HexDataManager : IDisposable
 
     public void Cleanup()
     {
-        _accessor?.Dispose();
-        _accessor = null;
+        Accessor?.Dispose();
+        Accessor = null;
         _mmf?.Dispose();
         _mmf = null;
     }
@@ -38,22 +38,22 @@ internal sealed class HexDataManager : IDisposable
     public void Clear()
     {
         Cleanup();
-        _filePath = null;
-        _fileSize = 0;
+        FilePath = null;
+        FileSize = 0;
         _fileRegions.Clear();
     }
 
     public bool Load(string filePath, AnalysisResult analysisResult)
     {
         Cleanup();
-        _filePath = filePath;
-        _fileSize = new FileInfo(filePath).Length;
+        FilePath = filePath;
+        FileSize = new FileInfo(filePath).Length;
         BuildFileRegions(analysisResult);
 
         try
         {
             _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            _accessor = _mmf.CreateViewAccessor(0, _fileSize, MemoryMappedFileAccess.Read);
+            Accessor = _mmf.CreateViewAccessor(0, FileSize, MemoryMappedFileAccess.Read);
             return true;
         }
         catch
@@ -64,13 +64,13 @@ internal sealed class HexDataManager : IDisposable
 
     public void ReadBytes(long offset, byte[] buffer)
     {
-        if (_accessor != null)
+        if (Accessor != null)
         {
-            _accessor.ReadArray(offset, buffer, 0, buffer.Length);
+            Accessor.ReadArray(offset, buffer, 0, buffer.Length);
         }
-        else if (_filePath != null)
+        else if (FilePath != null)
         {
-            using var fs = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var fs = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
             fs.Seek(offset, SeekOrigin.Begin);
             fs.ReadExactly(buffer);
         }
@@ -112,10 +112,7 @@ internal sealed class HexDataManager : IDisposable
             var end = file.Offset + file.Length;
 
             // Check if this file's range is already fully covered by existing regions
-            if (IsRangeFullyCovered(start, end, occupiedRanges))
-            {
-                continue;
-            }
+            if (IsRangeFullyCovered(start, end, occupiedRanges)) continue;
 
             _fileRegions.Add(new FileRegion
             {

@@ -14,11 +14,6 @@ internal sealed class CarveWriter
     private readonly ConcurrentBag<long> _failedConversionOffsets = [];
     private readonly bool _saveAtlas;
 
-    /// <summary>
-    ///     Offsets of files that failed conversion (DDX→DDS, XMA→WAV, etc.).
-    /// </summary>
-    public IReadOnlyCollection<long> FailedConversionOffsets => _failedConversionOffsets;
-
     public CarveWriter(
         Dictionary<string, IFileConverter> converters,
         bool enableConversion,
@@ -30,6 +25,11 @@ internal sealed class CarveWriter
         _saveAtlas = saveAtlas;
         _addToManifest = addToManifest;
     }
+
+    /// <summary>
+    ///     Offsets of files that failed conversion (DDX→DDS, XMA→WAV, etc.).
+    /// </summary>
+    public IReadOnlyCollection<long> FailedConversionOffsets => _failedConversionOffsets;
 
     public async Task WriteFileAsync(
         string outputFile,

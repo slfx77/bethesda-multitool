@@ -489,18 +489,18 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         try
         {
             var verbose = metadata?.TryGetValue("verbose", out var v) == true && v is true;
-            var converter = new NifEndianConverter(verbose);
-            var converted = converter.ConvertToLittleEndian(data);
-            if (converted != null)
+            var converter = new NifConverter(verbose);
+            var result = converter.Convert(data);
+
+            if (result.Success && result.OutputData != null)
             {
                 ConvertedCount++;
                 return Task.FromResult(new DdxConversionResult
                 {
                     Success = true,
-                    DdsData = converted,
-                    Notes = "Partial conversion: header converted to LE, block data remains BE. " +
-                            "Xbox 360 NIFs may have platform-specific blocks. " +
-                            "Use Noesis for better compatibility."
+                    DdsData = result.OutputData,
+                    Notes = result.ErrorMessage ??
+                            "Successfully converted Xbox 360 NIF to PC format with geometry unpacking."
                 });
             }
 
@@ -508,7 +508,7 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             return Task.FromResult(new DdxConversionResult
             {
                 Success = false,
-                Notes = "Failed to convert NIF - file may already be little-endian or invalid"
+                Notes = result.ErrorMessage ?? "Failed to convert NIF - file may already be little-endian or invalid"
             });
         }
         catch (Exception ex)

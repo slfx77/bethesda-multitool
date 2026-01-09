@@ -1,4 +1,3 @@
-using System.Text;
 using Xbox360MemoryCarver.Core.Minidump;
 using Xunit;
 
@@ -9,6 +8,25 @@ namespace Xbox360MemoryCarver.Tests.Core.Minidump;
 /// </summary>
 public class MinidumpParserTests
 {
+    #region Stream Count Tests
+
+    [Fact]
+    public void Parse_WithMultipleStreams_SetsNumberOfStreams()
+    {
+        // Arrange
+        var data = CreateMinimalMinidump(5);
+        using var stream = new MemoryStream(data);
+
+        // Act
+        var result = MinidumpParser.Parse(stream);
+
+        // Assert
+        Assert.True(result.IsValid);
+        Assert.Equal((uint)5, result.NumberOfStreams);
+    }
+
+    #endregion
+
     #region Header Validation Tests
 
     [Fact]
@@ -61,7 +79,7 @@ public class MinidumpParserTests
     public void Parse_ZeroStreams_ReturnsInvalid()
     {
         // Arrange - Valid signature but 0 streams
-        var data = CreateMinidumpHeader(numberOfStreams: 0, streamDirectoryRva: 32);
+        var data = CreateMinidumpHeader(0, 32);
         using var stream = new MemoryStream(data);
 
         // Act
@@ -75,7 +93,7 @@ public class MinidumpParserTests
     public void Parse_TooManyStreams_ReturnsInvalid()
     {
         // Arrange - Unreasonably large number of streams (>100)
-        var data = CreateMinidumpHeader(numberOfStreams: 500, streamDirectoryRva: 32);
+        var data = CreateMinidumpHeader(500, 32);
         using var stream = new MemoryStream(data);
 
         // Act
@@ -89,7 +107,7 @@ public class MinidumpParserTests
     public void Parse_ZeroStreamDirectoryRva_ReturnsInvalid()
     {
         // Arrange - Valid stream count but zero RVA
-        var data = CreateMinidumpHeader(numberOfStreams: 1, streamDirectoryRva: 0);
+        var data = CreateMinidumpHeader(1, 0);
         using var stream = new MemoryStream(data);
 
         // Act
@@ -107,7 +125,7 @@ public class MinidumpParserTests
     public void Parse_WithSystemInfoStream_ExtractsArchitecture()
     {
         // Arrange - Minidump with SystemInfo stream indicating PowerPC (Xbox 360)
-        var data = CreateMinidumpWithSystemInfo(processorArchitecture: 0x03);
+        var data = CreateMinidumpWithSystemInfo(0x03);
         using var stream = new MemoryStream(data);
 
         // Act
@@ -123,7 +141,7 @@ public class MinidumpParserTests
     public void Parse_WithX86Architecture_NotXbox360()
     {
         // Arrange - SystemInfo stream with x86 (0x00)
-        var data = CreateMinidumpWithSystemInfo(processorArchitecture: 0x00);
+        var data = CreateMinidumpWithSystemInfo(0x00);
         using var stream = new MemoryStream(data);
 
         // Act
@@ -139,7 +157,7 @@ public class MinidumpParserTests
     public void Parse_WithAmd64Architecture_NotXbox360()
     {
         // Arrange - SystemInfo stream with AMD64 (0x09)
-        var data = CreateMinidumpWithSystemInfo(processorArchitecture: 0x09);
+        var data = CreateMinidumpWithSystemInfo(0x09);
         using var stream = new MemoryStream(data);
 
         // Act
@@ -261,25 +279,6 @@ public class MinidumpParserTests
 
     #endregion
 
-    #region Stream Count Tests
-
-    [Fact]
-    public void Parse_WithMultipleStreams_SetsNumberOfStreams()
-    {
-        // Arrange
-        var data = CreateMinimalMinidump(streamCount: 5);
-        using var stream = new MemoryStream(data);
-
-        // Act
-        var result = MinidumpParser.Parse(stream);
-
-        // Assert
-        Assert.True(result.IsValid);
-        Assert.Equal((uint)5, result.NumberOfStreams);
-    }
-
-    #endregion
-
     #region Helper Methods
 
     private static byte[] CreateMinidumpHeader(uint numberOfStreams, uint streamDirectoryRva)
@@ -287,10 +286,16 @@ public class MinidumpParserTests
         var data = new byte[64];
 
         // Signature: "MDMP"
-        data[0] = 0x4D; data[1] = 0x44; data[2] = 0x4D; data[3] = 0x50;
+        data[0] = 0x4D;
+        data[1] = 0x44;
+        data[2] = 0x4D;
+        data[3] = 0x50;
 
         // Version (unused in these tests)
-        data[4] = 0x93; data[5] = 0xA7; data[6] = 0x00; data[7] = 0x00;
+        data[4] = 0x93;
+        data[5] = 0xA7;
+        data[6] = 0x00;
+        data[7] = 0x00;
 
         // NumberOfStreams (little-endian)
         WriteUInt32LE(data, 8, numberOfStreams);
@@ -312,8 +317,12 @@ public class MinidumpParserTests
         var data = new byte[totalSize];
 
         // Header
-        data[0] = 0x4D; data[1] = 0x44; data[2] = 0x4D; data[3] = 0x50; // "MDMP"
-        data[4] = 0x93; data[5] = 0xA7; // Version
+        data[0] = 0x4D;
+        data[1] = 0x44;
+        data[2] = 0x4D;
+        data[3] = 0x50; // "MDMP"
+        data[4] = 0x93;
+        data[5] = 0xA7; // Version
         WriteUInt32LE(data, 8, (uint)streamCount);
         WriteUInt32LE(data, 12, (uint)directoryOffset);
 
@@ -332,10 +341,14 @@ public class MinidumpParserTests
         var data = new byte[totalSize];
 
         // Header
-        data[0] = 0x4D; data[1] = 0x44; data[2] = 0x4D; data[3] = 0x50;
-        data[4] = 0x93; data[5] = 0xA7;
+        data[0] = 0x4D;
+        data[1] = 0x44;
+        data[2] = 0x4D;
+        data[3] = 0x50;
+        data[4] = 0x93;
+        data[5] = 0xA7;
         WriteUInt32LE(data, 8, 1); // 1 stream
-        WriteUInt32LE(data, 12, (uint)directoryOffset);
+        WriteUInt32LE(data, 12, directoryOffset);
 
         // Stream directory entry for SystemInfoStream (type 7)
         WriteUInt32LE(data, directoryOffset, 7); // StreamType = SystemInfoStream

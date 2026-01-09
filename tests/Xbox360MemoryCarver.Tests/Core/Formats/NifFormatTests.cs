@@ -1,6 +1,6 @@
-using Xunit;
 using Xbox360MemoryCarver.Core.Formats;
 using Xbox360MemoryCarver.Core.Formats.Nif;
+using Xunit;
 
 namespace Xbox360MemoryCarver.Tests.Core.Formats;
 

@@ -127,10 +127,7 @@ public sealed partial class HexMinimapControl : UserControl
             var end = file.Offset + file.Length;
 
             // Check if this file's range is already fully covered by existing regions
-            if (IsRangeFullyCovered(start, end, occupiedRanges))
-            {
-                continue;
-            }
+            if (IsRangeFullyCovered(start, end, occupiedRanges)) continue;
 
             _fileRegions.Add(new FileRegion
             {

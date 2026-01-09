@@ -16,7 +16,7 @@ public class XmaFormatTests
     public void ParseHeader_ValidRiffWave_WithXma2Chunk_ReturnsResult()
     {
         // Arrange
-        var data = CreateXmaHeader(true);
+        var data = CreateXmaHeader();
 
         // Act
         var result = _parser.Parse(data);
@@ -31,7 +31,7 @@ public class XmaFormatTests
     public void ParseHeader_ValidRiffWave_WithFmtXmaFormat_ReturnsResult()
     {
         // Arrange
-        var data = CreateXmaHeader(false, 0x0165);
+        var data = CreateXmaHeader(false);
 
         // Act
         var result = _parser.Parse(data);
@@ -150,7 +150,7 @@ public class XmaFormatTests
     public void ParseHeader_SetsIsXmaMetadata()
     {
         // Arrange
-        var data = CreateXmaHeader(true);
+        var data = CreateXmaHeader();
 
         // Act
         var result = _parser.Parse(data);
@@ -164,7 +164,7 @@ public class XmaFormatTests
     public void ParseHeader_WithFmtChunk_IncludesFormatTag()
     {
         // Arrange
-        var data = CreateXmaHeader(false, 0x0165);
+        var data = CreateXmaHeader(false);
 
         // Act
         var result = _parser.Parse(data);

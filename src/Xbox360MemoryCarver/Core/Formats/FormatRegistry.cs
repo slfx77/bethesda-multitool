@@ -1,11 +1,22 @@
 using System.Collections.Frozen;
-using System.Reflection;
+using Xbox360MemoryCarver.Core.Formats.Dds;
+using Xbox360MemoryCarver.Core.Formats.Ddx;
+using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using Xbox360MemoryCarver.Core.Formats.Esp;
+using Xbox360MemoryCarver.Core.Formats.Lip;
+using Xbox360MemoryCarver.Core.Formats.Nif;
+using Xbox360MemoryCarver.Core.Formats.Png;
+using Xbox360MemoryCarver.Core.Formats.Scda;
+using Xbox360MemoryCarver.Core.Formats.Script;
+using Xbox360MemoryCarver.Core.Formats.Xdbf;
+using Xbox360MemoryCarver.Core.Formats.Xma;
+using Xbox360MemoryCarver.Core.Formats.Xui;
 
 namespace Xbox360MemoryCarver.Core.Formats;
 
 /// <summary>
-///     Auto-discovers and registers all file format modules.
-///     Scans the assembly for IFileFormat implementations at startup.
+///     Registry of all file format modules.
+///     Uses explicit registration for trim compatibility (no reflection).
 /// </summary>
 public static class FormatRegistry
 {
@@ -14,7 +25,7 @@ public static class FormatRegistry
     /// </summary>
     public const uint UnknownColor = 0xFF3D3D3D;
 
-    private static readonly Lazy<IReadOnlyList<IFileFormat>> _formatsLazy = new(DiscoverFormats);
+    private static readonly Lazy<IReadOnlyList<IFileFormat>> _formatsLazy = new(CreateFormats);
 
     private static readonly Lazy<FrozenDictionary<string, IFileFormat>> _formatsByIdLazy =
         new(() => _formatsLazy.Value.ToFrozenDictionary(f => f.FormatId, StringComparer.OrdinalIgnoreCase));
@@ -157,32 +168,29 @@ public static class FormatRegistry
     }
 
     /// <summary>
-    ///     Discover all IFileFormat implementations in the assembly.
+    ///     Explicitly create all IFileFormat implementations.
+    ///     This avoids reflection for trim compatibility.
     /// </summary>
-    private static List<IFileFormat> DiscoverFormats()
+    private static List<IFileFormat> CreateFormats()
     {
-        var formatType = typeof(IFileFormat);
-        var assembly = Assembly.GetExecutingAssembly();
+        // Explicitly instantiate all format modules (no reflection)
+        var formats = new List<IFileFormat>
+        {
+            new DdsFormat(),
+            new DdxFormat(),
+            new EsmRecordFormat(),
+            new EspFormat(),
+            new LipFormat(),
+            new NifFormat(),
+            new PngFormat(),
+            new ScdaFormat(),
+            new ScriptFormat(),
+            new XdbfFormat(),
+            new XmaFormat(),
+            new XuiFormat()
+        };
 
-        var formats = assembly.GetTypes()
-            .Where(t => t is { IsClass: true, IsAbstract: false } && formatType.IsAssignableFrom(t))
-            .Select(t =>
-            {
-                try
-                {
-                    return Activator.CreateInstance(t) as IFileFormat;
-                }
-                catch
-                {
-                    return null;
-                }
-            })
-            .Where(f => f != null)
-            .Cast<IFileFormat>()
-            .OrderBy(f => f.DisplayName)
-            .ToList();
-
-        return formats;
+        return formats.OrderBy(f => f.DisplayName).ToList();
     }
 
     private static FrozenDictionary<string, IFileFormat> BuildFormatsBySignatureId()

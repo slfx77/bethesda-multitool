@@ -1,4 +1,5 @@
 using System.IO.MemoryMappedFiles;
+using System.Text;
 
 namespace Xbox360MemoryCarver;
 
@@ -9,8 +10,6 @@ internal sealed class HexSearcher
 {
     private readonly Func<MemoryMappedViewAccessor?> _getAccessor;
     private readonly Func<long> _getFileSize;
-    private int _currentSearchIndex = -1;
-    private byte[]? _lastSearchPattern;
 
     private List<long> _searchResults = [];
 
@@ -21,13 +20,14 @@ internal sealed class HexSearcher
     }
 
     public IReadOnlyList<long> SearchResults => _searchResults;
-    public int CurrentSearchIndex => _currentSearchIndex;
-    public byte[]? LastSearchPattern => _lastSearchPattern;
+    public int CurrentSearchIndex { get; private set; } = -1;
+
+    public byte[]? LastSearchPattern { get; private set; }
 
     public void Clear()
     {
         _searchResults.Clear();
-        _currentSearchIndex = -1;
+        CurrentSearchIndex = -1;
     }
 
     public SearchResult Search(string searchText, bool isHexMode, bool isCaseSensitive)
@@ -35,27 +35,21 @@ internal sealed class HexSearcher
         var accessor = _getAccessor();
         var fileSize = _getFileSize();
 
-        if (string.IsNullOrEmpty(searchText) || fileSize == 0 || accessor == null)
-        {
-            return SearchResult.NoResults;
-        }
+        if (string.IsNullOrEmpty(searchText) || fileSize == 0 || accessor == null) return SearchResult.NoResults;
 
         if (isHexMode || searchText.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
             var pattern = ParseHexPattern(searchText);
-            if (pattern == null || pattern.Length == 0)
-            {
-                return SearchResult.InvalidHex;
-            }
+            if (pattern == null || pattern.Length == 0) return SearchResult.InvalidHex;
 
-            _lastSearchPattern = pattern;
+            LastSearchPattern = pattern;
             _searchResults = SearchForPattern(accessor, fileSize, pattern);
         }
         else
         {
             if (isCaseSensitive)
             {
-                var pattern = System.Text.Encoding.ASCII.GetBytes(searchText);
+                var pattern = Encoding.ASCII.GetBytes(searchText);
                 _searchResults = SearchForPattern(accessor, fileSize, pattern);
             }
             else
@@ -63,46 +57,37 @@ internal sealed class HexSearcher
                 _searchResults = SearchForTextCaseInsensitive(accessor, fileSize, searchText);
             }
 
-            _lastSearchPattern = System.Text.Encoding.ASCII.GetBytes(searchText);
+            LastSearchPattern = Encoding.ASCII.GetBytes(searchText);
         }
 
-        _currentSearchIndex = _searchResults.Count > 0 ? 0 : -1;
+        CurrentSearchIndex = _searchResults.Count > 0 ? 0 : -1;
 
-        return _currentSearchIndex >= 0
-            ? new SearchResult(true, _searchResults[_currentSearchIndex])
+        return CurrentSearchIndex >= 0
+            ? new SearchResult(true, _searchResults[CurrentSearchIndex])
             : SearchResult.NoResults;
     }
 
     public long? FindNext()
     {
-        if (_searchResults.Count == 0)
-        {
-            return null;
-        }
+        if (_searchResults.Count == 0) return null;
 
-        _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.Count;
-        return _searchResults[_currentSearchIndex];
+        CurrentSearchIndex = (CurrentSearchIndex + 1) % _searchResults.Count;
+        return _searchResults[CurrentSearchIndex];
     }
 
     public long? FindPrevious()
     {
-        if (_searchResults.Count == 0)
-        {
-            return null;
-        }
+        if (_searchResults.Count == 0) return null;
 
-        _currentSearchIndex = (_currentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
-        return _searchResults[_currentSearchIndex];
+        CurrentSearchIndex = (CurrentSearchIndex - 1 + _searchResults.Count) % _searchResults.Count;
+        return _searchResults[CurrentSearchIndex];
     }
 
     public string GetResultsText()
     {
-        if (_searchResults.Count == 0)
-        {
-            return "No results";
-        }
+        if (_searchResults.Count == 0) return "No results";
 
-        return $"{_currentSearchIndex + 1} of {_searchResults.Count}";
+        return $"{CurrentSearchIndex + 1} of {_searchResults.Count}";
     }
 
     private static byte[]? ParseHexPattern(string input)
@@ -111,18 +96,12 @@ internal sealed class HexSearcher
             .Replace(" ", "")
             .Replace("-", "");
 
-        if (hex.Length % 2 != 0 || hex.Length == 0)
-        {
-            return null;
-        }
+        if (hex.Length % 2 != 0 || hex.Length == 0) return null;
 
         try
         {
             var bytes = new byte[hex.Length / 2];
-            for (var i = 0; i < bytes.Length; i++)
-            {
-                bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
-            }
+            for (var i = 0; i < bytes.Length; i++) bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
 
             return bytes;
         }
@@ -135,10 +114,7 @@ internal sealed class HexSearcher
     private static List<long> SearchForPattern(MemoryMappedViewAccessor accessor, long fileSize, byte[] pattern)
     {
         var results = new List<long>();
-        if (pattern.Length == 0)
-        {
-            return results;
-        }
+        if (pattern.Length == 0) return results;
 
         const int chunkSize = 64 * 1024 * 1024;
         const int maxResults = 10000;
@@ -156,18 +132,13 @@ internal sealed class HexSearcher
             {
                 var match = true;
                 for (var j = 0; j < pattern.Length; j++)
-                {
                     if (buffer[i + j] != pattern[j])
                     {
                         match = false;
                         break;
                     }
-                }
 
-                if (match)
-                {
-                    results.Add(offset + i);
-                }
+                if (match) results.Add(offset + i);
             }
 
             offset += chunkSize;
@@ -182,16 +153,13 @@ internal sealed class HexSearcher
         string searchText)
     {
         var results = new List<long>();
-        if (searchText.Length == 0)
-        {
-            return results;
-        }
+        if (searchText.Length == 0) return results;
 
         const int chunkSize = 64 * 1024 * 1024;
         const int maxResults = 10000;
 
-        var upperPattern = System.Text.Encoding.ASCII.GetBytes(searchText.ToUpperInvariant());
-        var lowerPattern = System.Text.Encoding.ASCII.GetBytes(searchText.ToLowerInvariant());
+        var upperPattern = Encoding.ASCII.GetBytes(searchText.ToUpperInvariant());
+        var lowerPattern = Encoding.ASCII.GetBytes(searchText.ToLowerInvariant());
         var patternLength = upperPattern.Length;
 
         var buffer = new byte[chunkSize + patternLength - 1];
@@ -216,10 +184,7 @@ internal sealed class HexSearcher
                     }
                 }
 
-                if (match)
-                {
-                    results.Add(offset + i);
-                }
+                if (match) results.Add(offset + i);
             }
 
             offset += chunkSize;
