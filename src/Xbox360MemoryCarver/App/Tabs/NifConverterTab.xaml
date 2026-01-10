@@ -165,7 +165,7 @@
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="80"/>
             <ColumnDefinition Width="120"/>
-            <ColumnDefinition Width="120"/>
+            <ColumnDefinition Width="250"/>
           </Grid.ColumnDefinitions>
           <TextBlock Grid.Column="0"
                      FontWeight="SemiBold"
@@ -257,7 +257,7 @@
                   <ColumnDefinition Width="*"/>
                   <ColumnDefinition Width="80"/>
                   <ColumnDefinition Width="120"/>
-                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="250"/>
                 </Grid.ColumnDefinitions>
                 <CheckBox
                   Grid.Column="0"
@@ -281,7 +281,9 @@
                   Grid.Column="4"
                   VerticalAlignment="Center"
                   Foreground="{x:Bind StatusColor, Mode=OneWay}"
-                  Text="{x:Bind Status, Mode=OneWay}"/>
+                  Text="{x:Bind Status, Mode=OneWay}"
+                  TextTrimming="CharacterEllipsis"
+                  ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}"/>
               </Grid>
             </DataTemplate>
           </ListView.ItemTemplate>
