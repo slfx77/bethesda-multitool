@@ -55,7 +55,7 @@ internal static class CarveExtractor
             adjustedSize = (int)Math.Min(adjustedSize, fileSize - adjustedOffset);
 
             var outputFile = BuildOutputPath(outputPath, signatureId, format, customFilename, offset,
-                parseResult.OutputFolderOverride);
+                parseResult.OutputFolderOverride, parseResult.ExtensionOverride);
 
             // Read the actual file data (including any leading bytes)
             var fileData = new byte[adjustedSize];
@@ -98,7 +98,7 @@ internal static class CarveExtractor
     }
 
     private static string BuildOutputPath(string outputPath, string signatureId, IFileFormat format,
-        string? customFilename, long offset, string? outputFolderOverride = null)
+        string? customFilename, long offset, string? outputFolderOverride = null, string? extensionOverride = null)
     {
         // Use override if provided, otherwise fall back to format default
         var typeFolder = outputFolderOverride ??
@@ -106,12 +106,13 @@ internal static class CarveExtractor
         var typePath = Path.Combine(outputPath, typeFolder);
         Directory.CreateDirectory(typePath);
 
+        var extension = extensionOverride ?? format.Extension;
         var filename = customFilename ?? $"{offset:X8}";
-        var outputFile = Path.Combine(typePath, $"{filename}{format.Extension}");
+        var outputFile = Path.Combine(typePath, $"{filename}{extension}");
 
         var counter = 1;
         while (File.Exists(outputFile))
-            outputFile = Path.Combine(typePath, $"{filename}_{counter++}{format.Extension}");
+            outputFile = Path.Combine(typePath, $"{filename}_{counter++}{extension}");
 
         return outputFile;
     }

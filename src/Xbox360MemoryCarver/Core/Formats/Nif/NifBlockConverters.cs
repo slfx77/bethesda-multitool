@@ -88,8 +88,11 @@ internal static class NifBlockConverters
                 break;
 
             case "NiSkinInstance":
-            case "BSDismemberSkinInstance":
                 ConvertNiSkinInstance(buf, pos, size, blockRemap);
+                break;
+
+            case "BSDismemberSkinInstance":
+                ConvertBSDismemberSkinInstance(buf, pos, size, blockRemap);
                 break;
 
             case "NiSkinData":
@@ -263,24 +266,42 @@ internal static class NifBlockConverters
 
     private static void ConvertBSShaderProperty(byte[] buf, int pos, int size, int[] blockRemap)
     {
+        // BSShaderPPLightingProperty inheritance:
+        // NiObjectNET: nameRef(4) + numExtraData(4) + controllerRef(4) = 12 bytes
+        // NiProperty: (no fields)
+        // NiShadeProperty: Flags(2) ← 2-byte field!
+        // BSShaderProperty: ShaderType(4) + ShaderFlags(4) + ShaderFlags2(4) + EnvMapScale(4)
+        // BSShaderLightingProperty: TextureClampMode(4)
+        // BSShaderPPLightingProperty: TextureSetRef(4) + more fields
+
         var end = pos + size;
         pos = ConvertNiObjectNETInPlace(buf, pos, end, blockRemap);
         if (pos < 0) return;
 
-        // Swap 5 uint32s, then check for SizedString
-        for (var i = 0; i < 5 && pos + 4 <= end; i++)
+        // NiShadeProperty: Flags is 2 bytes (ushort), swap it
+        if (pos + 2 > end) return;
+        SwapUInt16InPlace(buf, pos);
+        pos += 2;
+
+        // BSShaderProperty: ShaderType(4) + ShaderFlags(4) + ShaderFlags2(4) + EnvMapScale(4) = 16 bytes
+        for (var i = 0; i < 4 && pos + 4 <= end; i++)
         {
             SwapUInt32InPlace(buf, pos);
             pos += 4;
         }
 
-        // fileName or textureSetRef
+        // BSShaderLightingProperty: TextureClampMode(4)
         if (pos + 4 > end) return;
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
 
+        // BSShaderPPLightingProperty: TextureSetRef (block ref)
+        if (pos + 4 > end) return;
         SwapUInt32InPlace(buf, pos);
         RemapBlockRefInPlace(buf, pos, blockRemap);
         pos += 4;
 
+        // Remaining fields (RefractionStrength, etc.) - bulk swap
         BulkSwap4InPlace(buf, pos, end - pos);
     }
 
@@ -308,7 +329,65 @@ internal static class NifBlockConverters
             pos += 4;
         }
 
-        BulkSwap4InPlace(buf, pos, end - pos);
+        // NiSkinInstance has no additional fields after bones
+    }
+
+    /// <summary>
+    ///     Convert BSDismemberSkinInstance which extends NiSkinInstance with partition data.
+    ///     Structure:
+    ///       - [NiSkinInstance base: Data ref, SkinPartition ref, SkeletonRoot ptr, NumBones, Bones ptrs]
+    ///       - NumPartitions (uint)
+    ///       - Partitions[NumPartitions] - each is BodyPartList { PartFlag (ushort), BodyPart (ushort) }
+    /// </summary>
+    private static void ConvertBSDismemberSkinInstance(byte[] buf, int pos, int size, int[] blockRemap)
+    {
+        var end = pos + size;
+
+        // NiSkinInstance base: 3 refs (Data, SkinPartition, SkeletonRoot)
+        for (var i = 0; i < 3 && pos + 4 <= end; i++)
+        {
+            SwapUInt32InPlace(buf, pos);
+            RemapBlockRefInPlace(buf, pos, blockRemap);
+            pos += 4;
+        }
+
+        if (pos + 4 > end) return;
+
+        // NumBones (uint)
+        SwapUInt32InPlace(buf, pos);
+        var numBones = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
+        pos += 4;
+
+        // Validate numBones to avoid processing garbage data
+        if (numBones > 1000) return;
+
+        // Bones ptrs (array of refs)
+        for (var i = 0; i < numBones && pos + 4 <= end; i++)
+        {
+            SwapUInt32InPlace(buf, pos);
+            RemapBlockRefInPlace(buf, pos, blockRemap);
+            pos += 4;
+        }
+
+        // BSDismemberSkinInstance additional fields:
+        if (pos + 4 > end) return;
+
+        // NumPartitions (uint)
+        SwapUInt32InPlace(buf, pos);
+        var numPartitions = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
+        pos += 4;
+
+        // Validate numPartitions
+        if (numPartitions > 1000) return;
+
+        // Partitions[NumPartitions] - each BodyPartList is 4 bytes: PartFlag (ushort) + BodyPart (ushort)
+        for (var i = 0; i < numPartitions && pos + 4 <= end; i++)
+        {
+            // Each field is a ushort, swap them individually
+            SwapUInt16InPlace(buf, pos);      // PartFlag
+            SwapUInt16InPlace(buf, pos + 2);  // BodyPart
+            pos += 4;
+        }
     }
 
     private static void ConvertNiSkinData(byte[] buf, int pos, int size)
@@ -357,27 +436,118 @@ internal static class NifBlockConverters
         var end = pos + size;
         if (pos + 4 > end) return;
 
+        // NumPartitions
         SwapUInt32InPlace(buf, pos);
         var numPartitions = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
         pos += 4;
 
-        if (numPartitions == 0 || pos + 10 > end) return;
-
-        for (var i = 0; i < 5; i++)
+        for (var p = 0; p < numPartitions && pos + 10 <= end; p++)
         {
+            // Header fields: NumVertices, NumTriangles, NumBones, NumStrips, NumWeightsPerVertex
+            var numVertices = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
             SwapUInt16InPlace(buf, pos);
             pos += 2;
-        }
 
-        var numBones = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos - 8));
-        for (var i = 0; i < numBones && pos + 2 <= end; i++)
-        {
+            var numTriangles = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
             SwapUInt16InPlace(buf, pos);
             pos += 2;
-        }
 
-        pos += 4; // Skip flags
-        BulkSwap4InPlace(buf, pos, end - pos);
+            var numBones = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
+            SwapUInt16InPlace(buf, pos);
+            pos += 2;
+
+            var numStrips = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
+            SwapUInt16InPlace(buf, pos);
+            pos += 2;
+
+            var numWeightsPerVertex = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
+            SwapUInt16InPlace(buf, pos);
+            pos += 2;
+
+            // Bones array
+            for (var i = 0; i < numBones && pos + 2 <= end; i++)
+            {
+                SwapUInt16InPlace(buf, pos);
+                pos += 2;
+            }
+
+            // HasVertexMap (byte)
+            if (pos >= end) return;
+            var hasVertexMap = buf[pos++];
+
+            // VertexMap (ushort array)
+            if (hasVertexMap != 0)
+            {
+                for (var i = 0; i < numVertices && pos + 2 <= end; i++)
+                {
+                    SwapUInt16InPlace(buf, pos);
+                    pos += 2;
+                }
+            }
+
+            // HasVertexWeights (byte)
+            if (pos >= end) return;
+            var hasVertexWeights = buf[pos++];
+
+            // VertexWeights (float array)
+            if (hasVertexWeights != 0)
+            {
+                var numWeights = numVertices * numWeightsPerVertex;
+                for (var i = 0; i < numWeights && pos + 4 <= end; i++)
+                {
+                    SwapUInt32InPlace(buf, pos);
+                    pos += 4;
+                }
+            }
+
+            // StripLengths (ushort array) - even if numStrips==0
+            var stripLengths = new ushort[numStrips];
+            for (var i = 0; i < numStrips && pos + 2 <= end; i++)
+            {
+                stripLengths[i] = BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos));
+                SwapUInt16InPlace(buf, pos);
+                pos += 2;
+            }
+
+            // HasFaces (byte)
+            if (pos >= end) return;
+            var hasFaces = buf[pos++];
+
+            // Strips data (if hasFaces && numStrips > 0)
+            if (hasFaces != 0 && numStrips > 0)
+            {
+                for (var s = 0; s < numStrips && s < stripLengths.Length; s++)
+                {
+                    for (var i = 0; i < stripLengths[s] && pos + 2 <= end; i++)
+                    {
+                        SwapUInt16InPlace(buf, pos);
+                        pos += 2;
+                    }
+                }
+            }
+
+            // Triangles (if hasFaces && numStrips == 0)
+            if (hasFaces != 0 && numStrips == 0)
+            {
+                for (var i = 0; i < numTriangles && pos + 6 <= end; i++)
+                {
+                    SwapUInt16InPlace(buf, pos);
+                    SwapUInt16InPlace(buf, pos + 2);
+                    SwapUInt16InPlace(buf, pos + 4);
+                    pos += 6;
+                }
+            }
+
+            // HasBoneIndices (byte)
+            if (pos >= end) return;
+            var hasBoneIndices = buf[pos++];
+
+            // BoneIndices (byte array - no swap needed)
+            if (hasBoneIndices != 0)
+            {
+                pos += numVertices * numWeightsPerVertex;
+            }
+        }
     }
 
     private static void ConvertNiControllerSequence(byte[] buf, int pos, int size, int[] blockRemap)

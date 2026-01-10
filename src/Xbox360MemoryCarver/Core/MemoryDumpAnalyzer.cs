@@ -184,7 +184,7 @@ public sealed class MemoryDumpAnalyzer
         {
             // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
             progress?.Report(new AnalysisProgress
-                { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
+            { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
             await Task.Run(() =>
             {
                 var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
@@ -195,7 +195,7 @@ public sealed class MemoryDumpAnalyzer
 
             // Phase 4: ESM scan (80-90%) - now using memory-mapped access
             progress?.Report(new AnalysisProgress
-                { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
+            { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
             await Task.Run(() =>
             {
                 var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
@@ -204,7 +204,7 @@ public sealed class MemoryDumpAnalyzer
 
             // Phase 5: FormID mapping (90-100%) - now using memory-mapped access
             progress?.Report(new AnalysisProgress
-                { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
+            { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
             await Task.Run(
                 () =>
                 {
@@ -216,7 +216,7 @@ public sealed class MemoryDumpAnalyzer
         }
 
         progress?.Report(new AnalysisProgress
-            { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
+        { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
 
         stopwatch.Stop();
         result.AnalysisTime = stopwatch.Elapsed;

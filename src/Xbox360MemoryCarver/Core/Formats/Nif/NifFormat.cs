@@ -126,13 +126,14 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             if (headerInfo.Size < 0) return null;
 
             // Determine if this is animation or geometry based on block types
-            var (contentType, outputFolder) = ClassifyNifContent(headerInfo.BlockTypes);
+            var (contentType, outputFolder, extension) = ClassifyNifContent(headerInfo.BlockTypes);
 
             return new ParseResult
             {
                 Format = "NIF",
                 EstimatedSize = headerInfo.Size,
                 OutputFolderOverride = outputFolder,
+                ExtensionOverride = extension,
                 Metadata = new Dictionary<string, object>
                 {
                     ["version"] = versionString,
@@ -152,22 +153,23 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
     /// <summary>
     ///     Classify NIF content as animation or geometry based on block types.
+    ///     Returns the content type, output folder, and file extension.
     /// </summary>
-    private static (string contentType, string outputFolder) ClassifyNifContent(List<string> blockTypes)
+    private static (string contentType, string outputFolder, string? extension) ClassifyNifContent(List<string> blockTypes)
     {
         var hasGeometry = blockTypes.Any(bt => GeometryBlockTypes.Contains(bt));
         var hasAnimation = blockTypes.Any(bt => AnimationBlockTypes.Contains(bt));
 
         if (hasGeometry && !hasAnimation)
-            return ("geometry", "meshes");
+            return ("geometry", "meshes", null); // Use default .nif extension
 
         if (hasAnimation && !hasGeometry)
-            return ("animation", "anims");
+            return ("animation", "anims", ".kf"); // Animation files use .kf extension
 
         if (hasGeometry && hasAnimation)
-            return ("mixed", "meshes"); // Prefer meshes for mixed content
+            return ("mixed", "meshes", null); // Prefer meshes for mixed content
 
-        return ("unknown", "models"); // Fallback to generic models folder
+        return ("unknown", "models", null); // Fallback to generic models folder
     }
 
     /// <summary>

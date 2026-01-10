@@ -114,25 +114,55 @@ internal sealed class NifGeometryExtractor
                                   $"unitSize={streams[i].UnitSize}, offset={streams[i].BlockOffset}");
         }
 
-        // Type 16 = half4, Type 14 = half2
+        // Type 16 = half4, Type 14 = half2, Type 28 = ubyte4
         var half4Streams = streams.Where(s => s.Type == 16 && s.UnitSize == 8)
             .OrderBy(s => s.BlockOffset).ToList();
         var half2Streams = streams.Where(s => s.Type == 14 && s.UnitSize == 4)
             .OrderBy(s => s.BlockOffset).ToList();
 
-        // Layout (sorted by offset): Position(0), Normal(8), UV(16), Tangent(20), Bitangent(28)
+        // Stream layout depends on whether mesh is skinned (stride 48) or not (stride 32/36)
+        // Skinned (stride 48): Position(0), BoneWeights(8), BoneIdx(16), Normal(20), UV(28), Tangent(32), Bitangent(40)
+        // Non-skinned (stride 32): Position(0), Normal(8), UV(16), Tangent(20), Bitangent(28)
+
         if (half2Streams.Count > 0)
             result.UVs = ExtractHalf2Stream(data, rawDataOffset, numVertices, stride,
                 streams[streams.IndexOf(half2Streams[0])]);
 
+        // Position is always the first half4 stream at offset 0
         if (half4Streams.Count >= 1)
             result.Positions = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[0]);
-        if (half4Streams.Count >= 2)
-            result.Normals = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[1]);
-        if (half4Streams.Count >= 3)
-            result.Tangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[2]);
-        if (half4Streams.Count >= 4)
-            result.Bitangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[3]);
+
+        // For skinned meshes (stride >= 48), stream at offset 8 is bone weights, not normals
+        // Normal is at offset 20 (third half4), Tangent at 32 (fourth), Bitangent at 40 (fifth)
+        // For non-skinned meshes, Normal is at offset 8 (second half4)
+        bool isSkinned = stride >= 48 && half4Streams.Count >= 5;
+
+        if (isSkinned)
+        {
+            // Skinned layout: skip stream[1] (bone weights), use streams 2,3,4 for normal/tangent/bitangent
+            if (half4Streams.Count >= 3)
+                result.Normals = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[2]);
+            if (half4Streams.Count >= 4)
+                result.Tangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[3]);
+            if (half4Streams.Count >= 5)
+                result.Bitangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[4]);
+
+            if (_verbose)
+                Console.WriteLine($"  Skinned mesh layout detected (stride {stride}): Normal@{half4Streams[2].BlockOffset}, Tangent@{half4Streams[3].BlockOffset}, Bitangent@{half4Streams[4].BlockOffset}");
+        }
+        else
+        {
+            // Non-skinned layout: streams 1,2,3 for normal/tangent/bitangent
+            if (half4Streams.Count >= 2)
+                result.Normals = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[1]);
+            if (half4Streams.Count >= 3)
+                result.Tangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[2]);
+            if (half4Streams.Count >= 4)
+                result.Bitangents = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[3]);
+
+            if (_verbose)
+                Console.WriteLine($"  Non-skinned mesh layout (stride {stride}): Normal@{half4Streams[1].BlockOffset}");
+        }
 
         result.BsDataFlags = 0;
         if (result.UVs != null) result.BsDataFlags |= 1;

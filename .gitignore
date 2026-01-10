@@ -35,10 +35,15 @@ xcompress64.dll
 XnaNative.dll
 
 # Output directories
-tools/
 test_output/
 output/
 TestOutput/
+
+# Tools folder - ignore most but allow NifAnalyzer
+tools/*
+!tools/NifAnalyzer/
+tools/NifAnalyzer/bin/
+tools/NifAnalyzer/obj/
 
 # Python remnants (if any)
 .venv/

@@ -67,6 +67,12 @@ public sealed class ParseResult
     public string? OutputFolderOverride { get; init; }
 
     /// <summary>
+    ///     Optional override for the file extension (e.g., ".kf" for animations instead of ".nif").
+    ///     If null, the format's default Extension is used.
+    /// </summary>
+    public string? ExtensionOverride { get; init; }
+
+    /// <summary>
     ///     Additional metadata (dimensions, format details, flags, etc.).
     /// </summary>
     public Dictionary<string, object> Metadata { get; init; } = [];

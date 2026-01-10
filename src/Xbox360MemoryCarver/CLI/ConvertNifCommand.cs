@@ -39,6 +39,7 @@ public static class ConvertNifCommand
     private static async Task ExecuteAsync(string input, string? output, bool recursive, bool verbose, bool overwrite)
     {
         var files = new List<string>();
+        string? inputBaseDir = null;
 
         if (File.Exists(input))
         {
@@ -50,6 +51,7 @@ public static class ConvertNifCommand
             var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
             files.AddRange(Directory.GetFiles(input, "*.nif", searchOption));
             output ??= input + "_converted";
+            inputBaseDir = Path.GetFullPath(input);
         }
         else
         {
@@ -92,7 +94,21 @@ public static class ConvertNifCommand
 
                     try
                     {
-                        var outputPath = Path.Combine(output, fileName);
+                        // Preserve directory structure for recursive operations
+                        string outputPath;
+                        if (inputBaseDir != null)
+                        {
+                            var fullFilePath = Path.GetFullPath(file);
+                            var relativePath = Path.GetRelativePath(inputBaseDir, fullFilePath);
+                            outputPath = Path.Combine(output, relativePath);
+                            var outputDir = Path.GetDirectoryName(outputPath);
+                            if (!string.IsNullOrEmpty(outputDir))
+                                Directory.CreateDirectory(outputDir);
+                        }
+                        else
+                        {
+                            outputPath = Path.Combine(output, fileName);
+                        }
 
                         if (File.Exists(outputPath) && !overwrite)
                         {
