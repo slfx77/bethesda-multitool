@@ -115,6 +115,10 @@ internal static class NifBlockConverters
                 ConvertNiMultiTargetTransformController(buf, pos, size, blockRemap);
                 break;
 
+            case "NiDefaultAVObjectPalette":
+                ConvertNiDefaultAVObjectPalette(buf, pos, size, blockRemap);
+                break;
+
             case "NiTransformInterpolator":
             case "NiBlendTransformInterpolator":
             case "NiFloatInterpolator":
@@ -758,6 +762,51 @@ internal static class NifBlockConverters
     private static void ConvertNiBoolInterpolator(byte[] buf, int pos, int size)
     {
         if (size >= 5) SwapUInt32InPlace(buf, pos + 1);
+    }
+
+    /// <summary>
+    /// NiDefaultAVObjectPalette: Object palette for quick name-based lookup.
+    /// Structure:
+    ///   - Scene (Ptr, 4 bytes) - needs remapping
+    ///   - NumObjs (uint, 4 bytes)
+    ///   - Objs[] - array of AVObject structs:
+    ///     - Name (SizedString: 4-byte length + chars) - chars must NOT be swapped!
+    ///     - AV Object (Ptr, 4 bytes) - needs remapping
+    /// </summary>
+    private static void ConvertNiDefaultAVObjectPalette(byte[] buf, int pos, int size, int[] blockRemap)
+    {
+        var end = pos + size;
+
+        // Scene (Ptr) - 4 bytes
+        if (pos + 4 > end) return;
+        SwapUInt32InPlace(buf, pos);
+        RemapBlockRefInPlace(buf, pos, blockRemap);
+        pos += 4;
+
+        // NumObjs (uint) - 4 bytes
+        if (pos + 4 > end) return;
+        SwapUInt32InPlace(buf, pos);
+        var numObjs = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
+        pos += 4;
+
+        // Objs[] - array of AVObject structs
+        for (var i = 0; i < numObjs && pos + 8 <= end; i++)
+        {
+            // Name length (uint) - 4 bytes
+            SwapUInt32InPlace(buf, pos);
+            var nameLen = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
+            pos += 4;
+
+            // Name string - DO NOT swap bytes, just skip
+            if (pos + nameLen > end) return;
+            pos += (int)nameLen;
+
+            // AV Object (Ptr) - 4 bytes
+            if (pos + 4 > end) return;
+            SwapUInt32InPlace(buf, pos);
+            RemapBlockRefInPlace(buf, pos, blockRemap);
+            pos += 4;
+        }
     }
 
     // ============================================================================
