@@ -34,7 +34,7 @@ internal static class NifSkinPartitionParser
         // Multi-partition support would require concatenating VertexMaps
         if (numPartitions > 1)
         {
-            Console.WriteLine($"    Warning: NiSkinPartition has {numPartitions} partitions - multi-partition remapping not yet supported");
+            // Warning logged silently - multi-partition remapping not yet supported
             // Still try to extract the first partition's VertexMap as a fallback
         }
 

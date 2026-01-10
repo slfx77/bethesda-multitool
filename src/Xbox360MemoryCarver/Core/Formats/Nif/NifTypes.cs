@@ -66,6 +66,19 @@ internal sealed class GeometryBlockExpansion
 }
 
 /// <summary>
+///     Information about how a Havok block needs vertex decompression.
+/// </summary>
+internal sealed class HavokBlockExpansion
+{
+    public int BlockIndex { get; set; }
+    public int NumVertices { get; set; }
+    public int OriginalSize { get; set; }
+    public int NewSize { get; set; }
+    /// <summary>Offset within block where vertices start (after NumVertices + Compressed byte).</summary>
+    public int VertexDataOffset { get; set; }
+}
+
+/// <summary>
 ///     Data stream info from BSPackedAdditionalGeometryData.
 /// </summary>
 internal sealed class DataStreamInfo

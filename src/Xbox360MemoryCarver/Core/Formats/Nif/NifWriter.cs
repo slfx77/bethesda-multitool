@@ -15,8 +15,11 @@ internal static class NifWriter
         byte[] output,
         NifInfo sourceInfo,
         HashSet<int> packedBlockIndices,
-        Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand)
+        Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand,
+        Dictionary<int, HavokBlockExpansion>? havokBlocksToExpand = null)
     {
+        havokBlocksToExpand ??= [];
+
         var pos = 0;
         var outPos = 0;
 
@@ -110,7 +113,10 @@ internal static class NifWriter
             if (!packedBlockIndices.Contains(block.Index))
             {
                 var size = (uint)block.Size;
-                if (geometryBlocksToExpand.TryGetValue(block.Index, out var expansion)) size = (uint)expansion.NewSize;
+                if (geometryBlocksToExpand.TryGetValue(block.Index, out var geomExpansion))
+                    size = (uint)geomExpansion.NewSize;
+                else if (havokBlocksToExpand.TryGetValue(block.Index, out var havokExpansion))
+                    size = (uint)havokExpansion.NewSize;
                 BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), size);
                 outPos += 4;
             }

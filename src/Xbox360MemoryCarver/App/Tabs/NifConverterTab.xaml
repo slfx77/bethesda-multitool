@@ -8,11 +8,11 @@
 
   <Grid Padding="16">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
     <!-- Header with description -->
@@ -20,12 +20,12 @@
                 Margin="0,0,0,16">
       <TextBlock
         Style="{StaticResource SubtitleTextBlockStyle}"
-        Text="Xbox 360 NIF Converter" />
+        Text="Xbox 360 NIF Converter"/>
       <TextBlock
         Margin="0,4,0,0"
         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         TextWrapping="Wrap"
-        Text="Convert Xbox 360 NIF files to PC format. This includes endian conversion and unpacking BSPackedAdditionalGeometryData geometry." />
+        Text="Convert Xbox 360 NIF files to PC format. This includes endian conversion and unpacking BSPackedAdditionalGeometryData geometry."/>
     </StackPanel>
 
     <!-- Input/Output Section -->
@@ -34,13 +34,13 @@
       Margin="0,0,0,8"
       RowSpacing="8">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
       <!-- Input Directory -->
@@ -49,19 +49,19 @@
         Grid.Column="0"
         Margin="0,0,12,0"
         VerticalAlignment="Center"
-        Text="Input Directory" />
+        Text="Input Directory"/>
       <TextBox
         x:Name="InputDirectoryTextBox"
         Grid.Row="0"
         Grid.Column="1"
         Margin="0,0,8,0"
         PlaceholderText="Select or enter a folder containing Xbox 360 .nif files..."
-        TextChanged="InputDirectoryTextBox_TextChanged" />
+        TextChanged="InputDirectoryTextBox_TextChanged"/>
       <Button
         Grid.Row="0"
         Grid.Column="2"
         Click="BrowseInputButton_Click"
-        Content="Browse..." />
+        Content="Browse..."/>
 
       <!-- Output Directory -->
       <TextBlock
@@ -69,46 +69,46 @@
         Grid.Column="0"
         Margin="0,0,12,0"
         VerticalAlignment="Center"
-        Text="Output Directory" />
+        Text="Output Directory"/>
       <TextBox
         x:Name="OutputDirectoryTextBox"
         Grid.Row="1"
         Grid.Column="1"
         Margin="0,0,8,0"
         PlaceholderText="Select or enter output directory for converted files..."
-        TextChanged="OutputDirectoryTextBox_TextChanged" />
+        TextChanged="OutputDirectoryTextBox_TextChanged"/>
       <Button
         Grid.Row="1"
         Grid.Column="2"
         Click="BrowseOutputButton_Click"
-        Content="Browse..." />
+        Content="Browse..."/>
     </Grid>
 
     <!-- Progress Section -->
     <Grid Grid.Row="2"
           Margin="0,0,0,8">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
       <ProgressBar
         x:Name="ScanProgressBar"
         Grid.Row="0"
         Margin="0,0,0,4"
         Visibility="Collapsed"
-        Value="0" />
+        Value="0"/>
       <ProgressBar
         x:Name="ConversionProgressBar"
         Grid.Row="1"
         Margin="0,0,0,4"
         Visibility="Collapsed"
-        Value="0" />
+        Value="0"/>
       <TextBlock
         x:Name="StatusTextBlock"
         Grid.Row="2"
         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-        Text="" />
+        Text=""/>
     </Grid>
 
     <!-- Files List -->
@@ -119,27 +119,27 @@
       CornerRadius="8">
       <Grid>
         <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0"
               Margin="0,0,0,8">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
             <TextBlock
               Style="{StaticResource SubtitleTextBlockStyle}"
-              Text="NIF Files" />
+              Text="NIF Files"/>
             <TextBlock
               x:Name="FileCountTextBlock"
               VerticalAlignment="Center"
               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-              Text="" />
+              Text=""/>
           </StackPanel>
           <StackPanel
             Grid.Column="1"
@@ -147,10 +147,10 @@
             Spacing="8">
             <Button
               Click="SelectAllButton_Click"
-              Content="Select All" />
+              Content="Select All"/>
             <Button
               Click="SelectNoneButton_Click"
-              Content="Select None" />
+              Content="Select None"/>
           </StackPanel>
         </Grid>
 
@@ -161,15 +161,15 @@
               Background="{ThemeResource SystemControlBackgroundListLowBrush}"
               CornerRadius="4">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="40" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="80" />
-            <ColumnDefinition Width="120" />
-            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="40"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="80"/>
+            <ColumnDefinition Width="120"/>
+            <ColumnDefinition Width="120"/>
           </Grid.ColumnDefinitions>
           <TextBlock Grid.Column="0"
                      FontWeight="SemiBold"
-                     Text="" />
+                     Text=""/>
           <Button
             Grid.Column="1"
             Padding="0"
@@ -180,12 +180,12 @@
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
               <TextBlock FontWeight="SemiBold"
-                         Text="File Path" />
+                         Text="File Path"/>
               <FontIcon
                 x:Name="FilePathSortIcon"
                 FontSize="10"
                 Glyph=""
-                Visibility="Collapsed" />
+                Visibility="Collapsed"/>
             </StackPanel>
           </Button>
           <Button
@@ -198,12 +198,12 @@
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
               <TextBlock FontWeight="SemiBold"
-                         Text="Size" />
+                         Text="Size"/>
               <FontIcon
                 x:Name="SizeSortIcon"
                 FontSize="10"
                 Glyph=""
-                Visibility="Collapsed" />
+                Visibility="Collapsed"/>
             </StackPanel>
           </Button>
           <Button
@@ -216,12 +216,12 @@
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
               <TextBlock FontWeight="SemiBold"
-                         Text="Format" />
+                         Text="Format"/>
               <FontIcon
                 x:Name="FormatSortIcon"
                 FontSize="10"
                 Glyph=""
-                Visibility="Collapsed" />
+                Visibility="Collapsed"/>
             </StackPanel>
           </Button>
           <Button
@@ -234,12 +234,12 @@
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
               <TextBlock FontWeight="SemiBold"
-                         Text="Status" />
+                         Text="Status"/>
               <FontIcon
                 x:Name="StatusSortIcon"
                 FontSize="10"
                 Glyph=""
-                Visibility="Collapsed" />
+                Visibility="Collapsed"/>
             </StackPanel>
           </Button>
         </Grid>
@@ -253,35 +253,35 @@
             <DataTemplate x:DataType="local:NifFileEntry">
               <Grid Margin="0,2">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="40" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="80" />
-                  <ColumnDefinition Width="120" />
-                  <ColumnDefinition Width="120" />
+                  <ColumnDefinition Width="40"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="80"/>
+                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="120"/>
                 </Grid.ColumnDefinitions>
                 <CheckBox
                   Grid.Column="0"
-                  IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
+                  IsChecked="{x:Bind IsSelected, Mode=TwoWay}"/>
                 <TextBlock
                   Grid.Column="1"
                   VerticalAlignment="Center"
                   Text="{x:Bind RelativePath}"
                   TextTrimming="CharacterEllipsis"
-                  ToolTipService.ToolTip="{x:Bind FullPath}" />
+                  ToolTipService.ToolTip="{x:Bind FullPath}"/>
                 <TextBlock
                   Grid.Column="2"
                   VerticalAlignment="Center"
-                  Text="{x:Bind FileSizeDisplay}" />
+                  Text="{x:Bind FileSizeDisplay}"/>
                 <TextBlock
                   Grid.Column="3"
                   VerticalAlignment="Center"
                   Foreground="{x:Bind FormatColor, Mode=OneWay}"
-                  Text="{x:Bind FormatDescription, Mode=OneWay}" />
+                  Text="{x:Bind FormatDescription, Mode=OneWay}"/>
                 <TextBlock
                   Grid.Column="4"
                   VerticalAlignment="Center"
                   Foreground="{x:Bind StatusColor, Mode=OneWay}"
-                  Text="{x:Bind Status, Mode=OneWay}" />
+                  Text="{x:Bind Status, Mode=OneWay}"/>
               </Grid>
             </DataTemplate>
           </ListView.ItemTemplate>
@@ -295,11 +295,12 @@
       Margin="0,12,0,0"
       ColumnSpacing="16">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
       <!-- Options -->
@@ -307,27 +308,32 @@
         x:Name="PreserveStructureCheckBox"
         Grid.Column="0"
         Content="Preserve folder structure"
-        IsChecked="True" />
+        IsChecked="True"/>
       <CheckBox
         x:Name="OverwriteExistingCheckBox"
         Grid.Column="1"
         Content="Overwrite existing files"
-        IsChecked="False" />
+        IsChecked="False"/>
+      <CheckBox
+        x:Name="VerboseOutputCheckBox"
+        Grid.Column="2"
+        Content="Verbose output"
+        IsChecked="False"/>
 
       <!-- Action buttons -->
       <Button
         x:Name="CancelButton"
-        Grid.Column="3"
+        Grid.Column="4"
         Click="CancelButton_Click"
         Content="Cancel"
-        IsEnabled="False" />
+        IsEnabled="False"/>
       <Button
         x:Name="ConvertButton"
-        Grid.Column="4"
+        Grid.Column="5"
         Click="ConvertButton_Click"
         Content="Convert Selected"
         IsEnabled="False"
-        Style="{StaticResource AccentButtonStyle}" />
+        Style="{StaticResource AccentButtonStyle}"/>
     </Grid>
   </Grid>
 </UserControl>

@@ -31,6 +31,8 @@ internal class Program
                 "streamdump" when args.Length >= 3 => PackedCommands.StreamDump(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 10),
                 "normalcompare" when args.Length >= 5 => PackedCommands.NormalCompare(args[1], args[2], int.Parse(args[3]), int.Parse(args[4]), args.Length > 5 ? int.Parse(args[5]) : 50),
                 "hex" when args.Length >= 4 => HexCommands.Hex(args[1], ParseOffset(args[2]), int.Parse(args[3])),
+                "havok" when args.Length >= 3 => HavokCommands.Havok(args[1], int.Parse(args[2])),
+                "havokcompare" when args.Length >= 5 => HavokCommands.HavokCompare(args[1], args[2], int.Parse(args[3]), int.Parse(args[4])),
                 _ => PrintUsage()
             };
         }
@@ -59,6 +61,9 @@ internal class Program
               NifAnalyzer streamdump <file> <block> [count] Dump all half4 streams to find normals
               NifAnalyzer normalcompare <xbox> <pc> <xblk> <pcblk> [count]
                                                              Compare Xbox packed normals vs PC
+              NifAnalyzer havok <file> <block_index>         Parse Havok physics blocks
+              NifAnalyzer havokcompare <xbox> <pc> <xblk> <pcblk>
+                                                             Compare Havok blocks side-by-side
               NifAnalyzer hex <file> <offset> <length>       Hex dump at offset
 
             Examples:

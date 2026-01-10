@@ -116,7 +116,7 @@ internal static class NifGeometryWriter
         if (block.Size - (srcPos - block.DataOffset) > 0)
         {
             var beforeTriStrip = outPos;
-            outPos = CopyTriStripSpecificData(data, output, srcPos, outPos, block.TypeName);
+            outPos = CopyTriStripSpecificData(data, output, srcPos, outPos, block.TypeName, verbose);
             if (verbose) Console.WriteLine($"    CopyTriStripSpecificData: wrote {outPos - beforeTriStrip} bytes");
         }
 
@@ -316,7 +316,7 @@ internal static class NifGeometryWriter
         return outPos;
     }
 
-    private static int CopyTriStripSpecificData(byte[] data, byte[] output, int srcPos, int outPos, string blockType)
+    private static int CopyTriStripSpecificData(byte[] data, byte[] output, int srcPos, int outPos, string blockType, bool verbose)
     {
         if (blockType == "NiTriStripsData")
         {
@@ -365,21 +365,21 @@ internal static class NifGeometryWriter
             // numTriangles
             var numTriangles = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
             BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numTriangles);
-            Console.WriteLine($"      numTriangles={numTriangles}");
+            if (verbose) Console.WriteLine($"      numTriangles={numTriangles}");
             srcPos += 2;
             outPos += 2;
 
             // numTrianglePoints
             var numTrianglePoints = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(srcPos));
             BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), numTrianglePoints);
-            Console.WriteLine($"      numTrianglePoints={numTrianglePoints}");
+            if (verbose) Console.WriteLine($"      numTrianglePoints={numTrianglePoints}");
             srcPos += 4;
             outPos += 4;
 
             // hasTriangles
             var hasTriangles = data[srcPos++];
             output[outPos++] = hasTriangles;
-            Console.WriteLine($"      hasTriangles={hasTriangles}");
+            if (verbose) Console.WriteLine($"      hasTriangles={hasTriangles}");
 
             if (hasTriangles != 0)
                 for (var i = 0; i < numTriangles * 3; i++)
@@ -393,7 +393,7 @@ internal static class NifGeometryWriter
             // NumMatchGroups and MatchGroups data
             var numMatchGroups = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
             BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numMatchGroups);
-            Console.WriteLine($"      numMatchGroups={numMatchGroups}");
+            if (verbose) Console.WriteLine($"      numMatchGroups={numMatchGroups}");
             srcPos += 2;
             outPos += 2;
 

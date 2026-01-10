@@ -152,7 +152,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     private const int MaxConcurrentFileReads = 8; // Limit concurrent file I/O
 
     private readonly List<NifFileEntry> _allNifFiles = [];
-    private readonly NifConverter _converter = new();
     private readonly ObservableCollection<NifFileEntry> _nifFiles = [];
     private readonly NifFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
@@ -465,6 +464,9 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         var inputDir = InputDirectoryTextBox.Text;
         var preserveStructure = PreserveStructureCheckBox.IsChecked == true;
         var overwrite = OverwriteExistingCheckBox.IsChecked == true;
+        var verbose = VerboseOutputCheckBox.IsChecked == true;
+
+        var converter = new NifConverter(verbose);
 
         _cts = new CancellationTokenSource();
         UpdateButtonStates();
@@ -516,7 +518,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
 
                     // Read and convert
                     var inputData = await File.ReadAllBytesAsync(file.FullPath, _cts.Token);
-                    var result = await Task.Run(() => _converter.Convert(inputData), _cts.Token);
+                    var result = await Task.Run(() => converter.Convert(inputData), _cts.Token);
 
                     if (result.Success && result.OutputData != null)
                     {

@@ -65,12 +65,20 @@ public sealed class NifConverter
         }
     }
 
-    private static ConversionResult ConvertEndianOnly(byte[] data, NifInfo sourceInfo)
+    private ConversionResult ConvertEndianOnly(byte[] data, NifInfo sourceInfo)
     {
+        // Check for Havok blocks with compressed vertices
+        var havokExpansions = AnalyzeHavokBlocks(data, sourceInfo);
+
+        if (havokExpansions.Count > 0)
+        {
+            return ConvertWithHavokExpansion(data, sourceInfo, havokExpansions);
+        }
+
         var output = new byte[data.Length];
         var blockRemap = CreateIdentityRemap(sourceInfo.BlockCount);
 
-        var outPos = NifWriter.WriteHeader(data, output, sourceInfo, [], []);
+        var outPos = NifWriter.WriteHeader(data, output, sourceInfo, [], [], []);
 
         foreach (var block in sourceInfo.Blocks) outPos = NifWriter.WriteBlock(data, output, outPos, block, blockRemap);
 
@@ -93,7 +101,8 @@ public sealed class NifConverter
         var geometryDataByBlock = ExtractAllPackedGeometry(data, packedBlocks);
         var geometryBlocksToExpand = AnalyzeGeometryBlocks(data, sourceInfo, geometryDataByBlock);
         var vertexMapByGeometryBlock = ExtractVertexMaps(data, sourceInfo, geometryBlocksToExpand);
-        var output = BuildConvertedOutput(data, sourceInfo, packedBlocks, geometryBlocksToExpand, geometryDataByBlock, vertexMapByGeometryBlock);
+        var havokExpansions = AnalyzeHavokBlocks(data, sourceInfo);
+        var output = BuildConvertedOutput(data, sourceInfo, packedBlocks, geometryBlocksToExpand, geometryDataByBlock, vertexMapByGeometryBlock, havokExpansions);
 
         return new ConversionResult
         {
@@ -144,7 +153,7 @@ public sealed class NifConverter
         return result;
     }
 
-    private static GeometryBlockExpansion? AnalyzeGeometryBlock(
+    private GeometryBlockExpansion? AnalyzeGeometryBlock(
         byte[] data, BlockInfo block, Dictionary<int, PackedGeometryData> geometryDataByBlock)
     {
         var pos = block.DataOffset + 4; // Skip groupId
@@ -189,7 +198,7 @@ public sealed class NifConverter
             pos += 4; // numTrianglePoints
             var hasTriangles = data[pos];
 
-            if (hasTriangles == 0 && numTriangles > 0)
+            if (hasTriangles == 0 && numTriangles > 0 && _verbose)
             {
                 Console.WriteLine($"    Note: Block {block.Index} (NiTriShapeData) has HasTriangles=0");
                 Console.WriteLine($"    Will expand vertex/normal/UV data; triangles from NiSkinPartition");
@@ -394,34 +403,46 @@ public sealed class NifConverter
         return -1;
     }
 
-    private static byte[] BuildConvertedOutput(
+    private byte[] BuildConvertedOutput(
         byte[] data,
         NifInfo sourceInfo,
         List<BlockInfo> packedBlocks,
         Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand,
         Dictionary<int, PackedGeometryData> geometryDataByBlock,
-        Dictionary<int, ushort[]> vertexMapByGeometryBlock)
+        Dictionary<int, ushort[]> vertexMapByGeometryBlock,
+        Dictionary<int, HavokBlockExpansion> havokExpansions)
     {
         var packedBlockIndices = new HashSet<int>(packedBlocks.Select(b => b.Index));
-        var (output, blockRemap) = AllocateOutput(data, sourceInfo, packedBlocks, geometryBlocksToExpand);
+        var (output, blockRemap) = AllocateOutput(data, sourceInfo, packedBlocks, geometryBlocksToExpand, havokExpansions);
 
-        var outPos = NifWriter.WriteHeader(data, output, sourceInfo, packedBlockIndices, geometryBlocksToExpand);
+        var outPos = NifWriter.WriteHeader(data, output, sourceInfo, packedBlockIndices, geometryBlocksToExpand, havokExpansions);
 
         foreach (var block in sourceInfo.Blocks)
         {
             if (packedBlockIndices.Contains(block.Index)) continue;
 
             var blockStartPos = outPos;
+            
+            if (_verbose && havokExpansions.ContainsKey(block.Index))
+                Console.WriteLine($"  Block {block.Index} ({block.TypeName}): IS in havokExpansions");
 
             if (geometryBlocksToExpand.TryGetValue(block.Index, out var expansion))
             {
                 var packedData = geometryDataByBlock[expansion.PackedBlockIndex];
                 vertexMapByGeometryBlock.TryGetValue(block.Index, out var vertexMap);
-                outPos = NifGeometryWriter.WriteExpandedBlock(data, output, outPos, block, packedData, vertexMap, verbose: true);
+                outPos = NifGeometryWriter.WriteExpandedBlock(data, output, outPos, block, packedData, vertexMap, _verbose);
 
                 var actualWritten = outPos - blockStartPos;
-                if (actualWritten != expansion.NewSize)
+                if (actualWritten != expansion.NewSize && _verbose)
                     Console.WriteLine($"  WARNING: Block {block.Index} expected {expansion.NewSize} bytes, wrote {actualWritten}");
+            }
+            else if (havokExpansions.TryGetValue(block.Index, out var havokExpansion))
+            {
+                outPos = WriteExpandedHavokBlock(data, output, outPos, block, havokExpansion, blockRemap);
+
+                var actualWritten = outPos - blockStartPos;
+                if (actualWritten != havokExpansion.NewSize && _verbose)
+                    Console.WriteLine($"  WARNING: Havok block {block.Index} expected {havokExpansion.NewSize} bytes, wrote {actualWritten}");
             }
             else
             {
@@ -440,8 +461,10 @@ public sealed class NifConverter
         byte[] data,
         NifInfo sourceInfo,
         List<BlockInfo> packedBlocks,
-        Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand)
+        Dictionary<int, GeometryBlockExpansion> geometryBlocksToExpand,
+        Dictionary<int, HavokBlockExpansion>? havokExpansions = null)
     {
+        havokExpansions ??= [];
         var packedBlockIndices = new HashSet<int>(packedBlocks.Select(b => b.Index));
 
         // Calculate header size changes:
@@ -465,8 +488,10 @@ public sealed class NifConverter
         foreach (var block in sourceInfo.Blocks)
             if (packedBlockIndices.Contains(block.Index))
                 totalBlockSizeDelta -= block.Size;
-            else if (geometryBlocksToExpand.TryGetValue(block.Index, out var expansion))
-                totalBlockSizeDelta += expansion.SizeIncrease;
+            else if (geometryBlocksToExpand.TryGetValue(block.Index, out var geomExpansion))
+                totalBlockSizeDelta += geomExpansion.SizeIncrease;
+            else if (havokExpansions.TryGetValue(block.Index, out var havokExpansion))
+                totalBlockSizeDelta += havokExpansion.NewSize - havokExpansion.OriginalSize;
 
         var output = new byte[data.Length + headerSizeDelta + totalBlockSizeDelta];
 
@@ -483,5 +508,231 @@ public sealed class NifConverter
         var remap = new int[count];
         for (var i = 0; i < count; i++) remap[i] = i;
         return remap;
+    }
+
+    /// <summary>
+    ///     Analyzes hkPackedNiTriStripsData blocks to find compressed vertices that need expansion.
+    /// </summary>
+    private Dictionary<int, HavokBlockExpansion> AnalyzeHavokBlocks(byte[] data, NifInfo sourceInfo)
+    {
+        var result = new Dictionary<int, HavokBlockExpansion>();
+
+        foreach (var block in sourceInfo.Blocks.Where(b => b.TypeName == "hkPackedNiTriStripsData"))
+        {
+            var expansion = AnalyzeHavokBlock(data, block);
+            if (expansion != null)
+            {
+                result[block.Index] = expansion;
+                if (_verbose)
+                    Console.WriteLine(
+                        $"Havok block {block.Index}: {expansion.NumVertices} compressed vertices, " +
+                        $"size {expansion.OriginalSize} -> {expansion.NewSize} (+{expansion.NewSize - expansion.OriginalSize})");
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Analyzes a single hkPackedNiTriStripsData block for compressed vertices.
+    /// </summary>
+    private HavokBlockExpansion? AnalyzeHavokBlock(byte[] data, BlockInfo block)
+    {
+        var pos = block.DataOffset;
+        var end = pos + block.Size;
+
+        if (block.Size < 9) return null; // Need at least numTris + numVerts + compressed
+
+        // NumTriangles (BE)
+        var numTriangles = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos));
+        pos += 4;
+
+        // Skip TriangleData (8 bytes each: 3 ushorts + 1 ushort)
+        pos += (int)numTriangles * 8;
+
+        if (pos + 5 > end) return null;
+
+        // NumVertices (BE)
+        var numVertices = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos));
+        pos += 4;
+
+        // Compressed flag (1 byte)
+        var compressed = data[pos] != 0;
+        pos += 1;
+
+        if (!compressed) return null; // No expansion needed
+
+        // Calculate size increase: each vertex goes from 6 bytes (HalfVector3) to 12 bytes (Vector3)
+        var sizeIncrease = (int)numVertices * 6;
+
+        return new HavokBlockExpansion
+        {
+            BlockIndex = block.Index,
+            NumVertices = (int)numVertices,
+            OriginalSize = block.Size,
+            NewSize = block.Size + sizeIncrease,
+            VertexDataOffset = pos - block.DataOffset // Relative offset within block
+        };
+    }
+
+    /// <summary>
+    ///     Converts a NIF with Havok vertex expansion (no BSPackedAdditionalGeometryData).
+    /// </summary>
+    private ConversionResult ConvertWithHavokExpansion(
+        byte[] data, NifInfo sourceInfo, Dictionary<int, HavokBlockExpansion> havokExpansions)
+    {
+        // Calculate output size
+        var totalSizeIncrease = havokExpansions.Values.Sum(e => e.NewSize - e.OriginalSize);
+        var output = new byte[data.Length + totalSizeIncrease];
+        var blockRemap = CreateIdentityRemap(sourceInfo.BlockCount);
+
+        var outPos = NifWriter.WriteHeader(data, output, sourceInfo, [], [], havokExpansions);
+
+        foreach (var block in sourceInfo.Blocks)
+        {
+            if (havokExpansions.TryGetValue(block.Index, out var expansion))
+            {
+                outPos = WriteExpandedHavokBlock(data, output, outPos, block, expansion, blockRemap);
+            }
+            else
+            {
+                outPos = NifWriter.WriteBlock(data, output, outPos, block, blockRemap);
+            }
+        }
+
+        outPos = NifWriter.WriteFooter(data, output, outPos, sourceInfo, blockRemap);
+
+        if (outPos < output.Length) Array.Resize(ref output, outPos);
+
+        return new ConversionResult
+        {
+            Success = true,
+            OutputData = output,
+            SourceInfo = sourceInfo,
+            OutputInfo = NifParser.Parse(output)
+        };
+    }
+
+    /// <summary>
+    ///     Writes an hkPackedNiTriStripsData block with decompressed vertices.
+    /// </summary>
+    private static int WriteExpandedHavokBlock(
+        byte[] data, byte[] output, int outPos, BlockInfo block,
+        HavokBlockExpansion expansion, int[] blockRemap)
+    {
+        var srcPos = block.DataOffset;
+        var srcEnd = srcPos + block.Size;
+
+        // NumTriangles
+        var numTriangles = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(srcPos));
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), numTriangles);
+        srcPos += 4;
+        outPos += 4;
+
+        // TriangleData array (swap each: 3 ushorts + 1 ushort = 8 bytes)
+        for (uint i = 0; i < numTriangles && srcPos + 8 <= srcEnd; i++)
+        {
+            // v1, v2, v3, weldInfo
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos)));
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos + 2), BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos + 2)));
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos + 4), BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos + 4)));
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos + 6), BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos + 6)));
+            srcPos += 8;
+            outPos += 8;
+        }
+
+        // NumVertices
+        var numVertices = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(srcPos));
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), numVertices);
+        srcPos += 4;
+        outPos += 4;
+
+        // Compressed flag - write as 0 (uncompressed) since we're decompressing
+        srcPos += 1; // Skip source compressed byte
+        output[outPos++] = 0;
+
+        // Convert HalfVector3[] to Vector3[]
+        for (uint i = 0; i < numVertices && srcPos + 6 <= srcEnd; i++)
+        {
+            // Read 3 half-floats (BE) and convert to 3 floats (LE)
+            var hx = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
+            var hy = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos + 2));
+            var hz = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos + 4));
+            srcPos += 6;
+
+            var fx = HalfToFloat(hx);
+            var fy = HalfToFloat(hy);
+            var fz = HalfToFloat(hz);
+
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), fx);
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos + 4), fy);
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos + 8), fz);
+            outPos += 12;
+        }
+
+        // NumSubShapes
+        if (srcPos + 2 <= srcEnd)
+        {
+            var numSubShapes = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(srcPos));
+            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numSubShapes);
+            srcPos += 2;
+            outPos += 2;
+
+            // hkSubPartData array (12 bytes each: HavokFilter(4) + NumVertices(4) + HavokMaterial(4))
+            for (int i = 0; i < numSubShapes && srcPos + 12 <= srcEnd; i++)
+            {
+                var filter = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(srcPos));
+                var numVerts = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(srcPos + 4));
+                var material = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(srcPos + 8));
+
+                // HavokFilter
+                BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), filter);
+                // NumVertices
+                BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos + 4), numVerts);
+                // HavokMaterial
+                BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos + 8), material);
+                srcPos += 12;
+                outPos += 12;
+            }
+        }
+
+        return outPos;
+    }
+
+    /// <summary>
+    ///     Converts a half-float (16-bit) to a single-precision float (32-bit).
+    /// </summary>
+    private static float HalfToFloat(ushort half)
+    {
+        // IEEE 754 half-precision format:
+        // Sign: 1 bit, Exponent: 5 bits, Mantissa: 10 bits
+        var sign = (half >> 15) & 1;
+        var exp = (half >> 10) & 0x1F;
+        var mantissa = half & 0x3FF;
+
+        if (exp == 0)
+        {
+            if (mantissa == 0)
+            {
+                // Zero
+                return sign == 0 ? 0.0f : -0.0f;
+            }
+            // Denormalized number
+            var f = mantissa / 1024.0f * (float)Math.Pow(2, -14);
+            return sign == 0 ? f : -f;
+        }
+
+        if (exp == 0x1F)
+        {
+            // Infinity or NaN
+            if (mantissa == 0)
+                return sign == 0 ? float.PositiveInfinity : float.NegativeInfinity;
+            return float.NaN;
+        }
+
+        // Normalized number
+        var exponent = exp - 15 + 127; // Convert bias from 15 to 127
+        var floatBits = (sign << 31) | (exponent << 23) | (mantissa << 13);
+        return BitConverter.Int32BitsToSingle(floatBits);
     }
 }

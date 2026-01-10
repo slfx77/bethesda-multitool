@@ -30,6 +30,16 @@ The project uses multi-targeting to produce both GUI and CLI builds from a singl
 - **DDXConv** - DDX to DDS texture conversion tool
 - **microsoft-pdb** - Microsoft PDB tools for symbol analysis
 
+### Analysis Tools
+
+- **NifAnalyzer** (`tools/NifAnalyzer/`) - **Always use this tool for NIF file analysis**. Commands:
+  - `dotnet run --project tools/NifAnalyzer -- blocks <file>` - List all blocks with offsets and sizes
+  - `dotnet run --project tools/NifAnalyzer -- havok <file>` - Parse hkPackedNiTriStripsData blocks
+  - `dotnet run --project tools/NifAnalyzer -- hex <file> <offset> <length>` - Hex dump at offset
+  - `dotnet run --project tools/NifAnalyzer -- compare <file1> <file2>` - Compare two NIF files
+
+> **IMPORTANT**: When analyzing NIF files, always use NifAnalyzer instead of manual PowerShell byte parsing. The tool handles endianness, block parsing, and structure interpretation correctly.
+
 ## Research Documentation
 
 See [docs/Memory_Dump_Research.md](../docs/Memory_Dump_Research.md) for ongoing research into:
@@ -264,3 +274,4 @@ The Windows build defaults to GUI mode. Force CLI with `--no-gui`:
 
 ```bash
 Xbox360MemoryCarver.exe --no-gui dump.dmp -o output -v
+```
