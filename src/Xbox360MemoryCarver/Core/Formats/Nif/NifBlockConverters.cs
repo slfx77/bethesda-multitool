@@ -107,6 +107,14 @@ internal static class NifBlockConverters
                 ConvertNiControllerSequence(buf, pos, size, blockRemap);
                 break;
 
+            case "NiControllerManager":
+                ConvertNiControllerManager(buf, pos, size, blockRemap);
+                break;
+
+            case "NiMultiTargetTransformController":
+                ConvertNiMultiTargetTransformController(buf, pos, size, blockRemap);
+                break;
+
             case "NiTransformInterpolator":
             case "NiBlendTransformInterpolator":
             case "NiFloatInterpolator":
@@ -634,6 +642,117 @@ internal static class NifBlockConverters
         }
 
         BulkSwap4InPlace(buf, pos, end - pos);
+    }
+
+    /// <summary>
+    /// NiControllerManager: Animation controller that holds sequences.
+    /// Structure (inherits NiTimeController):
+    ///   - NextController (Ref, 4 bytes)
+    ///   - Flags (ushort, 2 bytes)
+    ///   - Frequency, Phase, StartTime, StopTime (4 floats, 16 bytes)
+    ///   - Target (Ptr, 4 bytes)
+    ///   - Cumulative (bool, 1 byte)
+    ///   - NumControllerSequences (uint, 4 bytes)
+    ///   - ControllerSequences[] (Ref array - need block remap!)
+    ///   - ObjectPalette (Ref, 4 bytes - need block remap!)
+    /// </summary>
+    private static void ConvertNiControllerManager(byte[] buf, int pos, int size, int[] blockRemap)
+    {
+        var end = pos + size;
+
+        // NiTimeController base fields
+        pos = ConvertNiTimeControllerInPlace(buf, pos, end, blockRemap);
+        if (pos < 0) return;
+
+        // Cumulative (bool) - 1 byte, no swap
+        if (pos + 1 > end) return;
+        pos += 1;
+
+        // NumControllerSequences
+        if (pos + 4 > end) return;
+        SwapUInt32InPlace(buf, pos);
+        var numSeqs = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos));
+        pos += 4;
+
+        // ControllerSequences[] - array of Refs (block indices)
+        for (var i = 0; i < numSeqs && pos + 4 <= end; i++)
+        {
+            SwapUInt32InPlace(buf, pos);
+            RemapBlockRefInPlace(buf, pos, blockRemap);
+            pos += 4;
+        }
+
+        // ObjectPalette (Ref)
+        if (pos + 4 > end) return;
+        SwapUInt32InPlace(buf, pos);
+        RemapBlockRefInPlace(buf, pos, blockRemap);
+    }
+
+    /// <summary>
+    /// NiMultiTargetTransformController: Animation controller with multiple targets.
+    /// Structure (inherits NiInterpController → NiTimeController):
+    ///   - NextController (Ref, 4 bytes)
+    ///   - Flags (ushort, 2 bytes)
+    ///   - Frequency, Phase, StartTime, StopTime (4 floats, 16 bytes)
+    ///   - Target (Ptr, 4 bytes)
+    ///   - NumExtraTargets (ushort, 2 bytes)
+    ///   - ExtraTargets[] (Ptr array - need block remap!)
+    /// </summary>
+    private static void ConvertNiMultiTargetTransformController(byte[] buf, int pos, int size, int[] blockRemap)
+    {
+        var end = pos + size;
+
+        // NiTimeController base fields
+        pos = ConvertNiTimeControllerInPlace(buf, pos, end, blockRemap);
+        if (pos < 0) return;
+
+        // NumExtraTargets (ushort, 2 bytes)
+        if (pos + 2 > end) return;
+        SwapUInt16InPlace(buf, pos);
+        var numTargets = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos));
+        pos += 2;
+
+        // ExtraTargets[] - array of Ptrs (block references to NiNode objects)
+        for (var i = 0; i < numTargets && pos + 4 <= end; i++)
+        {
+            SwapUInt32InPlace(buf, pos);
+            RemapBlockRefInPlace(buf, pos, blockRemap);
+            pos += 4;
+        }
+    }
+
+    /// <summary>
+    /// Convert NiTimeController base fields (used by animation controllers).
+    /// Returns the position after all NiTimeController fields, or -1 on error.
+    /// </summary>
+    private static int ConvertNiTimeControllerInPlace(byte[] buf, int pos, int end, int[] blockRemap)
+    {
+        // NextController (Ref) - 4 bytes
+        if (pos + 4 > end) return -1;
+        SwapUInt32InPlace(buf, pos);
+        RemapBlockRefInPlace(buf, pos, blockRemap);
+        pos += 4;
+
+        // Flags (ushort) - 2 bytes
+        if (pos + 2 > end) return -1;
+        SwapUInt16InPlace(buf, pos);
+        pos += 2;
+
+        // Frequency, Phase, StartTime, StopTime (4 floats)
+        if (pos + 16 > end) return -1;
+        SwapUInt32InPlace(buf, pos);      // Frequency
+        SwapUInt32InPlace(buf, pos + 4);  // Phase
+        SwapUInt32InPlace(buf, pos + 8);  // StartTime
+        SwapUInt32InPlace(buf, pos + 12); // StopTime
+        pos += 16;
+
+        // Target (Ptr) - 4 bytes
+        if (pos + 4 > end) return -1;
+        SwapUInt32InPlace(buf, pos);
+        RemapBlockRefInPlace(buf, pos, blockRemap);
+        pos += 4;
+
+        return pos;
     }
 
     private static void ConvertNiBoolInterpolator(byte[] buf, int pos, int size)
