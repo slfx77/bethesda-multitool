@@ -80,9 +80,11 @@ internal static class NifParser
         info.NumStrings = (int)ReadUInt32(data, pos, info.IsBigEndian); pos += 4;
         int maxStringLen = (int)ReadUInt32(data, pos, info.IsBigEndian); pos += 4;
 
+        info.Strings = new List<string>(info.NumStrings);
         for (int i = 0; i < info.NumStrings; i++)
         {
             int len = (int)ReadUInt32(data, pos, info.IsBigEndian); pos += 4;
+            info.Strings.Add(Encoding.ASCII.GetString(data, pos, len));
             pos += len;
         }
 

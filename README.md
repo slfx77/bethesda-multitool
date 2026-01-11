@@ -199,12 +199,12 @@ This project is licensed under the **MIT License** - See [LICENSE](LICENSE) file
 
 This project uses the following external components:
 
-| Component                                                 | License    | Usage                                                |
-| --------------------------------------------------------- | ---------- | ---------------------------------------------------- |
-| [DDXConv](https://github.com/kran27/DDXConv)              | Unlicensed | DDX→DDS texture conversion (forked, built-in)        |
-| [XCompression](https://github.com/gibbed/XCompression)    | zlib       | LZX decompression (submodule, called as subprocess)  |
-| [XUIHelper](https://github.com/ClementDrepworx/XUIHelper) | GPLv3      | XUR→XUI conversion (submodule, called as subprocess) |
-| [NifSkope nif.xml](https://github.com/niftools/nifskope)  | BSD-3      | NIF format schema for endian conversion (embedded)   |
+| Component                                                | License    | Usage                                                |
+| -------------------------------------------------------- | ---------- | ---------------------------------------------------- |
+| [DDXConv](https://github.com/kran27/DDXConv)             | Unlicensed | DDX→DDS texture conversion (forked, built-in)        |
+| [XCompression](https://github.com/gibbed/XCompression)   | zlib       | LZX decompression (submodule, called as subprocess)  |
+| [XUIHelper](https://github.com/SGCSam/XUIHelper)         | GPLv3      | XUR→XUI conversion (submodule, called as subprocess) |
+| [NifSkope nif.xml](https://github.com/niftools/nifskope) | BSD-3      | NIF format schema for endian conversion (embedded)   |
 
 **Note**: XUIHelper is licensed under GPLv3. Since it is invoked as a separate subprocess (not linked), this project remains MIT licensed. XUIHelper's GPLv3 license applies only to the XUIHelper component itself.
 

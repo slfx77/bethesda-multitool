@@ -161,9 +161,8 @@ public static class CarveCommand
 
             foreach (var (type, count) in summary.TypeCounts)
             {
-                var category = CategoryMap.TryGetValue(type, out var cat) ? cat : type;
-                categorized.TryGetValue(category, out var existing);
-                categorized[category] = existing + count;
+                var category = CategoryMap.GetValueOrDefault(type, type);
+                categorized[category] = categorized.GetValueOrDefault(category) + count;
             }
 
             var table = new Table();

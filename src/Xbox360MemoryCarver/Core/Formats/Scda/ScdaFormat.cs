@@ -36,7 +36,7 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
         if (!span[..4].SequenceEqual("SCDA"u8)) return null;
 
         var length = BinaryUtils.ReadUInt16LE(span, 4);
-        if (length == 0 || length > 65535 || offset + 6 + length > data.Length) return null;
+        if (length == 0 || offset + 6 + length > data.Length) return null;
 
         var bytecode = span.Slice(6, length);
         if (!ValidateBytecode(bytecode)) return null;

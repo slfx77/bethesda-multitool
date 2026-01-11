@@ -131,9 +131,7 @@ public class FileColoringTests
         };
 
         // Act
-        var actualColor = FormatRegistry.CategoryColors.TryGetValue(file.Category, out var color)
-            ? color
-            : FormatRegistry.UnknownColor;
+        var actualColor = FormatRegistry.CategoryColors.GetValueOrDefault(file.Category, FormatRegistry.UnknownColor);
 
         // Assert
         Assert.Equal(expectedColor, actualColor);
@@ -234,9 +232,7 @@ public class FileColoringTests
     {
         // Act - minidump_header is a special case handled in GetCategory
         var category = FormatRegistry.GetCategory(signatureId);
-        var actualColor = FormatRegistry.CategoryColors.TryGetValue(category, out var color)
-            ? color
-            : FormatRegistry.UnknownColor;
+        var actualColor = FormatRegistry.CategoryColors.GetValueOrDefault(category, FormatRegistry.UnknownColor);
 
         // Assert
         Assert.Equal(expectedColor, actualColor);

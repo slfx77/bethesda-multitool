@@ -51,7 +51,8 @@ internal sealed class XmaWavConverter
                 CreateNoWindow = true
             };
 
-            using var process = new Process { StartInfo = startInfo };
+            using var process = new Process();
+            process.StartInfo = startInfo;
             process.Start();
 
             var stderr = await process.StandardError.ReadToEndAsync();

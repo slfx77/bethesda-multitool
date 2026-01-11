@@ -41,10 +41,7 @@ public class CarvedFileInfo
     public long Length { get; set; }
     public string FileType { get; set; } = "";
     public string? FileName { get; set; }
-    public string? SubType { get; set; }
     public byte[]? Header { get; set; }
-    public bool IsExtracted { get; set; }
-    public string? ExtractedPath { get; set; }
     public string? Error { get; set; }
 
     /// <summary>
@@ -57,11 +54,6 @@ public class CarvedFileInfo
     ///     The file category for color coding.
     /// </summary>
     public FileCategory Category { get; set; }
-
-    /// <summary>
-    ///     Gets a display name - filename if available, otherwise the file type.
-    /// </summary>
-    public string DisplayName => !string.IsNullOrEmpty(FileName) ? FileName : FileType;
 }
 
 /// <summary>
@@ -72,10 +64,7 @@ public record ExtractionOptions
     public string OutputPath { get; init; } = "output";
     public bool ConvertDdx { get; init; } = true;
     public bool SaveAtlas { get; init; }
-    public bool SaveRaw { get; init; }
     public bool Verbose { get; init; }
-    public bool SkipEndian { get; init; }
-    public int ChunkSize { get; init; } = 10 * 1024 * 1024;
     public int MaxFilesPerType { get; init; } = 10000;
     public List<string>? FileTypes { get; init; }
 
@@ -94,7 +83,6 @@ public class AnalysisProgress
     public long BytesProcessed { get; set; }
     public long TotalBytes { get; set; }
     public int FilesFound { get; set; }
-    public string CurrentType { get; set; } = "";
 
     /// <summary>
     ///     Current phase of analysis (e.g., "Scanning", "Parsing", "Metadata").
@@ -114,20 +102,6 @@ public class ExtractionProgress
 {
     public int FilesProcessed { get; set; }
     public int TotalFiles { get; set; }
-    public CarvedFileInfo? CurrentFile { get; set; }
     public string CurrentOperation { get; set; } = "";
     public double PercentComplete { get; set; }
-
-    /// <summary>
-    ///     Gets the calculated percent complete, using the set value if positive, otherwise calculating from files processed.
-    /// </summary>
-    public double GetEffectivePercentComplete()
-    {
-        return PercentComplete > 0 ? PercentComplete : CalculateFromFilesProcessed();
-    }
-
-    private double CalculateFromFilesProcessed()
-    {
-        return TotalFiles > 0 ? FilesProcessed * 100.0 / TotalFiles : 0;
-    }
 }

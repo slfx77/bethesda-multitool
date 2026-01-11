@@ -69,7 +69,7 @@ public static class FormatRegistry
     /// </summary>
     public static IFileFormat? GetByFormatId(string formatId)
     {
-        return ByFormatId.TryGetValue(formatId, out var format) ? format : null;
+        return ByFormatId.GetValueOrDefault(formatId);
     }
 
     /// <summary>
@@ -77,7 +77,7 @@ public static class FormatRegistry
     /// </summary>
     public static IFileFormat? GetBySignatureId(string signatureId)
     {
-        return BySignatureId.TryGetValue(signatureId, out var format) ? format : null;
+        return BySignatureId.GetValueOrDefault(signatureId);
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ public static class FormatRegistry
     public static uint GetColor(string signatureId)
     {
         var category = GetCategory(signatureId);
-        return CategoryColors.TryGetValue(category, out var color) ? color : 0xFF555555;
+        return CategoryColors.GetValueOrDefault(category, 0xFF555555);
     }
 
     /// <summary>

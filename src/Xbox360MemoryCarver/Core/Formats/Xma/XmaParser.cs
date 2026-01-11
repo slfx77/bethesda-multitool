@@ -185,7 +185,7 @@ internal static class XmaParser
 
         CountCorruptRun(ref corruptBytes, ref firstCorruptionOffset, runLength, runStart);
 
-        var totalQuality = dataSize > 0 ? Math.Max(0, 100 - corruptBytes * 100 / dataSize) : 100;
+        var totalQuality = Math.Max(0, 100 - corruptBytes * 100 / dataSize);
 
         int usablePercent;
         if (firstCorruptionOffset < 0)
@@ -195,7 +195,7 @@ internal static class XmaParser
         else
         {
             var cleanBytes = firstCorruptionOffset - dataStart;
-            usablePercent = dataSize > 0 ? Math.Max(0, cleanBytes * 100 / dataSize) : 100;
+            usablePercent = Math.Max(0, cleanBytes * 100 / dataSize);
         }
 
         return (totalQuality, usablePercent);

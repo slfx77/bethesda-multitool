@@ -66,17 +66,18 @@ internal static class PackedCommands
         Console.WriteLine($"PC:   {pcGeom.NumVertices} vertices, HasNormals={pcGeom.HasNormals}");
         Console.WriteLine();
 
-        // Find normal stream in packed data
+        // Find normal stream in packed data - VERIFIED: 2nd half4 stream (offset 8) matches PC normals
         var half4Streams = packedResult.Streams.Where(s => s.Type == 16 && s.UnitSize == 8)
             .OrderBy(s => s.BlockOffset).ToList();
 
         if (half4Streams.Count < 2)
         {
-            Console.Error.WriteLine("Could not find normal stream in packed data");
+            Console.Error.WriteLine($"Expected at least 2 half4 streams for normals, found {half4Streams.Count}");
             return 1;
         }
 
-        var normalStream = half4Streams[1]; // Second half4 stream is normals
+        // Position=0, Normal=1 (by offset order, verified by comparison with PC reference)
+        var normalStream = half4Streams[1]; // 2nd half4 stream is normals (offset 8)
         Console.WriteLine($"Xbox normal stream: type={normalStream.Type}, offset={normalStream.BlockOffset}, unitSize={normalStream.UnitSize}");
         Console.WriteLine();
 
@@ -239,8 +240,14 @@ internal static class PackedCommands
         var normals = new List<(float X, float Y, float Z)>();
         if (geom.HasNormals == 0) return normals;
 
-        // Find normals offset: after vertices
-        int normalsOffset = geom.FieldOffsets.GetValueOrDefault("Vertices") + (int)geom.NumVertices * 12;
+        // Use the actual parsed normals offset from GeometryParser
+        if (!geom.FieldOffsets.TryGetValue("Normals", out int normalsOffset))
+        {
+            Console.Error.WriteLine("  Warning: Normals offset not found in PC geometry, trying fallback...");
+            // Fallback: after vertices
+            normalsOffset = geom.FieldOffsets.GetValueOrDefault("Vertices") + (int)geom.NumVertices * 12;
+        }
+
         count = Math.Min(count, geom.NumVertices);
 
         for (int i = 0; i < count; i++)
@@ -298,9 +305,10 @@ internal static class PackedCommands
         // Parse stream infos (25 bytes each)
         var streams = new PackedGeomStreamInfo[numBlockInfos];
         Console.WriteLine("=== Data Streams ===");
-        Console.WriteLine($"{"#",-3} {"Type",-6} {"Unit",-5} {"Total",-8} {"Stride",-7} {"BlkIdx",-7} {"Offset",-7} {"Interpretation",-20}");
-        Console.WriteLine(new string('-', 75));
+        Console.WriteLine($"{"#",-3} {"Type",-6} {"Unit",-5} {"Total",-8} {"Stride",-7} {"BlkIdx",-7} {"Offset",-7} {"Semantic",-25}");
+        Console.WriteLine(new string('-', 80));
 
+        // First pass: collect all streams
         for (int i = 0; i < numBlockInfos; i++)
         {
             streams[i] = new PackedGeomStreamInfo
@@ -314,8 +322,21 @@ internal static class PackedCommands
                 Flags = data[pos + 24]
             };
             pos += 25;
+        }
 
-            Console.WriteLine($"{i,-3} {streams[i].Type,-6} {streams[i].UnitSize,-5} {streams[i].TotalSize,-8} {streams[i].Stride,-7} {streams[i].BlockIndex,-7} {streams[i].BlockOffset,-7} {streams[i].GetInterpretation(),-20}");
+        // Second pass: display with semantic info (requires knowing all half4 stream offsets)
+        var half4Streams = streams.Where(s => s.Type == 16 && s.UnitSize == 8)
+            .OrderBy(s => s.BlockOffset).ToList();
+
+        foreach (var stream in streams.OrderBy(s => s.BlockOffset))
+        {
+            int half4Index = stream.Type == 16 && stream.UnitSize == 8
+                ? half4Streams.FindIndex(s => s.BlockOffset == stream.BlockOffset)
+                : -1;
+            var semantic = stream.GetSemanticName(half4Index);
+
+            int idx = Array.IndexOf(streams, stream);
+            Console.WriteLine($"{idx,-3} {stream.Type,-6} {stream.UnitSize,-5} {stream.TotalSize,-8} {stream.Stride,-7} {stream.BlockIndex,-7} {stream.BlockOffset,-7} {semantic,-25}");
         }
 
         Console.WriteLine();
@@ -386,12 +407,13 @@ internal static class PackedCommands
             Console.WriteLine($"Stride: {stride} bytes per vertex");
             Console.WriteLine();
 
-            // Find position stream (type 16 with lowest offset)
-            var posStream = streams.Where(s => s.Type == 16 && s.UnitSize == 8)
-                .OrderBy(s => s.BlockOffset).FirstOrDefault();
+            // Find streams by offset order - VERIFIED ORDER:
+            // half4[0] = Position, half4[1] = Normal (matches PC), half4[2] = Tangent, half4[3] = Bitangent
+            var half4StreamsForVerts = streams.Where(s => s.Type == 16 && s.UnitSize == 8)
+                .OrderBy(s => s.BlockOffset).ToList();
+            var posStream = half4StreamsForVerts.ElementAtOrDefault(0);
             var uvStream = streams.FirstOrDefault(s => s.Type == 14 && s.UnitSize == 4);
-            var normalStream = streams.Where(s => s.Type == 16 && s.UnitSize == 8)
-                .OrderBy(s => s.BlockOffset).Skip(1).FirstOrDefault();
+            var normalStream = half4StreamsForVerts.ElementAtOrDefault(1); // 2nd half4 stream is Normal (offset 8)
 
             Console.WriteLine($"{"Idx",-5} {"X",-12} {"Y",-12} {"Z",-12} {"U",-10} {"V",-10} {"Nx",-10} {"Ny",-10} {"Nz",-10}");
             Console.WriteLine(new string('-', 105));
@@ -630,6 +652,249 @@ internal static class PackedCommands
                 Console.WriteLine($"Direct triangles available: {part.Triangles.Length}");
             }
         }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Comprehensive analysis of BSPackedAdditionalGeometryData streams with semantic identification.
+    /// </summary>
+    public static int AnalyzeStreams(string path, int blockIndex, int numVertices)
+    {
+        var data = File.ReadAllBytes(path);
+        var nif = NifParser.Parse(data);
+
+        if (blockIndex < 0 || blockIndex >= nif.NumBlocks)
+        {
+            Console.Error.WriteLine($"Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
+            return 1;
+        }
+
+        int offset = nif.GetBlockOffset(blockIndex);
+        var typeName = nif.GetBlockTypeName(blockIndex);
+        var size = (int)nif.BlockSizes[blockIndex];
+
+        if (!typeName.Contains("PackedAdditionalGeometryData"))
+        {
+            Console.Error.WriteLine($"Block {blockIndex} is {typeName}, not BSPackedAdditionalGeometryData");
+            return 1;
+        }
+
+        Console.WriteLine("╔════════════════════════════════════════════════════════════════════════╗");
+        Console.WriteLine("║           BSPackedAdditionalGeometryData Stream Analysis              ║");
+        Console.WriteLine("╚════════════════════════════════════════════════════════════════════════╝");
+        Console.WriteLine();
+        Console.WriteLine($"File: {Path.GetFileName(path)}");
+        Console.WriteLine($"Block: {blockIndex} ({typeName})");
+        Console.WriteLine($"Offset: 0x{offset:X4} ({offset} bytes)");
+        Console.WriteLine($"Size: {size} bytes");
+        Console.WriteLine($"Endianness: {(nif.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
+        Console.WriteLine();
+
+        // Parse packed geometry
+        var result = ParsePackedGeometry(data, offset, size, nif.IsBigEndian);
+
+        if (result.RawDataOffset < 0)
+        {
+            Console.Error.WriteLine("Failed to locate raw vertex data in packed block");
+            return 1;
+        }
+
+        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        Console.WriteLine("                           STREAM LAYOUT                                   ");
+        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        Console.WriteLine();
+        Console.WriteLine($"NumVertices: {result.NumVertices}");
+        Console.WriteLine($"Stride: {result.Stride} bytes per vertex");
+        Console.WriteLine($"Raw Data Offset: 0x{result.RawDataOffset:X4}");
+        Console.WriteLine($"NumStreams: {result.Streams.Count}");
+        Console.WriteLine();
+
+        // Identify half4 streams for semantic assignment
+        var half4Streams = result.Streams
+            .Where(s => s.Type == 16 && s.UnitSize == 8)
+            .OrderBy(s => s.BlockOffset)
+            .ToList();
+
+        // Display stream table with semantic identification
+        Console.WriteLine($"{"#",-3} {"Type",-6} {"Unit",-5} {"Offset",-8} {"Semantic",-20} {"Interpretation",-25}");
+        Console.WriteLine(new string('─', 80));
+
+        for (int i = 0; i < result.Streams.Count; i++)
+        {
+            var stream = result.Streams.OrderBy(s => s.BlockOffset).ElementAt(i);
+            int half4Index = stream.Type == 16 && stream.UnitSize == 8
+                ? half4Streams.FindIndex(s => s.BlockOffset == stream.BlockOffset)
+                : -1;
+
+            var semantic = stream.GetSemanticName(half4Index);
+            var interp = stream.GetInterpretation();
+
+            Console.WriteLine($"{i,-3} {stream.Type,-6} {stream.UnitSize,-5} {stream.BlockOffset,-8} {semantic,-20} {interp,-25}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        Console.WriteLine("                         STRIDE LAYOUT DIAGRAM                             ");
+        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        Console.WriteLine();
+
+        // Visual stride diagram
+        Console.Write("  0         8        16       20       24       32       40");
+        Console.WriteLine();
+        Console.Write("  │         │         │    │    │         │         │");
+        Console.WriteLine();
+        Console.Write("  ");
+        for (int b = 0; b < result.Stride; b++)
+        {
+            var stream = result.Streams.OrderBy(s => s.BlockOffset)
+                .FirstOrDefault(s => s.BlockOffset <= b && b < s.BlockOffset + s.UnitSize);
+
+            if (stream != null)
+            {
+                int half4Idx = stream.Type == 16 && stream.UnitSize == 8
+                    ? half4Streams.FindIndex(s => s.BlockOffset == stream.BlockOffset)
+                    : -1;
+                var sem = stream.GetSemantic(half4Idx);
+                char c = sem switch
+                {
+                    PackedGeomStreamInfo.StreamSemantic.Position => 'P',
+                    PackedGeomStreamInfo.StreamSemantic.Tangent => 'T',
+                    PackedGeomStreamInfo.StreamSemantic.Bitangent => 'B',
+                    PackedGeomStreamInfo.StreamSemantic.Normal => 'N',
+                    PackedGeomStreamInfo.StreamSemantic.UV => 'U',
+                    PackedGeomStreamInfo.StreamSemantic.VertexColor => 'C',
+                    _ => '?'
+                };
+                Console.Write(c);
+            }
+            else
+            {
+                Console.Write('.');
+            }
+        }
+        Console.WriteLine();
+        Console.WriteLine();
+        Console.WriteLine("  P=Position  T=Tangent  C=Color  U=UV  B=Bitangent  N=Normal");
+
+        // Sample vertices
+        Console.WriteLine();
+        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        Console.WriteLine($"                      SAMPLE VERTEX DATA ({Math.Min(numVertices, result.NumVertices)} vertices)");
+        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        Console.WriteLine();
+
+        // Find streams by semantic - VERIFIED ORDER:
+        // half4[0] = Position, half4[1] = Normal, half4[2] = Tangent, half4[3] = Bitangent
+        var sortedHalf4 = result.Streams.Where(s => s.Type == 16 && s.UnitSize == 8).OrderBy(s => s.BlockOffset).ToList();
+        var posStream = sortedHalf4.ElementAtOrDefault(0);
+        var normalStream = sortedHalf4.ElementAtOrDefault(1);     // offset 8 - VERIFIED matches PC normals
+        var tangentStream = sortedHalf4.ElementAtOrDefault(2);    // offset 24
+        var bitangentStream = sortedHalf4.ElementAtOrDefault(3);  // offset 32
+        var colorStream = result.Streams.FirstOrDefault(s => s.Type == 28 && s.UnitSize == 4);
+        var uvStream = result.Streams.FirstOrDefault(s => s.Type == 14 && s.UnitSize == 4);
+
+        int displayCount = Math.Min(numVertices, result.NumVertices);
+
+        // Position table
+        if (posStream != null)
+        {
+            Console.WriteLine("┌─── Position (half4 → float3) ───────────────────────────────────────────┐");
+            Console.WriteLine($"│ {"Vtx",-5} {"X",-14} {"Y",-14} {"Z",-14} {"W",-10} │");
+            Console.WriteLine("├─────────────────────────────────────────────────────────────────────────┤");
+
+            for (int v = 0; v < displayCount; v++)
+            {
+                var vertBase = result.RawDataOffset + v * result.Stride;
+                var pOff = vertBase + (int)posStream.BlockOffset;
+                float x = HalfToFloat(ReadUInt16(data, pOff, nif.IsBigEndian));
+                float y = HalfToFloat(ReadUInt16(data, pOff + 2, nif.IsBigEndian));
+                float z = HalfToFloat(ReadUInt16(data, pOff + 4, nif.IsBigEndian));
+                float w = HalfToFloat(ReadUInt16(data, pOff + 6, nif.IsBigEndian));
+                Console.WriteLine($"│ {v,-5} {x,-14:F6} {y,-14:F6} {z,-14:F6} {w,-10:F4} │");
+            }
+            Console.WriteLine("└─────────────────────────────────────────────────────────────────────────┘");
+            Console.WriteLine();
+        }
+
+        // Normal table
+        if (normalStream != null)
+        {
+            Console.WriteLine("┌─── Normal (half4 → float3, normalized) ─────────────────────────────────┐");
+            Console.WriteLine($"│ {"Vtx",-5} {"Nx",-12} {"Ny",-12} {"Nz",-12} {"W",-8} {"Length",-10} │");
+            Console.WriteLine("├─────────────────────────────────────────────────────────────────────────┤");
+
+            float avgLen = 0;
+            int validCount = 0;
+            for (int v = 0; v < displayCount; v++)
+            {
+                var vertBase = result.RawDataOffset + v * result.Stride;
+                var nOff = vertBase + (int)normalStream.BlockOffset;
+                float nx = HalfToFloat(ReadUInt16(data, nOff, nif.IsBigEndian));
+                float ny = HalfToFloat(ReadUInt16(data, nOff + 2, nif.IsBigEndian));
+                float nz = HalfToFloat(ReadUInt16(data, nOff + 4, nif.IsBigEndian));
+                float nw = HalfToFloat(ReadUInt16(data, nOff + 6, nif.IsBigEndian));
+                float len = MathF.Sqrt(nx * nx + ny * ny + nz * nz);
+                avgLen += len;
+                if (len > 0.9f && len < 1.1f) validCount++;
+                Console.WriteLine($"│ {v,-5} {nx,-12:F6} {ny,-12:F6} {nz,-12:F6} {nw,-8:F4} {len,-10:F6} │");
+            }
+            Console.WriteLine("└─────────────────────────────────────────────────────────────────────────┘");
+            avgLen /= displayCount;
+            Console.WriteLine($"  Average length: {avgLen:F4} (should be ~1.0 for normalized normals)");
+            Console.WriteLine($"  Valid normals (0.9-1.1 length): {validCount}/{displayCount}");
+            Console.WriteLine();
+        }
+
+        // UV table
+        if (uvStream != null)
+        {
+            Console.WriteLine("┌─── UV (half2 → float2) ──────────────────────────────────────────────────┐");
+            Console.WriteLine($"│ {"Vtx",-5} {"U",-20} {"V",-20} │");
+            Console.WriteLine("├───────────────────────────────────────────────────────────────────────────┤");
+
+            int outOfRange = 0;
+            for (int v = 0; v < displayCount; v++)
+            {
+                var vertBase = result.RawDataOffset + v * result.Stride;
+                var uvOff = vertBase + (int)uvStream.BlockOffset;
+                float u = HalfToFloat(ReadUInt16(data, uvOff, nif.IsBigEndian));
+                float vCoord = HalfToFloat(ReadUInt16(data, uvOff + 2, nif.IsBigEndian));
+                if (u < 0 || u > 1 || vCoord < 0 || vCoord > 1) outOfRange++;
+                Console.WriteLine($"│ {v,-5} {u,-20:F6} {vCoord,-20:F6} │");
+            }
+            Console.WriteLine("└───────────────────────────────────────────────────────────────────────────┘");
+            Console.WriteLine($"  UVs outside 0-1 range: {outOfRange}/{displayCount}");
+            Console.WriteLine();
+        }
+
+        // Vertex color table
+        if (colorStream != null)
+        {
+            Console.WriteLine("┌─── Vertex Color (ubyte4 → RGBA) ─────────────────────────────────────────┐");
+            Console.WriteLine($"│ {"Vtx",-5} {"R",-8} {"G",-8} {"B",-8} {"A",-8} {"Hex",-12} │");
+            Console.WriteLine("├───────────────────────────────────────────────────────────────────────────┤");
+
+            for (int v = 0; v < displayCount; v++)
+            {
+                var vertBase = result.RawDataOffset + v * result.Stride;
+                var cOff = vertBase + (int)colorStream.BlockOffset;
+                byte r = data[cOff];
+                byte g = data[cOff + 1];
+                byte b = data[cOff + 2];
+                byte a = data[cOff + 3];
+                Console.WriteLine($"│ {v,-5} {r,-8} {g,-8} {b,-8} {a,-8} #{r:X2}{g:X2}{b:X2}{a:X2,-4} │");
+            }
+            Console.WriteLine("└───────────────────────────────────────────────────────────────────────────┘");
+            Console.WriteLine();
+        }
+
+        // Raw hex dump of first vertex
+        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        Console.WriteLine($"                    RAW HEX: VERTEX 0 ({result.Stride} bytes)");
+        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        Console.WriteLine();
+        HexDump(data, result.RawDataOffset, result.Stride);
 
         return 0;
     }

@@ -180,8 +180,7 @@ public class DdxFormatTests
 
         // Format dword at 0x28 (big-endian) - includes mip count
         // Low byte is format, bits 16-19 are mip count - 1
-        var formatDword = (uint)0x52; // DXT1 format
-        formatDword |= (1 - 1) << 16; // 1 mip level
+        const uint formatDword = 0x52; // DXT1 format with 1 mip level (mip count - 1 = 0)
         data[0x28] = (byte)((formatDword >> 24) & 0xFF);
         data[0x29] = (byte)((formatDword >> 16) & 0xFF);
         data[0x2A] = (byte)((formatDword >> 8) & 0xFF);

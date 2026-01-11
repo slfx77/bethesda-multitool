@@ -115,10 +115,8 @@ public sealed class DdsFormat : FileFormatBase
         return fourcc switch
         {
             "DXT1" => 8,
-            "DXT2" or "DXT3" or "DXT4" or "DXT5" => 16,
             "ATI1" or "BC4U" or "BC4S" => 8,
-            "ATI2" or "BC5U" or "BC5S" => 16,
-            _ => 16
+            _ => 16 // DXT2-5, ATI2, BC5U, BC5S, and others default to 16
         };
     }
 

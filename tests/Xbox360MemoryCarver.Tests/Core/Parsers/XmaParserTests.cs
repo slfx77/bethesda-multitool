@@ -75,7 +75,7 @@ public class XmaFormatTests
         // Arrange - RIFF but AVI format instead of WAVE
         var data = new byte[64];
         "RIFF"u8.CopyTo(data.AsSpan(0));
-        WriteUInt32LE(data, 4, 1000);
+        WriteUInt32Le(data, 4, 1000);
         "AVI "u8.CopyTo(data.AsSpan(8));
 
         // Act
@@ -187,7 +187,7 @@ public class XmaFormatTests
 
         // RIFF header
         "RIFF"u8.CopyTo(data.AsSpan(0));
-        WriteUInt32LE(data, 4, riffSize);
+        WriteUInt32Le(data, 4, riffSize);
         "WAVE"u8.CopyTo(data.AsSpan(8));
 
         var chunkOffset = 12;
@@ -196,26 +196,26 @@ public class XmaFormatTests
         {
             // XMA2 chunk
             "XMA2"u8.CopyTo(data.AsSpan(chunkOffset));
-            WriteUInt32LE(data, chunkOffset + 4, 32); // chunk size
+            WriteUInt32Le(data, chunkOffset + 4, 32); // chunk size
             chunkOffset += 40;
         }
         else
         {
             // fmt chunk with XMA format tag
             "fmt "u8.CopyTo(data.AsSpan(chunkOffset));
-            WriteUInt32LE(data, chunkOffset + 4, 16); // chunk size
-            WriteUInt16LE(data, chunkOffset + 8, formatTag);
+            WriteUInt32Le(data, chunkOffset + 4, 16); // chunk size
+            WriteUInt16Le(data, chunkOffset + 8, formatTag);
             chunkOffset += 24;
         }
 
         // data chunk
         "data"u8.CopyTo(data.AsSpan(chunkOffset));
-        WriteUInt32LE(data, chunkOffset + 4, riffSize - (uint)chunkOffset);
+        WriteUInt32Le(data, chunkOffset + 4, riffSize - (uint)chunkOffset);
 
         return data;
     }
 
-    private static void WriteUInt32LE(byte[] data, int offset, uint value)
+    private static void WriteUInt32Le(byte[] data, int offset, uint value)
     {
         data[offset] = (byte)(value & 0xFF);
         data[offset + 1] = (byte)((value >> 8) & 0xFF);
@@ -223,7 +223,7 @@ public class XmaFormatTests
         data[offset + 3] = (byte)((value >> 24) & 0xFF);
     }
 
-    private static void WriteUInt16LE(byte[] data, int offset, ushort value)
+    private static void WriteUInt16Le(byte[] data, int offset, ushort value)
     {
         data[offset] = (byte)(value & 0xFF);
         data[offset + 1] = (byte)((value >> 8) & 0xFF);

@@ -298,10 +298,10 @@ public class MinidumpParserTests
         data[7] = 0x00;
 
         // NumberOfStreams (little-endian)
-        WriteUInt32LE(data, 8, numberOfStreams);
+        WriteUInt32Le(data, 8, numberOfStreams);
 
         // StreamDirectoryRva (little-endian)
-        WriteUInt32LE(data, 12, streamDirectoryRva);
+        WriteUInt32Le(data, 12, streamDirectoryRva);
 
         return data;
     }
@@ -323,8 +323,8 @@ public class MinidumpParserTests
         data[3] = 0x50; // "MDMP"
         data[4] = 0x93;
         data[5] = 0xA7; // Version
-        WriteUInt32LE(data, 8, (uint)streamCount);
-        WriteUInt32LE(data, 12, (uint)directoryOffset);
+        WriteUInt32Le(data, 8, (uint)streamCount);
+        WriteUInt32Le(data, 12, (uint)directoryOffset);
 
         // Empty stream directory entries (type 0 = unused)
         // Just leave as zeros
@@ -347,21 +347,21 @@ public class MinidumpParserTests
         data[3] = 0x50;
         data[4] = 0x93;
         data[5] = 0xA7;
-        WriteUInt32LE(data, 8, 1); // 1 stream
-        WriteUInt32LE(data, 12, directoryOffset);
+        WriteUInt32Le(data, 8, 1); // 1 stream
+        WriteUInt32Le(data, 12, directoryOffset);
 
         // Stream directory entry for SystemInfoStream (type 7)
-        WriteUInt32LE(data, directoryOffset, 7); // StreamType = SystemInfoStream
-        WriteUInt32LE(data, directoryOffset + 4, 64); // DataSize
-        WriteUInt32LE(data, directoryOffset + 8, (uint)systemInfoOffset); // RVA
+        WriteUInt32Le(data, directoryOffset, 7); // StreamType = SystemInfoStream
+        WriteUInt32Le(data, directoryOffset + 4, 64); // DataSize
+        WriteUInt32Le(data, directoryOffset + 8, (uint)systemInfoOffset); // RVA
 
         // SystemInfo structure (processor architecture at offset 0)
-        WriteUInt16LE(data, systemInfoOffset, processorArchitecture);
+        WriteUInt16Le(data, systemInfoOffset, processorArchitecture);
 
         return data;
     }
 
-    private static void WriteUInt32LE(byte[] data, int offset, uint value)
+    private static void WriteUInt32Le(byte[] data, int offset, uint value)
     {
         data[offset] = (byte)(value & 0xFF);
         data[offset + 1] = (byte)((value >> 8) & 0xFF);
@@ -369,7 +369,7 @@ public class MinidumpParserTests
         data[offset + 3] = (byte)((value >> 24) & 0xFF);
     }
 
-    private static void WriteUInt16LE(byte[] data, int offset, ushort value)
+    private static void WriteUInt16Le(byte[] data, int offset, ushort value)
     {
         data[offset] = (byte)(value & 0xFF);
         data[offset + 1] = (byte)((value >> 8) & 0xFF);

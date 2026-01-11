@@ -342,4 +342,118 @@ internal static class GeometryCommands
         }
         return result;
     }
+
+    /// <summary>
+    /// Compare vertex colors between two geometry blocks (e.g., converted vs PC reference).
+    /// </summary>
+    public static int ColorCompare(string path1, string path2, int block1, int block2, int count = 20)
+    {
+        var data1 = File.ReadAllBytes(path1);
+        var data2 = File.ReadAllBytes(path2);
+        var nif1 = NifParser.Parse(data1);
+        var nif2 = NifParser.Parse(data2);
+
+        if (block1 >= nif1.NumBlocks || block2 >= nif2.NumBlocks)
+        {
+            Console.Error.WriteLine($"Block index out of range");
+            return 1;
+        }
+
+        int offset1 = nif1.GetBlockOffset(block1);
+        int offset2 = nif2.GetBlockOffset(block2);
+
+        var type1 = nif1.GetBlockTypeName(block1);
+        var type2 = nif2.GetBlockTypeName(block2);
+        var size1 = (int)nif1.BlockSizes[block1];
+        var size2 = (int)nif2.BlockSizes[block2];
+
+        Console.WriteLine("=== Vertex Color Comparison ===");
+        Console.WriteLine();
+        Console.WriteLine($"{"Property",-20} {"File 1",-35} {"File 2",-35}");
+        Console.WriteLine(new string('-', 95));
+        Console.WriteLine($"{"File",-20} {Path.GetFileName(path1),-35} {Path.GetFileName(path2),-35}");
+        Console.WriteLine($"{"Block",-20} {block1,-35} {block2,-35}");
+        Console.WriteLine($"{"Type",-20} {type1,-35} {type2,-35}");
+        Console.WriteLine($"{"Endian",-20} {(nif1.IsBigEndian ? "Big" : "Little"),-35} {(nif2.IsBigEndian ? "Big" : "Little"),-35}");
+
+        var geom1 = GeometryParser.Parse(data1.AsSpan(offset1, size1), nif1.IsBigEndian, nif1.BsVersion, type1);
+        var geom2 = GeometryParser.Parse(data2.AsSpan(offset2, size2), nif2.IsBigEndian, nif2.BsVersion, type2);
+
+        Console.WriteLine($"{"NumVertices",-20} {geom1.NumVertices,-35} {geom2.NumVertices,-35}");
+        Console.WriteLine($"{"HasVertexColors",-20} {geom1.HasVertexColors,-35} {geom2.HasVertexColors,-35}");
+
+        if (geom1.HasVertexColors == 0 && geom2.HasVertexColors == 0)
+        {
+            Console.WriteLine("\nNeither block has vertex colors.");
+            return 0;
+        }
+
+        count = Math.Min(count, Math.Min(geom1.NumVertices, geom2.NumVertices));
+
+        var colors1 = ExtractVertexColors(data1.AsSpan(offset1, size1), nif1.IsBigEndian, geom1, count);
+        var colors2 = ExtractVertexColors(data2.AsSpan(offset2, size2), nif2.IsBigEndian, geom2, count);
+
+        Console.WriteLine();
+        Console.WriteLine($"=== Vertex Colors (first {count}) ===");
+        Console.WriteLine();
+        Console.WriteLine($"{"Idx",-4} {"File 1 (R, G, B, A)",-40} {"File 2 (R, G, B, A)",-40} {"Match"}");
+        Console.WriteLine(new string('-', 95));
+
+        int matches = 0;
+        for (int i = 0; i < count; i++)
+        {
+            var c1 = i < colors1.Count ? colors1[i] : (R: 0f, G: 0f, B: 0f, A: 0f);
+            var c2 = i < colors2.Count ? colors2[i] : (R: 0f, G: 0f, B: 0f, A: 0f);
+
+            // Check if close enough (allowing for float precision)
+            var match = Math.Abs(c1.R - c2.R) < 0.01f &&
+                        Math.Abs(c1.G - c2.G) < 0.01f &&
+                        Math.Abs(c1.B - c2.B) < 0.01f &&
+                        Math.Abs(c1.A - c2.A) < 0.01f;
+
+            if (match) matches++;
+
+            var marker = match ? "✓" : "✗";
+            Console.WriteLine($"{i,-4} ({c1.R,6:F3}, {c1.G,6:F3}, {c1.B,6:F3}, {c1.A,6:F3})      ({c2.R,6:F3}, {c2.G,6:F3}, {c2.B,6:F3}, {c2.A,6:F3})      {marker}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Match rate: {matches}/{count} ({100.0 * matches / count:F1}%)");
+
+        // Show raw bytes for first vertex color in each file
+        if (geom1.HasVertexColors != 0 && geom1.FieldOffsets.TryGetValue("VertexColors", out int colorOffset1))
+        {
+            Console.WriteLine();
+            Console.WriteLine($"=== Raw Color Bytes (File 1, offset 0x{colorOffset1:X}) ===");
+            HexDump(data1, offset1 + colorOffset1, Math.Min(64, geom1.NumVertices * 16));
+        }
+
+        if (geom2.HasVertexColors != 0 && geom2.FieldOffsets.TryGetValue("VertexColors", out int colorOffset2))
+        {
+            Console.WriteLine();
+            Console.WriteLine($"=== Raw Color Bytes (File 2, offset 0x{colorOffset2:X}) ===");
+            HexDump(data2, offset2 + colorOffset2, Math.Min(64, geom2.NumVertices * 16));
+        }
+
+        return 0;
+    }
+
+    internal static List<(float R, float G, float B, float A)> ExtractVertexColors(ReadOnlySpan<byte> blockData, bool bigEndian, GeometryInfo geom, int count)
+    {
+        var result = new List<(float R, float G, float B, float A)>();
+        if (geom.HasVertexColors == 0 || !geom.FieldOffsets.TryGetValue("VertexColors", out int colorOffset))
+            return result;
+
+        // NIF stores vertex colors as Color4 (4 floats: R, G, B, A)
+        for (int i = 0; i < count; i++)
+        {
+            int pos = colorOffset + i * 16; // 4 floats * 4 bytes = 16 bytes per vertex
+            float r = ReadFloat(blockData, pos, bigEndian);
+            float g = ReadFloat(blockData, pos + 4, bigEndian);
+            float b = ReadFloat(blockData, pos + 8, bigEndian);
+            float a = ReadFloat(blockData, pos + 12, bigEndian);
+            result.Add((r, g, b, a));
+        }
+        return result;
+    }
 }

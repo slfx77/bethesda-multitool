@@ -21,8 +21,6 @@ public sealed class CarveManifestTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testDir)) Directory.Delete(_testDir, true);
-
-        GC.SuppressFinalize(this);
     }
 
     #region CarveEntry Tests
@@ -126,7 +124,7 @@ public sealed class CarveManifestTests : IDisposable
     public async Task SaveAsync_EmptyList_CreatesEmptyArrayJson()
     {
         // Arrange
-        var entries = new List<CarveEntry>();
+        List<CarveEntry> entries = [];
 
         // Act
         await CarveManifest.SaveAsync(_testDir, entries);

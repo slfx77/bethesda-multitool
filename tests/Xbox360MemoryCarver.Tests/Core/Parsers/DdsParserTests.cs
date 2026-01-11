@@ -208,45 +208,45 @@ public class DdsFormatTests
         "DDS "u8.CopyTo(data.AsSpan(0));
 
         // Header size (124 for standard DDS)
-        WriteUInt32LE(data, 4, 124);
+        WriteUInt32Le(data, 4, 124);
 
         // Flags
-        WriteUInt32LE(data, 8, 0x1 | 0x2 | 0x4 | 0x1000); // CAPS, HEIGHT, WIDTH, PIXELFORMAT
+        WriteUInt32Le(data, 8, 0x1 | 0x2 | 0x4 | 0x1000); // CAPS, HEIGHT, WIDTH, PIXELFORMAT
 
         // Height
-        WriteUInt32LE(data, 12, (uint)height);
+        WriteUInt32Le(data, 12, (uint)height);
 
         // Width
-        WriteUInt32LE(data, 16, (uint)width);
+        WriteUInt32Le(data, 16, (uint)width);
 
         // Pitch or linear size
-        WriteUInt32LE(data, 20, 0);
+        WriteUInt32Le(data, 20, 0);
 
         // Depth
-        WriteUInt32LE(data, 24, 0);
+        WriteUInt32Le(data, 24, 0);
 
         // Mip map count
-        WriteUInt32LE(data, 28, (uint)mipCount);
+        WriteUInt32Le(data, 28, (uint)mipCount);
 
         // Reserved (44 bytes at offset 32)
 
         // Pixel format starts at offset 76
         // Size of pixel format structure (32)
-        WriteUInt32LE(data, 76, 32);
+        WriteUInt32Le(data, 76, 32);
 
         // Pixel format flags (DDPF_FOURCC = 0x4)
-        WriteUInt32LE(data, 80, 0x4);
+        WriteUInt32Le(data, 80, 0x4);
 
         // FourCC at offset 84
         Encoding.ASCII.GetBytes(fourcc).CopyTo(data, 84);
 
         // RGB bit count (0 for compressed)
-        WriteUInt32LE(data, 88, 0);
+        WriteUInt32Le(data, 88, 0);
 
         return data;
     }
 
-    private static void WriteUInt32LE(byte[] data, int offset, uint value)
+    private static void WriteUInt32Le(byte[] data, int offset, uint value)
     {
         data[offset] = (byte)(value & 0xFF);
         data[offset + 1] = (byte)((value >> 8) & 0xFF);

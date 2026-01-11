@@ -211,8 +211,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         if (folder == null) return;
 
         InputDirectoryTextBox.Text = folder.Path;
-        if (string.IsNullOrEmpty(OutputDirectoryTextBox.Text))
-            OutputDirectoryTextBox.Text = Path.Combine(folder.Path, "converted_pc");
+        OutputDirectoryTextBox.Text = Path.Combine(folder.Path, "converted_pc");
 
         await ScanForNifFilesAsync(folder.Path);
     }
@@ -222,8 +221,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         var path = InputDirectoryTextBox.Text;
         if (Directory.Exists(path))
         {
-            if (string.IsNullOrEmpty(OutputDirectoryTextBox.Text))
-                OutputDirectoryTextBox.Text = Path.Combine(path, "converted_pc");
+            OutputDirectoryTextBox.Text = Path.Combine(path, "converted_pc");
             await ScanForNifFilesAsync(path);
         }
         else

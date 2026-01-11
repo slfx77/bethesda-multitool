@@ -117,18 +117,89 @@ internal static class HavokCommands
         Console.WriteLine();
         Console.WriteLine($"NumVertices: {numVertices}");
 
-        // Show first few vertices
-        Console.WriteLine("First 5 Vertices (Vector3):");
-        for (int i = 0; i < Math.Min(5, (int)numVertices) && pos + 12 <= end; i++)
+        // Compressed flag (since NIF 20.2.0.7)
+        var compressed = data[pos];
+        pos += 1;
+        Console.WriteLine($"Compressed: {compressed} ({(compressed == 1 ? "HalfVector3 - 6 bytes/vertex" : "Vector3 - 12 bytes/vertex")})");
+        Console.WriteLine();
+
+        // Show first few vertices based on compression
+        if (compressed == 1)
         {
-            var x = ReadFloat(data, pos, isBE);
-            var y = ReadFloat(data, pos + 4, isBE);
-            var z = ReadFloat(data, pos + 8, isBE);
-            Console.WriteLine($"  [{i}] ({x:F4}, {y:F4}, {z:F4})");
+            Console.WriteLine("First 5 Vertices (HalfVector3):");
+            for (int i = 0; i < Math.Min(5, (int)numVertices) && pos + 6 <= end; i++)
+            {
+                var hx = ReadUInt16(data, pos, isBE);
+                var hy = ReadUInt16(data, pos + 2, isBE);
+                var hz = ReadUInt16(data, pos + 4, isBE);
+                var x = HalfToFloat(hx);
+                var y = HalfToFloat(hy);
+                var z = HalfToFloat(hz);
+                Console.WriteLine($"  [{i}] Half(0x{hx:X4}, 0x{hy:X4}, 0x{hz:X4}) -> ({x:F4}, {y:F4}, {z:F4})");
+                pos += 6;
+            }
+            pos = offset + 4 + (int)numTriangles * 8 + 4 + 1 + (int)numVertices * 6;
+        }
+        else
+        {
+            Console.WriteLine("First 5 Vertices (Vector3):");
+            for (int i = 0; i < Math.Min(5, (int)numVertices) && pos + 12 <= end; i++)
+            {
+                var x = ReadFloat(data, pos, isBE);
+                var y = ReadFloat(data, pos + 4, isBE);
+                var z = ReadFloat(data, pos + 8, isBE);
+                Console.WriteLine($"  [{i}] ({x:F4}, {y:F4}, {z:F4})");
+                pos += 12;
+            }
+            pos = offset + 4 + (int)numTriangles * 8 + 4 + 1 + (int)numVertices * 12;
+        }
+
+        // NumSubShapes
+        if (pos + 2 > end) { Console.WriteLine("\nTruncated before SubShapes"); return 0; }
+        var numSubShapes = ReadUInt16(data, pos, isBE);
+        pos += 2;
+        Console.WriteLine();
+        Console.WriteLine($"NumSubShapes: {numSubShapes}");
+
+        // SubShapes
+        Console.WriteLine("SubShapes (hkSubPartData):");
+        for (int i = 0; i < numSubShapes && pos + 12 <= end; i++)
+        {
+            var havokFilter = ReadUInt32(data, pos, isBE);
+            var subNumVerts = ReadUInt32(data, pos + 4, isBE);
+            var havokMaterial = ReadUInt32(data, pos + 8, isBE);
+            Console.WriteLine($"  [{i}] Filter=0x{havokFilter:X8}, NumVerts={subNumVerts}, Material=0x{havokMaterial:X8}");
             pos += 12;
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Convert half-precision float (IEEE 754 binary16) to single precision float.
+    /// </summary>
+    private static float HalfToFloat(ushort h)
+    {
+        int sign = (h >> 15) & 0x0001;
+        int exp = (h >> 10) & 0x001F;
+        int mant = h & 0x03FF;
+
+        if (exp == 0)
+        {
+            if (mant == 0) return sign != 0 ? -0.0f : 0.0f;
+            while ((mant & 0x0400) == 0) { mant <<= 1; exp--; }
+            exp++;
+            mant &= ~0x0400;
+        }
+        else if (exp == 31)
+        {
+            return mant != 0 ? float.NaN : (sign != 0 ? float.NegativeInfinity : float.PositiveInfinity);
+        }
+
+        exp += 127 - 15;
+        mant <<= 13;
+        int bits = (sign << 31) | (exp << 23) | mant;
+        return BitConverter.Int32BitsToSingle(bits);
     }
 
     private static int ParseBhkPackedNiTriStripsShape(byte[] data, int offset, int size, bool isBE)

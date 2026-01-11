@@ -155,7 +155,8 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     ///     Classify NIF content as animation or geometry based on block types.
     ///     Returns the content type, output folder, and file extension.
     /// </summary>
-    private static (string contentType, string outputFolder, string? extension) ClassifyNifContent(List<string> blockTypes)
+    private static (string contentType, string outputFolder, string? extension) ClassifyNifContent(
+        List<string> blockTypes)
     {
         var hasGeometry = blockTypes.Any(bt => GeometryBlockTypes.Contains(bt));
         var hasAnimation = blockTypes.Any(bt => AnimationBlockTypes.Contains(bt));

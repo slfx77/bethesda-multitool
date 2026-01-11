@@ -15,6 +15,7 @@ internal class NifInfo
     public ushort[] BlockTypeIndices { get; set; } = [];
     public uint[] BlockSizes { get; set; } = [];
     public int NumStrings { get; set; }
+    public List<string> Strings { get; set; } = [];
     public int BlockDataOffset { get; set; }
 
     /// <summary>

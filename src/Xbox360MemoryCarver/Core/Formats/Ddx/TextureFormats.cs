@@ -46,6 +46,6 @@ public static class TextureFormats
     /// </summary>
     public static int GetBytesPerBlock(string fourcc)
     {
-        return BytesPerBlock.TryGetValue(fourcc, out var bytes) ? bytes : 16;
+        return BytesPerBlock.GetValueOrDefault(fourcc, 16);
     }
 }

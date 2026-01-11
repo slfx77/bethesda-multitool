@@ -21,7 +21,7 @@ public class DdxSubprocessConverter
         DdxConvPath = ddxConvPath ?? FindDdxConvPath();
 
         if (string.IsNullOrEmpty(DdxConvPath) || !File.Exists(DdxConvPath))
-            throw new FileNotFoundException($"{DdxConvExeName} not found.", DdxConvPath ?? DdxConvExeName);
+            throw new FileNotFoundException($"{DdxConvExeName} not found.", DdxConvExeName);
     }
 
     public int Processed { get; private set; }
@@ -142,8 +142,12 @@ public class DdxSubprocessConverter
     {
         return Process.Start(new ProcessStartInfo
         {
-            FileName = DdxConvPath, Arguments = args, UseShellExecute = false,
-            RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true
+            FileName = DdxConvPath,
+            Arguments = args,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
         });
     }
 
@@ -188,7 +192,9 @@ public class DdxSubprocessConverter
                 Failed++;
                 return new DdxConversionResult
                 {
-                    Success = false, IsPartial = isPartial, Notes = notes ?? $"Exit code {process.ExitCode}",
+                    Success = false,
+                    IsPartial = isPartial,
+                    Notes = notes ?? $"Exit code {process.ExitCode}",
                     ConsoleOutput = consoleOutput
                 };
             }
@@ -200,7 +206,11 @@ public class DdxSubprocessConverter
             Succeeded++;
             return new DdxConversionResult
             {
-                Success = true, DdsData = ddsData, AtlasData = atlasData, IsPartial = isPartial, Notes = notes,
+                Success = true,
+                DdsData = ddsData,
+                AtlasData = atlasData,
+                IsPartial = isPartial,
+                Notes = notes,
                 ConsoleOutput = _verbose ? consoleOutput : null
             };
         }
@@ -254,7 +264,7 @@ public class DdxSubprocessConverter
 
     public static bool IsDdxFile(byte[] data)
     {
-        return data?.Length >= 4 && BitConverter.ToUInt32(data, 0) is 0x4F445833 or 0x52445833;
+        return data.Length >= 4 && BitConverter.ToUInt32(data, 0) is 0x4F445833 or 0x52445833;
     }
 
     public static bool IsDdxFile(ReadOnlySpan<byte> data)

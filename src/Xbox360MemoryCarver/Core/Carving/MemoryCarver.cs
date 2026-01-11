@@ -46,8 +46,6 @@ public sealed class MemoryCarver : IDisposable
         if (_enableConversion) InitializeConverters(verbose);
     }
 
-    public int TotalConvertedCount => _converters.Values.Sum(c => c.ConvertedCount);
-    public int TotalConvertFailedCount => _converters.Values.Sum(c => c.FailedCount);
     public int DdxConvertedCount => _converters.TryGetValue("ddx", out var c) ? c.ConvertedCount : 0;
     public int DdxConvertFailedCount => _converters.TryGetValue("ddx", out var c) ? c.FailedCount : 0;
     public int XurConvertedCount => _converters.TryGetValue("xui", out var c) ? c.ConvertedCount : 0;
@@ -63,7 +61,6 @@ public sealed class MemoryCarver : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        GC.SuppressFinalize(this);
     }
 
     public async Task<List<CarveEntry>> CarveDumpAsync(string dumpPath, IProgress<double>? progress = null)

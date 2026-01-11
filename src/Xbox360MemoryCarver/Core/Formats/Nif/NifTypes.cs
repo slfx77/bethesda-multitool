@@ -50,6 +50,10 @@ internal sealed class PackedGeometryData
     public float[]? Tangents { get; set; }
     public float[]? Bitangents { get; set; }
     public float[]? UVs { get; set; }
+
+    /// <summary>Vertex colors as RGBA bytes (4 bytes per vertex).</summary>
+    public byte[]? VertexColors { get; set; }
+
     public ushort BsDataFlags { get; set; }
 }
 
@@ -72,9 +76,13 @@ internal sealed class HavokBlockExpansion
 {
     public int BlockIndex { get; set; }
     public int NumVertices { get; set; }
+    public int NumTriangles { get; set; }
+    public int NumSubShapes { get; set; }
     public int OriginalSize { get; set; }
     public int NewSize { get; set; }
-    /// <summary>Offset within block where vertices start (after NumVertices + Compressed byte).</summary>
+    public int SizeIncrease => NewSize - OriginalSize;
+
+    /// <summary>Offset within block where compressed vertices start (absolute file offset).</summary>
     public int VertexDataOffset { get; set; }
 }
 

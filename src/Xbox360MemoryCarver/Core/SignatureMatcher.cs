@@ -6,14 +6,8 @@ namespace Xbox360MemoryCarver.Core;
 /// </summary>
 public sealed class SignatureMatcher
 {
-    private readonly List<(string Name, byte[] Pattern)> _patterns;
-    private readonly Node _root;
-
-    public SignatureMatcher()
-    {
-        _root = new Node();
-        _patterns = [];
-    }
+    private readonly List<(string Name, byte[] Pattern)> _patterns = [];
+    private readonly Node _root = new();
 
     public int PatternCount => _patterns.Count;
 

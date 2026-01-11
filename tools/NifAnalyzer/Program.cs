@@ -23,12 +23,16 @@ internal class Program
                 "blocks" when args.Length >= 2 => InfoCommands.Blocks(args[1]),
                 "block" when args.Length >= 3 => InfoCommands.Block(args[1], int.Parse(args[2])),
                 "compare" when args.Length >= 3 => InfoCommands.Compare(args[1], args[2]),
+                "node" when args.Length >= 3 => NodeCommands.ParseNode(args[1], int.Parse(args[2])),
+                "nodecompare" when args.Length >= 5 => NodeCommands.CompareNode(args[1], args[2], int.Parse(args[3]), int.Parse(args[4])),
                 "geometry" when args.Length >= 3 => GeometryCommands.Geometry(args[1], int.Parse(args[2])),
                 "geomcompare" when args.Length >= 4 => GeometryCommands.GeomCompare(args[1], args[2], int.Parse(args[3])),
                 "vertices" when args.Length >= 3 => GeometryCommands.Vertices(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 10),
+                "colorcompare" when args.Length >= 5 => GeometryCommands.ColorCompare(args[1], args[2], int.Parse(args[3]), int.Parse(args[4]), args.Length > 5 ? int.Parse(args[5]) : 20),
                 "skinpart" when args.Length >= 3 => PackedCommands.SkinPart(args[1], int.Parse(args[2])),
                 "packed" when args.Length >= 3 => PackedCommands.Packed(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 5),
                 "streamdump" when args.Length >= 3 => PackedCommands.StreamDump(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 10),
+                "analyzestreams" when args.Length >= 3 => PackedCommands.AnalyzeStreams(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 5),
                 "normalcompare" when args.Length >= 5 => PackedCommands.NormalCompare(args[1], args[2], int.Parse(args[3]), int.Parse(args[4]), args.Length > 5 ? int.Parse(args[5]) : 50),
                 "hex" when args.Length >= 4 => HexCommands.Hex(args[1], ParseOffset(args[2]), int.Parse(args[3])),
                 "havok" when args.Length >= 3 => HavokCommands.Havok(args[1], int.Parse(args[2])),
@@ -56,9 +60,13 @@ internal class Program
               NifAnalyzer geometry <file> <block_index>      Parse NiTriShapeData/NiTriStripsData
               NifAnalyzer geomcompare <file1> <file2> <blk>  Compare geometry blocks side-by-side
               NifAnalyzer vertices <file> <block> [count]    Show vertex/normal/UV data (default 10)
+              NifAnalyzer colorcompare <f1> <f2> <b1> <b2> [count]
+                                                             Compare vertex colors between two blocks
               NifAnalyzer skinpart <file> <block_index>      Parse NiSkinPartition block
               NifAnalyzer packed <file> <block> [verts]      Parse BSPackedAdditionalGeometryData
-              NifAnalyzer streamdump <file> <block> [count] Dump all half4 streams to find normals
+              NifAnalyzer analyzestreams <file> <block> [verts]
+                                                             Comprehensive stream analysis with semantics
+              NifAnalyzer streamdump <file> <block> [count]  Dump all half4 streams to find normals
               NifAnalyzer normalcompare <xbox> <pc> <xblk> <pcblk> [count]
                                                              Compare Xbox packed normals vs PC
               NifAnalyzer havok <file> <block_index>         Parse Havok physics blocks
@@ -72,8 +80,10 @@ internal class Program
               NifAnalyzer compare xbox.nif converted.nif
               NifAnalyzer geomcompare xbox.nif pc.nif 5
               NifAnalyzer vertices converted.nif 5 20
+              NifAnalyzer colorcompare converted.nif pc.nif 15 15 30
               NifAnalyzer skinpart lefthand.nif 9
               NifAnalyzer packed lefthand.nif 6 10
+              NifAnalyzer analyzestreams lefthand.nif 6 10
               NifAnalyzer normalcompare xbox.nif pc.nif 6 5 50
               NifAnalyzer hex lefthand.nif 0x055E 64
             """);

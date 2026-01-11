@@ -14,7 +14,7 @@ public static class MinidumpParser
     private const uint SystemInfoStream = 7;
     private const uint Memory64ListStream = 9;
 
-    private static readonly byte[] MinidumpSignature = [0x4D, 0x44, 0x4D, 0x50]; // "MDMP"
+    private static readonly byte[] MinidumpSignature = "MDMP"u8.ToArray();
 
     /// <summary>
     ///     Parse a minidump file to extract module information.

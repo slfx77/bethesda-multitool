@@ -121,7 +121,7 @@ public static class ConvertNifCommand
                         var data = await File.ReadAllBytesAsync(file);
                         var result = converter.Convert(data);
 
-                        if (result.Success && result.OutputData != null)
+                        if (result is { Success: true, OutputData: not null })
                         {
                             await File.WriteAllBytesAsync(outputPath, result.OutputData);
                             converted++;

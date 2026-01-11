@@ -20,7 +20,7 @@ public class XurSubprocessConverter
         XuiHelperPath = xuiHelperPath ?? FindXuiHelperPath();
 
         if (string.IsNullOrEmpty(XuiHelperPath) || !File.Exists(XuiHelperPath))
-            throw new FileNotFoundException($"{XuiHelperExeName} not found.", XuiHelperPath ?? XuiHelperExeName);
+            throw new FileNotFoundException($"{XuiHelperExeName} not found.", XuiHelperExeName);
     }
 
     public int Processed { get; private set; }
@@ -309,7 +309,7 @@ public class XurSubprocessConverter
     /// </summary>
     public static bool IsXurFile(byte[] data)
     {
-        return data?.Length >= 4 &&
+        return data.Length >= 4 &&
                data[0] == 'X' && data[1] == 'U' && data[2] == 'I' &&
                (data[3] == 'B' || data[3] == 'S');
     }
