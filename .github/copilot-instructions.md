@@ -33,10 +33,13 @@ The project uses multi-targeting to produce both GUI and CLI builds from a singl
 ### Analysis Tools
 
 - **NifAnalyzer** (`tools/NifAnalyzer/`) - **Always use this tool for NIF file analysis**. Commands:
-  - `dotnet run --project tools/NifAnalyzer -- blocks <file>` - List all blocks with offsets and sizes
-  - `dotnet run --project tools/NifAnalyzer -- havok <file>` - Parse hkPackedNiTriStripsData blocks
-  - `dotnet run --project tools/NifAnalyzer -- hex <file> <offset> <length>` - Hex dump at offset
-  - `dotnet run --project tools/NifAnalyzer -- compare <file1> <file2>` - Compare two NIF files
+  - `dotnet run --project tools/NifAnalyzer -f net10.0 -- blocks <file>` - List all blocks with offsets and sizes
+  - `dotnet run --project tools/NifAnalyzer -f net10.0 -- geometry <file>` - Parse geometry blocks (NiTriStripsData, etc.)
+  - `dotnet run --project tools/NifAnalyzer -f net10.0 -- packed <file> <block_index>` - Parse BSPackedAdditionalGeometryData streams
+  - `dotnet run --project tools/NifAnalyzer -f net10.0 -- skinpart <file> <block_index>` - Parse NiSkinPartition
+  - `dotnet run --project tools/NifAnalyzer -f net10.0 -- havok <file>` - Parse hkPackedNiTriStripsData blocks
+  - `dotnet run --project tools/NifAnalyzer -f net10.0 -- hex <file> <offset> <length>` - Hex dump at offset
+  - `dotnet run --project tools/NifAnalyzer -f net10.0 -- compare <file1> <file2>` - Compare two NIF files
 
 > **IMPORTANT**: When analyzing NIF files, always use NifAnalyzer instead of manual PowerShell byte parsing. The tool handles endianness, block parsing, and structure interpretation correctly.
 
@@ -132,14 +135,94 @@ dotnet publish -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-conta
 - **Scripts**: Uncompiled ObScript (`scn`/`ScriptName` format) - debug builds; Compiled bytecode (SCDA) - release builds
 - **Data**: ESP/ESM (Bethesda plugins), XUI (Xbox UI), XDBF
 
-### NIF Conversion Notes
+### NIF Converter
 
-Xbox 360 NIF files use big-endian byte order and may contain platform-specific blocks:
+**Goal**: Convert Xbox 360 NIF models to PC format so they can **replace PC models and function correctly in-game**. This means skeletal animation must work - not just static rendering.
 
-- **BSPackedAdditionalGeometryData** - Xbox 360-specific geometry blocks (stripped during conversion)
-- Header fields are converted to little-endian
-- Block data byte order is swapped where possible
-- For best results, use [Noesis](https://richwhitehouse.com/index.php?content=inc_projects.php&showproject=91) or [NifSkope](https://github.com/niftools/nifskope) for further processing
+#### Conversion Overview
+
+Xbox 360 NIFs differ from PC NIFs in several ways:
+
+| Aspect | Xbox 360 | PC |
+|--------|----------|-----|
+| Byte order | Big-endian | Little-endian |
+| Geometry storage | Packed in `BSPackedAdditionalGeometryData` | Inline in `NiTriStripsData`/`NiTriShapeData` |
+| Bone weights/indices | Packed in geometry streams | In `NiSkinPartition` |
+
+#### What the Converter Does
+
+1. **Endian conversion** - All multi-byte fields swapped via schema-driven conversion
+2. **Geometry expansion** - BSPackedAdditionalGeometryData unpacked to standard geometry blocks:
+   - Positions (half4 → float3)
+   - Normals (half4 → float3, unit-length stream detection)
+   - UVs (half2 → float2)
+   - Tangents/Bitangents (half4 → float3)
+3. **Block stripping** - Xbox 360-specific blocks removed (BSPackedAdditionalGeometryData, hkPackedNiTriStripsData)
+4. **Block reference remapping** - All Ref<T> indices updated after block removal
+
+#### Xbox 360 Packed Data Stream Layout (stride 48 bytes)
+
+For skinned meshes:
+| Offset | Size | Type | Content |
+|--------|------|------|---------|
+| 0 | 8 | half4 | Position (x, y, z, w=1) |
+| 8 | 8 | half4 | Auxiliary data (NOT normals) |
+| 16 | 4 | ubyte4 | **Bone indices** (not vertex colors!) |
+| 20 | 8 | half4 | Normal (unit-length) |
+| 28 | 4 | half2 | UV coordinates |
+| 32 | 8 | half4 | Tangent |
+| 40 | 8 | half4 | Bitangent / Bone weights |
+
+#### Current Status
+
+✅ **Working**:
+- Endian conversion (schema-driven)
+- Geometry expansion (positions, normals, UVs, tangents, bitangents)
+- Skinned mesh detection (no fake vertex colors from bone indices)
+- Correct rendering in NifSkope (solid mode)
+
+⏳ **TODO for full skeletal animation**:
+- **NiSkinPartition bone weights/indices expansion** - Currently `HasVertexWeights=0` and `HasBoneIndices=0`. Need to:
+  1. Extract bone weights from packed stream (offset 40, or dedicated stream)
+  2. Extract bone indices from packed stream (offset 16, ubyte4)
+  3. Map indices using VertexMap to partition-local indices
+  4. Write per-vertex weights/indices arrays to NiSkinPartition
+  5. Set `HasVertexWeights=1` and `HasBoneIndices=1`
+
+Without bone weights/indices, converted models will render statically but **animations will not work**.
+
+#### NIF Schema System
+
+The converter uses `nif.xml` (NifSkope's schema) for accurate field parsing:
+
+- `NifSchema.cs` - Parses nif.xml definitions
+- `NifSchemaConverter.cs` - Schema-driven endian conversion
+- `NifConditionExpr.cs` - Evaluates runtime field conditions
+- `NifVersionExpr.cs` - Evaluates version-based conditions
+
+#### Reference Files
+
+- **PC reference**: `Sample/meshes_pc/` - Original PC NIF files for comparison
+- **Xbox 360 input**: `Sample/meshes_360_final/` - Xbox 360 NIF files to convert
+- **Test output**: `TestOutput/nif_schema_debug/` - Conversion test output
+
+#### Analysis Tools
+
+Always use NifAnalyzer for NIF inspection:
+
+```bash
+# List all blocks
+dotnet run --project tools/NifAnalyzer -f net10.0 -- blocks file.nif
+
+# Compare geometry data
+dotnet run --project tools/NifAnalyzer -f net10.0 -- geometry file.nif
+
+# Inspect packed data streams
+dotnet run --project tools/NifAnalyzer -f net10.0 -- packed file.nif <block_index>
+
+# Parse NiSkinPartition
+dotnet run --project tools/NifAnalyzer -f net10.0 -- skinpart file.nif <block_index>
+```
 
 ## Code Style & Quality
 
