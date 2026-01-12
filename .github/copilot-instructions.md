@@ -143,11 +143,11 @@ dotnet publish -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-conta
 
 Xbox 360 NIFs differ from PC NIFs in several ways:
 
-| Aspect | Xbox 360 | PC |
-|--------|----------|-----|
-| Byte order | Big-endian | Little-endian |
-| Geometry storage | Packed in `BSPackedAdditionalGeometryData` | Inline in `NiTriStripsData`/`NiTriShapeData` |
-| Bone weights/indices | Packed in geometry streams | In `NiSkinPartition` |
+| Aspect               | Xbox 360                                   | PC                                           |
+| -------------------- | ------------------------------------------ | -------------------------------------------- |
+| Byte order           | Big-endian                                 | Little-endian                                |
+| Geometry storage     | Packed in `BSPackedAdditionalGeometryData` | Inline in `NiTriStripsData`/`NiTriShapeData` |
+| Bone weights/indices | Packed in geometry streams                 | In `NiSkinPartition`                         |
 
 #### What the Converter Does
 
@@ -160,36 +160,44 @@ Xbox 360 NIFs differ from PC NIFs in several ways:
 3. **Block stripping** - Xbox 360-specific blocks removed (BSPackedAdditionalGeometryData, hkPackedNiTriStripsData)
 4. **Block reference remapping** - All Ref<T> indices updated after block removal
 
-#### Xbox 360 Packed Data Stream Layout (stride 48 bytes)
+#### Xbox 360 Packed Data Stream Layouts
 
-For skinned meshes:
-| Offset | Size | Type | Content |
-|--------|------|------|---------|
-| 0 | 8 | half4 | Position (x, y, z, w=1) |
-| 8 | 8 | half4 | Auxiliary data (NOT normals) |
-| 16 | 4 | ubyte4 | **Bone indices** (not vertex colors!) |
-| 20 | 8 | half4 | Normal (unit-length) |
-| 28 | 4 | half2 | UV coordinates |
-| 32 | 8 | half4 | Tangent |
-| 40 | 8 | half4 | Bitangent / Bone weights |
+Three stride formats exist. See [Xbox_360_NIF_Format.md](../docs/Xbox_360_NIF_Format.md) for full details.
+
+| Stride | Mesh Type                       | Offset 8       | Offset 16        |
+| ------ | ------------------------------- | -------------- | ---------------- |
+| 36     | Non-skinned, no vertex colors   | **Normals**    | UV               |
+| 40     | Non-skinned, with vertex colors | **Normals**    | Vertex Colors    |
+| 48     | Skinned                         | Unknown (~0.82)| Bone Indices     |
+
+> **IMPORTANT**: For skinned meshes (stride 48), offset 8 is NOT normals (avg length ~0.82). Actual normals are at offset 20. For non-skinned meshes (stride 36/40), offset 8 IS normals (unit-length ~1.0).
 
 #### Current Status
 
 ✅ **Working**:
+
 - Endian conversion (schema-driven)
 - Geometry expansion (positions, normals, UVs, tangents, bitangents)
-- Skinned mesh detection (no fake vertex colors from bone indices)
+- Unit-length stream detection for normals/tangents/bitangents
+- Stride-based skinned mesh detection (stride == 48)
+- Vertex color extraction (stride 40 meshes)
+- Triangle extraction from NiSkinPartition strips
 - Correct rendering in NifSkope (solid mode)
+- Normals verified against PC reference (match within half-float precision)
+- Havok collision layer rendering (HavokFilter packed struct conversion)
 
-⏳ **TODO for full skeletal animation**:
-- **NiSkinPartition bone weights/indices expansion** - Currently `HasVertexWeights=0` and `HasBoneIndices=0`. Need to:
-  1. Extract bone weights from packed stream (offset 40, or dedicated stream)
-  2. Extract bone indices from packed stream (offset 16, ubyte4)
-  3. Map indices using VertexMap to partition-local indices
-  4. Write per-vertex weights/indices arrays to NiSkinPartition
-  5. Set `HasVertexWeights=1` and `HasBoneIndices=1`
+⏳ **Partially Implemented**:
 
-Without bone weights/indices, converted models will render statically but **animations will not work**.
+- Bone indices extraction (from offset 16 ubyte4)
+- Bone weights location uncertain (may be in NiSkinPartition, not packed geometry)
+
+❌ **Not Yet Implemented**:
+
+- **Skeletal animation support** - NiSkinPartition bone weights/indices expansion
+- **Havok physics** - hkPackedNiTriStripsData conversion (currently stripped)
+- **Full bone weight transfer** - Need to verify where bone weights are stored
+
+Without proper bone weights/indices in NiSkinPartition, converted models will render statically but **animations may not work correctly**.
 
 #### NIF Schema System
 

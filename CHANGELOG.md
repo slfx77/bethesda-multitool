@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **NIF Converter: HavokFilter endian conversion** - Fixed packed struct conversion for Havok collision blocks
+  - Structs with `size="2"`, `size="4"`, or `size="8"` (like `HavokFilter`) are now bulk-swapped as single units
+  - Previously, individual fields within packed structs were swapped separately, corrupting the data
+  - This fixes collision wireframe colors in NifSkope (Layer field now correctly shows Red instead of Green)
+- **NIF Converter: Stride-based skinned mesh detection** - Fixed false positive detection for skinned meshes
+  - Changed detection from "ubyte4 at offset 16" to "stride == 48" as the sole skinned indicator
+  - Non-skinned meshes with stride 40 now correctly extract vertex colors instead of fake bone indices
+  - Affected meshes like `nv_prospectorsaloon.nif` now render with correct normals and vertex colors
 - Build warnings for missing curly braces in foreach/for loops (S3973)
 
 ## [0.2.0-alpha.1] - 2026-01-07

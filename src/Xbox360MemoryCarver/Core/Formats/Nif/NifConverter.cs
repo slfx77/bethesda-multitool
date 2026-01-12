@@ -3,7 +3,6 @@
 // Handles BSPackedAdditionalGeometryData expansion for Xbox 360 NIFs
 
 using System.Buffers.Binary;
-using System.Text;
 using static Xbox360MemoryCarver.Core.Formats.Nif.NifEndianUtils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -15,26 +14,34 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 /// </summary>
 internal sealed class NifConverter
 {
-    private readonly bool _verbose;
-    private readonly NifSchema _schema;
-
     // Blocks to strip from output (BSPackedAdditionalGeometryData)
-    private HashSet<int> _blocksToStrip = [];
-
-    // Extracted geometry data indexed by packed block index
-    private Dictionary<int, PackedGeometryData> _packedGeometryByBlock = [];
+    private readonly HashSet<int> _blocksToStrip = [];
 
     // Geometry blocks that need expansion, keyed by geometry block index
-    private Dictionary<int, GeometryBlockExpansion> _geometryExpansions = [];
-
-    // Havok collision blocks that need HalfVector3→Vector3 expansion
-    private Dictionary<int, HavokBlockExpansion> _havokExpansions = [];
-
-    // Vertex maps from NiSkinPartition blocks, keyed by NiSkinPartition block index
-    private Dictionary<int, ushort[]> _vertexMaps = [];
+    private readonly Dictionary<int, GeometryBlockExpansion> _geometryExpansions = [];
 
     // Maps geometry block index to its associated NiSkinPartition block index
-    private Dictionary<int, int> _geometryToSkinPartition = [];
+    private readonly Dictionary<int, int> _geometryToSkinPartition = [];
+
+    // Havok collision blocks that need HalfVector3→Vector3 expansion
+    private readonly Dictionary<int, HavokBlockExpansion> _havokExpansions = [];
+
+    // Extracted geometry data indexed by packed block index
+    private readonly Dictionary<int, PackedGeometryData> _packedGeometryByBlock = [];
+    private readonly NifSchema _schema;
+
+    // NiSkinPartition blocks that need bone weights/indices expansion
+    private readonly Dictionary<int, SkinPartitionExpansion> _skinPartitionExpansions = [];
+
+    // Maps NiSkinPartition block index to its associated packed geometry data
+    private readonly Dictionary<int, PackedGeometryData> _skinPartitionToPackedData = [];
+
+    // Triangles extracted from NiSkinPartition strips, keyed by NiSkinPartition block index
+    private readonly Dictionary<int, ushort[]> _skinPartitionTriangles = [];
+    private readonly bool _verbose;
+
+    // Vertex maps from NiSkinPartition blocks, keyed by NiSkinPartition block index
+    private readonly Dictionary<int, ushort[]> _vertexMaps = [];
 
     public NifConverter(bool verbose = false)
     {
@@ -55,21 +62,21 @@ internal sealed class NifConverter
             _geometryExpansions.Clear();
             _havokExpansions.Clear();
             _vertexMaps.Clear();
+            _skinPartitionTriangles.Clear();
             _geometryToSkinPartition.Clear();
+            _skinPartitionExpansions.Clear();
+            _skinPartitionToPackedData.Clear();
 
             // Parse the NIF header to understand structure
             var info = NifParser.Parse(data);
             if (info == null)
-            {
                 return new ConversionResult
                 {
                     Success = false,
                     ErrorMessage = "Failed to parse NIF header"
                 };
-            }
 
             if (!info.IsBigEndian)
-            {
                 return new ConversionResult
                 {
                     Success = true,
@@ -77,24 +84,28 @@ internal sealed class NifConverter
                     SourceInfo = info,
                     ErrorMessage = "File is already little-endian (PC format)"
                 };
-            }
 
             if (_verbose)
-            {
-                Console.WriteLine($"Converting NIF: {info.BlockCount} blocks, version {info.BinaryVersion:X8}, BS version {info.BsVersion}");
-            }
+                Console.WriteLine(
+                    $"Converting NIF: {info.BlockCount} blocks, version {info.BinaryVersion:X8}, BS version {info.BsVersion}");
 
             // Step 1: Find BSPackedAdditionalGeometryData blocks and extract geometry
             FindAndExtractPackedGeometry(data, info);
 
-            // Step 1b: Extract vertex maps from NiSkinPartition blocks (for skinned meshes)
+            // Step 1b: Extract vertex maps and triangles from NiSkinPartition blocks (for skinned meshes)
             ExtractVertexMaps(data, info);
 
             // Step 2: Find geometry blocks that reference packed data and calculate expansions
             FindGeometryExpansions(data, info);
 
+            // Step 2a: Update geometry expansions with triangle sizes (for NiTriShapeData)
+            UpdateGeometryExpansionsWithTriangles();
+
             // Step 2b: Find Havok collision blocks with compressed vertices
             FindHavokExpansions(data, info);
+
+            // Step 2c: Find NiSkinPartition blocks that need bone weights/indices expansion
+            FindSkinPartitionExpansions(data, info);
 
             // Step 3: Calculate block remap (accounting for removed packed blocks)
             var blockRemap = CalculateBlockRemap(info.BlockCount);
@@ -129,7 +140,6 @@ internal sealed class NifConverter
     private void FindAndExtractPackedGeometry(byte[] data, NifInfo info)
     {
         foreach (var block in info.Blocks)
-        {
             if (block.TypeName == "BSPackedAdditionalGeometryData")
             {
                 _blocksToStrip.Add(block.Index);
@@ -141,16 +151,14 @@ internal sealed class NifConverter
                 {
                     _packedGeometryByBlock[block.Index] = packedData;
                     if (_verbose)
-                    {
-                        Console.WriteLine($"  Block {block.Index}: BSPackedAdditionalGeometryData - extracted {packedData.NumVertices} vertices");
-                    }
+                        Console.WriteLine(
+                            $"  Block {block.Index}: BSPackedAdditionalGeometryData - extracted {packedData.NumVertices} vertices");
                 }
                 else if (_verbose)
                 {
                     Console.WriteLine($"  Block {block.Index}: BSPackedAdditionalGeometryData - extraction failed");
                 }
             }
-        }
     }
 
     /// <summary>
@@ -160,35 +168,41 @@ internal sealed class NifConverter
     /// </summary>
     private void ExtractVertexMaps(byte[] data, NifInfo info)
     {
-        if (_verbose)
-        {
-            Console.WriteLine("  Extracting vertex maps from NiSkinPartition blocks...");
-        }
+        if (_verbose) Console.WriteLine("  Extracting vertex maps from NiSkinPartition blocks...");
 
-        // First, extract VertexMap from all NiSkinPartition blocks
+        // First, extract VertexMap and Triangles from all NiSkinPartition blocks
         foreach (var block in info.Blocks)
-        {
             if (block.TypeName == "NiSkinPartition")
             {
                 if (_verbose)
-                {
-                    Console.WriteLine($"    Checking block {block.Index}: NiSkinPartition at offset 0x{block.DataOffset:X}, size {block.Size}");
-                }
-                var vertexMap = NifSkinPartitionParser.ExtractVertexMap(data, block.DataOffset, block.Size, info.IsBigEndian, _verbose);
+                    Console.WriteLine(
+                        $"    Checking block {block.Index}: NiSkinPartition at offset 0x{block.DataOffset:X}, size {block.Size}");
+
+                var vertexMap = NifSkinPartitionParser.ExtractVertexMap(data, block.DataOffset, block.Size,
+                    info.IsBigEndian, _verbose);
                 if (vertexMap != null && vertexMap.Length > 0)
                 {
                     _vertexMaps[block.Index] = vertexMap;
                     if (_verbose)
-                    {
-                        Console.WriteLine($"    Block {block.Index}: NiSkinPartition - extracted {vertexMap.Length} vertex mappings");
-                    }
+                        Console.WriteLine(
+                            $"    Block {block.Index}: NiSkinPartition - extracted {vertexMap.Length} vertex mappings");
                 }
                 else if (_verbose)
                 {
                     Console.WriteLine($"    Block {block.Index}: NiSkinPartition - no vertex map found");
                 }
+
+                // Also extract triangles from strips for NiTriShapeData expansion
+                var triangles = NifSkinPartitionParser.ExtractTriangles(data, block.DataOffset, block.Size,
+                    info.IsBigEndian, _verbose);
+                if (triangles != null && triangles.Length > 0)
+                {
+                    _skinPartitionTriangles[block.Index] = triangles;
+                    if (_verbose)
+                        Console.WriteLine(
+                            $"    Block {block.Index}: NiSkinPartition - extracted {triangles.Length / 3} triangles from strips");
+                }
             }
-        }
 
         // Now build geometry -> skin partition mapping via BSDismemberSkinInstance
         // Structure: NiTriShape/NiTriStrips has a Skin Instance ref that points to BSDismemberSkinInstance
@@ -197,37 +211,32 @@ internal sealed class NifConverter
         //   - Offset 4: Skin Partition ref (int) -> NiSkinPartition
         //   - Offset 8: Skeleton Root ref (int)
         //   - etc.
-        foreach (var block in info.Blocks)
+        foreach (var block in info.Blocks.Where(b => b.TypeName is "NiTriShape" or "NiTriStrips"))
         {
-            if (block.TypeName is "NiTriShape" or "NiTriStrips")
+            // Find the skin instance ref in the NiTriShape/NiTriStrips block
+            var skinInstanceRef = FindSkinInstanceRef(data, block, info);
+            if (skinInstanceRef < 0) continue;
+
+            var skinInstanceBlock = info.Blocks.FirstOrDefault(b => b.Index == skinInstanceRef);
+            if (skinInstanceBlock?.TypeName is not ("BSDismemberSkinInstance" or "NiSkinInstance")) continue;
+
+            // Read the skin partition ref from offset 4 in the skin instance
+            var skinPartitionRefPos = skinInstanceBlock.DataOffset + 4;
+            if (skinPartitionRefPos + 4 > data.Length) continue;
+
+            var skinPartitionRef = info.IsBigEndian
+                ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(skinPartitionRefPos, 4))
+                : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(skinPartitionRefPos, 4));
+
+            if (skinPartitionRef < 0) continue;
+
+            // Find the data ref (NiTriStripsData or NiTriShapeData) in the NiTriShape
+            var dataRef = FindDataRef(data, block, info);
+            if (dataRef >= 0 && _vertexMaps.ContainsKey(skinPartitionRef))
             {
-                // Find the skin instance ref in the NiTriShape/NiTriStrips block
-                var skinInstanceRef = FindSkinInstanceRef(data, block, info);
-                if (skinInstanceRef < 0) continue;
-
-                var skinInstanceBlock = info.Blocks.FirstOrDefault(b => b.Index == skinInstanceRef);
-                if (skinInstanceBlock?.TypeName is not ("BSDismemberSkinInstance" or "NiSkinInstance")) continue;
-
-                // Read the skin partition ref from offset 4 in the skin instance
-                var skinPartitionRefPos = skinInstanceBlock.DataOffset + 4;
-                if (skinPartitionRefPos + 4 > data.Length) continue;
-
-                var skinPartitionRef = info.IsBigEndian
-                    ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(skinPartitionRefPos, 4))
-                    : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(skinPartitionRefPos, 4));
-
-                if (skinPartitionRef < 0) continue;
-
-                // Find the data ref (NiTriStripsData or NiTriShapeData) in the NiTriShape
-                var dataRef = FindDataRef(data, block, info);
-                if (dataRef >= 0 && _vertexMaps.ContainsKey(skinPartitionRef))
-                {
-                    _geometryToSkinPartition[dataRef] = skinPartitionRef;
-                    if (_verbose)
-                    {
-                        Console.WriteLine($"  Mapped geometry block {dataRef} -> NiSkinPartition {skinPartitionRef}");
-                    }
-                }
+                _geometryToSkinPartition[dataRef] = skinPartitionRef;
+                if (_verbose)
+                    Console.WriteLine($"  Mapped geometry block {dataRef} -> NiSkinPartition {skinPartitionRef}");
             }
         }
     }
@@ -236,7 +245,7 @@ internal sealed class NifConverter
     ///     Find the Skin Instance ref in a NiTriShape/NiTriStrips block.
     ///     NiAVObject layout varies but skin instance is typically at a known offset after common fields.
     /// </summary>
-    private int FindSkinInstanceRef(byte[] data, BlockInfo block, NifInfo info)
+    private static int FindSkinInstanceRef(byte[] data, BlockInfo block, NifInfo info)
     {
         // NiTriShape structure (simplified):
         // - NiAVObject base (name, extra data, controller, flags, transform, properties, collision)
@@ -330,7 +339,7 @@ internal sealed class NifConverter
     /// <summary>
     ///     Find the Data ref in a NiTriShape/NiTriStrips block.
     /// </summary>
-    private int FindDataRef(byte[] data, BlockInfo block, NifInfo info)
+    private static int FindDataRef(byte[] data, BlockInfo block, NifInfo info)
     {
         // Similar to FindSkinInstanceRef but we want the data ref, not skin instance
         var pos = block.DataOffset;
@@ -384,32 +393,55 @@ internal sealed class NifConverter
     /// </summary>
     private void FindGeometryExpansions(byte[] data, NifInfo info)
     {
-        foreach (var block in info.Blocks)
+        foreach (var block in info.Blocks.Where(b => b.TypeName is "NiTriStripsData" or "NiTriShapeData"))
         {
-            if (block.TypeName is "NiTriStripsData" or "NiTriShapeData")
+            // Parse the geometry block to find its Additional Data reference
+            var additionalDataRef = ParseAdditionalDataRef(data, block);
+
+            if (additionalDataRef >= 0 && _packedGeometryByBlock.TryGetValue(additionalDataRef, out var packedData))
             {
-                // Parse the geometry block to find its Additional Data reference
-                var additionalDataRef = ParseAdditionalDataRef(data, block, info.IsBigEndian, info.BsVersion);
+                // Check if this is a skinned mesh - affects vertex color handling
+                var isSkinned = _geometryToSkinPartition.ContainsKey(block.Index);
 
-                if (additionalDataRef >= 0 && _packedGeometryByBlock.TryGetValue(additionalDataRef, out var packedData))
+                // Calculate size increase needed for expanded geometry
+                var expansion = CalculateGeometryExpansion(data, block, packedData, isSkinned);
+                if (expansion != null)
                 {
-                    // Check if this is a skinned mesh - affects vertex color handling
-                    var isSkinned = _geometryToSkinPartition.ContainsKey(block.Index);
-                    
-                    // Calculate size increase needed for expanded geometry
-                    var expansion = CalculateGeometryExpansion(data, block, packedData, info.IsBigEndian, info.BsVersion, isSkinned);
-                    if (expansion != null)
-                    {
-                        expansion.BlockIndex = block.Index;
-                        expansion.PackedBlockIndex = additionalDataRef;
-                        _geometryExpansions[block.Index] = expansion;
+                    expansion.BlockIndex = block.Index;
+                    expansion.PackedBlockIndex = additionalDataRef;
+                    _geometryExpansions[block.Index] = expansion;
 
-                        if (_verbose)
-                        {
-                            Console.WriteLine($"  Block {block.Index}: {block.TypeName} -> expand from {expansion.OriginalSize} to {expansion.NewSize} bytes");
-                        }
-                    }
+                    if (_verbose)
+                        Console.WriteLine(
+                            $"  Block {block.Index}: {block.TypeName} -> expand from {expansion.OriginalSize} to {expansion.NewSize} bytes");
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Update geometry expansion sizes to account for triangle data from NiSkinPartition.
+    ///     Called after ExtractVertexMaps has populated _skinPartitionTriangles.
+    /// </summary>
+    private void UpdateGeometryExpansionsWithTriangles()
+    {
+        foreach (var kvp in _geometryExpansions)
+        {
+            var geomBlockIndex = kvp.Key;
+            var expansion = kvp.Value;
+
+            // Check if this geometry block has triangles from its skin partition
+            if (_geometryToSkinPartition.TryGetValue(geomBlockIndex, out var skinPartIndex) &&
+                _skinPartitionTriangles.TryGetValue(skinPartIndex, out var triangles))
+            {
+                // Each triangle is 3 ushorts = 6 bytes
+                var triangleBytes = triangles.Length * 2; // triangles array contains indices, not triangle count
+                expansion.NewSize += triangleBytes;
+                expansion.SizeIncrease += triangleBytes;
+
+                if (_verbose)
+                    Console.WriteLine(
+                        $"    Block {geomBlockIndex}: Adding {triangles.Length / 3} triangles ({triangleBytes} bytes) from skin partition {skinPartIndex}");
             }
         }
     }
@@ -420,7 +452,6 @@ internal sealed class NifConverter
     private void FindHavokExpansions(byte[] data, NifInfo info)
     {
         foreach (var block in info.Blocks)
-        {
             if (block.TypeName == "hkPackedNiTriStripsData")
             {
                 var expansion = ParseHavokBlock(data, block, info.IsBigEndian);
@@ -429,26 +460,24 @@ internal sealed class NifConverter
                     _havokExpansions[block.Index] = expansion;
 
                     if (_verbose)
-                    {
-                        Console.WriteLine($"  Block {block.Index}: hkPackedNiTriStripsData -> expand from {expansion.OriginalSize} to {expansion.NewSize} bytes ({expansion.NumVertices} vertices)");
-                    }
+                        Console.WriteLine(
+                            $"  Block {block.Index}: hkPackedNiTriStripsData -> expand from {expansion.OriginalSize} to {expansion.NewSize} bytes ({expansion.NumVertices} vertices)");
                 }
             }
-        }
     }
 
     /// <summary>
     ///     Parse hkPackedNiTriStripsData to check if it has compressed vertices.
     ///     Structure:
-    ///       - NumTriangles (uint)
-    ///       - Triangles[NumTriangles] (TriangleData = 8 bytes each)
-    ///       - NumVertices (uint)
-    ///       - Compressed (bool) - since 20.2.0.7
-    ///       - Vertices[NumVertices] (Vector3 if Compressed=0, HalfVector3 if Compressed=1)
-    ///       - NumSubShapes (ushort) - since 20.2.0.7
-    ///       - SubShapes[NumSubShapes]
+    ///     - NumTriangles (uint)
+    ///     - Triangles[NumTriangles] (TriangleData = 8 bytes each)
+    ///     - NumVertices (uint)
+    ///     - Compressed (bool) - since 20.2.0.7
+    ///     - Vertices[NumVertices] (Vector3 if Compressed=0, HalfVector3 if Compressed=1)
+    ///     - NumSubShapes (ushort) - since 20.2.0.7
+    ///     - SubShapes[NumSubShapes]
     /// </summary>
-    private HavokBlockExpansion? ParseHavokBlock(byte[] data, BlockInfo block, bool isBigEndian)
+    private static HavokBlockExpansion? ParseHavokBlock(byte[] data, BlockInfo block, bool isBigEndian)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -473,10 +502,7 @@ internal sealed class NifConverter
         pos += 1;
 
         // Only need expansion if compressed
-        if (!compressed)
-        {
-            return null;
-        }
+        if (!compressed) return null;
 
         // Calculate how much data follows the vertices
         // CompressedVertices: numVertices * 6 bytes (HalfVector3)
@@ -508,9 +534,65 @@ internal sealed class NifConverter
     }
 
     /// <summary>
+    ///     Find NiSkinPartition blocks that need bone weights/indices expansion.
+    ///     These are associated with skinned meshes where the bone data is in BSPackedAdditionalGeometryData.
+    /// </summary>
+    private void FindSkinPartitionExpansions(byte[] data, NifInfo info)
+    {
+        // Build mapping from NiSkinPartition block index -> packed geometry data
+        // Chain: geometry block -> skin partition -> packed data
+
+        foreach (var kvp in _geometryExpansions)
+        {
+            var geomBlockIndex = kvp.Key;
+            var packedBlockIndex = kvp.Value.PackedBlockIndex;
+
+            // Check if this geometry block is associated with a skin partition
+            if (!_geometryToSkinPartition.TryGetValue(geomBlockIndex, out var skinPartitionIndex)) continue;
+
+            // Get the packed data
+            if (!_packedGeometryByBlock.TryGetValue(packedBlockIndex, out var packedData)) continue;
+
+            // Only expand if we have bone data in the packed geometry
+            if (packedData.BoneIndices != null && packedData.BoneWeights != null)
+                _skinPartitionToPackedData[skinPartitionIndex] = packedData;
+        }
+
+        // Now find all NiSkinPartition blocks that need expansion
+        foreach (var block in info.Blocks.Where(b => b.TypeName == "NiSkinPartition"))
+        {
+            // Check if this skin partition has associated packed data with bone info
+            if (!_skinPartitionToPackedData.ContainsKey(block.Index)) continue;
+
+            // Parse the skin partition to understand its structure
+            var skinData =
+                NifSkinPartitionExpander.Parse(data, block.DataOffset, block.Size, info.IsBigEndian, _verbose);
+            if (skinData == null) continue;
+
+            var newSize = NifSkinPartitionExpander.CalculateExpandedSize(skinData);
+            var sizeIncrease = newSize - block.Size;
+
+            if (sizeIncrease > 0)
+            {
+                _skinPartitionExpansions[block.Index] = new SkinPartitionExpansion
+                {
+                    BlockIndex = block.Index,
+                    OriginalSize = block.Size,
+                    NewSize = newSize,
+                    ParsedData = skinData
+                };
+
+                if (_verbose)
+                    Console.WriteLine(
+                        $"  Block {block.Index}: NiSkinPartition -> expand from {block.Size} to {newSize} bytes (+{sizeIncrease} for bone weights/indices)");
+            }
+        }
+    }
+
+    /// <summary>
     ///     Parse a geometry block to find its Additional Data block reference.
     /// </summary>
-    private int ParseAdditionalDataRef(byte[] data, BlockInfo block, bool isBigEndian, uint bsVersion)
+    private static int ParseAdditionalDataRef(byte[] data, BlockInfo block)
     {
         // NiGeometryData structure (simplified):
         // - GroupId (int) - since 10.1.0.114
@@ -594,7 +676,8 @@ internal sealed class NifConverter
     ///     Calculate how much a geometry block needs to expand.
     /// </summary>
     /// <param name="isSkinned">If true, skip vertex colors (ubyte4 is bone indices, not colors)</param>
-    private GeometryBlockExpansion? CalculateGeometryExpansion(byte[] data, BlockInfo block, PackedGeometryData packedData, bool isBigEndian, uint bsVersion, bool isSkinned = false)
+    private static GeometryBlockExpansion? CalculateGeometryExpansion(byte[] data, BlockInfo block,
+        PackedGeometryData packedData, bool isSkinned = false)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -686,16 +769,10 @@ internal sealed class NifConverter
         var newIndex = 0;
 
         for (var i = 0; i < blockCount; i++)
-        {
             if (_blocksToStrip.Contains(i))
-            {
                 remap[i] = -1; // Will be removed
-            }
             else
-            {
                 remap[i] = newIndex++;
-            }
-        }
 
         return remap;
     }
@@ -707,10 +784,7 @@ internal sealed class NifConverter
     {
         var size = originalSize;
 
-        if (_verbose)
-        {
-            Console.WriteLine($"  Size calculation: starting from {originalSize}");
-        }
+        if (_verbose) Console.WriteLine($"  Size calculation: starting from {originalSize}");
 
         // Subtract removed blocks
         foreach (var blockIdx in _blocksToStrip)
@@ -719,36 +793,32 @@ internal sealed class NifConverter
             size -= block.Size;
             size -= 4; // Block size entry in header
             size -= 2; // Block type index entry in header
-            if (_verbose)
-            {
-                Console.WriteLine($"    - Remove block {blockIdx}: {block.Size} + 6 header bytes");
-            }
+            if (_verbose) Console.WriteLine($"    - Remove block {blockIdx}: {block.Size} + 6 header bytes");
         }
 
         // Add geometry expansion sizes
         foreach (var kvp in _geometryExpansions)
         {
             size += kvp.Value.SizeIncrease;
-            if (_verbose)
-            {
-                Console.WriteLine($"    + Expand geometry block {kvp.Key}: {kvp.Value.SizeIncrease} bytes");
-            }
+            if (_verbose) Console.WriteLine($"    + Expand geometry block {kvp.Key}: {kvp.Value.SizeIncrease} bytes");
         }
 
         // Add Havok expansion sizes
         foreach (var kvp in _havokExpansions)
         {
             size += kvp.Value.SizeIncrease;
-            if (_verbose)
-            {
-                Console.WriteLine($"    + Expand Havok block {kvp.Key}: {kvp.Value.SizeIncrease} bytes");
-            }
+            if (_verbose) Console.WriteLine($"    + Expand Havok block {kvp.Key}: {kvp.Value.SizeIncrease} bytes");
         }
 
-        if (_verbose)
+        // Add skin partition expansion sizes
+        foreach (var kvp in _skinPartitionExpansions)
         {
-            Console.WriteLine($"  Final calculated size: {size}");
+            size += kvp.Value.SizeIncrease;
+            if (_verbose)
+                Console.WriteLine($"    + Expand NiSkinPartition block {kvp.Key}: {kvp.Value.SizeIncrease} bytes");
         }
+
+        if (_verbose) Console.WriteLine($"  Final calculated size: {size}");
 
         return size;
     }
@@ -759,7 +829,8 @@ internal sealed class NifConverter
     private void WriteConvertedOutput(byte[] input, byte[] output, NifInfo info, int[] blockRemap)
     {
         // Simple case: no expansions and no blocks to strip -> do in-place conversion
-        if (_blocksToStrip.Count == 0 && _geometryExpansions.Count == 0 && _havokExpansions.Count == 0)
+        if (_blocksToStrip.Count == 0 && _geometryExpansions.Count == 0 && _havokExpansions.Count == 0 &&
+            _skinPartitionExpansions.Count == 0)
         {
             Array.Copy(input, output, input.Length);
             ConvertInPlace(output, info, blockRemap);
@@ -768,9 +839,8 @@ internal sealed class NifConverter
 
         // Complex case: rebuild the file with new block sizes
         if (_verbose)
-        {
-            Console.WriteLine($"  Rebuilding file: removing {_blocksToStrip.Count} packed blocks, expanding {_geometryExpansions.Count} geometry blocks");
-        }
+            Console.WriteLine(
+                $"  Rebuilding file: removing {_blocksToStrip.Count} packed blocks, expanding {_geometryExpansions.Count} geometry, {_skinPartitionExpansions.Count} skin partition blocks");
 
         var schemaConverter = new NifSchemaConverter(
             _schema,
@@ -780,16 +850,14 @@ internal sealed class NifConverter
             _verbose);
 
         // Write header with updated block counts and sizes
-        var outPos = WriteConvertedHeader(input, output, info, blockRemap);
+        var outPos = WriteConvertedHeader(input, output, info);
 
         // Write each block
         foreach (var block in info.Blocks)
         {
             if (_blocksToStrip.Contains(block.Index))
-            {
                 // Skip packed blocks entirely
                 continue;
-            }
 
             var blockStartPos = outPos;
             var expectedSize = block.Size;
@@ -802,22 +870,35 @@ internal sealed class NifConverter
 
                 // Check if this geometry block has a vertex map for skinned mesh remapping
                 ushort[]? vertexMap = null;
+                ushort[]? triangles = null;
                 if (_geometryToSkinPartition.TryGetValue(block.Index, out var skinPartitionIndex))
                 {
                     _vertexMaps.TryGetValue(skinPartitionIndex, out vertexMap);
+                    _skinPartitionTriangles.TryGetValue(skinPartitionIndex, out triangles);
                     if (_verbose && vertexMap != null)
-                    {
-                        Console.WriteLine($"    Block {block.Index}: Using vertex map from skin partition {skinPartitionIndex}, length={vertexMap.Length}");
-                    }
+                        Console.WriteLine(
+                            $"    Block {block.Index}: Using vertex map from skin partition {skinPartitionIndex}, length={vertexMap.Length}");
+                    if (_verbose && triangles != null)
+                        Console.WriteLine(
+                            $"    Block {block.Index}: Using {triangles.Length / 3} triangles from skin partition {skinPartitionIndex}");
                 }
 
-                outPos = WriteExpandedGeometryBlock(input, output, outPos, block, packedData, blockRemap, vertexMap);
+                outPos = WriteExpandedGeometryBlock(input, output, outPos, block, packedData, vertexMap,
+                    triangles);
             }
             else if (_havokExpansions.TryGetValue(block.Index, out var havokExpansion))
             {
                 expectedSize = havokExpansion.NewSize;
                 // Expand Havok collision block with decompressed vertices
-                outPos = WriteExpandedHavokBlock(input, output, outPos, block, havokExpansion);
+                outPos = WriteExpandedHavokBlock(input, output, outPos, block);
+            }
+            else if (_skinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))
+            {
+                expectedSize = skinPartExpansion.NewSize;
+                // Expand NiSkinPartition block with bone weights/indices
+                var packedData = _skinPartitionToPackedData[block.Index];
+                outPos = NifSkinPartitionExpander.WriteExpanded(skinPartExpansion.ParsedData, packedData, output,
+                    outPos, _verbose);
             }
             else
             {
@@ -827,9 +908,8 @@ internal sealed class NifConverter
 
             var actualSize = outPos - blockStartPos;
             if (_verbose && actualSize != expectedSize)
-            {
-                Console.WriteLine($"  BLOCK SIZE MISMATCH: Block {block.Index} ({block.TypeName}) wrote {actualSize} bytes, expected {expectedSize}");
-            }
+                Console.WriteLine(
+                    $"  BLOCK SIZE MISMATCH: Block {block.Index} ({block.TypeName}) wrote {actualSize} bytes, expected {expectedSize}");
         }
 
         // Write footer with remapped indices
@@ -837,15 +917,13 @@ internal sealed class NifConverter
 
         // Verify output size
         if (_verbose && outPos != output.Length)
-        {
             Console.WriteLine($"  WARNING: Output size mismatch: wrote {outPos}, expected {output.Length}");
-        }
     }
 
     /// <summary>
     ///     Write the converted header to output with updated block counts and sizes.
     /// </summary>
-    private int WriteConvertedHeader(byte[] input, byte[] output, NifInfo info, int[] blockRemap)
+    private int WriteConvertedHeader(byte[] input, byte[] output, NifInfo info)
     {
         var srcPos = 0;
         var outPos = 0;
@@ -949,6 +1027,7 @@ internal sealed class NifConverter
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), block.TypeIndex);
                 outPos += 2;
             }
+
             srcPos += 2;
         }
 
@@ -959,16 +1038,15 @@ internal sealed class NifConverter
             {
                 var size = (uint)block.Size;
                 if (_geometryExpansions.TryGetValue(block.Index, out var expansion))
-                {
                     size = (uint)expansion.NewSize;
-                }
                 else if (_havokExpansions.TryGetValue(block.Index, out var havokExpansion))
-                {
                     size = (uint)havokExpansion.NewSize;
-                }
+                else if (_skinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))
+                    size = (uint)skinPartExpansion.NewSize;
                 BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), size);
                 outPos += 4;
             }
+
             srcPos += 4;
         }
 
@@ -1018,7 +1096,7 @@ internal sealed class NifConverter
     /// <summary>
     ///     Write a regular block (copy and convert endianness).
     /// </summary>
-    private int WriteConvertedBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
+    private static int WriteConvertedBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
         NifSchemaConverter schemaConverter, int[] blockRemap)
     {
         // Copy block data
@@ -1026,10 +1104,8 @@ internal sealed class NifConverter
 
         // Convert using schema
         if (!schemaConverter.TryConvert(output, outPos, block.Size, block.TypeName, blockRemap))
-        {
             // Fallback: bulk swap
             BulkSwap32(output, outPos, block.Size);
-        }
 
         return outPos + block.Size;
     }
@@ -1037,8 +1113,7 @@ internal sealed class NifConverter
     /// <summary>
     ///     Write a Havok collision block with decompressed vertices (HalfVector3 -> Vector3).
     /// </summary>
-    private int WriteExpandedHavokBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
-        HavokBlockExpansion expansion)
+    private static int WriteExpandedHavokBlock(byte[] input, byte[] output, int outPos, BlockInfo block)
     {
         var srcPos = block.DataOffset;
 
@@ -1141,9 +1216,9 @@ internal sealed class NifConverter
     /// </summary>
     private static float HalfToFloat(ushort h)
     {
-        int sign = (h >> 15) & 0x0001;
-        int exp = (h >> 10) & 0x001F;
-        int mant = h & 0x03FF;
+        var sign = (h >> 15) & 0x0001;
+        var exp = (h >> 10) & 0x001F;
+        var mant = h & 0x03FF;
 
         if (exp == 0)
         {
@@ -1157,30 +1232,32 @@ internal sealed class NifConverter
                 mant <<= 1;
                 exp--;
             }
+
             exp++;
             mant &= ~0x0400;
         }
         else if (exp == 31)
         {
             // Inf or NaN
-            return mant != 0
-                ? float.NaN
-                : (sign != 0 ? float.NegativeInfinity : float.PositiveInfinity);
+            if (mant != 0)
+                return float.NaN;
+            return sign != 0 ? float.NegativeInfinity : float.PositiveInfinity;
         }
 
         exp += 127 - 15;
         mant <<= 13;
 
-        int bits = (sign << 31) | (exp << 23) | mant;
+        var bits = (sign << 31) | (exp << 23) | mant;
         return BitConverter.Int32BitsToSingle(bits);
     }
 
     /// <summary>
     ///     Write a geometry block with expanded packed data.
     ///     If vertexMap is provided (for skinned meshes), vertices are remapped from partition order to mesh order.
+    ///     If triangles is provided, triangles are written for NiTriShapeData (converted from NiSkinPartition strips).
     /// </summary>
-    private int WriteExpandedGeometryBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
-        PackedGeometryData packedData, int[] blockRemap, ushort[]? vertexMap)
+    private static int WriteExpandedGeometryBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
+        PackedGeometryData packedData, ushort[]? vertexMap, ushort[]? triangles)
     {
         var srcPos = block.DataOffset;
 
@@ -1231,9 +1308,12 @@ internal sealed class NifConverter
                     if (meshIdx >= numVertices) continue; // Skip invalid indices
 
                     var writePos = basePos + meshIdx * 12;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos), packedData.Positions[partitionIdx * 3 + 0]);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4), packedData.Positions[partitionIdx * 3 + 1]);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8), packedData.Positions[partitionIdx * 3 + 2]);
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
+                        packedData.Positions[partitionIdx * 3 + 0]);
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4),
+                        packedData.Positions[partitionIdx * 3 + 1]);
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8),
+                        packedData.Positions[partitionIdx * 3 + 2]);
                 }
 
                 outPos += vertexDataSize;
@@ -1251,6 +1331,7 @@ internal sealed class NifConverter
                     BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 2]);
                     outPos += 4;
                 }
+
                 // Pad remaining vertices with zeros if packed data has fewer vertices
                 var remaining = numVertices - packedVertexCount;
                 if (remaining > 0)
@@ -1305,9 +1386,12 @@ internal sealed class NifConverter
                     if (meshIdx >= numVertices) continue;
 
                     var writePos = basePos + meshIdx * 12;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos), packedData.Normals[partitionIdx * 3 + 0]);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4), packedData.Normals[partitionIdx * 3 + 1]);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8), packedData.Normals[partitionIdx * 3 + 2]);
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
+                        packedData.Normals[partitionIdx * 3 + 0]);
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4),
+                        packedData.Normals[partitionIdx * 3 + 1]);
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8),
+                        packedData.Normals[partitionIdx * 3 + 2]);
                 }
 
                 outPos += normalDataSize;
@@ -1341,9 +1425,12 @@ internal sealed class NifConverter
                         if (meshIdx >= numVertices) continue;
 
                         var writePos = basePos + meshIdx * 12;
-                        BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos), packedData.Tangents[partitionIdx * 3 + 0]);
-                        BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4), packedData.Tangents[partitionIdx * 3 + 1]);
-                        BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8), packedData.Tangents[partitionIdx * 3 + 2]);
+                        BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
+                            packedData.Tangents[partitionIdx * 3 + 0]);
+                        BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4),
+                            packedData.Tangents[partitionIdx * 3 + 1]);
+                        BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8),
+                            packedData.Tangents[partitionIdx * 3 + 2]);
                     }
 
                     outPos += tangentDataSize;
@@ -1377,9 +1464,12 @@ internal sealed class NifConverter
                             if (meshIdx >= numVertices) continue;
 
                             var writePos = basePos + meshIdx * 12;
-                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos), packedData.Bitangents[partitionIdx * 3 + 0]);
-                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4), packedData.Bitangents[partitionIdx * 3 + 1]);
-                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8), packedData.Bitangents[partitionIdx * 3 + 2]);
+                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
+                                packedData.Bitangents[partitionIdx * 3 + 0]);
+                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4),
+                                packedData.Bitangents[partitionIdx * 3 + 1]);
+                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8),
+                                packedData.Bitangents[partitionIdx * 3 + 2]);
                         }
 
                         outPos += bitangentDataSize;
@@ -1388,11 +1478,14 @@ internal sealed class NifConverter
                     {
                         for (var v = 0; v < numVertices; v++)
                         {
-                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 0]);
+                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                                packedData.Bitangents[v * 3 + 0]);
                             outPos += 4;
-                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 1]);
+                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                                packedData.Bitangents[v * 3 + 1]);
                             outPos += 4;
-                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Bitangents[v * 3 + 2]);
+                            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                                packedData.Bitangents[v * 3 + 2]);
                             outPos += 4;
                         }
                     }
@@ -1412,7 +1505,6 @@ internal sealed class NifConverter
 
             // Copy existing tangents/bitangents if present
             if ((origBsDataFlags & 4096) != 0)
-            {
                 for (var v = 0; v < numVertices * 6; v++) // 3 floats tangent + 3 floats bitangent
                 {
                     BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
@@ -1420,7 +1512,6 @@ internal sealed class NifConverter
                     srcPos += 4;
                     outPos += 4;
                 }
-            }
         }
 
         // center (Vector3) + radius (float) = 16 bytes
@@ -1528,8 +1619,10 @@ internal sealed class NifConverter
                     if (meshIdx >= numVertices) continue;
 
                     var writePos = basePos + meshIdx * 8;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos), packedData.UVs[partitionIdx * 2 + 0]);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4), packedData.UVs[partitionIdx * 2 + 1]);
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
+                        packedData.UVs[partitionIdx * 2 + 0]);
+                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4),
+                        packedData.UVs[partitionIdx * 2 + 1]);
                 }
 
                 outPos += uvDataSize;
@@ -1571,17 +1664,18 @@ internal sealed class NifConverter
         // Copy and convert remaining block data (strips/triangles specific to NiTriStripsData/NiTriShapeData)
         var remainingOriginalBytes = block.Size - (srcPos - block.DataOffset);
         if (remainingOriginalBytes > 0)
-        {
-            outPos = WriteTriStripSpecificData(input, output, srcPos, outPos, block.TypeName);
-        }
+            outPos = WriteTriStripSpecificData(input, output, srcPos, outPos, block.TypeName, triangles);
 
         return outPos;
     }
 
     /// <summary>
     ///     Write NiTriStripsData or NiTriShapeData specific fields.
+    ///     If triangles is provided for NiTriShapeData, writes triangles from NiSkinPartition strips
+    ///     instead of copying the source (which has hasTriangles=0 on Xbox).
     /// </summary>
-    private int WriteTriStripSpecificData(byte[] input, byte[] output, int srcPos, int outPos, string blockType)
+    private static int WriteTriStripSpecificData(byte[] input, byte[] output, int srcPos, int outPos, string blockType,
+        ushort[]? triangles)
     {
         if (blockType == "NiTriStripsData")
         {
@@ -1628,32 +1722,58 @@ internal sealed class NifConverter
         }
         else if (blockType == "NiTriShapeData")
         {
-            // numTriangles (ushort)
-            var numTriangles = ReadUInt16BE(input, srcPos);
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numTriangles);
+            // Read source values
+            var srcNumTriangles = ReadUInt16BE(input, srcPos);
             srcPos += 2;
-            outPos += 2;
-
-            // numTrianglePoints (uint)
-            BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos),
-                BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos)));
+            var srcNumTrianglePoints = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
             srcPos += 4;
-            outPos += 4;
+            var srcHasTriangles = input[srcPos++];
 
-            // hasTriangles (byte)
-            var hasTriangles = input[srcPos++];
-            output[outPos++] = hasTriangles;
-
-            // triangles[numTriangles] (Triangle = 3 ushorts)
-            if (hasTriangles != 0)
+            // If we have triangles extracted from NiSkinPartition, use them
+            if (triangles != null && triangles.Length >= 3)
             {
-                for (var i = 0; i < numTriangles * 3; i++)
+                var numTriangles = (ushort)(triangles.Length / 3);
+                var numTrianglePoints = (uint)(numTriangles * 3);
+
+                // numTriangles (ushort)
+                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numTriangles);
+                outPos += 2;
+
+                // numTrianglePoints (uint)
+                BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), numTrianglePoints);
+                outPos += 4;
+
+                // hasTriangles (byte) - set to 1 since we're writing triangles
+                output[outPos++] = 1;
+
+                // Write triangles
+                for (var i = 0; i < triangles.Length; i++)
                 {
-                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                        ReadUInt16BE(input, srcPos));
-                    srcPos += 2;
+                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), triangles[i]);
                     outPos += 2;
                 }
+
+                // Skip source triangles if any (shouldn't be any since srcHasTriangles=0)
+                if (srcHasTriangles != 0) srcPos += srcNumTriangles * 6;
+            }
+            else
+            {
+                // No extracted triangles - copy source values
+                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), srcNumTriangles);
+                outPos += 2;
+                BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), srcNumTrianglePoints);
+                outPos += 4;
+                output[outPos++] = srcHasTriangles;
+
+                // Copy source triangles if present
+                if (srcHasTriangles != 0)
+                    for (var i = 0; i < srcNumTriangles * 3; i++)
+                    {
+                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                            ReadUInt16BE(input, srcPos));
+                        srcPos += 2;
+                        outPos += 2;
+                    }
             }
 
             // numMatchGroups (ushort)
@@ -1688,7 +1808,7 @@ internal sealed class NifConverter
     /// <summary>
     ///     Write the footer with remapped block indices.
     /// </summary>
-    private int WriteConvertedFooter(byte[] input, byte[] output, int outPos, NifInfo info, int[] blockRemap)
+    private static int WriteConvertedFooter(byte[] input, byte[] output, int outPos, NifInfo info, int[] blockRemap)
     {
         // Calculate footer position in source
         var lastBlock = info.Blocks[^1];
@@ -1743,13 +1863,14 @@ internal sealed class NifConverter
             }
 
             if (_verbose)
-                Console.WriteLine($"  Block {block.Index}: {block.TypeName} at offset {block.DataOffset:X}, size {block.Size}");
+                Console.WriteLine(
+                    $"  Block {block.Index}: {block.TypeName} at offset {block.DataOffset:X}, size {block.Size}");
 
             if (!schemaConverter.TryConvert(buf, block.DataOffset, block.Size, block.TypeName, blockRemap))
             {
                 // Fallback: bulk swap all 4-byte values (may break some data)
                 if (_verbose)
-                    Console.WriteLine($"    -> Using fallback bulk swap");
+                    Console.WriteLine("    -> Using fallback bulk swap");
                 BulkSwap32(buf, block.DataOffset, block.Size);
             }
         }
@@ -1758,7 +1879,7 @@ internal sealed class NifConverter
         ConvertFooter(buf, info);
     }
 
-    private void ConvertHeader(byte[] buf, NifInfo info)
+    private static void ConvertHeader(byte[] buf, NifInfo info)
     {
         // The header string and version are always little-endian
         // Only the endian byte needs to change from 0 (BE) to 1 (LE)
@@ -1774,7 +1895,7 @@ internal sealed class NifConverter
         SwapHeaderFields(buf, info);
     }
 
-    private void SwapHeaderFields(byte[] buf, NifInfo info)
+    private static void SwapHeaderFields(byte[] buf, NifInfo info)
     {
         // Position after header string + newline + binary version + endian byte
         var pos = info.HeaderString.Length + 1 + 4 + 1;
@@ -1873,7 +1994,7 @@ internal sealed class NifConverter
         }
     }
 
-    private void ConvertFooter(byte[] buf, NifInfo info)
+    private static void ConvertFooter(byte[] buf, NifInfo info)
     {
         // Footer is at the end of the file after all blocks
         // Structure: Num Roots (uint) + Root indices (int[Num Roots])
@@ -1907,8 +2028,12 @@ internal sealed class NifConverter
 
     // Big-endian read helpers
     private static ushort ReadUInt16BE(byte[] data, int offset)
-        => BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2));
+    {
+        return BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2));
+    }
 
     private static int ReadInt32BE(byte[] data, int offset)
-        => BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4));
+    {
+        return BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4));
+    }
 }
