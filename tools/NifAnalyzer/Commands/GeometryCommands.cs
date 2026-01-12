@@ -5,7 +5,7 @@ using static NifAnalyzer.Utils.BinaryHelpers;
 namespace NifAnalyzer.Commands;
 
 /// <summary>
-/// Commands for geometry analysis: geometry, geomcompare, vertices.
+///     Commands for geometry analysis: geometry, geomcompare, vertices.
 /// </summary>
 internal static class GeometryCommands
 {
@@ -20,7 +20,7 @@ internal static class GeometryCommands
             return 1;
         }
 
-        int offset = nif.GetBlockOffset(blockIndex);
+        var offset = nif.GetBlockOffset(blockIndex);
         var typeName = nif.GetBlockTypeName(blockIndex);
         var size = (int)nif.BlockSizes[blockIndex];
 
@@ -31,9 +31,7 @@ internal static class GeometryCommands
         Console.WriteLine();
 
         if (!typeName.Contains("TriShape") && !typeName.Contains("TriStrips"))
-        {
             Console.WriteLine("Warning: Not a geometry data block");
-        }
 
         // Parse geometry block
         var geom = GeometryParser.Parse(data.AsSpan(offset, size), nif.IsBigEndian, nif.BsVersion, typeName);
@@ -43,37 +41,51 @@ internal static class GeometryCommands
         Console.WriteLine($"{"Field",-25} {"Offset",-10} {"Value",-20}");
         Console.WriteLine(new string('-', 60));
         Console.WriteLine($"{"GroupId",-25} 0x{geom.FieldOffsets.GetValueOrDefault("GroupId"):X4,-8} {geom.GroupId}");
-        Console.WriteLine($"{"NumVertices",-25} 0x{geom.FieldOffsets.GetValueOrDefault("NumVertices"):X4,-8} {geom.NumVertices}");
-        Console.WriteLine($"{"KeepFlags",-25} 0x{geom.FieldOffsets.GetValueOrDefault("KeepFlags"):X4,-8} {geom.KeepFlags}");
-        Console.WriteLine($"{"CompressFlags",-25} 0x{geom.FieldOffsets.GetValueOrDefault("CompressFlags"):X4,-8} {geom.CompressFlags}");
-        Console.WriteLine($"{"HasVertices",-25} 0x{geom.FieldOffsets.GetValueOrDefault("HasVertices"):X4,-8} {geom.HasVertices}");
-        Console.WriteLine($"{"BsVectorFlags",-25} 0x{geom.FieldOffsets.GetValueOrDefault("BsVectorFlags"):X4,-8} 0x{geom.BsVectorFlags:X4}");
-        Console.WriteLine($"{"HasNormals",-25} 0x{geom.FieldOffsets.GetValueOrDefault("HasNormals"):X4,-8} {geom.HasNormals}");
-        Console.WriteLine($"{"Center",-25} 0x{geom.FieldOffsets.GetValueOrDefault("Center"):X4,-8} ({geom.TangentCenterX:F2}, {geom.TangentCenterY:F2}, {geom.TangentCenterZ:F2})");
+        Console.WriteLine(
+            $"{"NumVertices",-25} 0x{geom.FieldOffsets.GetValueOrDefault("NumVertices"):X4,-8} {geom.NumVertices}");
+        Console.WriteLine(
+            $"{"KeepFlags",-25} 0x{geom.FieldOffsets.GetValueOrDefault("KeepFlags"):X4,-8} {geom.KeepFlags}");
+        Console.WriteLine(
+            $"{"CompressFlags",-25} 0x{geom.FieldOffsets.GetValueOrDefault("CompressFlags"):X4,-8} {geom.CompressFlags}");
+        Console.WriteLine(
+            $"{"HasVertices",-25} 0x{geom.FieldOffsets.GetValueOrDefault("HasVertices"):X4,-8} {geom.HasVertices}");
+        Console.WriteLine(
+            $"{"BsVectorFlags",-25} 0x{geom.FieldOffsets.GetValueOrDefault("BsVectorFlags"):X4,-8} 0x{geom.BsVectorFlags:X4}");
+        Console.WriteLine(
+            $"{"HasNormals",-25} 0x{geom.FieldOffsets.GetValueOrDefault("HasNormals"):X4,-8} {geom.HasNormals}");
+        Console.WriteLine(
+            $"{"Center",-25} 0x{geom.FieldOffsets.GetValueOrDefault("Center"):X4,-8} ({geom.TangentCenterX:F2}, {geom.TangentCenterY:F2}, {geom.TangentCenterZ:F2})");
         Console.WriteLine($"{"Radius",-25} {"",10} {geom.TangentRadius:F2}");
-        Console.WriteLine($"{"HasVertexColors",-25} 0x{geom.FieldOffsets.GetValueOrDefault("HasVertexColors"):X4,-8} {geom.HasVertexColors}");
+        Console.WriteLine(
+            $"{"HasVertexColors",-25} 0x{geom.FieldOffsets.GetValueOrDefault("HasVertexColors"):X4,-8} {geom.HasVertexColors}");
         Console.WriteLine($"{"NumUvSets",-25} {"",10} {geom.NumUvSets} (from BsVectorFlags)");
-        Console.WriteLine($"{"ConsistencyFlags",-25} 0x{geom.FieldOffsets.GetValueOrDefault("ConsistencyFlags"):X4,-8} {geom.ConsistencyFlags}");
-        Console.WriteLine($"{"AdditionalData",-25} 0x{geom.FieldOffsets.GetValueOrDefault("AdditionalData"):X4,-8} {geom.AdditionalData} (block ref)");
+        Console.WriteLine(
+            $"{"ConsistencyFlags",-25} 0x{geom.FieldOffsets.GetValueOrDefault("ConsistencyFlags"):X4,-8} {geom.ConsistencyFlags}");
+        Console.WriteLine(
+            $"{"AdditionalData",-25} 0x{geom.FieldOffsets.GetValueOrDefault("AdditionalData"):X4,-8} {geom.AdditionalData} (block ref)");
 
         Console.WriteLine();
         if (typeName.Contains("NiTriShapeData"))
         {
             Console.WriteLine("=== NiTriShapeData Specific ===");
             Console.WriteLine();
-            Console.WriteLine($"{"NumTriangles",-25} 0x{geom.FieldOffsets.GetValueOrDefault("NumTriangles"):X4,-8} {geom.NumTriangles}");
-            Console.WriteLine($"{"NumTrianglePoints",-25} 0x{geom.FieldOffsets.GetValueOrDefault("NumTrianglePoints"):X4,-8} {geom.NumTrianglePoints}");
-            Console.WriteLine($"{"HasTriangles",-25} 0x{geom.FieldOffsets.GetValueOrDefault("HasTriangles"):X4,-8} {geom.HasTriangles}");
-            Console.WriteLine($"{"NumMatchGroups",-25} 0x{geom.FieldOffsets.GetValueOrDefault("NumMatchGroups"):X4,-8} {geom.NumMatchGroups}");
+            Console.WriteLine(
+                $"{"NumTriangles",-25} 0x{geom.FieldOffsets.GetValueOrDefault("NumTriangles"):X4,-8} {geom.NumTriangles}");
+            Console.WriteLine(
+                $"{"NumTrianglePoints",-25} 0x{geom.FieldOffsets.GetValueOrDefault("NumTrianglePoints"):X4,-8} {geom.NumTrianglePoints}");
+            Console.WriteLine(
+                $"{"HasTriangles",-25} 0x{geom.FieldOffsets.GetValueOrDefault("HasTriangles"):X4,-8} {geom.HasTriangles}");
+            Console.WriteLine(
+                $"{"NumMatchGroups",-25} 0x{geom.FieldOffsets.GetValueOrDefault("NumMatchGroups"):X4,-8} {geom.NumMatchGroups}");
             Console.WriteLine();
             Console.WriteLine($"Parsed size: {geom.ParsedSize} bytes");
             Console.WriteLine($"Actual block size: {size} bytes");
             Console.WriteLine($"Remaining/unaccounted bytes: {size - geom.ParsedSize}");
 
             // Calculate expected triangle data size
-            int expectedTriDataSize = geom.NumTriangles * 6; // 3 ushorts per triangle
+            var expectedTriDataSize = geom.NumTriangles * 6; // 3 ushorts per triangle
             Console.WriteLine();
-            Console.WriteLine($"Triangle data analysis:");
+            Console.WriteLine("Triangle data analysis:");
             Console.WriteLine($"  NumTriangles × 6 bytes = {expectedTriDataSize} bytes");
             Console.WriteLine($"  Unaccounted bytes = {size - geom.ParsedSize} bytes");
 
@@ -81,8 +93,9 @@ internal static class GeometryCommands
             {
                 Console.WriteLine();
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"*** WARNING: HasTriangles=0 but {size - geom.ParsedSize} bytes remain in block! ***");
-                Console.WriteLine($"*** This suggests triangles ARE present despite HasTriangles=0 ***");
+                Console.WriteLine(
+                    $"*** WARNING: HasTriangles=0 but {size - geom.ParsedSize} bytes remain in block! ***");
+                Console.WriteLine("*** This suggests triangles ARE present despite HasTriangles=0 ***");
                 Console.ResetColor();
             }
         }
@@ -100,8 +113,8 @@ internal static class GeometryCommands
         Console.WriteLine();
 
         // Show raw bytes from NumTriangles through end of block
-        int triFieldOffset = geom.FieldOffsets.GetValueOrDefault("NumTriangles");
-        int dumpLen = Math.Min(64, size - triFieldOffset);
+        var triFieldOffset = geom.FieldOffsets.GetValueOrDefault("NumTriangles");
+        var dumpLen = Math.Min(64, size - triFieldOffset);
         if (triFieldOffset > 0 && dumpLen > 0)
         {
             Console.WriteLine($"From NumTriangles field (relative offset 0x{triFieldOffset:X4}):");
@@ -124,8 +137,8 @@ internal static class GeometryCommands
             return 1;
         }
 
-        int offset1 = nif1.GetBlockOffset(blockIndex);
-        int offset2 = nif2.GetBlockOffset(blockIndex);
+        var offset1 = nif1.GetBlockOffset(blockIndex);
+        var offset2 = nif2.GetBlockOffset(blockIndex);
 
         var type1 = nif1.GetBlockTypeName(blockIndex);
         var type2 = nif2.GetBlockTypeName(blockIndex);
@@ -137,7 +150,8 @@ internal static class GeometryCommands
         Console.WriteLine($"{"Property",-25} {"File 1",-30} {"File 2",-30}");
         Console.WriteLine(new string('-', 90));
         Console.WriteLine($"{"File",-25} {Path.GetFileName(path1),-30} {Path.GetFileName(path2),-30}");
-        Console.WriteLine($"{"Endian",-25} {(nif1.IsBigEndian ? "Big (Xbox)" : "Little (PC)"),-30} {(nif2.IsBigEndian ? "Big (Xbox)" : "Little (PC)"),-30}");
+        Console.WriteLine(
+            $"{"Endian",-25} {(nif1.IsBigEndian ? "Big (Xbox)" : "Little (PC)"),-30} {(nif2.IsBigEndian ? "Big (Xbox)" : "Little (PC)"),-30}");
         Console.WriteLine($"{"Block Type",-25} {type1,-30} {type2,-30}");
         Console.WriteLine($"{"Block Size",-25} {size1,-30} {size2,-30}");
         Console.WriteLine($"{"Offset",-25} 0x{offset1:X4,-28} 0x{offset2:X4,-28}");
@@ -180,18 +194,22 @@ internal static class GeometryCommands
             Console.WriteLine("=== Vertex Data Sample (first 5) ===");
             Console.WriteLine();
 
-            var verts1 = ExtractVertices(data1.AsSpan(offset1, size1), nif1.IsBigEndian, geom1, Math.Min(5, (int)geom1.NumVertices));
-            var verts2 = ExtractVertices(data2.AsSpan(offset2, size2), nif2.IsBigEndian, geom2, Math.Min(5, (int)geom2.NumVertices));
+            var verts1 = ExtractVertices(data1.AsSpan(offset1, size1), nif1.IsBigEndian, geom1,
+                Math.Min(5, (int)geom1.NumVertices));
+            var verts2 = ExtractVertices(data2.AsSpan(offset2, size2), nif2.IsBigEndian, geom2,
+                Math.Min(5, (int)geom2.NumVertices));
 
             Console.WriteLine($"{"Idx",-4} {"File 1 (X, Y, Z)",-40} {"File 2 (X, Y, Z)",-40}");
             Console.WriteLine(new string('-', 90));
 
-            for (int i = 0; i < Math.Min(verts1.Count, verts2.Count); i++)
+            for (var i = 0; i < Math.Min(verts1.Count, verts2.Count); i++)
             {
                 var v1 = verts1[i];
                 var v2 = verts2[i];
-                var match = Math.Abs(v1.X - v2.X) < 0.001f && Math.Abs(v1.Y - v2.Y) < 0.001f && Math.Abs(v1.Z - v2.Z) < 0.001f;
-                Console.WriteLine($"{i,-4} ({v1.X,10:F4}, {v1.Y,10:F4}, {v1.Z,10:F4})   ({v2.X,10:F4}, {v2.Y,10:F4}, {v2.Z,10:F4}) {(match ? "✓" : "✗")}");
+                var match = Math.Abs(v1.X - v2.X) < 0.001f && Math.Abs(v1.Y - v2.Y) < 0.001f &&
+                            Math.Abs(v1.Z - v2.Z) < 0.001f;
+                Console.WriteLine(
+                    $"{i,-4} ({v1.X,10:F4}, {v1.Y,10:F4}, {v1.Z,10:F4})   ({v2.X,10:F4}, {v2.Y,10:F4}, {v2.Z,10:F4}) {(match ? "✓" : "✗")}");
             }
         }
 
@@ -209,7 +227,7 @@ internal static class GeometryCommands
             return 1;
         }
 
-        int offset = nif.GetBlockOffset(blockIndex);
+        var offset = nif.GetBlockOffset(blockIndex);
         var typeName = nif.GetBlockTypeName(blockIndex);
         var size = (int)nif.BlockSizes[blockIndex];
 
@@ -248,10 +266,8 @@ internal static class GeometryCommands
         Console.WriteLine();
         Console.WriteLine($"{"Idx",-5} {"X",12} {"Y",12} {"Z",12}");
         Console.WriteLine(new string('-', 50));
-        for (int i = 0; i < verts.Count; i++)
-        {
+        for (var i = 0; i < verts.Count; i++)
             Console.WriteLine($"{i,-5} {verts[i].X,12:F4} {verts[i].Y,12:F4} {verts[i].Z,12:F4}");
-        }
 
         // Extract normals if present
         if (geom.HasNormals != 0)
@@ -262,10 +278,8 @@ internal static class GeometryCommands
             Console.WriteLine();
             Console.WriteLine($"{"Idx",-5} {"X",12} {"Y",12} {"Z",12}");
             Console.WriteLine(new string('-', 50));
-            for (int i = 0; i < normals.Count; i++)
-            {
+            for (var i = 0; i < normals.Count; i++)
                 Console.WriteLine($"{i,-5} {normals[i].X,12:F4} {normals[i].Y,12:F4} {normals[i].Z,12:F4}");
-            }
         }
 
         // Extract UVs if present
@@ -277,10 +291,7 @@ internal static class GeometryCommands
             Console.WriteLine();
             Console.WriteLine($"{"Idx",-5} {"U",12} {"V",12}");
             Console.WriteLine(new string('-', 35));
-            for (int i = 0; i < uvs.Count; i++)
-            {
-                Console.WriteLine($"{i,-5} {uvs[i].U,12:F6} {uvs[i].V,12:F6}");
-            }
+            for (var i = 0; i < uvs.Count; i++) Console.WriteLine($"{i,-5} {uvs[i].U,12:F6} {uvs[i].V,12:F6}");
         }
 
         return 0;
@@ -293,58 +304,64 @@ internal static class GeometryCommands
         Console.WriteLine($"{name,-25} {val1,-30} {val2,-30} {marker}");
     }
 
-    internal static List<(float X, float Y, float Z)> ExtractVertices(ReadOnlySpan<byte> blockData, bool bigEndian, GeometryInfo geom, int count)
+    internal static List<(float X, float Y, float Z)> ExtractVertices(ReadOnlySpan<byte> blockData, bool bigEndian,
+        GeometryInfo geom, int count)
     {
         var result = new List<(float, float, float)>();
-        if (geom.HasVertices == 0 || !geom.FieldOffsets.TryGetValue("Vertices", out int vertOffset))
+        if (geom.HasVertices == 0 || !geom.FieldOffsets.TryGetValue("Vertices", out var vertOffset))
             return result;
 
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
         {
-            int pos = vertOffset + i * 12;
-            float x = ReadFloat(blockData, pos, bigEndian);
-            float y = ReadFloat(blockData, pos + 4, bigEndian);
-            float z = ReadFloat(blockData, pos + 8, bigEndian);
+            var pos = vertOffset + i * 12;
+            var x = ReadFloat(blockData, pos, bigEndian);
+            var y = ReadFloat(blockData, pos + 4, bigEndian);
+            var z = ReadFloat(blockData, pos + 8, bigEndian);
             result.Add((x, y, z));
         }
+
         return result;
     }
 
-    private static List<(float X, float Y, float Z)> ExtractNormals(ReadOnlySpan<byte> blockData, bool bigEndian, GeometryInfo geom, int count)
+    private static List<(float X, float Y, float Z)> ExtractNormals(ReadOnlySpan<byte> blockData, bool bigEndian,
+        GeometryInfo geom, int count)
     {
         var result = new List<(float, float, float)>();
-        if (geom.HasNormals == 0 || !geom.FieldOffsets.TryGetValue("Normals", out int normOffset))
+        if (geom.HasNormals == 0 || !geom.FieldOffsets.TryGetValue("Normals", out var normOffset))
             return result;
 
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
         {
-            int pos = normOffset + i * 12;
-            float x = ReadFloat(blockData, pos, bigEndian);
-            float y = ReadFloat(blockData, pos + 4, bigEndian);
-            float z = ReadFloat(blockData, pos + 8, bigEndian);
+            var pos = normOffset + i * 12;
+            var x = ReadFloat(blockData, pos, bigEndian);
+            var y = ReadFloat(blockData, pos + 4, bigEndian);
+            var z = ReadFloat(blockData, pos + 8, bigEndian);
             result.Add((x, y, z));
         }
+
         return result;
     }
 
-    private static List<(float U, float V)> ExtractUVs(ReadOnlySpan<byte> blockData, bool bigEndian, GeometryInfo geom, int count)
+    private static List<(float U, float V)> ExtractUVs(ReadOnlySpan<byte> blockData, bool bigEndian, GeometryInfo geom,
+        int count)
     {
         var result = new List<(float, float)>();
-        if (geom.NumUvSets == 0 || !geom.FieldOffsets.TryGetValue("UVSets", out int uvOffset))
+        if (geom.NumUvSets == 0 || !geom.FieldOffsets.TryGetValue("UVSets", out var uvOffset))
             return result;
 
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
         {
-            int pos = uvOffset + i * 8;
-            float u = ReadFloat(blockData, pos, bigEndian);
-            float v = ReadFloat(blockData, pos + 4, bigEndian);
+            var pos = uvOffset + i * 8;
+            var u = ReadFloat(blockData, pos, bigEndian);
+            var v = ReadFloat(blockData, pos + 4, bigEndian);
             result.Add((u, v));
         }
+
         return result;
     }
 
     /// <summary>
-    /// Compare vertex colors between two geometry blocks (e.g., converted vs PC reference).
+    ///     Compare vertex colors between two geometry blocks (e.g., converted vs PC reference).
     /// </summary>
     public static int ColorCompare(string path1, string path2, int block1, int block2, int count = 20)
     {
@@ -355,12 +372,12 @@ internal static class GeometryCommands
 
         if (block1 >= nif1.NumBlocks || block2 >= nif2.NumBlocks)
         {
-            Console.Error.WriteLine($"Block index out of range");
+            Console.Error.WriteLine("Block index out of range");
             return 1;
         }
 
-        int offset1 = nif1.GetBlockOffset(block1);
-        int offset2 = nif2.GetBlockOffset(block2);
+        var offset1 = nif1.GetBlockOffset(block1);
+        var offset2 = nif2.GetBlockOffset(block2);
 
         var type1 = nif1.GetBlockTypeName(block1);
         var type2 = nif2.GetBlockTypeName(block2);
@@ -374,7 +391,8 @@ internal static class GeometryCommands
         Console.WriteLine($"{"File",-20} {Path.GetFileName(path1),-35} {Path.GetFileName(path2),-35}");
         Console.WriteLine($"{"Block",-20} {block1,-35} {block2,-35}");
         Console.WriteLine($"{"Type",-20} {type1,-35} {type2,-35}");
-        Console.WriteLine($"{"Endian",-20} {(nif1.IsBigEndian ? "Big" : "Little"),-35} {(nif2.IsBigEndian ? "Big" : "Little"),-35}");
+        Console.WriteLine(
+            $"{"Endian",-20} {(nif1.IsBigEndian ? "Big" : "Little"),-35} {(nif2.IsBigEndian ? "Big" : "Little"),-35}");
 
         var geom1 = GeometryParser.Parse(data1.AsSpan(offset1, size1), nif1.IsBigEndian, nif1.BsVersion, type1);
         var geom2 = GeometryParser.Parse(data2.AsSpan(offset2, size2), nif2.IsBigEndian, nif2.BsVersion, type2);
@@ -399,8 +417,8 @@ internal static class GeometryCommands
         Console.WriteLine($"{"Idx",-4} {"File 1 (R, G, B, A)",-40} {"File 2 (R, G, B, A)",-40} {"Match"}");
         Console.WriteLine(new string('-', 95));
 
-        int matches = 0;
-        for (int i = 0; i < count; i++)
+        var matches = 0;
+        for (var i = 0; i < count; i++)
         {
             var c1 = i < colors1.Count ? colors1[i] : (R: 0f, G: 0f, B: 0f, A: 0f);
             var c2 = i < colors2.Count ? colors2[i] : (R: 0f, G: 0f, B: 0f, A: 0f);
@@ -414,21 +432,22 @@ internal static class GeometryCommands
             if (match) matches++;
 
             var marker = match ? "✓" : "✗";
-            Console.WriteLine($"{i,-4} ({c1.R,6:F3}, {c1.G,6:F3}, {c1.B,6:F3}, {c1.A,6:F3})      ({c2.R,6:F3}, {c2.G,6:F3}, {c2.B,6:F3}, {c2.A,6:F3})      {marker}");
+            Console.WriteLine(
+                $"{i,-4} ({c1.R,6:F3}, {c1.G,6:F3}, {c1.B,6:F3}, {c1.A,6:F3})      ({c2.R,6:F3}, {c2.G,6:F3}, {c2.B,6:F3}, {c2.A,6:F3})      {marker}");
         }
 
         Console.WriteLine();
         Console.WriteLine($"Match rate: {matches}/{count} ({100.0 * matches / count:F1}%)");
 
         // Show raw bytes for first vertex color in each file
-        if (geom1.HasVertexColors != 0 && geom1.FieldOffsets.TryGetValue("VertexColors", out int colorOffset1))
+        if (geom1.HasVertexColors != 0 && geom1.FieldOffsets.TryGetValue("VertexColors", out var colorOffset1))
         {
             Console.WriteLine();
             Console.WriteLine($"=== Raw Color Bytes (File 1, offset 0x{colorOffset1:X}) ===");
             HexDump(data1, offset1 + colorOffset1, Math.Min(64, geom1.NumVertices * 16));
         }
 
-        if (geom2.HasVertexColors != 0 && geom2.FieldOffsets.TryGetValue("VertexColors", out int colorOffset2))
+        if (geom2.HasVertexColors != 0 && geom2.FieldOffsets.TryGetValue("VertexColors", out var colorOffset2))
         {
             Console.WriteLine();
             Console.WriteLine($"=== Raw Color Bytes (File 2, offset 0x{colorOffset2:X}) ===");
@@ -438,22 +457,24 @@ internal static class GeometryCommands
         return 0;
     }
 
-    internal static List<(float R, float G, float B, float A)> ExtractVertexColors(ReadOnlySpan<byte> blockData, bool bigEndian, GeometryInfo geom, int count)
+    internal static List<(float R, float G, float B, float A)> ExtractVertexColors(ReadOnlySpan<byte> blockData,
+        bool bigEndian, GeometryInfo geom, int count)
     {
         var result = new List<(float R, float G, float B, float A)>();
-        if (geom.HasVertexColors == 0 || !geom.FieldOffsets.TryGetValue("VertexColors", out int colorOffset))
+        if (geom.HasVertexColors == 0 || !geom.FieldOffsets.TryGetValue("VertexColors", out var colorOffset))
             return result;
 
         // NIF stores vertex colors as Color4 (4 floats: R, G, B, A)
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
         {
-            int pos = colorOffset + i * 16; // 4 floats * 4 bytes = 16 bytes per vertex
-            float r = ReadFloat(blockData, pos, bigEndian);
-            float g = ReadFloat(blockData, pos + 4, bigEndian);
-            float b = ReadFloat(blockData, pos + 8, bigEndian);
-            float a = ReadFloat(blockData, pos + 12, bigEndian);
+            var pos = colorOffset + i * 16; // 4 floats * 4 bytes = 16 bytes per vertex
+            var r = ReadFloat(blockData, pos, bigEndian);
+            var g = ReadFloat(blockData, pos + 4, bigEndian);
+            var b = ReadFloat(blockData, pos + 8, bigEndian);
+            var a = ReadFloat(blockData, pos + 12, bigEndian);
             result.Add((r, g, b, a));
         }
+
         return result;
     }
 }

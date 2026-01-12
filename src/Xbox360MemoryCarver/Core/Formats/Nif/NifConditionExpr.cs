@@ -2,6 +2,10 @@
 // Handles expressions like: "Has Vertices", "Num Vertices > 0", "((Data Flags #BITAND# 63) != 0)"
 // These conditions depend on field values read at runtime, not just version info
 
+// S3218: Method shadowing is intentional in this expression tree visitor pattern
+
+#pragma warning disable S3218
+
 using System.Globalization;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -10,14 +14,14 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 ///     Parses and evaluates nif.xml runtime condition expressions.
 ///     These conditions depend on field values read during parsing.
 ///     Grammar:
-///       expr     -> or_expr
-///       or_expr  -> and_expr (('#OR#' | '||') and_expr)*
-///       and_expr -> compare (('#AND#' | '&amp;&amp;') compare)*
-///       compare  -> '(' expr ')' | '!' compare | field_expr
-///       field_expr -> value ((op value) | empty)
-///       value    -> '(' bitop_expr ')' | field_name | number
-///       bitop_expr -> value ('#BITAND#' | '#BITOR#') value
-///       op       -> '#GT#' | '#GTE#' | '#LT#' | '#LTE#' | '#EQ#' | '#NEQ#' | '!=' | '==' | etc.
+///     expr     -> or_expr
+///     or_expr  -> and_expr (('#OR#' | '||') and_expr)*
+///     and_expr -> compare (('#AND#' | '&amp;&amp;') compare)*
+///     compare  -> '(' expr ')' | '!' compare | field_expr
+///     field_expr -> value ((op value) | empty)
+///     value    -> '(' bitop_expr ')' | field_name | number
+///     bitop_expr -> value ('#BITAND#' | '#BITOR#') value
+///     op       -> '#GT#' | '#GTE#' | '#LT#' | '#LTE#' | '#EQ#' | '#NEQ#' | '!=' | '==' | etc.
 /// </summary>
 public sealed class NifConditionExpr
 {
@@ -114,6 +118,7 @@ public sealed class NifConditionExpr
         {
             // Ignore parse errors
         }
+
         return fields;
     }
 
@@ -134,6 +139,7 @@ public sealed class NifConditionExpr
             _pos += s.Length;
             return true;
         }
+
         return false;
     }
 
@@ -219,6 +225,7 @@ public sealed class NifConditionExpr
                 value = long.Parse(_expression[hexStart.._pos], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
                 return true;
             }
+
             _pos = start;
             return false;
         }
@@ -247,14 +254,19 @@ public sealed class NifConditionExpr
         return false;
     }
 
-    private static bool IsHexDigit(char c) =>
-        char.IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    private static bool IsHexDigit(char c)
+    {
+        return char.IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    }
 
     #endregion
 
     #region Parser
 
-    private ICondNode ParseExpr() => ParseOrExpr();
+    private ICondNode ParseExpr()
+    {
+        return ParseOrExpr();
+    }
 
     private ICondNode ParseOrExpr()
     {
@@ -316,10 +328,7 @@ public sealed class NifConditionExpr
                 // Not followed by operator - could be boolean field in parens like "(Has Normals)"
                 // or a parenthesized condition expression
                 // If it's just a field, treat as boolean
-                if (valueExpr is FieldNode)
-                {
-                    return new BoolCondNode(valueExpr);
-                }
+                if (valueExpr is FieldNode) return new BoolCondNode(valueExpr);
 
                 // If it's a bitwise expression result, treat as boolean (non-zero = true)
                 return new BoolCondNode(valueExpr);
@@ -360,7 +369,7 @@ public sealed class NifConditionExpr
     }
 
     /// <summary>
-    /// Parse a value expression: handles bitwise OR (lowest precedence in values)
+    ///     Parse a value expression: handles bitwise OR (lowest precedence in values)
     /// </summary>
     private IValueNode ParseValueExpr()
     {
@@ -376,7 +385,7 @@ public sealed class NifConditionExpr
     }
 
     /// <summary>
-    /// Parse bitwise AND expression (higher precedence than OR)
+    ///     Parse bitwise AND expression (higher precedence than OR)
     /// </summary>
     private IValueNode ParseBitAndExpr()
     {
@@ -392,7 +401,7 @@ public sealed class NifConditionExpr
     }
 
     /// <summary>
-    /// Parse atomic value: number, field name, or parenthesized value expression
+    ///     Parse atomic value: number, field name, or parenthesized value expression
     /// </summary>
     private IValueNode ParseValueAtom()
     {
@@ -428,7 +437,7 @@ public sealed class NifConditionExpr
     }
 
     /// <summary>
-    /// Read a special token like #ARG# that starts and ends with #
+    ///     Read a special token like #ARG# that starts and ends with #
     /// </summary>
     private string ReadSpecialToken()
     {
@@ -440,10 +449,7 @@ public sealed class NifConditionExpr
         _pos++; // Skip opening #
 
         // Read until we find the closing #
-        while (_pos < _expression.Length && _expression[_pos] != '#')
-        {
-            _pos++;
-        }
+        while (_pos < _expression.Length && _expression[_pos] != '#') _pos++;
 
         if (_pos < _expression.Length && _expression[_pos] == '#')
         {
@@ -483,12 +489,26 @@ public sealed class NifConditionExpr
         void CollectFields(HashSet<string> fields);
     }
 
-    private enum CompareOp { Gt, Gte, Lt, Lte, Eq, Neq }
+    private enum CompareOp
+    {
+        Gt,
+        Gte,
+        Lt,
+        Lte,
+        Eq,
+        Neq
+    }
 
     private sealed class LiteralNode(long value) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields) => value;
-        public void CollectFields(HashSet<string> fields) { }
+        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        {
+            return value;
+        }
+
+        public void CollectFields(HashSet<string> fields)
+        {
+        }
     }
 
     private sealed class FieldNode(string fieldName) : IValueNode
@@ -496,7 +516,6 @@ public sealed class NifConditionExpr
         public long Evaluate(IReadOnlyDictionary<string, object> fields)
         {
             if (fields.TryGetValue(fieldName, out var val))
-            {
                 return val switch
                 {
                     bool b => b ? 1 : 0,
@@ -510,18 +529,22 @@ public sealed class NifConditionExpr
                     ulong ul => (long)ul,
                     _ => 0
                 };
-            }
             // Field not found - default to 0 (conservative for "Has X" conditions)
             return 0;
         }
 
-        public void CollectFields(HashSet<string> fields) => fields.Add(fieldName);
+        public void CollectFields(HashSet<string> fields)
+        {
+            fields.Add(fieldName);
+        }
     }
 
     private sealed class BitAndNode(IValueNode left, IValueNode right) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields) =>
-            left.Evaluate(fields) & right.Evaluate(fields);
+        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        {
+            return left.Evaluate(fields) & right.Evaluate(fields);
+        }
 
         public void CollectFields(HashSet<string> fields)
         {
@@ -532,8 +555,10 @@ public sealed class NifConditionExpr
 
     private sealed class BitOrNode(IValueNode left, IValueNode right) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields) =>
-            left.Evaluate(fields) | right.Evaluate(fields);
+        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        {
+            return left.Evaluate(fields) | right.Evaluate(fields);
+        }
 
         public void CollectFields(HashSet<string> fields)
         {
@@ -547,10 +572,15 @@ public sealed class NifConditionExpr
     /// </summary>
     private sealed class WrappedNode(ICondNode inner) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields) =>
-            inner.Evaluate(fields) ? 1 : 0;
+        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        {
+            return inner.Evaluate(fields) ? 1 : 0;
+        }
 
-        public void CollectFields(HashSet<string> fields) => inner.CollectFields(fields);
+        public void CollectFields(HashSet<string> fields)
+        {
+            inner.CollectFields(fields);
+        }
     }
 
     private sealed class CompareCondNode(IValueNode left, CompareOp op, IValueNode right) : ICondNode
@@ -581,16 +611,23 @@ public sealed class NifConditionExpr
 
     private sealed class BoolCondNode(IValueNode value) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields) =>
-            value.Evaluate(fields) != 0;
+        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        {
+            return value.Evaluate(fields) != 0;
+        }
 
-        public void CollectFields(HashSet<string> fields) => value.CollectFields(fields);
+        public void CollectFields(HashSet<string> fields)
+        {
+            value.CollectFields(fields);
+        }
     }
 
     private sealed class AndCondNode(ICondNode left, ICondNode right) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields) =>
-            left.Evaluate(fields) && right.Evaluate(fields);
+        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        {
+            return left.Evaluate(fields) && right.Evaluate(fields);
+        }
 
         public void CollectFields(HashSet<string> fields)
         {
@@ -601,8 +638,10 @@ public sealed class NifConditionExpr
 
     private sealed class OrCondNode(ICondNode left, ICondNode right) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields) =>
-            left.Evaluate(fields) || right.Evaluate(fields);
+        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        {
+            return left.Evaluate(fields) || right.Evaluate(fields);
+        }
 
         public void CollectFields(HashSet<string> fields)
         {
@@ -613,10 +652,15 @@ public sealed class NifConditionExpr
 
     private sealed class NotCondNode(ICondNode inner) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields) =>
-            !inner.Evaluate(fields);
+        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        {
+            return !inner.Evaluate(fields);
+        }
 
-        public void CollectFields(HashSet<string> fields) => inner.CollectFields(fields);
+        public void CollectFields(HashSet<string> fields)
+        {
+            inner.CollectFields(fields);
+        }
     }
 
     #endregion

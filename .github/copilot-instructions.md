@@ -164,11 +164,11 @@ Xbox 360 NIFs differ from PC NIFs in several ways:
 
 Three stride formats exist. See [Xbox_360_NIF_Format.md](../docs/Xbox_360_NIF_Format.md) for full details.
 
-| Stride | Mesh Type                       | Offset 8       | Offset 16        |
-| ------ | ------------------------------- | -------------- | ---------------- |
-| 36     | Non-skinned, no vertex colors   | **Normals**    | UV               |
-| 40     | Non-skinned, with vertex colors | **Normals**    | Vertex Colors    |
-| 48     | Skinned                         | Unknown (~0.82)| Bone Indices     |
+| Stride | Mesh Type                       | Offset 8        | Offset 16     |
+| ------ | ------------------------------- | --------------- | ------------- |
+| 36     | Non-skinned, no vertex colors   | **Normals**     | UV            |
+| 40     | Non-skinned, with vertex colors | **Normals**     | Vertex Colors |
+| 48     | Skinned                         | Unknown (~0.82) | Bone Indices  |
 
 > **IMPORTANT**: For skinned meshes (stride 48), offset 8 is NOT normals (avg length ~0.82). Actual normals are at offset 20. For non-skinned meshes (stride 36/40), offset 8 IS normals (unit-length ~1.0).
 

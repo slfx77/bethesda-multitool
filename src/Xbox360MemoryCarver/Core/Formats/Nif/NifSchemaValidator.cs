@@ -1,6 +1,8 @@
 // Schema validator for NIF block converters
 // Compares manual converter implementations against nif.xml definitions
 
+using System.Globalization;
+
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 
 /// <summary>
@@ -90,7 +92,8 @@ public static class NifSchemaValidator
         }
 
         lines.Add("");
-        lines.Add($"Total fixed size: {(offset >= 0 ? offset.ToString() : "variable")} bytes");
+        lines.Add(
+            $"Total fixed size: {(offset >= 0 ? offset.ToString(CultureInfo.InvariantCulture) : "variable")} bytes");
 
         return string.Join(Environment.NewLine, lines);
     }

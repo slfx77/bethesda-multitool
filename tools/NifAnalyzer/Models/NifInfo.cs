@@ -1,7 +1,7 @@
 namespace NifAnalyzer.Models;
 
 /// <summary>
-/// Contains parsed NIF file header information.
+///     Contains parsed NIF file header information.
 /// </summary>
 internal class NifInfo
 {
@@ -19,18 +19,18 @@ internal class NifInfo
     public int BlockDataOffset { get; set; }
 
     /// <summary>
-    /// Calculates the file offset for a specific block index.
+    ///     Calculates the file offset for a specific block index.
     /// </summary>
     public int GetBlockOffset(int blockIndex)
     {
-        int offset = BlockDataOffset;
-        for (int i = 0; i < blockIndex; i++)
+        var offset = BlockDataOffset;
+        for (var i = 0; i < blockIndex; i++)
             offset += (int)BlockSizes[i];
         return offset;
     }
 
     /// <summary>
-    /// Gets the type name for a specific block index.
+    ///     Gets the type name for a specific block index.
     /// </summary>
     public string GetBlockTypeName(int blockIndex)
     {

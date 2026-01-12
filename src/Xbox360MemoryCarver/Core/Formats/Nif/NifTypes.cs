@@ -54,6 +54,20 @@ internal sealed class PackedGeometryData
     /// <summary>Vertex colors as RGBA bytes (4 bytes per vertex).</summary>
     public byte[]? VertexColors { get; set; }
 
+    /// <summary>
+    ///     Bone indices for skinned meshes (4 bytes per vertex).
+    ///     Each vertex references up to 4 bones by index.
+    ///     These are partition-local indices, not global skeleton indices.
+    /// </summary>
+    public byte[]? BoneIndices { get; set; }
+
+    /// <summary>
+    ///     Bone weights for skinned meshes (4 floats per vertex).
+    ///     Each weight corresponds to the bone at the same index in BoneIndices.
+    ///     Weights should sum to 1.0 for each vertex.
+    /// </summary>
+    public float[]? BoneWeights { get; set; }
+
     public ushort BsDataFlags { get; set; }
 }
 
@@ -84,6 +98,20 @@ internal sealed class HavokBlockExpansion
 
     /// <summary>Offset within block where compressed vertices start (absolute file offset).</summary>
     public int VertexDataOffset { get; set; }
+}
+
+/// <summary>
+///     Information about how a NiSkinPartition block needs bone weights/indices expansion.
+/// </summary>
+internal sealed class SkinPartitionExpansion
+{
+    public int BlockIndex { get; set; }
+    public int OriginalSize { get; set; }
+    public int NewSize { get; set; }
+    public int SizeIncrease => NewSize - OriginalSize;
+
+    /// <summary>Parsed skin partition data for writing expanded block.</summary>
+    public required NifSkinPartitionExpander.SkinPartitionData ParsedData { get; set; }
 }
 
 /// <summary>

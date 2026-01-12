@@ -4,21 +4,21 @@ using static NifAnalyzer.Utils.BinaryHelpers;
 namespace NifAnalyzer.Parsers;
 
 /// <summary>
-/// Parses NiSkinPartition blocks.
+///     Parses NiSkinPartition blocks.
 /// </summary>
 internal static class SkinPartitionParser
 {
     public static SkinPartitionInfo Parse(ReadOnlySpan<byte> data, bool bigEndian)
     {
         var info = new SkinPartitionInfo();
-        int pos = 0;
+        var pos = 0;
 
         info.NumPartitions = ReadUInt32(data, pos, bigEndian);
         pos += 4;
 
         info.Partitions = new SkinPartitionData[info.NumPartitions];
 
-        for (int p = 0; p < info.NumPartitions; p++)
+        for (var p = 0; p < info.NumPartitions; p++)
         {
             var part = new SkinPartitionData();
 
@@ -39,7 +39,7 @@ internal static class SkinPartitionParser
 
             // Bones array
             part.Bones = new ushort[part.NumBones];
-            for (int i = 0; i < part.NumBones; i++)
+            for (var i = 0; i < part.NumBones; i++)
             {
                 part.Bones[i] = ReadUInt16(data, pos, bigEndian);
                 pos += 2;
@@ -52,7 +52,7 @@ internal static class SkinPartitionParser
             if (part.HasVertexMap != 0)
             {
                 part.VertexMap = new ushort[part.NumVertices];
-                for (int i = 0; i < part.NumVertices; i++)
+                for (var i = 0; i < part.NumVertices; i++)
                 {
                     part.VertexMap[i] = ReadUInt16(data, pos, bigEndian);
                     pos += 2;
@@ -69,12 +69,25 @@ internal static class SkinPartitionParser
             // VertexWeights (if HasVertexWeights) - NumVertices x NumWeightsPerVertex floats
             if (part.HasVertexWeights != 0)
             {
-                pos += part.NumVertices * part.NumWeightsPerVertex * 4;
+                part.VertexWeights = new float[part.NumVertices][];
+                for (var v = 0; v < part.NumVertices; v++)
+                {
+                    part.VertexWeights[v] = new float[part.NumWeightsPerVertex];
+                    for (var w = 0; w < part.NumWeightsPerVertex; w++)
+                    {
+                        part.VertexWeights[v][w] = ReadFloat(data, pos, bigEndian);
+                        pos += 4;
+                    }
+                }
+            }
+            else
+            {
+                part.VertexWeights = [];
             }
 
             // StripLengths array (comes BEFORE HasFaces!)
             part.StripLengths = new ushort[part.NumStrips];
-            for (int i = 0; i < part.NumStrips; i++)
+            for (var i = 0; i < part.NumStrips; i++)
             {
                 part.StripLengths[i] = ReadUInt16(data, pos, bigEndian);
                 pos += 2;
@@ -87,10 +100,10 @@ internal static class SkinPartitionParser
             if (part.HasFaces != 0 && part.NumStrips != 0)
             {
                 part.Strips = new ushort[part.NumStrips][];
-                for (int s = 0; s < part.NumStrips; s++)
+                for (var s = 0; s < part.NumStrips; s++)
                 {
                     part.Strips[s] = new ushort[part.StripLengths[s]];
-                    for (int i = 0; i < part.StripLengths[s]; i++)
+                    for (var i = 0; i < part.StripLengths[s]; i++)
                     {
                         part.Strips[s][i] = ReadUInt16(data, pos, bigEndian);
                         pos += 2;
@@ -106,7 +119,7 @@ internal static class SkinPartitionParser
             if (part.HasFaces != 0 && part.NumStrips == 0)
             {
                 part.Triangles = new Triangle[part.NumTriangles];
-                for (int i = 0; i < part.NumTriangles; i++)
+                for (var i = 0; i < part.NumTriangles; i++)
                 {
                     part.Triangles[i] = new Triangle(
                         ReadUInt16(data, pos, bigEndian),
@@ -127,7 +140,16 @@ internal static class SkinPartitionParser
             // BoneIndices (if HasBoneIndices) - NumVertices x NumWeightsPerVertex bytes
             if (part.HasBoneIndices != 0)
             {
-                pos += part.NumVertices * part.NumWeightsPerVertex;
+                part.BoneIndices = new byte[part.NumVertices][];
+                for (var v = 0; v < part.NumVertices; v++)
+                {
+                    part.BoneIndices[v] = new byte[part.NumWeightsPerVertex];
+                    for (var w = 0; w < part.NumWeightsPerVertex; w++) part.BoneIndices[v][w] = data[pos++];
+                }
+            }
+            else
+            {
+                part.BoneIndices = [];
             }
 
             info.Partitions[p] = part;

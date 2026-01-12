@@ -5,13 +5,13 @@ using static NifAnalyzer.Utils.BinaryHelpers;
 namespace NifAnalyzer.Commands;
 
 /// <summary>
-/// Commands for parsing NiNode/BSFadeNode and related blocks field-by-field.
+///     Commands for parsing NiNode/BSFadeNode and related blocks field-by-field.
 /// </summary>
 internal static class NodeCommands
 {
     /// <summary>
-    /// Parse and display NiNode/BSFadeNode fields according to nif.xml spec.
-    /// For BS Version > 26, Flags is uint (4 bytes), not ushort (2 bytes).
+    ///     Parse and display NiNode/BSFadeNode fields according to nif.xml spec.
+    ///     For BS Version > 26, Flags is uint (4 bytes), not ushort (2 bytes).
     /// </summary>
     public static int ParseNode(string path, int blockIndex)
     {
@@ -35,8 +35,8 @@ internal static class NodeCommands
         Console.WriteLine($"BS Version: {nif.BsVersion}");
         Console.WriteLine();
 
-        int pos = offset;
-        int end = offset + size;
+        var pos = offset;
+        var end = offset + size;
 
         // === NiObjectNET ===
         Console.WriteLine("=== NiObjectNET ===");
@@ -55,7 +55,7 @@ internal static class NodeCommands
         if (numExtraData > 0)
         {
             Console.WriteLine($"  Extra Data Refs ({numExtraData}):");
-            for (int i = 0; i < numExtraData && pos + 4 <= end; i++)
+            for (var i = 0; i < numExtraData && pos + 4 <= end; i++)
             {
                 var refIdx = (int)ReadUInt32(data, pos, be);
                 Console.WriteLine($"    [{i}] 0x{pos:X4}: {refIdx}");
@@ -73,7 +73,7 @@ internal static class NodeCommands
         Console.WriteLine("=== NiAVObject ===");
 
         // Flags: uint for BSVER > 26, ushort for BSVER <= 26
-        bool flagsIsUInt = nif.BsVersion > 26;
+        var flagsIsUInt = nif.BsVersion > 26;
         if (flagsIsUInt)
         {
             if (pos + 4 > end) return Error("Truncated at Flags");
@@ -100,13 +100,14 @@ internal static class NodeCommands
         // Rotation (Matrix33 - 36 bytes)
         if (pos + 36 > end) return Error("Truncated at Rotation");
         Console.WriteLine($"  0x{pos:X4} [36] Rotation (Matrix33):");
-        for (int row = 0; row < 3; row++)
+        for (var row = 0; row < 3; row++)
         {
             var m0 = ReadFloat(data.AsSpan(), pos + row * 12, be);
             var m1 = ReadFloat(data.AsSpan(), pos + row * 12 + 4, be);
             var m2 = ReadFloat(data.AsSpan(), pos + row * 12 + 8, be);
             Console.WriteLine($"           [{m0,10:F4} {m1,10:F4} {m2,10:F4}]");
         }
+
         pos += 36;
 
         // Scale (float - 4 bytes)
@@ -116,7 +117,7 @@ internal static class NodeCommands
         pos += 4;
 
         // For BS <= FO3 (BS Version <= 34): Num Properties + Properties array
-        bool hasProperties = nif.BsVersion <= 34;
+        var hasProperties = nif.BsVersion <= 34;
         if (hasProperties)
         {
             if (pos + 4 > end) return Error("Truncated at Num Properties");
@@ -127,7 +128,7 @@ internal static class NodeCommands
             if (numProperties > 0)
             {
                 Console.WriteLine($"  Property Refs ({numProperties}):");
-                for (int i = 0; i < numProperties && pos + 4 <= end; i++)
+                for (var i = 0; i < numProperties && pos + 4 <= end; i++)
                 {
                     var refIdx = (int)ReadUInt32(data, pos, be);
                     Console.WriteLine($"    [{i}] 0x{pos:X4}: {refIdx}");
@@ -155,7 +156,7 @@ internal static class NodeCommands
         if (numChildren > 0 && numChildren < 1000)
         {
             Console.WriteLine($"  Children Refs ({numChildren}):");
-            for (int i = 0; i < numChildren && pos + 4 <= end; i++)
+            for (var i = 0; i < numChildren && pos + 4 <= end; i++)
             {
                 var refIdx = (int)ReadUInt32(data, pos, be);
                 Console.WriteLine($"    [{i}] 0x{pos:X4}: {refIdx}");
@@ -172,7 +173,7 @@ internal static class NodeCommands
         if (numEffects > 0 && numEffects < 1000)
         {
             Console.WriteLine($"  Effect Refs ({numEffects}):");
-            for (int i = 0; i < numEffects && pos + 4 <= end; i++)
+            for (var i = 0; i < numEffects && pos + 4 <= end; i++)
             {
                 var refIdx = (int)ReadUInt32(data, pos, be);
                 Console.WriteLine($"    [{i}] 0x{pos:X4}: {refIdx}");
@@ -183,15 +184,13 @@ internal static class NodeCommands
         Console.WriteLine();
         Console.WriteLine($"Bytes consumed: {pos - offset} / {size}");
         if (pos - offset != size)
-        {
             Console.WriteLine($"WARNING: Size mismatch! Expected {size}, consumed {pos - offset}");
-        }
 
         return 0;
     }
 
     /// <summary>
-    /// Compare NiNode/BSFadeNode fields between Xbox and PC/Converted files.
+    ///     Compare NiNode/BSFadeNode fields between Xbox and PC/Converted files.
     /// </summary>
     public static int CompareNode(string xboxPath, string otherPath, int xboxBlock, int otherBlock)
     {
@@ -204,7 +203,7 @@ internal static class NodeCommands
         var xTypeName = xbox.GetBlockTypeName(xboxBlock);
         var oTypeName = other.GetBlockTypeName(otherBlock);
 
-        Console.WriteLine($"=== Node Comparison ===");
+        Console.WriteLine("=== Node Comparison ===");
         Console.WriteLine($"Xbox: Block {xboxBlock} ({xTypeName}), Offset 0x{xbox.GetBlockOffset(xboxBlock):X4}");
         Console.WriteLine($"Other: Block {otherBlock} ({oTypeName}), Offset 0x{other.GetBlockOffset(otherBlock):X4}");
         Console.WriteLine();
@@ -233,8 +232,8 @@ internal static class NodeCommands
         var offset = nif.GetBlockOffset(blockIndex);
         var size = (int)nif.BlockSizes[blockIndex];
         var be = nif.IsBigEndian;
-        int pos = offset;
-        int end = offset + size;
+        var pos = offset;
+        var end = offset + size;
 
         // NiObjectNET
         if (pos + 4 <= end)
@@ -260,7 +259,7 @@ internal static class NodeCommands
         }
 
         // NiAVObject - Flags
-        bool flagsIsUInt = nif.BsVersion > 26;
+        var flagsIsUInt = nif.BsVersion > 26;
         if (flagsIsUInt && pos + 4 <= end)
         {
             var flags = ReadUInt32(data, pos, be);
@@ -312,10 +311,7 @@ internal static class NodeCommands
             pos += (int)Math.Min(numChildren, 100) * 4;
         }
 
-        if (pos + 4 <= end)
-        {
-            fields["NumEffects"] = ReadUInt32(data, pos, be).ToString();
-        }
+        if (pos + 4 <= end) fields["NumEffects"] = ReadUInt32(data, pos, be).ToString();
 
         return fields;
     }

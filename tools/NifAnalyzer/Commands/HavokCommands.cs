@@ -1,11 +1,10 @@
 using System.Buffers.Binary;
-using System.Globalization;
 using NifAnalyzer.Parsers;
 
 namespace NifAnalyzer.Commands;
 
 /// <summary>
-/// Commands for analyzing Havok physics blocks in NIF files.
+///     Commands for analyzing Havok physics blocks in NIF files.
 /// </summary>
 internal static class HavokCommands
 {
@@ -58,7 +57,7 @@ internal static class HavokCommands
         var xboxSize = (int)xbox.BlockSizes[xboxBlock];
         var pcSize = (int)pc.BlockSizes[pcBlock];
 
-        Console.WriteLine($"=== Havok Block Comparison ===");
+        Console.WriteLine("=== Havok Block Comparison ===");
         Console.WriteLine();
         Console.WriteLine($"{"Property",-25} {"Xbox 360",-20} {"PC",-20}");
         Console.WriteLine(new string('-', 65));
@@ -97,7 +96,7 @@ internal static class HavokCommands
 
         // Show first few triangles
         Console.WriteLine("First 5 TriangleData entries (Triangle v1,v2,v3 + WeldInfo):");
-        for (int i = 0; i < Math.Min(5, (int)numTriangles) && pos + 8 <= end; i++)
+        for (var i = 0; i < Math.Min(5, (int)numTriangles) && pos + 8 <= end; i++)
         {
             var v1 = ReadUInt16(data, pos, isBE);
             var v2 = ReadUInt16(data, pos + 2, isBE);
@@ -110,7 +109,11 @@ internal static class HavokCommands
         // Skip remaining triangles
         pos = offset + 4 + (int)numTriangles * 8;
 
-        if (pos + 4 > end) { Console.WriteLine("Truncated after triangles"); return 0; }
+        if (pos + 4 > end)
+        {
+            Console.WriteLine("Truncated after triangles");
+            return 0;
+        }
 
         var numVertices = ReadUInt32(data, pos, isBE);
         pos += 4;
@@ -120,14 +123,15 @@ internal static class HavokCommands
         // Compressed flag (since NIF 20.2.0.7)
         var compressed = data[pos];
         pos += 1;
-        Console.WriteLine($"Compressed: {compressed} ({(compressed == 1 ? "HalfVector3 - 6 bytes/vertex" : "Vector3 - 12 bytes/vertex")})");
+        Console.WriteLine(
+            $"Compressed: {compressed} ({(compressed == 1 ? "HalfVector3 - 6 bytes/vertex" : "Vector3 - 12 bytes/vertex")})");
         Console.WriteLine();
 
         // Show first few vertices based on compression
         if (compressed == 1)
         {
             Console.WriteLine("First 5 Vertices (HalfVector3):");
-            for (int i = 0; i < Math.Min(5, (int)numVertices) && pos + 6 <= end; i++)
+            for (var i = 0; i < Math.Min(5, (int)numVertices) && pos + 6 <= end; i++)
             {
                 var hx = ReadUInt16(data, pos, isBE);
                 var hy = ReadUInt16(data, pos + 2, isBE);
@@ -138,12 +142,13 @@ internal static class HavokCommands
                 Console.WriteLine($"  [{i}] Half(0x{hx:X4}, 0x{hy:X4}, 0x{hz:X4}) -> ({x:F4}, {y:F4}, {z:F4})");
                 pos += 6;
             }
+
             pos = offset + 4 + (int)numTriangles * 8 + 4 + 1 + (int)numVertices * 6;
         }
         else
         {
             Console.WriteLine("First 5 Vertices (Vector3):");
-            for (int i = 0; i < Math.Min(5, (int)numVertices) && pos + 12 <= end; i++)
+            for (var i = 0; i < Math.Min(5, (int)numVertices) && pos + 12 <= end; i++)
             {
                 var x = ReadFloat(data, pos, isBE);
                 var y = ReadFloat(data, pos + 4, isBE);
@@ -151,11 +156,17 @@ internal static class HavokCommands
                 Console.WriteLine($"  [{i}] ({x:F4}, {y:F4}, {z:F4})");
                 pos += 12;
             }
+
             pos = offset + 4 + (int)numTriangles * 8 + 4 + 1 + (int)numVertices * 12;
         }
 
         // NumSubShapes
-        if (pos + 2 > end) { Console.WriteLine("\nTruncated before SubShapes"); return 0; }
+        if (pos + 2 > end)
+        {
+            Console.WriteLine("\nTruncated before SubShapes");
+            return 0;
+        }
+
         var numSubShapes = ReadUInt16(data, pos, isBE);
         pos += 2;
         Console.WriteLine();
@@ -163,12 +174,13 @@ internal static class HavokCommands
 
         // SubShapes
         Console.WriteLine("SubShapes (hkSubPartData):");
-        for (int i = 0; i < numSubShapes && pos + 12 <= end; i++)
+        for (var i = 0; i < numSubShapes && pos + 12 <= end; i++)
         {
             var havokFilter = ReadUInt32(data, pos, isBE);
             var subNumVerts = ReadUInt32(data, pos + 4, isBE);
             var havokMaterial = ReadUInt32(data, pos + 8, isBE);
-            Console.WriteLine($"  [{i}] Filter=0x{havokFilter:X8}, NumVerts={subNumVerts}, Material=0x{havokMaterial:X8}");
+            Console.WriteLine(
+                $"  [{i}] Filter=0x{havokFilter:X8}, NumVerts={subNumVerts}, Material=0x{havokMaterial:X8}");
             pos += 12;
         }
 
@@ -176,29 +188,34 @@ internal static class HavokCommands
     }
 
     /// <summary>
-    /// Convert half-precision float (IEEE 754 binary16) to single precision float.
+    ///     Convert half-precision float (IEEE 754 binary16) to single precision float.
     /// </summary>
     private static float HalfToFloat(ushort h)
     {
-        int sign = (h >> 15) & 0x0001;
-        int exp = (h >> 10) & 0x001F;
-        int mant = h & 0x03FF;
+        var sign = (h >> 15) & 0x0001;
+        var exp = (h >> 10) & 0x001F;
+        var mant = h & 0x03FF;
 
         if (exp == 0)
         {
             if (mant == 0) return sign != 0 ? -0.0f : 0.0f;
-            while ((mant & 0x0400) == 0) { mant <<= 1; exp--; }
+            while ((mant & 0x0400) == 0)
+            {
+                mant <<= 1;
+                exp--;
+            }
+
             exp++;
             mant &= ~0x0400;
         }
         else if (exp == 31)
         {
-            return mant != 0 ? float.NaN : (sign != 0 ? float.NegativeInfinity : float.PositiveInfinity);
+            return mant != 0 ? float.NaN : sign != 0 ? float.NegativeInfinity : float.PositiveInfinity;
         }
 
         exp += 127 - 15;
         mant <<= 13;
-        int bits = (sign << 31) | (exp << 23) | mant;
+        var bits = (sign << 31) | (exp << 23) | mant;
         return BitConverter.Int32BitsToSingle(bits);
     }
 
@@ -220,14 +237,16 @@ internal static class HavokCommands
         Console.WriteLine($"Unused02: [{data[pos]:X2} {data[pos + 1]:X2} {data[pos + 2]:X2} {data[pos + 3]:X2}]");
         pos += 4;
 
-        Console.WriteLine($"Scale: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
+        Console.WriteLine(
+            $"Scale: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
         pos += 16;
 
         var radiusCopy = ReadFloat(data, pos, isBE);
         Console.WriteLine($"RadiusCopy: {radiusCopy:F6}");
         pos += 4;
 
-        Console.WriteLine($"ScaleCopy: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
+        Console.WriteLine(
+            $"ScaleCopy: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
         pos += 16;
 
         var dataRef = ReadInt32(data, pos, isBE);
@@ -245,7 +264,7 @@ internal static class HavokCommands
         pos += 4;
 
         Console.Write("Unused01 (12 bytes): ");
-        for (int i = 0; i < 12; i++) Console.Write($"{data[pos + i]:X2} ");
+        for (var i = 0; i < 12; i++) Console.Write($"{data[pos + i]:X2} ");
         Console.WriteLine();
         pos += 12;
 
@@ -273,7 +292,7 @@ internal static class HavokCommands
 
         Console.WriteLine($"MOPP Data: {dataSize} bytes starting at 0x{pos:X4}");
         Console.Write("First 32 bytes: ");
-        for (int i = 0; i < Math.Min(32, (int)dataSize); i++) Console.Write($"{data[pos + i]:X2} ");
+        for (var i = 0; i < Math.Min(32, (int)dataSize); i++) Console.Write($"{data[pos + i]:X2} ");
         Console.WriteLine();
 
         return 0;
@@ -309,11 +328,13 @@ internal static class HavokCommands
         pos += 4;
 
         // Translation (Vector4)
-        Console.WriteLine($"Translation: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
+        Console.WriteLine(
+            $"Translation: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
         pos += 16;
 
         // Rotation (QuaternionXYZW)
-        Console.WriteLine($"Rotation: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
+        Console.WriteLine(
+            $"Rotation: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
 
         return 0;
     }
@@ -342,12 +363,14 @@ internal static class HavokCommands
         var xNumTri = ReadUInt32(xbox, xOff, true);
         var pNumTri = ReadUInt32(pc, pOff, false);
 
-        Console.WriteLine($"{"NumTriangles",-25} {xNumTri,-20} {pNumTri,-20} {(xNumTri == pNumTri ? "✓" : "MISMATCH!")}");
+        Console.WriteLine(
+            $"{"NumTriangles",-25} {xNumTri,-20} {pNumTri,-20} {(xNumTri == pNumTri ? "✓" : "MISMATCH!")}");
 
         var xNumVert = ReadUInt32(xbox, xOff + 4 + (int)xNumTri * 8, true);
         var pNumVert = ReadUInt32(pc, pOff + 4 + (int)pNumTri * 8, false);
 
-        Console.WriteLine($"{"NumVertices",-25} {xNumVert,-20} {pNumVert,-20} {(xNumVert == pNumVert ? "✓" : "MISMATCH!")}");
+        Console.WriteLine(
+            $"{"NumVertices",-25} {xNumVert,-20} {pNumVert,-20} {(xNumVert == pNumVert ? "✓" : "MISMATCH!")}");
 
         // Compare first triangle
         if (xNumTri > 0)
@@ -384,12 +407,15 @@ internal static class HavokCommands
 
         var xDataSize = ReadUInt32(xbox, xOff + 20, true);
         var pDataSize = ReadUInt32(pc, pOff + 20, false);
-        Console.WriteLine($"{"MOPP DataSize",-25} {xDataSize,-20} {pDataSize,-20} {(xDataSize == pDataSize ? "✓" : "MISMATCH!")}");
+        Console.WriteLine(
+            $"{"MOPP DataSize",-25} {xDataSize,-20} {pDataSize,-20} {(xDataSize == pDataSize ? "✓" : "MISMATCH!")}");
 
         Console.WriteLine();
         Console.WriteLine("MOPP Offset Vector4:");
-        Console.WriteLine($"  Xbox: ({ReadFloat(xbox, xOff + 24, true):F4}, {ReadFloat(xbox, xOff + 28, true):F4}, {ReadFloat(xbox, xOff + 32, true):F4}, {ReadFloat(xbox, xOff + 36, true):F4})");
-        Console.WriteLine($"  PC:   ({ReadFloat(pc, pOff + 24, false):F4}, {ReadFloat(pc, pOff + 28, false):F4}, {ReadFloat(pc, pOff + 32, false):F4}, {ReadFloat(pc, pOff + 36, false):F4})");
+        Console.WriteLine(
+            $"  Xbox: ({ReadFloat(xbox, xOff + 24, true):F4}, {ReadFloat(xbox, xOff + 28, true):F4}, {ReadFloat(xbox, xOff + 32, true):F4}, {ReadFloat(xbox, xOff + 36, true):F4})");
+        Console.WriteLine(
+            $"  PC:   ({ReadFloat(pc, pOff + 24, false):F4}, {ReadFloat(pc, pOff + 28, false):F4}, {ReadFloat(pc, pOff + 32, false):F4}, {ReadFloat(pc, pOff + 36, false):F4})");
 
         return 0;
     }
@@ -397,26 +423,37 @@ internal static class HavokCommands
     private static int UnsupportedBlock(string typeName)
     {
         Console.WriteLine($"Havok parsing not implemented for: {typeName}");
-        Console.WriteLine("Supported: hkPackedNiTriStripsData, bhkPackedNiTriStripsShape, bhkMoppBvTreeShape, bhkRigidBody, bhkCollisionObject");
+        Console.WriteLine(
+            "Supported: hkPackedNiTriStripsData, bhkPackedNiTriStripsShape, bhkMoppBvTreeShape, bhkRigidBody, bhkCollisionObject");
         return 1;
     }
 
     private static uint ReadUInt32(byte[] data, int pos, bool isBE)
-        => isBE ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
-                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+    {
+        return isBE
+            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
+            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+    }
 
     private static int ReadInt32(byte[] data, int pos, bool isBE)
-        => isBE ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos))
-                : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(pos));
+    {
+        return isBE
+            ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos))
+            : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(pos));
+    }
 
     private static ushort ReadUInt16(byte[] data, int pos, bool isBE)
-        => isBE ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos))
-                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
+    {
+        return isBE
+            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos))
+            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
+    }
 
     private static float ReadFloat(byte[] data, int pos, bool isBE)
     {
-        var bits = isBE ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
-                        : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        var bits = isBE
+            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
+            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
         return BitConverter.UInt32BitsToSingle(bits);
     }
 }

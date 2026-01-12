@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 namespace NifAnalyzer.Utils;
 
 /// <summary>
-/// Shared binary reading helpers with endianness support.
+///     Shared binary reading helpers with endianness support.
 /// </summary>
 internal static class BinaryHelpers
 {
@@ -58,11 +58,12 @@ internal static class BinaryHelpers
             temp.Reverse();
             return BitConverter.ToSingle(temp);
         }
+
         return BitConverter.ToSingle(data.Slice(offset, 4));
     }
 
     /// <summary>
-    /// Converts IEEE 754 half-precision float to single-precision.
+    ///     Converts IEEE 754 half-precision float to single-precision.
     /// </summary>
     public static float HalfToFloat(ushort half)
     {
@@ -88,23 +89,26 @@ internal static class BinaryHelpers
     }
 
     /// <summary>
-    /// Formats a NIF version number (e.g., 0x14020007 -> "20.2.0.7").
+    ///     Formats a NIF version number (e.g., 0x14020007 -> "20.2.0.7").
     /// </summary>
-    public static string FormatVersion(uint v) => $"{v >> 24}.{(v >> 16) & 0xFF}.{(v >> 8) & 0xFF}.{v & 0xFF}";
+    public static string FormatVersion(uint v)
+    {
+        return $"{v >> 24}.{(v >> 16) & 0xFF}.{(v >> 8) & 0xFF}.{v & 0xFF}";
+    }
 
     /// <summary>
-    /// Prints a formatted hex dump to console.
+    ///     Prints a formatted hex dump to console.
     /// </summary>
     public static void HexDump(byte[] data, int offset, int length)
     {
         const int bytesPerLine = 16;
-        for (int i = 0; i < length; i += bytesPerLine)
+        for (var i = 0; i < length; i += bytesPerLine)
         {
             var lineOffset = offset + i;
             Console.Write($"{lineOffset:X8}  ");
 
             // Hex bytes
-            for (int j = 0; j < bytesPerLine; j++)
+            for (var j = 0; j < bytesPerLine; j++)
             {
                 if (i + j < length)
                     Console.Write($"{data[offset + i + j]:X2} ");
@@ -117,7 +121,7 @@ internal static class BinaryHelpers
             Console.Write(" ");
 
             // ASCII
-            for (int j = 0; j < bytesPerLine && i + j < length; j++)
+            for (var j = 0; j < bytesPerLine && i + j < length; j++)
             {
                 var b = data[offset + i + j];
                 Console.Write(b >= 32 && b < 127 ? (char)b : '.');

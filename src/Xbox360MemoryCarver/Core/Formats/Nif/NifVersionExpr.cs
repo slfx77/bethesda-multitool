@@ -2,6 +2,10 @@
 // Handles expressions like: ((#BSVER# #GTE# 130) #AND# (#BSVER# #LTE# 159))
 // Uses recursive descent parsing for clean, maintainable code
 
+// S3218: Method shadowing is intentional in this expression tree visitor pattern
+
+#pragma warning disable S3218
+
 using System.Globalization;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -23,7 +27,7 @@ public sealed record NifVersionContext
     // Common presets
     public static NifVersionContext FalloutNV => new()
     {
-        Version = 0x14020007,  // 20.2.0.7
+        Version = 0x14020007, // 20.2.0.7
         UserVersion = 0,
         BsVersion = 34
     };
@@ -46,19 +50,16 @@ public sealed record NifVersionContext
 /// <summary>
 ///     Parses and evaluates nif.xml version condition expressions.
 ///     Grammar:
-///       expr     -> or_expr
-///       or_expr  -> and_expr (('#OR#' | '||') and_expr)*
-///       and_expr -> compare (('#AND#' | '&amp;&amp;') compare)*
-///       compare  -> '(' expr ')' | variable op value | '!' compare
-///       variable -> '#VER#' | '#BSVER#' | '#USER#' | identifier
-///       op       -> '#GT#' | '#GTE#' | '#LT#' | '#LTE#' | '#EQ#' | '#NEQ#'
-///       value    -> number | hex_number
+///     expr     -> or_expr
+///     or_expr  -> and_expr (('#OR#' | '||') and_expr)*
+///     and_expr -> compare (('#AND#' | '&amp;&amp;') compare)*
+///     compare  -> '(' expr ')' | variable op value | '!' compare
+///     variable -> '#VER#' | '#BSVER#' | '#USER#' | identifier
+///     op       -> '#GT#' | '#GTE#' | '#LT#' | '#LTE#' | '#EQ#' | '#NEQ#'
+///     value    -> number | hex_number
 /// </summary>
 public sealed class NifVersionExpr
 {
-    private readonly string _expression;
-    private int _pos;
-
     /// <summary>
     ///     Token mappings from nif.xml verexpr definitions.
     ///     These are expanded before parsing.
@@ -102,6 +103,9 @@ public sealed class NifVersionExpr
         ["#DIVINITY2#"] = "((#USER# #EQ# 0x20000) #OR# (#USER# #EQ# 0x30000))"
     };
 
+    private readonly string _expression;
+    private int _pos;
+
     private NifVersionExpr(string expression)
     {
         // Expand any known tokens before parsing
@@ -116,12 +120,9 @@ public sealed class NifVersionExpr
     {
         // Iterate through all tokens and expand them
         foreach (var (token, expansion) in TokenExpansions)
-        {
             if (expression.Contains(token, StringComparison.OrdinalIgnoreCase))
-            {
                 expression = expression.Replace(token, expansion, StringComparison.OrdinalIgnoreCase);
-            }
-        }
+
         return expression;
     }
 
@@ -153,16 +154,9 @@ public sealed class NifVersionExpr
         if (string.IsNullOrWhiteSpace(expression))
             return _ => true;
 
-        try
-        {
-            var parser = new NifVersionExpr(expression);
-            var ast = parser.ParseExpr();
-            return ctx => ast.Evaluate(ctx);
-        }
-        catch
-        {
-            return _ => true;
-        }
+        var parser = new NifVersionExpr(expression);
+        var ast = parser.ParseExpr();
+        return ctx => ast.Evaluate(ctx);
     }
 
     private bool ParseAndEvaluate(NifVersionContext context)
@@ -188,6 +182,7 @@ public sealed class NifVersionExpr
             _pos += s.Length;
             return true;
         }
+
         return false;
     }
 
@@ -219,6 +214,20 @@ public sealed class NifVersionExpr
             if (_pos < _expression.Length)
                 _pos++; // consume closing #
             return _expression[start.._pos];
+        }
+
+        // Handle comparison operators (==, !=, >=, <=, >, <)
+        if (_pos < _expression.Length)
+        {
+            var c = _expression[_pos];
+            if (c is '=' or '!' or '>' or '<')
+            {
+                _pos++;
+                // Check for two-character operators (==, !=, >=, <=)
+                if (_pos < _expression.Length && _expression[_pos] == '=')
+                    _pos++;
+                return _expression[start.._pos];
+            }
         }
 
         // Handle identifiers and numbers
@@ -255,25 +264,28 @@ public sealed class NifVersionExpr
             // Version number like 20.2.0.7 - convert to uint
             var parts = numStr.Split('.');
             if (parts.Length == 4)
-            {
                 return (long.Parse(parts[0], CultureInfo.InvariantCulture) << 24) |
                        (long.Parse(parts[1], CultureInfo.InvariantCulture) << 16) |
                        (long.Parse(parts[2], CultureInfo.InvariantCulture) << 8) |
                        long.Parse(parts[3], CultureInfo.InvariantCulture);
-            }
         }
 
         return long.Parse(numStr, CultureInfo.InvariantCulture);
     }
 
-    private static bool IsHexDigit(char c) =>
-        char.IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    private static bool IsHexDigit(char c)
+    {
+        return char.IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    }
 
     #endregion
 
     #region Parser (Recursive Descent)
 
-    private IExprNode ParseExpr() => ParseOrExpr();
+    private IExprNode ParseExpr()
+    {
+        return ParseOrExpr();
+    }
 
     private IExprNode ParseOrExpr()
     {
@@ -337,24 +349,30 @@ public sealed class NifVersionExpr
         return new CompareNode(variable, cmp, value);
     }
 
-    private static VariableType ParseVariable(string token) => token.ToUpperInvariant() switch
+    private static VariableType ParseVariable(string token)
     {
-        "#VER#" or "#VERSION#" => VariableType.Version,
-        "#BSVER#" or "#BS_VERSION#" => VariableType.BsVersion,
-        "#USER#" or "#USER_VERSION#" => VariableType.UserVersion,
-        _ => throw new FormatException($"Unknown variable: {token}")
-    };
+        return token.ToUpperInvariant() switch
+        {
+            "#VER#" or "#VERSION#" => VariableType.Version,
+            "#BSVER#" or "#BS_VERSION#" => VariableType.BsVersion,
+            "#USER#" or "#USER_VERSION#" => VariableType.UserVersion,
+            _ => throw new FormatException($"Unknown variable: {token}")
+        };
+    }
 
-    private static CompareOp ParseCompareOp(string token) => token.ToUpperInvariant() switch
+    private static CompareOp ParseCompareOp(string token)
     {
-        "#GT#" or ">" => CompareOp.Gt,
-        "#GTE#" or ">=" => CompareOp.Gte,
-        "#LT#" or "<" => CompareOp.Lt,
-        "#LTE#" or "<=" => CompareOp.Lte,
-        "#EQ#" or "==" or "=" => CompareOp.Eq,
-        "#NEQ#" or "!=" => CompareOp.Neq,
-        _ => throw new FormatException($"Unknown operator: {token}")
-    };
+        return token.ToUpperInvariant() switch
+        {
+            "#GT#" or ">" => CompareOp.Gt,
+            "#GTE#" or ">=" => CompareOp.Gte,
+            "#LT#" or "<" => CompareOp.Lt,
+            "#LTE#" or "<=" => CompareOp.Lte,
+            "#EQ#" or "==" or "=" => CompareOp.Eq,
+            "#NEQ#" or "!=" => CompareOp.Neq,
+            _ => throw new FormatException($"Unknown operator: {token}")
+        };
+    }
 
     #endregion
 
@@ -365,8 +383,22 @@ public sealed class NifVersionExpr
         bool Evaluate(NifVersionContext ctx);
     }
 
-    private enum VariableType { Version, BsVersion, UserVersion }
-    private enum CompareOp { Gt, Gte, Lt, Lte, Eq, Neq }
+    private enum VariableType
+    {
+        Version,
+        BsVersion,
+        UserVersion
+    }
+
+    private enum CompareOp
+    {
+        Gt,
+        Gte,
+        Lt,
+        Lte,
+        Eq,
+        Neq
+    }
 
     private sealed class CompareNode(VariableType variable, CompareOp op, long value) : IExprNode
     {
@@ -374,7 +406,7 @@ public sealed class NifVersionExpr
         {
             var varValue = variable switch
             {
-                VariableType.Version => (long)ctx.Version,
+                VariableType.Version => ctx.Version,
                 VariableType.BsVersion => ctx.BsVersion,
                 VariableType.UserVersion => (long)ctx.UserVersion,
                 _ => 0
@@ -395,17 +427,26 @@ public sealed class NifVersionExpr
 
     private sealed class AndNode(IExprNode left, IExprNode right) : IExprNode
     {
-        public bool Evaluate(NifVersionContext ctx) => left.Evaluate(ctx) && right.Evaluate(ctx);
+        public bool Evaluate(NifVersionContext ctx)
+        {
+            return left.Evaluate(ctx) && right.Evaluate(ctx);
+        }
     }
 
     private sealed class OrNode(IExprNode left, IExprNode right) : IExprNode
     {
-        public bool Evaluate(NifVersionContext ctx) => left.Evaluate(ctx) || right.Evaluate(ctx);
+        public bool Evaluate(NifVersionContext ctx)
+        {
+            return left.Evaluate(ctx) || right.Evaluate(ctx);
+        }
     }
 
     private sealed class NotNode(IExprNode inner) : IExprNode
     {
-        public bool Evaluate(NifVersionContext ctx) => !inner.Evaluate(ctx);
+        public bool Evaluate(NifVersionContext ctx)
+        {
+            return !inner.Evaluate(ctx);
+        }
     }
 
     #endregion

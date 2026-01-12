@@ -23,17 +23,17 @@ public class NifVersionExprTests
     }
 
     [Theory]
-    [InlineData("#BSVER# #GT# 26", true)]   // 34 > 26
-    [InlineData("#BSVER# #GT# 34", false)]  // 34 > 34 = false
-    [InlineData("#BSVER# #GT# 50", false)]  // 34 > 50 = false
+    [InlineData("#BSVER# #GT# 26", true)] // 34 > 26
+    [InlineData("#BSVER# #GT# 34", false)] // 34 > 34 = false
+    [InlineData("#BSVER# #GT# 50", false)] // 34 > 50 = false
     public void BsVersion_GreaterThan(string expr, bool expected)
     {
         Assert.Equal(expected, NifVersionExpr.Evaluate(expr, _fnvContext));
     }
 
     [Theory]
-    [InlineData("#BSVER# #GTE# 26", true)]  // 34 >= 26
-    [InlineData("#BSVER# #GTE# 34", true)]  // 34 >= 34
+    [InlineData("#BSVER# #GTE# 26", true)] // 34 >= 26
+    [InlineData("#BSVER# #GTE# 34", true)] // 34 >= 34
     [InlineData("#BSVER# #GTE# 50", false)] // 34 >= 50 = false
     public void BsVersion_GreaterThanOrEqual(string expr, bool expected)
     {
@@ -41,17 +41,17 @@ public class NifVersionExprTests
     }
 
     [Theory]
-    [InlineData("#BSVER# #LT# 50", true)]   // 34 < 50
-    [InlineData("#BSVER# #LT# 34", false)]  // 34 < 34 = false
-    [InlineData("#BSVER# #LT# 26", false)]  // 34 < 26 = false
+    [InlineData("#BSVER# #LT# 50", true)] // 34 < 50
+    [InlineData("#BSVER# #LT# 34", false)] // 34 < 34 = false
+    [InlineData("#BSVER# #LT# 26", false)] // 34 < 26 = false
     public void BsVersion_LessThan(string expr, bool expected)
     {
         Assert.Equal(expected, NifVersionExpr.Evaluate(expr, _fnvContext));
     }
 
     [Theory]
-    [InlineData("#BSVER# #LTE# 50", true)]  // 34 <= 50
-    [InlineData("#BSVER# #LTE# 34", true)]  // 34 <= 34
+    [InlineData("#BSVER# #LTE# 50", true)] // 34 <= 50
+    [InlineData("#BSVER# #LTE# 34", true)] // 34 <= 34
     [InlineData("#BSVER# #LTE# 26", false)] // 34 <= 26 = false
     public void BsVersion_LessThanOrEqual(string expr, bool expected)
     {
@@ -59,15 +59,15 @@ public class NifVersionExprTests
     }
 
     [Theory]
-    [InlineData("#BSVER# #EQ# 34", true)]   // 34 == 34
-    [InlineData("#BSVER# #EQ# 83", false)]  // 34 == 83 = false
+    [InlineData("#BSVER# #EQ# 34", true)] // 34 == 34
+    [InlineData("#BSVER# #EQ# 83", false)] // 34 == 83 = false
     public void BsVersion_Equal(string expr, bool expected)
     {
         Assert.Equal(expected, NifVersionExpr.Evaluate(expr, _fnvContext));
     }
 
     [Theory]
-    [InlineData("#BSVER# #NEQ# 83", true)]  // 34 != 83
+    [InlineData("#BSVER# #NEQ# 83", true)] // 34 != 83
     [InlineData("#BSVER# #NEQ# 34", false)] // 34 != 34 = false
     public void BsVersion_NotEqual(string expr, bool expected)
     {
@@ -84,18 +84,18 @@ public class NifVersionExprTests
     }
 
     [Theory]
-    [InlineData("(#BSVER# #GTE# 26) #AND# (#BSVER# #LTE# 50)", true)]  // 26 <= 34 <= 50
+    [InlineData("(#BSVER# #GTE# 26) #AND# (#BSVER# #LTE# 50)", true)] // 26 <= 34 <= 50
     [InlineData("(#BSVER# #GTE# 50) #AND# (#BSVER# #LTE# 100)", false)] // 34 not in [50, 100]
-    [InlineData("#BSVER# #GTE# 26 #AND# #BSVER# #LTE# 50", true)]       // Without parens
+    [InlineData("#BSVER# #GTE# 26 #AND# #BSVER# #LTE# 50", true)] // Without parens
     public void And_Expression(string expr, bool expected)
     {
         Assert.Equal(expected, NifVersionExpr.Evaluate(expr, _fnvContext));
     }
 
     [Theory]
-    [InlineData("(#BSVER# #LT# 26) #OR# (#BSVER# #GT# 50)", false)]   // Neither true for 34
-    [InlineData("(#BSVER# #LT# 50) #OR# (#BSVER# #GT# 100)", true)]   // First is true
-    [InlineData("(#BSVER# #LT# 20) #OR# (#BSVER# #GT# 30)", true)]    // Second is true
+    [InlineData("(#BSVER# #LT# 26) #OR# (#BSVER# #GT# 50)", false)] // Neither true for 34
+    [InlineData("(#BSVER# #LT# 50) #OR# (#BSVER# #GT# 100)", true)] // First is true
+    [InlineData("(#BSVER# #LT# 20) #OR# (#BSVER# #GT# 30)", true)] // Second is true
     public void Or_Expression(string expr, bool expected)
     {
         Assert.Equal(expected, NifVersionExpr.Evaluate(expr, _fnvContext));
@@ -107,8 +107,8 @@ public class NifVersionExprTests
         // This is from actual nif.xml - checks for FO4 range
         var expr = "((#BSVER# #GTE# 130) #AND# (#BSVER# #LTE# 159))";
 
-        Assert.False(NifVersionExpr.Evaluate(expr, _fnvContext));   // FNV: BS 34, not in range
-        Assert.True(NifVersionExpr.Evaluate(expr, _fo4Context));    // FO4: BS 130, in range
+        Assert.False(NifVersionExpr.Evaluate(expr, _fnvContext)); // FNV: BS 34, not in range
+        Assert.True(NifVersionExpr.Evaluate(expr, _fo4Context)); // FO4: BS 130, in range
         Assert.False(NifVersionExpr.Evaluate(expr, _skyrimContext)); // Skyrim: BS 83, not in range
     }
 
@@ -145,9 +145,9 @@ public class NifVersionExprTests
     }
 
     [Theory]
-    [InlineData("#VER# #GTE# 0x14020007", true)]  // 20.2.0.7 >= 20.2.0.7
-    [InlineData("#VER# #LT# 0x14020007", false)]  // 20.2.0.7 < 20.2.0.7 = false
-    [InlineData("#VER# #GTE# 0x14000000", true)]  // 20.2.0.7 >= 20.0.0.0
+    [InlineData("#VER# #GTE# 0x14020007", true)] // 20.2.0.7 >= 20.2.0.7
+    [InlineData("#VER# #LT# 0x14020007", false)] // 20.2.0.7 < 20.2.0.7 = false
+    [InlineData("#VER# #GTE# 0x14000000", true)] // 20.2.0.7 >= 20.0.0.0
     public void Version_HexNumbers(string expr, bool expected)
     {
         Assert.Equal(expected, NifVersionExpr.Evaluate(expr, _fnvContext));

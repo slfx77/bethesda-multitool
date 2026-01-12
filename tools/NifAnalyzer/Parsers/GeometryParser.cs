@@ -4,18 +4,20 @@ using static NifAnalyzer.Utils.BinaryHelpers;
 namespace NifAnalyzer.Parsers;
 
 /// <summary>
-/// Parses NiTriShapeData and NiTriStripsData blocks.
+///     Parses NiTriShapeData and NiTriStripsData blocks.
 /// </summary>
 internal static class GeometryParser
 {
     public static GeometryInfo Parse(ReadOnlySpan<byte> data, bool bigEndian, int bsVersion, string blockType)
     {
         var info = new GeometryInfo();
-        int pos = 0;
+        var pos = 0;
 
         // NiGeometryData base fields
-        info.GroupId = ReadInt32(data, pos, bigEndian); pos += 4;
-        info.NumVertices = ReadUInt16(data, pos, bigEndian); pos += 2;
+        info.GroupId = ReadInt32(data, pos, bigEndian);
+        pos += 4;
+        info.NumVertices = ReadUInt16(data, pos, bigEndian);
+        pos += 2;
         info.FieldOffsets["GroupId"] = 0;
         info.FieldOffsets["NumVertices"] = 4;
 
@@ -43,7 +45,8 @@ internal static class GeometryParser
         if (bsVersion >= 34)
         {
             info.FieldOffsets["BsVectorFlags"] = pos;
-            info.BsVectorFlags = ReadUInt16(data, pos, bigEndian); pos += 2;
+            info.BsVectorFlags = ReadUInt16(data, pos, bigEndian);
+            pos += 2;
         }
 
         // Has Normals
@@ -61,10 +64,14 @@ internal static class GeometryParser
         if (bsVersion >= 34)
         {
             info.FieldOffsets["Center"] = pos;
-            info.TangentCenterX = ReadFloat(data, pos, bigEndian); pos += 4;
-            info.TangentCenterY = ReadFloat(data, pos, bigEndian); pos += 4;
-            info.TangentCenterZ = ReadFloat(data, pos, bigEndian); pos += 4;
-            info.TangentRadius = ReadFloat(data, pos, bigEndian); pos += 4;
+            info.TangentCenterX = ReadFloat(data, pos, bigEndian);
+            pos += 4;
+            info.TangentCenterY = ReadFloat(data, pos, bigEndian);
+            pos += 4;
+            info.TangentCenterZ = ReadFloat(data, pos, bigEndian);
+            pos += 4;
+            info.TangentRadius = ReadFloat(data, pos, bigEndian);
+            pos += 4;
         }
 
         // Tangents and Bitangents (if BS Vector Flags has tangent space bit)
@@ -93,13 +100,16 @@ internal static class GeometryParser
         }
         else
         {
-            numUvSets = ReadUInt16(data, pos, bigEndian); pos += 2;
-            info.TSpaceFlag = ReadUInt16(data, pos, bigEndian); pos += 2;
+            numUvSets = ReadUInt16(data, pos, bigEndian);
+            pos += 2;
+            info.TSpaceFlag = ReadUInt16(data, pos, bigEndian);
+            pos += 2;
         }
+
         info.NumUvSets = numUvSets;
 
         // UV coordinates
-        int actualUvSets = numUvSets & 0x3F;
+        var actualUvSets = numUvSets & 0x3F;
         if (actualUvSets > 0)
         {
             info.FieldOffsets["UVSets"] = pos;
@@ -108,21 +118,25 @@ internal static class GeometryParser
 
         // Consistency Flags
         info.FieldOffsets["ConsistencyFlags"] = pos;
-        info.ConsistencyFlags = ReadUInt16(data, pos, bigEndian); pos += 2;
+        info.ConsistencyFlags = ReadUInt16(data, pos, bigEndian);
+        pos += 2;
 
         // Additional Data (ref to BSPackedAdditionalGeometryData or -1)
         info.FieldOffsets["AdditionalData"] = pos;
-        info.AdditionalData = ReadInt32(data, pos, bigEndian); pos += 4;
+        info.AdditionalData = ReadInt32(data, pos, bigEndian);
+        pos += 4;
 
         // Now we're at NiTriBasedGeomData fields
         info.FieldOffsets["NumTriangles"] = pos;
-        info.NumTriangles = ReadUInt16(data, pos, bigEndian); pos += 2;
+        info.NumTriangles = ReadUInt16(data, pos, bigEndian);
+        pos += 2;
 
         if (blockType.Contains("NiTriShapeData"))
         {
             // NiTriShapeData specific
             info.FieldOffsets["NumTrianglePoints"] = pos;
-            info.NumTrianglePoints = ReadUInt32(data, pos, bigEndian); pos += 4;
+            info.NumTrianglePoints = ReadUInt32(data, pos, bigEndian);
+            pos += 4;
 
             info.FieldOffsets["HasTriangles"] = pos;
             info.HasTriangles = data[pos++];
@@ -137,21 +151,19 @@ internal static class GeometryParser
 
             // Num Match Groups
             info.FieldOffsets["NumMatchGroups"] = pos;
-            if (pos + 2 <= data.Length)
-            {
-                info.NumMatchGroups = ReadUInt16(data, pos, bigEndian);
-            }
+            if (pos + 2 <= data.Length) info.NumMatchGroups = ReadUInt16(data, pos, bigEndian);
         }
         else if (blockType.Contains("NiTriStripsData"))
         {
             // NiTriStripsData specific
             info.FieldOffsets["NumStrips"] = pos;
-            info.NumStrips = ReadUInt16(data, pos, bigEndian); pos += 2;
+            info.NumStrips = ReadUInt16(data, pos, bigEndian);
+            pos += 2;
 
             // Strip lengths
             info.StripLengths = new ushort[info.NumStrips];
             info.FieldOffsets["StripLengths"] = pos;
-            for (int i = 0; i < info.NumStrips; i++)
+            for (var i = 0; i < info.NumStrips; i++)
             {
                 info.StripLengths[i] = ReadUInt16(data, pos, bigEndian);
                 pos += 2;

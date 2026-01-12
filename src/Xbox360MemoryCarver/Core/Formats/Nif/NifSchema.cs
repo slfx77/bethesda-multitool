@@ -1,6 +1,7 @@
 // Schema-driven NIF block conversion using nif.xml definitions
 // This reduces errors by reading structure definitions directly from the authoritative source
 
+using System.Globalization;
 using System.Xml.Linq;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -115,11 +116,11 @@ public sealed class NifSchema
     {
         var assembly = typeof(NifSchema).Assembly;
         var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith("nif.xml", StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException("Embedded nif.xml resource not found");
+                               .FirstOrDefault(n => n.EndsWith("nif.xml", StringComparison.OrdinalIgnoreCase))
+                           ?? throw new InvalidOperationException("Embedded nif.xml resource not found");
 
         using var stream = assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException($"Failed to load resource: {resourceName}");
+                           ?? throw new InvalidOperationException($"Failed to load resource: {resourceName}");
 
         return LoadFromStream(stream);
     }
@@ -149,7 +150,7 @@ public sealed class NifSchema
             if (name == null) continue;
 
             var sizeStr = basic.Attribute("size")?.Value;
-            var size = sizeStr != null ? int.Parse(sizeStr) : 0;
+            var size = sizeStr != null ? int.Parse(sizeStr, CultureInfo.InvariantCulture) : 0;
 
             // Special case: bool changes size based on version
             if (name == "bool") size = 1; // Use modern size
@@ -165,8 +166,8 @@ public sealed class NifSchema
 
         // Parse enums, bitflags, and bitfields (they all use 'storage' for underlying type)
         foreach (var elem in root.Elements("enum")
-            .Concat(root.Elements("bitflags"))
-            .Concat(root.Elements("bitfield")))
+                     .Concat(root.Elements("bitflags"))
+                     .Concat(root.Elements("bitfield")))
         {
             var name = elem.Attribute("name")?.Value;
             var storage = elem.Attribute("storage")?.Value;
@@ -190,7 +191,7 @@ public sealed class NifSchema
             schema._structs[name] = new NifStructDef
             {
                 Name = name,
-                FixedSize = sizeStr != null ? int.Parse(sizeStr) : null,
+                FixedSize = sizeStr != null ? int.Parse(sizeStr, CultureInfo.InvariantCulture) : null,
                 Fields = ParseFields(structElem)
             };
         }

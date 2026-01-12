@@ -3,7 +3,7 @@ using static NifAnalyzer.Utils.BinaryHelpers;
 namespace NifAnalyzer.Commands;
 
 /// <summary>
-/// Raw hex dump command.
+///     Raw hex dump command.
 /// </summary>
 internal static class HexCommands
 {

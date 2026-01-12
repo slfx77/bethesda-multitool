@@ -307,21 +307,21 @@ Xbox 360-specific Havok collision data block.
 
 ### ✅ Fully Working
 
-| Feature                   | Status | Notes                                                  |
-| ------------------------- | ------ | ------------------------------------------------------ |
-| Endian conversion         | ✅     | Schema-driven, all fields converted                    |
-| Position extraction       | ✅     | half4 → float3                                         |
-| Normal extraction         | ✅     | Stride-aware offsets (8 for stride 36/40, 20 for 48)   |
-| Tangent extraction        | ✅     | Stride-aware offsets                                   |
-| Bitangent computation     | ✅     | Computed as cross(N,T) when not in packed              |
-| UV extraction             | ✅     | half2 → float2                                         |
-| Triangle extraction       | ✅     | Strips converted to triangles                          |
-| Block stripping           | ✅     | Xbox-specific blocks removed                           |
-| Reference remapping       | ✅     | Ref<T> indices updated                                 |
-| Rendering in NifSkope     | ✅     | Solid mode verified                                    |
-| Non-skinned meshes        | ✅     | Stride 36 and 40 formats fully supported               |
-| Vertex colors             | ✅     | Extracted from stride 40 meshes                        |
-| Havok collision rendering | ✅     | HavokFilter Layer field correctly converted            |
+| Feature                   | Status | Notes                                                |
+| ------------------------- | ------ | ---------------------------------------------------- |
+| Endian conversion         | ✅     | Schema-driven, all fields converted                  |
+| Position extraction       | ✅     | half4 → float3                                       |
+| Normal extraction         | ✅     | Stride-aware offsets (8 for stride 36/40, 20 for 48) |
+| Tangent extraction        | ✅     | Stride-aware offsets                                 |
+| Bitangent computation     | ✅     | Computed as cross(N,T) when not in packed            |
+| UV extraction             | ✅     | half2 → float2                                       |
+| Triangle extraction       | ✅     | Strips converted to triangles                        |
+| Block stripping           | ✅     | Xbox-specific blocks removed                         |
+| Reference remapping       | ✅     | Ref<T> indices updated                               |
+| Rendering in NifSkope     | ✅     | Solid mode verified                                  |
+| Non-skinned meshes        | ✅     | Stride 36 and 40 formats fully supported             |
+| Vertex colors             | ✅     | Extracted from stride 40 meshes                      |
+| Havok collision rendering | ✅     | HavokFilter Layer field correctly converted          |
 
 ### ⚠️ Partially Working
 

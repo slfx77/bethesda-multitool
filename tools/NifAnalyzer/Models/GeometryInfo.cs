@@ -1,7 +1,7 @@
 namespace NifAnalyzer.Models;
 
 /// <summary>
-/// Contains parsed geometry data from NiTriShapeData/NiTriStripsData blocks.
+///     Contains parsed geometry data from NiTriShapeData/NiTriStripsData blocks.
 /// </summary>
 internal class GeometryInfo
 {
@@ -40,7 +40,7 @@ internal class GeometryInfo
     public byte HasPoints { get; set; }
 
     /// <summary>
-    /// Field offsets for debugging - maps field name to relative block offset.
+    ///     Field offsets for debugging - maps field name to relative block offset.
     /// </summary>
     public Dictionary<string, int> FieldOffsets { get; } = new();
 }

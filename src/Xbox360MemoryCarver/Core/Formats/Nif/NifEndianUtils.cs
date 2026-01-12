@@ -33,7 +33,8 @@ internal static class NifEndianUtils
     {
         if (pos + 8 > buf.Length) return;
         (buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3], buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7]) =
-            (buf[pos + 7], buf[pos + 6], buf[pos + 5], buf[pos + 4], buf[pos + 3], buf[pos + 2], buf[pos + 1], buf[pos]);
+            (buf[pos + 7], buf[pos + 6], buf[pos + 5], buf[pos + 4], buf[pos + 3], buf[pos + 2], buf[pos + 1],
+                buf[pos]);
     }
 
     /// <summary>

@@ -1,11 +1,10 @@
-using NifAnalyzer.Models;
 using NifAnalyzer.Parsers;
 using static NifAnalyzer.Utils.BinaryHelpers;
 
 namespace NifAnalyzer.Commands;
 
 /// <summary>
-/// Commands for basic NIF information: info, blocks, block, compare.
+///     Commands for basic NIF information: info, blocks, block, compare.
 /// </summary>
 internal static class InfoCommands
 {
@@ -41,8 +40,8 @@ internal static class InfoCommands
         Console.WriteLine($"{"Idx",-5} {"Offset",-12} {"Size",-10} {"Type",-40}");
         Console.WriteLine(new string('-', 75));
 
-        int offset = nif.BlockDataOffset;
-        for (int i = 0; i < nif.NumBlocks; i++)
+        var offset = nif.BlockDataOffset;
+        for (var i = 0; i < nif.NumBlocks; i++)
         {
             var typeIdx = nif.BlockTypeIndices[i];
             var typeName = nif.BlockTypes[typeIdx];
@@ -66,7 +65,7 @@ internal static class InfoCommands
             return 1;
         }
 
-        int offset = nif.GetBlockOffset(blockIndex);
+        var offset = nif.GetBlockOffset(blockIndex);
         var typeName = nif.GetBlockTypeName(blockIndex);
         var size = (int)nif.BlockSizes[blockIndex];
 
@@ -96,7 +95,8 @@ internal static class InfoCommands
         Console.WriteLine($"{"Property",-25} {"Xbox 360",-20} {"PC",-20}");
         Console.WriteLine(new string('-', 65));
         Console.WriteLine($"{"File Size",-25} {xboxData.Length,-20:N0} {pcData.Length,-20:N0}");
-        Console.WriteLine($"{"Endian",-25} {(xbox.IsBigEndian ? "Big" : "Little"),-20} {(pc.IsBigEndian ? "Big" : "Little"),-20}");
+        Console.WriteLine(
+            $"{"Endian",-25} {(xbox.IsBigEndian ? "Big" : "Little"),-20} {(pc.IsBigEndian ? "Big" : "Little"),-20}");
         Console.WriteLine($"{"Version",-25} {FormatVersion(xbox.Version),-20} {FormatVersion(pc.Version),-20}");
         Console.WriteLine($"{"User Version",-25} {xbox.UserVersion,-20} {pc.UserVersion,-20}");
         Console.WriteLine($"{"BS Version",-25} {xbox.BsVersion,-20} {pc.BsVersion,-20}");
@@ -109,7 +109,8 @@ internal static class InfoCommands
         Console.WriteLine();
 
         var allTypes = xbox.BlockTypes.Union(pc.BlockTypes).OrderBy(t => t).ToList();
-        var xboxTypeCounts = xbox.BlockTypeIndices.GroupBy(i => xbox.BlockTypes[i]).ToDictionary(g => g.Key, g => g.Count());
+        var xboxTypeCounts = xbox.BlockTypeIndices.GroupBy(i => xbox.BlockTypes[i])
+            .ToDictionary(g => g.Key, g => g.Count());
         var pcTypeCounts = pc.BlockTypeIndices.GroupBy(i => pc.BlockTypes[i]).ToDictionary(g => g.Key, g => g.Count());
 
         Console.WriteLine($"{"Block Type",-40} {"Xbox",-8} {"PC",-8}");
@@ -126,17 +127,17 @@ internal static class InfoCommands
         Console.WriteLine("=== Block-by-Block Comparison ===");
         Console.WriteLine();
 
-        int maxBlocks = Math.Max(xbox.NumBlocks, pc.NumBlocks);
+        var maxBlocks = Math.Max(xbox.NumBlocks, pc.NumBlocks);
 
         Console.WriteLine($"{"Idx",-4} {"Xbox Type",-35} {"Xbox Size",-10} {"PC Type",-35} {"PC Size",-10}");
         Console.WriteLine(new string('-', 100));
 
-        for (int i = 0; i < maxBlocks; i++)
+        for (var i = 0; i < maxBlocks; i++)
         {
-            string xboxType = i < xbox.NumBlocks ? xbox.BlockTypes[xbox.BlockTypeIndices[i]] : "-";
-            string pcType = i < pc.NumBlocks ? pc.BlockTypes[pc.BlockTypeIndices[i]] : "-";
-            string xboxSize = i < xbox.NumBlocks ? xbox.BlockSizes[i].ToString() : "-";
-            string pcSize = i < pc.NumBlocks ? pc.BlockSizes[i].ToString() : "-";
+            var xboxType = i < xbox.NumBlocks ? xbox.BlockTypes[xbox.BlockTypeIndices[i]] : "-";
+            var pcType = i < pc.NumBlocks ? pc.BlockTypes[pc.BlockTypeIndices[i]] : "-";
+            var xboxSize = i < xbox.NumBlocks ? xbox.BlockSizes[i].ToString() : "-";
+            var pcSize = i < pc.NumBlocks ? pc.BlockSizes[i].ToString() : "-";
             var marker = xboxType != pcType ? " <--" : "";
 
             Console.WriteLine($"{i,-4} {xboxType,-35} {xboxSize,-10} {pcType,-35} {pcSize,-10}{marker}");
