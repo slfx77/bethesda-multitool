@@ -207,8 +207,8 @@ internal static class StringCommands
             var ctrlId = GetStringOrIndex(nif, ctrlIdIdx);
             var interpId = GetStringOrIndex(nif, interpIdIdx);
 
-            var interpStr = interpolator == -1 ? "None" : $"Ref[{interpolator}]";
-            var ctrlStr = controller == -1 ? "None" : $"Ref[{controller}]";
+            var interpStr = interpolator == -1 ? "None" : $"Ref[[{interpolator}]]";
+            var ctrlStr = controller == -1 ? "None" : $"Ref[[{controller}]]";
 
             ctrlTable.AddRow(
                 i.ToString(), interpStr, ctrlStr, priority.ToString(),
@@ -233,12 +233,12 @@ internal static class StringCommands
         seqTable.AddColumn("Property");
         seqTable.AddColumn("Value");
         seqTable.AddRow("Weight", weight.ToString("F4"));
-        seqTable.AddRow("Text Keys Ref", textKeysIdx == -1 ? "None" : $"Block[{textKeysIdx}]");
+        seqTable.AddRow("Text Keys Ref", textKeysIdx == -1 ? "None" : $"Block[[{textKeysIdx}]]");
         seqTable.AddRow("Cycle Type", cycleType.ToString());
         seqTable.AddRow("Frequency", frequency.ToString("F4"));
         seqTable.AddRow("Start Time", startTime.ToString("F4"));
         seqTable.AddRow("Stop Time", stopTime.ToString("F4"));
-        seqTable.AddRow("Manager Ptr", managerIdx == -1 ? "None" : $"Block[{managerIdx}]");
+        seqTable.AddRow("Manager Ptr", managerIdx == -1 ? "None" : $"Block[[{managerIdx}]]");
         seqTable.AddRow("Accum Root Name",
             $"{Markup.Escape(GetStringOrIndex(nif, accumRootNameIdx))} (idx={accumRootNameIdx})");
         AnsiConsole.Write(seqTable);
