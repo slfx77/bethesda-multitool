@@ -15,7 +15,7 @@ namespace Xbox360MemoryCarver.Core.Json;
 [JsonSerializable(typeof(CarveEntry))]
 [JsonSerializable(typeof(JsonAnalysisResult))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
-internal partial class CarverJsonContext : JsonSerializerContext;
+internal class CarverJsonContext : JsonSerializerContext;
 
 /// <summary>
 ///     Analysis result for JSON serialization.

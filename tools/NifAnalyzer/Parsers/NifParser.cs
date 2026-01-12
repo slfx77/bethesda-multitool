@@ -85,7 +85,7 @@ internal static class NifParser
         // String table
         info.NumStrings = (int)ReadUInt32(data, pos, info.IsBigEndian);
         pos += 4;
-        var maxStringLen = (int)ReadUInt32(data, pos, info.IsBigEndian);
+        info.MaxStringLength = (int)ReadUInt32(data, pos, info.IsBigEndian);
         pos += 4;
 
         info.Strings = new List<string>(info.NumStrings);

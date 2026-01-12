@@ -177,6 +177,15 @@ internal sealed class NifSchemaConverter
             ctx.FieldValues["#ARG#"] = argValue;
         }
 
+        // If field has a template attribute, save it for use by nested generic structs
+        // This propagates the template type (e.g., "float") to structs like Key<#T#>
+        var previousTemplate = ctx.TemplateType;
+        if (field.Template != null)
+            // Resolve the template value - it might be #T# itself (propagation) or an actual type
+            ctx.TemplateType = field.Template == "#T#" && ctx.TemplateType != null
+                ? ctx.TemplateType // Propagate existing #T#
+                : field.Template; // Use the new template type directly
+
         try
         {
             // Handle arrays
@@ -282,6 +291,9 @@ internal sealed class NifSchemaConverter
                 ctx.FieldValues["#ARG#"] = previousArg!;
             else if (field.Arg != null)
                 ctx.FieldValues.Remove("#ARG#");
+
+            // Restore previous template type
+            ctx.TemplateType = previousTemplate;
         }
     }
 
@@ -316,6 +328,21 @@ internal sealed class NifSchemaConverter
 
     private void ConvertSingleValue(ConversionContext ctx, string typeName, int depth = 0)
     {
+        // Resolve template type placeholder (#T#) to the actual type
+        if (typeName == "#T#")
+        {
+            if (ctx.TemplateType != null)
+            {
+                typeName = ctx.TemplateType;
+            }
+            else
+            {
+                if (_verbose)
+                    Console.WriteLine("    [Schema] WARNING: #T# used without template context, cannot resolve");
+                return;
+            }
+        }
+
         // Handle SizedString explicitly (inline string with uint length prefix)
         // Note: "string" is a struct that contains either SizedString (old) or NiFixedString (new)
         // based on version, so we let it fall through to struct handling
@@ -518,12 +545,14 @@ internal sealed class NifSchemaConverter
     {
         // Store fields that may be needed for conditions or array lengths
         // This includes: Num X, X Count, Has X, Data Flags, BS Data Flags, etc.
+        // Also store "Interpolation" which is used as #ARG# for Key struct conditions
         var shouldStore = field.Name.StartsWith("Num ", StringComparison.Ordinal) ||
                           field.Name.EndsWith(" Count", StringComparison.Ordinal) ||
                           field.Name.StartsWith("Has ", StringComparison.Ordinal) ||
                           field.Name.Contains("Flags", StringComparison.Ordinal) ||
                           field.Name.Contains("Type", StringComparison.Ordinal) ||
-                          field.Name == "Compressed";
+                          field.Name == "Compressed" ||
+                          field.Name == "Interpolation"; // For KeyGroup -> Key #ARG# propagation
 
         if (!shouldStore) return;
 
@@ -570,5 +599,12 @@ internal sealed class NifSchemaConverter
         public int[] BlockRemap { get; }
         public Dictionary<string, object> FieldValues { get; }
         public string BlockType { get; }
+
+        /// <summary>
+        ///     Current template type parameter (#T#) for generic structs like KeyGroup&lt;float&gt;.
+        ///     This is set when processing a field with a template attribute and propagates
+        ///     to nested structs.
+        /// </summary>
+        public string? TemplateType { get; set; }
     }
 }

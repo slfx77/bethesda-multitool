@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
+using System.CommandLine;
 using NifAnalyzer.Parsers;
+using Spectre.Console;
 
 namespace NifAnalyzer.Commands;
 
@@ -8,39 +10,53 @@ namespace NifAnalyzer.Commands;
 /// </summary>
 internal static class HavokCommands
 {
-    public static int Havok(string path, int blockIndex)
+    private static void Havok(string path, int blockIndex)
     {
         var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
 
         if (blockIndex < 0 || blockIndex >= nif.NumBlocks)
         {
-            Console.Error.WriteLine($"Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
-            return 1;
+            AnsiConsole.MarkupLine($"[red]Error:[/] Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
+            return;
         }
 
         var offset = nif.GetBlockOffset(blockIndex);
         var typeName = nif.GetBlockTypeName(blockIndex);
         var size = (int)nif.BlockSizes[blockIndex];
 
-        Console.WriteLine($"Block {blockIndex}: {typeName}");
-        Console.WriteLine($"Offset: 0x{offset:X4}, Size: {size} bytes");
-        Console.WriteLine($"Endian: {(nif.IsBigEndian ? "Big (Xbox 360)" : "Little (PC)")}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine($"Block {blockIndex}: {typeName}");
+        AnsiConsole.WriteLine($"Offset: 0x{offset:X4}, Size: {size} bytes");
+        AnsiConsole.WriteLine($"Endian: {(nif.IsBigEndian ? "Big (Xbox 360)" : "Little (PC)")}");
+        AnsiConsole.WriteLine();
 
-        return typeName switch
+        switch (typeName)
         {
-            "hkPackedNiTriStripsData" => ParseHkPackedNiTriStripsData(data, offset, size, nif.IsBigEndian),
-            "bhkPackedNiTriStripsShape" => ParseBhkPackedNiTriStripsShape(data, offset, size, nif.IsBigEndian),
-            "bhkMoppBvTreeShape" => ParseBhkMoppBvTreeShape(data, offset, size, nif.IsBigEndian),
-            "bhkRigidBody" or "bhkRigidBodyT" => ParseBhkRigidBody(data, offset, size, nif.IsBigEndian),
-            "bhkCollisionObject" or "bhkBlendCollisionObject" or "bhkSPCollisionObject"
-                => ParseBhkCollisionObject(data, offset, size, nif.IsBigEndian),
-            _ => UnsupportedBlock(typeName)
-        };
+            case "hkPackedNiTriStripsData":
+                ParseHkPackedNiTriStripsData(data, offset, size, nif.IsBigEndian);
+                break;
+            case "bhkPackedNiTriStripsShape":
+                ParseBhkPackedNiTriStripsShape(data, offset, size, nif.IsBigEndian);
+                break;
+            case "bhkMoppBvTreeShape":
+                ParseBhkMoppBvTreeShape(data, offset, size, nif.IsBigEndian);
+                break;
+            case "bhkRigidBody":
+            case "bhkRigidBodyT":
+                ParseBhkRigidBody(data, offset, size, nif.IsBigEndian);
+                break;
+            case "bhkCollisionObject":
+            case "bhkBlendCollisionObject":
+            case "bhkSPCollisionObject":
+                ParseBhkCollisionObject(data, offset, size, nif.IsBigEndian);
+                break;
+            default:
+                UnsupportedBlock(typeName);
+                break;
+        }
     }
 
-    public static int HavokCompare(string xboxPath, string pcPath, int xboxBlock, int pcBlock)
+    private static void HavokCompare(string xboxPath, string pcPath, int xboxBlock, int pcBlock)
     {
         var xboxData = File.ReadAllBytes(xboxPath);
         var pcData = File.ReadAllBytes(pcPath);
@@ -57,33 +73,34 @@ internal static class HavokCommands
         var xboxSize = (int)xbox.BlockSizes[xboxBlock];
         var pcSize = (int)pc.BlockSizes[pcBlock];
 
-        Console.WriteLine("=== Havok Block Comparison ===");
-        Console.WriteLine();
-        Console.WriteLine($"{"Property",-25} {"Xbox 360",-20} {"PC",-20}");
-        Console.WriteLine(new string('-', 65));
-        Console.WriteLine($"{"Block Index",-25} {xboxBlock,-20} {pcBlock,-20}");
-        Console.WriteLine($"{"Type",-25} {xboxTypeName,-20} {pcTypeName,-20}");
-        Console.WriteLine($"{"Offset",-25} 0x{xboxOffset:X4,-17} 0x{pcOffset:X4,-17}");
-        Console.WriteLine($"{"Size",-25} {xboxSize,-20} {pcSize,-20}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("=== Havok Block Comparison ===");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"{"Property",-25} {"Xbox 360",-20} {"PC",-20}");
+        AnsiConsole.WriteLine(new string('-', 65));
+        AnsiConsole.WriteLine($"{"Block Index",-25} {xboxBlock,-20} {pcBlock,-20}");
+        AnsiConsole.WriteLine($"{"Type",-25} {xboxTypeName,-20} {pcTypeName,-20}");
+        AnsiConsole.WriteLine($"{"Offset",-25} 0x{xboxOffset:X4,-17} 0x{pcOffset:X4,-17}");
+        AnsiConsole.WriteLine($"{"Size",-25} {xboxSize,-20} {pcSize,-20}");
+        AnsiConsole.WriteLine();
 
         if (xboxTypeName != pcTypeName)
         {
-            Console.WriteLine("ERROR: Block types don't match!");
-            return 1;
+            AnsiConsole.WriteLine("ERROR: Block types don't match!");
+            return;
         }
 
-        return xboxTypeName switch
+        switch (xboxTypeName)
         {
-            "hkPackedNiTriStripsData" => CompareHkPackedNiTriStripsData(xboxData, xboxOffset, xboxSize,
-                pcData, pcOffset, pcSize),
-            "bhkMoppBvTreeShape" => CompareBhkMoppBvTreeShape(xboxData, xboxOffset, xboxSize,
-                pcData, pcOffset, pcSize),
-            _ => 0
-        };
+            case "hkPackedNiTriStripsData":
+                CompareHkPackedNiTriStripsData(xboxData, xboxOffset, xboxSize, pcData, pcOffset, pcSize);
+                break;
+            case "bhkMoppBvTreeShape":
+                CompareBhkMoppBvTreeShape(xboxData, xboxOffset, xboxSize, pcData, pcOffset, pcSize);
+                break;
+        }
     }
 
-    private static int ParseHkPackedNiTriStripsData(byte[] data, int offset, int size, bool isBE)
+    private static void ParseHkPackedNiTriStripsData(byte[] data, int offset, int size, bool isBE)
     {
         var pos = offset;
         var end = offset + size;
@@ -91,18 +108,18 @@ internal static class HavokCommands
         var numTriangles = ReadUInt32(data, pos, isBE);
         pos += 4;
 
-        Console.WriteLine($"NumTriangles: {numTriangles}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine($"NumTriangles: {numTriangles}");
+        AnsiConsole.WriteLine();
 
         // Show first few triangles
-        Console.WriteLine("First 5 TriangleData entries (Triangle v1,v2,v3 + WeldInfo):");
+        AnsiConsole.WriteLine("First 5 TriangleData entries (Triangle v1,v2,v3 + WeldInfo):");
         for (var i = 0; i < Math.Min(5, (int)numTriangles) && pos + 8 <= end; i++)
         {
             var v1 = ReadUInt16(data, pos, isBE);
             var v2 = ReadUInt16(data, pos + 2, isBE);
             var v3 = ReadUInt16(data, pos + 4, isBE);
             var weld = ReadUInt16(data, pos + 6, isBE);
-            Console.WriteLine($"  [{i}] Triangle({v1}, {v2}, {v3}) WeldInfo=0x{weld:X4}");
+            AnsiConsole.WriteLine($"  [{i}] Triangle({v1}, {v2}, {v3}) WeldInfo=0x{weld:X4}");
             pos += 8;
         }
 
@@ -111,26 +128,26 @@ internal static class HavokCommands
 
         if (pos + 4 > end)
         {
-            Console.WriteLine("Truncated after triangles");
-            return 0;
+            AnsiConsole.WriteLine("Truncated after triangles");
+            return;
         }
 
         var numVertices = ReadUInt32(data, pos, isBE);
         pos += 4;
-        Console.WriteLine();
-        Console.WriteLine($"NumVertices: {numVertices}");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"NumVertices: {numVertices}");
 
         // Compressed flag (since NIF 20.2.0.7)
         var compressed = data[pos];
         pos += 1;
         Console.WriteLine(
             $"Compressed: {compressed} ({(compressed == 1 ? "HalfVector3 - 6 bytes/vertex" : "Vector3 - 12 bytes/vertex")})");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
 
         // Show first few vertices based on compression
         if (compressed == 1)
         {
-            Console.WriteLine("First 5 Vertices (HalfVector3):");
+            AnsiConsole.WriteLine("First 5 Vertices (HalfVector3):");
             for (var i = 0; i < Math.Min(5, (int)numVertices) && pos + 6 <= end; i++)
             {
                 var hx = ReadUInt16(data, pos, isBE);
@@ -139,7 +156,7 @@ internal static class HavokCommands
                 var x = HalfToFloat(hx);
                 var y = HalfToFloat(hy);
                 var z = HalfToFloat(hz);
-                Console.WriteLine($"  [{i}] Half(0x{hx:X4}, 0x{hy:X4}, 0x{hz:X4}) -> ({x:F4}, {y:F4}, {z:F4})");
+                AnsiConsole.WriteLine($"  [{i}] Half(0x{hx:X4}, 0x{hy:X4}, 0x{hz:X4}) -> ({x:F4}, {y:F4}, {z:F4})");
                 pos += 6;
             }
 
@@ -147,13 +164,13 @@ internal static class HavokCommands
         }
         else
         {
-            Console.WriteLine("First 5 Vertices (Vector3):");
+            AnsiConsole.WriteLine("First 5 Vertices (Vector3):");
             for (var i = 0; i < Math.Min(5, (int)numVertices) && pos + 12 <= end; i++)
             {
                 var x = ReadFloat(data, pos, isBE);
                 var y = ReadFloat(data, pos + 4, isBE);
                 var z = ReadFloat(data, pos + 8, isBE);
-                Console.WriteLine($"  [{i}] ({x:F4}, {y:F4}, {z:F4})");
+                AnsiConsole.WriteLine($"  [{i}] ({x:F4}, {y:F4}, {z:F4})");
                 pos += 12;
             }
 
@@ -163,17 +180,17 @@ internal static class HavokCommands
         // NumSubShapes
         if (pos + 2 > end)
         {
-            Console.WriteLine("\nTruncated before SubShapes");
-            return 0;
+            AnsiConsole.WriteLine("\nTruncated before SubShapes");
+            return;
         }
 
         var numSubShapes = ReadUInt16(data, pos, isBE);
         pos += 2;
-        Console.WriteLine();
-        Console.WriteLine($"NumSubShapes: {numSubShapes}");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"NumSubShapes: {numSubShapes}");
 
         // SubShapes
-        Console.WriteLine("SubShapes (hkSubPartData):");
+        AnsiConsole.WriteLine("SubShapes (hkSubPartData):");
         for (var i = 0; i < numSubShapes && pos + 12 <= end; i++)
         {
             var havokFilter = ReadUInt32(data, pos, isBE);
@@ -183,8 +200,6 @@ internal static class HavokCommands
                 $"  [{i}] Filter=0x{havokFilter:X8}, NumVerts={subNumVerts}, Material=0x{havokMaterial:X8}");
             pos += 12;
         }
-
-        return 0;
     }
 
     /// <summary>
@@ -219,22 +234,22 @@ internal static class HavokCommands
         return BitConverter.Int32BitsToSingle(bits);
     }
 
-    private static int ParseBhkPackedNiTriStripsShape(byte[] data, int offset, int size, bool isBE)
+    private static void ParseBhkPackedNiTriStripsShape(byte[] data, int offset, int size, bool isBE)
     {
         var pos = offset;
 
         var userData = ReadUInt32(data, pos, isBE);
-        Console.WriteLine($"UserData: {userData}");
+        AnsiConsole.WriteLine($"UserData: {userData}");
         pos += 4;
 
-        Console.WriteLine($"Unused01: [{data[pos]:X2} {data[pos + 1]:X2} {data[pos + 2]:X2} {data[pos + 3]:X2}]");
+        AnsiConsole.WriteLine($"Unused01: [{data[pos]:X2} {data[pos + 1]:X2} {data[pos + 2]:X2} {data[pos + 3]:X2}]");
         pos += 4;
 
         var radius = ReadFloat(data, pos, isBE);
-        Console.WriteLine($"Radius: {radius:F6}");
+        AnsiConsole.WriteLine($"Radius: {radius:F6}");
         pos += 4;
 
-        Console.WriteLine($"Unused02: [{data[pos]:X2} {data[pos + 1]:X2} {data[pos + 2]:X2} {data[pos + 3]:X2}]");
+        AnsiConsole.WriteLine($"Unused02: [{data[pos]:X2} {data[pos + 1]:X2} {data[pos + 2]:X2} {data[pos + 3]:X2}]");
         pos += 4;
 
         Console.WriteLine(
@@ -242,7 +257,7 @@ internal static class HavokCommands
         pos += 16;
 
         var radiusCopy = ReadFloat(data, pos, isBE);
-        Console.WriteLine($"RadiusCopy: {radiusCopy:F6}");
+        AnsiConsole.WriteLine($"RadiusCopy: {radiusCopy:F6}");
         pos += 4;
 
         Console.WriteLine(
@@ -250,60 +265,56 @@ internal static class HavokCommands
         pos += 16;
 
         var dataRef = ReadInt32(data, pos, isBE);
-        Console.WriteLine($"Data Ref: {dataRef} (hkPackedNiTriStripsData)");
-
-        return 0;
+        AnsiConsole.WriteLine($"Data Ref: {dataRef} (hkPackedNiTriStripsData)");
     }
 
-    private static int ParseBhkMoppBvTreeShape(byte[] data, int offset, int size, bool isBE)
+    private static void ParseBhkMoppBvTreeShape(byte[] data, int offset, int size, bool isBE)
     {
         var pos = offset;
 
         var shapeRef = ReadInt32(data, pos, isBE);
-        Console.WriteLine($"Shape Ref: {shapeRef}");
+        AnsiConsole.WriteLine($"Shape Ref: {shapeRef}");
         pos += 4;
 
         Console.Write("Unused01 (12 bytes): ");
         for (var i = 0; i < 12; i++) Console.Write($"{data[pos + i]:X2} ");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
         pos += 12;
 
         var scale = ReadFloat(data, pos, isBE);
-        Console.WriteLine($"Scale: {scale:F6}");
+        AnsiConsole.WriteLine($"Scale: {scale:F6}");
         pos += 4;
 
-        Console.WriteLine();
-        Console.WriteLine("=== hkpMoppCode ===");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine("=== hkpMoppCode ===");
 
         var dataSize = ReadUInt32(data, pos, isBE);
-        Console.WriteLine($"DataSize: {dataSize}");
+        AnsiConsole.WriteLine($"DataSize: {dataSize}");
         pos += 4;
 
         var ox = ReadFloat(data, pos, isBE);
         var oy = ReadFloat(data, pos + 4, isBE);
         var oz = ReadFloat(data, pos + 8, isBE);
         var ow = ReadFloat(data, pos + 12, isBE);
-        Console.WriteLine($"Offset: ({ox:F4}, {oy:F4}, {oz:F4}, {ow:F4})");
+        AnsiConsole.WriteLine($"Offset: ({ox:F4}, {oy:F4}, {oz:F4}, {ow:F4})");
         pos += 16;
 
         var buildType = data[pos];
-        Console.WriteLine($"BuildType: {buildType}");
+        AnsiConsole.WriteLine($"BuildType: {buildType}");
         pos += 1;
 
-        Console.WriteLine($"MOPP Data: {dataSize} bytes starting at 0x{pos:X4}");
+        AnsiConsole.WriteLine($"MOPP Data: {dataSize} bytes starting at 0x{pos:X4}");
         Console.Write("First 32 bytes: ");
         for (var i = 0; i < Math.Min(32, (int)dataSize); i++) Console.Write($"{data[pos + i]:X2} ");
-        Console.WriteLine();
-
-        return 0;
+        AnsiConsole.WriteLine();
     }
 
-    private static int ParseBhkRigidBody(byte[] data, int offset, int size, bool isBE)
+    private static void ParseBhkRigidBody(byte[] data, int offset, int size, bool isBE)
     {
         var pos = offset;
 
         var shapeRef = ReadInt32(data, pos, isBE);
-        Console.WriteLine($"Shape Ref: {shapeRef}");
+        AnsiConsole.WriteLine($"Shape Ref: {shapeRef}");
         pos += 4;
 
         // 4 bytes unused
@@ -312,16 +323,16 @@ internal static class HavokCommands
         // HavokFilter
         var filter = ReadUInt32(data, pos, isBE);
         var group = ReadUInt32(data, pos + 4, isBE);
-        Console.WriteLine($"HavokFilter: 0x{filter:X8}, Group: {group}");
+        AnsiConsole.WriteLine($"HavokFilter: 0x{filter:X8}, Group: {group}");
         pos += 8;
 
         // 4 bytes unused
         pos += 4;
 
         // CollisionResponse, unused, ProcessContactCallbackDelay
-        Console.WriteLine($"CollisionResponse: {data[pos]}");
+        AnsiConsole.WriteLine($"CollisionResponse: {data[pos]}");
         var callbackDelay = ReadUInt16(data, pos + 2, isBE);
-        Console.WriteLine($"ProcessContactCallbackDelay: {callbackDelay}");
+        AnsiConsole.WriteLine($"ProcessContactCallbackDelay: {callbackDelay}");
         pos += 4;
 
         // 4 bytes unused
@@ -335,48 +346,44 @@ internal static class HavokCommands
         // Rotation (QuaternionXYZW)
         Console.WriteLine(
             $"Rotation: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
-
-        return 0;
     }
 
-    private static int ParseBhkCollisionObject(byte[] data, int offset, int size, bool isBE)
+    private static void ParseBhkCollisionObject(byte[] data, int offset, int size, bool isBE)
     {
         var pos = offset;
 
         var target = ReadInt32(data, pos, isBE);
-        Console.WriteLine($"Target: {target}");
+        AnsiConsole.WriteLine($"Target: {target}");
         pos += 4;
 
         var flags = ReadUInt16(data, pos, isBE);
-        Console.WriteLine($"Flags: 0x{flags:X4}");
+        AnsiConsole.WriteLine($"Flags: 0x{flags:X4}");
         pos += 2;
 
         var body = ReadInt32(data, pos, isBE);
-        Console.WriteLine($"Body Ref: {body}");
-
-        return 0;
+        AnsiConsole.WriteLine($"Body Ref: {body}");
     }
 
-    private static int CompareHkPackedNiTriStripsData(byte[] xbox, int xOff, int xSize,
+    private static void CompareHkPackedNiTriStripsData(byte[] xbox, int xOff, int xSize,
         byte[] pc, int pOff, int pSize)
     {
         var xNumTri = ReadUInt32(xbox, xOff, true);
         var pNumTri = ReadUInt32(pc, pOff, false);
 
-        Console.WriteLine(
+        AnsiConsole.WriteLine(
             $"{"NumTriangles",-25} {xNumTri,-20} {pNumTri,-20} {(xNumTri == pNumTri ? "✓" : "MISMATCH!")}");
 
         var xNumVert = ReadUInt32(xbox, xOff + 4 + (int)xNumTri * 8, true);
         var pNumVert = ReadUInt32(pc, pOff + 4 + (int)pNumTri * 8, false);
 
-        Console.WriteLine(
+        AnsiConsole.WriteLine(
             $"{"NumVertices",-25} {xNumVert,-20} {pNumVert,-20} {(xNumVert == pNumVert ? "✓" : "MISMATCH!")}");
 
         // Compare first triangle
         if (xNumTri > 0)
         {
-            Console.WriteLine();
-            Console.WriteLine("First Triangle:");
+            AnsiConsole.WriteLine();
+            AnsiConsole.WriteLine("First Triangle:");
             var xv1 = ReadUInt16(xbox, xOff + 4, true);
             var xv2 = ReadUInt16(xbox, xOff + 6, true);
             var xv3 = ReadUInt16(xbox, xOff + 8, true);
@@ -387,45 +394,40 @@ internal static class HavokCommands
             var pv3 = ReadUInt16(pc, pOff + 8, false);
             var pw = ReadUInt16(pc, pOff + 10, false);
 
-            Console.WriteLine($"  Xbox: ({xv1}, {xv2}, {xv3}) Weld=0x{xw:X4}");
-            Console.WriteLine($"  PC:   ({pv1}, {pv2}, {pv3}) Weld=0x{pw:X4}");
+            AnsiConsole.WriteLine($"  Xbox: ({xv1}, {xv2}, {xv3}) Weld=0x{xw:X4}");
+            AnsiConsole.WriteLine($"  PC:   ({pv1}, {pv2}, {pv3}) Weld=0x{pw:X4}");
         }
-
-        return 0;
     }
 
-    private static int CompareBhkMoppBvTreeShape(byte[] xbox, int xOff, int xSize,
+    private static void CompareBhkMoppBvTreeShape(byte[] xbox, int xOff, int xSize,
         byte[] pc, int pOff, int pSize)
     {
         var xShapeRef = ReadInt32(xbox, xOff, true);
         var pShapeRef = ReadInt32(pc, pOff, false);
-        Console.WriteLine($"{"Shape Ref",-25} {xShapeRef,-20} {pShapeRef,-20}");
+        AnsiConsole.WriteLine($"{"Shape Ref",-25} {xShapeRef,-20} {pShapeRef,-20}");
 
         var xScale = ReadFloat(xbox, xOff + 16, true);
         var pScale = ReadFloat(pc, pOff + 16, false);
-        Console.WriteLine($"{"Scale",-25} {xScale:F6,-13} {pScale:F6,-13}");
+        AnsiConsole.WriteLine($"{"Scale",-25} {xScale:F6,-13} {pScale:F6,-13}");
 
         var xDataSize = ReadUInt32(xbox, xOff + 20, true);
         var pDataSize = ReadUInt32(pc, pOff + 20, false);
-        Console.WriteLine(
+        AnsiConsole.WriteLine(
             $"{"MOPP DataSize",-25} {xDataSize,-20} {pDataSize,-20} {(xDataSize == pDataSize ? "✓" : "MISMATCH!")}");
 
-        Console.WriteLine();
-        Console.WriteLine("MOPP Offset Vector4:");
-        Console.WriteLine(
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine("MOPP Offset Vector4:");
+        AnsiConsole.WriteLine(
             $"  Xbox: ({ReadFloat(xbox, xOff + 24, true):F4}, {ReadFloat(xbox, xOff + 28, true):F4}, {ReadFloat(xbox, xOff + 32, true):F4}, {ReadFloat(xbox, xOff + 36, true):F4})");
-        Console.WriteLine(
+        AnsiConsole.WriteLine(
             $"  PC:   ({ReadFloat(pc, pOff + 24, false):F4}, {ReadFloat(pc, pOff + 28, false):F4}, {ReadFloat(pc, pOff + 32, false):F4}, {ReadFloat(pc, pOff + 36, false):F4})");
-
-        return 0;
     }
 
-    private static int UnsupportedBlock(string typeName)
+    private static void UnsupportedBlock(string typeName)
     {
-        Console.WriteLine($"Havok parsing not implemented for: {typeName}");
+        AnsiConsole.WriteLine($"Havok parsing not implemented for: {typeName}");
         Console.WriteLine(
             "Supported: hkPackedNiTriStripsData, bhkPackedNiTriStripsShape, bhkMoppBvTreeShape, bhkRigidBody, bhkCollisionObject");
-        return 1;
     }
 
     private static uint ReadUInt32(byte[] data, int pos, bool isBE)
@@ -456,4 +458,37 @@ internal static class HavokCommands
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
         return BitConverter.UInt32BitsToSingle(bits);
     }
+
+    #region Command Registration
+
+    public static Command CreateHavokCommand()
+    {
+        var command = new Command("havok",
+            "Parse Havok physics blocks (hkPackedNiTriStripsData, bhkMoppBvTreeShape, etc.)");
+        var fileArg = new Argument<string>("file") { Description = "NIF file path" };
+        var blockArg = new Argument<int>("block") { Description = "Block index" };
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(blockArg);
+        command.SetAction(parseResult => Havok(parseResult.GetValue(fileArg), parseResult.GetValue(blockArg)));
+        return command;
+    }
+
+    public static Command CreateHavokCompareCommand()
+    {
+        var command = new Command("havokcompare", "Compare Havok blocks between Xbox 360 and PC files");
+        var xboxArg = new Argument<string>("xbox") { Description = "Xbox NIF file path" };
+        var pcArg = new Argument<string>("pc") { Description = "PC NIF file path" };
+        var xboxBlockArg = new Argument<int>("xbox-block") { Description = "Xbox block index" };
+        var pcBlockArg = new Argument<int>("pc-block") { Description = "PC block index" };
+        command.Arguments.Add(xboxArg);
+        command.Arguments.Add(pcArg);
+        command.Arguments.Add(xboxBlockArg);
+        command.Arguments.Add(pcBlockArg);
+        command.SetAction(parseResult => HavokCompare(
+            parseResult.GetValue(xboxArg), parseResult.GetValue(pcArg),
+            parseResult.GetValue(xboxBlockArg), parseResult.GetValue(pcBlockArg)));
+        return command;
+    }
+
+    #endregion
 }

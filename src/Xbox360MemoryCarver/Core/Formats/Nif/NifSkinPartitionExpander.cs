@@ -106,12 +106,10 @@ internal static class NifSkinPartitionExpander
             {
                 partition.VertexWeights = new float[partition.NumVertices, partition.NumWeightsPerVertex];
                 for (var v = 0; v < partition.NumVertices && pos < end; v++)
+                for (var w = 0; w < partition.NumWeightsPerVertex && pos + 4 <= end; w++)
                 {
-                    for (var w = 0; w < partition.NumWeightsPerVertex && pos + 4 <= end; w++)
-                    {
-                        partition.VertexWeights[v, w] = ReadFloat(data, pos, isBigEndian);
-                        pos += 4;
-                    }
+                    partition.VertexWeights[v, w] = ReadFloat(data, pos, isBigEndian);
+                    pos += 4;
                 }
             }
 
@@ -167,12 +165,8 @@ internal static class NifSkinPartitionExpander
             {
                 partition.BoneIndices = new byte[partition.NumVertices, partition.NumWeightsPerVertex];
                 for (var v = 0; v < partition.NumVertices && pos < end; v++)
-                {
-                    for (var w = 0; w < partition.NumWeightsPerVertex && pos + 1 <= end; w++)
-                    {
-                        partition.BoneIndices[v, w] = data[pos++];
-                    }
-                }
+                for (var w = 0; w < partition.NumWeightsPerVertex && pos + 1 <= end; w++)
+                    partition.BoneIndices[v, w] = data[pos++];
             }
 
             result.Partitions.Add(partition);

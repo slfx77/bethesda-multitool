@@ -14,13 +14,22 @@ public static class ModulesCommand
     {
         var command = new Command("modules", "List loaded modules from minidump header");
 
-        var inputArg = new Argument<string>("input", "Path to memory dump file (.dmp)");
-        var formatOpt = new Option<string>(["-f", "--format"], () => "text", "Output format: text, md, csv");
+        var inputArg = new Argument<string>("input") { Description = "Path to memory dump file (.dmp)" };
+        var formatOpt = new Option<string>("-f", "--format")
+        {
+            Description = "Output format: text, md, csv",
+            DefaultValueFactory = _ => "text"
+        };
 
-        command.AddArgument(inputArg);
-        command.AddOption(formatOpt);
+        command.Arguments.Add(inputArg);
+        command.Options.Add(formatOpt);
 
-        command.SetHandler(Execute, inputArg, formatOpt);
+        command.SetAction(parseResult =>
+        {
+            var input = parseResult.GetValue(inputArg)!;
+            var format = parseResult.GetValue(formatOpt)!;
+            Execute(input, format);
+        });
 
         return command;
     }

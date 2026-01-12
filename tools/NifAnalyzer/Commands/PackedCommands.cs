@@ -1,5 +1,7 @@
+using System.CommandLine;
 using NifAnalyzer.Models;
 using NifAnalyzer.Parsers;
+using Spectre.Console;
 using static NifAnalyzer.Utils.BinaryHelpers;
 
 namespace NifAnalyzer.Commands;
@@ -12,7 +14,7 @@ internal static class PackedCommands
     /// <summary>
     ///     Compare normals from Xbox 360 packed data against PC reference normals.
     /// </summary>
-    public static int NormalCompare(string xboxPath, string pcPath, int packedBlockIndex, int pcGeomBlockIndex,
+    private static void NormalCompare(string xboxPath, string pcPath, int packedBlockIndex, int pcGeomBlockIndex,
         int count)
     {
         var xboxData = File.ReadAllBytes(xboxPath);
@@ -20,23 +22,23 @@ internal static class PackedCommands
         var xboxNif = NifParser.Parse(xboxData);
         var pcNif = NifParser.Parse(pcData);
 
-        Console.WriteLine("=== Normal Comparison: Xbox 360 Packed vs PC Reference ===");
-        Console.WriteLine();
-        Console.WriteLine($"Xbox file: {Path.GetFileName(xboxPath)} (Block {packedBlockIndex})");
-        Console.WriteLine($"PC file:   {Path.GetFileName(pcPath)} (Block {pcGeomBlockIndex})");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("=== Normal Comparison: Xbox 360 Packed vs PC Reference ===");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"Xbox file: {Path.GetFileName(xboxPath)} (Block {packedBlockIndex})");
+        AnsiConsole.WriteLine($"PC file:   {Path.GetFileName(pcPath)} (Block {pcGeomBlockIndex})");
+        AnsiConsole.WriteLine();
 
         // Validate blocks
         if (packedBlockIndex >= xboxNif.NumBlocks)
         {
-            Console.Error.WriteLine($"Xbox block {packedBlockIndex} out of range");
-            return 1;
+            AnsiConsole.MarkupLine($"[red]Error:[/] Xbox block {packedBlockIndex} out of range");
+            return;
         }
 
         if (pcGeomBlockIndex >= pcNif.NumBlocks)
         {
-            Console.Error.WriteLine($"PC block {pcGeomBlockIndex} out of range");
-            return 1;
+            AnsiConsole.MarkupLine($"[red]Error:[/] PC block {pcGeomBlockIndex} out of range");
+            return;
         }
 
         var xboxTypeName = xboxNif.GetBlockTypeName(packedBlockIndex);
@@ -44,9 +46,9 @@ internal static class PackedCommands
 
         if (!xboxTypeName.Contains("PackedAdditionalGeometryData"))
         {
-            Console.Error.WriteLine(
-                $"Xbox block {packedBlockIndex} is {xboxTypeName}, not BSPackedAdditionalGeometryData");
-            return 1;
+            AnsiConsole.MarkupLine(
+                $"[red]Error:[/] Xbox block {packedBlockIndex} is {Markup.Escape(xboxTypeName)}, not BSPackedAdditionalGeometryData");
+            return;
         }
 
         // Parse Xbox packed data
@@ -56,8 +58,8 @@ internal static class PackedCommands
 
         if (packedResult.RawDataOffset < 0)
         {
-            Console.Error.WriteLine("Failed to parse Xbox packed data");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] Failed to parse Xbox packed data");
+            return;
         }
 
         // Parse PC geometry data
@@ -66,9 +68,9 @@ internal static class PackedCommands
         var pcGeom = GeometryParser.Parse(pcData.AsSpan(pcOffset, pcSize), pcNif.IsBigEndian, pcNif.BsVersion,
             pcTypeName);
 
-        Console.WriteLine($"Xbox: {packedResult.NumVertices} vertices, stride {packedResult.Stride}");
-        Console.WriteLine($"PC:   {pcGeom.NumVertices} vertices, HasNormals={pcGeom.HasNormals}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine($"Xbox: {packedResult.NumVertices} vertices, stride {packedResult.Stride}");
+        AnsiConsole.WriteLine($"PC:   {pcGeom.NumVertices} vertices, HasNormals={pcGeom.HasNormals}");
+        AnsiConsole.WriteLine();
 
         // Find normal stream in packed data - VERIFIED: unit-length stream at offset 20 matches PC normals
         // NOTE: Stream headers may label offset 8 as "Normal" but that data has avg length ~0.82, not unit-length.
@@ -80,13 +82,13 @@ internal static class PackedCommands
         var normalStream = half4Streams.FirstOrDefault(s => s.BlockOffset == 20);
         if (normalStream == null)
         {
-            Console.Error.WriteLine("Could not find normal stream at offset 20");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] Could not find normal stream at offset 20");
+            return;
         }
 
-        Console.WriteLine(
+        AnsiConsole.WriteLine(
             $"Xbox normal stream: type={normalStream.Type}, offset={normalStream.BlockOffset}, unitSize={normalStream.UnitSize}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
 
         // Extract Xbox normals
         var xboxNormals = new List<(float X, float Y, float Z)>();
@@ -105,10 +107,10 @@ internal static class PackedCommands
         var pcNormals = ExtractPcNormals(pcData.AsSpan(pcOffset, pcSize), pcNif.IsBigEndian, pcGeom, count);
 
         // Show raw bytes for first few normals
-        Console.WriteLine("=== Raw Normal Bytes (first 5 vertices) ===");
-        Console.WriteLine();
-        Console.WriteLine($"{"Vtx",-4} {"Xbox Bytes",-26} {"Xbox (Nx, Ny, Nz)",-35} {"PC (Nx, Ny, Nz)",-35}");
-        Console.WriteLine(new string('-', 110));
+        AnsiConsole.WriteLine("=== Raw Normal Bytes (first 5 vertices) ===");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"{"Vtx",-4} {"Xbox Bytes",-26} {"Xbox (Nx, Ny, Nz)",-35} {"PC (Nx, Ny, Nz)",-35}");
+        AnsiConsole.WriteLine(new string('-', 110));
 
         var displayCount = Math.Min(5, Math.Min(xboxNormals.Count, pcNormals.Count));
         for (var v = 0; v < displayCount; v++)
@@ -128,13 +130,13 @@ internal static class PackedCommands
                 $"{v,-4} {hexBytes,-26} ({xn.X,8:F4}, {xn.Y,8:F4}, {xn.Z,8:F4})   ({pn.X,8:F4}, {pn.Y,8:F4}, {pn.Z,8:F4})");
         }
 
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
 
         // Full comparison with statistics
-        Console.WriteLine($"=== Normal Comparison (first {count}) ===");
-        Console.WriteLine();
-        Console.WriteLine($"{"Vtx",-5} {"Xbox (Nx, Ny, Nz)",-35} {"PC (Nx, Ny, Nz)",-35} {"Delta",-10} {"Match"}");
-        Console.WriteLine(new string('-', 100));
+        AnsiConsole.WriteLine($"=== Normal Comparison (first {count}) ===");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"{"Vtx",-5} {"Xbox (Nx, Ny, Nz)",-35} {"PC (Nx, Ny, Nz)",-35} {"Delta",-10} {"Match"}");
+        AnsiConsole.WriteLine(new string('-', 100));
 
         var matchCount = 0;
         float maxDelta = 0;
@@ -161,16 +163,16 @@ internal static class PackedCommands
                     $"{i,-5} ({xn.X,8:F4}, {xn.Y,8:F4}, {xn.Z,8:F4})   ({pn.X,8:F4}, {pn.Y,8:F4}, {pn.Z,8:F4})   {delta,8:F4}   {(match ? "✓" : "✗")}");
         }
 
-        Console.WriteLine();
-        Console.WriteLine("=== Summary ===");
-        Console.WriteLine($"Compared: {Math.Min(xboxNormals.Count, pcNormals.Count)} normals");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine("=== Summary ===");
+        AnsiConsole.WriteLine($"Compared: {Math.Min(xboxNormals.Count, pcNormals.Count)} normals");
         Console.WriteLine(
             $"Matches (delta < 0.02): {matchCount} ({100.0 * matchCount / Math.Min(xboxNormals.Count, pcNormals.Count):F1}%)");
-        Console.WriteLine($"Max delta: {maxDelta:F4} at vertex {maxDeltaVert}");
+        AnsiConsole.WriteLine($"Max delta: {maxDelta:F4} at vertex {maxDeltaVert}");
 
         // Check if normals look like they need remapping
-        Console.WriteLine();
-        Console.WriteLine("=== Checking for potential issues ===");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine("=== Checking for potential issues ===");
 
         // Check if Xbox normals are normalized
         float avgLen = 0;
@@ -181,7 +183,7 @@ internal static class PackedCommands
         }
 
         avgLen /= xboxNormals.Count;
-        Console.WriteLine($"Xbox normal avg length: {avgLen:F4} (should be ~1.0 for normalized)");
+        AnsiConsole.WriteLine($"Xbox normal avg length: {avgLen:F4} (should be ~1.0 for normalized)");
 
         // Check if values look like valid normals (-1 to 1 range)
         var outOfRange = 0;
@@ -192,9 +194,7 @@ internal static class PackedCommands
                 outOfRange++;
         }
 
-        Console.WriteLine($"Xbox normals out of [-1,1] range: {outOfRange}");
-
-        return 0;
+        AnsiConsole.WriteLine($"Xbox normals out of [-1,1] range: {outOfRange}");
     }
 
     private static (int NumVertices, int Stride, int RawDataOffset, List<PackedGeomStreamInfo> Streams)
@@ -260,7 +260,8 @@ internal static class PackedCommands
         // Use the actual parsed normals offset from GeometryParser
         if (!geom.FieldOffsets.TryGetValue("Normals", out var normalsOffset))
         {
-            Console.Error.WriteLine("  Warning: Normals offset not found in PC geometry, trying fallback...");
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   "  Warning: Normals offset not found in PC geometry, trying fallback...");
             // Fallback: after vertices
             normalsOffset = geom.FieldOffsets.GetValueOrDefault("Vertices") + geom.NumVertices * 12;
         }
@@ -279,15 +280,16 @@ internal static class PackedCommands
         return normals;
     }
 
-    public static int Packed(string path, int blockIndex, int numVertsToShow)
+    private static void Packed(string path, int blockIndex, int numVertsToShow)
     {
         var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
 
         if (blockIndex < 0 || blockIndex >= nif.NumBlocks)
         {
-            Console.Error.WriteLine($"Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   $"Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
+            return;
         }
 
         var offset = nif.GetBlockOffset(blockIndex);
@@ -296,15 +298,16 @@ internal static class PackedCommands
 
         if (!typeName.Contains("PackedAdditionalGeometryData"))
         {
-            Console.Error.WriteLine($"Block {blockIndex} is {typeName}, not BSPackedAdditionalGeometryData");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   $"Block {blockIndex} is {typeName}, not BSPackedAdditionalGeometryData");
+            return;
         }
 
-        Console.WriteLine($"Block {blockIndex}: {typeName}");
-        Console.WriteLine($"Offset: 0x{offset:X4}");
-        Console.WriteLine($"Size: {size} bytes");
-        Console.WriteLine($"Endian: {(nif.IsBigEndian ? "Big (Xbox 360)" : "Little (PC)")}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine($"Block {blockIndex}: {typeName}");
+        AnsiConsole.WriteLine($"Offset: 0x{offset:X4}");
+        AnsiConsole.WriteLine($"Size: {size} bytes");
+        AnsiConsole.WriteLine($"Endian: {(nif.IsBigEndian ? "Big (Xbox 360)" : "Little (PC)")}");
+        AnsiConsole.WriteLine();
 
         var pos = offset;
 
@@ -314,17 +317,17 @@ internal static class PackedCommands
         var numBlockInfos = ReadUInt32(data, pos, nif.IsBigEndian);
         pos += 4;
 
-        Console.WriteLine("=== BSPackedAdditionalGeometryData ===");
-        Console.WriteLine($"NumVertices: {numVertices}");
-        Console.WriteLine($"NumBlockInfos (streams): {numBlockInfos}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("=== BSPackedAdditionalGeometryData ===");
+        AnsiConsole.WriteLine($"NumVertices: {numVertices}");
+        AnsiConsole.WriteLine($"NumBlockInfos (streams): {numBlockInfos}");
+        AnsiConsole.WriteLine();
 
         // Parse stream infos (25 bytes each)
         var streams = new PackedGeomStreamInfo[numBlockInfos];
-        Console.WriteLine("=== Data Streams ===");
+        AnsiConsole.WriteLine("=== Data Streams ===");
         Console.WriteLine(
             $"{"#",-3} {"Type",-6} {"Unit",-5} {"Total",-8} {"Stride",-7} {"BlkIdx",-7} {"Offset",-7} {"Semantic",-25}");
-        Console.WriteLine(new string('-', 80));
+        AnsiConsole.WriteLine(new string('-', 80));
 
         // First pass: collect all streams
         for (var i = 0; i < numBlockInfos; i++)
@@ -358,12 +361,12 @@ internal static class PackedCommands
                 $"{idx,-3} {stream.Type,-6} {stream.UnitSize,-5} {stream.TotalSize,-8} {stream.Stride,-7} {stream.BlockIndex,-7} {stream.BlockOffset,-7} {semantic,-25}");
         }
 
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
 
         // NumDataBlocks
         var numDataBlocks = ReadUInt32(data, pos, nif.IsBigEndian);
         pos += 4;
-        Console.WriteLine($"=== Data Blocks ({numDataBlocks}) ===");
+        AnsiConsole.WriteLine($"=== Data Blocks ({numDataBlocks}) ===");
 
         var rawDataOffset = -1;
         var rawDataSize = 0;
@@ -371,7 +374,7 @@ internal static class PackedCommands
         for (var b = 0; b < numDataBlocks; b++)
         {
             var hasData = data[pos++];
-            Console.WriteLine($"Block {b}: hasData = {hasData}");
+            AnsiConsole.WriteLine($"Block {b}: hasData = {hasData}");
 
             if (hasData == 0) continue;
 
@@ -379,52 +382,52 @@ internal static class PackedCommands
             var numInnerBlocks = ReadUInt32(data, pos + 4, nif.IsBigEndian);
             pos += 8;
 
-            Console.WriteLine($"  blockSize: {blockSize} (0x{blockSize:X4})");
-            Console.WriteLine($"  numInnerBlocks: {numInnerBlocks}");
+            AnsiConsole.WriteLine($"  blockSize: {blockSize} (0x{blockSize:X4})");
+            AnsiConsole.WriteLine($"  numInnerBlocks: {numInnerBlocks}");
 
             // Block offsets
             for (var ib = 0; ib < numInnerBlocks; ib++)
             {
                 var blkOff = ReadUInt32(data, pos, nif.IsBigEndian);
-                Console.WriteLine($"  blockOffset[{ib}]: {blkOff}");
+                AnsiConsole.WriteLine($"  blockOffset[{ib}]: {blkOff}");
                 pos += 4;
             }
 
             var numData = ReadUInt32(data, pos, nif.IsBigEndian);
             pos += 4;
-            Console.WriteLine($"  numData: {numData}");
+            AnsiConsole.WriteLine($"  numData: {numData}");
 
             // Data sizes
             for (var d = 0; d < numData; d++)
             {
                 var dSize = ReadUInt32(data, pos, nif.IsBigEndian);
-                Console.WriteLine($"  dataSize[{d}]: {dSize}");
+                AnsiConsole.WriteLine($"  dataSize[{d}]: {dSize}");
                 pos += 4;
             }
 
             rawDataOffset = pos;
             // blockSize is the total raw data size for this data block
             rawDataSize = (int)blockSize;
-            Console.WriteLine($"  >>> RAW DATA at 0x{pos:X4}, size {rawDataSize} bytes");
+            AnsiConsole.WriteLine($"  >>> RAW DATA at 0x{pos:X4}, size {rawDataSize} bytes");
             pos += rawDataSize;
 
             // shaderIndex and totalSize (BSPackedAGDDataBlock extension)
             var shaderIndex = ReadUInt32(data, pos, nif.IsBigEndian);
             var totalSize = ReadUInt32(data, pos + 4, nif.IsBigEndian);
             pos += 8;
-            Console.WriteLine($"  shaderIndex: {shaderIndex}");
-            Console.WriteLine($"  totalSize: {totalSize}");
+            AnsiConsole.WriteLine($"  shaderIndex: {shaderIndex}");
+            AnsiConsole.WriteLine($"  totalSize: {totalSize}");
         }
 
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
 
         // Extract and display sample vertices
         if (rawDataOffset > 0 && numBlockInfos > 0)
         {
             var stride = (int)streams[0].Stride;
-            Console.WriteLine($"=== Sample Vertex Data (first {numVertsToShow}) ===");
-            Console.WriteLine($"Stride: {stride} bytes per vertex");
-            Console.WriteLine();
+            AnsiConsole.WriteLine($"=== Sample Vertex Data (first {numVertsToShow}) ===");
+            AnsiConsole.WriteLine($"Stride: {stride} bytes per vertex");
+            AnsiConsole.WriteLine();
 
             // Find streams by offset order - VERIFIED ORDER:
             // half4[0] = Position, half4[1] = Normal (matches PC), half4[2] = Tangent, half4[3] = Bitangent
@@ -436,7 +439,7 @@ internal static class PackedCommands
 
             Console.WriteLine(
                 $"{"Idx",-5} {"X",-12} {"Y",-12} {"Z",-12} {"U",-10} {"V",-10} {"Nx",-10} {"Ny",-10} {"Nz",-10}");
-            Console.WriteLine(new string('-', 105));
+            AnsiConsole.WriteLine(new string('-', 105));
 
             for (var v = 0; v < Math.Min(numVertsToShow, numVertices); v++)
             {
@@ -475,35 +478,34 @@ internal static class PackedCommands
                     $"{v,-5} {px,-12:F4} {py,-12:F4} {pz,-12:F4} {u,-10:F4} {uv,-10:F4} {nx,-10:F4} {ny,-10:F4} {nz,-10:F4}");
             }
 
-            Console.WriteLine();
+            AnsiConsole.WriteLine();
 
             // Show raw hex for first vertex
-            Console.WriteLine($"=== Raw Hex for Vertex 0 ({stride} bytes at 0x{rawDataOffset:X4}) ===");
+            AnsiConsole.WriteLine($"=== Raw Hex for Vertex 0 ({stride} bytes at 0x{rawDataOffset:X4}) ===");
             HexDump(data, rawDataOffset, stride);
         }
-
-        return 0;
     }
 
     /// <summary>
     ///     Dump all half4 streams for first N vertices to identify where normals are stored.
     /// </summary>
-    public static int StreamDump(string path, int blockIndex, int count)
+    private static void StreamDump(string path, int blockIndex, int count)
     {
         var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
 
         if (blockIndex < 0 || blockIndex >= nif.NumBlocks)
         {
-            Console.Error.WriteLine($"Block index {blockIndex} out of range");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " + $"Block index {blockIndex} out of range");
+            return;
         }
 
         var typeName = nif.GetBlockTypeName(blockIndex);
         if (!typeName.Contains("PackedAdditionalGeometryData"))
         {
-            Console.Error.WriteLine($"Block {blockIndex} is {typeName}, not BSPackedAdditionalGeometryData");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   $"Block {blockIndex} is {typeName}, not BSPackedAdditionalGeometryData");
+            return;
         }
 
         var offset = nif.GetBlockOffset(blockIndex);
@@ -512,13 +514,13 @@ internal static class PackedCommands
 
         if (packedResult.RawDataOffset < 0)
         {
-            Console.Error.WriteLine("Failed to parse packed data");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " + "Failed to parse packed data");
+            return;
         }
 
-        Console.WriteLine($"=== All Half4 Streams for First {count} Vertices ===");
-        Console.WriteLine($"Stride: {packedResult.Stride}, NumVertices: {packedResult.NumVertices}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine($"=== All Half4 Streams for First {count} Vertices ===");
+        AnsiConsole.WriteLine($"Stride: {packedResult.Stride}, NumVertices: {packedResult.NumVertices}");
+        AnsiConsole.WriteLine();
 
         // Find all half4 streams
         var half4Streams = packedResult.Streams.Where(s => s.Type == 16 && s.UnitSize == 8)
@@ -526,14 +528,14 @@ internal static class PackedCommands
 
         Console.WriteLine(
             $"Found {half4Streams.Count} half4 streams at offsets: {string.Join(", ", half4Streams.Select(s => s.BlockOffset))}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
 
         // Header
         Console.Write($"{"Vtx",-4}");
         for (var s = 0; s < half4Streams.Count; s++)
             Console.Write($" | Stream{s} @{half4Streams[s].BlockOffset,-2} (x, y, z, w)".PadRight(40));
-        Console.WriteLine();
-        Console.WriteLine(new string('-', 4 + half4Streams.Count * 41));
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine(new string('-', 4 + half4Streams.Count * 41));
 
         count = Math.Min(count, packedResult.NumVertices);
         for (var v = 0; v < count; v++)
@@ -552,12 +554,12 @@ internal static class PackedCommands
                 Console.Write($" | ({x,7:F3},{y,7:F3},{z,7:F3},{w,6:F2}) len={len:F2}");
             }
 
-            Console.WriteLine();
+            AnsiConsole.WriteLine();
         }
 
         // Check which stream has values that look like normals (length ~1, values in -1..1)
-        Console.WriteLine();
-        Console.WriteLine("=== Stream Analysis ===");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine("=== Stream Analysis ===");
         for (var s = 0; s < half4Streams.Count; s++)
         {
             float avgLen = 0;
@@ -579,19 +581,18 @@ internal static class PackedCommands
             Console.WriteLine(
                 $"Stream {s} @offset {half4Streams[s].BlockOffset}: avgLen={avgLen:F3}, inRange(-1..1)={inRange}%");
         }
-
-        return 0;
     }
 
-    public static int SkinPart(string path, int blockIndex)
+    private static void SkinPart(string path, int blockIndex)
     {
         var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
 
         if (blockIndex < 0 || blockIndex >= nif.NumBlocks)
         {
-            Console.Error.WriteLine($"Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   $"Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
+            return;
         }
 
         var offset = nif.GetBlockOffset(blockIndex);
@@ -600,61 +601,61 @@ internal static class PackedCommands
 
         if (!typeName.Contains("SkinPartition"))
         {
-            Console.Error.WriteLine($"Block {blockIndex} is {typeName}, not NiSkinPartition");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " + $"Block {blockIndex} is {typeName}, not NiSkinPartition");
+            return;
         }
 
-        Console.WriteLine($"Block {blockIndex}: {typeName}");
-        Console.WriteLine($"Offset: 0x{offset:X4}");
-        Console.WriteLine($"Size: {size} bytes");
-        Console.WriteLine($"Endian: {(nif.IsBigEndian ? "Big (Xbox 360)" : "Little (PC)")}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine($"Block {blockIndex}: {typeName}");
+        AnsiConsole.WriteLine($"Offset: 0x{offset:X4}");
+        AnsiConsole.WriteLine($"Size: {size} bytes");
+        AnsiConsole.WriteLine($"Endian: {(nif.IsBigEndian ? "Big (Xbox 360)" : "Little (PC)")}");
+        AnsiConsole.WriteLine();
 
         var skinPart = SkinPartitionParser.Parse(data.AsSpan(offset, size), nif.IsBigEndian);
 
-        Console.WriteLine("=== NiSkinPartition ===");
-        Console.WriteLine();
-        Console.WriteLine($"NumPartitions: {skinPart.NumPartitions}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("=== NiSkinPartition ===");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"NumPartitions: {skinPart.NumPartitions}");
+        AnsiConsole.WriteLine();
 
         for (var p = 0; p < skinPart.NumPartitions; p++)
         {
             var part = skinPart.Partitions[p];
-            Console.WriteLine($"--- Partition {p} ---");
-            Console.WriteLine($"  NumVertices: {part.NumVertices}");
-            Console.WriteLine($"  NumTriangles: {part.NumTriangles}");
-            Console.WriteLine($"  NumBones: {part.NumBones}");
-            Console.WriteLine($"  NumStrips: {part.NumStrips}");
-            Console.WriteLine($"  NumWeightsPerVertex: {part.NumWeightsPerVertex}");
+            AnsiConsole.WriteLine($"--- Partition {p} ---");
+            AnsiConsole.WriteLine($"  NumVertices: {part.NumVertices}");
+            AnsiConsole.WriteLine($"  NumTriangles: {part.NumTriangles}");
+            AnsiConsole.WriteLine($"  NumBones: {part.NumBones}");
+            AnsiConsole.WriteLine($"  NumStrips: {part.NumStrips}");
+            AnsiConsole.WriteLine($"  NumWeightsPerVertex: {part.NumWeightsPerVertex}");
             Console.WriteLine(
                 $"  Bones: [{string.Join(", ", part.Bones.Take(Math.Min(10, part.Bones.Length)))}{(part.Bones.Length > 10 ? "..." : "")}]");
-            Console.WriteLine($"  HasVertexMap: {part.HasVertexMap}");
+            AnsiConsole.WriteLine($"  HasVertexMap: {part.HasVertexMap}");
             Console.WriteLine(
                 $"  VertexMap: [{string.Join(", ", part.VertexMap.Take(Math.Min(10, part.VertexMap.Length)))}{(part.VertexMap.Length > 10 ? "..." : "")}]");
-            Console.WriteLine($"  HasVertexWeights: {part.HasVertexWeights}");
-            Console.WriteLine($"  HasFaces: {part.HasFaces}");
+            AnsiConsole.WriteLine($"  HasVertexWeights: {part.HasVertexWeights}");
+            AnsiConsole.WriteLine($"  HasFaces: {part.HasFaces}");
 
             if (part.NumStrips > 0)
             {
-                Console.WriteLine($"  NumStripsLengths: {part.StripLengths.Length}");
-                Console.WriteLine($"  StripLengths: [{string.Join(", ", part.StripLengths)}]");
-                Console.WriteLine($"  Total strip indices: {part.StripLengths.Sum(l => l)}");
+                AnsiConsole.WriteLine($"  NumStripsLengths: {part.StripLengths.Length}");
+                AnsiConsole.WriteLine($"  StripLengths: [{string.Join(", ", part.StripLengths)}]");
+                AnsiConsole.WriteLine($"  Total strip indices: {part.StripLengths.Sum(l => l)}");
 
                 if (part.Strips.Length > 0 && part.Strips[0].Length > 0)
                     Console.WriteLine(
                         $"  Strip[0] first 20 indices: [{string.Join(", ", part.Strips[0].Take(Math.Min(20, part.Strips[0].Length)))}...]");
             }
 
-            Console.WriteLine($"  HasBoneIndices: {part.HasBoneIndices}");
+            AnsiConsole.WriteLine($"  HasBoneIndices: {part.HasBoneIndices}");
             if (part.Triangles.Length > 0)
                 Console.WriteLine(
                     $"  Triangles[0-4]: {string.Join(", ", part.Triangles.Take(5).Select(t => $"({t.V1},{t.V2},{t.V3})"))}...");
 
-            Console.WriteLine();
+            AnsiConsole.WriteLine();
         }
 
         // Summary for skinned mesh reconstruction
-        Console.WriteLine("=== Reconstruction Info ===");
+        AnsiConsole.WriteLine("=== Reconstruction Info ===");
         if (skinPart.NumPartitions > 0)
         {
             var part = skinPart.Partitions[0];
@@ -665,30 +666,29 @@ internal static class PackedCommands
                 foreach (var strip in part.Strips)
                     if (strip.Length >= 3)
                         stripTris += strip.Length - 2;
-                Console.WriteLine($"Triangles reconstructable from strips: {stripTris}");
-                Console.WriteLine($"Declared NumTriangles: {part.NumTriangles}");
+                AnsiConsole.WriteLine($"Triangles reconstructable from strips: {stripTris}");
+                AnsiConsole.WriteLine($"Declared NumTriangles: {part.NumTriangles}");
             }
             else if (part.Triangles.Length > 0)
             {
-                Console.WriteLine($"Direct triangles available: {part.Triangles.Length}");
+                AnsiConsole.WriteLine($"Direct triangles available: {part.Triangles.Length}");
             }
         }
-
-        return 0;
     }
 
     /// <summary>
     ///     Comprehensive analysis of BSPackedAdditionalGeometryData streams with semantic identification.
     /// </summary>
-    public static int AnalyzeStreams(string path, int blockIndex, int numVertices)
+    private static void AnalyzeStreams(string path, int blockIndex, int numVertices)
     {
         var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
 
         if (blockIndex < 0 || blockIndex >= nif.NumBlocks)
         {
-            Console.Error.WriteLine($"Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   $"Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})");
+            return;
         }
 
         var offset = nif.GetBlockOffset(blockIndex);
@@ -697,39 +697,40 @@ internal static class PackedCommands
 
         if (!typeName.Contains("PackedAdditionalGeometryData"))
         {
-            Console.Error.WriteLine($"Block {blockIndex} is {typeName}, not BSPackedAdditionalGeometryData");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   $"Block {blockIndex} is {typeName}, not BSPackedAdditionalGeometryData");
+            return;
         }
 
-        Console.WriteLine("╔════════════════════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║           BSPackedAdditionalGeometryData Stream Analysis              ║");
-        Console.WriteLine("╚════════════════════════════════════════════════════════════════════════╝");
-        Console.WriteLine();
-        Console.WriteLine($"File: {Path.GetFileName(path)}");
-        Console.WriteLine($"Block: {blockIndex} ({typeName})");
-        Console.WriteLine($"Offset: 0x{offset:X4} ({offset} bytes)");
-        Console.WriteLine($"Size: {size} bytes");
-        Console.WriteLine($"Endianness: {(nif.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("╔════════════════════════════════════════════════════════════════════════╗");
+        AnsiConsole.WriteLine("║           BSPackedAdditionalGeometryData Stream Analysis              ║");
+        AnsiConsole.WriteLine("╚════════════════════════════════════════════════════════════════════════╝");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"File: {Path.GetFileName(path)}");
+        AnsiConsole.WriteLine($"Block: {blockIndex} ({typeName})");
+        AnsiConsole.WriteLine($"Offset: 0x{offset:X4} ({offset} bytes)");
+        AnsiConsole.WriteLine($"Size: {size} bytes");
+        AnsiConsole.WriteLine($"Endianness: {(nif.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
+        AnsiConsole.WriteLine();
 
         // Parse packed geometry
         var result = ParsePackedGeometry(data, offset, size, nif.IsBigEndian);
 
         if (result.RawDataOffset < 0)
         {
-            Console.Error.WriteLine("Failed to locate raw vertex data in packed block");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " + "Failed to locate raw vertex data in packed block");
+            return;
         }
 
-        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
-        Console.WriteLine("                           STREAM LAYOUT                                   ");
-        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
-        Console.WriteLine();
-        Console.WriteLine($"NumVertices: {result.NumVertices}");
-        Console.WriteLine($"Stride: {result.Stride} bytes per vertex");
-        Console.WriteLine($"Raw Data Offset: 0x{result.RawDataOffset:X4}");
-        Console.WriteLine($"NumStreams: {result.Streams.Count}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        AnsiConsole.WriteLine("                           STREAM LAYOUT                                   ");
+        AnsiConsole.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"NumVertices: {result.NumVertices}");
+        AnsiConsole.WriteLine($"Stride: {result.Stride} bytes per vertex");
+        AnsiConsole.WriteLine($"Raw Data Offset: 0x{result.RawDataOffset:X4}");
+        AnsiConsole.WriteLine($"NumStreams: {result.Streams.Count}");
+        AnsiConsole.WriteLine();
 
         // Identify half4 streams for semantic assignment
         var half4Streams = result.Streams
@@ -738,8 +739,9 @@ internal static class PackedCommands
             .ToList();
 
         // Display stream table with semantic identification
-        Console.WriteLine($"{"#",-3} {"Type",-6} {"Unit",-5} {"Offset",-8} {"Semantic",-20} {"Interpretation",-25}");
-        Console.WriteLine(new string('─', 80));
+        AnsiConsole.WriteLine(
+            $"{"#",-3} {"Type",-6} {"Unit",-5} {"Offset",-8} {"Semantic",-20} {"Interpretation",-25}");
+        AnsiConsole.WriteLine(new string('─', 80));
 
         for (var i = 0; i < result.Streams.Count; i++)
         {
@@ -755,17 +757,17 @@ internal static class PackedCommands
                 $"{i,-3} {stream.Type,-6} {stream.UnitSize,-5} {stream.BlockOffset,-8} {semantic,-20} {interp,-25}");
         }
 
-        Console.WriteLine();
-        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
-        Console.WriteLine("                         STRIDE LAYOUT DIAGRAM                             ");
-        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        AnsiConsole.WriteLine("                         STRIDE LAYOUT DIAGRAM                             ");
+        AnsiConsole.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        AnsiConsole.WriteLine();
 
         // Visual stride diagram
         Console.Write("  0         8        16       20       24       32       40");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
         Console.Write("  │         │         │    │    │         │         │");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
         Console.Write("  ");
         for (var b = 0; b < result.Stride; b++)
         {
@@ -796,17 +798,17 @@ internal static class PackedCommands
             }
         }
 
-        Console.WriteLine();
-        Console.WriteLine();
-        Console.WriteLine("  P=Position  T=Tangent  C=Color  U=UV  B=Bitangent  N=Normal");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine("  P=Position  T=Tangent  C=Color  U=UV  B=Bitangent  N=Normal");
 
         // Sample vertices
-        Console.WriteLine();
-        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine("═══════════════════════════════════════════════════════════════════════════");
         Console.WriteLine(
             $"                      SAMPLE VERTEX DATA ({Math.Min(numVertices, result.NumVertices)} vertices)");
-        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        AnsiConsole.WriteLine();
 
         // Find streams by offset - VERIFIED against PC reference:
         // - Offset 0:  Position (model-scale values)
@@ -828,9 +830,9 @@ internal static class PackedCommands
         // Position table
         if (posStream != null)
         {
-            Console.WriteLine("┌─── Position (half4 → float3) ───────────────────────────────────────────┐");
-            Console.WriteLine($"│ {"Vtx",-5} {"X",-14} {"Y",-14} {"Z",-14} {"W",-10} │");
-            Console.WriteLine("├─────────────────────────────────────────────────────────────────────────┤");
+            AnsiConsole.WriteLine("┌─── Position (half4 → float3) ───────────────────────────────────────────┐");
+            AnsiConsole.WriteLine($"│ {"Vtx",-5} {"X",-14} {"Y",-14} {"Z",-14} {"W",-10} │");
+            AnsiConsole.WriteLine("├─────────────────────────────────────────────────────────────────────────┤");
 
             for (var v = 0; v < displayCount; v++)
             {
@@ -840,19 +842,19 @@ internal static class PackedCommands
                 var y = HalfToFloat(ReadUInt16(data, pOff + 2, nif.IsBigEndian));
                 var z = HalfToFloat(ReadUInt16(data, pOff + 4, nif.IsBigEndian));
                 var w = HalfToFloat(ReadUInt16(data, pOff + 6, nif.IsBigEndian));
-                Console.WriteLine($"│ {v,-5} {x,-14:F6} {y,-14:F6} {z,-14:F6} {w,-10:F4} │");
+                AnsiConsole.WriteLine($"│ {v,-5} {x,-14:F6} {y,-14:F6} {z,-14:F6} {w,-10:F4} │");
             }
 
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────────────┘");
-            Console.WriteLine();
+            AnsiConsole.WriteLine("└─────────────────────────────────────────────────────────────────────────┘");
+            AnsiConsole.WriteLine();
         }
 
         // Normal table
         if (normalStream != null)
         {
-            Console.WriteLine("┌─── Normal (half4 → float3, normalized) ─────────────────────────────────┐");
-            Console.WriteLine($"│ {"Vtx",-5} {"Nx",-12} {"Ny",-12} {"Nz",-12} {"W",-8} {"Length",-10} │");
-            Console.WriteLine("├─────────────────────────────────────────────────────────────────────────┤");
+            AnsiConsole.WriteLine("┌─── Normal (half4 → float3, normalized) ─────────────────────────────────┐");
+            AnsiConsole.WriteLine($"│ {"Vtx",-5} {"Nx",-12} {"Ny",-12} {"Nz",-12} {"W",-8} {"Length",-10} │");
+            AnsiConsole.WriteLine("├─────────────────────────────────────────────────────────────────────────┤");
 
             float avgLen = 0;
             var validCount = 0;
@@ -867,22 +869,22 @@ internal static class PackedCommands
                 var len = MathF.Sqrt(nx * nx + ny * ny + nz * nz);
                 avgLen += len;
                 if (len > 0.9f && len < 1.1f) validCount++;
-                Console.WriteLine($"│ {v,-5} {nx,-12:F6} {ny,-12:F6} {nz,-12:F6} {nw,-8:F4} {len,-10:F6} │");
+                AnsiConsole.WriteLine($"│ {v,-5} {nx,-12:F6} {ny,-12:F6} {nz,-12:F6} {nw,-8:F4} {len,-10:F6} │");
             }
 
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────────────┘");
+            AnsiConsole.WriteLine("└─────────────────────────────────────────────────────────────────────────┘");
             avgLen /= displayCount;
-            Console.WriteLine($"  Average length: {avgLen:F4} (should be ~1.0 for normalized normals)");
-            Console.WriteLine($"  Valid normals (0.9-1.1 length): {validCount}/{displayCount}");
-            Console.WriteLine();
+            AnsiConsole.WriteLine($"  Average length: {avgLen:F4} (should be ~1.0 for normalized normals)");
+            AnsiConsole.WriteLine($"  Valid normals (0.9-1.1 length): {validCount}/{displayCount}");
+            AnsiConsole.WriteLine();
         }
 
         // UV table
         if (uvStream != null)
         {
-            Console.WriteLine("┌─── UV (half2 → float2) ──────────────────────────────────────────────────┐");
-            Console.WriteLine($"│ {"Vtx",-5} {"U",-20} {"V",-20} │");
-            Console.WriteLine("├───────────────────────────────────────────────────────────────────────────┤");
+            AnsiConsole.WriteLine("┌─── UV (half2 → float2) ──────────────────────────────────────────────────┐");
+            AnsiConsole.WriteLine($"│ {"Vtx",-5} {"U",-20} {"V",-20} │");
+            AnsiConsole.WriteLine("├───────────────────────────────────────────────────────────────────────────┤");
 
             var outOfRange = 0;
             for (var v = 0; v < displayCount; v++)
@@ -892,20 +894,20 @@ internal static class PackedCommands
                 var u = HalfToFloat(ReadUInt16(data, uvOff, nif.IsBigEndian));
                 var vCoord = HalfToFloat(ReadUInt16(data, uvOff + 2, nif.IsBigEndian));
                 if (u < 0 || u > 1 || vCoord < 0 || vCoord > 1) outOfRange++;
-                Console.WriteLine($"│ {v,-5} {u,-20:F6} {vCoord,-20:F6} │");
+                AnsiConsole.WriteLine($"│ {v,-5} {u,-20:F6} {vCoord,-20:F6} │");
             }
 
-            Console.WriteLine("└───────────────────────────────────────────────────────────────────────────┘");
-            Console.WriteLine($"  UVs outside 0-1 range: {outOfRange}/{displayCount}");
-            Console.WriteLine();
+            AnsiConsole.WriteLine("└───────────────────────────────────────────────────────────────────────────┘");
+            AnsiConsole.WriteLine($"  UVs outside 0-1 range: {outOfRange}/{displayCount}");
+            AnsiConsole.WriteLine();
         }
 
         // Vertex color table
         if (colorStream != null)
         {
-            Console.WriteLine("┌─── Vertex Color (ubyte4 → RGBA) ─────────────────────────────────────────┐");
-            Console.WriteLine($"│ {"Vtx",-5} {"R",-8} {"G",-8} {"B",-8} {"A",-8} {"Hex",-12} │");
-            Console.WriteLine("├───────────────────────────────────────────────────────────────────────────┤");
+            AnsiConsole.WriteLine("┌─── Vertex Color (ubyte4 → RGBA) ─────────────────────────────────────────┐");
+            AnsiConsole.WriteLine($"│ {"Vtx",-5} {"R",-8} {"G",-8} {"B",-8} {"A",-8} {"Hex",-12} │");
+            AnsiConsole.WriteLine("├───────────────────────────────────────────────────────────────────────────┤");
 
             for (var v = 0; v < displayCount; v++)
             {
@@ -915,52 +917,50 @@ internal static class PackedCommands
                 var g = data[cOff + 1];
                 var b = data[cOff + 2];
                 var a = data[cOff + 3];
-                Console.WriteLine($"│ {v,-5} {r,-8} {g,-8} {b,-8} {a,-8} #{r:X2}{g:X2}{b:X2}{a:X2,-4} │");
+                AnsiConsole.WriteLine($"│ {v,-5} {r,-8} {g,-8} {b,-8} {a,-8} #{r:X2}{g:X2}{b:X2}{a:X2,-4} │");
             }
 
-            Console.WriteLine("└───────────────────────────────────────────────────────────────────────────┘");
-            Console.WriteLine();
+            AnsiConsole.WriteLine("└───────────────────────────────────────────────────────────────────────────┘");
+            AnsiConsole.WriteLine();
         }
 
         // Raw hex dump of first vertex
-        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
-        Console.WriteLine($"                    RAW HEX: VERTEX 0 ({result.Stride} bytes)");
-        Console.WriteLine("═══════════════════════════════════════════════════════════════════════════");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        AnsiConsole.WriteLine($"                    RAW HEX: VERTEX 0 ({result.Stride} bytes)");
+        AnsiConsole.WriteLine("═══════════════════════════════════════════════════════════════════════════");
+        AnsiConsole.WriteLine();
         HexDump(data, result.RawDataOffset, result.Stride);
-
-        return 0;
     }
 
     /// <summary>
     ///     Compare NiSkinPartition blocks from two NIF files (converted vs PC reference).
     /// </summary>
-    public static int SkinPartCompare(string file1Path, string file2Path, int block1Index, int block2Index, int count)
+    private static void SkinPartCompare(string file1Path, string file2Path, int block1Index, int block2Index, int count)
     {
         var data1 = File.ReadAllBytes(file1Path);
         var data2 = File.ReadAllBytes(file2Path);
         var nif1 = NifParser.Parse(data1);
         var nif2 = NifParser.Parse(data2);
 
-        Console.WriteLine("╔════════════════════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║              NiSkinPartition Comparison                                ║");
-        Console.WriteLine("╚════════════════════════════════════════════════════════════════════════╝");
-        Console.WriteLine();
-        Console.WriteLine($"File 1: {Path.GetFileName(file1Path)} (Block {block1Index})");
-        Console.WriteLine($"File 2: {Path.GetFileName(file2Path)} (Block {block2Index})");
-        Console.WriteLine();
+        AnsiConsole.WriteLine("╔════════════════════════════════════════════════════════════════════════╗");
+        AnsiConsole.WriteLine("║              NiSkinPartition Comparison                                ║");
+        AnsiConsole.WriteLine("╚════════════════════════════════════════════════════════════════════════╝");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine($"File 1: {Path.GetFileName(file1Path)} (Block {block1Index})");
+        AnsiConsole.WriteLine($"File 2: {Path.GetFileName(file2Path)} (Block {block2Index})");
+        AnsiConsole.WriteLine();
 
         // Validate block indices
         if (block1Index >= nif1.NumBlocks)
         {
-            Console.Error.WriteLine($"Block {block1Index} out of range for file 1");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " + $"Block {block1Index} out of range for file 1");
+            return;
         }
 
         if (block2Index >= nif2.NumBlocks)
         {
-            Console.Error.WriteLine($"Block {block2Index} out of range for file 2");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " + $"Block {block2Index} out of range for file 2");
+            return;
         }
 
         var type1 = nif1.GetBlockTypeName(block1Index);
@@ -968,14 +968,16 @@ internal static class PackedCommands
 
         if (!type1.Contains("SkinPartition"))
         {
-            Console.Error.WriteLine($"Block {block1Index} in file 1 is {type1}, not NiSkinPartition");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   $"Block {block1Index} in file 1 is {type1}, not NiSkinPartition");
+            return;
         }
 
         if (!type2.Contains("SkinPartition"))
         {
-            Console.Error.WriteLine($"Block {block2Index} in file 2 is {type2}, not NiSkinPartition");
-            return 1;
+            AnsiConsole.MarkupLine("[red]Error:[/] " +
+                                   $"Block {block2Index} in file 2 is {type2}, not NiSkinPartition");
+            return;
         }
 
         // Parse both skin partitions
@@ -984,18 +986,18 @@ internal static class PackedCommands
         var offset2 = nif2.GetBlockOffset(block2Index);
         var size2 = (int)nif2.BlockSizes[block2Index];
 
-        Console.WriteLine($"File 1: Size={size1} bytes, Endian={(nif1.IsBigEndian ? "Big" : "Little")}");
-        Console.WriteLine($"File 2: Size={size2} bytes, Endian={(nif2.IsBigEndian ? "Big" : "Little")}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine($"File 1: Size={size1} bytes, Endian={(nif1.IsBigEndian ? "Big" : "Little")}");
+        AnsiConsole.WriteLine($"File 2: Size={size2} bytes, Endian={(nif2.IsBigEndian ? "Big" : "Little")}");
+        AnsiConsole.WriteLine();
 
         var skin1 = SkinPartitionParser.Parse(data1.AsSpan(offset1, size1), nif1.IsBigEndian);
         var skin2 = SkinPartitionParser.Parse(data2.AsSpan(offset2, size2), nif2.IsBigEndian);
 
-        Console.WriteLine($"{"Property",-25} {"File 1",-20} {"File 2",-20} {"Match"}");
-        Console.WriteLine(new string('─', 75));
+        AnsiConsole.WriteLine($"{"Property",-25} {"File 1",-20} {"File 2",-20} {"Match"}");
+        AnsiConsole.WriteLine(new string('─', 75));
         Console.WriteLine(
             $"{"NumPartitions",-25} {skin1.NumPartitions,-20} {skin2.NumPartitions,-20} {(skin1.NumPartitions == skin2.NumPartitions ? "✓" : "✗")}");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
 
         var numPartitions = Math.Min(skin1.NumPartitions, skin2.NumPartitions);
 
@@ -1004,10 +1006,10 @@ internal static class PackedCommands
             var part1 = skin1.Partitions[p];
             var part2 = skin2.Partitions[p];
 
-            Console.WriteLine($"═══ Partition {p} ═══════════════════════════════════════════════════════════");
-            Console.WriteLine();
-            Console.WriteLine($"{"Property",-25} {"File 1",-20} {"File 2",-20} {"Match"}");
-            Console.WriteLine(new string('─', 75));
+            AnsiConsole.WriteLine($"═══ Partition {p} ═══════════════════════════════════════════════════════════");
+            AnsiConsole.WriteLine();
+            AnsiConsole.WriteLine($"{"Property",-25} {"File 1",-20} {"File 2",-20} {"Match"}");
+            AnsiConsole.WriteLine(new string('─', 75));
             Console.WriteLine(
                 $"{"NumVertices",-25} {part1.NumVertices,-20} {part2.NumVertices,-20} {(part1.NumVertices == part2.NumVertices ? "✓" : "✗")}");
             Console.WriteLine(
@@ -1026,11 +1028,11 @@ internal static class PackedCommands
                 $"{"HasFaces",-25} {part1.HasFaces,-20} {part2.HasFaces,-20} {(part1.HasFaces == part2.HasFaces ? "✓" : "✗")}");
             Console.WriteLine(
                 $"{"HasBoneIndices",-25} {part1.HasBoneIndices,-20} {part2.HasBoneIndices,-20} {(part1.HasBoneIndices == part2.HasBoneIndices ? "✓" : "✗")}");
-            Console.WriteLine();
+            AnsiConsole.WriteLine();
 
             // Compare bones array
             var bonesMatch = part1.Bones.Length == part2.Bones.Length && part1.Bones.SequenceEqual(part2.Bones);
-            Console.WriteLine($"Bones array: {(bonesMatch ? "✓ Match" : "✗ Mismatch")}");
+            AnsiConsole.WriteLine($"Bones array: {(bonesMatch ? "✓ Match" : "✗ Mismatch")}");
             if (!bonesMatch && part1.Bones.Length > 0 && part2.Bones.Length > 0)
             {
                 Console.WriteLine(
@@ -1051,7 +1053,7 @@ internal static class PackedCommands
                 for (var i = 0; i < Math.Min(part1.VertexMap.Length, part2.VertexMap.Length) && mismatches < 5; i++)
                     if (part1.VertexMap[i] != part2.VertexMap[i])
                     {
-                        Console.WriteLine($"  [VM {i}] File 1: {part1.VertexMap[i]}, File 2: {part2.VertexMap[i]}");
+                        AnsiConsole.WriteLine($"  [VM {i}] File 1: {part1.VertexMap[i]}, File 2: {part2.VertexMap[i]}");
                         mismatches++;
                     }
             }
@@ -1059,8 +1061,8 @@ internal static class PackedCommands
             // Compare weights if both have them
             if (part1.HasVertexWeights != 0 && part2.HasVertexWeights != 0)
             {
-                Console.WriteLine();
-                Console.WriteLine($"=== Vertex Weights (first {Math.Min(count, part1.NumVertices)} vertices) ===");
+                AnsiConsole.WriteLine();
+                AnsiConsole.WriteLine($"=== Vertex Weights (first {Math.Min(count, part1.NumVertices)} vertices) ===");
 
                 var weightMatches = 0;
                 var weightMismatches = 0;
@@ -1107,8 +1109,8 @@ internal static class PackedCommands
             // Compare bone indices if both have them
             if (part1.HasBoneIndices != 0 && part2.HasBoneIndices != 0)
             {
-                Console.WriteLine();
-                Console.WriteLine($"=== Bone Indices (first {Math.Min(count, part1.NumVertices)} vertices) ===");
+                AnsiConsole.WriteLine();
+                AnsiConsole.WriteLine($"=== Bone Indices (first {Math.Min(count, part1.NumVertices)} vertices) ===");
 
                 var idxMatches = 0;
                 var idxMismatches = 0;
@@ -1129,34 +1131,35 @@ internal static class PackedCommands
                         idxMismatches++;
                         if (displayedMismatches < 5)
                         {
-                            Console.WriteLine($"  [V{v}] File 1: [{string.Join(", ", part1.BoneIndices[v])}]");
-                            Console.WriteLine($"       File 2: [{string.Join(", ", part2.BoneIndices[v])}]");
+                            AnsiConsole.WriteLine($"  [V{v}] File 1: [{string.Join(", ", part1.BoneIndices[v])}]");
+                            AnsiConsole.WriteLine($"       File 2: [{string.Join(", ", part2.BoneIndices[v])}]");
                             displayedMismatches++;
                         }
                     }
                 }
 
-                Console.WriteLine($"  Bone index matches: {idxMatches}/{vertsToCompare}, mismatches: {idxMismatches}");
+                AnsiConsole.WriteLine(
+                    $"  Bone index matches: {idxMatches}/{vertsToCompare}, mismatches: {idxMismatches}");
             }
 
             // Compare triangles or strips
             if (part1.NumStrips > 0 || part2.NumStrips > 0)
             {
-                Console.WriteLine();
-                Console.WriteLine("=== Strips ===");
+                AnsiConsole.WriteLine();
+                AnsiConsole.WriteLine("=== Strips ===");
                 var stripsMatch = part1.StripLengths.Length == part2.StripLengths.Length &&
                                   part1.StripLengths.SequenceEqual(part2.StripLengths);
-                Console.WriteLine($"  StripLengths: {(stripsMatch ? "✓ Match" : "✗ Mismatch")}");
+                AnsiConsole.WriteLine($"  StripLengths: {(stripsMatch ? "✓ Match" : "✗ Mismatch")}");
                 if (!stripsMatch)
                 {
-                    Console.WriteLine($"    File 1: [{string.Join(", ", part1.StripLengths)}]");
-                    Console.WriteLine($"    File 2: [{string.Join(", ", part2.StripLengths)}]");
+                    AnsiConsole.WriteLine($"    File 1: [{string.Join(", ", part1.StripLengths)}]");
+                    AnsiConsole.WriteLine($"    File 2: [{string.Join(", ", part2.StripLengths)}]");
                 }
             }
             else if (part1.Triangles.Length > 0 || part2.Triangles.Length > 0)
             {
-                Console.WriteLine();
-                Console.WriteLine("=== Triangles ===");
+                AnsiConsole.WriteLine();
+                AnsiConsole.WriteLine("=== Triangles ===");
                 var triMatch = part1.Triangles.Length == part2.Triangles.Length;
                 if (triMatch)
                 {
@@ -1164,7 +1167,7 @@ internal static class PackedCommands
                     for (var t = 0; t < part1.Triangles.Length; t++)
                         if (part1.Triangles[t] != part2.Triangles[t])
                             mismatches++;
-                    Console.WriteLine($"  Triangles: {part1.Triangles.Length} total, {mismatches} mismatches");
+                    AnsiConsole.WriteLine($"  Triangles: {part1.Triangles.Length} total, {mismatches} mismatches");
                 }
                 else
                 {
@@ -1173,9 +1176,108 @@ internal static class PackedCommands
                 }
             }
 
-            Console.WriteLine();
+            AnsiConsole.WriteLine();
         }
-
-        return 0;
     }
+
+    #region Command Registration
+
+    public static Command CreateSkinPartCommand()
+    {
+        var command = new Command("skinpart", "Parse NiSkinPartition block");
+        var fileArg = new Argument<string>("file") { Description = "NIF file path" };
+        var blockArg = new Argument<int>("block") { Description = "Block index" };
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(blockArg);
+        command.SetAction(parseResult => SkinPart(parseResult.GetValue(fileArg), parseResult.GetValue(blockArg)));
+        return command;
+    }
+
+    public static Command CreateSkinPartCompareCommand()
+    {
+        var command = new Command("skinpartcompare", "Compare NiSkinPartition blocks between two files");
+        var file1Arg = new Argument<string>("file1") { Description = "First NIF file path" };
+        var file2Arg = new Argument<string>("file2") { Description = "Second NIF file path" };
+        var block1Arg = new Argument<int>("block1") { Description = "Block index in first file" };
+        var block2Arg = new Argument<int>("block2") { Description = "Block index in second file" };
+        var countOpt = new Option<int>("-c", "--count")
+            { Description = "Max partitions to compare", DefaultValueFactory = _ => 50 };
+        command.Arguments.Add(file1Arg);
+        command.Arguments.Add(file2Arg);
+        command.Arguments.Add(block1Arg);
+        command.Arguments.Add(block2Arg);
+        command.Options.Add(countOpt);
+        command.SetAction(parseResult => SkinPartCompare(
+            parseResult.GetValue(file1Arg), parseResult.GetValue(file2Arg),
+            parseResult.GetValue(block1Arg), parseResult.GetValue(block2Arg), parseResult.GetValue(countOpt)));
+        return command;
+    }
+
+    public static Command CreatePackedCommand()
+    {
+        var command = new Command("packed", "Parse BSPackedAdditionalGeometryData block");
+        var fileArg = new Argument<string>("file") { Description = "NIF file path" };
+        var blockArg = new Argument<int>("block") { Description = "Block index" };
+        var countOpt = new Option<int>("-c", "--count")
+            { Description = "Number of vertices to show", DefaultValueFactory = _ => 10 };
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(blockArg);
+        command.Options.Add(countOpt);
+        command.SetAction(parseResult => Packed(
+            parseResult.GetValue(fileArg), parseResult.GetValue(blockArg), parseResult.GetValue(countOpt)));
+        return command;
+    }
+
+    public static Command CreateStreamDumpCommand()
+    {
+        var command = new Command("streamdump", "Dump raw stream data from packed geometry");
+        var fileArg = new Argument<string>("file") { Description = "NIF file path" };
+        var blockArg = new Argument<int>("block") { Description = "Block index" };
+        var countOpt = new Option<int>("-c", "--count")
+            { Description = "Number of vertices to dump", DefaultValueFactory = _ => 10 };
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(blockArg);
+        command.Options.Add(countOpt);
+        command.SetAction(parseResult => StreamDump(
+            parseResult.GetValue(fileArg), parseResult.GetValue(blockArg), parseResult.GetValue(countOpt)));
+        return command;
+    }
+
+    public static Command CreateAnalyzeStreamsCommand()
+    {
+        var command = new Command("analyzestreams", "Analyze packed geometry streams for semantic detection");
+        var fileArg = new Argument<string>("file") { Description = "NIF file path" };
+        var blockArg = new Argument<int>("block") { Description = "Block index" };
+        var countOpt = new Option<int>("-c", "--count")
+            { Description = "Number of vertices to analyze", DefaultValueFactory = _ => 100 };
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(blockArg);
+        command.Options.Add(countOpt);
+        command.SetAction(parseResult => AnalyzeStreams(
+            parseResult.GetValue(fileArg), parseResult.GetValue(blockArg), parseResult.GetValue(countOpt)));
+        return command;
+    }
+
+    public static Command CreateNormalCompareCommand()
+    {
+        var command = new Command("normalcompare", "Compare normals between Xbox 360 packed and PC geometry");
+        var xboxArg = new Argument<string>("xbox") { Description = "Xbox NIF file path" };
+        var pcArg = new Argument<string>("pc") { Description = "PC NIF file path" };
+        var packedBlockArg = new Argument<int>("packed-block")
+            { Description = "BSPackedAdditionalGeometryData block index" };
+        var pcBlockArg = new Argument<int>("pc-block") { Description = "PC geometry block index" };
+        var countOpt = new Option<int>("-c", "--count")
+            { Description = "Number of normals to compare", DefaultValueFactory = _ => 100 };
+        command.Arguments.Add(xboxArg);
+        command.Arguments.Add(pcArg);
+        command.Arguments.Add(packedBlockArg);
+        command.Arguments.Add(pcBlockArg);
+        command.Options.Add(countOpt);
+        command.SetAction(parseResult => NormalCompare(
+            parseResult.GetValue(xboxArg), parseResult.GetValue(pcArg),
+            parseResult.GetValue(packedBlockArg), parseResult.GetValue(pcBlockArg), parseResult.GetValue(countOpt)));
+        return command;
+    }
+
+    #endregion
 }

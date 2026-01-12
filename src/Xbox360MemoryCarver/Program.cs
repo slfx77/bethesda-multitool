@@ -17,7 +17,7 @@ public static class Program
     public static string? AutoLoadFile { get; internal set; }
 
     [STAThread]
-    public static async Task<int> Main(string[] args)
+    public static int Main(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
 
@@ -29,10 +29,10 @@ public static class Program
         }
 #endif
 
-        return await RunCliAsync(args);
+        return RunCli(args);
     }
 
-    private static async Task<int> RunCliAsync(string[] args)
+    private static int RunCli(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
 
@@ -44,71 +44,95 @@ public static class Program
 
         var rootCommand = BuildRootCommand();
 
-        rootCommand.AddCommand(AnalyzeCommand.Create());
-        rootCommand.AddCommand(ModulesCommand.Create());
-        rootCommand.AddCommand(ConvertNifCommand.Create());
+        rootCommand.Subcommands.Add(AnalyzeCommand.Create());
+        rootCommand.Subcommands.Add(ModulesCommand.Create());
+        rootCommand.Subcommands.Add(ConvertNifCommand.Create());
 
-        return await rootCommand.InvokeAsync(args);
+        return rootCommand.Parse(args).Invoke();
     }
 
     private static RootCommand BuildRootCommand()
     {
         var rootCommand = new RootCommand("Xbox 360 Memory Dump File Carver");
 
-        var inputArgument =
-            new Argument<string?>("input", () => null, "Path to memory dump file (.dmp) or DDX file/directory");
-        var outputOption = new Option<string>(["-o", "--output"], () => "output", "Output directory for carved files");
-        var noGuiOption = new Option<bool>(["-n", "--no-gui"], "Run in command-line mode without GUI (Windows only)");
-        var ddxOption = new Option<bool>(["--ddx"], "Convert DDX textures to DDS format instead of carving");
-        var convertDdxOption = new Option<bool>(["--convert-ddx", "--convert"], () => true,
-            "Enable format conversions (DDX→DDS textures, XUR→XUI interfaces)");
-        var typesOption = new Option<string[]>(["-t", "--types"], "File types to extract (e.g., dds ddx xma nif)");
-        var verboseOption = new Option<bool>(["-v", "--verbose"], "Enable verbose output");
-        var maxFilesOption = new Option<int>(["--max-files"], () => 10000, "Maximum files to extract per type");
-
-        rootCommand.AddArgument(inputArgument);
-        rootCommand.AddOption(outputOption);
-        rootCommand.AddOption(noGuiOption);
-        rootCommand.AddOption(ddxOption);
-        rootCommand.AddOption(convertDdxOption);
-        rootCommand.AddOption(typesOption);
-        rootCommand.AddOption(verboseOption);
-        rootCommand.AddOption(maxFilesOption);
-
-        rootCommand.SetHandler(async context =>
+        var inputArgument = new Argument<string?>("input")
         {
-            var input = context.ParseResult.GetValueForArgument(inputArgument);
-            var output = context.ParseResult.GetValueForOption(outputOption)!;
-            var convertDdx = context.ParseResult.GetValueForOption(convertDdxOption);
-            var types = context.ParseResult.GetValueForOption(typesOption);
-            var verbose = context.ParseResult.GetValueForOption(verboseOption);
-            var maxFiles = context.ParseResult.GetValueForOption(maxFilesOption);
+            Description = "Path to memory dump file (.dmp) or DDX file/directory",
+            DefaultValueFactory = _ => null
+        };
+        var outputOption = new Option<string>("-o", "--output")
+        {
+            Description = "Output directory for carved files",
+            DefaultValueFactory = _ => "output"
+        };
+        var noGuiOption = new Option<bool>("-n", "--no-gui")
+        {
+            Description = "Run in command-line mode without GUI (Windows only)"
+        };
+        var ddxOption = new Option<bool>("--ddx")
+        {
+            Description = "Convert DDX textures to DDS format instead of carving"
+        };
+        var convertDdxOption = new Option<bool>("--convert-ddx", "--convert")
+        {
+            Description = "Enable format conversions (DDX→DDS textures, XUR→XUI interfaces)",
+            DefaultValueFactory = _ => true
+        };
+        var typesOption = new Option<string[]>("-t", "--types")
+        {
+            Description = "File types to extract (e.g., dds ddx xma nif)"
+        };
+        var verboseOption = new Option<bool>("-v", "--verbose")
+        {
+            Description = "Enable verbose output"
+        };
+        var maxFilesOption = new Option<int>("--max-files")
+        {
+            Description = "Maximum files to extract per type",
+            DefaultValueFactory = _ => 10000
+        };
+
+        rootCommand.Arguments.Add(inputArgument);
+        rootCommand.Options.Add(outputOption);
+        rootCommand.Options.Add(noGuiOption);
+        rootCommand.Options.Add(ddxOption);
+        rootCommand.Options.Add(convertDdxOption);
+        rootCommand.Options.Add(typesOption);
+        rootCommand.Options.Add(verboseOption);
+        rootCommand.Options.Add(maxFilesOption);
+
+        rootCommand.SetAction(async (parseResult, cancellationToken) =>
+        {
+            var input = parseResult.GetValue(inputArgument);
+            var output = parseResult.GetValue(outputOption)!;
+            var convertDdx = parseResult.GetValue(convertDdxOption);
+            var types = parseResult.GetValue(typesOption);
+            var verbose = parseResult.GetValue(verboseOption);
+            var maxFiles = parseResult.GetValue(maxFilesOption);
 
             if (string.IsNullOrEmpty(input))
             {
                 PrintUsage();
-                context.ExitCode = 1;
-                return;
+                return 1;
             }
 
             if (!File.Exists(input) && !Directory.Exists(input))
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] Input path not found: {input}");
-                context.ExitCode = 1;
-                return;
+                return 1;
             }
 
             try
             {
                 await CarveCommand.ExecuteAsync(input, output, types?.ToList(), convertDdx, verbose, maxFiles);
-                context.ExitCode = 0;
+                return 0;
             }
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
                 if (verbose) AnsiConsole.WriteException(ex);
 
-                context.ExitCode = 1;
+                return 1;
             }
         });
 

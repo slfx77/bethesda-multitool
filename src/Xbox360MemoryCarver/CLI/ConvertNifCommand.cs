@@ -14,24 +14,42 @@ public static class ConvertNifCommand
         var command = new Command("convert-nif",
             "Convert Xbox 360 NIF files (big-endian) to PC format (little-endian)");
 
-        var inputArgument = new Argument<string>("input", "Path to NIF file or directory containing NIF files");
-        var outputOption = new Option<string>(["-o", "--output"],
-            "Output directory (default: input directory with '_converted' suffix)");
-        var recursiveOption = new Option<bool>(["-r", "--recursive"], "Process directories recursively");
-        var verboseOption = new Option<bool>(["-v", "--verbose"], "Enable verbose output");
-        var overwriteOption = new Option<bool>(["--overwrite"], "Overwrite existing files");
+        var inputArgument = new Argument<string>("input")
+        {
+            Description = "Path to NIF file or directory containing NIF files"
+        };
+        var outputOption = new Option<string?>("-o", "--output")
+        {
+            Description = "Output directory (default: input directory with '_converted' suffix)"
+        };
+        var recursiveOption = new Option<bool>("-r", "--recursive")
+        {
+            Description = "Process directories recursively"
+        };
+        var verboseOption = new Option<bool>("-v", "--verbose")
+        {
+            Description = "Enable verbose output"
+        };
+        var overwriteOption = new Option<bool>("--overwrite")
+        {
+            Description = "Overwrite existing files"
+        };
 
-        command.AddArgument(inputArgument);
-        command.AddOption(outputOption);
-        command.AddOption(recursiveOption);
-        command.AddOption(verboseOption);
-        command.AddOption(overwriteOption);
+        command.Arguments.Add(inputArgument);
+        command.Options.Add(outputOption);
+        command.Options.Add(recursiveOption);
+        command.Options.Add(verboseOption);
+        command.Options.Add(overwriteOption);
 
-        command.SetHandler(
-            async (input, output, recursive, verbose, overwrite) =>
-            {
-                await ExecuteAsync(input, output, recursive, verbose, overwrite);
-            }, inputArgument, outputOption, recursiveOption, verboseOption, overwriteOption);
+        command.SetAction(async (parseResult, _) =>
+        {
+            var input = parseResult.GetValue(inputArgument)!;
+            var output = parseResult.GetValue(outputOption);
+            var recursive = parseResult.GetValue(recursiveOption);
+            var verbose = parseResult.GetValue(verboseOption);
+            var overwrite = parseResult.GetValue(overwriteOption);
+            await ExecuteAsync(input, output, recursive, verbose, overwrite);
+        });
 
         return command;
     }

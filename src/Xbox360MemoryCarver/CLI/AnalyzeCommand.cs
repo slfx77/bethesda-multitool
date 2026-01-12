@@ -17,20 +17,34 @@ public static class AnalyzeCommand
     {
         var command = new Command("analyze", "Analyze memory dump structure and extract metadata");
 
-        var inputArg = new Argument<string>("input", "Path to memory dump file (.dmp)");
-        var outputOpt = new Option<string?>(["-o", "--output"], "Output path for analysis report");
-        var formatOpt = new Option<string>(["-f", "--format"], () => "text", "Output format: text, md, json");
-        var extractEsmOpt = new Option<string?>(["-e", "--extract-esm"],
-            "Extract ESM records (EDID, GMST, SCTX, FormIDs) to directory");
-        var verboseOpt = new Option<bool>(["-v", "--verbose"], "Show detailed progress");
+        var inputArg = new Argument<string>("input") { Description = "Path to memory dump file (.dmp)" };
+        var outputOpt = new Option<string?>("-o", "--output") { Description = "Output path for analysis report" };
+        var formatOpt = new Option<string>("-f", "--format")
+        {
+            Description = "Output format: text, md, json",
+            DefaultValueFactory = _ => "text"
+        };
+        var extractEsmOpt = new Option<string?>("-e", "--extract-esm")
+        {
+            Description = "Extract ESM records (EDID, GMST, SCTX, FormIDs) to directory"
+        };
+        var verboseOpt = new Option<bool>("-v", "--verbose") { Description = "Show detailed progress" };
 
-        command.AddArgument(inputArg);
-        command.AddOption(outputOpt);
-        command.AddOption(formatOpt);
-        command.AddOption(extractEsmOpt);
-        command.AddOption(verboseOpt);
+        command.Arguments.Add(inputArg);
+        command.Options.Add(outputOpt);
+        command.Options.Add(formatOpt);
+        command.Options.Add(extractEsmOpt);
+        command.Options.Add(verboseOpt);
 
-        command.SetHandler(ExecuteAsync, inputArg, outputOpt, formatOpt, extractEsmOpt, verboseOpt);
+        command.SetAction(async (parseResult, _) =>
+        {
+            var input = parseResult.GetValue(inputArg)!;
+            var output = parseResult.GetValue(outputOpt);
+            var format = parseResult.GetValue(formatOpt)!;
+            var extractEsm = parseResult.GetValue(extractEsmOpt);
+            var verbose = parseResult.GetValue(verboseOpt);
+            await ExecuteAsync(input, output, format, extractEsm, verbose);
+        });
 
         return command;
     }
