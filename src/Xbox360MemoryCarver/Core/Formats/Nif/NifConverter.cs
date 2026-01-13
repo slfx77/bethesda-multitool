@@ -410,12 +410,9 @@ internal sealed class NifConverter
         var end = block.DataOffset + block.Size;
         var isBE = info.IsBigEndian;
 
-        // Skip name (SizedString = 4-byte len + chars)
-        if (pos + 4 > end) return -1;
-        var nameLen = isBE
-            ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos, 4))
-            : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(pos, 4));
-        pos += 4 + Math.Max(0, nameLen);
+        // Skip name (StringIndex = 4-byte index into string table for NIF 20.2.0.7+)
+        // For older versions it would be SizedString, but Bethesda games use string tables
+        pos += 4;
         if (pos > end) return -1;
 
         // Skip extra data (uint count + int[] refs)
@@ -496,12 +493,8 @@ internal sealed class NifConverter
         var end = block.DataOffset + block.Size;
         var isBE = info.IsBigEndian;
 
-        // Skip name
-        if (pos + 4 > end) return -1;
-        var nameLen = isBE
-            ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos, 4))
-            : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(pos, 4));
-        pos += 4 + Math.Max(0, nameLen);
+        // Skip name (StringIndex = 4-byte index for NIF 20.2.0.7+ with string tables)
+        pos += 4;
         if (pos > end) return -1;
 
         // Skip extra data
@@ -2446,3 +2439,4 @@ internal sealed class NifConverter
         return BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4));
     }
 }
+

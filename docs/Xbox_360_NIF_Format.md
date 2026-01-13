@@ -145,15 +145,15 @@ The packed vertex data uses a variable stride depending on mesh type. Three stri
 
 ### Skinned Layout (stride 48 bytes - skinned meshes)
 
-| Offset | Size | Type   | Semantic         | Avg Length        | Notes                     |
-| ------ | ---- | ------ | ---------------- | ----------------- | ------------------------- |
-| 0      | 8    | half4  | **Position**     | ~40 (model-scale) | XYZ + W=1                 |
-| 8      | 8    | half4  | **Unknown**      | ~0.82-0.90        | Purpose unknown           |
-| 16     | 4    | ubyte4 | **Bone Indices** | N/A               | 4 bone indices per vertex |
-| 20     | 8    | half4  | **Normal**       | ~1.0 (unit)       | Unit-length normals       |
-| 28     | 4    | half2  | **UV**           | N/A               | Texture coordinates       |
-| 32     | 8    | half4  | **Tangent**      | ~1.0 (unit)       | Unit-length tangents      |
-| 40     | 8    | half4  | **Bitangent**    | ~1.0 (unit)       | Unit-length bitangents    |
+| Offset | Size | Type   | Semantic         | Avg Length        | Notes                       |
+| ------ | ---- | ------ | ---------------- | ----------------- | --------------------------- |
+| 0      | 8    | half4  | **Position**     | ~40 (model-scale) | XYZ + W=1                   |
+| 8      | 8    | half4  | **Bone Weights** | Sum ≈ 1.0         | 4 weights (sum to 1.0)      |
+| 16     | 4    | ubyte4 | **Bone Indices** | N/A               | 4 bone indices per vertex   |
+| 20     | 8    | half4  | **Normal**       | ~1.0 (unit)       | Unit-length normals         |
+| 28     | 4    | half2  | **UV**           | N/A               | Texture coordinates         |
+| 32     | 8    | half4  | **Tangent**      | ~1.0 (unit)       | Unit-length tangents        |
+| 40     | 8    | half4  | **Bitangent**    | ~1.0 (unit)       | Unit-length bitangents      |
 
 ### Stride-Based Detection
 
@@ -197,58 +197,55 @@ The meaning of offset 8 depends on the stride:
 | Stride | Offset 8 Content      | Avg Length  |
 | ------ | --------------------- | ----------- |
 | 36     | **Normals**           | ~1.0 (unit) |
-| 40     | **Normals**           | ~1.0 (unit) |
-| 48     | **Unknown/Auxiliary** | ~0.82-0.90  |
+| 40     | **Normals**      | ~1.0 (unit) |
+| 48     | **Bone Weights** | Sum ≈ 1.0   |
 
-> **For skinned meshes (stride 48)**: Stream headers may label offset 8 as "Normal" based on stream order, but actual analysis shows avg vector length ~0.82-0.90 (NOT unit-length). The actual normals are at offset 20.
+> **For skinned meshes (stride 48)**: Offset 8 contains bone weights as half4, where the 4 values sum to approximately 1.0 (weight normalization). Normals are at offset 20.
 >
 > **For non-skinned meshes (stride 36/40)**: Offset 8 contains actual unit-length normals.
 
 ---
 
-## Unknown/Unexplored Data
+## Resolved: Bone Weights and Indices
 
-### Offset 8 in Skinned Meshes (stride 48)
+### Bone Weights at Offset 8 (stride 48)
 
-**Status**: Purpose unknown
+**Status**: ✅ RESOLVED
 
-**Observations**:
+The half4 at offset 8 in stride 48 meshes contains **bone weights**, not unknown data:
 
-- Only applies to skinned meshes (stride 48)
-- Stored as half4 (4× half-precision floats)
-- Average vector length: 0.82-0.90 (NOT unit-length)
-- Stream headers sometimes label this as "Normal" but it's not
-- Values appear to be in a consistent range across vertices
-- Could be: compressed normals (different encoding), blend shapes, secondary UV, or other auxiliary data
+- **Location**: Offset 8 in packed geometry (stride 48 meshes only)
+- **Format**: 4× half-precision floats
+- **Values**: Sum to approximately 1.0 (normalized blend weights)
+- **Previous confusion**: Average vector length ~0.82-0.90 seemed anomalous because we were computing magnitude of a weight vector, not checking for unit-length
 
-**Investigation needed**:
+**Discovery**: The key was recognizing that bone weights are *not* unit-length vectors - they are blend weights that sum to 1.0, so treating them as vectors and computing magnitude gives values around 0.5-1.0 depending on weight distribution.
 
-- Compare with known compressed normal formats (Oct16, Spheremap, etc.)
-- Check if values correlate with any mesh properties
-- Analyze across multiple mesh types (creatures, architecture, props)
+### Bone Indices at Offset 16
 
-### Bone Weights Location
+**Status**: ✅ RESOLVED
 
-**Status**: Uncertain
+- **Location**: Offset 16 in packed geometry (stride 48 meshes only)
+- **Format**: ubyte4 (4× unsigned bytes)
+- **Values**: Indices into the bone palette (0-255)
 
-**Observations**:
+### Complete Stride 48 Layout (Skinned Meshes)
 
-- PC files store bone weights in `NiSkinPartition` blocks
-- Xbox 360 packed geometry has bone indices at offset 16 (ubyte4)
-- Offset 40 was suspected to contain bone weights, but analysis shows it's unit-length bitangent data
-- Bone weights may be entirely in `NiSkinPartition`, not duplicated in packed geometry
-
-**Investigation needed**:
-
-- Parse Xbox 360 `NiSkinPartition` for bone weight data
-- Compare weight values between PC and Xbox 360
-- Determine if conversion needs to extract weights from different location
+| Offset | Size | Type   | Semantic       | Notes                     |
+| ------ | ---- | ------ | -------------- | ------------------------- |
+| 0      | 8    | half4  | Position       | XYZ + W=1                 |
+| 8      | 8    | half4  | Bone Weights   | 4 weights, sum ≈ 1.0      |
+| 16     | 4    | ubyte4 | Bone Indices   | 4 bone indices (0-255)    |
+| 20     | 8    | half4  | Normal         | Unit-length               |
+| 28     | 4    | half2  | UV             | Texture coordinates       |
+| 32     | 8    | half4  | Tangent        | Unit-length               |
+| 40     | 8    | half4  | Bitangent      | Unit-length               |
 
 ### Additional Streams
 
-Some meshes may have additional streams beyond the standard 48-byte layout:
+Some meshes may have additional streams beyond the standard layouts:
 
-- Vertex colors (when present)
+- Vertex colors (stride 40 meshes)
 - Secondary UV sets
 - Custom shader data
 
@@ -322,23 +319,16 @@ Xbox 360-specific Havok collision data block.
 | Non-skinned meshes        | ✅     | Stride 36 and 40 formats fully supported             |
 | Vertex colors             | ✅     | Extracted from stride 40 meshes                      |
 | Havok collision rendering | ✅     | HavokFilter Layer field correctly converted          |
-
-### ⚠️ Partially Working
-
-| Feature                | Status | Notes                                        |
-| ---------------------- | ------ | -------------------------------------------- |
-| Bone indices           | ⚠️     | Extracted from offset 16, may need remapping |
-| Skinned mesh detection | ⚠️     | Based on stride == 48                        |
+| Bone weights extraction   | ✅     | Extracted from offset 8 in stride 48 meshes          |
+| Bone indices extraction   | ✅     | Extracted from offset 16 in stride 48 meshes         |
+| NiSkinPartition expansion | ✅     | HasVertexWeights=1, HasBoneIndices=1 written         |
+| Skinned mesh detection    | ✅     | Based on stride == 48                                |
 
 ### ❌ Not Yet Implemented
 
-| Feature                   | Status | Notes                                         |
-| ------------------------- | ------ | --------------------------------------------- |
-| Bone weights              | ❌     | Location uncertain, may be in NiSkinPartition |
-| NiSkinPartition expansion | ❌     | Weights/indices not written to partition      |
-| Skeletal animation        | ❌     | Requires bone weights/indices                 |
-| Havok physics             | ❌     | hkPackedNiTriStripsData stripped              |
-| Offset 8 data             | ❌     | Unknown purpose, currently discarded          |
+| Feature       | Status | Notes                                  |
+| ------------- | ------ | -------------------------------------- |
+| Havok physics | ❌     | hkPackedNiTriStripsData stripped       |
 
 ---
 
@@ -401,12 +391,13 @@ dotnet run --project tools/NifAnalyzer -f net10.0 -- compare converted.nif refer
 
 ### Version History
 
-| Date       | Change                                       |
-| ---------- | -------------------------------------------- |
-| 2026-01-11 | Initial document creation                    |
-| 2026-01-11 | Documented offset 8 as unknown (not normals) |
-| 2026-01-11 | Verified normal location at offset 20        |
-| 2026-01-11 | Documented bone weight uncertainty           |
+| Date       | Change                                                      |
+| ---------- | ----------------------------------------------------------- |
+| 2026-01-11 | Initial document creation                                   |
+| 2026-01-11 | Documented offset 8 as unknown (not normals)                |
+| 2026-01-11 | Verified normal location at offset 20                       |
+| 2026-01-11 | Documented bone weight uncertainty                          |
+| 2026-01-12 | RESOLVED: Offset 8 = bone weights, NiSkinPartition working  |
 
 ---
 

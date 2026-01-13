@@ -132,17 +132,18 @@ internal static class NifPackedDataExtractor
                 var boneIndicesStream = ubyte4Streams.First(s => s.BlockOffset == 16);
                 result.BoneIndices = ExtractUbyte4Stream(data, rawDataOffset, numVertices, stride, boneIndicesStream);
 
-                // Bone weights: These may be in NiSkinPartition rather than packed geometry.
+                // Bone weights are at offset 8 for skinned meshes (stride 48)!
+                // The half4 at offset 8 contains the bone weights, NOT auxiliary data.
+                // Values are stored as 4 half-floats that sum to ~1.0 (e.g., 1.0, 0.0, 0.0, 0.0).
                 // The half4 at offset 40 is bitangent data (unit-length), not bone weights.
-                // NOTE: Bone weight location for Xbox 360 skinned meshes is still being researched.
-                // See docs/Xbox_360_NIF_Format.md for current understanding.
-                var hasBoneWeightsStream = half4Streams.Any(s => s.BlockOffset == 40);
+                var hasBoneWeightsStream = half4Streams.Any(s => s.BlockOffset == 8);
                 if (hasBoneWeightsStream)
                 {
-                    // For now, attempt to extract from offset 40 but this may not be correct
-                    var boneWeightsStream = half4Streams.First(s => s.BlockOffset == 40);
+                    var boneWeightsStream = half4Streams.First(s => s.BlockOffset == 8);
                     result.BoneWeights = ExtractHalf4WeightsStream(data, rawDataOffset, numVertices, stride,
                         boneWeightsStream, isBigEndian);
+                    if (verbose)
+                        Console.WriteLine("      Extracted bone weights from offset 8");
                 }
 
                 if (verbose)
@@ -178,7 +179,7 @@ internal static class NifPackedDataExtractor
             //
             // SKINNED (stride 48 bytes):
             //   Offset 0:  half4 (8 bytes) - Position
-            //   Offset 8:  half4 (8 bytes) - Unknown/auxiliary data (NOT normals!)
+            //   Offset 8:  half4 (8 bytes) - Bone weights (4 weights summing to 1.0)
             //   Offset 16: ubyte4 (4 bytes) - Bone indices
             //   Offset 20: half4 (8 bytes) - Normal (unit-length)
             //   Offset 28: half2 (4 bytes) - UV coordinates
@@ -226,10 +227,10 @@ internal static class NifPackedDataExtractor
 
             // Assign unit-length streams based on layout type
             // Non-skinned (36-byte): offsets 8, 20, 28 → Normals, Tangents, Bitangents
-            // Skinned (48-byte): offsets 20, 32, 40 → Normals, Tangents, Bitangents (skip offset 8)
+            // Skinned (48-byte): offsets 20, 32, 40 → Normals, Tangents, Bitangents (offset 8 = bone weights)
             if (isSkinned)
             {
-                // For skinned meshes, skip offset 8 (it's auxiliary data, not normals)
+                // For skinned meshes, skip offset 8 (it contains bone weights, extracted earlier)
                 var skinnedUnitStreams = unitStreams.Where(s => s.offset >= 20).ToList();
                 if (skinnedUnitStreams.Count >= 1) result.Normals = skinnedUnitStreams[0].data;
                 if (skinnedUnitStreams.Count >= 2) result.Tangents = skinnedUnitStreams[1].data;
