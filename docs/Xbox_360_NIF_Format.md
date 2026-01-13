@@ -288,15 +288,26 @@ Xbox 360 triangle strips must be converted to explicit triangles:
 
 Xbox 360-specific Havok collision data block.
 
-**Status**: Not yet implemented (currently stripped during conversion)
+**Status**: ✅ Implemented
 
-**Observations**:
+**Conversion process**:
 
-- Contains collision geometry for physics simulation
-- Different format from PC Havok data
-- May reference packed geometry data
+- Triangles: endian-swapped (3 × ushort + WeldInfo)
+- Vertices: expanded from HalfVector3 (6 bytes) to Vector3 (12 bytes)
+- SubShapes: endian-swapped (HavokFilter, NumVertices, HavokMaterial)
+- Compressed flag: set to 0 (decompressed) in output
 
-**Impact**: Converted models will not have collision detection until this is implemented.
+**Structure**:
+
+```
+NumTriangles (uint)
+Triangles[NumTriangles] - each 8 bytes (3 ushorts + weldinfo)
+NumVertices (uint)
+Compressed (byte) - 1 on Xbox, 0 on PC
+Vertices[NumVertices] - HalfVector3 (6 bytes) → Vector3 (12 bytes)
+NumSubShapes (ushort)
+SubShapes[NumSubShapes] - HavokFilter, NumVertices, Material
+```
 
 ---
 
@@ -313,12 +324,12 @@ Xbox 360-specific Havok collision data block.
 | Bitangent computation     | ✅     | Computed as cross(N,T) when not in packed            |
 | UV extraction             | ✅     | half2 → float2                                       |
 | Triangle extraction       | ✅     | Strips converted to triangles                        |
-| Block stripping           | ✅     | Xbox-specific blocks removed                         |
+| Block stripping           | ✅     | BSPackedAdditionalGeometryData blocks removed        |
 | Reference remapping       | ✅     | Ref<T> indices updated                               |
 | Rendering in NifSkope     | ✅     | Solid mode verified                                  |
 | Non-skinned meshes        | ✅     | Stride 36 and 40 formats fully supported             |
 | Vertex colors             | ✅     | Extracted from stride 40 meshes                      |
-| Havok collision rendering | ✅     | HavokFilter Layer field correctly converted          |
+| Havok collision           | ✅     | hkPackedNiTriStripsData vertices: half → float       |
 | Bone weights extraction   | ✅     | Extracted from offset 8 in stride 48 meshes          |
 | Bone indices extraction   | ✅     | Extracted from offset 16 in stride 48 meshes         |
 | NiSkinPartition expansion | ✅     | HasVertexWeights=1, HasBoneIndices=1 written         |
@@ -326,9 +337,11 @@ Xbox 360-specific Havok collision data block.
 
 ### ❌ Not Yet Implemented
 
-| Feature       | Status | Notes                            |
-| ------------- | ------ | -------------------------------- |
-| Havok physics | ❌     | hkPackedNiTriStripsData stripped |
+| Feature                   | Status | Notes                                        |
+| ------------------------- | ------ | -------------------------------------------- |
+| (None currently known)    | —      | All identified features have been implemented |
+
+> **Note**: hkPackedNiTriStripsData is now converted (vertices decompressed from half to full floats).
 
 ---
 

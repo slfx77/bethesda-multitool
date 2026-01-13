@@ -157,20 +157,21 @@ Xbox 360 NIFs differ from PC NIFs in several ways:
    - Normals (half4 → float3, unit-length stream detection)
    - UVs (half2 → float2)
    - Tangents/Bitangents (half4 → float3)
-3. **Block stripping** - Xbox 360-specific blocks removed (BSPackedAdditionalGeometryData, hkPackedNiTriStripsData)
-4. **Block reference remapping** - All Ref<T> indices updated after block removal
+3. **Block stripping** - BSPackedAdditionalGeometryData blocks removed
+4. **Havok conversion** - hkPackedNiTriStripsData vertices expanded (HalfVector3 → Vector3)
+5. **Block reference remapping** - All Ref<T> indices updated after block removal
 
 #### Xbox 360 Packed Data Stream Layouts
 
 Three stride formats exist. See [Xbox_360_NIF_Format.md](../docs/Xbox_360_NIF_Format.md) for full details.
 
-| Stride | Mesh Type                       | Offset 8        | Offset 16     |
-| ------ | ------------------------------- | --------------- | ------------- |
-| 36     | Non-skinned, no vertex colors   | **Normals**     | UV            |
-| 40     | Non-skinned, with vertex colors | **Normals**     | Vertex Colors |
-| 48     | Skinned                         | Unknown (~0.82) | Bone Indices  |
+| Stride | Mesh Type                       | Offset 8         | Offset 16     |
+| ------ | ------------------------------- | ---------------- | ------------- |
+| 36     | Non-skinned, no vertex colors   | **Normals**      | UV            |
+| 40     | Non-skinned, with vertex colors | **Normals**      | Vertex Colors |
+| 48     | Skinned                         | **Bone Weights** | Bone Indices  |
 
-> **IMPORTANT**: For skinned meshes (stride 48), offset 8 is NOT normals (avg length ~0.82). Actual normals are at offset 20. For non-skinned meshes (stride 36/40), offset 8 IS normals (unit-length ~1.0).
+> **IMPORTANT**: For skinned meshes (stride 48), offset 8 contains bone weights (4 half-floats summing to ~1.0). Actual normals are at offset 20. For non-skinned meshes (stride 36/40), offset 8 IS normals (unit-length ~1.0).
 
 #### Current Status
 
@@ -185,19 +186,13 @@ Three stride formats exist. See [Xbox_360_NIF_Format.md](../docs/Xbox_360_NIF_Fo
 - Correct rendering in NifSkope (solid mode)
 - Normals verified against PC reference (match within half-float precision)
 - Havok collision layer rendering (HavokFilter packed struct conversion)
-
-⏳ **Partially Implemented**:
-
+- Bone weights extraction (from offset 8 in stride 48 meshes)
 - Bone indices extraction (from offset 16 ubyte4)
-- Bone weights location uncertain (may be in NiSkinPartition, not packed geometry)
+- NiSkinPartition expansion (HasVertexWeights=1, HasBoneIndices=1 written)
 
 ❌ **Not Yet Implemented**:
 
-- **Skeletal animation support** - NiSkinPartition bone weights/indices expansion
-- **Havok physics** - hkPackedNiTriStripsData conversion (currently stripped)
-- **Full bone weight transfer** - Need to verify where bone weights are stored
-
-Without proper bone weights/indices in NiSkinPartition, converted models will render statically but **animations may not work correctly**.
+- (None currently known)
 
 #### NIF Schema System
 

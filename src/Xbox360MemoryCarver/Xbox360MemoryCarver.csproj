@@ -10,6 +10,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
+    <!-- Application icon for both CLI and GUI executables -->
+    <ApplicationIcon>converter.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Single-file and trimming options for CLI builds -->
