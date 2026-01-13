@@ -210,10 +210,9 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         var folder = await picker.PickSingleFolderAsync();
         if (folder == null) return;
 
+        // Setting InputDirectoryTextBox.Text triggers TextChanged event which calls ScanForNifFilesAsync
         InputDirectoryTextBox.Text = folder.Path;
         OutputDirectoryTextBox.Text = Path.Combine(folder.Path, "converted_pc");
-
-        await ScanForNifFilesAsync(folder.Path);
     }
 
     private async void InputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)

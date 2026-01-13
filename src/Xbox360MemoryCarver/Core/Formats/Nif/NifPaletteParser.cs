@@ -38,12 +38,8 @@ internal static class NifPaletteParser
         // Parse NiDefaultAVObjectPalette for block→name mappings
         var blockNames = Parse(data, info, verbose);
         if (blockNames != null)
-        {
             foreach (var kvp in blockNames)
-            {
                 result.BlockNames[kvp.Key] = kvp.Value;
-            }
-        }
 
         // Parse NiControllerSequence for Accum Root Name
         var accumRootName = ParseAccumRootName(data, info, verbose);
@@ -66,13 +62,11 @@ internal static class NifPaletteParser
         // Find NiDefaultAVObjectPalette block
         BlockInfo? paletteBlock = null;
         foreach (var block in info.Blocks)
-        {
             if (block.TypeName == "NiDefaultAVObjectPalette")
             {
                 paletteBlock = block;
                 break;
             }
-        }
 
         if (paletteBlock == null)
         {
@@ -127,12 +121,10 @@ internal static class NifPaletteParser
             {
                 // Strip suffix like ":0" from names (animation controller format vs node name)
                 var baseName = StripAnimationSuffix(name);
-                
+
                 // Don't overwrite if we already have a simpler name for this block
                 if (!result.ContainsKey(blockRef) || result[blockRef].Length > baseName.Length)
-                {
                     result[blockRef] = baseName;
-                }
             }
         }
 
@@ -151,13 +143,11 @@ internal static class NifPaletteParser
         // Find first NiControllerSequence block
         BlockInfo? seqBlock = null;
         foreach (var block in info.Blocks)
-        {
             if (block.TypeName == "NiControllerSequence")
             {
                 seqBlock = block;
                 break;
             }
-        }
 
         if (seqBlock == null)
         {
@@ -173,19 +163,19 @@ internal static class NifPaletteParser
     ///     Parse NiControllerSequence block to extract Accum Root Name.
     ///     Structure (for version 20.2.0.7, BS Version 34):
     ///     - NiSequence base:
-    ///       - Name (string index)
-    ///       - Num Controlled Blocks (uint)
-    ///       - Array Grow By (uint)
-    ///       - Controlled Blocks (array of ControlledBlock)
+    ///     - Name (string index)
+    ///     - Num Controlled Blocks (uint)
+    ///     - Array Grow By (uint)
+    ///     - Controlled Blocks (array of ControlledBlock)
     ///     - NiControllerSequence fields:
-    ///       - Weight (float)
-    ///       - Text Keys (Ref)
-    ///       - Cycle Type (uint)
-    ///       - Frequency (float)
-    ///       - Start Time (float)
-    ///       - Stop Time (float)
-    ///       - Manager (Ptr)
-    ///       - Accum Root Name (string index) <- This is what we want!
+    ///     - Weight (float)
+    ///     - Text Keys (Ref)
+    ///     - Cycle Type (uint)
+    ///     - Frequency (float)
+    ///     - Start Time (float)
+    ///     - Stop Time (float)
+    ///     - Manager (Ptr)
+    ///     - Accum Root Name (string index) <- This is what we want!
     /// </summary>
     private static string? ParseControllerSequence(byte[] data, int offset, NifInfo info, bool verbose)
     {
@@ -195,13 +185,13 @@ internal static class NifPaletteParser
         // NiSequence base fields:
         // Name (string index)
         var nameIdx = ReadInt32(data, ref pos, bigEndian);
-        
+
         // Num Controlled Blocks
         var numControlledBlocks = ReadInt32(data, ref pos, bigEndian);
-        
+
         // Array Grow By
         _ = ReadInt32(data, ref pos, bigEndian); // Not used
-        
+
         if (verbose)
             Console.WriteLine($"  NiControllerSequence: nameIdx={nameIdx}, numControlled={numControlledBlocks}");
 
@@ -222,36 +212,33 @@ internal static class NifPaletteParser
         // NiControllerSequence specific fields:
         // Weight (float)
         pos += 4;
-        
+
         // Text Keys (Ref)
         pos += 4;
-        
+
         // Cycle Type (uint)
         pos += 4;
-        
+
         // Frequency (float)
         pos += 4;
-        
+
         // Start Time (float)
         pos += 4;
-        
+
         // Stop Time (float)
         pos += 4;
-        
+
         // Manager (Ptr)
         pos += 4;
-        
+
         // Accum Root Name (string index) - THIS IS WHAT WE WANT!
         var accumRootNameIdx = ReadInt32(data, ref pos, bigEndian);
-        
+
         if (verbose)
             Console.WriteLine($"  Accum Root Name Index: {accumRootNameIdx}");
 
         // Look up the string
-        if (accumRootNameIdx >= 0 && accumRootNameIdx < info.Strings.Count)
-        {
-            return info.Strings[accumRootNameIdx];
-        }
+        if (accumRootNameIdx >= 0 && accumRootNameIdx < info.Strings.Count) return info.Strings[accumRootNameIdx];
 
         return null;
     }
@@ -269,18 +256,15 @@ internal static class NifPaletteParser
             var suffix = name.AsSpan(colonIdx + 1);
             var isNumeric = true;
             foreach (var c in suffix)
-            {
                 if (c < '0' || c > '9')
                 {
                     isNumeric = false;
                     break;
                 }
-            }
-            if (isNumeric)
-            {
-                return name[..colonIdx];
-            }
+
+            if (isNumeric) return name[..colonIdx];
         }
+
         return name;
     }
 
@@ -288,13 +272,9 @@ internal static class NifPaletteParser
     {
         int value;
         if (bigEndian)
-        {
             value = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3];
-        }
         else
-        {
             value = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24);
-        }
         pos += 4;
         return value;
     }

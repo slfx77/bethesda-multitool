@@ -3,6 +3,7 @@
 // Handles BSPackedAdditionalGeometryData expansion for Xbox 360 NIFs
 
 using System.Buffers.Binary;
+using System.Text;
 using static Xbox360MemoryCarver.Core.Formats.Nif.NifEndianUtils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -20,23 +21,23 @@ internal sealed class NifConverter
     // Geometry blocks that need expansion, keyed by geometry block index
     private readonly Dictionary<int, GeometryBlockExpansion> _geometryExpansions = [];
 
+    // Triangles extracted from NiTriStripsData strips (for non-skinned meshes), keyed by geometry block index
+    private readonly Dictionary<int, ushort[]> _geometryStripTriangles = [];
+
     // Maps geometry block index to its associated NiSkinPartition block index
     private readonly Dictionary<int, int> _geometryToSkinPartition = [];
 
     // Havok collision blocks that need HalfVector3→Vector3 expansion
     private readonly Dictionary<int, HavokBlockExpansion> _havokExpansions = [];
 
-    // Block index → node name mapping from NiDefaultAVObjectPalette
-    private readonly Dictionary<int, string> _nodeNamesByBlock = [];
-
     // New strings to add to the string table (for node names)
     private readonly List<string> _newStrings = [];
 
+    // Block index → node name mapping from NiDefaultAVObjectPalette
+    private readonly Dictionary<int, string> _nodeNamesByBlock = [];
+
     // Maps block index → string table index (for NiNode Name field restoration)
     private readonly Dictionary<int, int> _nodeNameStringIndices = [];
-
-    // Original string count (before adding new strings)
-    private int _originalStringCount;
 
     // Extracted geometry data indexed by packed block index
     private readonly Dictionary<int, PackedGeometryData> _packedGeometryByBlock = [];
@@ -50,13 +51,13 @@ internal sealed class NifConverter
 
     // Triangles extracted from NiSkinPartition strips, keyed by NiSkinPartition block index
     private readonly Dictionary<int, ushort[]> _skinPartitionTriangles = [];
-
-    // Triangles extracted from NiTriStripsData strips (for non-skinned meshes), keyed by geometry block index
-    private readonly Dictionary<int, ushort[]> _geometryStripTriangles = [];
     private readonly bool _verbose;
 
     // Vertex maps from NiSkinPartition blocks, keyed by NiSkinPartition block index
     private readonly Dictionary<int, ushort[]> _vertexMaps = [];
+
+    // Original string count (before adding new strings)
+    private int _originalStringCount;
 
     public NifConverter(bool verbose = false)
     {
@@ -258,7 +259,8 @@ internal sealed class NifConverter
         }
 
         if (_verbose && _nodeNamesByBlock.Count > 0)
-            Console.WriteLine($"  Found {_nodeNamesByBlock.Count} node names from palette/sequence, adding {_newStrings.Count} new strings");
+            Console.WriteLine(
+                $"  Found {_nodeNamesByBlock.Count} node names from palette/sequence, adding {_newStrings.Count} new strings");
     }
 
     /// <summary>
@@ -607,13 +609,11 @@ internal sealed class NifConverter
 
             // Also check for NiTriStripsData triangles (non-skinned meshes)
             if (_geometryStripTriangles.TryGetValue(geomBlockIndex, out var stripTriangles))
-            {
                 // NiTriStripsData already has strips in the source, so no size increase needed
                 // But we need to track that we have triangles for this block
                 if (_verbose)
                     Console.WriteLine(
                         $"    Block {geomBlockIndex}: Has {stripTriangles.Length / 3} triangles from NiTriStripsData strips");
-            }
         }
     }
 
@@ -774,6 +774,7 @@ internal sealed class NifConverter
                     : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
                 pos += 2;
             }
+
             allStrips.Add(strip);
         }
 
@@ -1448,10 +1449,8 @@ internal sealed class NifConverter
         // Max string length (uint) - update if we have longer strings
         var maxStrLen = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
         foreach (var str in _newStrings)
-        {
             if (str.Length > maxStrLen)
                 maxStrLen = (uint)str.Length;
-        }
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), maxStrLen);
         srcPos += 4;
         outPos += 4;
@@ -1474,7 +1473,7 @@ internal sealed class NifConverter
         {
             BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), (uint)str.Length);
             outPos += 4;
-            System.Text.Encoding.ASCII.GetBytes(str, output.AsSpan(outPos));
+            Encoding.ASCII.GetBytes(str, output.AsSpan(outPos));
             outPos += str.Length;
         }
 
@@ -1517,7 +1516,8 @@ internal sealed class NifConverter
             // It's a StringIndex which is a 4-byte int
             BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos), stringIndex);
             if (_verbose)
-                Console.WriteLine($"    Block {block.Index} ({block.TypeName}): Set Name to string index {stringIndex} ('{_nodeNamesByBlock[block.Index]}')");
+                Console.WriteLine(
+                    $"    Block {block.Index} ({block.TypeName}): Set Name to string index {stringIndex} ('{_nodeNamesByBlock[block.Index]}')");
         }
 
         return outPos + block.Size;

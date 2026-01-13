@@ -153,7 +153,7 @@ internal static class NifParser
                 ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
                 : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
             pos += 4;
-            
+
             var str = Encoding.ASCII.GetString(data, pos, (int)strLen);
             strings.Add(str);
             pos += (int)strLen;

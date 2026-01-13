@@ -13,7 +13,8 @@ internal static class ScanCommands
     {
         var command = new Command("scan", "Scan a folder for NIF files containing specific block types");
         var folderArg = new Argument<string>("folder") { Description = "Folder path to scan" };
-        var blockTypeArg = new Argument<string>("blockType") { Description = "Block type to search for (e.g., NiControllerSequence)" };
+        var blockTypeArg = new Argument<string>("blockType")
+            { Description = "Block type to search for (e.g., NiControllerSequence)" };
         var recursiveOpt = new Option<bool>("-r", "--recursive") { Description = "Search subdirectories recursively" };
         command.Arguments.Add(folderArg);
         command.Arguments.Add(blockTypeArg);
@@ -76,9 +77,7 @@ internal static class ScanCommands
                         {
                             var typeName = nif.GetBlockTypeName(i);
                             if (typeName.Contains(blockType, StringComparison.OrdinalIgnoreCase))
-                            {
                                 matchingBlocks.Add((i, typeName));
-                            }
                         }
 
                         if (matchingBlocks.Count > 0)
@@ -119,7 +118,8 @@ internal static class ScanCommands
 
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[green]Found {matches.Count} files[/] with {matches.Sum(m => m.Count)} total blocks matching '{blockType}'");
+            AnsiConsole.MarkupLine(
+                $"[green]Found {matches.Count} files[/] with {matches.Sum(m => m.Count)} total blocks matching '{blockType}'");
         }
 
         if (errors > 0)
@@ -162,7 +162,7 @@ internal static class ScanCommands
             "NiControllerManager",
             "NiTextKeyExtraData",
             "BSAnimNote",
-            "BSAnimNotes",
+            "BSAnimNotes"
         };
 
         var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
@@ -209,7 +209,7 @@ internal static class ScanCommands
                                 TotalAnimBlocks = animBlocks.Values.Sum(),
                                 HasControllerSequence = animBlocks.ContainsKey("NiControllerSequence"),
                                 HasFloatData = animBlocks.ContainsKey("NiFloatData"),
-                                HasTransformData = animBlocks.ContainsKey("NiTransformData"),
+                                HasTransformData = animBlocks.ContainsKey("NiTransformData")
                             });
                         }
                     }
@@ -241,9 +241,7 @@ internal static class ScanCommands
                 .ToList();
 
             foreach (var (type, files, blocks) in blockTypeSummary)
-            {
                 summaryTable.AddRow(type, files.ToString(), blocks.ToString());
-            }
 
             AnsiConsole.Write(summaryTable);
             AnsiConsole.WriteLine();
@@ -257,9 +255,10 @@ internal static class ScanCommands
             fileTable.AddColumn("Animation Types");
 
             // Sort by number of controller sequences (most interesting first)
-            foreach (var info in matches.OrderByDescending(m => m.BlockCounts.GetValueOrDefault("NiControllerSequence", 0))
-                                       .ThenByDescending(m => m.TotalAnimBlocks)
-                                       .Take(100)) // Limit to first 100
+            foreach (var info in matches
+                         .OrderByDescending(m => m.BlockCounts.GetValueOrDefault("NiControllerSequence", 0))
+                         .ThenByDescending(m => m.TotalAnimBlocks)
+                         .Take(100)) // Limit to first 100
             {
                 var ctrlSeq = info.BlockCounts.GetValueOrDefault("NiControllerSequence", 0);
                 var floatData = info.BlockCounts.GetValueOrDefault("NiFloatData", 0);

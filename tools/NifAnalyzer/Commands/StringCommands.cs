@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text;
 using NifAnalyzer.Models;
 using NifAnalyzer.Parsers;
 using Spectre.Console;
@@ -352,7 +353,6 @@ internal static class StringCommands
 
             diffTable.AddRow($"0x{off:X4}", $"[red]0x{b1:X2}[/]", $"[green]0x{b2:X2}[/]", context);
         }
-
     }
 
     /// <summary>
@@ -405,14 +405,16 @@ internal static class StringCommands
         {
             // Read SizedString: uint length + chars
             var strLen = ReadInt32(blockData, ref pos, be);
-            var name = System.Text.Encoding.ASCII.GetString(data, blockOffset + pos, strLen);
+            var name = Encoding.ASCII.GetString(data, blockOffset + pos, strLen);
             pos += strLen;
 
             // Read Ptr (block reference)
             var blockRef = ReadInt32(blockData, ref pos, be);
 
-            var blockType = blockRef >= 0 && blockRef < nif.NumBlocks ? nif.GetBlockTypeName(blockRef) : (blockRef == -1 ? "null" : "INVALID");
-            var refStr = blockRef == -1 ? "[dim]null[/]" : (blockRef < nif.NumBlocks ? $"[green]{blockRef}[/]" : $"[red]{blockRef} (INVALID!)[/]");
+            var blockType = blockRef >= 0 && blockRef < nif.NumBlocks ? nif.GetBlockTypeName(blockRef) :
+                blockRef == -1 ? "null" : "INVALID";
+            var refStr = blockRef == -1 ? "[dim]null[/]" :
+                blockRef < nif.NumBlocks ? $"[green]{blockRef}[/]" : $"[red]{blockRef} (INVALID!)[/]";
 
             table.AddRow(i.ToString(), Markup.Escape(name), refStr, blockType);
         }
