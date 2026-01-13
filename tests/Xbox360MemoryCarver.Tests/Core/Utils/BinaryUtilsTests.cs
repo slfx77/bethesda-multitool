@@ -302,7 +302,7 @@ public class BinaryUtilsTests
     public void SanitizeFilename_ValidFilename_ReturnsUnchanged()
     {
         // Arrange
-        var filename = "valid_filename.txt";
+        const string filename = "valid_filename.txt";
 
         // Act
         var result = BinaryUtils.SanitizeFilename(filename);
@@ -315,7 +315,7 @@ public class BinaryUtilsTests
     public void SanitizeFilename_WithInvalidChars_ReplacesWithUnderscore()
     {
         // Arrange
-        var filename = "file<name>:test.txt";
+        const string filename = "file<name>:test.txt";
 
         // Act
         var result = BinaryUtils.SanitizeFilename(filename);

@@ -163,12 +163,10 @@ public sealed partial class HexMinimapControl : UserControl
         return currentPos >= end;
     }
 
-
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_analysisResult != null) Render();
     }
-
 
     private void Render()
     {

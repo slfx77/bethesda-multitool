@@ -13,6 +13,10 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 /// </summary>
 internal sealed partial class NifSchemaConverter
 {
+    private const string ArgPlaceholder = "#ARG#";
+    private const string StripsFieldName = "Strips";
+    private const string TrianglesFieldName = "Triangles";
+
     private static readonly Logger Log = Logger.Instance;
 
     // Cache compiled version conditions
@@ -71,50 +75,79 @@ internal sealed partial class NifSchemaConverter
         foreach (var field in fields)
         {
             if (ctx.Position >= ctx.End) break;
-
-            // Check onlyT (type-specific field)
-            if (!string.IsNullOrEmpty(field.OnlyT) && !_schema.Inherits(ctx.BlockType, field.OnlyT))
-            {
-                if (depth == 0)
-                    Log.Trace($"    Skipping {field.Name} (onlyT={field.OnlyT}, block={ctx.BlockType})");
-                continue;
-            }
-
-            // Check since/until version range
-            if (!IsVersionInRange(field.Since, field.Until))
-            {
-                if (depth == 0)
-                    Log.Trace(
-                        $"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
-                continue;
-            }
-
-            // Check version conditions (vercond)
-            if (!EvaluateVersionCondition(field.VersionCond))
-            {
-                if (depth == 0 || field.Name == "LOD Level" || field.Name == "Global VB")
-                    Log.Trace($"    Skipping {field.Name} (vercond failed: {field.VersionCond})");
-                continue;
-            }
-
-            // Check runtime conditions (requires field values from context)
-            if (!string.IsNullOrEmpty(field.Condition))
-            {
-                var condResult = EvaluateCondition(field.Condition, ctx.FieldValues);
-                if (!condResult)
-                {
-                    if (depth == 0)
-                        Log.Trace($"    Skipping {field.Name} (cond failed: {field.Condition})");
-                    continue;
-                }
-            }
+            if (!ShouldProcessField(ctx, field, depth)) continue;
 
             if (depth == 0)
+            {
                 Log.Trace($"    Converting field {field.Name} at pos {ctx.Position:X}");
+            }
 
-            // Convert the field
             ConvertField(ctx, field, depth);
         }
+    }
+
+    private bool ShouldProcessField(ConversionContext ctx, NifFieldDef field, int depth)
+    {
+        // Check onlyT (type-specific field)
+        if (!IsFieldTypeMatch(ctx, field, depth)) return false;
+
+        // Check version constraints
+        if (!IsFieldVersionValid(field, depth)) return false;
+
+        // Check runtime conditions
+        if (!IsFieldConditionMet(ctx, field, depth)) return false;
+
+        return true;
+    }
+
+    private bool IsFieldTypeMatch(ConversionContext ctx, NifFieldDef field, int depth)
+    {
+        if (string.IsNullOrEmpty(field.OnlyT)) return true;
+
+        if (_schema.Inherits(ctx.BlockType, field.OnlyT)) return true;
+
+        if (depth == 0)
+        {
+            Log.Trace($"    Skipping {field.Name} (onlyT={field.OnlyT}, block={ctx.BlockType})");
+        }
+        return false;
+    }
+
+    private bool IsFieldVersionValid(NifFieldDef field, int depth)
+    {
+        if (!IsVersionInRange(field.Since, field.Until))
+        {
+            if (depth == 0)
+            {
+                Log.Trace($"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
+            }
+            return false;
+        }
+
+        if (!EvaluateVersionCondition(field.VersionCond))
+        {
+            if (depth == 0 || field.Name == "LOD Level" || field.Name == "Global VB")
+            {
+                Log.Trace($"    Skipping {field.Name} (vercond failed: {field.VersionCond})");
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsFieldConditionMet(ConversionContext ctx, NifFieldDef field, int depth)
+    {
+        if (string.IsNullOrEmpty(field.Condition)) return true;
+
+        var condResult = EvaluateCondition(field.Condition, ctx.FieldValues);
+        if (condResult) return true;
+
+        if (depth == 0)
+        {
+            Log.Trace($"    Skipping {field.Name} (cond failed: {field.Condition})");
+        }
+        return false;
     }
 
     /// <summary>
@@ -160,121 +193,165 @@ internal sealed partial class NifSchemaConverter
     {
         // If field has an arg attribute, evaluate it and set #ARG# before processing
         // This is needed for structs that use #ARG# in their field conditions
-        var hadPreviousArg = ctx.FieldValues.TryGetValue("#ARG#", out var previousArg);
+        var hadPreviousArg = ctx.FieldValues.TryGetValue(ArgPlaceholder, out var previousArg);
 
         if (field.Arg != null)
         {
             var argValue = EvaluateArgExpression(field.Arg, ctx.FieldValues);
-            ctx.FieldValues["#ARG#"] = argValue;
+            ctx.FieldValues[ArgPlaceholder] = argValue;
         }
 
         // If field has a template attribute, save it for use by nested generic structs
-        // This propagates the template type (e.g., "float") to structs like Key<#T#>
         var previousTemplate = ctx.TemplateType;
         if (field.Template != null)
-            // Resolve the template value - it might be #T# itself (propagation) or an actual type
-            ctx.TemplateType = field.Template == "#T#" && ctx.TemplateType != null
-                ? ctx.TemplateType // Propagate existing #T#
-                : field.Template; // Use the new template type directly
+        {
+            ctx.TemplateType = ResolveTemplateType(field.Template, ctx.TemplateType);
+        }
 
         try
         {
-            // Handle arrays
-            if (field.Length != null)
-            {
-                var count = EvaluateArrayLength(field.Length, ctx.FieldValues);
-                if (count < 0)
-                {
-                    if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
-                        Log.Trace($"    Skipping array {field.Name} (length expression '{field.Length}' = {count})");
-                    return; // Invalid or conditional array
-                }
-
-                // Handle 2D arrays with width attribute (e.g., UV Sets: length is num UV sets, width is num vertices)
-                if (field.Width != null)
-                {
-                    // First check if this is a jagged array (e.g., "Strip Lengths")
-                    // In this case, width is stored as an array in a special key
-                    var arrayKey = $"#{field.Width}#Array";
-                    if (ctx.FieldValues.TryGetValue(arrayKey, out var arrayObj) && arrayObj is int[] widthArray)
-                    {
-                        // Jagged array: each row has different width
-                        if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
-                            Log.Trace(
-                                $"    Jagged array: {field.Name} = {count} rows with variable widths (total {widthArray.Sum()} elements) using key '{arrayKey}'");
-
-                        for (var row = 0; row < count && row < widthArray.Length && ctx.Position < ctx.End; row++)
-                        {
-                            var rowWidth = widthArray[row];
-                            for (var col = 0; col < rowWidth && ctx.Position < ctx.End; col++)
-                                ConvertSingleValue(ctx, field.Type, depth);
-                        }
-
-                        return;
-                    }
-
-                    var width = EvaluateArrayLength(field.Width, ctx.FieldValues);
-                    if (width < 0)
-                    {
-                        if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
-                            Log.Trace(
-                                $"    Skipping array {field.Name} (width expression '{field.Width}' = {width}, arrayKey='{arrayKey}', found={ctx.FieldValues.ContainsKey(arrayKey)})");
-                        return; // Invalid width
-                    }
-
-                    if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
-                        Log.Trace($"    2D array: {field.Name} = {count} x {width} = {count * width} elements");
-                    count *= width; // Total elements = length * width
-                }
-
-                if (count > 100000)
-                {
-                    Log.Trace($"    [Schema] WARNING: Array too large ({count}), skipping field {field.Name}");
-                    return;
-                }
-
-                // For arrays that might be used as widths (like "Strip Lengths"), 
-                // store individual values so jagged arrays can reference them
-                var shouldStoreArrayValues = field.Name.EndsWith(" Lengths", StringComparison.Ordinal) &&
-                                             field.Type == "ushort" &&
-                                             count > 0 && count <= 100;
-                var arrayValues = shouldStoreArrayValues ? new int[count] : null;
-
-                for (var i = 0; i < count && ctx.Position < ctx.End; i++)
-                {
-                    // For arrays we need to store, read value before converting
-                    if (arrayValues != null && ctx.Position + 2 <= ctx.End)
-                        // Read big-endian value before conversion
-                        arrayValues[i] = BinaryPrimitives.ReadUInt16BigEndian(ctx.Buffer.AsSpan(ctx.Position, 2));
-                    ConvertSingleValue(ctx, field.Type, depth);
-                }
-
-                // Store array values for use by subsequent fields
-                if (arrayValues != null)
-                {
-                    ctx.FieldValues[$"#{field.Name}#Array"] = arrayValues;
-                    Log.Trace($"      Stored array {field.Name} = [{string.Join(", ", arrayValues)}] at depth {depth}");
-                }
-
-                return;
-            }
-
-            // Single value
-            ConvertSingleValue(ctx, field.Type, depth);
-
-            // Store value for conditional field evaluation
-            StoreFieldValue(ctx, field);
+            ConvertFieldValue(ctx, field, depth);
         }
         finally
         {
-            // Restore previous #ARG# value (or remove if there wasn't one)
-            if (hadPreviousArg)
-                ctx.FieldValues["#ARG#"] = previousArg!;
-            else if (field.Arg != null)
-                ctx.FieldValues.Remove("#ARG#");
-
-            // Restore previous template type
+            RestoreArgValue(ctx, field, hadPreviousArg, previousArg);
             ctx.TemplateType = previousTemplate;
+        }
+    }
+
+    private static string ResolveTemplateType(string template, string? currentTemplate)
+    {
+        // Resolve the template value - it might be #T# itself (propagation) or an actual type
+        return template == "#T#" && currentTemplate != null
+            ? currentTemplate // Propagate existing #T#
+            : template; // Use the new template type directly
+    }
+
+    private static void RestoreArgValue(ConversionContext ctx, NifFieldDef field, bool hadPreviousArg, object? previousArg)
+    {
+        if (hadPreviousArg)
+        {
+            ctx.FieldValues[ArgPlaceholder] = previousArg!;
+        }
+        else if (field.Arg != null)
+        {
+            ctx.FieldValues.Remove(ArgPlaceholder);
+        }
+    }
+
+    private void ConvertFieldValue(ConversionContext ctx, NifFieldDef field, int depth)
+    {
+        // Handle arrays
+        if (field.Length != null)
+        {
+            ConvertArrayField(ctx, field, depth);
+            return;
+        }
+
+        // Single value
+        ConvertSingleValue(ctx, field.Type, depth);
+        StoreFieldValue(ctx, field);
+    }
+
+    private void ConvertArrayField(ConversionContext ctx, NifFieldDef field, int depth)
+    {
+        var count = EvaluateArrayLength(field.Length!, ctx.FieldValues);
+        if (count < 0)
+        {
+            LogSkippedArray(field, depth, $"length expression '{field.Length}' = {count}");
+            return;
+        }
+
+        // Handle 2D or jagged arrays
+        if (field.Width != null)
+        {
+            count = ResolveTwoDimensionalArrayCount(ctx, field, count, depth);
+            if (count < 0) return;
+        }
+
+        if (count > 100000)
+        {
+            Log.Trace($"    [Schema] WARNING: Array too large ({count}), skipping field {field.Name}");
+            return;
+        }
+
+        ConvertArrayElements(ctx, field, count, depth);
+    }
+
+    private int ResolveTwoDimensionalArrayCount(ConversionContext ctx, NifFieldDef field, int count, int depth)
+    {
+        var arrayKey = $"#{field.Width}#Array";
+
+        // Check if this is a jagged array
+        if (ctx.FieldValues.TryGetValue(arrayKey, out var arrayObj) && arrayObj is int[] widthArray)
+        {
+            ConvertJaggedArray(ctx, field, count, widthArray, depth);
+            return -1; // Signal that we've handled it
+        }
+
+        var width = EvaluateArrayLength(field.Width!, ctx.FieldValues);
+        if (width < 0)
+        {
+            LogSkippedArray(field, depth,
+                $"width expression '{field.Width}' = {width}, arrayKey='{arrayKey}', found={ctx.FieldValues.ContainsKey(arrayKey)}");
+            return -1;
+        }
+
+        if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
+        {
+            Log.Trace($"    2D array: {field.Name} = {count} x {width} = {count * width} elements");
+        }
+
+        return count * width;
+    }
+
+    private void ConvertJaggedArray(ConversionContext ctx, NifFieldDef field, int rowCount, int[] widthArray, int depth)
+    {
+        if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
+        {
+            Log.Trace($"    Jagged array: {field.Name} = {rowCount} rows with variable widths (total {widthArray.Sum()} elements)");
+        }
+
+        for (var row = 0; row < rowCount && row < widthArray.Length && ctx.Position < ctx.End; row++)
+        {
+            var rowWidth = widthArray[row];
+            for (var col = 0; col < rowWidth && ctx.Position < ctx.End; col++)
+            {
+                ConvertSingleValue(ctx, field.Type, depth);
+            }
+        }
+    }
+
+    private void ConvertArrayElements(ConversionContext ctx, NifFieldDef field, int count, int depth)
+    {
+        // For arrays that might be used as widths (like "Strip Lengths"), 
+        // store individual values so jagged arrays can reference them
+        var shouldStoreArrayValues = field.Name.EndsWith(" Lengths", StringComparison.Ordinal) &&
+                                     field.Type == "ushort" &&
+                                     count > 0 && count <= 100;
+        var arrayValues = shouldStoreArrayValues ? new int[count] : null;
+
+        for (var i = 0; i < count && ctx.Position < ctx.End; i++)
+        {
+            if (arrayValues != null && ctx.Position + 2 <= ctx.End)
+            {
+                arrayValues[i] = BinaryPrimitives.ReadUInt16BigEndian(ctx.Buffer.AsSpan(ctx.Position, 2));
+            }
+            ConvertSingleValue(ctx, field.Type, depth);
+        }
+
+        if (arrayValues != null)
+        {
+            ctx.FieldValues[$"#{field.Name}#Array"] = arrayValues;
+            Log.Trace($"      Stored array {field.Name} = [{string.Join(", ", arrayValues)}] at depth {depth}");
+        }
+    }
+
+    private static void LogSkippedArray(NifFieldDef field, int depth, string reason)
+    {
+        if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
+        {
+            Log.Trace($"    Skipping array {field.Name} ({reason})");
         }
     }
 
@@ -285,9 +362,9 @@ internal sealed partial class NifSchemaConverter
             return literalValue;
 
         // Handle #ARG# propagation from parent
-        if (argExpr == "#ARG#")
+        if (argExpr == ArgPlaceholder)
         {
-            if (fieldValues.TryGetValue("#ARG#", out var parentArg))
+            if (fieldValues.TryGetValue(ArgPlaceholder, out var parentArg))
                 return Convert.ToInt64(parentArg, CultureInfo.InvariantCulture);
             return 0;
         }
@@ -333,6 +410,7 @@ internal sealed partial class NifSchemaConverter
     {
         // Try to get value from field context (simple field reference)
         if (fieldValues.TryGetValue(lengthExpr, out var val))
+        {
             return val switch
             {
                 int i => i,
@@ -342,6 +420,7 @@ internal sealed partial class NifSchemaConverter
                 long l => (int)l,
                 _ => -1
             };
+        }
 
         // Try to parse as literal
         if (int.TryParse(lengthExpr, CultureInfo.InvariantCulture, out var literal))

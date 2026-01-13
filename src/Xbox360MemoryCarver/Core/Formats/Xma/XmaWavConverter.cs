@@ -8,6 +8,9 @@ namespace Xbox360MemoryCarver.Core.Formats.Xma;
 /// </summary>
 internal sealed class XmaWavConverter
 {
+    private const string FfmpegExeName = "ffmpeg.exe";
+    private const string FfmpegName = "ffmpeg";
+
     private static readonly Logger Log = Logger.Instance;
     private readonly string? _ffmpegPath;
 
@@ -104,10 +107,10 @@ internal sealed class XmaWavConverter
 
         foreach (var dir in pathDirs)
         {
-            var ffmpegPath = Path.Combine(dir, "ffmpeg.exe");
+            var ffmpegPath = Path.Combine(dir, FfmpegExeName);
             if (File.Exists(ffmpegPath)) return ffmpegPath;
 
-            ffmpegPath = Path.Combine(dir, "ffmpeg");
+            ffmpegPath = Path.Combine(dir, FfmpegName);
             if (File.Exists(ffmpegPath)) return ffmpegPath;
         }
 
@@ -118,10 +121,10 @@ internal sealed class XmaWavConverter
 
         var commonPaths = new[]
         {
-            Path.Combine(systemDrive, "ffmpeg", "bin", "ffmpeg.exe"),
-            Path.Combine(programFiles, "ffmpeg", "bin", "ffmpeg.exe"),
-            Path.Combine(programFilesX86, "ffmpeg", "bin", "ffmpeg.exe"),
-            Path.Combine(localAppData, "ffmpeg", "bin", "ffmpeg.exe")
+            Path.Combine(systemDrive, FfmpegName, "bin", FfmpegExeName),
+            Path.Combine(programFiles, FfmpegName, "bin", FfmpegExeName),
+            Path.Combine(programFilesX86, FfmpegName, "bin", FfmpegExeName),
+            Path.Combine(localAppData, FfmpegName, "bin", FfmpegExeName)
         };
 
         return commonPaths.FirstOrDefault(File.Exists);

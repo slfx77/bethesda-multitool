@@ -49,7 +49,6 @@ public class ScdaParserTests
         Assert.Equal("SCDA", result.Format);
     }
 
-
     [Fact]
     public void ParseHeader_InvalidMagic_ReturnsNull()
     {
@@ -226,7 +225,7 @@ public class ScdaParserTests
     public void ScanForRecords_WithAssociatedSctx_ParsesSourceText()
     {
         // Arrange - SCDA followed by SCTX within 200 bytes
-        var sourceText = "SetStage MyQuest 10";
+        const string sourceText = "SetStage MyQuest 10";
         var sourceBytes = Encoding.ASCII.GetBytes(sourceText);
 
         var data = new byte[100];

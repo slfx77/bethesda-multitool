@@ -16,6 +16,9 @@ public static class GuiEntryPoint
 
     public static int Run(string[] args)
     {
+        // args parameter reserved for future command-line GUI options
+        _ = args;
+
         // Attach to console early for crash logging
         AttachConsole(ATTACH_PARENT_PROCESS);
 
@@ -68,10 +71,8 @@ public static class GuiEntryPoint
         e.SetObserved();
     }
 
-
     [DllImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachConsole(int dwProcessId);
-
 }
 #endif

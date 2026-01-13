@@ -48,6 +48,7 @@ internal static class ClipboardHelper
         try
         {
             if (OpenClipboard(IntPtr.Zero))
+            {
                 try
                 {
                     EmptyClipboard();
@@ -67,8 +68,11 @@ internal static class ClipboardHelper
                 {
                     CloseClipboard();
                 }
+            }
             else
+            {
                 Debug.WriteLine("[ClipboardHelper] OpenClipboard failed");
+            }
         }
         catch (Exception ex)
         {
@@ -91,6 +95,7 @@ internal static class ClipboardHelper
             }
 
             if (OpenClipboard(IntPtr.Zero))
+            {
                 try
                 {
                     var hGlobal = GetClipboardData(CF_UNICODETEXT);
@@ -122,6 +127,7 @@ internal static class ClipboardHelper
                 {
                     CloseClipboard();
                 }
+            }
 
             Debug.WriteLine("[ClipboardHelper] OpenClipboard failed");
         }

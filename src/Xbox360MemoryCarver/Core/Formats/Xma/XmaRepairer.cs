@@ -54,38 +54,43 @@ internal static class XmaRepairer
         return result;
     }
 
-
     private static (int channels, int sampleRate) ExtractAudioParams(byte[] data, int fmtOffset, bool convertToXma2)
     {
         var formatTag = data.Length > fmtOffset + 10
             ? BinaryUtils.ReadUInt16LE(data.AsSpan(), fmtOffset + 8)
             : (ushort)0;
 
-        int channels;
-        int sampleRate;
+        var (channels, sampleRate) = (formatTag == 0x0165 || convertToXma2)
+            ? ExtractXma1Params(data, fmtOffset)
+            : ExtractXma2Params(data, fmtOffset);
 
-        if (formatTag == 0x0165 || convertToXma2)
-        {
-            // XMA1WAVEFORMAT structure
-            sampleRate = data.Length > fmtOffset + 24
-                ? (int)BinaryUtils.ReadUInt32LE(data.AsSpan(), fmtOffset + 24)
-                : DefaultSampleRate;
-            channels = data.Length > fmtOffset + 37 ? data[fmtOffset + 37] : 1;
-        }
-        else
-        {
-            // XMA2/WAVEFORMATEX structure
-            channels = data.Length > fmtOffset + 10 ? BinaryUtils.ReadUInt16LE(data.AsSpan(), fmtOffset + 10) : 1;
-            sampleRate = data.Length > fmtOffset + 12
-                ? (int)BinaryUtils.ReadUInt32LE(data.AsSpan(), fmtOffset + 12)
-                : DefaultSampleRate;
-        }
+        return (ValidateChannels(channels), ValidateSampleRate(sampleRate));
+    }
 
-        if (channels < 1 || channels > 8) channels = 1;
-        if (sampleRate < 8000 || sampleRate > 96000) sampleRate = DefaultSampleRate;
-
+    private static (int channels, int sampleRate) ExtractXma1Params(byte[] data, int fmtOffset)
+    {
+        // XMA1WAVEFORMAT structure
+        var sampleRate = data.Length > fmtOffset + 24
+            ? (int)BinaryUtils.ReadUInt32LE(data.AsSpan(), fmtOffset + 24)
+            : DefaultSampleRate;
+        var channels = data.Length > fmtOffset + 37 ? data[fmtOffset + 37] : 1;
         return (channels, sampleRate);
     }
+
+    private static (int channels, int sampleRate) ExtractXma2Params(byte[] data, int fmtOffset)
+    {
+        // XMA2/WAVEFORMATEX structure
+        var channels = data.Length > fmtOffset + 10 ? BinaryUtils.ReadUInt16LE(data.AsSpan(), fmtOffset + 10) : 1;
+        var sampleRate = data.Length > fmtOffset + 12
+            ? (int)BinaryUtils.ReadUInt32LE(data.AsSpan(), fmtOffset + 12)
+            : DefaultSampleRate;
+        return (channels, sampleRate);
+    }
+
+    private static int ValidateChannels(int channels) => channels is >= 1 and <= 8 ? channels : 1;
+
+    private static int ValidateSampleRate(int sampleRate) =>
+        sampleRate is >= 8000 and <= 96000 ? sampleRate : DefaultSampleRate;
 
     private static byte[] GenerateSeekTable(int dataSize)
     {
@@ -156,11 +161,16 @@ internal static class XmaRepairer
 
         // Fallback: linear scan
         for (var i = 12; i < data.Length - 8; i++)
+        {
             if (data.AsSpan(i, 4).SequenceEqual(chunkId))
             {
                 var size = BinaryUtils.ReadUInt32LE(data.AsSpan(), i + 4);
-                if (size <= 100_000_000) return i;
+                if (size <= 100_000_000)
+                {
+                    return i;
+                }
             }
+        }
 
         return -1;
     }

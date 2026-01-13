@@ -309,8 +309,8 @@ public class MinidumpParserTests
     private static byte[] CreateMinimalMinidump(int streamCount = 1)
     {
         // Create a minimal valid minidump with empty stream directory
-        var headerSize = 32;
-        var directoryOffset = 32;
+        const int headerSize = 32;
+        const int directoryOffset = 32;
         var directorySize = streamCount * 12;
         var totalSize = headerSize + directorySize + 64; // Extra space for data
 

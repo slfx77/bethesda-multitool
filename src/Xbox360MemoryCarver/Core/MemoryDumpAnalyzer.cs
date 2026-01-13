@@ -23,8 +23,12 @@ public sealed partial class MemoryDumpAnalyzer
         // Register all signatures from the format registry for analysis
         // (includes all formats for visualization, even those with scanning disabled)
         foreach (var format in FormatRegistry.All)
-        foreach (var sig in format.Signatures)
-            _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
+        {
+            foreach (var sig in format.Signatures)
+            {
+                _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
+            }
+        }
 
         _signatureMatcher.Build();
     }
@@ -43,13 +47,6 @@ public sealed partial class MemoryDumpAnalyzer
         bool includeMetadata = true,
         CancellationToken cancellationToken = default)
     {
-        // Progress phases and their weight (totals 100%):
-        // - Scanning: 0-50%
-        // - Parsing: 50-70%
-        // - SCDA scan: 70-80% (if metadata enabled)
-        // - ESM scan: 80-90%
-        // - FormID map: 90-100%
-
         var stopwatch = Stopwatch.StartNew();
         var result = new AnalysisResult { FilePath = filePath };
 
@@ -60,61 +57,102 @@ public sealed partial class MemoryDumpAnalyzer
         var minidumpInfo = MinidumpParser.Parse(filePath);
         result.MinidumpInfo = minidumpInfo;
 
-        if (minidumpInfo.IsValid)
-        {
-            result.BuildType = DetectBuildType(minidumpInfo);
-            Console.WriteLine(
-                $"[Minidump] {minidumpInfo.Modules.Count} modules, {minidumpInfo.MemoryRegions.Count} memory regions, Xbox 360: {minidumpInfo.IsXbox360}");
-
-            // Add minidump header as a colored region
-            if (minidumpInfo.HeaderSize > 0)
-                result.CarvedFiles.Add(new CarvedFileInfo
-                {
-                    Offset = 0,
-                    Length = minidumpInfo.HeaderSize,
-                    FileType = "Minidump Header",
-                    FileName = "minidump_header",
-                    SignatureId = "minidump_header",
-                    Category = FileCategory.Header
-                });
-
-            // Add modules directly to results
-            AddModulesFromMinidump(result, minidumpInfo);
-        }
+        ProcessMinidumpInfo(result, minidumpInfo);
 
         // Build set of module file offsets to exclude from signature scanning
-        var moduleOffsets = new HashSet<long>(
-            minidumpInfo.Modules
-                .Select(m => minidumpInfo.GetModuleFileRange(m))
-                .Where(r => r.HasValue)
-                .Select(r => r!.Value.fileOffset));
+        var moduleOffsets = BuildModuleOffsetSet(minidumpInfo);
 
         // Use a single memory-mapped file for all operations
         using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
 
         // Phase 1: Signature scanning (0-50%)
-        var scanProgress = progress != null
-            ? new Progress<AnalysisProgress>(p =>
-            {
-                // Scale scan progress to 0-50%
-                var scanPercent = p.TotalBytes > 0 ? p.BytesProcessed * 50.0 / p.TotalBytes : 0;
-                progress.Report(new AnalysisProgress
-                {
-                    Phase = "Scanning",
-                    FilesFound = p.FilesFound,
-                    BytesProcessed = p.BytesProcessed,
-                    TotalBytes = p.TotalBytes,
-                    PercentComplete = scanPercent
-                });
-            })
-            : null;
-
+        var scanProgress = CreateScanProgress(progress);
         var matches = await Task.Run(() => FindAllMatches(accessor, result.FileSize, scanProgress), cancellationToken);
 
         // Phase 2: Parsing matches (50-70%)
         progress?.Report(new AnalysisProgress { Phase = "Parsing", FilesFound = matches.Count, PercentComplete = 50 });
+        await ParseMatchesAsync(accessor, result, matches, moduleOffsets, progress, cancellationToken);
 
+        // Sort all results by offset
+        SortCarvedFilesByOffset(result);
+
+        // Extract metadata (SCDA records, ESM records, FormID mapping) using memory-mapped access
+        if (includeMetadata)
+        {
+            await ExtractMetadataAsync(accessor, result, progress, cancellationToken);
+        }
+
+        progress?.Report(new AnalysisProgress
+        { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
+
+        stopwatch.Stop();
+        result.AnalysisTime = stopwatch.Elapsed;
+
+        return result;
+    }
+
+    private static void ProcessMinidumpInfo(AnalysisResult result, MinidumpInfo minidumpInfo)
+    {
+        if (!minidumpInfo.IsValid) return;
+
+        result.BuildType = DetectBuildType(minidumpInfo);
+        Console.WriteLine(
+            $"[Minidump] {minidumpInfo.Modules.Count} modules, {minidumpInfo.MemoryRegions.Count} memory regions, Xbox 360: {minidumpInfo.IsXbox360}");
+
+        // Add minidump header as a colored region
+        if (minidumpInfo.HeaderSize > 0)
+        {
+            result.CarvedFiles.Add(new CarvedFileInfo
+            {
+                Offset = 0,
+                Length = minidumpInfo.HeaderSize,
+                FileType = "Minidump Header",
+                FileName = "minidump_header",
+                SignatureId = "minidump_header",
+                Category = FileCategory.Header
+            });
+        }
+
+        // Add modules directly to results
+        AddModulesFromMinidump(result, minidumpInfo);
+    }
+
+    private static HashSet<long> BuildModuleOffsetSet(MinidumpInfo minidumpInfo)
+    {
+        return new HashSet<long>(
+            minidumpInfo.Modules
+                .Select(m => minidumpInfo.GetModuleFileRange(m))
+                .Where(r => r.HasValue)
+                .Select(r => r!.Value.fileOffset));
+    }
+
+    private static Progress<AnalysisProgress>? CreateScanProgress(IProgress<AnalysisProgress>? progress)
+    {
+        if (progress == null) return null;
+        return new Progress<AnalysisProgress>(p =>
+        {
+            // Scale scan progress to 0-50%
+            var scanPercent = p.TotalBytes > 0 ? p.BytesProcessed * 50.0 / p.TotalBytes : 0;
+            progress.Report(new AnalysisProgress
+            {
+                Phase = "Scanning",
+                FilesFound = p.FilesFound,
+                BytesProcessed = p.BytesProcessed,
+                TotalBytes = p.TotalBytes,
+                PercentComplete = scanPercent
+            });
+        });
+    }
+
+    private static async Task ParseMatchesAsync(
+        MemoryMappedViewAccessor accessor,
+        AnalysisResult result,
+        List<(string signatureId, long offset)> matches,
+        HashSet<long> moduleOffsets,
+        IProgress<AnalysisProgress>? progress,
+        CancellationToken cancellationToken)
+    {
         await Task.Run(() =>
         {
             var processed = 0;
@@ -122,97 +160,111 @@ public sealed partial class MemoryDumpAnalyzer
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Skip signatures at module offsets (modules are added from minidump metadata)
-                if (moduleOffsets.Contains(offset)) continue;
-
-                var format = FormatRegistry.GetBySignatureId(signatureId);
-                if (format == null) continue;
-
-                var signature =
-                    format.Signatures.FirstOrDefault(s => s.Id.Equals(signatureId, StringComparison.OrdinalIgnoreCase));
-                if (signature == null) continue;
-
-                var (length, fileName) =
-                    EstimateFileSizeAndExtractName(accessor, result.FileSize, offset, signatureId, format);
-
-                if (length > 0)
+                if (TryParseMatch(accessor, result, signatureId, offset, moduleOffsets))
                 {
-                    result.CarvedFiles.Add(new CarvedFileInfo
-                    {
-                        Offset = offset,
-                        Length = length,
-                        FileType = signature.Description,
-                        FileName = fileName,
-                        SignatureId = signatureId,
-                        Category = format.Category
-                    });
-
                     result.TypeCounts.TryGetValue(signatureId, out var count);
                     result.TypeCounts[signatureId] = count + 1;
                 }
 
                 processed++;
-                if (progress != null && processed % 100 == 0)
-                {
-                    var parsePercent = 50 + processed * 20.0 / matches.Count;
-                    progress.Report(new AnalysisProgress
-                    {
-                        Phase = "Parsing",
-                        FilesFound = result.CarvedFiles.Count,
-                        PercentComplete = parsePercent
-                    });
-                }
+                ReportParsingProgress(progress, processed, matches.Count, result.CarvedFiles.Count);
             }
         }, cancellationToken);
+    }
 
-        // Sort all results by offset
+    private static bool TryParseMatch(
+        MemoryMappedViewAccessor accessor,
+        AnalysisResult result,
+        string signatureId,
+        long offset,
+        HashSet<long> moduleOffsets)
+    {
+        // Skip signatures at module offsets (modules are added from minidump metadata)
+        if (moduleOffsets.Contains(offset)) return false;
+
+        var format = FormatRegistry.GetBySignatureId(signatureId);
+        if (format == null) return false;
+
+        var signature = format.Signatures.FirstOrDefault(s => s.Id.Equals(signatureId, StringComparison.OrdinalIgnoreCase));
+        if (signature == null) return false;
+
+        var (length, fileName) = EstimateFileSizeAndExtractName(accessor, result.FileSize, offset, signatureId, format);
+        if (length <= 0) return false;
+
+        result.CarvedFiles.Add(new CarvedFileInfo
+        {
+            Offset = offset,
+            Length = length,
+            FileType = signature.Description,
+            FileName = fileName,
+            SignatureId = signatureId,
+            Category = format.Category
+        });
+
+        return true;
+    }
+
+    private static void ReportParsingProgress(
+        IProgress<AnalysisProgress>? progress, int processed, int total, int filesFound)
+    {
+        if (progress == null || processed % 100 != 0) return;
+
+        var parsePercent = 50 + processed * 20.0 / total;
+        progress.Report(new AnalysisProgress
+        {
+            Phase = "Parsing",
+            FilesFound = filesFound,
+            PercentComplete = parsePercent
+        });
+    }
+
+    private static void SortCarvedFilesByOffset(AnalysisResult result)
+    {
         var sortedFiles = result.CarvedFiles.OrderBy(f => f.Offset).ToList();
         result.CarvedFiles.Clear();
         foreach (var file in sortedFiles) result.CarvedFiles.Add(file);
+    }
 
-        // Extract metadata (SCDA records, ESM records, FormID mapping) using memory-mapped access
-        if (includeMetadata)
-        {
-            // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
-            progress?.Report(new AnalysisProgress
-                { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
-            await Task.Run(() =>
-            {
-                var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
-                foreach (var record in scdaScanResult.Records)
-                    record.ScriptName = ScdaExtractor.ExtractScriptNameFromSourcePublic(record.SourceText);
-                result.ScdaRecords = scdaScanResult.Records;
-            }, cancellationToken);
-
-            // Phase 4: ESM scan (80-90%) - now using memory-mapped access
-            progress?.Report(new AnalysisProgress
-                { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
-            await Task.Run(() =>
-            {
-                var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
-                result.EsmRecords = esmRecords;
-            }, cancellationToken);
-
-            // Phase 5: FormID mapping (90-100%) - now using memory-mapped access
-            progress?.Report(new AnalysisProgress
-                { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
-            await Task.Run(
-                () =>
-                {
-                    result.FormIdMap =
-                        EsmRecordFormat.CorrelateFormIdsToNamesMemoryMapped(accessor, result.FileSize,
-                            result.EsmRecords!);
-                },
-                cancellationToken);
-        }
-
+    private static async Task ExtractMetadataAsync(
+        MemoryMappedViewAccessor accessor,
+        AnalysisResult result,
+        IProgress<AnalysisProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-            { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
+        { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
+        await Task.Run(() =>
+        {
+            var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
+            foreach (var record in scdaScanResult.Records)
+            {
+                record.ScriptName = ScdaExtractor.ExtractScriptNameFromSourcePublic(record.SourceText);
+            }
 
-        stopwatch.Stop();
-        result.AnalysisTime = stopwatch.Elapsed;
+            result.ScdaRecords = scdaScanResult.Records;
+        }, cancellationToken);
 
-        return result;
+        // Phase 4: ESM scan (80-90%) - now using memory-mapped access
+        progress?.Report(new AnalysisProgress
+        { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
+        await Task.Run(() =>
+        {
+            var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
+            result.EsmRecords = esmRecords;
+        }, cancellationToken);
+
+        // Phase 5: FormID mapping (90-100%) - now using memory-mapped access
+        progress?.Report(new AnalysisProgress
+        { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
+        await Task.Run(
+            () =>
+            {
+                result.FormIdMap =
+                    EsmRecordFormat.CorrelateFormIdsToNamesMemoryMapped(accessor, result.FileSize,
+                        result.EsmRecords!);
+            },
+            cancellationToken);
     }
 
     private static void AddModulesFromMinidump(AnalysisResult result, MinidumpInfo minidumpInfo)

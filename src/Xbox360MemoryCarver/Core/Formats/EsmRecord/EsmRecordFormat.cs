@@ -44,14 +44,24 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         var seenFormIds = new HashSet<uint>();
 
         for (var i = 0; i <= data.Length - 8; i++)
+        {
             if (MatchesSignature(data, i, "EDID"u8))
+            {
                 TryAddEdidRecord(data, i, data.Length, result.EditorIds, seenEdids);
+            }
             else if (MatchesSignature(data, i, "GMST"u8))
+            {
                 TryAddGmstRecord(data, i, data.Length, result.GameSettings);
+            }
             else if (MatchesSignature(data, i, "SCTX"u8))
+            {
                 TryAddSctxRecord(data, i, data.Length, result.ScriptSources);
+            }
             else if (MatchesSignature(data, i, "SCRO"u8))
+            {
                 TryAddScroRecord(data, i, data.Length, result.FormIdReferences, seenFormIds);
+            }
+        }
 
         return result;
     }
@@ -84,14 +94,24 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
 
                 // Scan this chunk
                 for (var i = 0; i <= searchLimit; i++)
+                {
                     if (MatchesSignature(buffer, i, "EDID"u8))
+                    {
                         TryAddEdidRecordWithOffset(buffer, i, toRead, offset, result.EditorIds, seenEdids);
+                    }
                     else if (MatchesSignature(buffer, i, "GMST"u8))
+                    {
                         TryAddGmstRecordWithOffset(buffer, i, toRead, offset, result.GameSettings);
+                    }
                     else if (MatchesSignature(buffer, i, "SCTX"u8))
+                    {
                         TryAddSctxRecordWithOffset(buffer, i, toRead, offset, result.ScriptSources);
+                    }
                     else if (MatchesSignature(buffer, i, "SCRO"u8))
+                    {
                         TryAddScroRecordWithOffset(buffer, i, toRead, offset, result.FormIdReferences, seenFormIds);
+                    }
+                }
 
                 offset += chunkSize;
             }
@@ -127,6 +147,9 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         long fileSize,
         EsmRecordScanResult existingScan)
     {
+        // fileSize parameter kept for API consistency, not needed for correlation
+        _ = fileSize;
+
         var correlations = new Dictionary<uint, string>();
         var buffer = ArrayPool<byte>.Shared.Rent(256); // Small buffer for searching backward
 
@@ -307,8 +330,12 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     private static bool IsRecordTypeMarker(byte[] data, int offset)
     {
         for (var b = 0; b < 4; b++)
+        {
             if (!char.IsAsciiLetterOrDigit((char)data[offset + b]) && data[offset + b] != '_')
+            {
                 return false;
+            }
+        }
 
         return true;
     }

@@ -86,37 +86,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
         try
         {
-            if (data.Length < offset + 50) return null;
+            var versionInfo = ValidateAndExtractVersion(data, offset);
+            if (versionInfo == null) return null;
 
-            // Check for ", Version " after the magic
-            var versionPrefixSpan = data.Slice(offset + 20, 10);
-            if (!versionPrefixSpan.SequenceEqual(", Version "u8)) return null;
-
-            var versionOffset = offset + 30;
-
-            // Find the newline that terminates the version string
-            var newlinePos = -1;
-            for (var i = versionOffset; i < Math.Min(versionOffset + 20, data.Length); i++)
-                if (data[i] == 0x0A)
-                {
-                    newlinePos = i;
-                    break;
-                }
-
-            if (newlinePos == -1 || newlinePos <= versionOffset) return null;
-
-            // Ensure we don't go out of bounds when slicing
-            if (newlinePos > data.Length) return null;
-
-            var versionString = Encoding.ASCII.GetString(data[versionOffset..newlinePos]).TrimEnd('\r');
-
-            if (!VersionPattern().IsMatch(versionString)) return null;
-
-            var majorVersion = 0;
-            var dotIdx = versionString.IndexOf('.');
-            if (dotIdx > 0 && int.TryParse(versionString[..dotIdx], out var major)) majorVersion = major;
-
-            if (majorVersion < 2 || majorVersion > 30) return null;
+            var (versionString, majorVersion, newlinePos) = versionInfo.Value;
 
             // Try to parse full header structure for accurate size calculation and content type detection
             var headerInfo = ParseNifHeader(data, offset, newlinePos);
@@ -150,6 +123,44 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         }
     }
 
+    private static (string versionString, int majorVersion, int newlinePos)? ValidateAndExtractVersion(
+        ReadOnlySpan<byte> data, int offset)
+    {
+        if (data.Length < offset + 50) return null;
+
+        // Check for ", Version " after the magic
+        var versionPrefixSpan = data.Slice(offset + 20, 10);
+        if (!versionPrefixSpan.SequenceEqual(", Version "u8)) return null;
+
+        var versionOffset = offset + 30;
+        var newlinePos = FindNewlinePosition(data, versionOffset);
+        if (newlinePos == -1 || newlinePos <= versionOffset || newlinePos > data.Length) return null;
+
+        var versionString = Encoding.ASCII.GetString(data[versionOffset..newlinePos]).TrimEnd('\r');
+        if (!VersionPattern().IsMatch(versionString)) return null;
+
+        var majorVersion = ExtractMajorVersion(versionString);
+        if (majorVersion < 2 || majorVersion > 30) return null;
+
+        return (versionString, majorVersion, newlinePos);
+    }
+
+    private static int FindNewlinePosition(ReadOnlySpan<byte> data, int start)
+    {
+        for (var i = start; i < Math.Min(start + 20, data.Length); i++)
+        {
+            if (data[i] == 0x0A) return i;
+        }
+        return -1;
+    }
+
+    private static int ExtractMajorVersion(string versionString)
+    {
+        var dotIdx = versionString.IndexOf('.');
+        if (dotIdx > 0 && int.TryParse(versionString[..dotIdx], out var major)) return major;
+        return 0;
+    }
+
     /// <summary>
     ///     Classify NIF content as animation or geometry based on block types.
     ///     Returns the content type, output folder, and file extension.
@@ -179,237 +190,63 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     private static NifHeaderInfo ParseNifHeader(ReadOnlySpan<byte> data, int fileOffset, int newlinePos)
     {
         const int maxSize = 10 * 1024 * 1024;
-        var blockTypes = new List<string>();
 
         try
         {
-            // Position after the header string newline
             var pos = newlinePos + 1;
+            var blockTypes = new List<string>();
 
-            if (pos + 9 > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), false, blockTypes);
-
-            // Read binary version (4 bytes, always little-endian initially)
-            var binaryVersion = BinaryUtils.ReadUInt32LE(data, pos);
-            pos += 4;
-
-            // Validate binary version - should be a known NIF version
-            // Common versions: 0x14020007 (20.2.0.7), 0x14000005 (20.0.0.5), 0x14000004 (20.0.0.4)
-            // Reject if it looks like garbage (e.g., UTF-16 text with alternating nulls)
-            if (binaryVersion < 0x04000000 || binaryVersion > 0x20000000) return new NifHeaderInfo(-1, false, []);
-
-            // Endian type (1 byte) - present in version >= 20.0.0.3
-            // 0 = big-endian (Xbox 360), 1 = little-endian (PC)
-            // NOTE: In Bethesda Xbox 360 NIFs, the header fields (userVersion, numBlocks, etc.)
-            // are ALWAYS little-endian. Only the post-header data (NumBlockTypes, Block Types,
-            // Block Sizes array) follows the endian byte.
-            var endianByte = data[pos];
-
-            // Validate endian byte - must be 0 or 1
-            if (endianByte > 1) return new NifHeaderInfo(-1, false, []);
-            pos += 1;
-
-            // Endian byte determines byte order for post-header data only
-            var isBigEndian = endianByte == 0;
-
-            // User version is ALWAYS little-endian in Bethesda NIFs
-            var userVersion = BinaryUtils.ReadUInt32LE(data, pos);
-            pos += 4;
-
-            // Num blocks (4 bytes) - ALWAYS little-endian in Bethesda NIFs
-            if (pos + 4 > data.Length)
-                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-            var numBlocks = BinaryUtils.ReadUInt32LE(data, pos);
-            pos += 4;
-
-            // Sanity check: numBlocks should be reasonable (< 100000)
-            if (numBlocks == 0 || numBlocks > 100000)
-                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-
-            // Check if this is a Bethesda file (user version indicates Bethesda stream header)
-            // Bethesda versions: user version is typically 11, 12, or similar
-            var hasBsHeader = IsBethesdaVersion(binaryVersion, userVersion);
-
-            if (hasBsHeader)
+            // Parse initial header fields
+            if (!TryParseInitialHeader(data, ref pos, out var binaryVersion, out var isBigEndian, out var userVersion))
             {
-                // Skip BS Header (Bethesda-specific header)
-                // BSStreamHeader structure:
-                // - BS Version: ulittle32 (always little-endian!)
-                // - Author: ExportString (1 byte length + chars including null)
-                // - Unknown Int: uint (if BS Version > 130)
-                // - Process Script: ExportString (if BS Version < 131)
-                // - Export Script: ExportString
-                // - Max Filepath: ExportString (if BS Version >= 103)
-
-                if (pos + 4 > data.Length)
-                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-                var bsVersion = BinaryUtils.ReadUInt32LE(data, pos); // Always little-endian!
-                pos += 4;
-
-                // Skip Author string (ExportString: 1 byte length + chars including null)
-                if (pos + 1 > data.Length)
-                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-                var authorLen = data[pos];
-                pos += 1 + authorLen;
-
-                // If bsVersion > 130, there's an unknown int
-                if (bsVersion > 130) pos += 4;
-
-                // Skip Process Script (if BS Version < 131)
-                if (bsVersion < 131)
-                {
-                    if (pos + 1 > data.Length)
-                        return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-                    var processScriptLen = data[pos];
-                    pos += 1 + processScriptLen;
-                }
-
-                // Skip Export Script
-                if (pos + 1 > data.Length)
-                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-                var exportScriptLen = data[pos];
-                pos += 1 + exportScriptLen;
-
-                // Skip Max Filepath (if BS Version >= 103)
-                if (bsVersion >= 103)
-                {
-                    if (pos + 1 > data.Length)
-                        return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-                    var maxFilepathLen = data[pos];
-                    pos += 1 + maxFilepathLen;
-                }
+                return new NifHeaderInfo(-1, false, []);
             }
 
-            // Some NIF files have an extra padding byte here for alignment
-            // Try to detect and skip it by checking if the next value makes sense
-            if (pos + 4 <= data.Length)
+            // Parse number of blocks
+            if (!TryReadNumBlocks(data, ref pos, out var numBlocks))
             {
-                var testNumBlockTypes = isBigEndian
-                    ? BinaryUtils.ReadUInt16BE(data, pos)
-                    : BinaryUtils.ReadUInt16LE(data, pos);
-
-                // If the value is unreasonable, try skipping a byte (alignment padding)
-                if (testNumBlockTypes == 0 || testNumBlockTypes > 500)
-                {
-                    // Check if skipping 1 byte gives a reasonable value
-                    var testNumBlockTypes2 = isBigEndian
-                        ? BinaryUtils.ReadUInt16BE(data, pos + 1)
-                        : BinaryUtils.ReadUInt16LE(data, pos + 1);
-
-                    if (testNumBlockTypes2 > 0 && testNumBlockTypes2 < 500) pos += 1; // Skip the padding byte
-                }
+                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
             }
 
-            // Num Block Types (2 bytes)
-            if (pos + 2 > data.Length)
-                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-            var numBlockTypes = isBigEndian
-                ? BinaryUtils.ReadUInt16BE(data, pos)
-                : BinaryUtils.ReadUInt16LE(data, pos);
-            pos += 2;
-
-            // Sanity check
-            if (numBlockTypes == 0 || numBlockTypes > 1000)
-                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-
-            // Read Block Types (SizedString array) and collect their names
-            // NIF SizedString: uint32 length + chars (no null terminator in string data)
-            for (var i = 0; i < numBlockTypes; i++)
+            // Skip Bethesda header if present
+            if (IsBethesdaVersion(binaryVersion, userVersion) && !TrySkipBethesdaHeader(data, ref pos))
             {
-                if (pos + 4 > data.Length)
-                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-                var strLen = isBigEndian
-                    ? BinaryUtils.ReadUInt32BE(data, pos)
-                    : BinaryUtils.ReadUInt32LE(data, pos);
-                pos += 4;
-
-                // Sanity check string length
-                if (strLen > 256) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-
-                // Read the block type name
-                if (pos + strLen <= data.Length && strLen > 0)
-                {
-                    var blockTypeName = Encoding.ASCII.GetString(data.Slice(pos, (int)strLen));
-                    blockTypes.Add(blockTypeName);
-                }
-
-                pos += (int)strLen;
+                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
             }
 
-            // Skip Block Type Index (ushort[numBlocks])
+            // Handle optional alignment padding
+            TrySkipAlignmentPadding(data, ref pos, isBigEndian);
+
+            // Read block types
+            if (!TryReadBlockTypes(data, ref pos, isBigEndian, blockTypes))
+            {
+                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            }
+
+            // Skip block type indices
             pos += (int)numBlocks * 2;
-
-            if (pos > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-
-            // Block Size array (uint[numBlocks]) - used to calculate total file size
-            // Present in version 20.2.0.5+
-            if (pos + numBlocks * 4 > data.Length)
+            if (pos > data.Length)
+            {
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-
-            long totalBlockSize = 0;
-            for (var i = 0; i < numBlocks; i++)
-            {
-                var blockSize = isBigEndian
-                    ? BinaryUtils.ReadUInt32BE(data, pos)
-                    : BinaryUtils.ReadUInt32LE(data, pos);
-                pos += 4;
-
-                // Sanity check individual block size
-                if (blockSize > 50 * 1024 * 1024) // 50 MB max per block
-                    return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-
-                totalBlockSize += blockSize;
             }
 
-            // Skip Num Strings, Max String Length, Strings array
-            if (pos + 8 > data.Length)
+            // Read block sizes and calculate total
+            if (!TryReadBlockSizes(data, ref pos, isBigEndian, numBlocks, out var totalBlockSize))
+            {
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
-
-            var numStrings = isBigEndian
-                ? BinaryUtils.ReadUInt32BE(data, pos)
-                : BinaryUtils.ReadUInt32LE(data, pos);
-            pos += 4;
-
-            // Skip Max String Length
-            pos += 4;
-
-            // Skip Strings (SizedString array)
-            for (var i = 0; i < numStrings && pos + 4 <= data.Length; i++)
-            {
-                var strLen = isBigEndian
-                    ? BinaryUtils.ReadUInt32BE(data, pos)
-                    : BinaryUtils.ReadUInt32LE(data, pos);
-                pos += 4;
-
-                if (strLen > 1024) break; // Sanity check
-                pos += (int)strLen;
             }
 
-            // Skip Num Groups and Groups array
-            if (pos + 4 <= data.Length)
-            {
-                var numGroups = isBigEndian
-                    ? BinaryUtils.ReadUInt32BE(data, pos)
-                    : BinaryUtils.ReadUInt32LE(data, pos);
-                pos += 4;
-                pos += (int)numGroups * 4;
-            }
+            // Skip strings section
+            TrySkipStringsSection(data, ref pos, isBigEndian);
 
-            // Calculate total size: header position + all block data + footer
-            // Footer is: Num Roots (uint) + Root refs (int[Num Roots])
-            // Most NIFs have 1-2 roots, so footer is typically 8-12 bytes
+            // Skip groups section
+            TrySkipGroupsSection(data, ref pos, isBigEndian);
+
+            // Calculate final size
             var headerSize = pos - fileOffset;
-            var footerEstimate = 8; // Minimum: 4 bytes NumRoots + 4 bytes for 1 root index
-
+            const int footerEstimate = 8;
             var calculatedSize = headerSize + (int)totalBlockSize + footerEstimate;
-
-            // Trust the header-calculated size when parsing succeeds.
-            // NIF files can contain embedded "Gamebryo File Format" strings in debug data,
-            // so boundary scanning would give false positives.
-            // Only use boundary scanning as a fallback when header parsing fails.
-            var totalSize = calculatedSize;
-
-            // Clamp to reasonable range
-            totalSize = Math.Max(100, Math.Min(totalSize, maxSize));
+            var totalSize = Math.Max(100, Math.Min(calculatedSize, maxSize));
 
             return new NifHeaderInfo(totalSize, isBigEndian, blockTypes);
         }
@@ -417,6 +254,314 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         {
             return new NifHeaderInfo(FallbackSize(data, fileOffset), false, []);
         }
+    }
+
+    /// <summary>
+    ///     Parse initial header: binary version, endian byte, user version.
+    /// </summary>
+    private static bool TryParseInitialHeader(
+        ReadOnlySpan<byte> data,
+        ref int pos,
+        out uint binaryVersion,
+        out bool isBigEndian,
+        out uint userVersion)
+    {
+        binaryVersion = 0;
+        isBigEndian = false;
+        userVersion = 0;
+
+        if (pos + 9 > data.Length)
+        {
+            return false;
+        }
+
+        binaryVersion = BinaryUtils.ReadUInt32LE(data, pos);
+        pos += 4;
+
+        // Validate binary version
+        if (binaryVersion < 0x04000000 || binaryVersion > 0x20000000)
+        {
+            return false;
+        }
+
+        var endianByte = data[pos];
+        if (endianByte > 1)
+        {
+            return false;
+        }
+
+        pos += 1;
+        isBigEndian = endianByte == 0;
+
+        userVersion = BinaryUtils.ReadUInt32LE(data, pos);
+        pos += 4;
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Read number of blocks.
+    /// </summary>
+    private static bool TryReadNumBlocks(ReadOnlySpan<byte> data, ref int pos, out uint numBlocks)
+    {
+        numBlocks = 0;
+        if (pos + 4 > data.Length)
+        {
+            return false;
+        }
+
+        numBlocks = BinaryUtils.ReadUInt32LE(data, pos);
+        pos += 4;
+
+        return numBlocks > 0 && numBlocks <= 100000;
+    }
+
+    /// <summary>
+    ///     Skip Bethesda-specific header (BSStreamHeader).
+    /// </summary>
+    private static bool TrySkipBethesdaHeader(ReadOnlySpan<byte> data, ref int pos)
+    {
+        if (pos + 4 > data.Length)
+        {
+            return false;
+        }
+
+        var bsVersion = BinaryUtils.ReadUInt32LE(data, pos);
+        pos += 4;
+
+        // Skip Author string
+        if (!TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
+
+        // Unknown int if bsVersion > 130
+        if (bsVersion > 130)
+        {
+            pos += 4;
+        }
+
+        // Skip Process Script if bsVersion < 131
+        if (bsVersion < 131 && !TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
+
+        // Skip Export Script
+        if (!TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
+
+        // Skip Max Filepath if bsVersion >= 103
+        if (bsVersion >= 103 && !TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Skip an ExportString (1 byte length + chars).
+    /// </summary>
+    private static bool TrySkipExportString(ReadOnlySpan<byte> data, ref int pos)
+    {
+        if (pos + 1 > data.Length)
+        {
+            return false;
+        }
+
+        var len = data[pos];
+        pos += 1 + len;
+        return true;
+    }
+
+    /// <summary>
+    ///     Try to skip alignment padding byte if present.
+    /// </summary>
+    private static void TrySkipAlignmentPadding(ReadOnlySpan<byte> data, ref int pos, bool isBigEndian)
+    {
+        if (pos + 4 > data.Length)
+        {
+            return;
+        }
+
+        var testNumBlockTypes = isBigEndian
+            ? BinaryUtils.ReadUInt16BE(data, pos)
+            : BinaryUtils.ReadUInt16LE(data, pos);
+
+        if (testNumBlockTypes == 0 || testNumBlockTypes > 500)
+        {
+            var testNumBlockTypes2 = isBigEndian
+                ? BinaryUtils.ReadUInt16BE(data, pos + 1)
+                : BinaryUtils.ReadUInt16LE(data, pos + 1);
+
+            if (testNumBlockTypes2 > 0 && testNumBlockTypes2 < 500)
+            {
+                pos += 1;
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Read block types section.
+    /// </summary>
+    private static bool TryReadBlockTypes(
+        ReadOnlySpan<byte> data,
+        ref int pos,
+        bool isBigEndian,
+        List<string> blockTypes)
+    {
+        if (pos + 2 > data.Length)
+        {
+            return false;
+        }
+
+        var numBlockTypes = isBigEndian
+            ? BinaryUtils.ReadUInt16BE(data, pos)
+            : BinaryUtils.ReadUInt16LE(data, pos);
+        pos += 2;
+
+        if (numBlockTypes == 0 || numBlockTypes > 1000)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < numBlockTypes; i++)
+        {
+            if (!TryReadSizedString(data, ref pos, isBigEndian, out var blockTypeName))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(blockTypeName))
+            {
+                blockTypes.Add(blockTypeName);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Read a SizedString (uint32 length + chars).
+    /// </summary>
+    private static bool TryReadSizedString(
+        ReadOnlySpan<byte> data,
+        ref int pos,
+        bool isBigEndian,
+        out string result)
+    {
+        result = string.Empty;
+        if (pos + 4 > data.Length)
+        {
+            return false;
+        }
+
+        var strLen = isBigEndian
+            ? BinaryUtils.ReadUInt32BE(data, pos)
+            : BinaryUtils.ReadUInt32LE(data, pos);
+        pos += 4;
+
+        if (strLen > 256)
+        {
+            return false;
+        }
+
+        if (pos + strLen <= data.Length && strLen > 0)
+        {
+            result = Encoding.ASCII.GetString(data.Slice(pos, (int)strLen));
+        }
+
+        pos += (int)strLen;
+        return true;
+    }
+
+    /// <summary>
+    ///     Read block sizes and calculate total.
+    /// </summary>
+    private static bool TryReadBlockSizes(
+        ReadOnlySpan<byte> data,
+        ref int pos,
+        bool isBigEndian,
+        uint numBlocks,
+        out long totalBlockSize)
+    {
+        totalBlockSize = 0;
+        if (pos + numBlocks * 4 > data.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < numBlocks; i++)
+        {
+            var blockSize = isBigEndian
+                ? BinaryUtils.ReadUInt32BE(data, pos)
+                : BinaryUtils.ReadUInt32LE(data, pos);
+            pos += 4;
+
+            if (blockSize > 50 * 1024 * 1024)
+            {
+                return false;
+            }
+
+            totalBlockSize += blockSize;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Skip strings section.
+    /// </summary>
+    private static void TrySkipStringsSection(ReadOnlySpan<byte> data, ref int pos, bool isBigEndian)
+    {
+        if (pos + 8 > data.Length)
+        {
+            return;
+        }
+
+        var numStrings = isBigEndian
+            ? BinaryUtils.ReadUInt32BE(data, pos)
+            : BinaryUtils.ReadUInt32LE(data, pos);
+        pos += 4;
+
+        // Skip Max String Length
+        pos += 4;
+
+        // Skip Strings
+        for (var i = 0; i < numStrings && pos + 4 <= data.Length; i++)
+        {
+            var strLen = isBigEndian
+                ? BinaryUtils.ReadUInt32BE(data, pos)
+                : BinaryUtils.ReadUInt32LE(data, pos);
+            pos += 4;
+
+            if (strLen > 1024)
+            {
+                break;
+            }
+
+            pos += (int)strLen;
+        }
+    }
+
+    /// <summary>
+    ///     Skip groups section.
+    /// </summary>
+    private static void TrySkipGroupsSection(ReadOnlySpan<byte> data, ref int pos, bool isBigEndian)
+    {
+        if (pos + 4 > data.Length)
+        {
+            return;
+        }
+
+        var numGroups = isBigEndian
+            ? BinaryUtils.ReadUInt32BE(data, pos)
+            : BinaryUtils.ReadUInt32LE(data, pos);
+        pos += 4;
+        pos += (int)numGroups * 4;
     }
 
     /// <summary>

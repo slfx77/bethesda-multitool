@@ -72,23 +72,8 @@ public static class NifSchemaValidator
         foreach (var field in objDef.AllFields)
         {
             var size = GetFieldSize(schema, field);
-            var sizeStr = size.HasValue ? $"{size.Value}" : "?";
-            var conditional = "";
-
-            if (field.VersionCond != null)
-                conditional = $" [vercond: {field.VersionCond}]";
-            else if (field.Condition != null) conditional = $" [cond: {field.Condition}]";
-
-            var arrayInfo = field.Length != null ? $"[{field.Length}]" : "";
-
-            lines.Add($"  +{offset,4:X4}: {field.Name,-30} {field.Type}{arrayInfo,-20} ({sizeStr} bytes){conditional}");
-
-            if (size.HasValue && field.Length == null)
-                offset += size.Value;
-            else if (size.HasValue && field.Length != null && int.TryParse(field.Length, out var count))
-                offset += size.Value * count;
-            else
-                offset = -1; // Unknown from here
+            lines.Add(FormatFieldLine(field, size, offset));
+            offset = UpdateOffset(offset, size, field);
         }
 
         lines.Add("");
@@ -96,6 +81,29 @@ public static class NifSchemaValidator
             $"Total fixed size: {(offset >= 0 ? offset.ToString(CultureInfo.InvariantCulture) : "variable")} bytes");
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatFieldLine(NifFieldDef field, int? size, int offset)
+    {
+        var sizeStr = size.HasValue ? $"{size.Value}" : "?";
+        var conditional = GetConditionalString(field);
+        var arrayInfo = field.Length != null ? $"[{field.Length}]" : "";
+        return $"  +{offset,4:X4}: {field.Name,-30} {field.Type}{arrayInfo,-20} ({sizeStr} bytes){conditional}";
+    }
+
+    private static string GetConditionalString(NifFieldDef field)
+    {
+        if (field.VersionCond != null) return $" [vercond: {field.VersionCond}]";
+        if (field.Condition != null) return $" [cond: {field.Condition}]";
+        return "";
+    }
+
+    private static int UpdateOffset(int offset, int? size, NifFieldDef field)
+    {
+        if (!size.HasValue) return -1;
+        if (field.Length == null) return offset + size.Value;
+        if (int.TryParse(field.Length, out var count)) return offset + size.Value * count;
+        return -1;
     }
 }
 

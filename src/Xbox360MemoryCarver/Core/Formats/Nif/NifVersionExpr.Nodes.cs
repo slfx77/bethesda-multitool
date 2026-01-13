@@ -3,7 +3,6 @@
 
 // S3218: Method shadowing is intentional in this expression tree visitor pattern
 
-
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 
 /// <summary>

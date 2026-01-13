@@ -4,7 +4,6 @@
 
 // S3218: Method shadowing is intentional in this expression tree visitor pattern
 
-
 using System.Globalization;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -192,7 +191,9 @@ public sealed partial class NifConditionExpr
             if (c == '(' || c == ')' || c == '!' || c == '#' ||
                 c == '>' || c == '<' || c == '=' ||
                 c == '&' || c == '|')
+            {
                 break;
+            }
 
             _pos++;
         }

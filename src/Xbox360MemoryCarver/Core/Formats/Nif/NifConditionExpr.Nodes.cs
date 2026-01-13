@@ -1,6 +1,5 @@
 // AST node types for NifConditionExpr
 
-
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 
 // AST nodes for condition expression evaluation
@@ -45,6 +44,7 @@ public sealed partial class NifConditionExpr
         public long Evaluate(IReadOnlyDictionary<string, object> fields)
         {
             if (fields.TryGetValue(fieldName, out var val))
+            {
                 return val switch
                 {
                     bool b => b ? 1 : 0,
@@ -58,6 +58,7 @@ public sealed partial class NifConditionExpr
                     ulong ul => (long)ul,
                     _ => 0
                 };
+            }
             // Field not found - default to 0 (conservative for "Has X" conditions)
             return 0;
         }

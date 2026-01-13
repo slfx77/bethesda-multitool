@@ -101,8 +101,10 @@ public class FileColoringTests
 
         // Act & Assert
         foreach (var category in allCategories)
+        {
             Assert.True(FormatRegistry.CategoryColors.ContainsKey(category),
                 $"Category {category} should have a color defined");
+        }
     }
 
     #endregion

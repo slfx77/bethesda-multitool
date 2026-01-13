@@ -95,8 +95,10 @@ public static class ScdaFormatter
         sb.AppendLine("; ═══════════════════════════════════════════════════════════════");
 
         if (stage.FormIdReferences.Count > 0)
+        {
             sb.AppendLine(CultureInfo.InvariantCulture,
                 $"; SCRO References: {string.Join(", ", stage.FormIdReferences.Select((id, i) => $"#{i + 1}=0x{id:X8}"))}");
+        }
 
         AppendSourceTextInline(sb, stage);
         sb.AppendLine();
@@ -133,7 +135,6 @@ public static class ScdaFormatter
                 sb.Append(";   ").AppendLine(line.Trim());
         }
     }
-
 
     private static void AppendDecompiledBytecode(StringBuilder sb, byte[] bytecode)
     {

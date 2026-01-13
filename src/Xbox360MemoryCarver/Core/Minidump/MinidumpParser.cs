@@ -55,14 +55,13 @@ public static class MinidumpParser
             {
                 var entryOffset = i * 12;
                 var streamType = BinaryUtils.ReadUInt32LE(directoryBuffer, entryOffset);
-                var dataSize = BinaryUtils.ReadUInt32LE(directoryBuffer, entryOffset + 4);
                 var rva = BinaryUtils.ReadUInt32LE(directoryBuffer, entryOffset + 8);
 
                 switch (streamType)
                 {
                     case SystemInfoStream: ParseSystemInfo(stream, rva, result); break;
                     case ModuleListStream: ParseModuleList(stream, rva, result); break;
-                    case Memory64ListStream: ParseMemory64List(stream, rva, dataSize, result); break;
+                    case Memory64ListStream: ParseMemory64List(stream, rva, result); break;
                 }
             }
 
@@ -112,9 +111,7 @@ public static class MinidumpParser
         }
     }
 
-
-    private static void ParseMemory64List(Stream stream, uint rva, uint _, MinidumpInfo result)
-
+    private static void ParseMemory64List(Stream stream, uint rva, MinidumpInfo result)
     {
         stream.Seek(rva, SeekOrigin.Begin);
 

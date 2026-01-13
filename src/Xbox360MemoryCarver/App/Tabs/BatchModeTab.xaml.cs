@@ -56,12 +56,10 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
                                   && _dumpFiles.Any(f => f.IsSelected);
     }
 
-
     private void ParallelCountBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (double.IsNaN(args.NewValue)) sender.Value = 2;
     }
-
 
     private async Task ShowDialogAsync(string title, string message, bool isError = false)
     {
@@ -74,7 +72,6 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
             await ErrorDialogHelper.ShowInfoAsync(title, message, XamlRoot);
         }
     }
-
 
     private async void BrowseInputButton_Click(object sender, RoutedEventArgs e)
     {
@@ -136,7 +133,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         UpdateButtonStates();
     }
 
-    private void InputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    private void InputDirectoryTextBox_TextChanged(object _sender, TextChangedEventArgs _e)
     {
         if (Directory.Exists(InputDirectoryTextBox.Text))
         {
@@ -152,22 +149,22 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         }
     }
 
-    private void OutputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    private void OutputDirectoryTextBox_TextChanged(object _sender, TextChangedEventArgs _e)
     {
         UpdateButtonStates();
     }
 
-    private void SelectAllButton_Click(object sender, RoutedEventArgs e)
+    private void SelectAllButton_Click(object _sender, RoutedEventArgs _e)
     {
         foreach (var entry in _dumpFiles) entry.IsSelected = true;
     }
 
-    private void SelectNoneButton_Click(object sender, RoutedEventArgs e)
+    private void SelectNoneButton_Click(object _sender, RoutedEventArgs _e)
     {
         foreach (var entry in _dumpFiles) entry.IsSelected = false;
     }
 
-    private async void ExtractButton_Click(object sender, RoutedEventArgs e)
+    private async void ExtractButton_Click(object _sender, RoutedEventArgs _e)
     {
         var selectedFiles = _dumpFiles.Where(f => f.IsSelected).ToList();
         if (selectedFiles.Count == 0) return;
@@ -294,7 +291,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         });
     }
 
-    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    private void CancelButton_Click(object _sender, RoutedEventArgs _e)
     {
         _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
@@ -302,17 +299,17 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
 
     #region Sorting
 
-    private void SortByFilename_Click(object sender, RoutedEventArgs e)
+    private void SortByFilename_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(BatchSortColumn.Filename);
     }
 
-    private void SortBySize_Click(object sender, RoutedEventArgs e)
+    private void SortBySize_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(BatchSortColumn.Size);
     }
 
-    private void SortByStatus_Click(object sender, RoutedEventArgs e)
+    private void SortByStatus_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(BatchSortColumn.Status);
     }

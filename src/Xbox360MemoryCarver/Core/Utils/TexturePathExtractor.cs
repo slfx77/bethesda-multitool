@@ -31,24 +31,28 @@ internal static class TexturePathExtractor
 
         // Look for the extension - start from end of search area
         for (var i = searchLength - extBytes.Length; i >= 0; i--)
-            if (IsExtensionMatch(searchArea, i, extBytes))
-            {
-                var pathEnd = i + extBytes.Length;
-                var pathStart = FindPathStart(searchArea, i);
+        {
+            if (!IsExtensionMatch(searchArea, i, extBytes)) continue;
 
-                if (pathStart >= 0 && pathEnd > pathStart)
-                {
-                    var pathLength = pathEnd - pathStart;
-                    if (pathLength is >= 5 and <= 260)
-                    {
-                        var path = Encoding.ASCII.GetString(searchArea.Slice(pathStart, pathLength));
-                        var cleanPath = CleanupPath(path, extension);
-                        if (cleanPath != null) return cleanPath;
-                    }
-                }
-            }
+            var path = TryExtractPath(searchArea, i, extBytes.Length, extension);
+            if (path != null) return path;
+        }
 
         return null;
+    }
+
+    private static string? TryExtractPath(ReadOnlySpan<byte> searchArea, int extPosition, int extLength, string extension)
+    {
+        var pathEnd = extPosition + extLength;
+        var pathStart = FindPathStart(searchArea, extPosition);
+
+        if (pathStart < 0 || pathEnd <= pathStart) return null;
+
+        var pathLength = pathEnd - pathStart;
+        if (pathLength is < 5 or > 260) return null;
+
+        var path = Encoding.ASCII.GetString(searchArea.Slice(pathStart, pathLength));
+        return CleanupPath(path, extension);
     }
 
     /// <summary>

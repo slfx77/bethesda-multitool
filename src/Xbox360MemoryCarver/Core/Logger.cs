@@ -48,10 +48,12 @@ public sealed class Logger
         get
         {
             if (_instance == null)
+            {
                 lock (_syncLock)
                 {
                     _instance ??= new Logger();
                 }
+            }
 
             return _instance;
         }
@@ -192,9 +194,12 @@ public sealed class Logger
         var parts = new List<string>(2);
 
         if (IncludeTimestamp)
+        {
             parts.Add(string.Format(CultureInfo.InvariantCulture, "[{0:HH:mm:ss.fff}]", DateTime.Now));
+        }
 
         if (IncludeLevel)
+        {
             parts.Add(level switch
             {
                 LogLevel.Error => "[ERR]",
@@ -204,6 +209,7 @@ public sealed class Logger
                 LogLevel.Trace => "[TRC]",
                 _ => ""
             });
+        }
 
         return parts.Count > 0 ? string.Join(" ", parts) + " " : "";
     }

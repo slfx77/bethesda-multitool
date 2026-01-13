@@ -236,11 +236,15 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
                 slice.SequenceEqual("scn "u8) ||
                 slice.SequenceEqual("DDS "u8) ||
                 SignatureBoundaryScanner.IsPngSignature(data, i))
+            {
                 return i - offset;
+            }
 
             // Check for NIF (Gamebryo)
             if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual("Gamebryo File Format"u8))
+            {
                 return i - offset;
+            }
         }
 
         return headerSize + Math.Max(100, uncompressedSize * 7 / 10);

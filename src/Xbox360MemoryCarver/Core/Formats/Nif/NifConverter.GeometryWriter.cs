@@ -7,6 +7,17 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 internal sealed partial class NifConverter
 {
     /// <summary>
+    ///     Context for geometry writing operations, reducing parameter count.
+    /// </summary>
+    private readonly record struct GeometryWriteContext(
+        byte[] Input,
+        byte[] Output,
+        ushort NumVertices,
+        PackedGeometryData PackedData,
+        ushort[]? VertexMap,
+        bool IsSkinned);
+
+    /// <summary>
     ///     Write a geometry block with expanded packed data.
     ///     If vertexMap is provided (for skinned meshes), vertices are remapped from partition order to mesh order.
     ///     If triangles is provided, triangles are written for NiTriShapeData (converted from NiSkinPartition strips).
@@ -37,15 +48,16 @@ internal sealed partial class NifConverter
         var newHasVertices = (byte)(packedData.Positions != null ? 1 : origHasVertices);
         output[outPos++] = newHasVertices;
 
+        // Create context for helper methods
+        var ctx = new GeometryWriteContext(input, output, numVertices, packedData, vertexMap, vertexMap != null);
+
         // Write vertices
-        outPos = WriteVertices(input, output, srcPos, outPos, numVertices, packedData, vertexMap,
-            origHasVertices, newHasVertices, out srcPos);
+        outPos = WriteVertices(ctx, srcPos, outPos, origHasVertices, newHasVertices, out srcPos);
 
         // bsDataFlags - update flags based on packed data
         var origBsDataFlags = ReadUInt16BE(input, srcPos);
         var newBsDataFlags = origBsDataFlags;
         if (packedData.Tangents != null) newBsDataFlags |= 4096; // Has tangents flag
-
         if (packedData.UVs != null) newBsDataFlags |= 1; // Has UVs flag
 
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), newBsDataFlags);
@@ -58,8 +70,8 @@ internal sealed partial class NifConverter
         output[outPos++] = newHasNormals;
 
         // Write normals and tangents
-        outPos = WriteNormalsAndTangents(input, output, srcPos, outPos, numVertices, packedData, vertexMap,
-            origHasNormals, newHasNormals, origBsDataFlags, newBsDataFlags, out srcPos);
+        outPos = WriteNormalsAndTangents(ctx, srcPos, outPos, origHasNormals, newHasNormals,
+            origBsDataFlags, newBsDataFlags, out srcPos);
 
         // center (Vector3) + radius (float) = 16 bytes
         for (var i = 0; i < 4; i++)
@@ -71,13 +83,10 @@ internal sealed partial class NifConverter
         }
 
         // Write vertex colors
-        var isSkinned = vertexMap != null;
-        outPos = WriteVertexColors(input, output, srcPos, outPos, numVertices, packedData, vertexMap,
-            isSkinned, out srcPos);
+        outPos = WriteVertexColors(ctx, srcPos, outPos, out srcPos);
 
         // Write UV sets
-        outPos = WriteUVSets(input, output, srcPos, outPos, numVertices, packedData, vertexMap,
-            origBsDataFlags, newBsDataFlags, out srcPos);
+        outPos = WriteUVSets(ctx, srcPos, outPos, origBsDataFlags, newBsDataFlags, out srcPos);
 
         // consistency (ushort BE -> LE)
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
@@ -101,77 +110,93 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write vertex positions from packed data or copy existing.
     /// </summary>
-    private static int WriteVertices(byte[] input, byte[] output, int srcPos, int outPos, ushort numVertices,
-        PackedGeometryData packedData, ushort[]? vertexMap, byte origHasVertices, byte newHasVertices,
-        out int newSrcPos)
+    private static int WriteVertices(GeometryWriteContext ctx, int srcPos, int outPos,
+        byte origHasVertices, byte newHasVertices, out int newSrcPos)
     {
         // Always prefer packed data when available - Xbox 360 files set hasVertices=1
         // even when actual vertex data is in BSPackedAdditionalGeometryData
-        if (newHasVertices != 0 && packedData.Positions != null)
+        if (newHasVertices != 0 && ctx.PackedData.Positions != null)
         {
-            // Write unpacked positions (with optional vertex map remapping for skinned meshes)
-            if (vertexMap != null && vertexMap.Length > 0)
-            {
-                // Skinned mesh: remap from partition order to mesh order
-                var vertexDataSize = numVertices * 12; // 3 floats * 4 bytes
-                var basePos = outPos;
-
-                // Pre-zero the vertex area (in case mapping is sparse)
-                output.AsSpan(basePos, vertexDataSize).Clear();
-
-                // Iterate over ALL partition vertices from packed data
-                var packedVertexCount = Math.Min(vertexMap.Length, packedData.Positions.Length / 3);
-                for (var partitionIdx = 0; partitionIdx < packedVertexCount; partitionIdx++)
-                {
-                    var meshIdx = vertexMap[partitionIdx];
-                    if (meshIdx >= numVertices) continue; // Skip invalid indices
-
-                    var writePos = basePos + meshIdx * 12;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
-                        packedData.Positions[partitionIdx * 3 + 0]);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4),
-                        packedData.Positions[partitionIdx * 3 + 1]);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8),
-                        packedData.Positions[partitionIdx * 3 + 2]);
-                }
-
-                outPos += vertexDataSize;
-            }
-            else
-            {
-                // Non-skinned mesh: write in sequential order
-                var packedVertexCount = Math.Min(numVertices, packedData.Positions.Length / 3);
-                for (var v = 0; v < packedVertexCount; v++)
-                {
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 0]);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 1]);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.Positions[v * 3 + 2]);
-                    outPos += 4;
-                }
-
-                // Pad remaining vertices with zeros if packed data has fewer vertices
-                var remaining = numVertices - packedVertexCount;
-                if (remaining > 0)
-                {
-                    output.AsSpan(outPos, remaining * 12).Clear();
-                    outPos += remaining * 12;
-                }
-            }
+            outPos = WriteVerticesFromPackedData(ctx, outPos);
         }
-        else if (origHasVertices != 0 && packedData.Positions == null)
+        else if (origHasVertices != 0 && ctx.PackedData.Positions == null)
         {
-            // Copy and convert existing vertices (only if no packed data available)
-            for (var v = 0; v < numVertices * 3; v++)
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                    BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
-                srcPos += 4;
-                outPos += 4;
-            }
+            outPos = CopyAndConvertVertices(ctx.Input, ctx.Output, srcPos, outPos, ctx.NumVertices, out srcPos);
+            newSrcPos = srcPos;
+            return outPos;
         }
 
+        newSrcPos = srcPos;
+        return outPos;
+    }
+
+    private static int WriteVerticesFromPackedData(GeometryWriteContext ctx, int outPos)
+    {
+        if (ctx.VertexMap != null && ctx.VertexMap.Length > 0)
+        {
+            return WriteRemappedVertices(ctx, outPos);
+        }
+        return WriteSequentialVertices(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Positions!);
+    }
+
+    private static int WriteRemappedVertices(GeometryWriteContext ctx, int outPos)
+    {
+        var vertexDataSize = ctx.NumVertices * 12;
+        var basePos = outPos;
+        ctx.Output.AsSpan(basePos, vertexDataSize).Clear();
+
+        var packedVertexCount = Math.Min(ctx.VertexMap!.Length, ctx.PackedData.Positions!.Length / 3);
+        for (var partitionIdx = 0; partitionIdx < packedVertexCount; partitionIdx++)
+        {
+            var meshIdx = ctx.VertexMap[partitionIdx];
+            if (meshIdx >= ctx.NumVertices) continue;
+
+            var writePos = basePos + meshIdx * 12;
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos),
+                ctx.PackedData.Positions[partitionIdx * 3 + 0]);
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 4),
+                ctx.PackedData.Positions[partitionIdx * 3 + 1]);
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 8),
+                ctx.PackedData.Positions[partitionIdx * 3 + 2]);
+        }
+
+        return outPos + vertexDataSize;
+    }
+
+    private static int WriteSequentialVertices(byte[] output, int outPos, ushort numVertices, float[] positions)
+    {
+        var packedVertexCount = Math.Min(numVertices, positions.Length / 3);
+        for (var v = 0; v < packedVertexCount; v++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), positions[v * 3 + 0]);
+            outPos += 4;
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), positions[v * 3 + 1]);
+            outPos += 4;
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), positions[v * 3 + 2]);
+            outPos += 4;
+        }
+
+        // Pad remaining vertices with zeros if packed data has fewer vertices
+        var remaining = numVertices - packedVertexCount;
+        if (remaining > 0)
+        {
+            output.AsSpan(outPos, remaining * 12).Clear();
+            outPos += remaining * 12;
+        }
+
+        return outPos;
+    }
+
+    private static int CopyAndConvertVertices(byte[] input, byte[] output, int srcPos, int outPos,
+        ushort numVertices, out int newSrcPos)
+    {
+        for (var v = 0; v < numVertices * 3; v++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
+            srcPos += 4;
+            outPos += 4;
+        }
         newSrcPos = srcPos;
         return outPos;
     }
@@ -179,47 +204,69 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write normals, tangents, and bitangents from packed data or copy existing.
     /// </summary>
-    private static int WriteNormalsAndTangents(byte[] input, byte[] output, int srcPos, int outPos, ushort numVertices,
-        PackedGeometryData packedData, ushort[]? vertexMap, byte origHasNormals, byte newHasNormals,
-        ushort origBsDataFlags, ushort newBsDataFlags, out int newSrcPos)
+    private static int WriteNormalsAndTangents(GeometryWriteContext ctx, int srcPos, int outPos,
+        byte origHasNormals, byte newHasNormals, ushort origBsDataFlags, ushort newBsDataFlags, out int newSrcPos)
     {
         // Always prefer packed data when available - Xbox 360 files set hasNormals=1
         // even when actual normal data is in BSPackedAdditionalGeometryData
-        if (newHasNormals != 0 && packedData.Normals != null)
+        if (newHasNormals != 0 && ctx.PackedData.Normals != null)
         {
-            // Write unpacked normals (with optional vertex map remapping for skinned meshes)
-            outPos = WriteVec3Array(output, outPos, numVertices, packedData.Normals, vertexMap);
+            outPos = WriteNormalsFromPackedData(ctx, outPos, newBsDataFlags);
+        }
+        else if (origHasNormals != 0 && ctx.PackedData.Normals == null)
+        {
+            outPos = CopyAndConvertNormals(ctx.Input, ctx.Output, srcPos, outPos, ctx.NumVertices,
+                origBsDataFlags, out srcPos);
+            newSrcPos = srcPos;
+            return outPos;
+        }
 
-            // Write tangents if available (with optional remapping)
-            if ((newBsDataFlags & 4096) != 0 && packedData.Tangents != null)
+        newSrcPos = srcPos;
+        return outPos;
+    }
+
+    private static int WriteNormalsFromPackedData(GeometryWriteContext ctx, int outPos, ushort newBsDataFlags)
+    {
+        // Write unpacked normals (with optional vertex map remapping for skinned meshes)
+        outPos = WriteVec3Array(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Normals!, ctx.VertexMap);
+
+        // Write tangents if available (with optional remapping)
+        if ((newBsDataFlags & 4096) != 0 && ctx.PackedData.Tangents != null)
+        {
+            outPos = WriteVec3Array(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Tangents, ctx.VertexMap);
+
+            // Write bitangents if available (with optional remapping)
+            if (ctx.PackedData.Bitangents != null)
             {
-                outPos = WriteVec3Array(output, outPos, numVertices, packedData.Tangents, vertexMap);
-
-                // Write bitangents if available (with optional remapping)
-                if (packedData.Bitangents != null)
-                    outPos = WriteVec3Array(output, outPos, numVertices, packedData.Bitangents, vertexMap);
+                outPos = WriteVec3Array(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Bitangents, ctx.VertexMap);
             }
         }
-        else if (origHasNormals != 0 && packedData.Normals == null)
+
+        return outPos;
+    }
+
+    private static int CopyAndConvertNormals(byte[] input, byte[] output, int srcPos, int outPos,
+        ushort numVertices, ushort origBsDataFlags, out int newSrcPos)
+    {
+        // Copy and convert existing normals
+        for (var v = 0; v < numVertices * 3; v++)
         {
-            // Copy and convert existing normals (only if no packed data available)
-            for (var v = 0; v < numVertices * 3; v++)
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
+            srcPos += 4;
+            outPos += 4;
+        }
+
+        // Copy existing tangents/bitangents if present
+        if ((origBsDataFlags & 4096) != 0)
+        {
+            for (var v = 0; v < numVertices * 6; v++) // 3 floats tangent + 3 floats bitangent
             {
                 BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
                     BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
                 srcPos += 4;
                 outPos += 4;
             }
-
-            // Copy existing tangents/bitangents if present
-            if ((origBsDataFlags & 4096) != 0)
-                for (var v = 0; v < numVertices * 6; v++) // 3 floats tangent + 3 floats bitangent
-                {
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                        BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
-                    srcPos += 4;
-                    outPos += 4;
-                }
         }
 
         newSrcPos = srcPos;
@@ -268,79 +315,102 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write vertex colors from packed data or copy existing.
     /// </summary>
-    private static int WriteVertexColors(byte[] input, byte[] output, int srcPos, int outPos, ushort numVertices,
-        PackedGeometryData packedData, ushort[]? vertexMap, bool isSkinned, out int newSrcPos)
+    private static int WriteVertexColors(GeometryWriteContext ctx, int srcPos, int outPos, out int newSrcPos)
     {
         // hasVertexColors (byte) - set to 1 if we have colors from packed data
-        // NOTE: For skinned meshes (vertexMap != null), ubyte4 stream is bone indices, NOT vertex colors!
-        var origHasVertexColors = input[srcPos++];
-        var newHasVertexColors = (byte)(packedData.VertexColors != null && !isSkinned ? 1 : origHasVertexColors);
-        output[outPos++] = newHasVertexColors;
+        // NOTE: For skinned meshes, ubyte4 stream is bone indices, NOT vertex colors!
+        var origHasVertexColors = ctx.Input[srcPos++];
+        var newHasVertexColors = (byte)(ctx.PackedData.VertexColors != null && !ctx.IsSkinned ? 1 : origHasVertexColors);
+        ctx.Output[outPos++] = newHasVertexColors;
 
         // NIF stores vertex colors as Color4 (4 floats, 16 bytes per vertex) in RGBA order
         // Xbox 360 packed data stores them as ByteColor4 (4 bytes per vertex) in ARGB order
-        if (newHasVertexColors != 0 && packedData.VertexColors != null && !isSkinned)
+        if (newHasVertexColors != 0 && ctx.PackedData.VertexColors != null && !ctx.IsSkinned)
         {
-            // Convert from ByteColor4 ARGB (0-255) to Color4 RGBA (0.0-1.0) (with optional remapping)
-            if (vertexMap != null && vertexMap.Length > 0)
-            {
-                var colorDataSize = numVertices * 16; // 4 floats * 4 bytes
-                var basePos = outPos;
-                output.AsSpan(basePos, colorDataSize).Clear();
-
-                var packedColorCount = Math.Min(vertexMap.Length, packedData.VertexColors.Length / 4);
-                for (var partitionIdx = 0; partitionIdx < packedColorCount; partitionIdx++)
-                {
-                    var meshIdx = vertexMap[partitionIdx];
-                    if (meshIdx >= numVertices) continue;
-
-                    // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
-                    var a = packedData.VertexColors[partitionIdx * 4 + 0] / 255.0f;
-                    var r = packedData.VertexColors[partitionIdx * 4 + 1] / 255.0f;
-                    var g = packedData.VertexColors[partitionIdx * 4 + 2] / 255.0f;
-                    var b = packedData.VertexColors[partitionIdx * 4 + 3] / 255.0f;
-
-                    var writePos = basePos + meshIdx * 16;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos), r);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4), g);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 8), b);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 12), a);
-                }
-
-                outPos += colorDataSize;
-            }
-            else
-            {
-                for (var v = 0; v < numVertices; v++)
-                {
-                    // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
-                    var a = packedData.VertexColors[v * 4 + 0] / 255.0f;
-                    var r = packedData.VertexColors[v * 4 + 1] / 255.0f;
-                    var g = packedData.VertexColors[v * 4 + 2] / 255.0f;
-                    var b = packedData.VertexColors[v * 4 + 3] / 255.0f;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), r);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), g);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), b);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), a);
-                    outPos += 4;
-                }
-            }
+            outPos = WriteVertexColorsFromPackedData(ctx, outPos);
         }
-        else if (origHasVertexColors != 0 && packedData.VertexColors == null)
+        else if (origHasVertexColors != 0 && ctx.PackedData.VertexColors == null)
         {
-            // Copy and convert existing Color4 values (only if no packed data available)
-            for (var v = 0; v < numVertices * 4; v++)
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                    BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
-                srcPos += 4;
-                outPos += 4;
-            }
+            outPos = CopyAndConvertVertexColors(ctx.Input, ctx.Output, srcPos, outPos, ctx.NumVertices, out srcPos);
+            newSrcPos = srcPos;
+            return outPos;
         }
 
+        newSrcPos = srcPos;
+        return outPos;
+    }
+
+    private static int WriteVertexColorsFromPackedData(GeometryWriteContext ctx, int outPos)
+    {
+        if (ctx.VertexMap != null && ctx.VertexMap.Length > 0)
+        {
+            return WriteRemappedVertexColors(ctx, outPos);
+        }
+        return WriteSequentialVertexColors(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.VertexColors!);
+    }
+
+    private static int WriteRemappedVertexColors(GeometryWriteContext ctx, int outPos)
+    {
+        var colorDataSize = ctx.NumVertices * 16;
+        var basePos = outPos;
+        ctx.Output.AsSpan(basePos, colorDataSize).Clear();
+
+        var packedColorCount = Math.Min(ctx.VertexMap!.Length, ctx.PackedData.VertexColors!.Length / 4);
+        for (var partitionIdx = 0; partitionIdx < packedColorCount; partitionIdx++)
+        {
+            var meshIdx = ctx.VertexMap[partitionIdx];
+            if (meshIdx >= ctx.NumVertices) continue;
+
+            // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
+            var (r, g, b, a) = ExtractArgbAsRgba(ctx.PackedData.VertexColors, partitionIdx);
+
+            var writePos = basePos + meshIdx * 16;
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos), r);
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 4), g);
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 8), b);
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 12), a);
+        }
+
+        return outPos + colorDataSize;
+    }
+
+    private static int WriteSequentialVertexColors(byte[] output, int outPos, ushort numVertices, byte[] colors)
+    {
+        for (var v = 0; v < numVertices; v++)
+        {
+            // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
+            var (r, g, b, a) = ExtractArgbAsRgba(colors, v);
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), r);
+            outPos += 4;
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), g);
+            outPos += 4;
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), b);
+            outPos += 4;
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), a);
+            outPos += 4;
+        }
+        return outPos;
+    }
+
+    private static (float r, float g, float b, float a) ExtractArgbAsRgba(byte[] colors, int index)
+    {
+        var a = colors[index * 4 + 0] / 255.0f;
+        var r = colors[index * 4 + 1] / 255.0f;
+        var g = colors[index * 4 + 2] / 255.0f;
+        var b = colors[index * 4 + 3] / 255.0f;
+        return (r, g, b, a);
+    }
+
+    private static int CopyAndConvertVertexColors(byte[] input, byte[] output, int srcPos, int outPos,
+        ushort numVertices, out int newSrcPos)
+    {
+        for (var v = 0; v < numVertices * 4; v++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
+            srcPos += 4;
+            outPos += 4;
+        }
         newSrcPos = srcPos;
         return outPos;
     }
@@ -348,60 +418,80 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write UV coordinates from packed data or copy existing.
     /// </summary>
-    private static int WriteUVSets(byte[] input, byte[] output, int srcPos, int outPos, ushort numVertices,
-        PackedGeometryData packedData, ushort[]? vertexMap, ushort origBsDataFlags, ushort newBsDataFlags,
-        out int newSrcPos)
+    private static int WriteUVSets(GeometryWriteContext ctx, int srcPos, int outPos,
+        ushort origBsDataFlags, ushort newBsDataFlags, out int newSrcPos)
     {
         var origNumUVSets = origBsDataFlags & 1;
         var newNumUVSets = newBsDataFlags & 1;
 
-        if (newNumUVSets != 0 && packedData.UVs != null)
+        if (newNumUVSets != 0 && ctx.PackedData.UVs != null)
         {
-            // Write unpacked UVs (with optional remapping)
-            if (vertexMap != null && vertexMap.Length > 0)
-            {
-                var uvDataSize = numVertices * 8; // 2 floats * 4 bytes
-                var basePos = outPos;
-                output.AsSpan(basePos, uvDataSize).Clear();
-
-                var packedUvCount = Math.Min(vertexMap.Length, packedData.UVs.Length / 2);
-                for (var partitionIdx = 0; partitionIdx < packedUvCount; partitionIdx++)
-                {
-                    var meshIdx = vertexMap[partitionIdx];
-                    if (meshIdx >= numVertices) continue;
-
-                    var writePos = basePos + meshIdx * 8;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
-                        packedData.UVs[partitionIdx * 2 + 0]);
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos + 4),
-                        packedData.UVs[partitionIdx * 2 + 1]);
-                }
-
-                outPos += uvDataSize;
-            }
-            else
-            {
-                for (var v = 0; v < numVertices; v++)
-                {
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.UVs[v * 2 + 0]);
-                    outPos += 4;
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), packedData.UVs[v * 2 + 1]);
-                    outPos += 4;
-                }
-            }
+            outPos = WriteUVsFromPackedData(ctx, outPos);
         }
-        else if (origNumUVSets != 0 && packedData.UVs == null)
+        else if (origNumUVSets != 0 && ctx.PackedData.UVs == null)
         {
-            // Copy and convert existing UVs (only if no packed data available)
-            for (var v = 0; v < numVertices * 2; v++)
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
-                    BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
-                srcPos += 4;
-                outPos += 4;
-            }
+            outPos = CopyAndConvertUVs(ctx.Input, ctx.Output, srcPos, outPos, ctx.NumVertices, out srcPos);
+            newSrcPos = srcPos;
+            return outPos;
         }
 
+        newSrcPos = srcPos;
+        return outPos;
+    }
+
+    private static int WriteUVsFromPackedData(GeometryWriteContext ctx, int outPos)
+    {
+        if (ctx.VertexMap != null && ctx.VertexMap.Length > 0)
+        {
+            return WriteRemappedUVs(ctx, outPos);
+        }
+        return WriteSequentialUVs(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.UVs!);
+    }
+
+    private static int WriteRemappedUVs(GeometryWriteContext ctx, int outPos)
+    {
+        var uvDataSize = ctx.NumVertices * 8;
+        var basePos = outPos;
+        ctx.Output.AsSpan(basePos, uvDataSize).Clear();
+
+        var packedUvCount = Math.Min(ctx.VertexMap!.Length, ctx.PackedData.UVs!.Length / 2);
+        for (var partitionIdx = 0; partitionIdx < packedUvCount; partitionIdx++)
+        {
+            var meshIdx = ctx.VertexMap[partitionIdx];
+            if (meshIdx >= ctx.NumVertices) continue;
+
+            var writePos = basePos + meshIdx * 8;
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos),
+                ctx.PackedData.UVs[partitionIdx * 2 + 0]);
+            BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 4),
+                ctx.PackedData.UVs[partitionIdx * 2 + 1]);
+        }
+
+        return outPos + uvDataSize;
+    }
+
+    private static int WriteSequentialUVs(byte[] output, int outPos, ushort numVertices, float[] uvs)
+    {
+        for (var v = 0; v < numVertices; v++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), uvs[v * 2 + 0]);
+            outPos += 4;
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), uvs[v * 2 + 1]);
+            outPos += 4;
+        }
+        return outPos;
+    }
+
+    private static int CopyAndConvertUVs(byte[] input, byte[] output, int srcPos, int outPos,
+        ushort numVertices, out int newSrcPos)
+    {
+        for (var v = 0; v < numVertices * 2; v++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
+                BinaryPrimitives.ReadSingleBigEndian(input.AsSpan(srcPos)));
+            srcPos += 4;
+            outPos += 4;
+        }
         newSrcPos = srcPos;
         return outPos;
     }
@@ -442,14 +532,18 @@ internal sealed partial class NifConverter
 
             // points[numStrips][stripLengths[i]]
             if (hasPoints != 0)
+            {
                 for (var i = 0; i < numStrips; i++)
-                for (var j = 0; j < stripLengths[i]; j++)
                 {
-                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                        ReadUInt16BE(input, srcPos));
-                    srcPos += 2;
-                    outPos += 2;
+                    for (var j = 0; j < stripLengths[i]; j++)
+                    {
+                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                            ReadUInt16BE(input, srcPos));
+                        srcPos += 2;
+                        outPos += 2;
+                    }
                 }
+            }
         }
         else if (blockType == "NiTriShapeData")
         {
@@ -510,6 +604,7 @@ internal sealed partial class NifConverter
 
             // Copy source triangles if present
             if (srcHasTriangles != 0)
+            {
                 for (var i = 0; i < srcNumTriangles * 3; i++)
                 {
                     BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
@@ -517,6 +612,7 @@ internal sealed partial class NifConverter
                     srcPos += 2;
                     outPos += 2;
                 }
+            }
         }
 
         // numMatchGroups (ushort)

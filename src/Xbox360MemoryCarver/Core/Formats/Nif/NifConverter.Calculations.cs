@@ -10,6 +10,29 @@ internal sealed partial class NifConverter
     private static GeometryBlockExpansion? CalculateGeometryExpansion(
         byte[] data, BlockInfo block, PackedGeometryData packedData, bool isSkinned = false)
     {
+        var fields = ParseGeometryBlockFields(data, block);
+        if (fields == null) return null;
+
+        var sizeIncrease = CalculateSizeIncrease(fields.Value, packedData, isSkinned);
+        if (sizeIncrease == 0) return null;
+
+        return new GeometryBlockExpansion
+        {
+            OriginalSize = block.Size,
+            NewSize = block.Size + sizeIncrease,
+            SizeIncrease = sizeIncrease
+        };
+    }
+
+    private readonly record struct GeometryBlockFields(
+        ushort NumVertices,
+        ushort BsDataFlags,
+        byte HasVertices,
+        byte HasNormals,
+        byte HasVertexColors);
+
+    private static GeometryBlockFields? ParseGeometryBlockFields(byte[] data, BlockInfo block)
+    {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
 
@@ -46,12 +69,20 @@ internal sealed partial class NifConverter
         if (pos + 1 > end) return null;
         var hasVertexColors = data[pos];
 
-        // Calculate size increase
+        return new GeometryBlockFields(numVertices, bsDataFlags, hasVertices, hasNormals, hasVertexColors);
+    }
+
+    private static int CalculateSizeIncrease(GeometryBlockFields fields, PackedGeometryData packedData, bool isSkinned)
+    {
         var sizeIncrease = 0;
+        var numVertices = fields.NumVertices;
 
-        if (hasVertices == 0 && packedData.Positions != null) sizeIncrease += numVertices * 12;
+        if (fields.HasVertices == 0 && packedData.Positions != null)
+        {
+            sizeIncrease += numVertices * 12;
+        }
 
-        if (hasNormals == 0 && packedData.Normals != null)
+        if (fields.HasNormals == 0 && packedData.Normals != null)
         {
             sizeIncrease += numVertices * 12;
             if (packedData.Tangents != null) sizeIncrease += numVertices * 12;
@@ -59,19 +90,18 @@ internal sealed partial class NifConverter
         }
 
         // Vertex colors: skip for skinned meshes (ubyte4 is bone indices)
-        if (hasVertexColors == 0 && packedData.VertexColors != null && !isSkinned) sizeIncrease += numVertices * 16;
-
-        var numUVSets = bsDataFlags & 1;
-        if (numUVSets == 0 && packedData.UVs != null) sizeIncrease += numVertices * 8;
-
-        if (sizeIncrease == 0) return null;
-
-        return new GeometryBlockExpansion
+        if (fields.HasVertexColors == 0 && packedData.VertexColors != null && !isSkinned)
         {
-            OriginalSize = block.Size,
-            NewSize = block.Size + sizeIncrease,
-            SizeIncrease = sizeIncrease
-        };
+            sizeIncrease += numVertices * 16;
+        }
+
+        var numUVSets = fields.BsDataFlags & 1;
+        if (numUVSets == 0 && packedData.UVs != null)
+        {
+            sizeIncrease += numVertices * 8;
+        }
+
+        return sizeIncrease;
     }
 
     /// <summary>
@@ -83,10 +113,16 @@ internal sealed partial class NifConverter
         var newIndex = 0;
 
         for (var i = 0; i < blockCount; i++)
+        {
             if (_blocksToStrip.Contains(i))
+            {
                 remap[i] = -1;
+            }
             else
+            {
                 remap[i] = newIndex++;
+            }
+        }
 
         return remap;
     }

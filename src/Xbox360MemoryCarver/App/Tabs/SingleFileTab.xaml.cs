@@ -81,7 +81,7 @@ public sealed partial class SingleFileTab : UserControl
         UpdateButtonStates();
     }
 
-    private void OutputPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    private void OutputPathTextBox_TextChanged(object _sender, TextChangedEventArgs _e)
     {
         UpdateButtonStates();
     }
@@ -232,15 +232,23 @@ public sealed partial class SingleFileTab : UserControl
 
             // Update status for extracted files
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedOffsets.Contains(x.Offset)))
+            {
                 // Check if conversion failed for this file
                 if (summary.FailedConversionOffsets.Contains(entry.Offset))
+                {
                     entry.Status = ExtractionStatus.Failed;
+                }
                 else
+                {
                     entry.Status = ExtractionStatus.Extracted;
+                }
+            }
 
             // Update status for extracted modules (from minidump metadata)
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedModuleOffsets.Contains(x.Offset)))
+            {
                 entry.Status = ExtractionStatus.Extracted;
+            }
 
             var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
             if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";
@@ -266,22 +274,22 @@ public sealed partial class SingleFileTab : UserControl
 
     #region Sorting
 
-    private void SortByOffset_Click(object sender, RoutedEventArgs e)
+    private void SortByOffset_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(CarvedFilesSorter.SortColumn.Offset);
     }
 
-    private void SortByLength_Click(object sender, RoutedEventArgs e)
+    private void SortByLength_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(CarvedFilesSorter.SortColumn.Length);
     }
 
-    private void SortByType_Click(object sender, RoutedEventArgs e)
+    private void SortByType_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(CarvedFilesSorter.SortColumn.Type);
     }
 
-    private void SortByFilename_Click(object sender, RoutedEventArgs e)
+    private void SortByFilename_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(CarvedFilesSorter.SortColumn.Filename);
     }

@@ -110,10 +110,15 @@ internal static class TextBoxContextMenuHelper
     {
         var selectedText = textBox.SelectedText;
         if (string.IsNullOrEmpty(selectedText))
+        {
             // If nothing selected, copy all text
             selectedText = textBox.Text;
+        }
 
-        if (!string.IsNullOrEmpty(selectedText)) ClipboardHelper.CopyText(selectedText);
+        if (!string.IsNullOrEmpty(selectedText))
+        {
+            ClipboardHelper.CopyText(selectedText);
+        }
     }
 
     private static void Paste(TextBox textBox)
@@ -127,11 +132,15 @@ internal static class TextBoxContextMenuHelper
         var length = textBox.SelectionLength;
 
         if (length > 0)
+        {
             // Replace selection
             textBox.Text = textBox.Text.Remove(start, length).Insert(start, clipboardText);
+        }
         else
+        {
             // Insert at cursor
             textBox.Text = textBox.Text.Insert(start, clipboardText);
+        }
 
         textBox.SelectionStart = start + clipboardText.Length;
         textBox.SelectionLength = 0;

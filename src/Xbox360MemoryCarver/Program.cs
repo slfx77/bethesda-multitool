@@ -101,7 +101,7 @@ public static class Program
         rootCommand.Options.Add(verboseOption);
         rootCommand.Options.Add(maxFilesOption);
 
-        rootCommand.SetAction(async (parseResult, cancellationToken) =>
+        rootCommand.SetAction(async (parseResult, _cancellationToken) =>
         {
             var input = parseResult.GetValue(inputArgument);
             var output = parseResult.GetValue(outputOption)!;
@@ -183,8 +183,12 @@ public static class Program
     private static string? GetFlagValue(string[] args, string flag)
     {
         for (var i = 0; i < args.Length - 1; i++)
+        {
             if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
+            {
                 return args[i + 1];
+            }
+        }
 
         return null;
     }

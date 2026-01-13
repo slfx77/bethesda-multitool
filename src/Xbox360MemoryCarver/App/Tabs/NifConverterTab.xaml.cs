@@ -275,151 +275,8 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
 
         try
         {
-            var entries = await Task.Run(async () =>
-            {
-                // First pass: enumerate all NIF files (quick)
-                var nifFiles = Directory.EnumerateFiles(directory, "*.nif", SearchOption.AllDirectories)
-                    .ToList();
-
-                if (nifFiles.Count == 0)
-                    return Array
-                        .Empty<(string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360
-                            )>();
-
-                // Update progress bar to determinate mode with file count
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    ScanProgressBar.IsIndeterminate = false;
-                    ScanProgressBar.Maximum = nifFiles.Count;
-                    ScanProgressBar.Value = 0;
-                    StatusTextBlock.Text = $"Scanning {nifFiles.Count} NIF files...";
-                });
-
-                // Second pass: process files with throttled parallelism to avoid I/O contention
-                var result =
-                    new (string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)
-                        [nifFiles.Count];
-                var processedCount = 0;
-                var lastReportedProgress = 0;
-
-                // Use SemaphoreSlim to limit concurrent file reads
-                using var semaphore = new SemaphoreSlim(MaxConcurrentFileReads);
-                var tasks = new Task[nifFiles.Count];
-
-                for (var i = 0; i < nifFiles.Count; i++)
-                {
-                    var index = i;
-                    tasks[i] = Task.Run(async () =>
-                    {
-                        await semaphore.WaitAsync();
-                        try
-                        {
-                            var filePath = nifFiles[index];
-                            var relativePath = Path.GetRelativePath(directory, filePath);
-                            long fileSize;
-                            string formatDesc;
-
-                            // Use ArrayPool for header buffer to reduce allocations
-                            var headerBytes = ArrayPool<byte>.Shared.Rent(50);
-                            try
-                            {
-                                var fileInfo = new FileInfo(filePath);
-                                fileSize = fileInfo.Length;
-
-                                // Quick check for Xbox 360 format - read only first 50 bytes
-                                await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                                    FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-                                var bytesRead = await fs.ReadAsync(headerBytes.AsMemory(0, 50));
-
-                                if (bytesRead >= 50)
-                                {
-                                    var newlinePos = Array.IndexOf(headerBytes, (byte)0x0A, 0, 50);
-                                    if (newlinePos > 0 && newlinePos + 5 < 50)
-                                        formatDesc = headerBytes[newlinePos + 5] switch
-                                        {
-                                            0 => "Xbox 360 (BE)",
-                                            1 => "PC (LE)",
-                                            _ => "Unknown"
-                                        };
-                                    else
-                                        formatDesc = "Invalid";
-                                }
-                                else
-                                {
-                                    formatDesc = "Invalid";
-                                }
-                            }
-                            catch
-                            {
-                                fileSize = 0;
-                                formatDesc = "Error";
-                            }
-                            finally
-                            {
-                                ArrayPool<byte>.Shared.Return(headerBytes);
-                            }
-
-                            result[index] = (filePath, relativePath, fileSize, formatDesc,
-                                formatDesc == "Xbox 360 (BE)");
-
-                            // Update progress periodically (every 100 files to avoid UI flooding)
-                            var currentCount = Interlocked.Increment(ref processedCount);
-                            if (currentCount % 100 == 0 || currentCount == nifFiles.Count)
-                            {
-                                // Ensure monotonic progress by only updating if we have a higher value
-                                var previousMax = lastReportedProgress;
-                                while (currentCount > previousMax)
-                                {
-                                    if (Interlocked.CompareExchange(ref lastReportedProgress, currentCount,
-                                            previousMax) == previousMax)
-                                    {
-                                        // Successfully updated, now update UI
-                                        var progressValue = currentCount;
-                                        DispatcherQueue.TryEnqueue(() =>
-                                        {
-                                            if (progressValue > ScanProgressBar.Value)
-                                                ScanProgressBar.Value = progressValue;
-                                        });
-                                        break;
-                                    }
-
-                                    previousMax = lastReportedProgress;
-                                }
-                            }
-                        }
-                        finally
-                        {
-                            semaphore.Release();
-                        }
-                    });
-                }
-
-                await Task.WhenAll(tasks);
-                return result;
-            });
-
-            // Batch add entries - suspend UI updates during batch operation
-            NifFilesListView.ItemsSource = null;
-
-            foreach (var (fullPath, relativePath, fileSize, formatDesc, isXbox360) in entries)
-            {
-                var entry = new NifFileEntry
-                {
-                    FullPath = fullPath,
-                    RelativePath = relativePath,
-                    FileSize = fileSize,
-                    FormatDescription = formatDesc,
-                    FormatColor = NifFileEntry.GetFormatBrush(formatDesc),
-                    IsSelected = isXbox360
-                };
-
-                _allNifFiles.Add(entry);
-                _nifFiles.Add(entry);
-            }
-
-            // Restore binding after batch add
-            NifFilesListView.ItemsSource = _nifFiles;
-
+            var entries = await ScanDirectoryForNifFilesAsync(directory);
+            PopulateNifFilesList(entries);
             UpdateFileCount();
             UpdateButtonStates();
             StatusTextBlock.Text =
@@ -430,6 +287,159 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
             ScanProgressBar.Visibility = Visibility.Collapsed;
             ScanProgressBar.IsIndeterminate = true;
         }
+    }
+
+    private async Task<(string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)[]>
+        ScanDirectoryForNifFilesAsync(string directory)
+    {
+        return await Task.Run(async () =>
+        {
+            var nifFiles = Directory.EnumerateFiles(directory, "*.nif", SearchOption.AllDirectories).ToList();
+            if (nifFiles.Count == 0)
+            {
+                return Array.Empty<(string, string, long, string, bool)>();
+            }
+
+            InitializeScanProgress(nifFiles.Count);
+
+            var result = new (string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)
+                [nifFiles.Count];
+            var progressTracker = new ScanProgressTracker(nifFiles.Count, DispatcherQueue, ScanProgressBar);
+
+            using var semaphore = new SemaphoreSlim(MaxConcurrentFileReads);
+            var tasks = nifFiles.Select((filePath, index) =>
+                ProcessNifFileAsync(directory, filePath, result, index, semaphore, progressTracker)).ToArray();
+
+            await Task.WhenAll(tasks);
+            return result;
+        });
+    }
+
+    private sealed class ScanProgressTracker(int totalCount, Microsoft.UI.Dispatching.DispatcherQueue dispatcher, Microsoft.UI.Xaml.Controls.ProgressBar progressBar)
+    {
+        private int _processedCount;
+        private int _lastReportedProgress;
+
+        public void IncrementAndReport()
+        {
+            var currentCount = Interlocked.Increment(ref _processedCount);
+            if (currentCount % 100 != 0 && currentCount != totalCount) return;
+
+            var previousMax = _lastReportedProgress;
+            while (currentCount > previousMax)
+            {
+                if (Interlocked.CompareExchange(ref _lastReportedProgress, currentCount, previousMax) == previousMax)
+                {
+                    var progressValue = currentCount;
+                    dispatcher.TryEnqueue(() =>
+                    {
+                        if (progressValue > progressBar.Value)
+                            progressBar.Value = progressValue;
+                    });
+                    break;
+                }
+
+                previousMax = _lastReportedProgress;
+            }
+        }
+    }
+
+    private void InitializeScanProgress(int fileCount)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ScanProgressBar.IsIndeterminate = false;
+            ScanProgressBar.Maximum = fileCount;
+            ScanProgressBar.Value = 0;
+            StatusTextBlock.Text = $"Scanning {fileCount} NIF files...";
+        });
+    }
+
+    private async Task ProcessNifFileAsync(
+        string directory,
+        string filePath,
+        (string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)[] result,
+        int index,
+        SemaphoreSlim semaphore,
+        ScanProgressTracker progressTracker)
+    {
+        await semaphore.WaitAsync();
+        try
+        {
+            var relativePath = Path.GetRelativePath(directory, filePath);
+            var (fileSize, formatDesc) = await ReadNifFileHeaderAsync(filePath);
+            result[index] = (filePath, relativePath, fileSize, formatDesc, formatDesc == "Xbox 360 (BE)");
+
+            progressTracker.IncrementAndReport();
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
+
+    private static async Task<(long fileSize, string formatDesc)> ReadNifFileHeaderAsync(string filePath)
+    {
+        var headerBytes = ArrayPool<byte>.Shared.Rent(50);
+        try
+        {
+            var fileInfo = new FileInfo(filePath);
+            var fileSize = fileInfo.Length;
+
+            await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var bytesRead = await fs.ReadAsync(headerBytes.AsMemory(0, 50));
+
+            var formatDesc = DetermineNifFormat(headerBytes, bytesRead);
+            return (fileSize, formatDesc);
+        }
+        catch
+        {
+            return (0, "Error");
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(headerBytes);
+        }
+    }
+
+    private static string DetermineNifFormat(byte[] headerBytes, int bytesRead)
+    {
+        if (bytesRead < 50) return "Invalid";
+
+        var newlinePos = Array.IndexOf(headerBytes, (byte)0x0A, 0, 50);
+        if (newlinePos <= 0 || newlinePos + 5 >= 50) return "Invalid";
+
+        return headerBytes[newlinePos + 5] switch
+        {
+            0 => "Xbox 360 (BE)",
+            1 => "PC (LE)",
+            _ => "Unknown"
+        };
+    }
+
+    private void PopulateNifFilesList(
+        (string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)[] entries)
+    {
+        NifFilesListView.ItemsSource = null;
+
+        foreach (var (fullPath, relativePath, fileSize, formatDesc, isXbox360) in entries)
+        {
+            var entry = new NifFileEntry
+            {
+                FullPath = fullPath,
+                RelativePath = relativePath,
+                FileSize = fileSize,
+                FormatDescription = formatDesc,
+                FormatColor = NifFileEntry.GetFormatBrush(formatDesc),
+                IsSelected = isXbox360
+            };
+
+            _allNifFiles.Add(entry);
+            _nifFiles.Add(entry);
+        }
+
+        NifFilesListView.ItemsSource = _nifFiles;
     }
 
     private void SelectAllButton_Click(object sender, RoutedEventArgs e)
@@ -563,7 +573,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         }
     }
 
-    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    private void CancelButton_Click(object _sender, RoutedEventArgs _e)
     {
         _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
@@ -571,22 +581,22 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
 
     #region Sorting
 
-    private void SortByFilePath_Click(object sender, RoutedEventArgs e)
+    private void SortByFilePath_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(NifFilesSorter.SortColumn.FilePath);
     }
 
-    private void SortBySize_Click(object sender, RoutedEventArgs e)
+    private void SortBySize_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(NifFilesSorter.SortColumn.Size);
     }
 
-    private void SortByFormat_Click(object sender, RoutedEventArgs e)
+    private void SortByFormat_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(NifFilesSorter.SortColumn.Format);
     }
 
-    private void SortByStatus_Click(object sender, RoutedEventArgs e)
+    private void SortByStatus_Click(object _sender, RoutedEventArgs _e)
     {
         ApplySort(NifFilesSorter.SortColumn.Status);
     }

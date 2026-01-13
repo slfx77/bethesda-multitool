@@ -40,8 +40,10 @@ public sealed partial class MemoryDumpAnalyzer
 
             var gameModule = FindGameModule(result.MinidumpInfo);
             if (gameModule != null)
+            {
                 sb.AppendLine(CultureInfo.InvariantCulture,
                     $"Game: {Path.GetFileName(gameModule.Name)} ({gameModule.Size / 1024.0:F0} KB)");
+            }
         }
 
         if (result.CarvedFiles.Count > 0)
@@ -149,8 +151,10 @@ public sealed partial class MemoryDumpAnalyzer
         }
 
         if (result.ScdaRecords.Count > 30)
+        {
             sb.AppendLine(CultureInfo.InvariantCulture,
                 $"| ... | ... | ({result.ScdaRecords.Count - 30} more) | ... |");
+        }
 
         sb.AppendLine();
     }

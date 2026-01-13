@@ -16,59 +16,62 @@ public sealed partial class ScdaDecompiler
         while (pos < length)
         {
             if (offset + pos >= bytes.Length) break;
-
-            var marker = bytes[offset + pos];
-
-            switch (marker)
-            {
-                case 0x20: // Push
-                    pos++;
-                    if (pos >= length || offset + pos >= bytes.Length) continue;
-                    ParsePushValue(bytes, offset, length, ref pos, stack);
-                    continue;
-
-                case 0x58: // Standalone function call
-                    ParseFunctionCall(bytes, offset, length, ref pos, stack);
-                    continue;
-
-                case 0x6E when pos + 5 <= length: // Long param
-                    stack.Push(((int)BinaryUtils.ReadUInt32LE(bytes, offset + pos + 1)).ToString(CultureInfo
-                        .InvariantCulture));
-                    pos += 5;
-                    continue;
-
-                case 0x7A when pos + 9 <= length: // Float param (double)
-                    stack.Push(BitConverter.ToDouble(bytes, offset + pos + 1)
-                        .ToString("G", CultureInfo.InvariantCulture));
-                    pos += 9;
-                    continue;
-
-                case 0x72 when pos + 3 <= length: // Reference
-                    stack.Push($"SCRO#{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
-                    pos += 3;
-                    continue;
-
-                case 0x73 when pos + 3 <= length: // Int local
-                    stack.Push($"iLocal{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
-                    pos += 3;
-                    continue;
-
-                case 0x66 when pos + 3 <= length: // Float local
-                    stack.Push($"fLocal{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
-                    pos += 3;
-                    continue;
-
-                default:
-                    if (TryParseOperator(bytes, offset, length, ref pos, stack)) continue;
-                    if (marker >= 0x30 && marker <= 0x39) stack.Push(((char)marker).ToString());
-                    pos++;
-                    continue;
-            }
+            ProcessExpressionToken(bytes, offset, length, ref pos, stack);
         }
 
         return stack.Count > 0 ? string.Join(" ", stack.Reverse()) : "0";
     }
 
+    private void ProcessExpressionToken(byte[] bytes, int offset, int length, ref int pos, Stack<string> stack)
+    {
+        var marker = bytes[offset + pos];
+
+        switch (marker)
+        {
+            case 0x20: // Push
+                pos++;
+                if (pos >= length || offset + pos >= bytes.Length) return;
+                ParsePushValue(bytes, offset, length, ref pos, stack);
+                return;
+
+            case 0x58: // Standalone function call
+                ParseFunctionCall(bytes, offset, length, ref pos, stack);
+                return;
+
+            case 0x6E when pos + 5 <= length: // Long param
+                stack.Push(((int)BinaryUtils.ReadUInt32LE(bytes, offset + pos + 1)).ToString(CultureInfo
+                    .InvariantCulture));
+                pos += 5;
+                return;
+
+            case 0x7A when pos + 9 <= length: // Float param (double)
+                stack.Push(BitConverter.ToDouble(bytes, offset + pos + 1)
+                    .ToString("G", CultureInfo.InvariantCulture));
+                pos += 9;
+                return;
+
+            case 0x72 when pos + 3 <= length: // Reference
+                stack.Push($"SCRO#{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
+                pos += 3;
+                return;
+
+            case 0x73 when pos + 3 <= length: // Int local
+                stack.Push($"iLocal{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
+                pos += 3;
+                return;
+
+            case 0x66 when pos + 3 <= length: // Float local
+                stack.Push($"fLocal{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
+                pos += 3;
+                return;
+
+            default:
+                if (TryParseOperator(bytes, offset, length, ref pos, stack)) return;
+                if (marker >= 0x30 && marker <= 0x39) stack.Push(((char)marker).ToString());
+                pos++;
+                return;
+        }
+    }
 
     private void ParsePushValue(byte[] bytes, int offset, int length, ref int pos, Stack<string> stack)
     {
@@ -76,67 +79,77 @@ public sealed partial class ScdaDecompiler
 
         var next = bytes[offset + pos];
 
-        // ASCII digits ('0'-'9')
-        if (next >= 0x30 && next <= 0x39)
-        {
-            stack.Push(((char)next).ToString());
-            pos++;
-            return;
-        }
-
-        // Reference with possible variable access
-        if (next == 0x72 && pos + 3 <= length)
-        {
-            var refIdx = BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1);
-            pos += 3;
-
-            if (pos < length && offset + pos < bytes.Length)
-            {
-                var varMarker = bytes[offset + pos];
-                if ((varMarker == 0x73 || varMarker == 0x66) && pos + 3 <= length)
-                {
-                    var varIdx = BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1);
-                    var varPrefix = varMarker == 0x66 ? "f" : "i";
-                    stack.Push($"SCRO#{refIdx}.{varPrefix}Local{varIdx}");
-                    pos += 3;
-                    return;
-                }
-            }
-
-            stack.Push($"SCRO#{refIdx}");
-            return;
-        }
-
-        // Int local
-        if (next == 0x73 && pos + 3 <= length)
-        {
-            stack.Push($"iLocal{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
-            pos += 3;
-            return;
-        }
-
-        // Float local
-        if (next == 0x66 && pos + 3 <= length)
-        {
-            stack.Push($"fLocal{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
-            pos += 3;
-            return;
-        }
-
-        // Function call
-        if (next == 0x58 && pos + 5 <= length)
-        {
-            pos++; // skip 0x58
-            ParseFunctionCall(bytes, offset, length, ref pos, stack);
-            return;
-        }
-
-        // Operators after push
+        if (TryParseAsciiDigit(next, stack, ref pos)) return;
+        if (TryParseReferenceWithVariable(bytes, offset, length, ref pos, stack, next)) return;
+        if (TryParseLocalVariable(bytes, offset, length, ref pos, stack, next)) return;
+        if (TryParseFunctionCallMarker(bytes, offset, length, ref pos, stack, next)) return;
         if (TryParseOperator(bytes, offset, length, ref pos, stack)) return;
 
         // Other literal values
         stack.Push(next.ToString(CultureInfo.InvariantCulture));
         pos++;
+    }
+
+    private static bool TryParseAsciiDigit(byte next, Stack<string> stack, ref int pos)
+    {
+        if (next < 0x30 || next > 0x39) return false;
+        stack.Push(((char)next).ToString());
+        pos++;
+        return true;
+    }
+
+    private static bool TryParseReferenceWithVariable(
+        byte[] bytes, int offset, int length, ref int pos, Stack<string> stack, byte next)
+    {
+        if (next != 0x72 || pos + 3 > length) return false;
+
+        var refIdx = BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1);
+        pos += 3;
+
+        if (pos < length && offset + pos < bytes.Length)
+        {
+            var varMarker = bytes[offset + pos];
+            if ((varMarker == 0x73 || varMarker == 0x66) && pos + 3 <= length)
+            {
+                var varIdx = BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1);
+                var varPrefix = varMarker == 0x66 ? "f" : "i";
+                stack.Push($"SCRO#{refIdx}.{varPrefix}Local{varIdx}");
+                pos += 3;
+                return true;
+            }
+        }
+
+        stack.Push($"SCRO#{refIdx}");
+        return true;
+    }
+
+    private static bool TryParseLocalVariable(
+        byte[] bytes, int offset, int length, ref int pos, Stack<string> stack, byte next)
+    {
+        if (next == 0x73 && pos + 3 <= length)
+        {
+            stack.Push($"iLocal{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
+            pos += 3;
+            return true;
+        }
+
+        if (next == 0x66 && pos + 3 <= length)
+        {
+            stack.Push($"fLocal{BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1)}");
+            pos += 3;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryParseFunctionCallMarker(
+        byte[] bytes, int offset, int length, ref int pos, Stack<string> stack, byte next)
+    {
+        if (next != 0x58 || pos + 5 > length) return false;
+        pos++; // skip 0x58
+        ParseFunctionCall(bytes, offset, length, ref pos, stack);
+        return true;
     }
 
     private void ParseFunctionCall(byte[] bytes, int offset, int length, ref int pos, Stack<string> stack)

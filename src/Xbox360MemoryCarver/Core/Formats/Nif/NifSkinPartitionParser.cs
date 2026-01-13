@@ -14,6 +14,55 @@ internal static partial class NifSkinPartitionParser
 {
     private static readonly Logger Log = Logger.Instance;
 
+    /// <summary>Reader context for partition parsing.</summary>
+    private ref struct PartitionReader
+    {
+        public readonly byte[] Data;
+        public readonly int End;
+        public readonly bool IsBigEndian;
+        public int Pos;
+
+        public PartitionReader(byte[] data, int offset, int size, bool isBigEndian)
+        {
+            Data = data;
+            End = offset + size;
+            IsBigEndian = isBigEndian;
+            Pos = offset;
+        }
+
+        public readonly bool CanRead(int bytes) => Pos + bytes <= End;
+
+        public ushort ReadUInt16()
+        {
+            var value = IsBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(Data.AsSpan(Pos, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(Data.AsSpan(Pos, 2));
+            Pos += 2;
+            return value;
+        }
+
+        public uint ReadUInt32()
+        {
+            var value = IsBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(Data.AsSpan(Pos, 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(Data.AsSpan(Pos, 4));
+            Pos += 4;
+            return value;
+        }
+
+        public byte ReadByte() => Data[Pos++];
+
+        public void Skip(int bytes) => Pos += bytes;
+    }
+
+    /// <summary>Parsed partition header fields.</summary>
+    private readonly record struct PartitionHeader(
+        ushort NumVertices,
+        ushort NumTriangles,
+        ushort NumBones,
+        ushort NumStrips,
+        ushort NumWeightsPerVertex);
+
     /// <summary>
     ///     Extracts the combined VertexMap from all partitions in a NiSkinPartition block.
     ///     Returns null if no vertex map is present.
@@ -22,197 +71,192 @@ internal static partial class NifSkinPartitionParser
     {
         if (size < 4) return null;
 
-        var pos = offset;
-        var end = offset + size;
-
-        // NiSkinPartition structure for Fallout 3/NV (version 20.2.0.7, BS version 34):
-        // The DataSize/VertexSize/VertexDesc/VertexData fields only exist in Skyrim SE+ (#BS_SSE#)
-        // For FO3/NV, the structure is simply:
-        // - NumPartitions (uint, 4 bytes)
-        // - Partitions (SkinPartition array)
-
-        // NumPartitions (uint)
-        var numPartitions = isBigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos, 4))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4));
-        pos += 4;
+        var reader = new PartitionReader(data, offset, size, isBigEndian);
+        var numPartitions = reader.ReadUInt32();
 
         Log.Debug($"      NiSkinPartition: {numPartitions} partitions, block size {size}");
 
         if (numPartitions == 0 || numPartitions > 1000) return null;
 
-        // Collect all vertex maps from partitions
         var allVertexMaps = new List<ushort[]>();
         var totalVertices = 0;
 
-        for (var p = 0; p < numPartitions && pos < end; p++)
+        for (var p = 0; p < numPartitions && reader.Pos < reader.End; p++)
         {
-            // NumVertices (ushort)
-            if (pos + 2 > end)
-            {
-                Log.Debug($"        Partition {p}: early break at NumVertices");
-                break;
-            }
-
-            var numVertices = isBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
-                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
-            pos += 2;
-
-            // NumTriangles (ushort)
-            if (pos + 2 > end)
-            {
-                Log.Debug($"        Partition {p}: early break at NumTriangles");
-                break;
-            }
-
-            var numTriangles = isBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
-                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
-            pos += 2;
-
-            // NumBones (ushort)
-            if (pos + 2 > end)
-            {
-                Log.Debug($"        Partition {p}: early break at NumBones");
-                break;
-            }
-
-            var numBones = isBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
-                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
-            pos += 2;
-
-            // NumStrips (ushort)
-            if (pos + 2 > end)
-            {
-                Log.Debug($"        Partition {p}: early break at NumStrips");
-                break;
-            }
-
-            var numStrips = isBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
-                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
-            pos += 2;
-
-            // NumWeightsPerVertex (ushort)
-            if (pos + 2 > end)
-            {
-                Log.Debug($"        Partition {p}: early break at NumWeightsPerVertex");
-                break;
-            }
-
-            var numWeightsPerVertex = isBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
-                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
-            pos += 2;
+            var header = TryReadPartitionHeader(ref reader, p);
+            if (header == null) break;
 
             Log.Debug(
-                $"        Partition {p}: {numVertices} verts, {numTriangles} tris, {numBones} bones, {numStrips} strips, {numWeightsPerVertex} weights/vert");
+                $"        Partition {p}: {header.Value.NumVertices} verts, {header.Value.NumTriangles} tris, " +
+                $"{header.Value.NumBones} bones, {header.Value.NumStrips} strips, {header.Value.NumWeightsPerVertex} weights/vert");
 
-            // Skip Bones array (numBones * ushort)
-            pos += numBones * 2;
-            if (pos > end)
+            // Skip Bones array
+            reader.Skip(header.Value.NumBones * 2);
+            if (reader.Pos > reader.End) break;
+
+            // Read vertex map if present
+            var vertexMap = TryReadVertexMap(ref reader, header.Value.NumVertices, p);
+            if (vertexMap != null)
             {
-                Log.Debug($"        Partition {p}: early break after Bones");
-                break;
-            }
-
-            // HasVertexMap (byte)
-            if (pos + 1 > end)
-            {
-                Log.Debug($"        Partition {p}: early break at HasVertexMap");
-                break;
-            }
-
-            var hasVertexMap = data[pos++];
-
-            Log.Debug($"        Partition {p}: hasVertexMap={hasVertexMap}");
-
-            // VertexMap (if HasVertexMap)
-            if (hasVertexMap != 0)
-            {
-                if (pos + numVertices * 2 > end)
-                {
-                    Log.Debug($"        Partition {p}: early break reading VertexMap");
-                    break;
-                }
-
-                var vertexMap = new ushort[numVertices];
-                for (var i = 0; i < numVertices; i++)
-                {
-                    vertexMap[i] = isBigEndian
-                        ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
-                        : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
-                    pos += 2;
-                }
-
                 allVertexMaps.Add(vertexMap);
-                totalVertices += numVertices;
+                totalVertices += header.Value.NumVertices;
             }
 
-            // HasVertexWeights (byte)
-            if (pos + 1 > end) break;
-            var hasVertexWeights = data[pos++];
-
-            // Skip VertexWeights (NumVertices x NumWeightsPerVertex floats)
-            if (hasVertexWeights != 0)
-            {
-                pos += numVertices * numWeightsPerVertex * 4;
-                if (pos > end) break;
-            }
-
-            // StripLengths array (numStrips * ushort)
-            var stripLengths = new ushort[numStrips];
-            for (var i = 0; i < numStrips && pos + 2 <= end; i++)
-            {
-                stripLengths[i] = isBigEndian
-                    ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
-                    : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
-                pos += 2;
-            }
-
-            // HasFaces (byte)
-            if (pos + 1 > end) break;
-            var hasFaces = data[pos++];
-
-            // Skip Strips (if HasFaces and NumStrips != 0)
-            if (hasFaces != 0 && numStrips != 0)
-                for (var s = 0; s < numStrips; s++)
-                {
-                    pos += stripLengths[s] * 2;
-                    if (pos > end) break;
-                }
-
-            // Skip Triangles (if HasFaces and NumStrips == 0)
-            if (hasFaces != 0 && numStrips == 0)
-            {
-                pos += numTriangles * 6; // 3 ushorts per triangle
-                if (pos > end) break;
-            }
-
-            // HasBoneIndices (byte)
-            if (pos + 1 > end) break;
-            var hasBoneIndices = data[pos++];
-
-            // Skip BoneIndices (NumVertices x NumWeightsPerVertex bytes)
-            if (hasBoneIndices != 0)
-            {
-                pos += numVertices * numWeightsPerVertex;
-                if (pos > end) break;
-            }
-
-            // Note: LODLevel/GlobalVB fields only exist in BS version 100+ (Skyrim SE+)
-            // For FO3/NV (BS version 34), we don't skip anything here
+            // Skip remaining partition data
+            if (!SkipRemainingPartitionData(ref reader, header.Value)) break;
         }
 
-        // If no vertex maps found, return null (not a skinned mesh or no remapping needed)
-        if (allVertexMaps.Count == 0)
-            return null;
+        return CombineVertexMaps(allVertexMaps, totalVertices);
+    }
 
-        // Combine all vertex maps into one
-        // For skinned meshes, the partitions are processed in order and their
-        // vertex maps concatenate to form the complete mapping from partition order to mesh order
+    private static PartitionHeader? TryReadPartitionHeader(ref PartitionReader reader, int partitionIndex)
+    {
+        if (!reader.CanRead(10))
+        {
+            Log.Debug($"        Partition {partitionIndex}: early break at header");
+            return null;
+        }
+
+        return new PartitionHeader(
+            NumVertices: reader.ReadUInt16(),
+            NumTriangles: reader.ReadUInt16(),
+            NumBones: reader.ReadUInt16(),
+            NumStrips: reader.ReadUInt16(),
+            NumWeightsPerVertex: reader.ReadUInt16());
+    }
+
+    private static ushort[]? TryReadVertexMap(ref PartitionReader reader, ushort numVertices, int partitionIndex)
+    {
+        if (!reader.CanRead(1))
+        {
+            Log.Debug($"        Partition {partitionIndex}: early break at HasVertexMap");
+            return null;
+        }
+
+        var hasVertexMap = reader.ReadByte();
+        Log.Debug($"        Partition {partitionIndex}: hasVertexMap={hasVertexMap}");
+
+        if (hasVertexMap == 0) return null;
+
+        if (!reader.CanRead(numVertices * 2))
+        {
+            Log.Debug($"        Partition {partitionIndex}: early break reading VertexMap");
+            return null;
+        }
+
+        var vertexMap = new ushort[numVertices];
+        for (var i = 0; i < numVertices; i++)
+        {
+            vertexMap[i] = reader.ReadUInt16();
+        }
+
+        return vertexMap;
+    }
+
+    private static bool SkipRemainingPartitionData(ref PartitionReader reader, PartitionHeader header)
+    {
+        if (!TrySkipVertexWeightsSection(ref reader, header))
+        {
+            return false;
+        }
+
+        var stripLengths = ReadStripLengthsArray(ref reader, header.NumStrips);
+
+        if (!TrySkipFacesSection(ref reader, header, stripLengths))
+        {
+            return false;
+        }
+
+        return TrySkipBoneIndicesSection(ref reader, header);
+    }
+
+    private static bool TrySkipVertexWeightsSection(ref PartitionReader reader, PartitionHeader header)
+    {
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
+
+        var hasVertexWeights = reader.ReadByte();
+        if (hasVertexWeights == 0)
+        {
+            return true;
+        }
+
+        reader.Skip(header.NumVertices * header.NumWeightsPerVertex * 4);
+        return reader.Pos <= reader.End;
+    }
+
+    private static ushort[] ReadStripLengthsArray(ref PartitionReader reader, ushort numStrips)
+    {
+        var stripLengths = new ushort[numStrips];
+        for (var i = 0; i < numStrips && reader.CanRead(2); i++)
+        {
+            stripLengths[i] = reader.ReadUInt16();
+        }
+
+        return stripLengths;
+    }
+
+    private static bool TrySkipFacesSection(ref PartitionReader reader, PartitionHeader header, ushort[] stripLengths)
+    {
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
+
+        var hasFaces = reader.ReadByte();
+        if (hasFaces == 0)
+        {
+            return true;
+        }
+
+        return header.NumStrips != 0
+            ? TrySkipAllStrips(ref reader, stripLengths)
+            : TrySkipTriangles(ref reader, header.NumTriangles);
+    }
+
+    private static bool TrySkipAllStrips(ref PartitionReader reader, ushort[] stripLengths)
+    {
+        for (var s = 0; s < stripLengths.Length; s++)
+        {
+            reader.Skip(stripLengths[s] * 2);
+            if (reader.Pos > reader.End)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TrySkipTriangles(ref PartitionReader reader, ushort numTriangles)
+    {
+        reader.Skip(numTriangles * 6);
+        return reader.Pos <= reader.End;
+    }
+
+    private static bool TrySkipBoneIndicesSection(ref PartitionReader reader, PartitionHeader header)
+    {
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
+
+        var hasBoneIndices = reader.ReadByte();
+        if (hasBoneIndices == 0)
+        {
+            return true;
+        }
+
+        reader.Skip(header.NumVertices * header.NumWeightsPerVertex);
+        return reader.Pos <= reader.End;
+    }
+
+    private static ushort[]? CombineVertexMaps(List<ushort[]> allVertexMaps, int totalVertices)
+    {
+        if (allVertexMaps.Count == 0) return null;
+
         var combined = new ushort[totalVertices];
         var idx = 0;
         foreach (var map in allVertexMaps)

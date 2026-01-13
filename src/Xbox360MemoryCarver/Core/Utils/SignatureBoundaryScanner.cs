@@ -102,14 +102,12 @@ public static class SignatureBoundaryScanner
     {
         var knownSignatures = GetKnownSignatures();
 
-
         foreach (var sig in knownSignatures)
         {
             if (position + sig.Length > data.Length) continue;
             if (data.Slice(position, sig.Length).SequenceEqual(sig))
                 return true;
         }
-
 
         // Check Gamebryo
         if (position + 20 <= data.Length && data.Slice(position, 20).SequenceEqual(GamebryoSignature)) return true;
@@ -156,31 +154,75 @@ public static class SignatureBoundaryScanner
 
         for (var i = scanStart; i < scanEnd; i++)
         {
-            // Check 4-byte signatures
-            var slice = data.Slice(i, Math.Min(4, data.Length - i));
-
-
-            foreach (var sig in knownSignatures)
+            var signatureMatch = TryMatchKnownSignature(data, i, knownSignatures, excludeSignature, validateRiff);
+            if (signatureMatch >= 0)
             {
-                if (sig.Length > slice.Length) continue;
-                if (!slice[..sig.Length].SequenceEqual(sig)) continue;
-
-                // Skip if this signature matches the excluded signature
-                if (!excludeSignature.IsEmpty &&
-                    sig.Length == excludeSignature.Length &&
-                    excludeSignature.SequenceEqual(sig)) continue;
-
-                // Validate RIFF headers if requested
-                if (validateRiff && slice.SequenceEqual("RIFF"u8) && !IsValidRiffHeader(data, i)) continue;
-
-                return i - offset;
+                return signatureMatch - offset;
             }
 
-
-            // Check for Gamebryo/NIF (20-byte signature)
-            if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual(GamebryoSignature)) return i - offset;
+            if (TryMatchGamebryoSignature(data, i))
+            {
+                return i - offset;
+            }
         }
 
         return -1;
+    }
+
+    private static int TryMatchKnownSignature(
+        ReadOnlySpan<byte> data,
+        int position,
+        byte[][] knownSignatures,
+        ReadOnlySpan<byte> excludeSignature,
+        bool validateRiff)
+    {
+        var slice = data.Slice(position, Math.Min(4, data.Length - position));
+
+        foreach (var sig in knownSignatures)
+        {
+            if (!IsSignatureMatch(slice, sig))
+            {
+                continue;
+            }
+
+            if (ShouldExcludeSignature(sig, excludeSignature))
+            {
+                continue;
+            }
+
+            if (validateRiff && slice.SequenceEqual("RIFF"u8) && !IsValidRiffHeader(data, position))
+            {
+                continue;
+            }
+
+            return position;
+        }
+
+        return -1;
+    }
+
+    private static bool IsSignatureMatch(ReadOnlySpan<byte> slice, byte[] signature)
+    {
+        if (signature.Length > slice.Length)
+        {
+            return false;
+        }
+
+        return slice[..signature.Length].SequenceEqual(signature);
+    }
+
+    private static bool ShouldExcludeSignature(ReadOnlySpan<byte> signature, ReadOnlySpan<byte> excludeSignature)
+    {
+        if (excludeSignature.IsEmpty)
+        {
+            return false;
+        }
+
+        return signature.Length == excludeSignature.Length && excludeSignature.SequenceEqual(signature);
+    }
+
+    private static bool TryMatchGamebryoSignature(ReadOnlySpan<byte> data, int position)
+    {
+        return position + 20 <= data.Length && data.Slice(position, 20).SequenceEqual(GamebryoSignature);
     }
 }

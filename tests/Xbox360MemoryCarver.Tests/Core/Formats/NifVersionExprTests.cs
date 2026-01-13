@@ -105,7 +105,7 @@ public class NifVersionExprTests
     public void ComplexExpression_FO4Range()
     {
         // This is from actual nif.xml - checks for FO4 range
-        var expr = "((#BSVER# #GTE# 130) #AND# (#BSVER# #LTE# 159))";
+        const string expr = "((#BSVER# #GTE# 130) #AND# (#BSVER# #LTE# 159))";
 
         Assert.False(NifVersionExpr.Evaluate(expr, _fnvContext)); // FNV: BS 34, not in range
         Assert.True(NifVersionExpr.Evaluate(expr, _fo4Context)); // FO4: BS 130, in range
@@ -117,7 +117,7 @@ public class NifVersionExprTests
     {
         // NiAVObject.Flags is uint when #BSVER# #GT# 26
         // FNV has BS 34, so this should be true
-        var expr = "#BSVER# #GT# 26";
+        const string expr = "#BSVER# #GT# 26";
         Assert.True(NifVersionExpr.Evaluate(expr, _fnvContext));
     }
 
@@ -126,14 +126,14 @@ public class NifVersionExprTests
     {
         // NiAVObject.Flags is ushort when #BSVER# #LTE# 26
         // FNV has BS 34, so this should be false
-        var expr = "#BSVER# #LTE# 26";
+        const string expr = "#BSVER# #LTE# 26";
         Assert.False(NifVersionExpr.Evaluate(expr, _fnvContext));
     }
 
     [Fact]
     public void Compile_ReturnsWorkingDelegate()
     {
-        var expr = "(#BSVER# #GTE# 26) #AND# (#BSVER# #LTE# 50)";
+        const string expr = "(#BSVER# #GTE# 26) #AND# (#BSVER# #LTE# 50)";
         var compiled = NifVersionExpr.Compile(expr);
 
         // FNV (BS 34): 26 <= 34 <= 50 = true

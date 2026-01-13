@@ -132,6 +132,7 @@ internal sealed class CarveWriter
     {
         var currentPath = outputFile;
         for (var attempt = 0; attempt < maxRetries; attempt++)
+        {
             try
             {
                 await File.WriteAllBytesAsync(currentPath, data);
@@ -145,5 +146,6 @@ internal sealed class CarveWriter
                 var suffix = Guid.NewGuid().ToString("N")[..8];
                 currentPath = Path.Combine(dir, $"{nameWithoutExt}_{suffix}{ext}");
             }
+        }
     }
 }

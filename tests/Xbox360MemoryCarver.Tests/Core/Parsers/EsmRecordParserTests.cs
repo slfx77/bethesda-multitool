@@ -39,7 +39,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_ValidEdid_ReturnsEditorId()
     {
         // Arrange - EDID record with "TestItem" as editor ID
-        var editorId = "TestItem";
+        const string editorId = "TestItem";
         var editorIdBytes = Encoding.ASCII.GetBytes(editorId + "\0");
 
         var data = new byte[50];
@@ -64,7 +64,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_DuplicateEdids_DeduplicatesResults()
     {
         // Arrange - Two identical EDID records
-        var editorId = "TestItem";
+        const string editorId = "TestItem";
         var editorIdBytes = Encoding.ASCII.GetBytes(editorId + "\0");
 
         var data = new byte[100];
@@ -121,7 +121,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_EdidStartsWithNumber_Skipped()
     {
         // Arrange - EDID starting with number (invalid)
-        var editorId = "123Test";
+        const string editorId = "123Test";
         var editorIdBytes = Encoding.ASCII.GetBytes(editorId + "\0");
 
         var data = new byte[30];
@@ -144,7 +144,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_ValidGmst_ReturnsGameSetting()
     {
         // Arrange - GMST record with "fActorStrengthMultiplier"
-        var settingName = "fActorStrengthMultiplier";
+        const string settingName = "fActorStrengthMultiplier";
         var settingBytes = Encoding.ASCII.GetBytes(settingName + "\0");
 
         var data = new byte[50];
@@ -194,7 +194,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_InvalidGmstPrefix_Skipped()
     {
         // Arrange - GMST with invalid prefix
-        var settingName = "xInvalidPrefix";
+        const string settingName = "xInvalidPrefix";
         var settingBytes = Encoding.ASCII.GetBytes(settingName + "\0");
 
         var data = new byte[50];
@@ -217,7 +217,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_ValidSctx_ReturnsScriptSource()
     {
         // Arrange - SCTX with script source containing keywords
-        var scriptText = "if GetStage MyQuest >= 10\n  Enable\nendif";
+        const string scriptText = "if GetStage MyQuest >= 10\n  Enable\nendif";
         var scriptBytes = Encoding.ASCII.GetBytes(scriptText);
 
         var data = new byte[100];
@@ -241,7 +241,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_SctxWithoutKeywords_Skipped()
     {
         // Arrange - SCTX without any recognized keywords
-        var text = "some random text without script keywords";
+        const string text = "some random text without script keywords";
         var textBytes = Encoding.ASCII.GetBytes(text);
 
         var data = new byte[100];
@@ -421,7 +421,7 @@ public class EsmRecordParserTests
         var offset = 0;
 
         // EDID
-        var editorId = "TestWeapon\0";
+        const string editorId = "TestWeapon\0";
         data[offset++] = (byte)'E';
         data[offset++] = (byte)'D';
         data[offset++] = (byte)'I';
@@ -433,7 +433,7 @@ public class EsmRecordParserTests
         offset += 5; // Padding
 
         // GMST
-        var setting = "fDamageMultiplier\0";
+        const string setting = "fDamageMultiplier\0";
         data[offset++] = (byte)'G';
         data[offset++] = (byte)'M';
         data[offset++] = (byte)'S';

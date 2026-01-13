@@ -4,7 +4,6 @@
 
 // S3218: Method shadowing is intentional in this expression tree visitor pattern
 
-
 using System.Globalization;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -119,8 +118,12 @@ public sealed partial class NifVersionExpr
     {
         // Iterate through all tokens and expand them
         foreach (var (token, expansion) in TokenExpansions)
+        {
             if (expression.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
                 expression = expression.Replace(token, expansion, StringComparison.OrdinalIgnoreCase);
+            }
+        }
 
         return expression;
     }
@@ -204,37 +207,46 @@ public sealed partial class NifVersionExpr
         SkipWhitespace();
         var start = _pos;
 
-        // Handle #TOKEN# style
-        if (_pos < _expression.Length && _expression[_pos] == '#')
-        {
-            _pos++;
-            while (_pos < _expression.Length && _expression[_pos] != '#')
-                _pos++;
-            if (_pos < _expression.Length)
-                _pos++; // consume closing #
-            return _expression[start.._pos];
-        }
-
-        // Handle comparison operators (==, !=, >=, <=, >, <)
-        if (_pos < _expression.Length)
-        {
-            var c = _expression[_pos];
-            if (c is '=' or '!' or '>' or '<')
-            {
-                _pos++;
-                // Check for two-character operators (==, !=, >=, <=)
-                if (_pos < _expression.Length && _expression[_pos] == '=')
-                    _pos++;
-                return _expression[start.._pos];
-            }
-        }
-
-        // Handle identifiers and numbers
-        while (_pos < _expression.Length &&
-               (char.IsLetterOrDigit(_expression[_pos]) || _expression[_pos] == '_' || _expression[_pos] == '.'))
-            _pos++;
+        if (TryReadHashToken()) return _expression[start.._pos];
+        if (TryReadComparisonOperator()) return _expression[start.._pos];
+        ReadIdentifierOrNumber();
 
         return _expression[start.._pos];
+    }
+
+    private bool TryReadHashToken()
+    {
+        if (_pos >= _expression.Length || _expression[_pos] != '#') return false;
+
+        _pos++;
+        while (_pos < _expression.Length && _expression[_pos] != '#')
+        {
+            _pos++;
+        }
+        if (_pos < _expression.Length) _pos++; // consume closing #
+        return true;
+    }
+
+    private bool TryReadComparisonOperator()
+    {
+        if (_pos >= _expression.Length) return false;
+
+        var c = _expression[_pos];
+        if (c is not ('=' or '!' or '>' or '<')) return false;
+
+        _pos++;
+        // Check for two-character operators (==, !=, >=, <=)
+        if (_pos < _expression.Length && _expression[_pos] == '=') _pos++;
+        return true;
+    }
+
+    private void ReadIdentifierOrNumber()
+    {
+        while (_pos < _expression.Length &&
+               (char.IsLetterOrDigit(_expression[_pos]) || _expression[_pos] == '_' || _expression[_pos] == '.'))
+        {
+            _pos++;
+        }
     }
 
     private long ReadNumber()
@@ -249,7 +261,9 @@ public sealed partial class NifVersionExpr
         {
             _pos += 2;
             while (_pos < _expression.Length && IsHexDigit(_expression[_pos]))
+            {
                 _pos++;
+            }
             return long.Parse(_expression[(start + 2).._pos], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
         }
 

@@ -54,7 +54,43 @@ public static class ConvertNifCommand
         return command;
     }
 
+    /// <summary>
+    ///     Context for conversion operations.
+    /// </summary>
+    private sealed class ConversionContext
+    {
+        public required List<string> Files { get; init; }
+        public required string Output { get; init; }
+        public required string? InputBaseDir { get; init; }
+        public required bool Verbose { get; init; }
+        public required bool Overwrite { get; init; }
+        public int Converted { get; set; }
+        public int Skipped { get; set; }
+        public int Failed { get; set; }
+    }
+
     private static async Task ExecuteAsync(string input, string? output, bool recursive, bool verbose, bool overwrite)
+    {
+        var context = BuildConversionContext(input, output, recursive, verbose, overwrite);
+        if (context == null)
+        {
+            return;
+        }
+
+        PrintStartMessage(context);
+        await ProcessFilesAsync(context);
+        PrintSummary(context);
+    }
+
+    /// <summary>
+    ///     Builds the conversion context from command arguments.
+    /// </summary>
+    private static ConversionContext? BuildConversionContext(
+        string input,
+        string? output,
+        bool recursive,
+        bool verbose,
+        bool overwrite)
     {
         var files = new List<string>();
         string? inputBaseDir = null;
@@ -74,25 +110,43 @@ public static class ConvertNifCommand
         else
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] Input path not found: {input}");
-            return;
+            return null;
         }
 
         if (files.Count == 0)
         {
             AnsiConsole.MarkupLine("[yellow]No NIF files found.[/]");
-            return;
+            return null;
         }
 
         Directory.CreateDirectory(output);
 
-        AnsiConsole.MarkupLine($"[blue]Found[/] {files.Count} NIF file(s) to process");
-        AnsiConsole.MarkupLine($"[blue]Output:[/] {output}");
-        AnsiConsole.WriteLine();
+        return new ConversionContext
+        {
+            Files = files,
+            Output = output,
+            InputBaseDir = inputBaseDir,
+            Verbose = verbose,
+            Overwrite = overwrite
+        };
+    }
 
-        var converter = new NifConverter(verbose);
-        var converted = 0;
-        var skipped = 0;
-        var failed = 0;
+    /// <summary>
+    ///     Prints the start message.
+    /// </summary>
+    private static void PrintStartMessage(ConversionContext context)
+    {
+        AnsiConsole.MarkupLine($"[blue]Found[/] {context.Files.Count} NIF file(s) to process");
+        AnsiConsole.MarkupLine($"[blue]Output:[/] {context.Output}");
+        AnsiConsole.WriteLine();
+    }
+
+    /// <summary>
+    ///     Processes all files with progress display.
+    /// </summary>
+    private static async Task ProcessFilesAsync(ConversionContext context)
+    {
+        var converter = new NifConverter(context.Verbose);
 
         await AnsiConsole.Progress()
             .AutoClear(false)
@@ -103,81 +157,148 @@ public static class ConvertNifCommand
                 new SpinnerColumn())
             .StartAsync(async ctx =>
             {
-                var task = ctx.AddTask("[yellow]Converting NIF files[/]", maxValue: files.Count);
+                var task = ctx.AddTask("[yellow]Converting NIF files[/]", maxValue: context.Files.Count);
 
-                foreach (var file in files)
+                foreach (var file in context.Files)
                 {
                     var fileName = Path.GetFileName(file);
                     task.Description = $"[yellow]{fileName}[/]";
 
-                    try
-                    {
-                        // Preserve directory structure for recursive operations
-                        string outputPath;
-                        if (inputBaseDir != null)
-                        {
-                            var fullFilePath = Path.GetFullPath(file);
-                            var relativePath = Path.GetRelativePath(inputBaseDir, fullFilePath);
-                            outputPath = Path.Combine(output, relativePath);
-                            var outputDir = Path.GetDirectoryName(outputPath);
-                            if (!string.IsNullOrEmpty(outputDir))
-                                Directory.CreateDirectory(outputDir);
-                        }
-                        else
-                        {
-                            outputPath = Path.Combine(output, fileName);
-                        }
-
-                        if (File.Exists(outputPath) && !overwrite)
-                        {
-                            if (verbose) AnsiConsole.MarkupLine($"[grey]Skipping (exists):[/] {fileName}");
-                            skipped++;
-                            task.Increment(1);
-                            continue;
-                        }
-
-                        var data = await File.ReadAllBytesAsync(file);
-                        var result = converter.Convert(data);
-
-                        if (result is { Success: true, OutputData: not null })
-                        {
-                            await File.WriteAllBytesAsync(outputPath, result.OutputData);
-                            converted++;
-
-                            if (verbose)
-                            {
-                                AnsiConsole.MarkupLine($"[green]Converted:[/] {fileName}");
-                                if (!string.IsNullOrEmpty(result.ErrorMessage))
-                                    AnsiConsole.MarkupLine($"[dim]  {result.ErrorMessage}[/]");
-                            }
-                        }
-                        else
-                        {
-                            // File might already be little-endian or invalid
-                            if (verbose)
-                                AnsiConsole.MarkupLine(
-                                    $"[yellow]Skipped:[/] {fileName} - {result.ErrorMessage ?? "already LE or invalid"}");
-                            skipped++;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        failed++;
-                        if (verbose) AnsiConsole.MarkupLine($"[red]Failed:[/] {fileName} - {ex.Message}");
-                    }
-
+                    await ProcessSingleFileAsync(context, converter, file, fileName);
                     task.Increment(1);
                 }
 
                 task.Description = "[green]Complete[/]";
             });
+    }
 
+    /// <summary>
+    ///     Processes a single file.
+    /// </summary>
+    private static async Task ProcessSingleFileAsync(
+        ConversionContext context,
+        NifConverter converter,
+        string file,
+        string fileName)
+    {
+        try
+        {
+            var outputPath = GetOutputPath(context, file, fileName);
+
+            if (ShouldSkipExistingFile(context, outputPath, fileName))
+            {
+                return;
+            }
+
+            await ConvertFileAsync(context, converter, file, fileName, outputPath);
+        }
+        catch (Exception ex)
+        {
+            context.Failed++;
+            if (context.Verbose)
+            {
+                AnsiConsole.MarkupLine($"[red]Failed:[/] {fileName} - {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Gets the output path for a file, preserving directory structure.
+    /// </summary>
+    private static string GetOutputPath(ConversionContext context, string file, string fileName)
+    {
+        if (context.InputBaseDir == null)
+        {
+            return Path.Combine(context.Output, fileName);
+        }
+
+        var fullFilePath = Path.GetFullPath(file);
+        var relativePath = Path.GetRelativePath(context.InputBaseDir, fullFilePath);
+        var outputPath = Path.Combine(context.Output, relativePath);
+        var outputDir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(outputDir))
+        {
+            Directory.CreateDirectory(outputDir);
+        }
+
+        return outputPath;
+    }
+
+    /// <summary>
+    ///     Checks if an existing file should be skipped.
+    /// </summary>
+    private static bool ShouldSkipExistingFile(ConversionContext context, string outputPath, string fileName)
+    {
+        if (!File.Exists(outputPath) || context.Overwrite)
+        {
+            return false;
+        }
+
+        if (context.Verbose)
+        {
+            AnsiConsole.MarkupLine($"[grey]Skipping (exists):[/] {fileName}");
+        }
+
+        context.Skipped++;
+        return true;
+    }
+
+    /// <summary>
+    ///     Performs the actual file conversion.
+    /// </summary>
+    private static async Task ConvertFileAsync(
+        ConversionContext context,
+        NifConverter converter,
+        string file,
+        string fileName,
+        string outputPath)
+    {
+        var data = await File.ReadAllBytesAsync(file);
+        var result = converter.Convert(data);
+
+        if (result is { Success: true, OutputData: not null })
+        {
+            await File.WriteAllBytesAsync(outputPath, result.OutputData);
+            context.Converted++;
+
+            if (context.Verbose)
+            {
+                AnsiConsole.MarkupLine($"[green]Converted:[/] {fileName}");
+                if (!string.IsNullOrEmpty(result.ErrorMessage))
+                {
+                    AnsiConsole.MarkupLine($"[dim]  {result.ErrorMessage}[/]");
+                }
+            }
+        }
+        else
+        {
+            if (context.Verbose)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[yellow]Skipped:[/] {fileName} - {result.ErrorMessage ?? "already LE or invalid"}");
+            }
+
+            context.Skipped++;
+        }
+    }
+
+    /// <summary>
+    ///     Prints the summary.
+    /// </summary>
+    private static void PrintSummary(ConversionContext context)
+    {
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[green]Converted:[/] {converted}");
+        AnsiConsole.MarkupLine($"[green]Converted:[/] {context.Converted}");
 
-        if (skipped > 0) AnsiConsole.MarkupLine($"[yellow]Skipped:[/] {skipped}");
+        if (context.Skipped > 0)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Skipped:[/] {context.Skipped}");
+        }
 
-        if (failed > 0) AnsiConsole.MarkupLine($"[red]Failed:[/] {failed}");
+        if (context.Failed > 0)
+        {
+            AnsiConsole.MarkupLine($"[red]Failed:[/] {context.Failed}");
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[dim]Xbox 360 NIFs have been converted with geometry unpacking.[/]");

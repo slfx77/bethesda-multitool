@@ -262,7 +262,10 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
 
         if (e.Key is VirtualKey.PageUp or VirtualKey.PageDown or VirtualKey.Home or VirtualKey.End or VirtualKey.Up
-            or VirtualKey.Down) HexViewerControl_KeyDown(sender, e);
+            or VirtualKey.Down)
+        {
+            HexViewerControl_KeyDown(sender, e);
+        }
     }
 
     private void HexViewerControl_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -281,12 +284,12 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         e.Handled = true;
     }
 
-    private void CopyHexMenuItem_Click(object sender, RoutedEventArgs e)
+    private void CopyHexMenuItem_Click(object _sender, RoutedEventArgs _e)
     {
         CopySelectedText(HexTextBlock);
     }
 
-    private void CopyAsciiMenuItem_Click(object sender, RoutedEventArgs e)
+    private void CopyAsciiMenuItem_Click(object _sender, RoutedEventArgs _e)
     {
         CopySelectedText(AsciiTextBlock);
     }
@@ -313,7 +316,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     #region Minimap
 
-    private void MinimapContainer_SizeChanged(object sender, SizeChangedEventArgs e)
+    private void MinimapContainer_SizeChanged(object _sender, SizeChangedEventArgs e)
     {
         if (Math.Abs(e.NewSize.Height - _lastMinimapContainerHeight) > 1)
         {
@@ -322,7 +325,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
     }
 
-    private void MinimapZoomSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    private void MinimapZoomSlider_ValueChanged(object _sender, RangeBaseValueChangedEventArgs e)
     {
         if (_minimapRenderer != null)
         {
@@ -377,7 +380,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
     #region Search
 
-    private void SearchToggleButton_Click(object sender, RoutedEventArgs e)
+    private void SearchToggleButton_Click(object _sender, RoutedEventArgs _e)
     {
         if (SearchPanel.Visibility == Visibility.Collapsed) OpenSearch();
         else CloseSearch();
@@ -426,17 +429,17 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         }
     }
 
-    private void SearchPrevButton_Click(object sender, RoutedEventArgs e)
+    private void SearchPrevButton_Click(object _sender, RoutedEventArgs _e)
     {
         FindPrevious();
     }
 
-    private void SearchNextButton_Click(object sender, RoutedEventArgs e)
+    private void SearchNextButton_Click(object _sender, RoutedEventArgs _e)
     {
         FindNext();
     }
 
-    private void SearchButton_Click(object sender, RoutedEventArgs e)
+    private void SearchButton_Click(object _sender, RoutedEventArgs _e)
     {
         PerformSearch();
     }

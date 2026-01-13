@@ -140,7 +140,6 @@ public static class CarveCommand
             return;
         }
 
-
         AnsiConsole.MarkupLine(
             $"[green]Extracted[/] {summary.TotalExtracted} files in [blue]{stopwatch.Elapsed.TotalSeconds:F2}s[/]");
 
@@ -149,68 +148,117 @@ public static class CarveCommand
 
     private static void PrintSummary(ExtractionSummary summary, bool convertDdx)
     {
-        if (summary.TypeCounts.Count > 0)
+        PrintCategoryTable(summary);
+        PrintConversionStats(summary, convertDdx);
+        PrintScriptStats(summary);
+    }
+
+    private static void PrintCategoryTable(ExtractionSummary summary)
+    {
+        if (summary.TypeCounts.Count == 0)
         {
-            AnsiConsole.WriteLine();
-
-            // Group by category
-            var categorized = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var (type, count) in summary.TypeCounts)
-            {
-                var category = CategoryMap.GetValueOrDefault(type, type);
-                categorized[category] = categorized.GetValueOrDefault(category) + count;
-            }
-
-            var table = new Table();
-            table.Border(TableBorder.Rounded);
-            table.AddColumn(new TableColumn("[bold]Category[/]").LeftAligned());
-            table.AddColumn(new TableColumn("[bold]Count[/]").RightAligned());
-
-            foreach (var (category, count) in categorized.OrderByDescending(x => x.Value))
-                if (count > 0)
-                    table.AddRow(category, count.ToString(CultureInfo.InvariantCulture));
-
-            if (summary.ModulesExtracted > 0)
-                table.AddRow("[grey]Modules (from header)[/]",
-                    summary.ModulesExtracted.ToString(CultureInfo.InvariantCulture));
-
-            AnsiConsole.Write(table);
+            return;
         }
 
-        if (convertDdx)
-        {
-            // DDX conversion stats
-            if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
-            {
-                AnsiConsole.WriteLine();
-                var converted = summary.DdxConverted > 0
-                    ? $"[green]{summary.DdxConverted} successful[/]"
-                    : "0 successful";
-                var failed = summary.DdxFailed > 0
-                    ? $"[red]{summary.DdxFailed} failed[/]"
-                    : "0 failed";
-                AnsiConsole.MarkupLine($"DDX → DDS conversions: {converted}, {failed}");
-            }
+        AnsiConsole.WriteLine();
 
-            // XUR conversion stats
-            if (summary.XurConverted > 0 || summary.XurFailed > 0)
+        var categorized = CategorizeTypeCounts(summary.TypeCounts);
+        var table = BuildCategoryTable(categorized, summary.ModulesExtracted);
+
+        AnsiConsole.Write(table);
+    }
+
+    private static Dictionary<string, int> CategorizeTypeCounts(IReadOnlyDictionary<string, int> typeCounts)
+    {
+        var categorized = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (type, count) in typeCounts)
+        {
+            var category = CategoryMap.GetValueOrDefault(type, type);
+            categorized[category] = categorized.GetValueOrDefault(category) + count;
+        }
+
+        return categorized;
+    }
+
+    private static Table BuildCategoryTable(Dictionary<string, int> categorized, int modulesExtracted)
+    {
+        var table = new Table();
+        table.Border(TableBorder.Rounded);
+        table.AddColumn(new TableColumn("[bold]Category[/]").LeftAligned());
+        table.AddColumn(new TableColumn("[bold]Count[/]").RightAligned());
+
+        foreach (var (category, count) in categorized.OrderByDescending(x => x.Value))
+        {
+            if (count > 0)
             {
-                var xurConverted = summary.XurConverted > 0
-                    ? $"[green]{summary.XurConverted} successful[/]"
-                    : "0 successful";
-                var xurFailed = summary.XurFailed > 0
-                    ? $"[red]{summary.XurFailed} failed[/]"
-                    : "0 failed";
-                AnsiConsole.MarkupLine($"XUR → XUI conversions: {xurConverted}, {xurFailed}");
+                table.AddRow(category, count.ToString(CultureInfo.InvariantCulture));
             }
         }
 
-        if (summary.ScriptsExtracted > 0)
+        if (modulesExtracted > 0)
         {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine(
-                $"[yellow]Scripts:[/] {summary.ScriptsExtracted} records ({summary.ScriptQuestsGrouped} quests grouped)");
+            table.AddRow("[grey]Modules (from header)[/]", modulesExtracted.ToString(CultureInfo.InvariantCulture));
         }
+
+        return table;
+    }
+
+    private static void PrintConversionStats(ExtractionSummary summary, bool convertDdx)
+    {
+        if (!convertDdx)
+        {
+            return;
+        }
+
+        PrintDdxConversionStats(summary);
+        PrintXurConversionStats(summary);
+    }
+
+    private static void PrintDdxConversionStats(ExtractionSummary summary)
+    {
+        if (summary.DdxConverted == 0 && summary.DdxFailed == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        var converted = FormatSuccessCount(summary.DdxConverted);
+        var failed = FormatFailedCount(summary.DdxFailed);
+        AnsiConsole.MarkupLine($"DDX → DDS conversions: {converted}, {failed}");
+    }
+
+    private static void PrintXurConversionStats(ExtractionSummary summary)
+    {
+        if (summary.XurConverted == 0 && summary.XurFailed == 0)
+        {
+            return;
+        }
+
+        var converted = FormatSuccessCount(summary.XurConverted);
+        var failed = FormatFailedCount(summary.XurFailed);
+        AnsiConsole.MarkupLine($"XUR → XUI conversions: {converted}, {failed}");
+    }
+
+    private static string FormatSuccessCount(int count)
+    {
+        return count > 0 ? $"[green]{count} successful[/]" : "0 successful";
+    }
+
+    private static string FormatFailedCount(int count)
+    {
+        return count > 0 ? $"[red]{count} failed[/]" : "0 failed";
+    }
+
+    private static void PrintScriptStats(ExtractionSummary summary)
+    {
+        if (summary.ScriptsExtracted == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(
+            $"[yellow]Scripts:[/] {summary.ScriptsExtracted} records ({summary.ScriptQuestsGrouped} quests grouped)");
     }
 }

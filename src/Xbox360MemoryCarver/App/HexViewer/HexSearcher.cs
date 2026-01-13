@@ -127,24 +127,33 @@ internal sealed class HexSearcher
             var toRead = (int)Math.Min(buffer.Length, fileSize - offset);
             accessor.ReadArray(offset, buffer, 0, toRead);
 
-            var searchEnd = toRead - pattern.Length + 1;
-            for (var i = 0; i < searchEnd && results.Count < maxResults; i++)
-            {
-                var match = true;
-                for (var j = 0; j < pattern.Length; j++)
-                    if (buffer[i + j] != pattern[j])
-                    {
-                        match = false;
-                        break;
-                    }
-
-                if (match) results.Add(offset + i);
-            }
-
+            SearchChunkForPattern(buffer, toRead, pattern, offset, results, maxResults);
             offset += chunkSize;
         }
 
         return results;
+    }
+
+    private static void SearchChunkForPattern(
+        byte[] buffer, int bufferLength, byte[] pattern, long baseOffset, List<long> results, int maxResults)
+    {
+        var searchEnd = bufferLength - pattern.Length + 1;
+        for (var i = 0; i < searchEnd && results.Count < maxResults; i++)
+        {
+            if (IsPatternMatch(buffer, i, pattern))
+            {
+                results.Add(baseOffset + i);
+            }
+        }
+    }
+
+    private static bool IsPatternMatch(byte[] buffer, int offset, byte[] pattern)
+    {
+        for (var j = 0; j < pattern.Length; j++)
+        {
+            if (buffer[offset + j] != pattern[j]) return false;
+        }
+        return true;
     }
 
     private static List<long> SearchForTextCaseInsensitive(
@@ -160,9 +169,8 @@ internal sealed class HexSearcher
 
         var upperPattern = Encoding.ASCII.GetBytes(searchText.ToUpperInvariant());
         var lowerPattern = Encoding.ASCII.GetBytes(searchText.ToLowerInvariant());
-        var patternLength = upperPattern.Length;
 
-        var buffer = new byte[chunkSize + patternLength - 1];
+        var buffer = new byte[chunkSize + upperPattern.Length - 1];
         long offset = 0;
 
         while (offset < fileSize && results.Count < maxResults)
@@ -170,27 +178,35 @@ internal sealed class HexSearcher
             var toRead = (int)Math.Min(buffer.Length, fileSize - offset);
             accessor.ReadArray(offset, buffer, 0, toRead);
 
-            var searchEnd = toRead - patternLength + 1;
-            for (var i = 0; i < searchEnd && results.Count < maxResults; i++)
-            {
-                var match = true;
-                for (var j = 0; j < patternLength; j++)
-                {
-                    var b = buffer[i + j];
-                    if (b != upperPattern[j] && b != lowerPattern[j])
-                    {
-                        match = false;
-                        break;
-                    }
-                }
-
-                if (match) results.Add(offset + i);
-            }
-
+            SearchChunkCaseInsensitive(buffer, toRead, upperPattern, lowerPattern, offset, results, maxResults);
             offset += chunkSize;
         }
 
         return results;
+    }
+
+    private static void SearchChunkCaseInsensitive(
+        byte[] buffer, int bufferLength, byte[] upperPattern, byte[] lowerPattern,
+        long baseOffset, List<long> results, int maxResults)
+    {
+        var searchEnd = bufferLength - upperPattern.Length + 1;
+        for (var i = 0; i < searchEnd && results.Count < maxResults; i++)
+        {
+            if (IsCaseInsensitiveMatch(buffer, i, upperPattern, lowerPattern))
+            {
+                results.Add(baseOffset + i);
+            }
+        }
+    }
+
+    private static bool IsCaseInsensitiveMatch(byte[] buffer, int offset, byte[] upperPattern, byte[] lowerPattern)
+    {
+        for (var j = 0; j < upperPattern.Length; j++)
+        {
+            var b = buffer[offset + j];
+            if (b != upperPattern[j] && b != lowerPattern[j]) return false;
+        }
+        return true;
     }
 }
 

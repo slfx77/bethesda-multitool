@@ -30,61 +30,51 @@ internal sealed partial class NifConverter
             if (!IsNodeType(typeName)) continue;
 
             _nodeNamesByBlock[blockIndex] = name;
-
-            // Check if the name already exists in the string table
-            var existingIndex = info.Strings.IndexOf(name);
-            if (existingIndex >= 0)
-            {
-                _nodeNameStringIndices[blockIndex] = existingIndex;
-            }
-            else if (existingStrings.Contains(name))
-            {
-                // Already added as a new string - find its index
-                var newIdx = _newStrings.IndexOf(name);
-                if (newIdx >= 0) _nodeNameStringIndices[blockIndex] = _originalStringCount + newIdx;
-            }
-            else
-            {
-                // Need to add a new string
-                _nodeNameStringIndices[blockIndex] = _originalStringCount + _newStrings.Count;
-                _newStrings.Add(name);
-                existingStrings.Add(name);
-            }
+            _nodeNameStringIndices[blockIndex] = GetOrAddStringIndex(info, existingStrings, name);
         }
 
         // Handle Accum Root Name for the root BSFadeNode (block 0)
-        if (nameMappings.AccumRootName != null && !_nodeNamesByBlock.ContainsKey(0))
-        {
-            var rootTypeName = info.GetBlockTypeName(0);
-            if (IsNodeType(rootTypeName))
-            {
-                var rootName = nameMappings.AccumRootName;
-                _nodeNamesByBlock[0] = rootName;
-
-                var existingIndex = info.Strings.IndexOf(rootName);
-                if (existingIndex >= 0)
-                {
-                    _nodeNameStringIndices[0] = existingIndex;
-                }
-                else if (existingStrings.Contains(rootName))
-                {
-                    var newIdx = _newStrings.IndexOf(rootName);
-                    if (newIdx >= 0) _nodeNameStringIndices[0] = _originalStringCount + newIdx;
-                }
-                else
-                {
-                    _nodeNameStringIndices[0] = _originalStringCount + _newStrings.Count;
-                    _newStrings.Add(rootName);
-                    existingStrings.Add(rootName);
-                }
-
-                Log.Debug($"  Root node (block 0) name from Accum Root Name: '{rootName}'");
-            }
-        }
+        ProcessAccumRootName(info, existingStrings, nameMappings);
 
         if (_nodeNamesByBlock.Count > 0)
+        {
             Log.Debug(
                 $"  Found {_nodeNamesByBlock.Count} node names from palette/sequence, adding {_newStrings.Count} new strings");
+        }
+    }
+
+    private int GetOrAddStringIndex(NifInfo info, HashSet<string> existingStrings, string name)
+    {
+        // Check if the name already exists in the string table
+        var existingIndex = info.Strings.IndexOf(name);
+        if (existingIndex >= 0) return existingIndex;
+
+        // Already added as a new string - find its index
+        if (existingStrings.Contains(name))
+        {
+            var newIdx = _newStrings.IndexOf(name);
+            if (newIdx >= 0) return _originalStringCount + newIdx;
+        }
+
+        // Need to add a new string
+        var newIndex = _originalStringCount + _newStrings.Count;
+        _newStrings.Add(name);
+        existingStrings.Add(name);
+        return newIndex;
+    }
+
+    private void ProcessAccumRootName(NifInfo info, HashSet<string> existingStrings, NifNameMappings nameMappings)
+    {
+        if (nameMappings.AccumRootName == null || _nodeNamesByBlock.ContainsKey(0)) return;
+
+        var rootTypeName = info.GetBlockTypeName(0);
+        if (!IsNodeType(rootTypeName)) return;
+
+        var rootName = nameMappings.AccumRootName;
+        _nodeNamesByBlock[0] = rootName;
+        _nodeNameStringIndices[0] = GetOrAddStringIndex(info, existingStrings, rootName);
+
+        Log.Debug($"  Root node (block 0) name from Accum Root Name: '{rootName}'");
     }
 
     /// <summary>
@@ -93,6 +83,7 @@ internal sealed partial class NifConverter
     private void FindAndExtractPackedGeometry(byte[] data, NifInfo info)
     {
         foreach (var block in info.Blocks)
+        {
             if (block.TypeName == "BSPackedAdditionalGeometryData")
             {
                 _blocksToStrip.Add(block.Index);
@@ -111,6 +102,7 @@ internal sealed partial class NifConverter
                     Log.Debug($"  Block {block.Index}: BSPackedAdditionalGeometryData - extraction failed");
                 }
             }
+        }
     }
 
     /// <summary>
@@ -149,6 +141,7 @@ internal sealed partial class NifConverter
     private void FindHavokExpansions(byte[] data, NifInfo info)
     {
         foreach (var block in info.Blocks)
+        {
             if (block.TypeName == "hkPackedNiTriStripsData")
             {
                 var expansion = ParseHavokBlock(data, block, info.IsBigEndian);
@@ -160,6 +153,7 @@ internal sealed partial class NifConverter
                         $"  Block {block.Index}: hkPackedNiTriStripsData -> expand from {expansion.OriginalSize} to {expansion.NewSize} bytes ({expansion.NumVertices} vertices)");
                 }
             }
+        }
     }
 
     /// <summary>

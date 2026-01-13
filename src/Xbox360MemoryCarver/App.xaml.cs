@@ -51,14 +51,12 @@ public partial class App : Application
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachConsole(int dwProcessId);
 
-
     private static void App_UnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         Console.WriteLine($"[CRASH] Unhandled exception: {e.Exception}");
         Console.WriteLine($"[CRASH] Message: {e.Message}");
         e.Handled = false; // Let it crash but we logged it
     }
-
 
     /// <summary>
     ///     Invoked when the application is launched.

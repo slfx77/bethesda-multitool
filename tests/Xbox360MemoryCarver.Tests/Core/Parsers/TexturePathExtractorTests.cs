@@ -90,7 +90,7 @@ public class TexturePathExtractorTests
     public void SanitizeFilename_ValidFilename_ReturnsUnchanged()
     {
         // Arrange
-        var filename = "texture_normal_01";
+        const string filename = "texture_normal_01";
 
         // Act
         var result = TexturePathExtractor.SanitizeFilename(filename);
@@ -103,7 +103,7 @@ public class TexturePathExtractorTests
     public void SanitizeFilename_WithSpaces_RemovesSpaces()
     {
         // Arrange
-        var filename = "texture normal 01";
+        const string filename = "texture normal 01";
 
         // Act
         var result = TexturePathExtractor.SanitizeFilename(filename);
@@ -116,7 +116,7 @@ public class TexturePathExtractorTests
     public void SanitizeFilename_WithSpecialChars_RemovesThem()
     {
         // Arrange
-        var filename = "texture/normal\\01.test";
+        const string filename = "texture/normal\\01.test";
 
         // Act
         var result = TexturePathExtractor.SanitizeFilename(filename);
@@ -129,7 +129,7 @@ public class TexturePathExtractorTests
     public void SanitizeFilename_AllowsHyphens()
     {
         // Arrange
-        var filename = "texture-normal-01";
+        const string filename = "texture-normal-01";
 
         // Act
         var result = TexturePathExtractor.SanitizeFilename(filename);
@@ -201,7 +201,7 @@ public class TexturePathExtractorTests
         pathBytes.CopyTo(data, 0);
 
         // Header is 600 bytes after the path (beyond 512 byte search limit)
-        var headerOffset = 600;
+        const int headerOffset = 600;
 
         // Act
         var result = TexturePathExtractor.FindPrecedingPath(data, headerOffset, ".ddx");
