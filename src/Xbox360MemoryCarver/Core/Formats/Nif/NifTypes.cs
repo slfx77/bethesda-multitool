@@ -25,6 +25,17 @@ public sealed class NifInfo
     public int BlockCount { get; set; }
     public List<BlockInfo> Blocks { get; } = [];
     public List<string> BlockTypeNames { get; } = [];
+    public List<string> Strings { get; } = [];
+
+    /// <summary>
+    ///     Get the type name for a block by index.
+    /// </summary>
+    public string GetBlockTypeName(int blockIndex)
+    {
+        if (blockIndex < 0 || blockIndex >= Blocks.Count)
+            return "Invalid";
+        return Blocks[blockIndex].TypeName;
+    }
 }
 
 /// <summary>

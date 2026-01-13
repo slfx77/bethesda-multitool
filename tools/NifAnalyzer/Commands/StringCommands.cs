@@ -58,6 +58,17 @@ internal static class StringCommands
         return command;
     }
 
+    public static Command CreatePaletteCommand()
+    {
+        var command = new Command("palette", "Parse NiDefaultAVObjectPalette to show object→block mappings");
+        var fileArg = new Argument<string>("file") { Description = "Path to NIF file" };
+        var blockArg = new Argument<int>("block") { Description = "Block index of NiDefaultAVObjectPalette" };
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(blockArg);
+        command.SetAction(parseResult => Palette(parseResult.GetValue(fileArg), parseResult.GetValue(blockArg)));
+        return command;
+    }
+
     /// <summary>
     ///     Dump all strings in the NIF string table.
     /// </summary>
@@ -342,9 +353,71 @@ internal static class StringCommands
             diffTable.AddRow($"0x{off:X4}", $"[red]0x{b1:X2}[/]", $"[green]0x{b2:X2}[/]", context);
         }
 
-        AnsiConsole.Write(diffTable);
+    }
 
-        if (diffCount > 20) AnsiConsole.MarkupLine($"[dim]... and {diffCount - 20} more differences[/]");
+    /// <summary>
+    ///     Parse and display NiDefaultAVObjectPalette contents.
+    /// </summary>
+    private static void Palette(string path, int blockIndex)
+    {
+        var data = File.ReadAllBytes(path);
+        var nif = NifParser.Parse(data);
+
+        if (blockIndex < 0 || blockIndex >= nif.NumBlocks)
+        {
+            AnsiConsole.MarkupLine($"[red]Error: Block index {blockIndex} out of range (0-{nif.NumBlocks - 1})[/]");
+            return;
+        }
+
+        var typeName = nif.GetBlockTypeName(blockIndex);
+        if (typeName != "NiDefaultAVObjectPalette")
+        {
+            AnsiConsole.MarkupLine($"[red]Error: Block {blockIndex} is {typeName}, not NiDefaultAVObjectPalette[/]");
+            return;
+        }
+
+        var blockOffset = nif.GetBlockOffset(blockIndex);
+        var blockData = data.AsSpan(blockOffset);
+        var be = nif.IsBigEndian;
+
+        // Scene (Ptr to NiAVObject) - 4 bytes
+        var pos = 0;
+        var sceneRef = ReadInt32(blockData, ref pos, be);
+
+        // Num Objs - 4 bytes
+        var numObjs = ReadInt32(blockData, ref pos, be);
+
+        AnsiConsole.MarkupLine($"[bold]File:[/] {Path.GetFileName(path)}");
+        AnsiConsole.MarkupLine($"[bold]Block:[/] {blockIndex} (NiDefaultAVObjectPalette)");
+        AnsiConsole.MarkupLine($"[bold]Endian:[/] {(be ? "Big (Xbox 360)" : "Little (PC)")}");
+        AnsiConsole.MarkupLine($"[bold]Scene Ref:[/] {(sceneRef == -1 ? "null" : sceneRef.ToString())}");
+        AnsiConsole.MarkupLine($"[bold]Num Objects:[/] {numObjs}");
+        AnsiConsole.WriteLine();
+
+        var table = new Table().Border(TableBorder.Rounded);
+        table.AddColumn(new TableColumn("Idx").RightAligned());
+        table.AddColumn("Name");
+        table.AddColumn(new TableColumn("Block Ref").RightAligned());
+        table.AddColumn("Block Type");
+
+        // Parse AVObject array - each entry is: SizedString (uint length + chars) + Ptr (int)
+        for (var i = 0; i < numObjs; i++)
+        {
+            // Read SizedString: uint length + chars
+            var strLen = ReadInt32(blockData, ref pos, be);
+            var name = System.Text.Encoding.ASCII.GetString(data, blockOffset + pos, strLen);
+            pos += strLen;
+
+            // Read Ptr (block reference)
+            var blockRef = ReadInt32(blockData, ref pos, be);
+
+            var blockType = blockRef >= 0 && blockRef < nif.NumBlocks ? nif.GetBlockTypeName(blockRef) : (blockRef == -1 ? "null" : "INVALID");
+            var refStr = blockRef == -1 ? "[dim]null[/]" : (blockRef < nif.NumBlocks ? $"[green]{blockRef}[/]" : $"[red]{blockRef} (INVALID!)[/]");
+
+            table.AddRow(i.ToString(), Markup.Escape(name), refStr, blockType);
+        }
+
+        AnsiConsole.Write(table);
     }
 
     private static string GetStringOrIndex(NifInfo nif, int idx)

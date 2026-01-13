@@ -26,6 +26,18 @@ internal sealed class NifConverter
     // Havok collision blocks that need HalfVector3→Vector3 expansion
     private readonly Dictionary<int, HavokBlockExpansion> _havokExpansions = [];
 
+    // Block index → node name mapping from NiDefaultAVObjectPalette
+    private readonly Dictionary<int, string> _nodeNamesByBlock = [];
+
+    // New strings to add to the string table (for node names)
+    private readonly List<string> _newStrings = [];
+
+    // Maps block index → string table index (for NiNode Name field restoration)
+    private readonly Dictionary<int, int> _nodeNameStringIndices = [];
+
+    // Original string count (before adding new strings)
+    private int _originalStringCount;
+
     // Extracted geometry data indexed by packed block index
     private readonly Dictionary<int, PackedGeometryData> _packedGeometryByBlock = [];
     private readonly NifSchema _schema;
@@ -66,6 +78,10 @@ internal sealed class NifConverter
             _geometryToSkinPartition.Clear();
             _skinPartitionExpansions.Clear();
             _skinPartitionToPackedData.Clear();
+            _nodeNamesByBlock.Clear();
+            _newStrings.Clear();
+            _nodeNameStringIndices.Clear();
+            _originalStringCount = 0;
 
             // Parse the NIF header to understand structure
             var info = NifParser.Parse(data);
@@ -88,6 +104,9 @@ internal sealed class NifConverter
             if (_verbose)
                 Console.WriteLine(
                     $"Converting NIF: {info.BlockCount} blocks, version {info.BinaryVersion:X8}, BS version {info.BsVersion}");
+
+            // Step 0: Parse NiDefaultAVObjectPalette to get node names
+            ParseNodeNamesFromPalette(data, info);
 
             // Step 1: Find BSPackedAdditionalGeometryData blocks and extract geometry
             FindAndExtractPackedGeometry(data, info);
@@ -132,6 +151,106 @@ internal sealed class NifConverter
                 ErrorMessage = $"Conversion failed: {ex.Message}"
             };
         }
+    }
+
+    /// <summary>
+    ///     Parse NiDefaultAVObjectPalette to extract node names.
+    ///     Xbox 360 NIFs have NULL names on NiNode/BSFadeNode blocks, but the names
+    ///     are preserved in the palette. We restore them by adding the names to the
+    ///     string table and updating the Name field on node blocks.
+    /// </summary>
+    private void ParseNodeNamesFromPalette(byte[] data, NifInfo info)
+    {
+        var nameMappings = NifPaletteParser.ParseAll(data, info, _verbose);
+        if (nameMappings == null)
+            return;
+
+        // Store original string count for index calculations
+        _originalStringCount = info.Strings.Count;
+
+        // Build a set of existing strings to avoid duplicates
+        var existingStrings = new HashSet<string>(info.Strings);
+
+        // For each block→name mapping, determine if we need a new string
+        foreach (var (blockIndex, name) in nameMappings.BlockNames)
+        {
+            // Check if this is a node block (NiNode, BSFadeNode, etc.)
+            var typeName = info.GetBlockTypeName(blockIndex);
+            if (!IsNodeType(typeName))
+                continue;
+
+            _nodeNamesByBlock[blockIndex] = name;
+
+            // Check if the name already exists in the string table
+            var existingIndex = info.Strings.IndexOf(name);
+            if (existingIndex >= 0)
+            {
+                _nodeNameStringIndices[blockIndex] = existingIndex;
+            }
+            else if (existingStrings.Contains(name))
+            {
+                // Already added as a new string - find its index
+                var newIdx = _newStrings.IndexOf(name);
+                if (newIdx >= 0)
+                    _nodeNameStringIndices[blockIndex] = _originalStringCount + newIdx;
+            }
+            else
+            {
+                // Need to add a new string
+                _nodeNameStringIndices[blockIndex] = _originalStringCount + _newStrings.Count;
+                _newStrings.Add(name);
+                existingStrings.Add(name);
+            }
+        }
+
+        // Handle Accum Root Name for the root BSFadeNode (block 0)
+        // The palette doesn't include the root node, so we get the name from NiControllerSequence
+        if (nameMappings.AccumRootName != null && !_nodeNamesByBlock.ContainsKey(0))
+        {
+            var rootTypeName = info.GetBlockTypeName(0);
+            if (IsNodeType(rootTypeName))
+            {
+                var rootName = nameMappings.AccumRootName;
+                _nodeNamesByBlock[0] = rootName;
+
+                // Check if the name already exists in the string table
+                var existingIndex = info.Strings.IndexOf(rootName);
+                if (existingIndex >= 0)
+                {
+                    _nodeNameStringIndices[0] = existingIndex;
+                }
+                else if (existingStrings.Contains(rootName))
+                {
+                    // Already added as a new string - find its index
+                    var newIdx = _newStrings.IndexOf(rootName);
+                    if (newIdx >= 0)
+                        _nodeNameStringIndices[0] = _originalStringCount + newIdx;
+                }
+                else
+                {
+                    // Need to add a new string
+                    _nodeNameStringIndices[0] = _originalStringCount + _newStrings.Count;
+                    _newStrings.Add(rootName);
+                    existingStrings.Add(rootName);
+                }
+
+                if (_verbose)
+                    Console.WriteLine($"  Root node (block 0) name from Accum Root Name: '{rootName}'");
+            }
+        }
+
+        if (_verbose && _nodeNamesByBlock.Count > 0)
+            Console.WriteLine($"  Found {_nodeNamesByBlock.Count} node names from palette/sequence, adding {_newStrings.Count} new strings");
+    }
+
+    /// <summary>
+    ///     Check if a block type is a node type that has a Name field.
+    /// </summary>
+    private static bool IsNodeType(string typeName)
+    {
+        return typeName is "NiNode" or "BSFadeNode" or "BSLeafAnimNode" or "BSTreeNode" or
+            "BSOrderedNode" or "BSMultiBoundNode" or "BSMasterParticleSystem" or "NiSwitchNode" or
+            "NiBillboardNode" or "NiLODNode" or "BSBlastNode" or "BSDamageStage" or "NiAVObject";
     }
 
     /// <summary>
@@ -786,6 +905,13 @@ internal sealed class NifConverter
 
         if (_verbose) Console.WriteLine($"  Size calculation: starting from {originalSize}");
 
+        // Add new strings for node names
+        foreach (var str in _newStrings)
+        {
+            size += 4 + str.Length; // SizedString: uint length + chars
+            if (_verbose) Console.WriteLine($"    + New string '{str}': {4 + str.Length} bytes");
+        }
+
         // Subtract removed blocks
         foreach (var blockIdx in _blocksToStrip)
         {
@@ -828,9 +954,9 @@ internal sealed class NifConverter
     /// </summary>
     private void WriteConvertedOutput(byte[] input, byte[] output, NifInfo info, int[] blockRemap)
     {
-        // Simple case: no expansions and no blocks to strip -> do in-place conversion
+        // Simple case: no expansions, no blocks to strip, and no new strings -> do in-place conversion
         if (_blocksToStrip.Count == 0 && _geometryExpansions.Count == 0 && _havokExpansions.Count == 0 &&
-            _skinPartitionExpansions.Count == 0)
+            _skinPartitionExpansions.Count == 0 && _newStrings.Count == 0)
         {
             Array.Copy(input, output, input.Length);
             ConvertInPlace(output, info, blockRemap);
@@ -840,7 +966,7 @@ internal sealed class NifConverter
         // Complex case: rebuild the file with new block sizes
         if (_verbose)
             Console.WriteLine(
-                $"  Rebuilding file: removing {_blocksToStrip.Count} packed blocks, expanding {_geometryExpansions.Count} geometry, {_skinPartitionExpansions.Count} skin partition blocks");
+                $"  Rebuilding file: removing {_blocksToStrip.Count} packed blocks, expanding {_geometryExpansions.Count} geometry, {_skinPartitionExpansions.Count} skin partition blocks, adding {_newStrings.Count} strings");
 
         var schemaConverter = new NifSchemaConverter(
             _schema,
@@ -1050,19 +1176,25 @@ internal sealed class NifConverter
             srcPos += 4;
         }
 
-        // Num strings (uint) - convert BE to LE
+        // Num strings (uint) - add new strings count
         var numStrings = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
-        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), numStrings);
+        var newNumStrings = numStrings + (uint)_newStrings.Count;
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), newNumStrings);
         srcPos += 4;
         outPos += 4;
 
-        // Max string length (uint) - convert BE to LE
+        // Max string length (uint) - update if we have longer strings
         var maxStrLen = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
+        foreach (var str in _newStrings)
+        {
+            if (str.Length > maxStrLen)
+                maxStrLen = (uint)str.Length;
+        }
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), maxStrLen);
         srcPos += 4;
         outPos += 4;
 
-        // Strings (SizedString: uint length BE + chars)
+        // Strings (SizedString: uint length BE + chars) - copy original strings
         for (var i = 0; i < numStrings; i++)
         {
             var strLen = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
@@ -1073,6 +1205,15 @@ internal sealed class NifConverter
             Array.Copy(input, srcPos, output, outPos, (int)strLen);
             srcPos += (int)strLen;
             outPos += (int)strLen;
+        }
+
+        // Write new strings for node names
+        foreach (var str in _newStrings)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), (uint)str.Length);
+            outPos += 4;
+            System.Text.Encoding.ASCII.GetBytes(str, output.AsSpan(outPos));
+            outPos += str.Length;
         }
 
         // Num groups (uint) - convert BE to LE
@@ -1096,7 +1237,7 @@ internal sealed class NifConverter
     /// <summary>
     ///     Write a regular block (copy and convert endianness).
     /// </summary>
-    private static int WriteConvertedBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
+    private int WriteConvertedBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
         NifSchemaConverter schemaConverter, int[] blockRemap)
     {
         // Copy block data
@@ -1106,6 +1247,16 @@ internal sealed class NifConverter
         if (!schemaConverter.TryConvert(output, outPos, block.Size, block.TypeName, blockRemap))
             // Fallback: bulk swap
             BulkSwap32(output, outPos, block.Size);
+
+        // Restore node name if we have one from the palette
+        if (_nodeNameStringIndices.TryGetValue(block.Index, out var stringIndex))
+        {
+            // The Name field is at offset 0 for NiNode/BSFadeNode (first field after AVObject inheritance)
+            // It's a StringIndex which is a 4-byte int
+            BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos), stringIndex);
+            if (_verbose)
+                Console.WriteLine($"    Block {block.Index} ({block.TypeName}): Set Name to string index {stringIndex} ('{_nodeNamesByBlock[block.Index]}')");
+        }
 
         return outPos + block.Size;
     }

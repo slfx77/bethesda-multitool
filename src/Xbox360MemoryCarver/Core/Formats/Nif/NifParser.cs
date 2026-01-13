@@ -94,8 +94,8 @@ internal static class NifParser
             pos += 4;
         }
 
-        // Skip string table
-        pos = SkipStringTable(data, pos, info.IsBigEndian);
+        // Parse string table
+        pos = ParseStringTable(data, pos, info.IsBigEndian, info.Strings);
 
         // Num groups
         var numGroups = info.IsBigEndian
@@ -124,7 +124,7 @@ internal static class NifParser
         return info;
     }
 
-    private static int SkipStringTable(byte[] data, int pos, bool isBigEndian)
+    private static int ParseStringTable(byte[] data, int pos, bool isBigEndian, List<string> strings)
     {
         // Num strings
         var numStrings = isBigEndian
@@ -141,7 +141,11 @@ internal static class NifParser
             var strLen = isBigEndian
                 ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
                 : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-            pos += 4 + (int)strLen;
+            pos += 4;
+            
+            var str = Encoding.ASCII.GetString(data, pos, (int)strLen);
+            strings.Add(str);
+            pos += (int)strLen;
         }
 
         return pos;

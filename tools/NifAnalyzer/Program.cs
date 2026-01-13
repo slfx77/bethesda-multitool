@@ -22,6 +22,7 @@ internal class Program
         rootCommand.Subcommands.Add(StringCommands.CreateStringCompareCommand());
         rootCommand.Subcommands.Add(StringCommands.CreateControllerCommand());
         rootCommand.Subcommands.Add(StringCommands.CreateDiffBlockCommand());
+        rootCommand.Subcommands.Add(StringCommands.CreatePaletteCommand());
         rootCommand.Subcommands.Add(NodeCommands.CreateNodeCommand());
         rootCommand.Subcommands.Add(NodeCommands.CreateNodeCompareCommand());
         rootCommand.Subcommands.Add(GeometryCommands.CreateGeometryCommand());
@@ -37,6 +38,8 @@ internal class Program
         rootCommand.Subcommands.Add(HexCommands.CreateHexCommand());
         rootCommand.Subcommands.Add(HavokCommands.CreateHavokCommand());
         rootCommand.Subcommands.Add(HavokCommands.CreateHavokCompareCommand());
+        rootCommand.Subcommands.Add(ScanCommands.CreateScanCommand());
+        rootCommand.Subcommands.Add(ScanCommands.CreateAnimatedCommand());
 
         return rootCommand.Parse(args).Invoke();
     }
