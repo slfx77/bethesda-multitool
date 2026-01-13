@@ -38,148 +38,157 @@ public sealed partial class ScdaDecompiler
     /// </summary>
     public string Decompile(byte[] bytecode)
     {
-        var sb = new StringBuilder();
-        var indent = 0;
-        var pos = 0;
+        var context = new DecompileContext();
 
-        string Indent()
+        while (context.Pos < bytecode.Length - 1)
         {
-            return new string('\t', indent);
+            var opcode = BinaryUtils.ReadUInt16LE(bytecode, context.Pos);
+            context.Pos = DecompileOpcode(bytecode, opcode, context);
         }
 
-        while (pos < bytecode.Length - 1)
+        return context.Output.ToString();
+    }
+
+    private sealed class DecompileContext
+    {
+        public StringBuilder Output { get; } = new();
+        public int Indent { get; set; }
+        public int Pos { get; set; }
+
+        public string GetIndent() => new('\t', Indent);
+        public void IncreaseIndent() => Indent++;
+        public void DecreaseIndent() => Indent = Math.Max(0, Indent - 1);
+    }
+
+    private int DecompileOpcode(byte[] bytecode, ushort opcode, DecompileContext ctx)
+    {
+        return opcode switch
         {
-            var opcode = BinaryUtils.ReadUInt16LE(bytecode, pos);
+            0x0010 => DecompileBegin(bytecode, ctx),
+            0x0011 => DecompileEnd(ctx),
+            0x0015 => DecompileSet(bytecode, ctx),
+            0x0016 => DecompileIf(bytecode, ctx),
+            0x0017 => DecompileElse(bytecode, ctx),
+            0x0018 => DecompileElseIf(bytecode, ctx),
+            0x0019 => DecompileEndIf(ctx),
+            0x001C => DecompileSetRef(bytecode, ctx),
+            0x001D => DecompileSimple(ctx, "ScriptName"),
+            0x001E => DecompileSimple(ctx, "Return"),
+            >= 0x100 => DecompileFunctionCall(bytecode, opcode, ctx),
+            _ => DecompileUnknown(opcode, ctx)
+        };
+    }
 
-            // Core opcodes (control flow)
-            switch (opcode)
-            {
-                case 0x0010: // Begin
-                {
-                    var modeLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                    var mode = modeLen > 0 ? BinaryUtils.ReadUInt16LE(bytecode, pos + 4) : 0;
-                    var blockName = GetBlockTypeName(mode);
-                    sb.AppendLine($"{Indent()}Begin {blockName}");
-                    indent++;
-                    pos += 4 + modeLen;
-                    continue;
-                }
+    private int DecompileBegin(byte[] bytecode, DecompileContext ctx)
+    {
+        var modeLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
+        var mode = modeLen > 0 ? BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 4) : 0;
+        ctx.Output.AppendLine($"{ctx.GetIndent()}Begin {GetBlockTypeName(mode)}");
+        ctx.IncreaseIndent();
+        return ctx.Pos + 4 + modeLen;
+    }
 
-                case 0x0011: // End
-                    indent = Math.Max(0, indent - 1);
-                    sb.AppendLine($"{Indent()}End");
-                    pos += 4;
-                    continue;
+    private static int DecompileEnd(DecompileContext ctx)
+    {
+        ctx.DecreaseIndent();
+        ctx.Output.AppendLine($"{ctx.GetIndent()}End");
+        return ctx.Pos + 4;
+    }
 
-                case 0x0015: // Set
-                {
-                    var setLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                    var (varName, varBytes) = ParseVariable(bytecode, pos + 4);
-                    var exprLenOffset = pos + 4 + varBytes;
-                    var exprLen = BinaryUtils.ReadUInt16LE(bytecode, exprLenOffset);
-                    var exprStart = exprLenOffset + 2;
-                    var expr = ParseExpression(bytecode, exprStart, exprLen);
-                    sb.AppendLine($"{Indent()}set {varName} to {expr}");
-                    pos += 4 + setLen;
-                    continue;
-                }
+    private int DecompileSet(byte[] bytecode, DecompileContext ctx)
+    {
+        var setLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
+        var (varName, varBytes) = ParseVariable(bytecode, ctx.Pos + 4);
+        var exprLenOffset = ctx.Pos + 4 + varBytes;
+        var exprLen = BinaryUtils.ReadUInt16LE(bytecode, exprLenOffset);
+        var expr = ParseExpression(bytecode, exprLenOffset + 2, exprLen);
+        ctx.Output.AppendLine($"{ctx.GetIndent()}set {varName} to {expr}");
+        return ctx.Pos + 4 + setLen;
+    }
 
-                case 0x0016: // If
-                {
-                    var compLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                    var exprLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 6);
-                    var expr = ParseExpression(bytecode, pos + 8, exprLen);
-                    sb.AppendLine($"{Indent()}if ({expr})");
-                    indent++;
-                    pos += 4 + compLen;
-                    continue;
-                }
+    private int DecompileIf(byte[] bytecode, DecompileContext ctx)
+    {
+        var compLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
+        var exprLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 6);
+        var expr = ParseExpression(bytecode, ctx.Pos + 8, exprLen);
+        ctx.Output.AppendLine($"{ctx.GetIndent()}if ({expr})");
+        ctx.IncreaseIndent();
+        return ctx.Pos + 4 + compLen;
+    }
 
-                case 0x0017: // Else
-                {
-                    var elseLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                    indent = Math.Max(0, indent - 1);
-                    sb.AppendLine($"{Indent()}else");
-                    indent++;
-                    pos += 4 + elseLen;
-                    continue;
-                }
+    private static int DecompileElse(byte[] bytecode, DecompileContext ctx)
+    {
+        var elseLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
+        ctx.DecreaseIndent();
+        ctx.Output.AppendLine($"{ctx.GetIndent()}else");
+        ctx.IncreaseIndent();
+        return ctx.Pos + 4 + elseLen;
+    }
 
-                case 0x0018: // ElseIf
-                {
-                    var elifLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                    var exprLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 6);
-                    var expr = ParseExpression(bytecode, pos + 8, exprLen);
-                    indent = Math.Max(0, indent - 1);
-                    sb.AppendLine($"{Indent()}elseif ({expr})");
-                    indent++;
-                    pos += 4 + elifLen;
-                    continue;
-                }
+    private int DecompileElseIf(byte[] bytecode, DecompileContext ctx)
+    {
+        var elifLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
+        var exprLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 6);
+        var expr = ParseExpression(bytecode, ctx.Pos + 8, exprLen);
+        ctx.DecreaseIndent();
+        ctx.Output.AppendLine($"{ctx.GetIndent()}elseif ({expr})");
+        ctx.IncreaseIndent();
+        return ctx.Pos + 4 + elifLen;
+    }
 
-                case 0x0019: // EndIf
-                    indent = Math.Max(0, indent - 1);
-                    sb.AppendLine($"{Indent()}endif");
-                    pos += 4;
-                    continue;
+    private static int DecompileEndIf(DecompileContext ctx)
+    {
+        ctx.DecreaseIndent();
+        ctx.Output.AppendLine($"{ctx.GetIndent()}endif");
+        return ctx.Pos + 4;
+    }
 
-                case 0x001C: // SetRef - sets implicit reference for next call
-                {
-                    var refIdx = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
-                    _currentRef = $"SCRO#{refIdx}";
-                    pos += 4;
-                    continue;
-                }
+    private int DecompileSetRef(byte[] bytecode, DecompileContext ctx)
+    {
+        var refIdx = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
+        _currentRef = $"SCRO#{refIdx}";
+        return ctx.Pos + 4;
+    }
 
-                case 0x001D: // ScriptName
-                    sb.AppendLine($"{Indent()}ScriptName");
-                    pos += 4;
-                    continue;
+    private static int DecompileSimple(DecompileContext ctx, string keyword)
+    {
+        ctx.Output.AppendLine($"{ctx.GetIndent()}{keyword}");
+        return ctx.Pos + 4;
+    }
 
-                case 0x001E: // Return
-                    sb.AppendLine($"{Indent()}Return");
-                    pos += 4;
-                    continue;
-            }
+    private int DecompileFunctionCall(byte[] bytecode, ushort opcode, DecompileContext ctx)
+    {
+        var name = _opcodeTable.TryGetValue(opcode, out var info) ? info.Name : $"Function_{opcode:X4}";
+        var paramLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
 
-            // FUNCTION_* opcodes (0x100+)
-            if (opcode >= 0x100)
-            {
-                var name = _opcodeTable.TryGetValue(opcode, out var info) ? info.Name : $"Function_{opcode:X4}";
-                var paramLen = BinaryUtils.ReadUInt16LE(bytecode, pos + 2);
+        var call = paramLen == 0
+            ? name
+            : FormatFunctionWithParams(bytecode, ctx.Pos, paramLen, name);
 
-                string call;
-                if (paramLen == 0)
-                {
-                    call = name;
-                }
-                else
-                {
-                    var paramCount = BinaryUtils.ReadUInt16LE(bytecode, pos + 4);
-                    var paramStr = ParseParameters(bytecode, pos + 6, paramLen - 2, paramCount);
-                    call = paramStr.Length > 0 ? $"{name} {paramStr}" : name;
-                }
-
-                if (_currentRef != null)
-                {
-                    sb.AppendLine($"{Indent()}{_currentRef}.{call}");
-                    _currentRef = null;
-                }
-                else
-                {
-                    sb.AppendLine($"{Indent()}{call}");
-                }
-
-                pos += 4 + paramLen;
-                continue;
-            }
-
-            // Unknown opcode - skip
-            sb.AppendLine($"{Indent()}; Unknown opcode 0x{opcode:X4}");
-            pos += 2;
+        if (_currentRef != null)
+        {
+            ctx.Output.AppendLine($"{ctx.GetIndent()}{_currentRef}.{call}");
+            _currentRef = null;
+        }
+        else
+        {
+            ctx.Output.AppendLine($"{ctx.GetIndent()}{call}");
         }
 
-        return sb.ToString();
+        return ctx.Pos + 4 + paramLen;
+    }
+
+    private string FormatFunctionWithParams(byte[] bytecode, int pos, int paramLen, string name)
+    {
+        var paramCount = BinaryUtils.ReadUInt16LE(bytecode, pos + 4);
+        var paramStr = ParseParameters(bytecode, pos + 6, paramLen - 2, paramCount);
+        return paramStr.Length > 0 ? $"{name} {paramStr}" : name;
+    }
+
+    private static int DecompileUnknown(ushort opcode, DecompileContext ctx)
+    {
+        ctx.Output.AppendLine($"{ctx.GetIndent()}; Unknown opcode 0x{opcode:X4}");
+        return ctx.Pos + 2;
     }
 
     private static string GetBlockTypeName(int mode)

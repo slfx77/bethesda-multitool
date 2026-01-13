@@ -16,109 +16,113 @@ internal static class NifParser
         if (data.Length < 50) return null;
 
         var info = new NifInfo();
+        var pos = ParseHeaderString(data, info);
+        if (pos < 0) return null;
 
-        // Find header string (ends with newline)
-        var newlinePos = Array.IndexOf(data, (byte)0x0A, 0, Math.Min(60, data.Length));
-        if (newlinePos < 0) return null;
-
-        info.HeaderString = Encoding.ASCII.GetString(data, 0, newlinePos);
-        var pos = newlinePos + 1;
-
-        // Binary version (always LE)
-        info.BinaryVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        pos += 4;
-
-        // Endian byte
-        info.IsBigEndian = data[pos] == 0;
-        pos += 1;
-
-        // User version (always LE)
-        info.UserVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        pos += 4;
-
-        // Num blocks (always LE)
-        var numBlocks = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        info.BlockCount = (int)numBlocks;
-        pos += 4;
-
-        // Check for Bethesda header
-        if (IsBethesdaVersion(info.BinaryVersion, info.UserVersion))
+        pos = ParseVersionInfo(data, pos, info);
+        if (!IsBethesdaVersion(info.BinaryVersion, info.UserVersion))
         {
-            // BS Version (always LE)
-            info.BsVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-            pos += 4;
-
-            // Skip ShortStrings (author, process script, export script)
-            for (var i = 0; i < 3; i++)
-            {
-                var len = data[pos];
-                pos += 1 + len;
-            }
-        }
-        else
-        {
-            // Non-Bethesda version - we only support Bethesda versions for full conversion
-            // Return minimal info so caller can check endianness
-            return info;
+            return info; // Return minimal info for non-Bethesda files
         }
 
-        // NumBlockTypes (follows endian byte)
-        var numBlockTypes = info.IsBigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos))
-            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
+        pos = ParseBethesdaHeader(data, pos, info);
+        var numBlockTypes = ReadUInt16(data, pos, info.IsBigEndian);
         pos += 2;
 
-        // Block type names (SizedStrings)
+        pos = ParseBlockTypeNames(data, pos, numBlockTypes, info);
+        if (pos < 0) return null;
+
+        var (blockTypeIndices, blockSizes) = ParseBlockMetadata(data, pos, info.BlockCount, info.IsBigEndian);
+        pos += info.BlockCount * 6; // 2 bytes for type index + 4 bytes for size
+
+        pos = ParseStringTable(data, pos, info.IsBigEndian, info.Strings);
+        pos = SkipGroups(data, pos, info.IsBigEndian);
+
+        BuildBlockList(info, blockTypeIndices, blockSizes, pos);
+        return info;
+    }
+
+    private static int ParseHeaderString(byte[] data, NifInfo info)
+    {
+        var newlinePos = Array.IndexOf(data, (byte)0x0A, 0, Math.Min(60, data.Length));
+        if (newlinePos < 0) return -1;
+
+        info.HeaderString = Encoding.ASCII.GetString(data, 0, newlinePos);
+        return newlinePos + 1;
+    }
+
+    private static int ParseVersionInfo(byte[] data, int pos, NifInfo info)
+    {
+        info.BinaryVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        info.IsBigEndian = data[pos + 4] == 0;
+        info.UserVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos + 5));
+        info.BlockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos + 9));
+        return pos + 13;
+    }
+
+    private static int ParseBethesdaHeader(byte[] data, int pos, NifInfo info)
+    {
+        info.BsVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        pos += 4;
+
+        // Skip ShortStrings (author, process script, export script)
+        for (var i = 0; i < 3; i++)
+        {
+            pos += 1 + data[pos];
+        }
+
+        return pos;
+    }
+
+    private static int ParseBlockTypeNames(byte[] data, int pos, int numBlockTypes, NifInfo info)
+    {
         for (var i = 0; i < numBlockTypes; i++)
         {
-            if (pos + 4 > data.Length) return null;
+            if (pos + 4 > data.Length) return -1;
 
-            var strLen = info.IsBigEndian
-                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
-                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+            var strLen = ReadUInt32(data, pos, info.IsBigEndian);
             pos += 4;
 
-            // Sanity check: string length should be reasonable (< 256) and fit in buffer
-            if (strLen > 256 || pos + strLen > data.Length) return null;
+            if (strLen > 256 || pos + strLen > data.Length) return -1;
 
             info.BlockTypeNames.Add(Encoding.ASCII.GetString(data, pos, (int)strLen));
             pos += (int)strLen;
         }
 
-        // Block type indices
+        return pos;
+    }
+
+    private static (ushort[] typeIndices, uint[] sizes) ParseBlockMetadata(
+        byte[] data, int pos, int numBlocks, bool isBigEndian)
+    {
         var blockTypeIndices = new ushort[numBlocks];
         for (var i = 0; i < numBlocks; i++)
         {
-            blockTypeIndices[i] = info.IsBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos))
-                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
-            pos += 2;
+            blockTypeIndices[i] = ReadUInt16(data, pos + i * 2, isBigEndian);
         }
 
-        // Block sizes
+        var sizePos = pos + numBlocks * 2;
         var blockSizes = new uint[numBlocks];
         for (var i = 0; i < numBlocks; i++)
         {
-            blockSizes[i] = info.IsBigEndian
-                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
-                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-            pos += 4;
+            blockSizes[i] = ReadUInt32(data, sizePos + i * 4, isBigEndian);
         }
 
-        // Parse string table
-        pos = ParseStringTable(data, pos, info.IsBigEndian, info.Strings);
+        return (blockTypeIndices, blockSizes);
+    }
 
-        // Num groups
-        var numGroups = info.IsBigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        pos += 4;
-        pos += (int)numGroups * 4;
+    private static int SkipGroups(byte[] data, int pos, bool isBigEndian)
+    {
+        var numGroups = ReadUInt32(data, pos, isBigEndian);
+        return pos + 4 + (int)numGroups * 4;
+    }
 
-        // Build block list
-        for (var i = 0; i < numBlocks; i++)
+    private static void BuildBlockList(NifInfo info, ushort[] blockTypeIndices, uint[] blockSizes, int dataStart)
+    {
+        var pos = dataStart;
+        for (var i = 0; i < info.BlockCount; i++)
         {
-            var block = new BlockInfo
+            info.Blocks.Add(new BlockInfo
             {
                 Index = i,
                 TypeIndex = blockTypeIndices[i],
@@ -127,13 +131,20 @@ internal static class NifParser
                     : "Unknown",
                 Size = (int)blockSizes[i],
                 DataOffset = pos
-            };
-            info.Blocks.Add(block);
+            });
             pos += (int)blockSizes[i];
         }
-
-        return info;
     }
+
+    private static ushort ReadUInt16(byte[] data, int pos, bool isBigEndian) =>
+        isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos))
+            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
+
+    private static uint ReadUInt32(byte[] data, int pos, bool isBigEndian) =>
+        isBigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
+            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
 
     private static int ParseStringTable(byte[] data, int pos, bool isBigEndian, List<string> strings)
     {
