@@ -50,6 +50,9 @@ internal sealed class NifConverter
 
     // Triangles extracted from NiSkinPartition strips, keyed by NiSkinPartition block index
     private readonly Dictionary<int, ushort[]> _skinPartitionTriangles = [];
+
+    // Triangles extracted from NiTriStripsData strips (for non-skinned meshes), keyed by geometry block index
+    private readonly Dictionary<int, ushort[]> _geometryStripTriangles = [];
     private readonly bool _verbose;
 
     // Vertex maps from NiSkinPartition blocks, keyed by NiSkinPartition block index
@@ -75,6 +78,7 @@ internal sealed class NifConverter
             _havokExpansions.Clear();
             _vertexMaps.Clear();
             _skinPartitionTriangles.Clear();
+            _geometryStripTriangles.Clear();
             _geometryToSkinPartition.Clear();
             _skinPartitionExpansions.Clear();
             _skinPartitionToPackedData.Clear();
@@ -101,6 +105,14 @@ internal sealed class NifConverter
                     ErrorMessage = "File is already little-endian (PC format)"
                 };
 
+            // Check if this is a Bethesda version we can fully convert
+            if (!NifParser.IsBethesdaVersion(info.BinaryVersion, info.UserVersion))
+                return new ConversionResult
+                {
+                    Success = false,
+                    ErrorMessage = $"Unsupported NIF version {info.BinaryVersion:X8} (only Bethesda versions supported)"
+                };
+
             if (_verbose)
                 Console.WriteLine(
                     $"Converting NIF: {info.BlockCount} blocks, version {info.BinaryVersion:X8}, BS version {info.BsVersion}");
@@ -117,13 +129,16 @@ internal sealed class NifConverter
             // Step 2: Find geometry blocks that reference packed data and calculate expansions
             FindGeometryExpansions(data, info);
 
-            // Step 2a: Update geometry expansions with triangle sizes (for NiTriShapeData)
+            // Step 2a: Extract triangles from NiTriStripsData blocks (for non-skinned meshes)
+            ExtractNiTriStripsDataTriangles(data, info);
+
+            // Step 2b: Update geometry expansions with triangle sizes (for NiTriShapeData)
             UpdateGeometryExpansionsWithTriangles();
 
-            // Step 2b: Find Havok collision blocks with compressed vertices
+            // Step 2c: Find Havok collision blocks with compressed vertices
             FindHavokExpansions(data, info);
 
-            // Step 2c: Find NiSkinPartition blocks that need bone weights/indices expansion
+            // Step 2d: Find NiSkinPartition blocks that need bone weights/indices expansion
             FindSkinPartitionExpansions(data, info);
 
             // Step 3: Calculate block remap (accounting for removed packed blocks)
@@ -145,6 +160,9 @@ internal sealed class NifConverter
         }
         catch (Exception ex)
         {
+            if (_verbose)
+                Console.WriteLine($"  Stack trace: {ex.StackTrace}");
+
             return new ConversionResult
             {
                 Success = false,
@@ -396,16 +414,22 @@ internal sealed class NifConverter
             ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos, 4))
             : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(pos, 4));
         pos += 4 + Math.Max(0, nameLen);
+        if (pos > end) return -1;
 
         // Skip extra data (uint count + int[] refs)
         if (pos + 4 > end) return -1;
         var extraDataCount = isBE
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4));
+
+        // Sanity check
+        if (extraDataCount > 100) return -1;
         pos += 4 + (int)extraDataCount * 4;
+        if (pos > end) return -1;
 
         // Skip controller ref
         pos += 4;
+        if (pos > end) return -1;
 
         // Skip flags (ushort)
         pos += 2;
@@ -436,10 +460,15 @@ internal sealed class NifConverter
         var numProperties = isBE
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4));
+
+        // Sanity check - properties count should be reasonable (< 100)
+        if (numProperties > 100) return -1;
         pos += 4 + (int)numProperties * 4;
+        if (pos > end) return -1;
 
         // Skip collision object ref
         pos += 4;
+        if (pos > end) return -1;
 
         // Now we're at NiGeometry specific data
         // Data ref (int)
@@ -471,32 +500,45 @@ internal sealed class NifConverter
             ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos, 4))
             : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(pos, 4));
         pos += 4 + Math.Max(0, nameLen);
+        if (pos > end) return -1;
 
         // Skip extra data
         if (pos + 4 > end) return -1;
         var extraDataCount = isBE
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4));
+
+        // Sanity check
+        if (extraDataCount > 100) return -1;
         pos += 4 + (int)extraDataCount * 4;
+        if (pos > end) return -1;
 
         // Skip controller ref
         pos += 4;
+        if (pos > end) return -1;
 
         // Skip uint flags
         pos += 4;
+        if (pos > end) return -1;
 
         // Skip transform (52 bytes)
         pos += 52;
+        if (pos > end) return -1;
 
         // Skip properties
         if (pos + 4 > end) return -1;
         var numProperties = isBE
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4));
+
+        // Sanity check
+        if (numProperties > 100) return -1;
         pos += 4 + (int)numProperties * 4;
+        if (pos > end) return -1;
 
         // Skip collision object ref
         pos += 4;
+        if (pos > end) return -1;
 
         // Data ref - this is what we want
         if (pos + 4 > end) return -1;
@@ -562,7 +604,218 @@ internal sealed class NifConverter
                     Console.WriteLine(
                         $"    Block {geomBlockIndex}: Adding {triangles.Length / 3} triangles ({triangleBytes} bytes) from skin partition {skinPartIndex}");
             }
+
+            // Also check for NiTriStripsData triangles (non-skinned meshes)
+            if (_geometryStripTriangles.TryGetValue(geomBlockIndex, out var stripTriangles))
+            {
+                // NiTriStripsData already has strips in the source, so no size increase needed
+                // But we need to track that we have triangles for this block
+                if (_verbose)
+                    Console.WriteLine(
+                        $"    Block {geomBlockIndex}: Has {stripTriangles.Length / 3} triangles from NiTriStripsData strips");
+            }
         }
+    }
+
+    /// <summary>
+    ///     Extract triangle strips from NiTriStripsData blocks that have HasPoints=1.
+    ///     For non-skinned meshes, strips are stored directly in the geometry block.
+    ///     Converts strips to explicit triangles and stores in _geometryStripTriangles.
+    /// </summary>
+    private void ExtractNiTriStripsDataTriangles(byte[] data, NifInfo info)
+    {
+        if (_verbose) Console.WriteLine("  Extracting triangles from NiTriStripsData blocks...");
+
+        foreach (var block in info.Blocks.Where(b => b.TypeName == "NiTriStripsData"))
+        {
+            // Skip if this geometry block has a skin partition (triangles come from there)
+            if (_geometryToSkinPartition.ContainsKey(block.Index))
+                continue;
+
+            // Skip if not in our geometry expansions (no packed data to expand)
+            if (!_geometryExpansions.ContainsKey(block.Index))
+                continue;
+
+            var triangles = ExtractTrianglesFromTriStripsData(data, block, info.IsBigEndian);
+            if (triangles != null && triangles.Length > 0)
+            {
+                _geometryStripTriangles[block.Index] = triangles;
+                if (_verbose)
+                    Console.WriteLine(
+                        $"    Block {block.Index}: NiTriStripsData - extracted {triangles.Length / 3} triangles from strips");
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Extract triangles from a NiTriStripsData block.
+    ///     Parses strip data and converts to explicit triangles.
+    /// </summary>
+    private static ushort[]? ExtractTrianglesFromTriStripsData(byte[] data, BlockInfo block, bool isBigEndian)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+
+        // Skip NiGeometryData common fields to get to strip data
+        // GroupId (int)
+        pos += 4;
+
+        // NumVertices (ushort)
+        if (pos + 2 > end) return null;
+        pos += 2;
+
+        // KeepFlags, CompressFlags (bytes)
+        pos += 2;
+
+        // HasVertices (bool)
+        if (pos + 1 > end) return null;
+        var hasVertices = data[pos++];
+        if (hasVertices != 0)
+        {
+            // This shouldn't happen for Xbox 360 NIFs with packed data, but handle it
+            var numVerts = isBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(block.DataOffset + 4, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(block.DataOffset + 4, 2));
+            pos += numVerts * 12;
+        }
+
+        // BSDataFlags (ushort)
+        if (pos + 2 > end) return null;
+        var bsDataFlags = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
+            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
+        pos += 2;
+
+        // HasNormals (bool)
+        if (pos + 1 > end) return null;
+        var hasNormals = data[pos++];
+        if (hasNormals != 0)
+        {
+            var numVerts = isBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(block.DataOffset + 4, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(block.DataOffset + 4, 2));
+            pos += numVerts * 12; // Normals
+            if ((bsDataFlags & 4096) != 0)
+                pos += numVerts * 24; // Tangents + Bitangents
+        }
+
+        // BoundingSphere (center Vector3 + radius float = 16 bytes)
+        pos += 16;
+
+        // HasVertexColors (bool)
+        if (pos + 1 > end) return null;
+        var hasVertexColors = data[pos++];
+        if (hasVertexColors != 0)
+        {
+            var numVerts = isBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(block.DataOffset + 4, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(block.DataOffset + 4, 2));
+            pos += numVerts * 16; // Color4 * numVerts
+        }
+
+        // UV Sets based on BSDataFlags bit 0
+        var numUVSets = bsDataFlags & 1;
+        if (numUVSets != 0)
+        {
+            var numVerts = isBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(block.DataOffset + 4, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(block.DataOffset + 4, 2));
+            pos += numVerts * 8;
+        }
+
+        // ConsistencyFlags (ushort)
+        pos += 2;
+
+        // AdditionalData ref (int)
+        pos += 4;
+
+        // Now at NiTriStripsData specific fields
+        // NumTriangles (ushort)
+        if (pos + 2 > end) return null;
+        pos += 2;
+
+        // NumStrips (ushort)
+        if (pos + 2 > end) return null;
+        var numStrips = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
+            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
+        pos += 2;
+
+        if (numStrips == 0) return null;
+
+        // StripLengths[numStrips]
+        var stripLengths = new ushort[numStrips];
+        for (var i = 0; i < numStrips; i++)
+        {
+            if (pos + 2 > end) return null;
+            stripLengths[i] = isBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
+            pos += 2;
+        }
+
+        // HasPoints (bool)
+        if (pos + 1 > end) return null;
+        var hasPoints = data[pos++];
+        if (hasPoints == 0) return null;
+
+        // Read all strip indices
+        var allStrips = new List<ushort[]>();
+        for (var i = 0; i < numStrips; i++)
+        {
+            var stripLen = stripLengths[i];
+            if (pos + stripLen * 2 > end) return null;
+
+            var strip = new ushort[stripLen];
+            for (var j = 0; j < stripLen; j++)
+            {
+                strip[j] = isBigEndian
+                    ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos, 2))
+                    : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2));
+                pos += 2;
+            }
+            allStrips.Add(strip);
+        }
+
+        // Convert strips to triangles
+        return ConvertStripsToTriangles(allStrips);
+    }
+
+    /// <summary>
+    ///     Convert triangle strips to explicit triangles.
+    ///     Handles winding order alternation for proper face orientation.
+    /// </summary>
+    private static ushort[] ConvertStripsToTriangles(List<ushort[]> strips)
+    {
+        var triangles = new List<ushort>();
+
+        foreach (var strip in strips)
+        {
+            if (strip.Length < 3) continue;
+
+            for (var i = 0; i < strip.Length - 2; i++)
+            {
+                // Skip degenerate triangles (used for strip stitching)
+                if (strip[i] == strip[i + 1] || strip[i + 1] == strip[i + 2] || strip[i] == strip[i + 2])
+                    continue;
+
+                // Alternate winding order for proper face orientation
+                if ((i & 1) == 0)
+                {
+                    triangles.Add(strip[i]);
+                    triangles.Add(strip[i + 1]);
+                    triangles.Add(strip[i + 2]);
+                }
+                else
+                {
+                    triangles.Add(strip[i]);
+                    triangles.Add(strip[i + 2]);
+                    triangles.Add(strip[i + 1]);
+                }
+            }
+        }
+
+        return [.. triangles];
     }
 
     /// <summary>
@@ -1007,6 +1260,15 @@ internal sealed class NifConverter
                     if (_verbose && triangles != null)
                         Console.WriteLine(
                             $"    Block {block.Index}: Using {triangles.Length / 3} triangles from skin partition {skinPartitionIndex}");
+                }
+
+                // For NiTriStripsData without skin partition, use triangles extracted from strips
+                if (triangles == null && _geometryStripTriangles.TryGetValue(block.Index, out var stripTriangles))
+                {
+                    triangles = stripTriangles;
+                    if (_verbose)
+                        Console.WriteLine(
+                            $"    Block {block.Index}: Using {triangles.Length / 3} triangles from NiTriStripsData strips");
                 }
 
                 outPos = WriteExpandedGeometryBlock(input, output, outPos, block, packedData, vertexMap,

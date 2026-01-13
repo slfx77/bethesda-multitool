@@ -55,6 +55,12 @@ internal static class NifParser
                 pos += 1 + len;
             }
         }
+        else
+        {
+            // Non-Bethesda version - we only support Bethesda versions for full conversion
+            // Return minimal info so caller can check endianness
+            return info;
+        }
 
         // NumBlockTypes (follows endian byte)
         var numBlockTypes = info.IsBigEndian
@@ -65,10 +71,15 @@ internal static class NifParser
         // Block type names (SizedStrings)
         for (var i = 0; i < numBlockTypes; i++)
         {
+            if (pos + 4 > data.Length) return null;
+
             var strLen = info.IsBigEndian
                 ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
                 : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
             pos += 4;
+
+            // Sanity check: string length should be reasonable (< 256) and fit in buffer
+            if (strLen > 256 || pos + strLen > data.Length) return null;
 
             info.BlockTypeNames.Add(Encoding.ASCII.GetString(data, pos, (int)strLen));
             pos += (int)strLen;
