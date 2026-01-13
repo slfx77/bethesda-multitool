@@ -5,25 +5,26 @@ namespace Xbox360MemoryCarver.Core.Formats.EsmRecord;
 /// </summary>
 public static class EsmRecordExporter
 {
+    private static readonly Logger Log = Logger.Instance;
+
     /// <summary>
     ///     Export ESM records to files in the specified output directory.
     /// </summary>
     public static async Task ExportRecordsAsync(
         EsmRecordScanResult records,
         Dictionary<uint, string> formIdMap,
-        string outputDir,
-        bool verbose = false)
+        string outputDir)
     {
         Directory.CreateDirectory(outputDir);
 
-        await ExportEditorIdsAsync(records.EditorIds, outputDir, verbose);
-        await ExportGameSettingsAsync(records.GameSettings, outputDir, verbose);
-        await ExportScriptSourcesAsync(records.ScriptSources, outputDir, verbose);
-        await ExportFormIdMapAsync(formIdMap, outputDir, verbose);
-        await ExportFormIdReferencesAsync(records.FormIdReferences, formIdMap, outputDir, verbose);
+        await ExportEditorIdsAsync(records.EditorIds, outputDir);
+        await ExportGameSettingsAsync(records.GameSettings, outputDir);
+        await ExportScriptSourcesAsync(records.ScriptSources, outputDir);
+        await ExportFormIdMapAsync(formIdMap, outputDir);
+        await ExportFormIdReferencesAsync(records.FormIdReferences, formIdMap, outputDir);
     }
 
-    private static async Task ExportEditorIdsAsync(List<EdidRecord> editorIds, string outputDir, bool verbose)
+    private static async Task ExportEditorIdsAsync(List<EdidRecord> editorIds, string outputDir)
     {
         if (editorIds.Count == 0) return;
 
@@ -33,10 +34,10 @@ public static class EsmRecordExporter
             .Select(e => e.Name);
         await File.WriteAllLinesAsync(edidPath, edidLines);
 
-        if (verbose) Console.WriteLine($"  [ESM] Exported {editorIds.Count} editor IDs to editor_ids.txt");
+        Log.Debug($"  [ESM] Exported {editorIds.Count} editor IDs to editor_ids.txt");
     }
 
-    private static async Task ExportGameSettingsAsync(List<GmstRecord> gameSettings, string outputDir, bool verbose)
+    private static async Task ExportGameSettingsAsync(List<GmstRecord> gameSettings, string outputDir)
     {
         if (gameSettings.Count == 0) return;
 
@@ -47,10 +48,10 @@ public static class EsmRecordExporter
             .OrderBy(n => n);
         await File.WriteAllLinesAsync(gmstPath, gmstLines);
 
-        if (verbose) Console.WriteLine($"  [ESM] Exported {gameSettings.Count} game settings to game_settings.txt");
+        Log.Debug($"  [ESM] Exported {gameSettings.Count} game settings to game_settings.txt");
     }
 
-    private static async Task ExportScriptSourcesAsync(List<SctxRecord> scriptSources, string outputDir, bool verbose)
+    private static async Task ExportScriptSourcesAsync(List<SctxRecord> scriptSources, string outputDir)
     {
         if (scriptSources.Count == 0) return;
 
@@ -64,10 +65,10 @@ public static class EsmRecordExporter
             await File.WriteAllTextAsync(Path.Combine(sctxDir, filename), sctx.Text);
         }
 
-        if (verbose) Console.WriteLine($"  [ESM] Exported {scriptSources.Count} script sources to script_sources/");
+        Log.Debug($"  [ESM] Exported {scriptSources.Count} script sources to script_sources/");
     }
 
-    private static async Task ExportFormIdMapAsync(Dictionary<uint, string> formIdMap, string outputDir, bool verbose)
+    private static async Task ExportFormIdMapAsync(Dictionary<uint, string> formIdMap, string outputDir)
     {
         if (formIdMap.Count == 0) return;
 
@@ -78,14 +79,13 @@ public static class EsmRecordExporter
             .Select(kv => $"0x{kv.Key:X8},{kv.Value}"));
         await File.WriteAllLinesAsync(formIdPath, formIdLines);
 
-        if (verbose) Console.WriteLine($"  [ESM] Exported {formIdMap.Count} FormID correlations to formid_map.csv");
+        Log.Debug($"  [ESM] Exported {formIdMap.Count} FormID correlations to formid_map.csv");
     }
 
     private static async Task ExportFormIdReferencesAsync(
         List<ScroRecord> formIdReferences,
         Dictionary<uint, string> formIdMap,
-        string outputDir,
-        bool verbose)
+        string outputDir)
     {
         if (formIdReferences.Count == 0) return;
 
@@ -99,7 +99,6 @@ public static class EsmRecordExporter
             });
         await File.WriteAllLinesAsync(scroPath, scroLines);
 
-        if (verbose)
-            Console.WriteLine($"  [ESM] Exported {formIdReferences.Count} FormID references to formid_references.txt");
+        Log.Debug($"  [ESM] Exported {formIdReferences.Count} FormID references to formid_references.txt");
     }
 }

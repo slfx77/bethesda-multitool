@@ -108,7 +108,7 @@ public static class MemoryDumpExtractor
             }))
             : null;
 
-        var result = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, stringProgress, options.Verbose);
+        var result = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, stringProgress);
 
         progress?.Report(new ExtractionProgress
         {

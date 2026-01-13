@@ -86,7 +86,7 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
         }
         catch (FileNotFoundException ex)
         {
-            if (verbose) Console.WriteLine($"Warning: {ex.Message}");
+            Logger.Instance.Debug($"Warning: {ex.Message}");
 
             return false;
         }

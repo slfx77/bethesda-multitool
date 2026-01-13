@@ -145,15 +145,15 @@ The packed vertex data uses a variable stride depending on mesh type. Three stri
 
 ### Skinned Layout (stride 48 bytes - skinned meshes)
 
-| Offset | Size | Type   | Semantic         | Avg Length        | Notes                       |
-| ------ | ---- | ------ | ---------------- | ----------------- | --------------------------- |
-| 0      | 8    | half4  | **Position**     | ~40 (model-scale) | XYZ + W=1                   |
-| 8      | 8    | half4  | **Bone Weights** | Sum ≈ 1.0         | 4 weights (sum to 1.0)      |
-| 16     | 4    | ubyte4 | **Bone Indices** | N/A               | 4 bone indices per vertex   |
-| 20     | 8    | half4  | **Normal**       | ~1.0 (unit)       | Unit-length normals         |
-| 28     | 4    | half2  | **UV**           | N/A               | Texture coordinates         |
-| 32     | 8    | half4  | **Tangent**      | ~1.0 (unit)       | Unit-length tangents        |
-| 40     | 8    | half4  | **Bitangent**    | ~1.0 (unit)       | Unit-length bitangents      |
+| Offset | Size | Type   | Semantic         | Avg Length        | Notes                     |
+| ------ | ---- | ------ | ---------------- | ----------------- | ------------------------- |
+| 0      | 8    | half4  | **Position**     | ~40 (model-scale) | XYZ + W=1                 |
+| 8      | 8    | half4  | **Bone Weights** | Sum ≈ 1.0         | 4 weights (sum to 1.0)    |
+| 16     | 4    | ubyte4 | **Bone Indices** | N/A               | 4 bone indices per vertex |
+| 20     | 8    | half4  | **Normal**       | ~1.0 (unit)       | Unit-length normals       |
+| 28     | 4    | half2  | **UV**           | N/A               | Texture coordinates       |
+| 32     | 8    | half4  | **Tangent**      | ~1.0 (unit)       | Unit-length tangents      |
+| 40     | 8    | half4  | **Bitangent**    | ~1.0 (unit)       | Unit-length bitangents    |
 
 ### Stride-Based Detection
 
@@ -194,9 +194,9 @@ This produces correct results for meshes that store tangent space implicitly.
 
 The meaning of offset 8 depends on the stride:
 
-| Stride | Offset 8 Content      | Avg Length  |
-| ------ | --------------------- | ----------- |
-| 36     | **Normals**           | ~1.0 (unit) |
+| Stride | Offset 8 Content | Avg Length  |
+| ------ | ---------------- | ----------- |
+| 36     | **Normals**      | ~1.0 (unit) |
 | 40     | **Normals**      | ~1.0 (unit) |
 | 48     | **Bone Weights** | Sum ≈ 1.0   |
 
@@ -219,7 +219,7 @@ The half4 at offset 8 in stride 48 meshes contains **bone weights**, not unknown
 - **Values**: Sum to approximately 1.0 (normalized blend weights)
 - **Previous confusion**: Average vector length ~0.82-0.90 seemed anomalous because we were computing magnitude of a weight vector, not checking for unit-length
 
-**Discovery**: The key was recognizing that bone weights are *not* unit-length vectors - they are blend weights that sum to 1.0, so treating them as vectors and computing magnitude gives values around 0.5-1.0 depending on weight distribution.
+**Discovery**: The key was recognizing that bone weights are _not_ unit-length vectors - they are blend weights that sum to 1.0, so treating them as vectors and computing magnitude gives values around 0.5-1.0 depending on weight distribution.
 
 ### Bone Indices at Offset 16
 
@@ -231,15 +231,15 @@ The half4 at offset 8 in stride 48 meshes contains **bone weights**, not unknown
 
 ### Complete Stride 48 Layout (Skinned Meshes)
 
-| Offset | Size | Type   | Semantic       | Notes                     |
-| ------ | ---- | ------ | -------------- | ------------------------- |
-| 0      | 8    | half4  | Position       | XYZ + W=1                 |
-| 8      | 8    | half4  | Bone Weights   | 4 weights, sum ≈ 1.0      |
-| 16     | 4    | ubyte4 | Bone Indices   | 4 bone indices (0-255)    |
-| 20     | 8    | half4  | Normal         | Unit-length               |
-| 28     | 4    | half2  | UV             | Texture coordinates       |
-| 32     | 8    | half4  | Tangent        | Unit-length               |
-| 40     | 8    | half4  | Bitangent      | Unit-length               |
+| Offset | Size | Type   | Semantic     | Notes                  |
+| ------ | ---- | ------ | ------------ | ---------------------- |
+| 0      | 8    | half4  | Position     | XYZ + W=1              |
+| 8      | 8    | half4  | Bone Weights | 4 weights, sum ≈ 1.0   |
+| 16     | 4    | ubyte4 | Bone Indices | 4 bone indices (0-255) |
+| 20     | 8    | half4  | Normal       | Unit-length            |
+| 28     | 4    | half2  | UV           | Texture coordinates    |
+| 32     | 8    | half4  | Tangent      | Unit-length            |
+| 40     | 8    | half4  | Bitangent    | Unit-length            |
 
 ### Additional Streams
 
@@ -326,9 +326,9 @@ Xbox 360-specific Havok collision data block.
 
 ### ❌ Not Yet Implemented
 
-| Feature       | Status | Notes                                  |
-| ------------- | ------ | -------------------------------------- |
-| Havok physics | ❌     | hkPackedNiTriStripsData stripped       |
+| Feature       | Status | Notes                            |
+| ------------- | ------ | -------------------------------- |
+| Havok physics | ❌     | hkPackedNiTriStripsData stripped |
 
 ---
 
@@ -391,13 +391,13 @@ dotnet run --project tools/NifAnalyzer -f net10.0 -- compare converted.nif refer
 
 ### Version History
 
-| Date       | Change                                                      |
-| ---------- | ----------------------------------------------------------- |
-| 2026-01-11 | Initial document creation                                   |
-| 2026-01-11 | Documented offset 8 as unknown (not normals)                |
-| 2026-01-11 | Verified normal location at offset 20                       |
-| 2026-01-11 | Documented bone weight uncertainty                          |
-| 2026-01-12 | RESOLVED: Offset 8 = bone weights, NiSkinPartition working  |
+| Date       | Change                                                     |
+| ---------- | ---------------------------------------------------------- |
+| 2026-01-11 | Initial document creation                                  |
+| 2026-01-11 | Documented offset 8 as unknown (not normals)               |
+| 2026-01-11 | Verified normal location at offset 20                      |
+| 2026-01-11 | Documented bone weight uncertainty                         |
+| 2026-01-12 | RESOLVED: Offset 8 = bone weights, NiSkinPartition working |
 
 ---
 

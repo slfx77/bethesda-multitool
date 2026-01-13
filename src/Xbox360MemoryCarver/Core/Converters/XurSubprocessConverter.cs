@@ -12,11 +12,10 @@ public class XurSubprocessConverter
     private const string XuiHelperCliProject = "XUIHelper.CLI";
     private const string TargetFramework = "net8.0";
 
-    private readonly bool _verbose;
+    private static readonly Logger Log = Logger.Instance;
 
-    public XurSubprocessConverter(bool verbose = false, string? xuiHelperPath = null)
+    public XurSubprocessConverter(string? xuiHelperPath = null)
     {
-        _verbose = verbose;
         XuiHelperPath = xuiHelperPath ?? FindXuiHelperPath();
 
         if (string.IsNullOrEmpty(XuiHelperPath) || !File.Exists(XuiHelperPath))
@@ -148,7 +147,7 @@ public class XurSubprocessConverter
                 version = DetectXurVersion(data);
                 if (version == 0)
                 {
-                    if (_verbose) Console.WriteLine($"[XurConverter] Could not detect XUR version for {inputPath}");
+                    Log.Debug($"[XurConverter] Could not detect XUR version for {inputPath}");
 
                     Failed++;
                     return false;
@@ -169,11 +168,11 @@ public class XurSubprocessConverter
             var stderr = process.StandardError.ReadToEnd();
             process.WaitForExit();
 
-            if (_verbose && !string.IsNullOrEmpty(stdout)) Console.WriteLine(stdout);
+            if (!string.IsNullOrEmpty(stdout)) Log.Debug(stdout);
 
             if (process.ExitCode != 0 || !File.Exists(outputPath))
             {
-                if (_verbose) Console.WriteLine($"[XurConverter] Conversion failed: {stderr}");
+                Log.Debug($"[XurConverter] Conversion failed: {stderr}");
 
                 Failed++;
                 return false;
@@ -250,7 +249,7 @@ public class XurSubprocessConverter
             process.WaitForExit();
 
             var consoleOutput = stdout + (string.IsNullOrEmpty(stderr) ? "" : $"\nSTDERR: {stderr}");
-            if (_verbose && !string.IsNullOrWhiteSpace(stdout)) Console.WriteLine(stdout.TrimEnd());
+            if (!string.IsNullOrWhiteSpace(stdout)) Log.Debug(stdout.TrimEnd());
 
             if (!File.Exists(tempOutputPath))
             {
@@ -271,7 +270,7 @@ public class XurSubprocessConverter
                 Success = true,
                 XuiData = xuiData,
                 XurVersion = version,
-                ConsoleOutput = _verbose ? consoleOutput : null
+                ConsoleOutput = consoleOutput
             };
         }
         catch (Exception ex)

@@ -6,6 +6,8 @@ using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Formats.Scda;
 using Xbox360MemoryCarver.Core.Json;
 
+using static Xbox360MemoryCarver.Core.LogLevel;
+
 namespace Xbox360MemoryCarver.CLI;
 
 /// <summary>
@@ -156,13 +158,15 @@ public static class AnalyzeCommand
     private static async Task ExtractEsmRecordsAsync(string input, string extractEsm,
         AnalysisResult result, bool verbose)
     {
+        // Set logger level based on verbose flag
+        if (verbose) Logger.Instance.Level = LogLevel.Debug;
+
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[blue]Exporting ESM records to:[/] {extractEsm}");
         await EsmRecordFormat.ExportRecordsAsync(
             result.EsmRecords!,
             result.FormIdMap,
-            extractEsm,
-            verbose);
+            extractEsm);
         AnsiConsole.MarkupLine("[green]ESM export complete.[/]");
 
         if (result.ScdaRecords.Count > 0)
@@ -173,7 +177,7 @@ public static class AnalyzeCommand
             var scriptsDir = Path.Combine(extractEsm, "scripts");
             var scriptProgress =
                 verbose ? new Progress<string>(msg => AnsiConsole.MarkupLine($"  [grey]{msg}[/]")) : null;
-            var scriptResult = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress, verbose);
+            var scriptResult = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress);
             AnsiConsole.MarkupLine(
                 $"[green]Scripts extracted:[/] {scriptResult.TotalRecords} records ({scriptResult.GroupedQuests} quests, {scriptResult.UngroupedScripts} ungrouped)");
         }

@@ -12,16 +12,16 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 ///     Schema-driven NIF block converter that uses nif.xml definitions.
 ///     Automatically determines field types and applies correct byte swapping.
 /// </summary>
-internal sealed class NifSchemaConverter
+internal sealed partial class NifSchemaConverter
 {
+    private static readonly Logger Log = Logger.Instance;
+
     // Cache compiled version conditions
     private readonly Dictionary<string, Func<NifVersionContext, bool>> _conditionCache = [];
     private readonly NifSchema _schema;
-    private readonly bool _verbose;
     private readonly NifVersionContext _versionContext;
 
-    public NifSchemaConverter(NifSchema schema, uint version = 0x14020007, int userVersion = 0, int bsVersion = 34,
-        bool verbose = false)
+    public NifSchemaConverter(NifSchema schema, uint version = 0x14020007, int userVersion = 0, int bsVersion = 34)
     {
         _schema = schema;
         _versionContext = new NifVersionContext
@@ -30,7 +30,6 @@ internal sealed class NifSchemaConverter
             UserVersion = (uint)userVersion,
             BsVersion = bsVersion
         };
-        _verbose = verbose;
     }
 
     /// <summary>
@@ -42,13 +41,11 @@ internal sealed class NifSchemaConverter
         var objDef = _schema.GetObject(blockType);
         if (objDef == null)
         {
-            if (_verbose)
-                Console.WriteLine($"  [Schema] Unknown block type: {blockType}, using bulk swap");
+            Log.Trace($"  [Schema] Unknown block type: {blockType}, using bulk swap");
             return false;
         }
 
-        if (_verbose)
-            Console.WriteLine($"  [Schema] Converting {blockType} ({objDef.AllFields.Count} fields)");
+        Log.Trace($"  [Schema] Converting {blockType} ({objDef.AllFields.Count} fields)");
 
         try
         {
@@ -59,8 +56,7 @@ internal sealed class NifSchemaConverter
         }
         catch (Exception ex)
         {
-            if (_verbose)
-                Console.WriteLine($"  [Schema] Error converting {blockType}: {ex.Message}");
+            Log.Debug($"  [Schema] Error converting {blockType}: {ex.Message}");
             return false;
         }
     }
@@ -69,8 +65,7 @@ internal sealed class NifSchemaConverter
     {
         if (depth > 20)
         {
-            if (_verbose)
-                Console.WriteLine("    [Schema] WARNING: Max recursion depth reached, stopping");
+            Log.Trace("    [Schema] WARNING: Max recursion depth reached, stopping");
             return;
         }
 
@@ -81,25 +76,24 @@ internal sealed class NifSchemaConverter
             // Check onlyT (type-specific field)
             if (!string.IsNullOrEmpty(field.OnlyT) && !_schema.Inherits(ctx.BlockType, field.OnlyT))
             {
-                if (_verbose && depth == 0)
-                    Console.WriteLine($"    Skipping {field.Name} (onlyT={field.OnlyT}, block={ctx.BlockType})");
+                if (depth == 0)
+                    Log.Trace($"    Skipping {field.Name} (onlyT={field.OnlyT}, block={ctx.BlockType})");
                 continue;
             }
 
             // Check since/until version range
             if (!IsVersionInRange(field.Since, field.Until))
             {
-                if (_verbose && depth == 0)
-                    Console.WriteLine(
-                        $"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
+                if (depth == 0)
+                    Log.Trace($"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
                 continue;
             }
 
             // Check version conditions (vercond)
             if (!EvaluateVersionCondition(field.VersionCond))
             {
-                if (_verbose && (depth == 0 || field.Name == "LOD Level" || field.Name == "Global VB"))
-                    Console.WriteLine($"    Skipping {field.Name} (vercond failed: {field.VersionCond})");
+                if (depth == 0 || field.Name == "LOD Level" || field.Name == "Global VB")
+                    Log.Trace($"    Skipping {field.Name} (vercond failed: {field.VersionCond})");
                 continue;
             }
 
@@ -109,14 +103,14 @@ internal sealed class NifSchemaConverter
                 var condResult = EvaluateCondition(field.Condition, ctx.FieldValues);
                 if (!condResult)
                 {
-                    if (_verbose && depth == 0)
-                        Console.WriteLine($"    Skipping {field.Name} (cond failed: {field.Condition})");
+                    if (depth == 0)
+                        Log.Trace($"    Skipping {field.Name} (cond failed: {field.Condition})");
                     continue;
                 }
             }
 
-            if (_verbose && depth == 0)
-                Console.WriteLine($"    Converting field {field.Name} at pos {ctx.Position:X}");
+            if (depth == 0)
+                Log.Trace($"    Converting field {field.Name} at pos {ctx.Position:X}");
 
             // Convert the field
             ConvertField(ctx, field, depth);
@@ -164,8 +158,6 @@ internal sealed class NifSchemaConverter
 
     private void ConvertField(ConversionContext ctx, NifFieldDef field, int depth = 0)
     {
-        var startPos = ctx.Position;
-
         // If field has an arg attribute, evaluate it and set #ARG# before processing
         // This is needed for structs that use #ARG# in their field conditions
         object? previousArg = null;
@@ -194,9 +186,8 @@ internal sealed class NifSchemaConverter
                 var count = EvaluateArrayLength(field.Length, ctx.FieldValues);
                 if (count < 0)
                 {
-                    if (_verbose && (depth == 0 || field.Name == "Strips" || field.Name == "Triangles"))
-                        Console.WriteLine(
-                            $"    Skipping array {field.Name} (length expression '{field.Length}' = {count})");
+                    if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
+                        Log.Trace($"    Skipping array {field.Name} (length expression '{field.Length}' = {count})");
                     return; // Invalid or conditional array
                 }
 
@@ -209,9 +200,8 @@ internal sealed class NifSchemaConverter
                     if (ctx.FieldValues.TryGetValue(arrayKey, out var arrayObj) && arrayObj is int[] widthArray)
                     {
                         // Jagged array: each row has different width
-                        if (_verbose && (depth == 0 || field.Name == "Strips" || field.Name == "Triangles"))
-                            Console.WriteLine(
-                                $"    Jagged array: {field.Name} = {count} rows with variable widths (total {widthArray.Sum()} elements) using key '{arrayKey}'");
+                        if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
+                            Log.Trace($"    Jagged array: {field.Name} = {count} rows with variable widths (total {widthArray.Sum()} elements) using key '{arrayKey}'");
 
                         for (var row = 0; row < count && row < widthArray.Length && ctx.Position < ctx.End; row++)
                         {
@@ -226,22 +216,19 @@ internal sealed class NifSchemaConverter
                     var width = EvaluateArrayLength(field.Width, ctx.FieldValues);
                     if (width < 0)
                     {
-                        if (_verbose && (depth == 0 || field.Name == "Strips" || field.Name == "Triangles"))
-                            Console.WriteLine(
-                                $"    Skipping array {field.Name} (width expression '{field.Width}' = {width}, arrayKey='{arrayKey}', found={ctx.FieldValues.ContainsKey(arrayKey)})");
+                        if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
+                            Log.Trace($"    Skipping array {field.Name} (width expression '{field.Width}' = {width}, arrayKey='{arrayKey}', found={ctx.FieldValues.ContainsKey(arrayKey)})");
                         return; // Invalid width
                     }
 
-                    if (_verbose && (depth == 0 || field.Name == "Strips" || field.Name == "Triangles"))
-                        Console.WriteLine($"    2D array: {field.Name} = {count} x {width} = {count * width} elements");
+                    if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
+                        Log.Trace($"    2D array: {field.Name} = {count} x {width} = {count * width} elements");
                     count *= width; // Total elements = length * width
                 }
 
                 if (count > 100000)
                 {
-                    if (_verbose)
-                        Console.WriteLine(
-                            $"    [Schema] WARNING: Array too large ({count}), skipping field {field.Name}");
+                    Log.Trace($"    [Schema] WARNING: Array too large ({count}), skipping field {field.Name}");
                     return;
                 }
 
@@ -265,9 +252,7 @@ internal sealed class NifSchemaConverter
                 if (arrayValues != null)
                 {
                     ctx.FieldValues[$"#{field.Name}#Array"] = arrayValues;
-                    if (_verbose) // Always show when storing array values (helps debug jagged arrays)
-                        Console.WriteLine(
-                            $"      Stored array {field.Name} = [{string.Join(", ", arrayValues)}] at depth {depth}");
+                    Log.Trace($"      Stored array {field.Name} = [{string.Join(", ", arrayValues)}] at depth {depth}");
                 }
 
                 return;
@@ -277,12 +262,7 @@ internal sealed class NifSchemaConverter
             ConvertSingleValue(ctx, field.Type, depth);
 
             // Store value for conditional field evaluation
-            StoreFieldValue(ctx, field, _verbose);
-
-            // Safety warning: if position didn't advance for a non-empty field (only report at top level)
-            if (ctx.Position == startPos && field.Type != "NiObject" && _verbose && depth == 0)
-                Console.WriteLine(
-                    $"    [Schema] WARNING: Position stuck at {ctx.Position:X}, field {field.Name}:{field.Type}");
+            StoreFieldValue(ctx, field);
         }
         finally
         {
@@ -324,168 +304,6 @@ internal sealed class NifSchemaConverter
             // If expression evaluation fails, try to parse as literal
             return 0;
         }
-    }
-
-    private void ConvertSingleValue(ConversionContext ctx, string typeName, int depth = 0)
-    {
-        // Resolve template type placeholder (#T#) to the actual type
-        if (typeName == "#T#")
-        {
-            if (ctx.TemplateType != null)
-            {
-                typeName = ctx.TemplateType;
-            }
-            else
-            {
-                if (_verbose)
-                    Console.WriteLine("    [Schema] WARNING: #T# used without template context, cannot resolve");
-                return;
-            }
-        }
-
-        // Handle SizedString explicitly (inline string with uint length prefix)
-        // Note: "string" is a struct that contains either SizedString (old) or NiFixedString (new)
-        // based on version, so we let it fall through to struct handling
-        if (typeName == "SizedString")
-        {
-            ConvertSizedString(ctx);
-            return;
-        }
-
-        if (typeName == "SizedString16")
-        {
-            ConvertSizedString16(ctx);
-            return;
-        }
-
-        // Check basic types first
-        if (_schema.BasicTypes.TryGetValue(typeName, out var basic))
-        {
-            ConvertBasicType(ctx, basic);
-            return;
-        }
-
-        // Check enums (convert based on storage type)
-        if (_schema.Enums.TryGetValue(typeName, out var enumDef))
-        {
-            if (_schema.BasicTypes.TryGetValue(enumDef.Storage, out var storageType))
-                ConvertBasicType(ctx, storageType);
-            return;
-        }
-
-        // Check structs (recursively convert fields OR bulk swap if fixed size)
-        if (_schema.Structs.TryGetValue(typeName, out var structDef))
-        {
-            // Some structs with fixed size (like HavokFilter) are packed bitfields that should
-            // be swapped as a single unit rather than field-by-field. The fields describe the
-            // layout AFTER endian conversion, not before.
-            if (structDef.FixedSize is 2 or 4 or 8)
-            {
-                // Bulk swap the entire struct as a single unit
-                if (structDef.FixedSize == 2) SwapUInt16InPlace(ctx.Buffer, ctx.Position);
-                else if (structDef.FixedSize == 4) SwapUInt32InPlace(ctx.Buffer, ctx.Position);
-                else if (structDef.FixedSize == 8) SwapUInt64InPlace(ctx.Buffer, ctx.Position);
-                ctx.Position += structDef.FixedSize.Value;
-                return;
-            }
-
-            // Clear any field values that this struct defines, so each struct instance
-            // in an array starts fresh. This prevents stale values from previous instances
-            // from affecting conditional field parsing.
-            foreach (var field in structDef.Fields) ctx.FieldValues.Remove(field.Name);
-
-            ConvertFields(ctx, structDef.Fields, depth + 1);
-            return;
-        }
-
-        // Unknown type - try to look up size and bulk swap
-        var size = _schema.GetTypeSize(typeName);
-        if (size.HasValue && size.Value > 0)
-        {
-            // Bulk swap based on size
-            if (size.Value == 2) SwapUInt16InPlace(ctx.Buffer, ctx.Position);
-            else if (size.Value == 4) SwapUInt32InPlace(ctx.Buffer, ctx.Position);
-            else if (size.Value == 8) SwapUInt64InPlace(ctx.Buffer, ctx.Position);
-            ctx.Position += size.Value;
-        }
-        else if (_verbose)
-        {
-            Console.WriteLine($"    [Schema] WARNING: Unknown type '{typeName}' with no size, cannot advance position");
-        }
-    }
-
-    /// <summary>
-    ///     Converts a SizedString (uint length + chars) - swaps the length field.
-    /// </summary>
-    private static void ConvertSizedString(ConversionContext ctx)
-    {
-        if (ctx.Position + 4 > ctx.End) return;
-
-        // Swap the length (uint, 4 bytes)
-        SwapUInt32InPlace(ctx.Buffer, ctx.Position);
-        var length = BinaryPrimitives.ReadUInt32LittleEndian(ctx.Buffer.AsSpan(ctx.Position, 4));
-        ctx.Position += 4;
-
-        // Skip the string data (chars don't need swapping)
-        if (length > 0 && length < 0x10000) // Sanity check
-            ctx.Position += (int)length;
-    }
-
-    /// <summary>
-    ///     Converts a SizedString16 (ushort length + chars) - swaps the length field.
-    /// </summary>
-    private static void ConvertSizedString16(ConversionContext ctx)
-    {
-        if (ctx.Position + 2 > ctx.End) return;
-
-        // Swap the length (ushort, 2 bytes)
-        SwapUInt16InPlace(ctx.Buffer, ctx.Position);
-        var length = BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buffer.AsSpan(ctx.Position, 2));
-        ctx.Position += 2;
-
-        // Skip the string data (chars don't need swapping)
-        if (length > 0)
-            ctx.Position += length;
-    }
-
-    private static void ConvertBasicType(ConversionContext ctx, NifBasicType basic)
-    {
-        if (ctx.Position + basic.Size > ctx.End) return;
-
-        var pos = ctx.Position; // Save position before modifying
-
-        switch (basic.Size)
-        {
-            case 1:
-                // No swap needed for single bytes
-                ctx.Position += 1;
-                break;
-
-            case 2:
-                SwapUInt16InPlace(ctx.Buffer, pos);
-                ctx.Position += 2;
-                break;
-
-            case 4:
-                SwapUInt32InPlace(ctx.Buffer, pos);
-                // Handle block references (Ref, Ptr) that need remapping
-                if (basic.IsGeneric)
-                    RemapBlockRef(ctx.Buffer, pos, ctx.BlockRemap);
-                ctx.Position += 4;
-                break;
-
-            case 8:
-                SwapUInt64InPlace(ctx.Buffer, pos);
-                ctx.Position += 8;
-                break;
-        }
-    }
-
-    private static void RemapBlockRef(byte[] buf, int pos, int[] blockRemap)
-    {
-        var idx = BinaryPrimitives.ReadInt32LittleEndian(buf.AsSpan(pos, 4));
-        if (idx >= 0 && idx < blockRemap.Length)
-            BinaryPrimitives.WriteInt32LittleEndian(buf.AsSpan(pos, 4), blockRemap[idx]);
     }
 
     private bool EvaluateVersionCondition(string? vercond)
@@ -541,7 +359,7 @@ internal sealed class NifSchemaConverter
         }
     }
 
-    private void StoreFieldValue(ConversionContext ctx, NifFieldDef field, bool verbose)
+    private void StoreFieldValue(ConversionContext ctx, NifFieldDef field)
     {
         // Store fields that may be needed for conditions or array lengths
         // This includes: Num X, X Count, Has X, Data Flags, BS Data Flags, etc.
@@ -575,8 +393,7 @@ internal sealed class NifSchemaConverter
 
             ctx.FieldValues[field.Name] = val;
 
-            if (verbose)
-                Console.WriteLine($"      Stored {field.Name} = {val} (from pos {ctx.Position - size:X})");
+            Log.Trace($"      Stored {field.Name} = {val} (from pos {ctx.Position - size:X})");
         }
     }
 

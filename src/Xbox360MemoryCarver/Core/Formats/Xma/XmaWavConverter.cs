@@ -8,22 +8,21 @@ namespace Xbox360MemoryCarver.Core.Formats.Xma;
 /// </summary>
 internal sealed class XmaWavConverter
 {
+    private static readonly Logger Log = Logger.Instance;
     private readonly string? _ffmpegPath;
-    private readonly bool _verbose;
 
-    public XmaWavConverter(bool verbose)
+    public XmaWavConverter()
     {
-        _verbose = verbose;
         _ffmpegPath = FindFfmpeg();
 
-        if (_ffmpegPath == null && verbose)
+        if (_ffmpegPath == null)
         {
-            Console.WriteLine("[XmaFormat] FFmpeg not found - XMA to WAV conversion disabled");
-            Console.WriteLine("[XmaFormat] Install FFmpeg and add to PATH for XMA→WAV conversion");
+            Log.Debug("[XmaFormat] FFmpeg not found - XMA to WAV conversion disabled");
+            Log.Debug("[XmaFormat] Install FFmpeg and add to PATH for XMA→WAV conversion");
         }
-        else if (_ffmpegPath != null && verbose)
+        else
         {
-            Console.WriteLine($"[XmaFormat] FFmpeg found at: {_ffmpegPath}");
+            Log.Debug($"[XmaFormat] FFmpeg found at: {_ffmpegPath}");
         }
     }
 
@@ -60,8 +59,8 @@ internal sealed class XmaWavConverter
 
             if (process.ExitCode != 0 || !File.Exists(outputPath))
             {
-                if (_verbose && !string.IsNullOrEmpty(stderr))
-                    Console.WriteLine($"[XmaFormat] FFmpeg error: {stderr.Trim()}");
+                if (!string.IsNullOrEmpty(stderr))
+                    Log.Debug($"[XmaFormat] FFmpeg error: {stderr.Trim()}");
                 return new DdxConversionResult { Success = false, Notes = "FFmpeg decode failed" };
             }
 
@@ -69,12 +68,9 @@ internal sealed class XmaWavConverter
 
             if (wavData.Length <= 44) return new DdxConversionResult { Success = false, Notes = "No audio decoded" };
 
-            if (_verbose)
-            {
-                var duration = EstimateWavDuration(wavData);
-                Console.WriteLine(
-                    $"[XmaFormat] Decoded {xmaData.Length} bytes XMA → {wavData.Length} bytes WAV ({duration:F2}s)");
-            }
+            var duration = EstimateWavDuration(wavData);
+            Log.Debug(
+                $"[XmaFormat] Decoded {xmaData.Length} bytes XMA → {wavData.Length} bytes WAV ({duration:F2}s)");
 
             return new DdxConversionResult
             {

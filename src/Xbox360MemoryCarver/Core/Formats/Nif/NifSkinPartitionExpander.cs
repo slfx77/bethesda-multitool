@@ -12,12 +12,14 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 ///     is stored in BSPackedAdditionalGeometryData. PC NIFs need this data in
 ///     NiSkinPartition for animations to work.
 /// </summary>
-internal static class NifSkinPartitionExpander
+internal static partial class NifSkinPartitionExpander
 {
+    private static readonly Logger Log = Logger.Instance;
+
     /// <summary>
     ///     Parses a NiSkinPartition block and returns structured data.
     /// </summary>
-    public static SkinPartitionData? Parse(byte[] data, int offset, int size, bool isBigEndian, bool verbose = false)
+    public static SkinPartitionData? Parse(byte[] data, int offset, int size, bool isBigEndian)
     {
         if (size < 4) return null;
 
@@ -38,7 +40,7 @@ internal static class NifSkinPartitionExpander
             OriginalSize = size
         };
 
-        if (verbose) Console.WriteLine($"      Parsing NiSkinPartition: {numPartitions} partitions");
+        Log.Debug($"      Parsing NiSkinPartition: {numPartitions} partitions");
 
         for (var p = 0; p < numPartitions && pos < end; p++)
         {
@@ -69,10 +71,9 @@ internal static class NifSkinPartitionExpander
             partition.NumWeightsPerVertex = ReadUInt16(data, pos, isBigEndian);
             pos += 2;
 
-            if (verbose)
-                Console.WriteLine(
-                    $"        Partition {p}: {partition.NumVertices} verts, {partition.NumTriangles} tris, " +
-                    $"{partition.NumBones} bones, {partition.NumStrips} strips, {partition.NumWeightsPerVertex} weights/vert");
+            Log.Debug(
+                $"        Partition {p}: {partition.NumVertices} verts, {partition.NumTriangles} tris, " +
+                $"{partition.NumBones} bones, {partition.NumStrips} strips, {partition.NumWeightsPerVertex} weights/vert");
 
             // Bones array (numBones * ushort)
             partition.Bones = new ushort[partition.NumBones];
@@ -106,11 +107,11 @@ internal static class NifSkinPartitionExpander
             {
                 partition.VertexWeights = new float[partition.NumVertices, partition.NumWeightsPerVertex];
                 for (var v = 0; v < partition.NumVertices && pos < end; v++)
-                for (var w = 0; w < partition.NumWeightsPerVertex && pos + 4 <= end; w++)
-                {
-                    partition.VertexWeights[v, w] = ReadFloat(data, pos, isBigEndian);
-                    pos += 4;
-                }
+                    for (var w = 0; w < partition.NumWeightsPerVertex && pos + 4 <= end; w++)
+                    {
+                        partition.VertexWeights[v, w] = ReadFloat(data, pos, isBigEndian);
+                        pos += 4;
+                    }
             }
 
             // StripLengths array (numStrips * ushort)
@@ -165,8 +166,8 @@ internal static class NifSkinPartitionExpander
             {
                 partition.BoneIndices = new byte[partition.NumVertices, partition.NumWeightsPerVertex];
                 for (var v = 0; v < partition.NumVertices && pos < end; v++)
-                for (var w = 0; w < partition.NumWeightsPerVertex && pos + 1 <= end; w++)
-                    partition.BoneIndices[v, w] = data[pos++];
+                    for (var w = 0; w < partition.NumWeightsPerVertex && pos + 1 <= end; w++)
+                        partition.BoneIndices[v, w] = data[pos++];
             }
 
             result.Partitions.Add(partition);
@@ -190,7 +191,7 @@ internal static class NifSkinPartitionExpander
             if (p.HasVertexMap) size += p.NumVertices * 2; // VertexMap
 
             size += 1; // HasVertexWeights
-            // Always add vertex weights (this is what we're expanding)
+            // Vertex weights are always included in expansion
             size += p.NumVertices * p.NumWeightsPerVertex * 4; // VertexWeights (floats)
 
             size += p.NumStrips * 2; // StripLengths
@@ -205,180 +206,11 @@ internal static class NifSkinPartitionExpander
             }
 
             size += 1; // HasBoneIndices
-            // Always add bone indices (this is what we're expanding)
+            // Bone indices are always included in expansion
             size += p.NumVertices * p.NumWeightsPerVertex; // BoneIndices (bytes)
         }
 
         return size;
-    }
-
-    /// <summary>
-    ///     Writes an expanded NiSkinPartition block with bone weights and indices from packed geometry data.
-    /// </summary>
-    /// <param name="skinPartition">Parsed NiSkinPartition data</param>
-    /// <param name="packedData">Packed geometry data containing bone indices/weights</param>
-    /// <param name="output">Output buffer to write to</param>
-    /// <param name="outPos">Position to start writing at</param>
-    /// <param name="verbose">Enable verbose logging</param>
-    /// <returns>New position after writing</returns>
-    public static int WriteExpanded(
-        SkinPartitionData skinPartition,
-        PackedGeometryData packedData,
-        byte[] output,
-        int outPos,
-        bool verbose = false)
-    {
-        var startPos = outPos;
-
-        // NumPartitions (uint, little-endian for PC)
-        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos, 4), skinPartition.NumPartitions);
-        outPos += 4;
-
-        // Running vertex offset to track position in packed data
-        var packedVertexOffset = 0;
-
-        foreach (var p in skinPartition.Partitions)
-        {
-            // Basic partition header
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), p.NumVertices);
-            outPos += 2;
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), p.NumTriangles);
-            outPos += 2;
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), p.NumBones);
-            outPos += 2;
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), p.NumStrips);
-            outPos += 2;
-            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), p.NumWeightsPerVertex);
-            outPos += 2;
-
-            // Bones array
-            foreach (var bone in p.Bones)
-            {
-                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), bone);
-                outPos += 2;
-            }
-
-            // HasVertexMap (keep same)
-            output[outPos++] = (byte)(p.HasVertexMap ? 1 : 0);
-
-            // VertexMap (if present)
-            if (p.HasVertexMap)
-                foreach (var idx in p.VertexMap)
-                {
-                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), idx);
-                    outPos += 2;
-                }
-
-            // HasVertexWeights = 1 (we're adding them!)
-            output[outPos++] = 1;
-
-            // VertexWeights - populate from packed geometry data
-            // The VertexMap tells us which global vertex index corresponds to each partition vertex
-            for (var v = 0; v < p.NumVertices; v++)
-            {
-                // Get the global vertex index from VertexMap (or use sequential if no map)
-                var globalVertexIdx = p.HasVertexMap && v < p.VertexMap.Length
-                    ? p.VertexMap[v]
-                    : packedVertexOffset + v;
-
-                for (var w = 0; w < p.NumWeightsPerVertex; w++)
-                {
-                    var weight = 0f;
-                    if (packedData.BoneWeights != null && globalVertexIdx < packedData.NumVertices)
-                    {
-                        var weightIdx = globalVertexIdx * 4 + w;
-                        if (weightIdx < packedData.BoneWeights.Length) weight = packedData.BoneWeights[weightIdx];
-                    }
-
-                    BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), weight);
-                    outPos += 4;
-                }
-            }
-
-            // StripLengths
-            foreach (var len in p.StripLengths)
-            {
-                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), len);
-                outPos += 2;
-            }
-
-            // HasFaces
-            output[outPos++] = (byte)(p.HasFaces ? 1 : 0);
-
-            // Strips or Triangles
-            if (p.HasFaces)
-            {
-                if (p.NumStrips > 0 && p.Strips != null)
-                    for (var s = 0; s < p.NumStrips && s < p.Strips.Length; s++)
-                        foreach (var idx in p.Strips[s])
-                        {
-                            BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), idx);
-                            outPos += 2;
-                        }
-                else if (p.Triangles != null)
-                    for (var t = 0; t < p.NumTriangles; t++)
-                    {
-                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), p.Triangles[t, 0]);
-                        outPos += 2;
-                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), p.Triangles[t, 1]);
-                        outPos += 2;
-                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), p.Triangles[t, 2]);
-                        outPos += 2;
-                    }
-            }
-
-            // HasBoneIndices = 1 (we're adding them!)
-            output[outPos++] = 1;
-
-            // BoneIndices - populate from packed geometry data
-            // Need to remap global bone indices to partition-local bone indices
-            for (var v = 0; v < p.NumVertices; v++)
-            {
-                var globalVertexIdx = p.HasVertexMap && v < p.VertexMap.Length
-                    ? p.VertexMap[v]
-                    : packedVertexOffset + v;
-
-                for (var w = 0; w < p.NumWeightsPerVertex; w++)
-                {
-                    byte boneIdx = 0;
-                    if (packedData.BoneIndices != null && globalVertexIdx < packedData.NumVertices)
-                    {
-                        var packedIdx = globalVertexIdx * 4 + w;
-                        if (packedIdx < packedData.BoneIndices.Length)
-                        {
-                            var globalBoneIdx = packedData.BoneIndices[packedIdx];
-                            // Map global bone index to partition-local index
-                            boneIdx = MapToPartitionBoneIndex(globalBoneIdx, p.Bones);
-                        }
-                    }
-
-                    output[outPos++] = boneIdx;
-                }
-            }
-
-            // Track offset for non-mapped partitions
-            if (!p.HasVertexMap) packedVertexOffset += p.NumVertices;
-        }
-
-        if (verbose)
-            Console.WriteLine(
-                $"      Wrote expanded NiSkinPartition: {outPos - startPos} bytes (was {skinPartition.OriginalSize})");
-
-        return outPos;
-    }
-
-    /// <summary>
-    ///     Maps a global bone index to a partition-local bone index.
-    ///     The partition's Bones array contains the mapping from local to global.
-    /// </summary>
-    private static byte MapToPartitionBoneIndex(byte globalBoneIdx, ushort[] partitionBones)
-    {
-        for (var i = 0; i < partitionBones.Length; i++)
-            if (partitionBones[i] == globalBoneIdx)
-                return (byte)i;
-
-        // Bone not found in partition - return 0 as fallback
-        return 0;
     }
 
     private static ushort ReadUInt16(byte[] data, int offset, bool bigEndian)
@@ -437,3 +269,4 @@ internal static class NifSkinPartitionExpander
         public int OriginalSize { get; set; }
     }
 }
+

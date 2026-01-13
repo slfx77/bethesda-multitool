@@ -10,8 +10,8 @@
 
   <Grid>
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
     </Grid.RowDefinitions>
 
     <!--  Custom title bar - compact, transparent for Mica  -->
@@ -21,10 +21,10 @@
       Height="40"
       Background="Transparent">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
       <!--  App icon  -->
@@ -34,7 +34,7 @@
         Height="16"
         Margin="12,0,0,0"
         VerticalAlignment="Center"
-        Source="Assets/StoreLogo.png" />
+        Source="Assets/StoreLogo.png"/>
 
       <!--  App title - vertically centered with tabs  -->
       <TextBlock
@@ -42,7 +42,7 @@
         Margin="-12,6,0,0"
         VerticalAlignment="Center"
         FontSize="12"
-        Text="Xbox 360 Memory Carver" />
+        Text="Xbox 360 Memory Carver"/>
 
       <!--  Tab strip area - fixed width tabs  -->
       <controls:TabView
@@ -54,22 +54,22 @@
         IsAddTabButtonVisible="False"
         SelectedIndex="0"
         TabWidthMode="Equal">
-        <controls:TabView.Resources />
+        <controls:TabView.Resources/>
         <controls:TabView.TabStripHeader>
           <Grid
             x:Name="TabStripDragRegion"
-            Background="Transparent" />
+            Background="Transparent"/>
         </controls:TabView.TabStripHeader>
         <controls:TabView.TabItems>
           <controls:TabViewItem
             Header="Single File"
-            IsClosable="False" />
+            IsClosable="False"/>
           <controls:TabViewItem
             Header="Batch Mode"
-            IsClosable="False" />
+            IsClosable="False"/>
           <controls:TabViewItem
             Header="NIF Converter"
-            IsClosable="False" />
+            IsClosable="False"/>
         </controls:TabView.TabItems>
       </controls:TabView>
 
@@ -78,7 +78,7 @@
         x:Name="CaptionButtonsSpacer"
         Grid.Column="3"
         Width="138"
-        Background="Transparent" />
+        Background="Transparent"/>
     </Grid>
 
     <!--  Main content area  -->
@@ -87,13 +87,13 @@
       Background="Transparent">
       <tabs:SingleFileTab
         x:Name="SingleFileTabContent"
-        Visibility="Visible" />
+        Visibility="Visible"/>
       <tabs:BatchModeTab
         x:Name="BatchModeTabContent"
-        Visibility="Collapsed" />
+        Visibility="Collapsed"/>
       <tabs:NifConverterTab
         x:Name="NifConverterTabContent"
-        Visibility="Collapsed" />
+        Visibility="Collapsed"/>
     </Grid>
   </Grid>
 </Window>

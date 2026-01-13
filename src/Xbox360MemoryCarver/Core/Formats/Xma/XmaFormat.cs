@@ -137,7 +137,7 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
 
     public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
     {
-        _wavConverter = new XmaWavConverter(verbose);
+        _wavConverter = new XmaWavConverter();
         return _wavConverter.IsAvailable;
     }
 

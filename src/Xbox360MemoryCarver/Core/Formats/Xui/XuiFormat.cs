@@ -103,12 +103,12 @@ public sealed class XuiFormat : FileFormatBase, IFileConverter
     {
         try
         {
-            _converter = new XurSubprocessConverter(verbose);
+            _converter = new XurSubprocessConverter();
             return true;
         }
         catch (FileNotFoundException ex)
         {
-            if (verbose) Console.WriteLine($"Warning: {ex.Message}");
+            Logger.Instance.Debug($"Warning: {ex.Message}");
 
             return false;
         }

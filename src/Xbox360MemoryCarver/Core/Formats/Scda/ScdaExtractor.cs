@@ -9,6 +9,7 @@ namespace Xbox360MemoryCarver.Core.Formats.Scda;
 /// </summary>
 public static partial class ScdaExtractor
 {
+    private static readonly Logger Log = Logger.Instance;
     /// <summary>
     ///     Extract all SCDA records from a dump, grouping by quest name.
     /// </summary>
@@ -16,7 +17,6 @@ public static partial class ScdaExtractor
         byte[] dumpData,
         string outputDir,
         IProgress<string>? progress = null,
-        bool verbose = false,
         string? opcodeTablePath = null)
     {
         Directory.CreateDirectory(outputDir);
@@ -35,7 +35,7 @@ public static partial class ScdaExtractor
         var (groups, ungrouped) = GroupRecordsByQuest(records.Records);
         progress?.Report($"Grouped into {groups.Count} quests, {ungrouped.Count} ungrouped");
 
-        await WriteGroupedFilesAsync(groups, outputDir, verbose);
+        await WriteGroupedFilesAsync(groups, outputDir);
         await WriteUngroupedFilesAsync(ungrouped, outputDir);
 
         // Build script info list for analysis
@@ -60,18 +60,18 @@ public static partial class ScdaExtractor
 
         // Add grouped scripts with quest names
         foreach (var (questName, records) in groups)
-        foreach (var record in records)
-        {
-            var scriptName = ExtractScriptNameFromSource(record.SourceText);
-            scripts.Add(new ScriptInfo
+            foreach (var record in records)
             {
-                Offset = record.Offset,
-                BytecodeSize = record.BytecodeLength,
-                ScriptName = scriptName,
-                QuestName = questName,
-                HasSource = record.HasAssociatedSctx
-            });
-        }
+                var scriptName = ExtractScriptNameFromSource(record.SourceText);
+                scripts.Add(new ScriptInfo
+                {
+                    Offset = record.Offset,
+                    BytecodeSize = record.BytecodeLength,
+                    ScriptName = scriptName,
+                    QuestName = questName,
+                    HasSource = record.HasAssociatedSctx
+                });
+            }
 
         // Add ungrouped scripts
         foreach (var record in ungrouped)
@@ -163,8 +163,7 @@ public static partial class ScdaExtractor
 
     private static async Task WriteGroupedFilesAsync(
         Dictionary<string, List<ScdaRecord>> groups,
-        string outputDir,
-        bool verbose)
+        string outputDir)
     {
         foreach (var (questName, stages) in groups.OrderBy(g => g.Value[0].Offset))
         {
@@ -172,9 +171,8 @@ public static partial class ScdaExtractor
             var content = ScdaFormatter.FormatGroupedScript(questName, stages);
             await File.WriteAllTextAsync(scriptPath, content);
 
-            if (verbose)
-                Console.WriteLine(
-                    $"  [Script] {questName}: {stages.Count} stages ({stages.Sum(s => s.BytecodeLength)} bytes)");
+            Log.Debug(
+                $"  [Script] {questName}: {stages.Count} stages ({stages.Sum(s => s.BytecodeLength)} bytes)");
         }
     }
 

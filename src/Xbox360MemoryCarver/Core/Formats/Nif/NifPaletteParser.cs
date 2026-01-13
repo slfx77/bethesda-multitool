@@ -28,26 +28,27 @@ internal sealed class NifNameMappings
 /// </summary>
 internal static class NifPaletteParser
 {
+    private static readonly Logger Log = Logger.Instance;
+
     /// <summary>
     ///     Parse all name-related blocks and return combined mappings.
     /// </summary>
-    public static NifNameMappings ParseAll(byte[] data, NifInfo info, bool verbose = false)
+    public static NifNameMappings ParseAll(byte[] data, NifInfo info)
     {
         var result = new NifNameMappings();
 
         // Parse NiDefaultAVObjectPalette for block→name mappings
-        var blockNames = Parse(data, info, verbose);
+        var blockNames = Parse(data, info);
         if (blockNames != null)
             foreach (var kvp in blockNames)
                 result.BlockNames[kvp.Key] = kvp.Value;
 
         // Parse NiControllerSequence for Accum Root Name
-        var accumRootName = ParseAccumRootName(data, info, verbose);
+        var accumRootName = ParseAccumRootName(data, info);
         if (accumRootName != null)
         {
             result.AccumRootName = accumRootName;
-            if (verbose)
-                Console.WriteLine($"  Accum Root Name: '{accumRootName}'");
+            Log.Debug($"  Accum Root Name: '{accumRootName}'");
         }
 
         return result;
@@ -57,7 +58,7 @@ internal static class NifPaletteParser
     ///     Parse NiDefaultAVObjectPalette and return a dictionary mapping block index to name.
     ///     Only returns entries with valid block references (not -1).
     /// </summary>
-    public static Dictionary<int, string>? Parse(byte[] data, NifInfo info, bool verbose = false)
+    public static Dictionary<int, string>? Parse(byte[] data, NifInfo info)
     {
         // Find NiDefaultAVObjectPalette block
         BlockInfo? paletteBlock = null;
@@ -70,18 +71,17 @@ internal static class NifPaletteParser
 
         if (paletteBlock == null)
         {
-            if (verbose)
-                Console.WriteLine("  No NiDefaultAVObjectPalette found");
+            Log.Debug("  No NiDefaultAVObjectPalette found");
             return null;
         }
 
-        return ParseBlock(data, paletteBlock.DataOffset, info.IsBigEndian, verbose);
+        return ParseBlock(data, paletteBlock.DataOffset, info.IsBigEndian);
     }
 
     /// <summary>
     ///     Parse NiDefaultAVObjectPalette at the given offset.
     /// </summary>
-    private static Dictionary<int, string> ParseBlock(byte[] data, int offset, bool bigEndian, bool verbose)
+    private static Dictionary<int, string> ParseBlock(byte[] data, int offset, bool bigEndian)
     {
         var result = new Dictionary<int, string>();
         var pos = offset;
@@ -92,8 +92,7 @@ internal static class NifPaletteParser
         // Num objects - 4 bytes  
         var numObjs = ReadInt32(data, ref pos, bigEndian);
 
-        if (verbose)
-            Console.WriteLine($"  Parsing NiDefaultAVObjectPalette: {numObjs} entries, scene ref {sceneRef}");
+        Log.Debug($"  Parsing NiDefaultAVObjectPalette: {numObjs} entries, scene ref {sceneRef}");
 
         // Parse AVObject array - each entry is: SizedString (uint length + chars) + Ptr (int)
         for (var i = 0; i < numObjs; i++)
@@ -102,8 +101,7 @@ internal static class NifPaletteParser
             var strLen = ReadInt32(data, ref pos, bigEndian);
             if (strLen < 0 || strLen > 256 || pos + strLen > data.Length)
             {
-                if (verbose)
-                    Console.WriteLine($"    Invalid string length {strLen} at entry {i}");
+                Log.Debug($"    Invalid string length {strLen} at entry {i}");
                 break;
             }
 
@@ -113,8 +111,7 @@ internal static class NifPaletteParser
             // Read Ptr (block reference)
             var blockRef = ReadInt32(data, ref pos, bigEndian);
 
-            if (verbose)
-                Console.WriteLine($"    [{i}] Name='{name}' -> Block {blockRef}");
+            Log.Debug($"    [{i}] Name='{name}' -> Block {blockRef}");
 
             // Only add entries with valid block references
             if (blockRef >= 0)
@@ -122,14 +119,15 @@ internal static class NifPaletteParser
                 // Strip suffix like ":0" from names (animation controller format vs node name)
                 var baseName = StripAnimationSuffix(name);
 
-                // Don't overwrite if we already have a simpler name for this block
-                if (!result.ContainsKey(blockRef) || result[blockRef].Length > baseName.Length)
+                // Prefer simpler (shorter) names for block mappings
+                if (!result.TryGetValue(blockRef, out var existingName) || existingName.Length > baseName.Length)
+                {
                     result[blockRef] = baseName;
+                }
             }
         }
 
-        if (verbose)
-            Console.WriteLine($"  Found {result.Count} block→name mappings");
+        Log.Debug($"  Found {result.Count} block→name mappings");
 
         return result;
     }
@@ -138,7 +136,7 @@ internal static class NifPaletteParser
     ///     Parse NiControllerSequence blocks to find Accum Root Name.
     ///     The Accum Root Name is the name of the root node for animation accumulation.
     /// </summary>
-    public static string? ParseAccumRootName(byte[] data, NifInfo info, bool verbose = false)
+    public static string? ParseAccumRootName(byte[] data, NifInfo info)
     {
         // Find first NiControllerSequence block
         BlockInfo? seqBlock = null;
@@ -151,12 +149,11 @@ internal static class NifPaletteParser
 
         if (seqBlock == null)
         {
-            if (verbose)
-                Console.WriteLine("  No NiControllerSequence found");
+            Log.Debug("  No NiControllerSequence found");
             return null;
         }
 
-        return ParseControllerSequence(data, seqBlock.DataOffset, info, verbose);
+        return ParseControllerSequence(data, seqBlock.DataOffset, info);
     }
 
     /// <summary>
@@ -175,9 +172,9 @@ internal static class NifPaletteParser
     ///     - Start Time (float)
     ///     - Stop Time (float)
     ///     - Manager (Ptr)
-    ///     - Accum Root Name (string index) <- This is what we want!
+    ///     - Accum Root Name (string index) - target field for extraction
     /// </summary>
-    private static string? ParseControllerSequence(byte[] data, int offset, NifInfo info, bool verbose)
+    private static string? ParseControllerSequence(byte[] data, int offset, NifInfo info)
     {
         var pos = offset;
         var bigEndian = info.IsBigEndian;
@@ -192,8 +189,7 @@ internal static class NifPaletteParser
         // Array Grow By
         _ = ReadInt32(data, ref pos, bigEndian); // Not used
 
-        if (verbose)
-            Console.WriteLine($"  NiControllerSequence: nameIdx={nameIdx}, numControlled={numControlledBlocks}");
+        Log.Debug($"  NiControllerSequence: nameIdx={nameIdx}, numControlled={numControlledBlocks}");
 
         // Skip Controlled Blocks array
         // Each ControlledBlock for version 20.2.0.7, BS Version 34 (Bethesda) is:
@@ -231,11 +227,10 @@ internal static class NifPaletteParser
         // Manager (Ptr)
         pos += 4;
 
-        // Accum Root Name (string index) - THIS IS WHAT WE WANT!
+        // Accum Root Name (string index) - target field for extraction
         var accumRootNameIdx = ReadInt32(data, ref pos, bigEndian);
 
-        if (verbose)
-            Console.WriteLine($"  Accum Root Name Index: {accumRootNameIdx}");
+        Log.Debug($"  Accum Root Name Index: {accumRootNameIdx}");
 
         // Look up the string
         if (accumRootNameIdx >= 0 && accumRootNameIdx < info.Strings.Count) return info.Strings[accumRootNameIdx];

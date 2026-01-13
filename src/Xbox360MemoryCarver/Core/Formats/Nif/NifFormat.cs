@@ -341,7 +341,7 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
             if (pos > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
 
-            // Block Size array (uint[numBlocks]) - this is what we need!
+            // Block Size array (uint[numBlocks]) - used to calculate total file size
             // Present in version 20.2.0.5+
             if (pos + numBlocks * 4 > data.Length)
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
@@ -451,79 +451,5 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     ///     Result from parsing NIF header.
     /// </summary>
     private readonly record struct NifHeaderInfo(int Size, bool IsBigEndian, List<string> BlockTypes);
-
-    #region IFileConverter Implementation
-
-    /// <inheritdoc />
-    public string TargetExtension => ".nif";
-
-    /// <inheritdoc />
-    public string TargetFolder => "models_converted";
-
-    /// <inheritdoc />
-    public bool IsInitialized => true;
-
-    /// <inheritdoc />
-    public int ConvertedCount { get; private set; }
-
-    /// <inheritdoc />
-    public int FailedCount { get; private set; }
-
-    /// <inheritdoc />
-    public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
-    {
-        // No external dependencies needed for NIF conversion
-        return true;
-    }
-
-    /// <inheritdoc />
-    public bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata)
-    {
-        // Only convert big-endian NIF files
-        if (metadata?.TryGetValue("bigEndian", out var beValue) == true && beValue is bool isBigEndian)
-            return isBigEndian;
-
-        return false;
-    }
-
-    /// <inheritdoc />
-    public Task<DdxConversionResult> ConvertAsync(byte[] data, IReadOnlyDictionary<string, object>? metadata = null)
-    {
-        try
-        {
-            var verbose = metadata?.TryGetValue("verbose", out var v) == true && v is true;
-            var converter = new NifConverter(verbose);
-            var result = converter.Convert(data);
-
-            if (result.Success && result.OutputData != null)
-            {
-                ConvertedCount++;
-                return Task.FromResult(new DdxConversionResult
-                {
-                    Success = true,
-                    DdsData = result.OutputData,
-                    Notes = result.ErrorMessage ??
-                            "Successfully converted Xbox 360 NIF to PC format with geometry unpacking."
-                });
-            }
-
-            FailedCount++;
-            return Task.FromResult(new DdxConversionResult
-            {
-                Success = false,
-                Notes = result.ErrorMessage ?? "Failed to convert NIF - file may already be little-endian or invalid"
-            });
-        }
-        catch (Exception ex)
-        {
-            FailedCount++;
-            return Task.FromResult(new DdxConversionResult
-            {
-                Success = false,
-                Notes = $"NIF conversion error: {ex.Message}"
-            });
-        }
-    }
-
-    #endregion
 }
+

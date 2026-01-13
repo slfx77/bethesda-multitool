@@ -162,10 +162,9 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     public static Task ExportRecordsAsync(
         EsmRecordScanResult records,
         Dictionary<uint, string> formIdMap,
-        string outputDir,
-        bool verbose = false)
+        string outputDir)
     {
-        return EsmRecordExporter.ExportRecordsAsync(records, formIdMap, outputDir, verbose);
+        return EsmRecordExporter.ExportRecordsAsync(records, formIdMap, outputDir);
     }
 
     #endregion

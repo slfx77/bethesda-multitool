@@ -12,11 +12,12 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 /// </summary>
 internal static class NifPackedDataExtractor
 {
+    private static readonly Logger Log = Logger.Instance;
+
     /// <summary>
     ///     Parse a BSPackedAdditionalGeometryData block and extract geometry.
     /// </summary>
-    public static PackedGeometryData? Extract(byte[] data, int blockOffset, int blockSize, bool isBigEndian,
-        bool verbose = false)
+    public static PackedGeometryData? Extract(byte[] data, int blockOffset, int blockSize, bool isBigEndian)
     {
         try
         {
@@ -33,7 +34,7 @@ internal static class NifPackedDataExtractor
             var numBlockInfos = ReadUInt32(data, pos, isBigEndian);
             pos += 4;
 
-            if (verbose) Console.WriteLine($"    Packed data: {numVertices} vertices, {numBlockInfos} streams");
+            Log.Debug($"    Packed data: {numVertices} vertices, {numBlockInfos} streams");
 
             // Parse stream infos (25 bytes each)
             var streams = new List<DataStreamInfo>();
@@ -51,12 +52,9 @@ internal static class NifPackedDataExtractor
                 });
                 pos += 25;
 
-                if (verbose)
-                {
-                    var s = streams[^1];
-                    Console.WriteLine(
-                        $"      Stream {i}: type={s.Type}, unitSize={s.UnitSize}, stride={s.Stride}, offset={s.BlockOffset}");
-                }
+                var s = streams[^1];
+                Log.Debug(
+                    $"      Stream {i}: type={s.Type}, unitSize={s.UnitSize}, stride={s.Stride}, offset={s.BlockOffset}");
             }
 
             if (streams.Count == 0) return null;
@@ -97,7 +95,7 @@ internal static class NifPackedDataExtractor
 
             if (rawDataOffset < 0)
             {
-                if (verbose) Console.WriteLine("    Failed to find raw data offset");
+                Log.Debug("    Failed to find raw data offset");
                 return null;
             }
 
@@ -142,22 +140,21 @@ internal static class NifPackedDataExtractor
                     var boneWeightsStream = half4Streams.First(s => s.BlockOffset == 8);
                     result.BoneWeights = ExtractHalf4WeightsStream(data, rawDataOffset, numVertices, stride,
                         boneWeightsStream, isBigEndian);
-                    if (verbose)
-                        Console.WriteLine("      Extracted bone weights from offset 8");
+                    Log.Debug("      Extracted bone weights from offset 8");
                 }
 
-                if (verbose)
-                    Console.WriteLine("      Skinned mesh (stride 48): extracted bone indices");
+                Log.Debug("      Skinned mesh (stride 48): extracted bone indices");
             }
             else
             {
                 // Non-skinned mesh: ubyte4 (if present) is vertex colors
                 if (ubyte4Streams.Count > 0)
+                {
                     result.VertexColors =
                         ExtractUbyte4Stream(data, rawDataOffset, numVertices, stride, ubyte4Streams[0]);
 
-                if (verbose && ubyte4Streams.Count > 0)
-                    Console.WriteLine("      Non-skinned mesh: extracted vertex colors");
+                    Log.Debug("      Non-skinned mesh: extracted vertex colors");
+                }
             }
 
             // Xbox 360 packed geometry has different layouts based on stride:
@@ -215,9 +212,8 @@ internal static class NifPackedDataExtractor
                     if (avgLen > 0.9 && avgLen < 1.1)
                     {
                         unitStreams.Add((stream, streamData, (int)stream.BlockOffset));
-                        if (verbose)
-                            Console.WriteLine(
-                                $"      Found unit-length stream at offset {stream.BlockOffset}, avgLen={avgLen:F3}");
+                        Log.Debug(
+                            $"      Found unit-length stream at offset {stream.BlockOffset}, avgLen={avgLen:F3}");
                     }
                 }
             }
@@ -249,8 +245,7 @@ internal static class NifPackedDataExtractor
             if (result.Normals != null && result.Tangents != null && result.Bitangents == null)
             {
                 result.Bitangents = ComputeBitangents(result.Normals, result.Tangents, numVertices);
-                if (verbose)
-                    Console.WriteLine("      Computed bitangents from normals and tangents");
+                Log.Debug("      Computed bitangents from normals and tangents");
             }
 
             // Calculate BS Data Flags based on what data is available
@@ -260,17 +255,16 @@ internal static class NifPackedDataExtractor
             if (result.Tangents != null || result.Bitangents != null) bsDataFlags |= 4096;
             result.BsDataFlags = bsDataFlags;
 
-            if (verbose)
-                Console.WriteLine(
-                    $"    Extracted: verts={result.Positions != null}, normals={result.Normals != null}, " +
-                    $"tangents={result.Tangents != null}, bitangents={result.Bitangents != null}, uvs={result.UVs != null}, " +
-                    $"colors={result.VertexColors != null}, boneIndices={result.BoneIndices != null}, boneWeights={result.BoneWeights != null}");
+            Log.Debug(
+                $"    Extracted: verts={result.Positions != null}, normals={result.Normals != null}, " +
+                $"tangents={result.Tangents != null}, bitangents={result.Bitangents != null}, uvs={result.UVs != null}, " +
+                $"colors={result.VertexColors != null}, boneIndices={result.BoneIndices != null}, boneWeights={result.BoneWeights != null}");
 
             return result;
         }
         catch (Exception ex)
         {
-            if (verbose) Console.WriteLine($"    Error extracting packed data: {ex.Message}");
+            Log.Debug($"    Error extracting packed data: {ex.Message}");
             return null;
         }
     }
