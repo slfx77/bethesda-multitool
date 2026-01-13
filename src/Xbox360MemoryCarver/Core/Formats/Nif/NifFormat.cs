@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using Xbox360MemoryCarver.Core.Converters;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -452,4 +451,3 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     /// </summary>
     private readonly record struct NifHeaderInfo(int Size, bool IsBigEndian, List<string> BlockTypes);
 }
-

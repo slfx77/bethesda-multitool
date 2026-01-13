@@ -102,14 +102,14 @@ public static class SignatureBoundaryScanner
     {
         var knownSignatures = GetKnownSignatures();
 
-#pragma warning disable S3267 // Loops should be simplified using LINQ - cannot use Span in lambda
+
         foreach (var sig in knownSignatures)
         {
             if (position + sig.Length > data.Length) continue;
             if (data.Slice(position, sig.Length).SequenceEqual(sig))
                 return true;
         }
-#pragma warning restore S3267
+
 
         // Check Gamebryo
         if (position + 20 <= data.Length && data.Slice(position, 20).SequenceEqual(GamebryoSignature)) return true;
@@ -159,7 +159,7 @@ public static class SignatureBoundaryScanner
             // Check 4-byte signatures
             var slice = data.Slice(i, Math.Min(4, data.Length - i));
 
-#pragma warning disable S3267 // Loops should be simplified using LINQ - cannot use Span in lambda
+
             foreach (var sig in knownSignatures)
             {
                 if (sig.Length > slice.Length) continue;
@@ -175,7 +175,7 @@ public static class SignatureBoundaryScanner
 
                 return i - offset;
             }
-#pragma warning restore S3267
+
 
             // Check for Gamebryo/NIF (20-byte signature)
             if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual(GamebryoSignature)) return i - offset;

@@ -1,6 +1,5 @@
 // AST node types for NifConditionExpr
 
-#pragma warning disable S3218
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 

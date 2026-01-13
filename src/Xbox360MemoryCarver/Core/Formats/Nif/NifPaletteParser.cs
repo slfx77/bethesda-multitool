@@ -121,9 +121,7 @@ internal static class NifPaletteParser
 
                 // Prefer simpler (shorter) names for block mappings
                 if (!result.TryGetValue(blockRef, out var existingName) || existingName.Length > baseName.Length)
-                {
                     result[blockRef] = baseName;
-                }
             }
         }
 

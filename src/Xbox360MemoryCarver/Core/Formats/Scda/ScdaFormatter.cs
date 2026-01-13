@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 
@@ -135,8 +134,7 @@ public static class ScdaFormatter
         }
     }
 
-    [SuppressMessage("Globalization", "CA1305:Specify IFormatProvider",
-        Justification = "Script code output is not culture-sensitive")]
+
     private static void AppendDecompiledBytecode(StringBuilder sb, byte[] bytecode)
     {
         sb.AppendLine("; === Decompiled Bytecode ===");

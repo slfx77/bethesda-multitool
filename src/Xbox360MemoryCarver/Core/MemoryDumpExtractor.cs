@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.IO.MemoryMappedFiles;
 using Xbox360MemoryCarver.Core.Carving;
 using Xbox360MemoryCarver.Core.Formats.Scda;
@@ -122,8 +121,6 @@ public static class MemoryDumpExtractor
     /// <summary>
     ///     Extract modules from minidump metadata.
     /// </summary>
-    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
-        Justification = "Module extraction handles multiple data sources and edge cases")]
     private static async Task<(int count, HashSet<long> offsets)> ExtractModulesAsync(
         string filePath,
         ExtractionOptions options,

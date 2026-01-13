@@ -44,15 +44,9 @@ internal sealed partial class NifConverter
         // bsDataFlags - update flags based on packed data
         var origBsDataFlags = ReadUInt16BE(input, srcPos);
         var newBsDataFlags = origBsDataFlags;
-        if (packedData.Tangents != null)
-        {
-            newBsDataFlags |= 4096; // Has tangents flag
-        }
+        if (packedData.Tangents != null) newBsDataFlags |= 4096; // Has tangents flag
 
-        if (packedData.UVs != null)
-        {
-            newBsDataFlags |= 1; // Has UVs flag
-        }
+        if (packedData.UVs != null) newBsDataFlags |= 1; // Has UVs flag
 
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), newBsDataFlags);
         srcPos += 2;
@@ -99,9 +93,7 @@ internal sealed partial class NifConverter
         // Copy and convert remaining block data (strips/triangles specific to NiTriStripsData/NiTriShapeData)
         var remainingOriginalBytes = block.Size - (srcPos - block.DataOffset);
         if (remainingOriginalBytes > 0)
-        {
             outPos = WriteTriStripSpecificData(input, output, srcPos, outPos, block.TypeName, triangles);
-        }
 
         return outPos;
     }
@@ -132,10 +124,7 @@ internal sealed partial class NifConverter
                 for (var partitionIdx = 0; partitionIdx < packedVertexCount; partitionIdx++)
                 {
                     var meshIdx = vertexMap[partitionIdx];
-                    if (meshIdx >= numVertices)
-                    {
-                        continue; // Skip invalid indices
-                    }
+                    if (meshIdx >= numVertices) continue; // Skip invalid indices
 
                     var writePos = basePos + meshIdx * 12;
                     BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
@@ -208,9 +197,7 @@ internal sealed partial class NifConverter
 
                 // Write bitangents if available (with optional remapping)
                 if (packedData.Bitangents != null)
-                {
                     outPos = WriteVec3Array(output, outPos, numVertices, packedData.Bitangents, vertexMap);
-                }
             }
         }
         else if (origHasNormals != 0 && packedData.Normals == null)
@@ -226,7 +213,6 @@ internal sealed partial class NifConverter
 
             // Copy existing tangents/bitangents if present
             if ((origBsDataFlags & 4096) != 0)
-            {
                 for (var v = 0; v < numVertices * 6; v++) // 3 floats tangent + 3 floats bitangent
                 {
                     BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
@@ -234,7 +220,6 @@ internal sealed partial class NifConverter
                     srcPos += 4;
                     outPos += 4;
                 }
-            }
         }
 
         newSrcPos = srcPos;
@@ -256,10 +241,7 @@ internal sealed partial class NifConverter
             for (var partitionIdx = 0; partitionIdx < packedCount; partitionIdx++)
             {
                 var meshIdx = vertexMap[partitionIdx];
-                if (meshIdx >= numVertices)
-                {
-                    continue;
-                }
+                if (meshIdx >= numVertices) continue;
 
                 var writePos = basePos + meshIdx * 12;
                 BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos), data[partitionIdx * 3 + 0]);
@@ -269,20 +251,18 @@ internal sealed partial class NifConverter
 
             return outPos + dataSize;
         }
-        else
-        {
-            for (var v = 0; v < numVertices; v++)
-            {
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), data[v * 3 + 0]);
-                outPos += 4;
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), data[v * 3 + 1]);
-                outPos += 4;
-                BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), data[v * 3 + 2]);
-                outPos += 4;
-            }
 
-            return outPos;
+        for (var v = 0; v < numVertices; v++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), data[v * 3 + 0]);
+            outPos += 4;
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), data[v * 3 + 1]);
+            outPos += 4;
+            BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), data[v * 3 + 2]);
+            outPos += 4;
         }
+
+        return outPos;
     }
 
     /// <summary>
@@ -312,10 +292,7 @@ internal sealed partial class NifConverter
                 for (var partitionIdx = 0; partitionIdx < packedColorCount; partitionIdx++)
                 {
                     var meshIdx = vertexMap[partitionIdx];
-                    if (meshIdx >= numVertices)
-                    {
-                        continue;
-                    }
+                    if (meshIdx >= numVertices) continue;
 
                     // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
                     var a = packedData.VertexColors[partitionIdx * 4 + 0] / 255.0f;
@@ -391,10 +368,7 @@ internal sealed partial class NifConverter
                 for (var partitionIdx = 0; partitionIdx < packedUvCount; partitionIdx++)
                 {
                     var meshIdx = vertexMap[partitionIdx];
-                    if (meshIdx >= numVertices)
-                    {
-                        continue;
-                    }
+                    if (meshIdx >= numVertices) continue;
 
                     var writePos = basePos + meshIdx * 8;
                     BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos),
@@ -468,18 +442,14 @@ internal sealed partial class NifConverter
 
             // points[numStrips][stripLengths[i]]
             if (hasPoints != 0)
-            {
                 for (var i = 0; i < numStrips; i++)
+                for (var j = 0; j < stripLengths[i]; j++)
                 {
-                    for (var j = 0; j < stripLengths[i]; j++)
-                    {
-                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                            ReadUInt16BE(input, srcPos));
-                        srcPos += 2;
-                        outPos += 2;
-                    }
+                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                        ReadUInt16BE(input, srcPos));
+                    srcPos += 2;
+                    outPos += 2;
                 }
-            }
         }
         else if (blockType == "NiTriShapeData")
         {
@@ -527,10 +497,7 @@ internal sealed partial class NifConverter
             }
 
             // Skip source triangles if any (shouldn't be any since srcHasTriangles=0)
-            if (srcHasTriangles != 0)
-            {
-                srcPos += srcNumTriangles * 6;
-            }
+            if (srcHasTriangles != 0) srcPos += srcNumTriangles * 6;
         }
         else
         {
@@ -543,7 +510,6 @@ internal sealed partial class NifConverter
 
             // Copy source triangles if present
             if (srcHasTriangles != 0)
-            {
                 for (var i = 0; i < srcNumTriangles * 3; i++)
                 {
                     BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
@@ -551,7 +517,6 @@ internal sealed partial class NifConverter
                     srcPos += 2;
                     outPos += 2;
                 }
-            }
         }
 
         // numMatchGroups (ushort)

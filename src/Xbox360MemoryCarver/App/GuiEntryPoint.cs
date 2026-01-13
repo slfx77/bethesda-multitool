@@ -68,10 +68,10 @@ public static class GuiEntryPoint
         e.SetObserved();
     }
 
-#pragma warning disable SYSLIB1054
+
     [DllImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachConsole(int dwProcessId);
-#pragma warning restore SYSLIB1054
+
 }
 #endif

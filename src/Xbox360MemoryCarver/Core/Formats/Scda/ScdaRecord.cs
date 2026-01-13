@@ -17,11 +17,10 @@ public record ScdaRecord
     public string? ScriptName { get; set; }
 
     // Computed properties - SonarQube S2325 incorrectly suggests these be static
-#pragma warning disable S2325
+
     public int BytecodeSize => Bytecode.Length;
     public int BytecodeLength => Bytecode.Length;
     public bool HasAssociatedSctx => !string.IsNullOrEmpty(SourceText);
-#pragma warning restore S2325
 }
 
 /// <summary>

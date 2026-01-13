@@ -56,12 +56,12 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
                                   && _dumpFiles.Any(f => f.IsSelected);
     }
 
-#pragma warning disable CA1822, S2325 // Event handler cannot be static
+
     private void ParallelCountBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (double.IsNaN(args.NewValue)) sender.Value = 2;
     }
-#pragma warning restore CA1822, S2325
+
 
     private async Task ShowDialogAsync(string title, string message, bool isError = false)
     {
@@ -75,7 +75,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         }
     }
 
-#pragma warning disable RCS1163
+
     private async void BrowseInputButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
@@ -166,74 +166,6 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     {
         foreach (var entry in _dumpFiles) entry.IsSelected = false;
     }
-
-    #region Sorting
-
-    private void SortByFilename_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(BatchSortColumn.Filename);
-    }
-
-    private void SortBySize_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(BatchSortColumn.Size);
-    }
-
-    private void SortByStatus_Click(object sender, RoutedEventArgs e)
-    {
-        ApplySort(BatchSortColumn.Status);
-    }
-
-    private void ApplySort(BatchSortColumn column)
-    {
-        if (_sortColumn == column)
-        {
-            _sortAscending = !_sortAscending;
-        }
-        else
-        {
-            _sortColumn = column;
-            _sortAscending = true;
-        }
-
-        UpdateSortIcons();
-
-        var sorted = _sortColumn switch
-        {
-            BatchSortColumn.Filename => _sortAscending
-                ? _dumpFiles.OrderBy(f => f.FileName)
-                : _dumpFiles.OrderByDescending(f => f.FileName),
-            BatchSortColumn.Size => _sortAscending
-                ? _dumpFiles.OrderBy(f => f.Size)
-                : _dumpFiles.OrderByDescending(f => f.Size),
-            BatchSortColumn.Status => _sortAscending
-                ? _dumpFiles.OrderBy(f => f.Status)
-                : _dumpFiles.OrderByDescending(f => f.Status),
-            _ => _dumpFiles.AsEnumerable()
-        };
-
-        var list = sorted.ToList();
-
-        // Batch update - suspend UI binding during sort refresh
-        DumpFilesListView.ItemsSource = null;
-        _dumpFiles.Clear();
-        foreach (var item in list) _dumpFiles.Add(item);
-        DumpFilesListView.ItemsSource = _dumpFiles;
-    }
-
-    private void UpdateSortIcons()
-    {
-        var glyph = _sortAscending ? "\uE70D" : "\uE70E";
-        FilenameSortIcon.Visibility =
-            _sortColumn == BatchSortColumn.Filename ? Visibility.Visible : Visibility.Collapsed;
-        FilenameSortIcon.Glyph = glyph;
-        SizeSortIcon.Visibility = _sortColumn == BatchSortColumn.Size ? Visibility.Visible : Visibility.Collapsed;
-        SizeSortIcon.Glyph = glyph;
-        StatusSortIcon.Visibility = _sortColumn == BatchSortColumn.Status ? Visibility.Visible : Visibility.Collapsed;
-        StatusSortIcon.Glyph = glyph;
-    }
-
-    #endregion
 
     private async void ExtractButton_Click(object sender, RoutedEventArgs e)
     {
@@ -367,5 +299,72 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
     }
-#pragma warning restore RCS1163
+
+    #region Sorting
+
+    private void SortByFilename_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(BatchSortColumn.Filename);
+    }
+
+    private void SortBySize_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(BatchSortColumn.Size);
+    }
+
+    private void SortByStatus_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySort(BatchSortColumn.Status);
+    }
+
+    private void ApplySort(BatchSortColumn column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortAscending = !_sortAscending;
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortAscending = true;
+        }
+
+        UpdateSortIcons();
+
+        var sorted = _sortColumn switch
+        {
+            BatchSortColumn.Filename => _sortAscending
+                ? _dumpFiles.OrderBy(f => f.FileName)
+                : _dumpFiles.OrderByDescending(f => f.FileName),
+            BatchSortColumn.Size => _sortAscending
+                ? _dumpFiles.OrderBy(f => f.Size)
+                : _dumpFiles.OrderByDescending(f => f.Size),
+            BatchSortColumn.Status => _sortAscending
+                ? _dumpFiles.OrderBy(f => f.Status)
+                : _dumpFiles.OrderByDescending(f => f.Status),
+            _ => _dumpFiles.AsEnumerable()
+        };
+
+        var list = sorted.ToList();
+
+        // Batch update - suspend UI binding during sort refresh
+        DumpFilesListView.ItemsSource = null;
+        _dumpFiles.Clear();
+        foreach (var item in list) _dumpFiles.Add(item);
+        DumpFilesListView.ItemsSource = _dumpFiles;
+    }
+
+    private void UpdateSortIcons()
+    {
+        var glyph = _sortAscending ? "\uE70D" : "\uE70E";
+        FilenameSortIcon.Visibility =
+            _sortColumn == BatchSortColumn.Filename ? Visibility.Visible : Visibility.Collapsed;
+        FilenameSortIcon.Glyph = glyph;
+        SizeSortIcon.Visibility = _sortColumn == BatchSortColumn.Size ? Visibility.Visible : Visibility.Collapsed;
+        SizeSortIcon.Glyph = glyph;
+        StatusSortIcon.Visibility = _sortColumn == BatchSortColumn.Status ? Visibility.Visible : Visibility.Collapsed;
+        StatusSortIcon.Glyph = glyph;
+    }
+
+    #endregion
 }

@@ -4,7 +4,6 @@
 
 // S3218: Method shadowing is intentional in this expression tree visitor pattern
 
-#pragma warning disable S3218
 
 using System.Globalization;
 
@@ -376,4 +375,3 @@ public sealed partial class NifVersionExpr
 
     #endregion
 }
-

@@ -2,7 +2,7 @@
 // Supports recursive evaluation of version conditions
 
 // S3218: Method shadowing is intentional in this expression tree visitor pattern
-#pragma warning disable S3218
+
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 

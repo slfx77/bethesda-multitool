@@ -4,7 +4,6 @@
 
 using System.Buffers.Binary;
 using System.Globalization;
-using static Xbox360MemoryCarver.Core.Formats.Nif.NifEndianUtils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 
@@ -85,7 +84,8 @@ internal sealed partial class NifSchemaConverter
             if (!IsVersionInRange(field.Since, field.Until))
             {
                 if (depth == 0)
-                    Log.Trace($"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
+                    Log.Trace(
+                        $"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
                 continue;
             }
 
@@ -160,8 +160,7 @@ internal sealed partial class NifSchemaConverter
     {
         // If field has an arg attribute, evaluate it and set #ARG# before processing
         // This is needed for structs that use #ARG# in their field conditions
-        object? previousArg = null;
-        var hadPreviousArg = ctx.FieldValues.TryGetValue("#ARG#", out previousArg);
+        var hadPreviousArg = ctx.FieldValues.TryGetValue("#ARG#", out var previousArg);
 
         if (field.Arg != null)
         {
@@ -201,7 +200,8 @@ internal sealed partial class NifSchemaConverter
                     {
                         // Jagged array: each row has different width
                         if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
-                            Log.Trace($"    Jagged array: {field.Name} = {count} rows with variable widths (total {widthArray.Sum()} elements) using key '{arrayKey}'");
+                            Log.Trace(
+                                $"    Jagged array: {field.Name} = {count} rows with variable widths (total {widthArray.Sum()} elements) using key '{arrayKey}'");
 
                         for (var row = 0; row < count && row < widthArray.Length && ctx.Position < ctx.End; row++)
                         {
@@ -217,7 +217,8 @@ internal sealed partial class NifSchemaConverter
                     if (width < 0)
                     {
                         if (depth == 0 || field.Name == "Strips" || field.Name == "Triangles")
-                            Log.Trace($"    Skipping array {field.Name} (width expression '{field.Width}' = {width}, arrayKey='{arrayKey}', found={ctx.FieldValues.ContainsKey(arrayKey)})");
+                            Log.Trace(
+                                $"    Skipping array {field.Name} (width expression '{field.Width}' = {width}, arrayKey='{arrayKey}', found={ctx.FieldValues.ContainsKey(arrayKey)})");
                         return; // Invalid width
                     }
 

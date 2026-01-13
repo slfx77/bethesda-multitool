@@ -337,9 +337,9 @@ SubShapes[NumSubShapes] - HavokFilter, NumVertices, Material
 
 ### ❌ Not Yet Implemented
 
-| Feature                   | Status | Notes                                        |
-| ------------------------- | ------ | -------------------------------------------- |
-| (None currently known)    | —      | All identified features have been implemented |
+| Feature                | Status | Notes                                         |
+| ---------------------- | ------ | --------------------------------------------- |
+| (None currently known) | —      | All identified features have been implemented |
 
 > **Note**: hkPackedNiTriStripsData is now converted (vertices decompressed from half to full floats).
 

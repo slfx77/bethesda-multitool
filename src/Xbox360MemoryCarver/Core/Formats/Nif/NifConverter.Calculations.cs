@@ -25,10 +25,7 @@ internal sealed partial class NifConverter
         var hasVertices = data[pos];
         pos += 1;
 
-        if (hasVertices != 0)
-        {
-            pos += numVertices * 12;
-        }
+        if (hasVertices != 0) pos += numVertices * 12;
 
         if (pos + 2 > end) return null;
         var bsDataFlags = ReadUInt16BE(data, pos);
@@ -41,10 +38,7 @@ internal sealed partial class NifConverter
         if (hasNormals != 0)
         {
             pos += numVertices * 12;
-            if ((bsDataFlags & 4096) != 0)
-            {
-                pos += numVertices * 24;
-            }
+            if ((bsDataFlags & 4096) != 0) pos += numVertices * 24;
         }
 
         pos += 16; // center + radius
@@ -55,40 +49,22 @@ internal sealed partial class NifConverter
         // Calculate size increase
         var sizeIncrease = 0;
 
-        if (hasVertices == 0 && packedData.Positions != null)
-        {
-            sizeIncrease += numVertices * 12;
-        }
+        if (hasVertices == 0 && packedData.Positions != null) sizeIncrease += numVertices * 12;
 
         if (hasNormals == 0 && packedData.Normals != null)
         {
             sizeIncrease += numVertices * 12;
-            if (packedData.Tangents != null)
-            {
-                sizeIncrease += numVertices * 12;
-            }
-            if (packedData.Bitangents != null)
-            {
-                sizeIncrease += numVertices * 12;
-            }
+            if (packedData.Tangents != null) sizeIncrease += numVertices * 12;
+            if (packedData.Bitangents != null) sizeIncrease += numVertices * 12;
         }
 
         // Vertex colors: skip for skinned meshes (ubyte4 is bone indices)
-        if (hasVertexColors == 0 && packedData.VertexColors != null && !isSkinned)
-        {
-            sizeIncrease += numVertices * 16;
-        }
+        if (hasVertexColors == 0 && packedData.VertexColors != null && !isSkinned) sizeIncrease += numVertices * 16;
 
         var numUVSets = bsDataFlags & 1;
-        if (numUVSets == 0 && packedData.UVs != null)
-        {
-            sizeIncrease += numVertices * 8;
-        }
+        if (numUVSets == 0 && packedData.UVs != null) sizeIncrease += numVertices * 8;
 
-        if (sizeIncrease == 0)
-        {
-            return null;
-        }
+        if (sizeIncrease == 0) return null;
 
         return new GeometryBlockExpansion
         {
@@ -107,16 +83,10 @@ internal sealed partial class NifConverter
         var newIndex = 0;
 
         for (var i = 0; i < blockCount; i++)
-        {
             if (_blocksToStrip.Contains(i))
-            {
                 remap[i] = -1;
-            }
             else
-            {
                 remap[i] = newIndex++;
-            }
-        }
 
         return remap;
     }

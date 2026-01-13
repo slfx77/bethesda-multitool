@@ -1,6 +1,5 @@
 // Expression parsing helpers for ScdaDecompiler
 
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Xbox360MemoryCarver.Core.Utils;
 
@@ -9,8 +8,6 @@ namespace Xbox360MemoryCarver.Core.Formats.Scda;
 // Expression parsing methods
 public sealed partial class ScdaDecompiler
 {
-    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
-        Justification = "Expression parsing requires complex switch logic")]
     private string ParseExpression(byte[] bytes, int offset, int length)
     {
         var stack = new Stack<string>();
@@ -72,8 +69,7 @@ public sealed partial class ScdaDecompiler
         return stack.Count > 0 ? string.Join(" ", stack.Reverse()) : "0";
     }
 
-    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
-        Justification = "Push value parsing requires complex conditional logic")]
+
     private void ParsePushValue(byte[] bytes, int offset, int length, ref int pos, Stack<string> stack)
     {
         if (offset + pos >= bytes.Length) return;

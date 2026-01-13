@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-01-17
+
+### Added
+
+- **Application Icon**: Embedded application icon for the executable
+- **JSON Source Generation**: Added partial class for trim-compatible JSON serialization
+- **Logger System**: Comprehensive logging with verbosity levels (None, Error, Warn, Info, Debug, Trace)
 
 ### Changed
 
@@ -21,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `NifTypes` - Shared type definitions
 - Added JSON source generation contexts for AOT compatibility
 - Improved code style consistency with enforced curly braces on all control flow statements
+- Updated documentation for NIF conversion status (all features now implemented)
 
 ### Removed
 
@@ -92,6 +99,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DDX Conversion**: Xbox 360 DDX textures to standard DDS format
 - **Minidump Parsing**: Extract module information from Xbox 360 minidumps
 
-[Unreleased]: https://github.com/slfx77/xbox-360-minidump-extractor/compare/v0.2.0-alpha.1...HEAD
+[1.0.0]: https://github.com/slfx77/xbox-360-minidump-extractor/compare/v0.2.0-alpha.1...v1.0.0
 [0.2.0-alpha.1]: https://github.com/slfx77/xbox-360-minidump-extractor/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
 [0.1.0-alpha.1]: https://github.com/slfx77/xbox-360-minidump-extractor/releases/tag/v0.1.0-alpha.1

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core;
@@ -134,13 +133,13 @@ public static class CarveCommand
         stopwatch.Stop();
 
         // Null check is defensive - summary is set inside async lambda which the analyzer can't verify
-#pragma warning disable S2583 // Conditionally executed code should be reachable
+
         if (summary is null)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] Extraction failed");
             return;
         }
-#pragma warning restore S2583
+
 
         AnsiConsole.MarkupLine(
             $"[green]Extracted[/] {summary.TotalExtracted} files in [blue]{stopwatch.Elapsed.TotalSeconds:F2}s[/]");
@@ -148,8 +147,6 @@ public static class CarveCommand
         PrintSummary(summary, convertDdx);
     }
 
-    [SuppressMessage("Sonar", "S3776:Cognitive Complexity",
-        Justification = "Summary output logic with multiple stats categories is inherently branched")]
     private static void PrintSummary(ExtractionSummary summary, bool convertDdx)
     {
         if (summary.TypeCounts.Count > 0)

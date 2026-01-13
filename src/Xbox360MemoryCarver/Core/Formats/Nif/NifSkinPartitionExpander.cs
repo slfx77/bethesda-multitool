@@ -107,11 +107,11 @@ internal static partial class NifSkinPartitionExpander
             {
                 partition.VertexWeights = new float[partition.NumVertices, partition.NumWeightsPerVertex];
                 for (var v = 0; v < partition.NumVertices && pos < end; v++)
-                    for (var w = 0; w < partition.NumWeightsPerVertex && pos + 4 <= end; w++)
-                    {
-                        partition.VertexWeights[v, w] = ReadFloat(data, pos, isBigEndian);
-                        pos += 4;
-                    }
+                for (var w = 0; w < partition.NumWeightsPerVertex && pos + 4 <= end; w++)
+                {
+                    partition.VertexWeights[v, w] = ReadFloat(data, pos, isBigEndian);
+                    pos += 4;
+                }
             }
 
             // StripLengths array (numStrips * ushort)
@@ -166,8 +166,8 @@ internal static partial class NifSkinPartitionExpander
             {
                 partition.BoneIndices = new byte[partition.NumVertices, partition.NumWeightsPerVertex];
                 for (var v = 0; v < partition.NumVertices && pos < end; v++)
-                    for (var w = 0; w < partition.NumWeightsPerVertex && pos + 1 <= end; w++)
-                        partition.BoneIndices[v, w] = data[pos++];
+                for (var w = 0; w < partition.NumWeightsPerVertex && pos + 1 <= end; w++)
+                    partition.BoneIndices[v, w] = data[pos++];
             }
 
             result.Partitions.Add(partition);
@@ -269,4 +269,3 @@ internal static partial class NifSkinPartitionExpander
         public int OriginalSize { get; set; }
     }
 }
-

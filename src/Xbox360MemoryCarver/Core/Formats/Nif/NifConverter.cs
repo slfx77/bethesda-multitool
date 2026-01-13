@@ -3,7 +3,6 @@
 // Handles BSPackedAdditionalGeometryData expansion for Xbox 360 NIFs
 
 using System.Buffers.Binary;
-using System.Text;
 using static Xbox360MemoryCarver.Core.Formats.Nif.NifEndianUtils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -63,10 +62,7 @@ internal sealed partial class NifConverter
     public NifConverter(bool verbose = false)
     {
         // Configure logger level based on verbose flag
-        if (verbose)
-        {
-            Log.Level = LogLevel.Debug;
-        }
+        if (verbose) Log.Level = LogLevel.Debug;
 
         _schema = NifSchema.LoadEmbedded();
     }
@@ -100,4 +96,3 @@ internal sealed partial class NifConverter
         return BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4));
     }
 }
-

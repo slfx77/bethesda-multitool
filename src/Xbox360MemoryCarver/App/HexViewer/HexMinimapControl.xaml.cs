@@ -163,12 +163,11 @@ public sealed partial class HexMinimapControl : UserControl
         return currentPos >= end;
     }
 
-#pragma warning disable RCS1163 // Unused parameter - required for event handler signature
+
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_analysisResult != null) Render();
     }
-#pragma warning restore RCS1163
 
 
     private void Render()

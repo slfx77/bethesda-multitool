@@ -16,17 +16,18 @@ internal sealed partial class NifConverter
 
         // First, extract VertexMap and Triangles from all NiSkinPartition blocks
         foreach (var block in info.Blocks)
-        {
             if (block.TypeName == "NiSkinPartition")
             {
-                Log.Debug($"    Checking block {block.Index}: NiSkinPartition at offset 0x{block.DataOffset:X}, size {block.Size}");
+                Log.Debug(
+                    $"    Checking block {block.Index}: NiSkinPartition at offset 0x{block.DataOffset:X}, size {block.Size}");
 
                 var vertexMap = NifSkinPartitionParser.ExtractVertexMap(
                     data, block.DataOffset, block.Size, info.IsBigEndian);
                 if (vertexMap != null && vertexMap.Length > 0)
                 {
                     _vertexMaps[block.Index] = vertexMap;
-                    Log.Debug($"    Block {block.Index}: NiSkinPartition - extracted {vertexMap.Length} vertex mappings");
+                    Log.Debug(
+                        $"    Block {block.Index}: NiSkinPartition - extracted {vertexMap.Length} vertex mappings");
                 }
                 else
                 {
@@ -39,41 +40,29 @@ internal sealed partial class NifConverter
                 if (triangles != null && triangles.Length > 0)
                 {
                     _skinPartitionTriangles[block.Index] = triangles;
-                    Log.Debug($"    Block {block.Index}: NiSkinPartition - extracted {triangles.Length / 3} triangles from strips");
+                    Log.Debug(
+                        $"    Block {block.Index}: NiSkinPartition - extracted {triangles.Length / 3} triangles from strips");
                 }
             }
-        }
 
         // Now build geometry -> skin partition mapping via BSDismemberSkinInstance
         foreach (var block in info.Blocks.Where(b => b.TypeName is "NiTriShape" or "NiTriStrips"))
         {
             var skinInstanceRef = FindSkinInstanceRef(data, block, info);
-            if (skinInstanceRef < 0)
-            {
-                continue;
-            }
+            if (skinInstanceRef < 0) continue;
 
             var skinInstanceBlock = info.Blocks.FirstOrDefault(b => b.Index == skinInstanceRef);
-            if (skinInstanceBlock?.TypeName is not ("BSDismemberSkinInstance" or "NiSkinInstance"))
-            {
-                continue;
-            }
+            if (skinInstanceBlock?.TypeName is not ("BSDismemberSkinInstance" or "NiSkinInstance")) continue;
 
             // Read the skin partition ref from offset 4 in the skin instance
             var skinPartitionRefPos = skinInstanceBlock.DataOffset + 4;
-            if (skinPartitionRefPos + 4 > data.Length)
-            {
-                continue;
-            }
+            if (skinPartitionRefPos + 4 > data.Length) continue;
 
             var skinPartitionRef = info.IsBigEndian
                 ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(skinPartitionRefPos, 4))
                 : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(skinPartitionRefPos, 4));
 
-            if (skinPartitionRef < 0)
-            {
-                continue;
-            }
+            if (skinPartitionRef < 0) continue;
 
             // Find the data ref in the NiTriShape
             var dataRef = FindDataRef(data, block, info);
@@ -103,14 +92,14 @@ internal sealed partial class NifConverter
                 expansion.NewSize += triangleBytes;
                 expansion.SizeIncrease += triangleBytes;
 
-                Log.Debug($"    Block {geomBlockIndex}: Adding {triangles.Length / 3} triangles ({triangleBytes} bytes) from skin partition {skinPartIndex}");
+                Log.Debug(
+                    $"    Block {geomBlockIndex}: Adding {triangles.Length / 3} triangles ({triangleBytes} bytes) from skin partition {skinPartIndex}");
             }
 
             // Also check for NiTriStripsData triangles (non-skinned meshes)
             if (_geometryStripTriangles.TryGetValue(geomBlockIndex, out var stripTriangles))
-            {
-                Log.Debug($"    Block {geomBlockIndex}: Has {stripTriangles.Length / 3} triangles from NiTriStripsData strips");
-            }
+                Log.Debug(
+                    $"    Block {geomBlockIndex}: Has {stripTriangles.Length / 3} triangles from NiTriStripsData strips");
         }
     }
 
@@ -124,22 +113,17 @@ internal sealed partial class NifConverter
         foreach (var block in info.Blocks.Where(b => b.TypeName == "NiTriStripsData"))
         {
             // Skip if this geometry block has a skin partition (triangles come from there)
-            if (_geometryToSkinPartition.ContainsKey(block.Index))
-            {
-                continue;
-            }
+            if (_geometryToSkinPartition.ContainsKey(block.Index)) continue;
 
             // Skip if not in our geometry expansions (no packed data to expand)
-            if (!_geometryExpansions.ContainsKey(block.Index))
-            {
-                continue;
-            }
+            if (!_geometryExpansions.ContainsKey(block.Index)) continue;
 
             var triangles = ExtractTrianglesFromTriStripsData(data, block, info.IsBigEndian);
             if (triangles != null && triangles.Length > 0)
             {
                 _geometryStripTriangles[block.Index] = triangles;
-                Log.Debug($"    Block {block.Index}: NiTriStripsData - extracted {triangles.Length / 3} triangles from strips");
+                Log.Debug(
+                    $"    Block {block.Index}: NiTriStripsData - extracted {triangles.Length / 3} triangles from strips");
             }
         }
     }
@@ -184,10 +168,7 @@ internal sealed partial class NifConverter
                 ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(block.DataOffset + 4, 2))
                 : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(block.DataOffset + 4, 2));
             pos += numVerts * 12;
-            if ((bsDataFlags & 4096) != 0)
-            {
-                pos += numVerts * 24;
-            }
+            if ((bsDataFlags & 4096) != 0) pos += numVerts * 24;
         }
 
         pos += 16; // BoundingSphere
@@ -272,18 +253,12 @@ internal sealed partial class NifConverter
 
         foreach (var strip in strips)
         {
-            if (strip.Length < 3)
-            {
-                continue;
-            }
+            if (strip.Length < 3) continue;
 
             for (var i = 0; i < strip.Length - 2; i++)
             {
                 // Skip degenerate triangles
-                if (strip[i] == strip[i + 1] || strip[i + 1] == strip[i + 2] || strip[i] == strip[i + 2])
-                {
-                    continue;
-                }
+                if (strip[i] == strip[i + 1] || strip[i + 1] == strip[i + 2] || strip[i] == strip[i + 2]) continue;
 
                 // Alternate winding order
                 if ((i & 1) == 0)

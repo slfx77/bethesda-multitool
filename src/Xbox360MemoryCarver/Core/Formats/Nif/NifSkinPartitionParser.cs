@@ -130,7 +130,6 @@ internal static partial class NifSkinPartitionParser
             Log.Debug($"        Partition {p}: hasVertexMap={hasVertexMap}");
 
             // VertexMap (if HasVertexMap)
-            ushort[]? vertexMap = null;
             if (hasVertexMap != 0)
             {
                 if (pos + numVertices * 2 > end)
@@ -139,7 +138,7 @@ internal static partial class NifSkinPartitionParser
                     break;
                 }
 
-                vertexMap = new ushort[numVertices];
+                var vertexMap = new ushort[numVertices];
                 for (var i = 0; i < numVertices; i++)
                 {
                     vertexMap[i] = isBigEndian
@@ -225,4 +224,3 @@ internal static partial class NifSkinPartitionParser
         return combined;
     }
 }
-

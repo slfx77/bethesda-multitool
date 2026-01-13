@@ -5,7 +5,6 @@ using Xbox360MemoryCarver.Core;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Formats.Scda;
 using Xbox360MemoryCarver.Core.Json;
-
 using static Xbox360MemoryCarver.Core.LogLevel;
 
 namespace Xbox360MemoryCarver.CLI;
@@ -159,7 +158,7 @@ public static class AnalyzeCommand
         AnalysisResult result, bool verbose)
     {
         // Set logger level based on verbose flag
-        if (verbose) Logger.Instance.Level = LogLevel.Debug;
+        if (verbose) Logger.Instance.Level = Debug;
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[blue]Exporting ESM records to:[/] {extractEsm}");

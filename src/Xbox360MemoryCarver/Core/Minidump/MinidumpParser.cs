@@ -112,9 +112,9 @@ public static class MinidumpParser
         }
     }
 
-#pragma warning disable S1172
+
     private static void ParseMemory64List(Stream stream, uint rva, uint _, MinidumpInfo result)
-#pragma warning restore S1172
+
     {
         stream.Seek(rva, SeekOrigin.Begin);
 

@@ -22,7 +22,8 @@ internal sealed partial class NifConverter
         }
 
         // Complex case: rebuild the file with new block sizes
-        Log.Debug($"  Rebuilding file: removing {_blocksToStrip.Count} packed blocks, expanding {_geometryExpansions.Count} geometry, {_skinPartitionExpansions.Count} skin partition blocks, adding {_newStrings.Count} strings");
+        Log.Debug(
+            $"  Rebuilding file: removing {_blocksToStrip.Count} packed blocks, expanding {_geometryExpansions.Count} geometry, {_skinPartitionExpansions.Count} skin partition blocks, adding {_newStrings.Count} strings");
 
         var schemaConverter = new NifSchemaConverter(
             _schema,
@@ -37,10 +38,8 @@ internal sealed partial class NifConverter
         foreach (var block in info.Blocks)
         {
             if (_blocksToStrip.Contains(block.Index))
-            {
                 // Skip packed blocks entirely
                 continue;
-            }
 
             var blockStartPos = outPos;
             var expectedSize = block.Size;
@@ -59,21 +58,20 @@ internal sealed partial class NifConverter
                     _vertexMaps.TryGetValue(skinPartitionIndex, out vertexMap);
                     _skinPartitionTriangles.TryGetValue(skinPartitionIndex, out triangles);
                     if (vertexMap != null)
-                    {
-                        Log.Debug($"    Block {block.Index}: Using vertex map from skin partition {skinPartitionIndex}, length={vertexMap.Length}");
-                    }
+                        Log.Debug(
+                            $"    Block {block.Index}: Using vertex map from skin partition {skinPartitionIndex}, length={vertexMap.Length}");
 
                     if (triangles != null)
-                    {
-                        Log.Debug($"    Block {block.Index}: Using {triangles.Length / 3} triangles from skin partition {skinPartitionIndex}");
-                    }
+                        Log.Debug(
+                            $"    Block {block.Index}: Using {triangles.Length / 3} triangles from skin partition {skinPartitionIndex}");
                 }
 
                 // For NiTriStripsData without skin partition, use triangles extracted from strips
                 if (triangles == null && _geometryStripTriangles.TryGetValue(block.Index, out var stripTriangles))
                 {
                     triangles = stripTriangles;
-                    Log.Debug($"    Block {block.Index}: Using {triangles.Length / 3} triangles from NiTriStripsData strips");
+                    Log.Debug(
+                        $"    Block {block.Index}: Using {triangles.Length / 3} triangles from NiTriStripsData strips");
                 }
 
                 outPos = WriteExpandedGeometryBlock(input, output, outPos, block, packedData, vertexMap,
@@ -101,9 +99,8 @@ internal sealed partial class NifConverter
 
             var actualSize = outPos - blockStartPos;
             if (actualSize != expectedSize)
-            {
-                Log.Debug($"  BLOCK SIZE MISMATCH: Block {block.Index} ({block.TypeName}) wrote {actualSize} bytes, expected {expectedSize}");
-            }
+                Log.Debug(
+                    $"  BLOCK SIZE MISMATCH: Block {block.Index} ({block.TypeName}) wrote {actualSize} bytes, expected {expectedSize}");
         }
 
         // Write footer with remapped indices
@@ -117,14 +114,11 @@ internal sealed partial class NifConverter
     /// </summary>
     private int WriteConvertedHeader(byte[] input, byte[] output, NifInfo info)
     {
-        var srcPos = 0;
-        var outPos = 0;
-
         // Copy header string including newline
         var newlinePos = Array.IndexOf(input, (byte)0x0A, 0, 60);
         Array.Copy(input, 0, output, 0, newlinePos + 1);
-        srcPos = newlinePos + 1;
-        outPos = newlinePos + 1;
+        var srcPos = newlinePos + 1;
+        var outPos = newlinePos + 1;
 
         // Binary version (4 bytes) - already LE in Bethesda files
         Array.Copy(input, srcPos, output, outPos, 4);
@@ -230,17 +224,11 @@ internal sealed partial class NifConverter
             {
                 var size = (uint)block.Size;
                 if (_geometryExpansions.TryGetValue(block.Index, out var expansion))
-                {
                     size = (uint)expansion.NewSize;
-                }
                 else if (_havokExpansions.TryGetValue(block.Index, out var havokExpansion))
-                {
                     size = (uint)havokExpansion.NewSize;
-                }
                 else if (_skinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))
-                {
                     size = (uint)skinPartExpansion.NewSize;
-                }
 
                 BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), size);
                 outPos += 4;
@@ -259,12 +247,8 @@ internal sealed partial class NifConverter
         // Max string length (uint) - update if we have longer strings
         var maxStrLen = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
         foreach (var str in _newStrings)
-        {
             if (str.Length > maxStrLen)
-            {
                 maxStrLen = (uint)str.Length;
-            }
-        }
 
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), maxStrLen);
         srcPos += 4;
@@ -319,10 +303,7 @@ internal sealed partial class NifConverter
         var lastBlock = info.Blocks[^1];
         var footerPos = lastBlock.DataOffset + lastBlock.Size;
 
-        if (footerPos + 4 > input.Length)
-        {
-            return outPos;
-        }
+        if (footerPos + 4 > input.Length) return outPos;
 
         // numRoots (uint BE -> LE)
         var numRoots = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(footerPos));
@@ -354,10 +335,8 @@ internal sealed partial class NifConverter
 
         // Convert using schema
         if (!schemaConverter.TryConvert(output, outPos, block.Size, block.TypeName, blockRemap))
-        {
             // Fallback: bulk swap
             BulkSwap32(output, outPos, block.Size);
-        }
 
         // Restore node name if we have one from the palette
         if (_nodeNameStringIndices.TryGetValue(block.Index, out var stringIndex))
@@ -365,7 +344,8 @@ internal sealed partial class NifConverter
             // The Name field is at offset 0 for NiNode/BSFadeNode (first field after AVObject inheritance)
             // It's a StringIndex which is a 4-byte int
             BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos), stringIndex);
-            Log.Debug($"    Block {block.Index} ({block.TypeName}): Set Name to string index {stringIndex} ('{_nodeNamesByBlock[block.Index]}')");
+            Log.Debug(
+                $"    Block {block.Index} ({block.TypeName}): Set Name to string index {stringIndex} ('{_nodeNamesByBlock[block.Index]}')");
         }
 
         return outPos + block.Size;
