@@ -115,7 +115,7 @@
     <Border
       Grid.Row="3"
       Padding="8"
-      Background="#80202020"
+      Background="{ThemeResource CardBackgroundBrush}"
       CornerRadius="8">
       <Grid>
         <Grid.RowDefinitions>
@@ -164,8 +164,8 @@
             <ColumnDefinition Width="40"/>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="80"/>
-            <ColumnDefinition Width="120"/>
-            <ColumnDefinition Width="250"/>
+            <ColumnDefinition Width="80"/>
+            <ColumnDefinition Width="200"/>
           </Grid.ColumnDefinitions>
           <TextBlock Grid.Column="0"
                      FontWeight="SemiBold"
@@ -261,8 +261,8 @@
                   <ColumnDefinition Width="40"/>
                   <ColumnDefinition Width="*"/>
                   <ColumnDefinition Width="80"/>
-                  <ColumnDefinition Width="120"/>
-                  <ColumnDefinition Width="250"/>
+                  <ColumnDefinition Width="80"/>
+                  <ColumnDefinition Width="200"/>
                 </Grid.ColumnDefinitions>
                 <CheckBox
                   Grid.Column="0"

@@ -1,4 +1,6 @@
 using Windows.Graphics;
+using Windows.UI;
+using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -79,7 +81,55 @@ public sealed partial class MainWindow : Window
         // Set the custom title bar as the drag region
         SetTitleBar(AppTitleBar);
 
+        // Configure caption button colors based on theme
+        UpdateCaptionButtonColors();
+
+        // Listen for theme changes
+        if (Content is FrameworkElement rootElement)
+        {
+            rootElement.ActualThemeChanged += (s, e) => UpdateCaptionButtonColors();
+        }
+
         Console.WriteLine("[MainWindow] Title bar extended with custom drag region");
+    }
+
+    private void UpdateCaptionButtonColors()
+    {
+        var titleBar = AppWindow.TitleBar;
+        if (titleBar == null)
+        {
+            return;
+        }
+
+        // Detect current theme
+        var isDark = (Content as FrameworkElement)?.ActualTheme == ElementTheme.Dark
+            || ((Content as FrameworkElement)?.ActualTheme == ElementTheme.Default
+                && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+
+        if (isDark)
+        {
+            // Dark theme - light buttons
+            titleBar.ButtonForegroundColor = Colors.White;
+            titleBar.ButtonHoverForegroundColor = Colors.White;
+            titleBar.ButtonHoverBackgroundColor = Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonPressedForegroundColor = Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonPressedBackgroundColor = Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonInactiveForegroundColor = Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF);
+        }
+        else
+        {
+            // Light theme - dark buttons
+            titleBar.ButtonForegroundColor = Colors.Black;
+            titleBar.ButtonHoverForegroundColor = Colors.Black;
+            titleBar.ButtonHoverBackgroundColor = Color.FromArgb(0x20, 0x00, 0x00, 0x00);
+            titleBar.ButtonPressedForegroundColor = Color.FromArgb(0xC0, 0x00, 0x00, 0x00);
+            titleBar.ButtonPressedBackgroundColor = Color.FromArgb(0x10, 0x00, 0x00, 0x00);
+            titleBar.ButtonInactiveForegroundColor = Color.FromArgb(0x80, 0x00, 0x00, 0x00);
+        }
+
+        // Transparent backgrounds for both themes (Mica shows through)
+        titleBar.ButtonBackgroundColor = Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
     }
 
     private void MainTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
