@@ -7,14 +7,14 @@ public sealed partial class NifConditionExpr
 {
     private interface ICondNode
     {
-        bool Evaluate(IReadOnlyDictionary<string, object> fields);
-        void CollectFields(HashSet<string> fields);
+        bool Eval(IReadOnlyDictionary<string, object> fields);
+        void GatherFields(HashSet<string> fields);
     }
 
     private interface IValueNode
     {
-        long Evaluate(IReadOnlyDictionary<string, object> fields);
-        void CollectFields(HashSet<string> fields);
+        long Eval(IReadOnlyDictionary<string, object> fields);
+        void GatherFields(HashSet<string> fields);
     }
 
     private enum CompareOp
@@ -29,22 +29,21 @@ public sealed partial class NifConditionExpr
 
     private sealed class LiteralNode(long value) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        public long Eval(IReadOnlyDictionary<string, object> fields)
         {
             return value;
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
         }
     }
 
     private sealed class FieldNode(string fieldName) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        public long Eval(IReadOnlyDictionary<string, object> fields)
         {
             if (fields.TryGetValue(fieldName, out var val))
-            {
                 return val switch
                 {
                     bool b => b ? 1 : 0,
@@ -58,12 +57,11 @@ public sealed partial class NifConditionExpr
                     ulong ul => (long)ul,
                     _ => 0
                 };
-            }
             // Field not found - default to 0 (conservative for "Has X" conditions)
             return 0;
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
             fields.Add(fieldName);
         }
@@ -71,29 +69,29 @@ public sealed partial class NifConditionExpr
 
     private sealed class BitAndNode(IValueNode left, IValueNode right) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        public long Eval(IReadOnlyDictionary<string, object> fields)
         {
-            return left.Evaluate(fields) & right.Evaluate(fields);
+            return left.Eval(fields) & right.Eval(fields);
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
-            left.CollectFields(fields);
-            right.CollectFields(fields);
+            left.GatherFields(fields);
+            right.GatherFields(fields);
         }
     }
 
     private sealed class BitOrNode(IValueNode left, IValueNode right) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        public long Eval(IReadOnlyDictionary<string, object> fields)
         {
-            return left.Evaluate(fields) | right.Evaluate(fields);
+            return left.Eval(fields) | right.Eval(fields);
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
-            left.CollectFields(fields);
-            right.CollectFields(fields);
+            left.GatherFields(fields);
+            right.GatherFields(fields);
         }
     }
 
@@ -102,23 +100,23 @@ public sealed partial class NifConditionExpr
     /// </summary>
     private sealed class WrappedNode(ICondNode inner) : IValueNode
     {
-        public long Evaluate(IReadOnlyDictionary<string, object> fields)
+        public long Eval(IReadOnlyDictionary<string, object> fields)
         {
-            return inner.Evaluate(fields) ? 1 : 0;
+            return inner.Eval(fields) ? 1 : 0;
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
-            inner.CollectFields(fields);
+            inner.GatherFields(fields);
         }
     }
 
     private sealed class CompareCondNode(IValueNode left, CompareOp op, IValueNode right) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        public bool Eval(IReadOnlyDictionary<string, object> fields)
         {
-            var l = left.Evaluate(fields);
-            var r = right.Evaluate(fields);
+            var l = left.Eval(fields);
+            var r = right.Eval(fields);
 
             return op switch
             {
@@ -132,64 +130,64 @@ public sealed partial class NifConditionExpr
             };
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
-            left.CollectFields(fields);
-            right.CollectFields(fields);
+            left.GatherFields(fields);
+            right.GatherFields(fields);
         }
     }
 
     private sealed class BoolCondNode(IValueNode value) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        public bool Eval(IReadOnlyDictionary<string, object> fields)
         {
-            return value.Evaluate(fields) != 0;
+            return value.Eval(fields) != 0;
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
-            value.CollectFields(fields);
+            value.GatherFields(fields);
         }
     }
 
     private sealed class AndCondNode(ICondNode left, ICondNode right) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        public bool Eval(IReadOnlyDictionary<string, object> fields)
         {
-            return left.Evaluate(fields) && right.Evaluate(fields);
+            return left.Eval(fields) && right.Eval(fields);
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
-            left.CollectFields(fields);
-            right.CollectFields(fields);
+            left.GatherFields(fields);
+            right.GatherFields(fields);
         }
     }
 
     private sealed class OrCondNode(ICondNode left, ICondNode right) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        public bool Eval(IReadOnlyDictionary<string, object> fields)
         {
-            return left.Evaluate(fields) || right.Evaluate(fields);
+            return left.Eval(fields) || right.Eval(fields);
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
-            left.CollectFields(fields);
-            right.CollectFields(fields);
+            left.GatherFields(fields);
+            right.GatherFields(fields);
         }
     }
 
     private sealed class NotCondNode(ICondNode inner) : ICondNode
     {
-        public bool Evaluate(IReadOnlyDictionary<string, object> fields)
+        public bool Eval(IReadOnlyDictionary<string, object> fields)
         {
-            return !inner.Evaluate(fields);
+            return !inner.Eval(fields);
         }
 
-        public void CollectFields(HashSet<string> fields)
+        public void GatherFields(HashSet<string> fields)
         {
-            inner.CollectFields(fields);
+            inner.GatherFields(fields);
         }
     }
 }

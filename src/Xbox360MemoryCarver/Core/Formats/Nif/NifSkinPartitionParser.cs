@@ -14,55 +14,6 @@ internal static partial class NifSkinPartitionParser
 {
     private static readonly Logger Log = Logger.Instance;
 
-    /// <summary>Reader context for partition parsing.</summary>
-    private ref struct PartitionReader
-    {
-        public readonly byte[] Data;
-        public readonly int End;
-        public readonly bool IsBigEndian;
-        public int Pos;
-
-        public PartitionReader(byte[] data, int offset, int size, bool isBigEndian)
-        {
-            Data = data;
-            End = offset + size;
-            IsBigEndian = isBigEndian;
-            Pos = offset;
-        }
-
-        public readonly bool CanRead(int bytes) => Pos + bytes <= End;
-
-        public ushort ReadUInt16()
-        {
-            var value = IsBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(Data.AsSpan(Pos, 2))
-                : BinaryPrimitives.ReadUInt16LittleEndian(Data.AsSpan(Pos, 2));
-            Pos += 2;
-            return value;
-        }
-
-        public uint ReadUInt32()
-        {
-            var value = IsBigEndian
-                ? BinaryPrimitives.ReadUInt32BigEndian(Data.AsSpan(Pos, 4))
-                : BinaryPrimitives.ReadUInt32LittleEndian(Data.AsSpan(Pos, 4));
-            Pos += 4;
-            return value;
-        }
-
-        public byte ReadByte() => Data[Pos++];
-
-        public void Skip(int bytes) => Pos += bytes;
-    }
-
-    /// <summary>Parsed partition header fields.</summary>
-    private readonly record struct PartitionHeader(
-        ushort NumVertices,
-        ushort NumTriangles,
-        ushort NumBones,
-        ushort NumStrips,
-        ushort NumWeightsPerVertex);
-
     /// <summary>
     ///     Extracts the combined VertexMap from all partitions in a NiSkinPartition block.
     ///     Returns null if no vertex map is present.
@@ -118,11 +69,11 @@ internal static partial class NifSkinPartitionParser
         }
 
         return new PartitionHeader(
-            NumVertices: reader.ReadUInt16(),
-            NumTriangles: reader.ReadUInt16(),
-            NumBones: reader.ReadUInt16(),
-            NumStrips: reader.ReadUInt16(),
-            NumWeightsPerVertex: reader.ReadUInt16());
+            reader.ReadUInt16(),
+            reader.ReadUInt16(),
+            reader.ReadUInt16(),
+            reader.ReadUInt16(),
+            reader.ReadUInt16());
     }
 
     private static ushort[]? TryReadVertexMap(ref PartitionReader reader, ushort numVertices, int partitionIndex)
@@ -145,43 +96,28 @@ internal static partial class NifSkinPartitionParser
         }
 
         var vertexMap = new ushort[numVertices];
-        for (var i = 0; i < numVertices; i++)
-        {
-            vertexMap[i] = reader.ReadUInt16();
-        }
+        for (var i = 0; i < numVertices; i++) vertexMap[i] = reader.ReadUInt16();
 
         return vertexMap;
     }
 
     private static bool SkipRemainingPartitionData(ref PartitionReader reader, PartitionHeader header)
     {
-        if (!TrySkipVertexWeightsSection(ref reader, header))
-        {
-            return false;
-        }
+        if (!TrySkipVertexWeightsSection(ref reader, header)) return false;
 
         var stripLengths = ReadStripLengthsArray(ref reader, header.NumStrips);
 
-        if (!TrySkipFacesSection(ref reader, header, stripLengths))
-        {
-            return false;
-        }
+        if (!TrySkipFacesSection(ref reader, header, stripLengths)) return false;
 
         return TrySkipBoneIndicesSection(ref reader, header);
     }
 
     private static bool TrySkipVertexWeightsSection(ref PartitionReader reader, PartitionHeader header)
     {
-        if (!reader.CanRead(1))
-        {
-            return false;
-        }
+        if (!reader.CanRead(1)) return false;
 
         var hasVertexWeights = reader.ReadByte();
-        if (hasVertexWeights == 0)
-        {
-            return true;
-        }
+        if (hasVertexWeights == 0) return true;
 
         reader.Skip(header.NumVertices * header.NumWeightsPerVertex * 4);
         return reader.Pos <= reader.End;
@@ -190,26 +126,17 @@ internal static partial class NifSkinPartitionParser
     private static ushort[] ReadStripLengthsArray(ref PartitionReader reader, ushort numStrips)
     {
         var stripLengths = new ushort[numStrips];
-        for (var i = 0; i < numStrips && reader.CanRead(2); i++)
-        {
-            stripLengths[i] = reader.ReadUInt16();
-        }
+        for (var i = 0; i < numStrips && reader.CanRead(2); i++) stripLengths[i] = reader.ReadUInt16();
 
         return stripLengths;
     }
 
     private static bool TrySkipFacesSection(ref PartitionReader reader, PartitionHeader header, ushort[] stripLengths)
     {
-        if (!reader.CanRead(1))
-        {
-            return false;
-        }
+        if (!reader.CanRead(1)) return false;
 
         var hasFaces = reader.ReadByte();
-        if (hasFaces == 0)
-        {
-            return true;
-        }
+        if (hasFaces == 0) return true;
 
         return header.NumStrips != 0
             ? TrySkipAllStrips(ref reader, stripLengths)
@@ -221,10 +148,7 @@ internal static partial class NifSkinPartitionParser
         for (var s = 0; s < stripLengths.Length; s++)
         {
             reader.Skip(stripLengths[s] * 2);
-            if (reader.Pos > reader.End)
-            {
-                return false;
-            }
+            if (reader.Pos > reader.End) return false;
         }
 
         return true;
@@ -238,16 +162,10 @@ internal static partial class NifSkinPartitionParser
 
     private static bool TrySkipBoneIndicesSection(ref PartitionReader reader, PartitionHeader header)
     {
-        if (!reader.CanRead(1))
-        {
-            return false;
-        }
+        if (!reader.CanRead(1)) return false;
 
         var hasBoneIndices = reader.ReadByte();
-        if (hasBoneIndices == 0)
-        {
-            return true;
-        }
+        if (hasBoneIndices == 0) return true;
 
         reader.Skip(header.NumVertices * header.NumWeightsPerVertex);
         return reader.Pos <= reader.End;
@@ -267,4 +185,62 @@ internal static partial class NifSkinPartitionParser
 
         return combined;
     }
+
+    /// <summary>Reader context for partition parsing.</summary>
+    private ref struct PartitionReader
+    {
+        public readonly byte[] Data;
+        public readonly int End;
+        public readonly bool IsBigEndian;
+        public int Pos;
+
+        public PartitionReader(byte[] data, int offset, int size, bool isBigEndian)
+        {
+            Data = data;
+            End = offset + size;
+            IsBigEndian = isBigEndian;
+            Pos = offset;
+        }
+
+        public readonly bool CanRead(int bytes)
+        {
+            return Pos + bytes <= End;
+        }
+
+        public ushort ReadUInt16()
+        {
+            var value = IsBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(Data.AsSpan(Pos, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(Data.AsSpan(Pos, 2));
+            Pos += 2;
+            return value;
+        }
+
+        public uint ReadUInt32()
+        {
+            var value = IsBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(Data.AsSpan(Pos, 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(Data.AsSpan(Pos, 4));
+            Pos += 4;
+            return value;
+        }
+
+        public byte ReadByte()
+        {
+            return Data[Pos++];
+        }
+
+        public void Skip(int bytes)
+        {
+            Pos += bytes;
+        }
+    }
+
+    /// <summary>Parsed partition header fields.</summary>
+    private readonly record struct PartitionHeader(
+        ushort NumVertices,
+        ushort NumTriangles,
+        ushort NumBones,
+        ushort NumStrips,
+        ushort NumWeightsPerVertex);
 }

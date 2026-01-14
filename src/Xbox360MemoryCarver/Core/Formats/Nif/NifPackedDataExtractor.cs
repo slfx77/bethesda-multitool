@@ -23,9 +23,7 @@ internal static class NifPackedDataExtractor
         {
             if (!TryParseHeader(data, blockOffset, blockSize, isBigEndian, out var numVertices, out var streams,
                     out var pos))
-            {
                 return null;
-            }
 
             if (streams.Count == 0) return null;
 
@@ -151,11 +149,6 @@ internal static class NifPackedDataExtractor
         return rawDataOffset;
     }
 
-    private record CategorizedStreams(
-        List<DataStreamInfo> Half4Streams,
-        List<DataStreamInfo> Half2Streams,
-        List<DataStreamInfo> Ubyte4Streams);
-
     private static CategorizedStreams CategorizeStreams(List<DataStreamInfo> streams)
     {
         // Type 16 + UnitSize 8 = half4 (positions, normals, tangents, bitangents)
@@ -172,9 +165,7 @@ internal static class NifPackedDataExtractor
         List<DataStreamInfo> half2Streams, bool isBigEndian, PackedGeometryData result)
     {
         if (half2Streams.Count > 0)
-        {
             result.UVs = ExtractHalf2Stream(data, rawDataOffset, numVertices, stride, half2Streams[0], isBigEndian);
-        }
     }
 
     private static void ExtractSkinnedOrVertexColorData(byte[] data, int rawDataOffset, int numVertices, int stride,
@@ -222,10 +213,8 @@ internal static class NifPackedDataExtractor
     {
         // Position is always the first stream (offset 0)
         if (half4Streams.Count >= 1 && half4Streams[0].BlockOffset == 0)
-        {
             result.Positions = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[0],
                 isBigEndian);
-        }
     }
 
     private static void ExtractNormalsTangentsBitangents(byte[] data, int rawDataOffset, int numVertices, int stride,
@@ -511,4 +500,9 @@ internal static class NifPackedDataExtractor
         var bits = (sign << 31) | (e << 23) | m;
         return BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
     }
+
+    private sealed record CategorizedStreams(
+        List<DataStreamInfo> Half4Streams,
+        List<DataStreamInfo> Half2Streams,
+        List<DataStreamInfo> Ubyte4Streams);
 }

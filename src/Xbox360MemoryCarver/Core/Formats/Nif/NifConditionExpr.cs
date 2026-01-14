@@ -2,8 +2,6 @@
 // Handles expressions like: "Has Vertices", "Num Vertices > 0", "((Data Flags #BITAND# 63) != 0)"
 // These conditions depend on field values read at runtime, not just version info
 
-// S3218: Method shadowing is intentional in this expression tree visitor pattern
-
 using System.Globalization;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -44,7 +42,7 @@ public sealed partial class NifConditionExpr
         {
             var parser = new NifConditionExpr(expression);
             var ast = parser.ParseExpr();
-            return ast.Evaluate(fieldValues);
+            return ast.Eval(fieldValues);
         }
         catch (Exception ex)
         {
@@ -68,7 +66,7 @@ public sealed partial class NifConditionExpr
         {
             var parser = new NifConditionExpr(expression);
             var valueAst = parser.ParseValueExpr();
-            return valueAst.Evaluate(fieldValues);
+            return valueAst.Eval(fieldValues);
         }
         catch
         {
@@ -89,7 +87,7 @@ public sealed partial class NifConditionExpr
         {
             var parser = new NifConditionExpr(expression);
             var ast = parser.ParseExpr();
-            return ctx => ast.Evaluate(ctx);
+            return ctx => ast.Eval(ctx);
         }
         catch
         {
@@ -110,7 +108,7 @@ public sealed partial class NifConditionExpr
         {
             var parser = new NifConditionExpr(expression);
             var ast = parser.ParseExpr();
-            ast.CollectFields(fields);
+            ast.GatherFields(fields);
         }
         catch
         {
@@ -191,9 +189,7 @@ public sealed partial class NifConditionExpr
             if (c == '(' || c == ')' || c == '!' || c == '#' ||
                 c == '>' || c == '<' || c == '=' ||
                 c == '&' || c == '|')
-            {
                 break;
-            }
 
             _pos++;
         }

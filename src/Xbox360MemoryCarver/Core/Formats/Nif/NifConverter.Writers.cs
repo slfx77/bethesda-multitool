@@ -44,10 +44,8 @@ internal sealed partial class NifConverter
 
             var actualSize = outPos - blockStartPos;
             if (actualSize != expectedSize)
-            {
                 Log.Debug(
                     $"  BLOCK SIZE MISMATCH: Block {block.Index} ({block.TypeName}) wrote {actualSize} bytes, expected {expectedSize}");
-            }
         }
 
         // Write footer with remapped indices
@@ -127,17 +125,16 @@ internal sealed partial class NifConverter
         return WriteExpandedGeometryBlock(input, output, outPos, block, packedData, vertexMap, triangles);
     }
 
-    private static void LogVertexMapAndTriangles(int blockIndex, int skinPartitionIndex, ushort[]? vertexMap, ushort[]? triangles)
+    private static void LogVertexMapAndTriangles(int blockIndex, int skinPartitionIndex, ushort[]? vertexMap,
+        ushort[]? triangles)
     {
         if (vertexMap != null)
-        {
-            Log.Debug($"    Block {blockIndex}: Using vertex map from skin partition {skinPartitionIndex}, length={vertexMap.Length}");
-        }
+            Log.Debug(
+                $"    Block {blockIndex}: Using vertex map from skin partition {skinPartitionIndex}, length={vertexMap.Length}");
 
         if (triangles != null)
-        {
-            Log.Debug($"    Block {blockIndex}: Using {triangles.Length / 3} triangles from skin partition {skinPartitionIndex}");
-        }
+            Log.Debug(
+                $"    Block {blockIndex}: Using {triangles.Length / 3} triangles from skin partition {skinPartitionIndex}");
     }
 
     /// <summary>
@@ -173,7 +170,8 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private (int srcPos, int outPos) WriteHeaderFixedFields(byte[] input, byte[] output, int srcPos, int outPos, NifInfo info)
+    private (int srcPos, int outPos) WriteHeaderFixedFields(byte[] input, byte[] output, int srcPos, int outPos,
+        NifInfo info)
     {
         // Binary version (4 bytes) - already LE in Bethesda files
         Array.Copy(input, srcPos, output, outPos, 4);
@@ -199,7 +197,8 @@ internal sealed partial class NifConverter
         return (srcPos, outPos);
     }
 
-    private static (int srcPos, int outPos) WriteBsHeader(byte[] input, byte[] output, int srcPos, int outPos, uint bsVersion)
+    private static (int srcPos, int outPos) WriteBsHeader(byte[] input, byte[] output, int srcPos, int outPos,
+        uint bsVersion)
     {
         // BS Version (4 bytes) - already LE
         Array.Copy(input, srcPos, output, outPos, 4);
@@ -218,24 +217,19 @@ internal sealed partial class NifConverter
         }
 
         // Process Script if bsVersion < 131
-        if (bsVersion < 131)
-        {
-            (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
-        }
+        if (bsVersion < 131) (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
 
         // Export Script
         (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
 
         // Max Filepath if bsVersion >= 103
-        if (bsVersion >= 103)
-        {
-            (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
-        }
+        if (bsVersion >= 103) (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
 
         return (srcPos, outPos);
     }
 
-    private static (int srcPos, int outPos) CopyLengthPrefixedString(byte[] input, byte[] output, int srcPos, int outPos)
+    private static (int srcPos, int outPos) CopyLengthPrefixedString(byte[] input, byte[] output, int srcPos,
+        int outPos)
     {
         var strLen = input[srcPos];
         Array.Copy(input, srcPos, output, outPos, 1 + strLen);
@@ -276,6 +270,7 @@ internal sealed partial class NifConverter
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), block.TypeIndex);
                 outPos += 2;
             }
+
             srcPos += 2;
         }
 
@@ -288,6 +283,7 @@ internal sealed partial class NifConverter
                 BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), (uint)size);
                 outPos += 4;
             }
+
             srcPos += 4;
         }
 
@@ -407,10 +403,8 @@ internal sealed partial class NifConverter
 
         // Convert using schema
         if (!schemaConverter.TryConvert(output, outPos, block.Size, block.TypeName, blockRemap))
-        {
             // Fallback: bulk swap
             BulkSwap32(output, outPos, block.Size);
-        }
 
         // Restore node name if we have one from the palette
         if (_nodeNameStringIndices.TryGetValue(block.Index, out var stringIndex))

@@ -324,7 +324,7 @@ public class MinidumpParserTests
         data[4] = 0x93;
         data[5] = 0xA7; // Version
         WriteUInt32Le(data, 8, (uint)streamCount);
-        WriteUInt32Le(data, 12, (uint)directoryOffset);
+        WriteUInt32Le(data, 12, directoryOffset);
 
         // Empty stream directory entries (type 0 = unused)
         // Just leave as zeros

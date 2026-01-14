@@ -109,12 +109,8 @@ public sealed class MemoryCarver : IDisposable
         var options = new Dictionary<string, object> { ["saveAtlas"] = _saveAtlas };
 
         foreach (var format in FormatRegistry.All)
-        {
             if (format is IFileConverter converter && converter.Initialize(verbose, options))
-            {
                 _converters[format.FormatId] = converter;
-            }
-        }
     }
 
     private static HashSet<string> GetSignatureIdsToSearch(List<string>? fileTypes)
@@ -131,19 +127,13 @@ public sealed class MemoryCarver : IDisposable
             var format = FormatRegistry.GetByFormatId(ft);
             if (format != null)
             {
-                foreach (var sig in format.Signatures)
-                {
-                    result.Add(sig.Id);
-                }
+                foreach (var sig in format.Signatures) result.Add(sig.Id);
 
                 continue;
             }
 
             format = FormatRegistry.GetBySignatureId(ft);
-            if (format != null)
-            {
-                result.Add(ft);
-            }
+            if (format != null) result.Add(ft);
         }
 
         return result;
@@ -170,12 +160,8 @@ public sealed class MemoryCarver : IDisposable
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
                 foreach (var (name, _, position) in _signatureMatcher.Search(buffer.AsSpan(0, toRead), offset))
-                {
                     if (_stats.GetValueOrDefault(name, 0) < _maxFilesPerType)
-                    {
                         allMatches.Add((name, position));
-                    }
-                }
 
                 offset += chunkSize;
                 progress?.Report(Math.Min((double)offset / fileSize * 0.5, 0.5));
@@ -218,9 +204,14 @@ public sealed class MemoryCarver : IDisposable
                 if (extraction != null)
                 {
                     _stats.AddOrUpdate(match.SignatureId, 1, (_, v) => v + 1);
-                    await _writer.WriteFileAsync(extraction.Value.OutputFile, extraction.Value.Data, match.Offset,
-                        match.SignatureId, extraction.Value.FileSize, extraction.Value.OriginalPath,
-                        extraction.Value.Metadata);
+                    await _writer.WriteFileAsync(new WriteFileParams(
+                        extraction.Value.OutputFile,
+                        extraction.Value.Data,
+                        match.Offset,
+                        match.SignatureId,
+                        extraction.Value.FileSize,
+                        extraction.Value.OriginalPath,
+                        extraction.Value.Metadata));
                 }
 
                 var currentCount = Interlocked.Increment(ref processedCount);

@@ -95,10 +95,8 @@ public static class ScdaFormatter
         sb.AppendLine("; ═══════════════════════════════════════════════════════════════");
 
         if (stage.FormIdReferences.Count > 0)
-        {
             sb.AppendLine(CultureInfo.InvariantCulture,
                 $"; SCRO References: {string.Join(", ", stage.FormIdReferences.Select((id, i) => $"#{i + 1}=0x{id:X8}"))}");
-        }
 
         AppendSourceTextInline(sb, stage);
         sb.AppendLine();
@@ -146,8 +144,8 @@ public static class ScdaFormatter
         }
         catch (Exception ex)
         {
-            sb.AppendLine($"; Decompilation failed: {ex.Message}");
-            sb.AppendLine("; Raw hex: " + Convert.ToHexString(bytecode));
+            sb.Append("; Decompilation failed: ").AppendLine(ex.Message);
+            sb.Append("; Raw hex: ").AppendLine(Convert.ToHexString(bytecode));
         }
     }
 }

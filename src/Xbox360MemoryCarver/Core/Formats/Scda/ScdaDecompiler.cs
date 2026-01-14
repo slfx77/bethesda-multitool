@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Xbox360MemoryCarver.Core.Utils;
 
@@ -49,17 +50,6 @@ public sealed partial class ScdaDecompiler
         return context.Output.ToString();
     }
 
-    private sealed class DecompileContext
-    {
-        public StringBuilder Output { get; } = new();
-        public int Indent { get; set; }
-        public int Pos { get; set; }
-
-        public string GetIndent() => new('\t', Indent);
-        public void IncreaseIndent() => Indent++;
-        public void DecreaseIndent() => Indent = Math.Max(0, Indent - 1);
-    }
-
     private int DecompileOpcode(byte[] bytecode, ushort opcode, DecompileContext ctx)
     {
         return opcode switch
@@ -79,11 +69,11 @@ public sealed partial class ScdaDecompiler
         };
     }
 
-    private int DecompileBegin(byte[] bytecode, DecompileContext ctx)
+    private static int DecompileBegin(byte[] bytecode, DecompileContext ctx)
     {
         var modeLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
         var mode = modeLen > 0 ? BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 4) : 0;
-        ctx.Output.AppendLine($"{ctx.GetIndent()}Begin {GetBlockTypeName(mode)}");
+        ctx.Output.Append(ctx.GetIndent()).Append("Begin ").AppendLine(GetBlockTypeName(mode));
         ctx.IncreaseIndent();
         return ctx.Pos + 4 + modeLen;
     }
@@ -91,7 +81,7 @@ public sealed partial class ScdaDecompiler
     private static int DecompileEnd(DecompileContext ctx)
     {
         ctx.DecreaseIndent();
-        ctx.Output.AppendLine($"{ctx.GetIndent()}End");
+        ctx.Output.Append(ctx.GetIndent()).AppendLine("End");
         return ctx.Pos + 4;
     }
 
@@ -102,7 +92,7 @@ public sealed partial class ScdaDecompiler
         var exprLenOffset = ctx.Pos + 4 + varBytes;
         var exprLen = BinaryUtils.ReadUInt16LE(bytecode, exprLenOffset);
         var expr = ParseExpression(bytecode, exprLenOffset + 2, exprLen);
-        ctx.Output.AppendLine($"{ctx.GetIndent()}set {varName} to {expr}");
+        ctx.Output.Append(ctx.GetIndent()).Append("set ").Append(varName).Append(" to ").AppendLine(expr);
         return ctx.Pos + 4 + setLen;
     }
 
@@ -111,7 +101,7 @@ public sealed partial class ScdaDecompiler
         var compLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
         var exprLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 6);
         var expr = ParseExpression(bytecode, ctx.Pos + 8, exprLen);
-        ctx.Output.AppendLine($"{ctx.GetIndent()}if ({expr})");
+        ctx.Output.Append(ctx.GetIndent()).Append("if (").Append(expr).AppendLine(")");
         ctx.IncreaseIndent();
         return ctx.Pos + 4 + compLen;
     }
@@ -120,7 +110,7 @@ public sealed partial class ScdaDecompiler
     {
         var elseLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
         ctx.DecreaseIndent();
-        ctx.Output.AppendLine($"{ctx.GetIndent()}else");
+        ctx.Output.Append(ctx.GetIndent()).AppendLine("else");
         ctx.IncreaseIndent();
         return ctx.Pos + 4 + elseLen;
     }
@@ -131,7 +121,7 @@ public sealed partial class ScdaDecompiler
         var exprLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 6);
         var expr = ParseExpression(bytecode, ctx.Pos + 8, exprLen);
         ctx.DecreaseIndent();
-        ctx.Output.AppendLine($"{ctx.GetIndent()}elseif ({expr})");
+        ctx.Output.Append(ctx.GetIndent()).Append("elseif (").Append(expr).AppendLine(")");
         ctx.IncreaseIndent();
         return ctx.Pos + 4 + elifLen;
     }
@@ -139,7 +129,7 @@ public sealed partial class ScdaDecompiler
     private static int DecompileEndIf(DecompileContext ctx)
     {
         ctx.DecreaseIndent();
-        ctx.Output.AppendLine($"{ctx.GetIndent()}endif");
+        ctx.Output.Append(ctx.GetIndent()).AppendLine("endif");
         return ctx.Pos + 4;
     }
 
@@ -152,13 +142,13 @@ public sealed partial class ScdaDecompiler
 
     private static int DecompileSimple(DecompileContext ctx, string keyword)
     {
-        ctx.Output.AppendLine($"{ctx.GetIndent()}{keyword}");
+        ctx.Output.Append(ctx.GetIndent()).AppendLine(keyword);
         return ctx.Pos + 4;
     }
 
     private int DecompileFunctionCall(byte[] bytecode, ushort opcode, DecompileContext ctx)
     {
-        var name = _opcodeTable.TryGetValue(opcode, out var info) ? info.Name : $"Function_{opcode:X4}";
+        var name = _opcodeTable.TryGetValue(opcode, out var info) ? info.Name : string.Create(CultureInfo.InvariantCulture, $"Function_{opcode:X4}");
         var paramLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
 
         var call = paramLen == 0
@@ -167,18 +157,18 @@ public sealed partial class ScdaDecompiler
 
         if (_currentRef != null)
         {
-            ctx.Output.AppendLine($"{ctx.GetIndent()}{_currentRef}.{call}");
+            ctx.Output.Append(ctx.GetIndent()).Append(_currentRef).Append('.').AppendLine(call);
             _currentRef = null;
         }
         else
         {
-            ctx.Output.AppendLine($"{ctx.GetIndent()}{call}");
+            ctx.Output.Append(ctx.GetIndent()).AppendLine(call);
         }
 
         return ctx.Pos + 4 + paramLen;
     }
 
-    private string FormatFunctionWithParams(byte[] bytecode, int pos, int paramLen, string name)
+    private static string FormatFunctionWithParams(byte[] bytecode, int pos, int paramLen, string name)
     {
         var paramCount = BinaryUtils.ReadUInt16LE(bytecode, pos + 4);
         var paramStr = ParseParameters(bytecode, pos + 6, paramLen - 2, paramCount);
@@ -187,7 +177,7 @@ public sealed partial class ScdaDecompiler
 
     private static int DecompileUnknown(ushort opcode, DecompileContext ctx)
     {
-        ctx.Output.AppendLine($"{ctx.GetIndent()}; Unknown opcode 0x{opcode:X4}");
+        ctx.Output.Append(ctx.GetIndent()).Append("; Unknown opcode 0x").AppendLine(opcode.ToString("X4", CultureInfo.InvariantCulture));
         return ctx.Pos + 2;
     }
 
@@ -251,5 +241,27 @@ public sealed partial class ScdaDecompiler
         var varIdx = BinaryUtils.ReadUInt16LE(bytes, offset + 4);
         var varType = varMarker == 0x66 ? "f" : "i";
         return ($"SCRO#{refIdx}.{varType}Local{varIdx}", 6);
+    }
+
+    private sealed class DecompileContext
+    {
+        public StringBuilder Output { get; } = new();
+        public int Indent { get; set; }
+        public int Pos { get; set; }
+
+        public string GetIndent()
+        {
+            return new string('\t', Indent);
+        }
+
+        public void IncreaseIndent()
+        {
+            Indent++;
+        }
+
+        public void DecreaseIndent()
+        {
+            Indent = Math.Max(0, Indent - 1);
+        }
     }
 }

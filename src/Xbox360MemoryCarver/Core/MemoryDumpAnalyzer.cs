@@ -78,10 +78,7 @@ public sealed partial class MemoryDumpAnalyzer
         SortCarvedFilesByOffset(result);
 
         // Extract metadata (SCDA records, ESM records, FormID mapping) using memory-mapped access
-        if (includeMetadata)
-        {
-            await ExtractMetadataAsync(accessor, result, progress, cancellationToken);
-        }
+        if (includeMetadata) await ExtractMetadataAsync(accessor, result, progress, cancellationToken);
 
         progress?.Report(new AnalysisProgress
         { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
@@ -102,7 +99,6 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Add minidump header as a colored region
         if (minidumpInfo.HeaderSize > 0)
-        {
             result.CarvedFiles.Add(new CarvedFileInfo
             {
                 Offset = 0,
@@ -112,7 +108,6 @@ public sealed partial class MemoryDumpAnalyzer
                 SignatureId = "minidump_header",
                 Category = FileCategory.Header
             });
-        }
 
         // Add modules directly to results
         AddModulesFromMinidump(result, minidumpInfo);
@@ -185,7 +180,8 @@ public sealed partial class MemoryDumpAnalyzer
         var format = FormatRegistry.GetBySignatureId(signatureId);
         if (format == null) return false;
 
-        var signature = format.Signatures.FirstOrDefault(s => s.Id.Equals(signatureId, StringComparison.OrdinalIgnoreCase));
+        var signature =
+            format.Signatures.FirstOrDefault(s => s.Id.Equals(signatureId, StringComparison.OrdinalIgnoreCase));
         if (signature == null) return false;
 
         var (length, fileName) = EstimateFileSizeAndExtractName(accessor, result.FileSize, offset, signatureId, format);
@@ -238,9 +234,7 @@ public sealed partial class MemoryDumpAnalyzer
         {
             var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
             foreach (var record in scdaScanResult.Records)
-            {
                 record.ScriptName = ScdaExtractor.ExtractScriptNameFromSourcePublic(record.SourceText);
-            }
 
             result.ScdaRecords = scdaScanResult.Records;
         }, cancellationToken);

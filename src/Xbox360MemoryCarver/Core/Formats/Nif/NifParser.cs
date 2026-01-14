@@ -20,10 +20,8 @@ internal static class NifParser
         if (pos < 0) return null;
 
         pos = ParseVersionInfo(data, pos, info);
-        if (!IsBethesdaVersion(info.BinaryVersion, info.UserVersion))
-        {
-            return info; // Return minimal info for non-Bethesda files
-        }
+        if (!IsBethesdaVersion(info.BinaryVersion,
+                info.UserVersion)) return info; // Return minimal info for non-Bethesda files
 
         pos = ParseBethesdaHeader(data, pos, info);
         var numBlockTypes = ReadUInt16(data, pos, info.IsBigEndian);
@@ -66,10 +64,7 @@ internal static class NifParser
         pos += 4;
 
         // Skip ShortStrings (author, process script, export script)
-        for (var i = 0; i < 3; i++)
-        {
-            pos += 1 + data[pos];
-        }
+        for (var i = 0; i < 3; i++) pos += 1 + data[pos];
 
         return pos;
     }
@@ -96,17 +91,11 @@ internal static class NifParser
         byte[] data, int pos, int numBlocks, bool isBigEndian)
     {
         var blockTypeIndices = new ushort[numBlocks];
-        for (var i = 0; i < numBlocks; i++)
-        {
-            blockTypeIndices[i] = ReadUInt16(data, pos + i * 2, isBigEndian);
-        }
+        for (var i = 0; i < numBlocks; i++) blockTypeIndices[i] = ReadUInt16(data, pos + i * 2, isBigEndian);
 
         var sizePos = pos + numBlocks * 2;
         var blockSizes = new uint[numBlocks];
-        for (var i = 0; i < numBlocks; i++)
-        {
-            blockSizes[i] = ReadUInt32(data, sizePos + i * 4, isBigEndian);
-        }
+        for (var i = 0; i < numBlocks; i++) blockSizes[i] = ReadUInt32(data, sizePos + i * 4, isBigEndian);
 
         return (blockTypeIndices, blockSizes);
     }
@@ -136,15 +125,19 @@ internal static class NifParser
         }
     }
 
-    private static ushort ReadUInt16(byte[] data, int pos, bool isBigEndian) =>
-        isBigEndian
+    private static ushort ReadUInt16(byte[] data, int pos, bool isBigEndian)
+    {
+        return isBigEndian
             ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos))
             : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
+    }
 
-    private static uint ReadUInt32(byte[] data, int pos, bool isBigEndian) =>
-        isBigEndian
+    private static uint ReadUInt32(byte[] data, int pos, bool isBigEndian)
+    {
+        return isBigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+    }
 
     private static int ParseStringTable(byte[] data, int pos, bool isBigEndian, List<string> strings)
     {

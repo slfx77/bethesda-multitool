@@ -16,8 +16,17 @@ public class LoggerTests : IDisposable
 
     public void Dispose()
     {
-        Logger.Instance.Reset();
-        _output.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Logger.Instance.Reset();
+            _output.Dispose();
+        }
     }
 
     #region LogLevel Enum Tests
@@ -43,6 +52,40 @@ public class LoggerTests : IDisposable
         var instance1 = Logger.Instance;
         var instance2 = Logger.Instance;
         Assert.Same(instance1, instance2);
+    }
+
+    #endregion
+
+    #region Level Property Tests
+
+    [Theory]
+    [InlineData(LogLevel.None)]
+    [InlineData(LogLevel.Error)]
+    [InlineData(LogLevel.Warn)]
+    [InlineData(LogLevel.Info)]
+    [InlineData(LogLevel.Debug)]
+    [InlineData(LogLevel.Trace)]
+    public void Level_CanBeSetToAnyValue(LogLevel level)
+    {
+        Logger.Instance.Level = level;
+        Assert.Equal(level, Logger.Instance.Level);
+    }
+
+    #endregion
+
+    #region SetOutput Tests
+
+    [Fact]
+    public void SetOutput_ChangesOutputDestination()
+    {
+        var customWriter = new StringWriter();
+        Logger.Instance.SetOutput(customWriter);
+        Logger.Instance.Info("custom output test");
+
+        Assert.Contains("custom output test", customWriter.ToString());
+        Assert.Empty(_output.ToString());
+
+        customWriter.Dispose();
     }
 
     #endregion
@@ -333,40 +376,6 @@ public class LoggerTests : IDisposable
         Logger.Instance.Info("test");
         var output = _output.ToString();
         Assert.DoesNotMatch(@"\[\d{2}:\d{2}:\d{2}\.\d{3}\]", output);
-    }
-
-    #endregion
-
-    #region Level Property Tests
-
-    [Theory]
-    [InlineData(LogLevel.None)]
-    [InlineData(LogLevel.Error)]
-    [InlineData(LogLevel.Warn)]
-    [InlineData(LogLevel.Info)]
-    [InlineData(LogLevel.Debug)]
-    [InlineData(LogLevel.Trace)]
-    public void Level_CanBeSetToAnyValue(LogLevel level)
-    {
-        Logger.Instance.Level = level;
-        Assert.Equal(level, Logger.Instance.Level);
-    }
-
-    #endregion
-
-    #region SetOutput Tests
-
-    [Fact]
-    public void SetOutput_ChangesOutputDestination()
-    {
-        var customWriter = new StringWriter();
-        Logger.Instance.SetOutput(customWriter);
-        Logger.Instance.Info("custom output test");
-
-        Assert.Contains("custom output test", customWriter.ToString());
-        Assert.Empty(_output.ToString());
-
-        customWriter.Dispose();
     }
 
     #endregion

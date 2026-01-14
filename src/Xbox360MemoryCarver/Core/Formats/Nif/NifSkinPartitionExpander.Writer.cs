@@ -34,9 +34,7 @@ internal static partial class NifSkinPartitionExpander
         var packedVertexOffset = 0;
 
         foreach (var partition in skinPartition.Partitions)
-        {
             outPos = WritePartition(partition, packedData, output, outPos, ref packedVertexOffset);
-        }
 
         Log.Debug(
             $"      Wrote expanded NiSkinPartition: {outPos - startPos} bytes (was {skinPartition.OriginalSize})");
@@ -63,10 +61,7 @@ internal static partial class NifSkinPartitionExpander
         outPos = WriteBoneIndicesSection(partition, packedData, output, outPos, packedVertexOffset);
 
         // Track offset for non-mapped partitions
-        if (!partition.HasVertexMap)
-        {
-            packedVertexOffset += partition.NumVertices;
-        }
+        if (!partition.HasVertexMap) packedVertexOffset += partition.NumVertices;
 
         return outPos;
     }
@@ -111,13 +106,11 @@ internal static partial class NifSkinPartitionExpander
         output[outPos++] = (byte)(partition.HasVertexMap ? 1 : 0);
 
         if (partition.HasVertexMap)
-        {
             foreach (var idx in partition.VertexMap)
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), idx);
                 outPos += 2;
             }
-        }
 
         return outPos;
     }
@@ -180,10 +173,7 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     private static float GetBoneWeight(PackedGeometryData packedData, int globalVertexIdx, int weightIdx)
     {
-        if (packedData.BoneWeights == null || globalVertexIdx >= packedData.NumVertices)
-        {
-            return 0f;
-        }
+        if (packedData.BoneWeights == null || globalVertexIdx >= packedData.NumVertices) return 0f;
 
         var idx = globalVertexIdx * 4 + weightIdx;
         return idx < packedData.BoneWeights.Length ? packedData.BoneWeights[idx] : 0f;
@@ -210,19 +200,11 @@ internal static partial class NifSkinPartitionExpander
     {
         output[outPos++] = (byte)(partition.HasFaces ? 1 : 0);
 
-        if (!partition.HasFaces)
-        {
-            return outPos;
-        }
+        if (!partition.HasFaces) return outPos;
 
         if (partition.NumStrips > 0 && partition.Strips != null)
-        {
             outPos = WriteStrips(partition, output, outPos);
-        }
-        else if (partition.Triangles != null)
-        {
-            outPos = WriteTriangles(partition, output, outPos);
-        }
+        else if (partition.Triangles != null) outPos = WriteTriangles(partition, output, outPos);
 
         return outPos;
     }
@@ -233,13 +215,11 @@ internal static partial class NifSkinPartitionExpander
     private static int WriteStrips(PartitionInfo partition, byte[] output, int outPos)
     {
         for (var s = 0; s < partition.NumStrips && s < partition.Strips!.Length; s++)
-        {
             foreach (var idx in partition.Strips[s])
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), idx);
                 outPos += 2;
             }
-        }
 
         return outPos;
     }
@@ -313,16 +293,10 @@ internal static partial class NifSkinPartitionExpander
         int weightIdx,
         ushort[] partitionBones)
     {
-        if (packedData.BoneIndices == null || globalVertexIdx >= packedData.NumVertices)
-        {
-            return 0;
-        }
+        if (packedData.BoneIndices == null || globalVertexIdx >= packedData.NumVertices) return 0;
 
         var idx = globalVertexIdx * 4 + weightIdx;
-        if (idx >= packedData.BoneIndices.Length)
-        {
-            return 0;
-        }
+        if (idx >= packedData.BoneIndices.Length) return 0;
 
         var globalBoneIdx = packedData.BoneIndices[idx];
         return MapToPartitionBoneIndex(globalBoneIdx, partitionBones);
@@ -335,12 +309,8 @@ internal static partial class NifSkinPartitionExpander
     private static byte MapToPartitionBoneIndex(byte globalBoneIdx, ushort[] partitionBones)
     {
         for (var i = 0; i < partitionBones.Length; i++)
-        {
             if (partitionBones[i] == globalBoneIdx)
-            {
                 return (byte)i;
-            }
-        }
 
         // Bone not found in partition - return 0 as fallback
         return 0;

@@ -4,6 +4,18 @@ using Xbox360MemoryCarver.Core.Formats;
 namespace Xbox360MemoryCarver.Core.Carving;
 
 /// <summary>
+///     Parameters for file write operations.
+/// </summary>
+internal sealed record WriteFileParams(
+    string OutputFile,
+    byte[] Data,
+    long Offset,
+    string SignatureId,
+    int FileSize,
+    string? OriginalPath,
+    Dictionary<string, object>? Metadata);
+
+/// <summary>
 ///     Handles file writing, conversion, and repair operations for carved files.
 /// </summary>
 internal sealed class CarveWriter
@@ -31,72 +43,56 @@ internal sealed class CarveWriter
     /// </summary>
     public IReadOnlyCollection<long> FailedConversionOffsets => _failedConversionOffsets;
 
-    public async Task WriteFileAsync(
-        string outputFile,
-        byte[] data,
-        long offset,
-        string signatureId,
-        int fileSize,
-        string? originalPath,
-        Dictionary<string, object>? metadata)
+    public async Task WriteFileAsync(WriteFileParams p)
     {
-        var format = FormatRegistry.GetBySignatureId(signatureId);
+        var format = FormatRegistry.GetBySignatureId(p.SignatureId);
 
         // Try conversion if available for this format
         if (_enableConversion && format != null && _converters.TryGetValue(format.FormatId, out var converter) &&
-            converter.CanConvert(signatureId, metadata))
+            converter.CanConvert(p.SignatureId, p.Metadata))
         {
-            var convertResult = await TryConvertAsync(converter, data, outputFile, offset, signatureId, fileSize,
-                originalPath, metadata);
+            var convertResult = await TryConvertAsync(converter, p);
             if (convertResult) return;
         }
 
         // Repair files if needed using IFileRepairer interface
-        var outputData = data;
+        var outputData = p.Data;
         var isRepaired = false;
-        if (format is IFileRepairer repairer && repairer.NeedsRepair(metadata))
+        if (format is IFileRepairer repairer && repairer.NeedsRepair(p.Metadata))
         {
-            outputData = repairer.Repair(data, metadata);
-            isRepaired = outputData != data;
+            outputData = repairer.Repair(p.Data, p.Metadata);
+            isRepaired = outputData != p.Data;
         }
 
-        await WriteFileWithRetryAsync(outputFile, outputData);
+        await WriteFileWithRetryAsync(p.OutputFile, outputData);
         _addToManifest(new CarveEntry
         {
-            FileType = signatureId,
-            Offset = offset,
-            SizeInDump = fileSize,
+            FileType = p.SignatureId,
+            Offset = p.Offset,
+            SizeInDump = p.FileSize,
             SizeOutput = outputData.Length,
-            Filename = Path.GetFileName(outputFile),
-            OriginalPath = originalPath,
+            Filename = Path.GetFileName(p.OutputFile),
+            OriginalPath = p.OriginalPath,
             Notes = isRepaired ? "Repaired" : null,
-            Metadata = metadata
+            Metadata = p.Metadata
         });
     }
 
-    private async Task<bool> TryConvertAsync(
-        IFileConverter converter,
-        byte[] data,
-        string outputFile,
-        long offset,
-        string signatureId,
-        int fileSize,
-        string? originalPath,
-        Dictionary<string, object>? metadata)
+    private async Task<bool> TryConvertAsync(IFileConverter converter, WriteFileParams p)
     {
-        var result = await converter.ConvertAsync(data, metadata);
+        var result = await converter.ConvertAsync(p.Data, p.Metadata);
         if (!result.Success || result.DdsData == null)
         {
             // Track that this file failed conversion
-            _failedConversionOffsets.Add(offset);
+            _failedConversionOffsets.Add(p.Offset);
             return false;
         }
 
-        var format = FormatRegistry.GetBySignatureId(signatureId);
-        var originalFolder = format?.OutputFolder ?? signatureId;
+        var format = FormatRegistry.GetBySignatureId(p.SignatureId);
+        var originalFolder = format?.OutputFolder ?? p.SignatureId;
         var targetFolder = converter.TargetFolder;
 
-        var convertedOutputFile = Path.ChangeExtension(outputFile.Replace(
+        var convertedOutputFile = Path.ChangeExtension(p.OutputFile.Replace(
             Path.DirectorySeparatorChar + originalFolder + Path.DirectorySeparatorChar,
             Path.DirectorySeparatorChar + targetFolder + Path.DirectorySeparatorChar), converter.TargetExtension);
         Directory.CreateDirectory(Path.GetDirectoryName(convertedOutputFile)!);
@@ -109,17 +105,17 @@ internal sealed class CarveWriter
 
         _addToManifest(new CarveEntry
         {
-            FileType = signatureId,
-            Offset = offset,
-            SizeInDump = fileSize,
+            FileType = p.SignatureId,
+            Offset = p.Offset,
+            SizeInDump = p.FileSize,
             SizeOutput = result.DdsData.Length,
             Filename = Path.GetFileName(convertedOutputFile),
-            OriginalPath = originalPath,
+            OriginalPath = p.OriginalPath,
             IsCompressed = true,
             ContentType = result.IsPartial ? "converted_partial" : "converted",
             IsPartial = result.IsPartial,
             Notes = result.Notes,
-            Metadata = metadata
+            Metadata = p.Metadata
         });
 
         return true;
@@ -132,7 +128,6 @@ internal sealed class CarveWriter
     {
         var currentPath = outputFile;
         for (var attempt = 0; attempt < maxRetries; attempt++)
-        {
             try
             {
                 await File.WriteAllBytesAsync(currentPath, data);
@@ -146,6 +141,5 @@ internal sealed class CarveWriter
                 var suffix = Guid.NewGuid().ToString("N")[..8];
                 currentPath = Path.Combine(dir, $"{nameWithoutExt}_{suffix}{ext}");
             }
-        }
     }
 }

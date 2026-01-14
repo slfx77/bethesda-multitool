@@ -108,31 +108,37 @@ public static class CarveCommand
 
         ExtractionSummary? summary = null;
 
-        await AnsiConsole.Progress()
-            .AutoClear(false)
-            .Columns(
-                new TaskDescriptionColumn(),
-                new ProgressBarColumn(),
-                new PercentageColumn(),
-                new SpinnerColumn())
-            .StartAsync(async ctx =>
-            {
-                var task = ctx.AddTask("[yellow]Extracting files[/]", maxValue: 100);
-
-                var progress = new Progress<ExtractionProgress>(p =>
+        try
+        {
+            await AnsiConsole.Progress()
+                .AutoClear(false)
+                .Columns(
+                    new TaskDescriptionColumn(),
+                    new ProgressBarColumn(),
+                    new PercentageColumn(),
+                    new SpinnerColumn())
+                .StartAsync(async ctx =>
                 {
-                    task.Value = p.PercentComplete;
-                    task.Description = $"[yellow]{p.CurrentOperation}[/]";
-                });
+                    var task = ctx.AddTask("[yellow]Extracting files[/]", maxValue: 100);
 
-                summary = await MemoryDumpExtractor.Extract(file, options, progress);
-                task.Value = 100;
-                task.Description = "[green]Complete[/]";
-            });
+                    var progress = new Progress<ExtractionProgress>(p =>
+                    {
+                        task.Value = p.PercentComplete;
+                        task.Description = $"[yellow]{p.CurrentOperation}[/]";
+                    });
+
+                    summary = await MemoryDumpExtractor.Extract(file, options, progress);
+                    task.Value = 100;
+                    task.Description = "[green]Complete[/]";
+                });
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            return;
+        }
 
         stopwatch.Stop();
-
-        // Null check is defensive - summary is set inside async lambda which the analyzer can't verify
 
         if (summary is null)
         {
@@ -155,10 +161,7 @@ public static class CarveCommand
 
     private static void PrintCategoryTable(ExtractionSummary summary)
     {
-        if (summary.TypeCounts.Count == 0)
-        {
-            return;
-        }
+        if (summary.TypeCounts.Count == 0) return;
 
         AnsiConsole.WriteLine();
 
@@ -189,27 +192,18 @@ public static class CarveCommand
         table.AddColumn(new TableColumn("[bold]Count[/]").RightAligned());
 
         foreach (var (category, count) in categorized.OrderByDescending(x => x.Value))
-        {
             if (count > 0)
-            {
                 table.AddRow(category, count.ToString(CultureInfo.InvariantCulture));
-            }
-        }
 
         if (modulesExtracted > 0)
-        {
             table.AddRow("[grey]Modules (from header)[/]", modulesExtracted.ToString(CultureInfo.InvariantCulture));
-        }
 
         return table;
     }
 
     private static void PrintConversionStats(ExtractionSummary summary, bool convertDdx)
     {
-        if (!convertDdx)
-        {
-            return;
-        }
+        if (!convertDdx) return;
 
         PrintDdxConversionStats(summary);
         PrintXurConversionStats(summary);
@@ -217,10 +211,7 @@ public static class CarveCommand
 
     private static void PrintDdxConversionStats(ExtractionSummary summary)
     {
-        if (summary.DdxConverted == 0 && summary.DdxFailed == 0)
-        {
-            return;
-        }
+        if (summary.DdxConverted == 0 && summary.DdxFailed == 0) return;
 
         AnsiConsole.WriteLine();
         var converted = FormatSuccessCount(summary.DdxConverted);
@@ -230,10 +221,7 @@ public static class CarveCommand
 
     private static void PrintXurConversionStats(ExtractionSummary summary)
     {
-        if (summary.XurConverted == 0 && summary.XurFailed == 0)
-        {
-            return;
-        }
+        if (summary.XurConverted == 0 && summary.XurFailed == 0) return;
 
         var converted = FormatSuccessCount(summary.XurConverted);
         var failed = FormatFailedCount(summary.XurFailed);
@@ -252,10 +240,7 @@ public static class CarveCommand
 
     private static void PrintScriptStats(ExtractionSummary summary)
     {
-        if (summary.ScriptsExtracted == 0)
-        {
-            return;
-        }
+        if (summary.ScriptsExtracted == 0) return;
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine(

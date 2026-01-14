@@ -37,10 +37,8 @@ internal sealed partial class NifConverter
         ProcessAccumRootName(info, existingStrings, nameMappings);
 
         if (_nodeNamesByBlock.Count > 0)
-        {
             Log.Debug(
                 $"  Found {_nodeNamesByBlock.Count} node names from palette/sequence, adding {_newStrings.Count} new strings");
-        }
     }
 
     private int GetOrAddStringIndex(NifInfo info, HashSet<string> existingStrings, string name)
@@ -83,7 +81,6 @@ internal sealed partial class NifConverter
     private void FindAndExtractPackedGeometry(byte[] data, NifInfo info)
     {
         foreach (var block in info.Blocks)
-        {
             if (block.TypeName == "BSPackedAdditionalGeometryData")
             {
                 _blocksToStrip.Add(block.Index);
@@ -102,7 +99,6 @@ internal sealed partial class NifConverter
                     Log.Debug($"  Block {block.Index}: BSPackedAdditionalGeometryData - extraction failed");
                 }
             }
-        }
     }
 
     /// <summary>
@@ -141,7 +137,6 @@ internal sealed partial class NifConverter
     private void FindHavokExpansions(byte[] data, NifInfo info)
     {
         foreach (var block in info.Blocks)
-        {
             if (block.TypeName == "hkPackedNiTriStripsData")
             {
                 var expansion = ParseHavokBlock(data, block, info.IsBigEndian);
@@ -153,7 +148,6 @@ internal sealed partial class NifConverter
                         $"  Block {block.Index}: hkPackedNiTriStripsData -> expand from {expansion.OriginalSize} to {expansion.NewSize} bytes ({expansion.NumVertices} vertices)");
                 }
             }
-        }
     }
 
     /// <summary>

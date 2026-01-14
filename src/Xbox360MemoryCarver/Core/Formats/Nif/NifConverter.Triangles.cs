@@ -25,7 +25,8 @@ internal sealed partial class NifConverter
     {
         foreach (var block in info.Blocks.Where(b => b.TypeName == "NiSkinPartition"))
         {
-            Log.Debug($"    Checking block {block.Index}: NiSkinPartition at offset 0x{block.DataOffset:X}, size {block.Size}");
+            Log.Debug(
+                $"    Checking block {block.Index}: NiSkinPartition at offset 0x{block.DataOffset:X}, size {block.Size}");
 
             ExtractVertexMapFromBlock(data, block, info.IsBigEndian);
             ExtractTrianglesFromBlock(data, block, info.IsBigEndian);
@@ -52,7 +53,8 @@ internal sealed partial class NifConverter
         if (triangles != null && triangles.Length > 0)
         {
             _skinPartitionTriangles[block.Index] = triangles;
-            Log.Debug($"    Block {block.Index}: NiSkinPartition - extracted {triangles.Length / 3} triangles from strips");
+            Log.Debug(
+                $"    Block {block.Index}: NiSkinPartition - extracted {triangles.Length / 3} triangles from strips");
         }
     }
 
@@ -70,7 +72,8 @@ internal sealed partial class NifConverter
         }
     }
 
-    private void TryMapGeometryToSkinPartition(byte[] data, BlockInfo geometryBlock, BlockInfo skinInstanceBlock, NifInfo info)
+    private void TryMapGeometryToSkinPartition(byte[] data, BlockInfo geometryBlock, BlockInfo skinInstanceBlock,
+        NifInfo info)
     {
         // Read the skin partition ref from offset 4 in the skin instance
         var skinPartitionRefPos = skinInstanceBlock.DataOffset + 4;
@@ -115,10 +118,8 @@ internal sealed partial class NifConverter
 
             // Also check for NiTriStripsData triangles (non-skinned meshes)
             if (_geometryStripTriangles.TryGetValue(geomBlockIndex, out var stripTriangles))
-            {
                 Log.Debug(
                     $"    Block {geomBlockIndex}: Has {stripTriangles.Length / 3} triangles from NiTriStripsData strips");
-            }
         }
     }
 
@@ -248,6 +249,7 @@ internal sealed partial class NifConverter
                 strip[j] = ReadUInt16(data, pos, isBigEndian);
                 pos += 2;
             }
+
             allStrips.Add(strip);
         }
 

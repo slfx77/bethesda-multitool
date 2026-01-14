@@ -83,12 +83,8 @@ public sealed class ScriptFormat : FileFormatBase
     private static int FindLineEnd(ReadOnlySpan<byte> data)
     {
         for (var i = 0; i < data.Length; i++)
-        {
             if (data[i] == '\r' || data[i] == '\n')
-            {
                 return i;
-            }
-        }
 
         return -1;
     }
@@ -102,9 +98,7 @@ public sealed class ScriptFormat : FileFormatBase
             scriptName = firstLine[4..].Trim();
         else if (lower.StartsWith("scriptname ", StringComparison.Ordinal) ||
                  lower.StartsWith("scriptname\t", StringComparison.Ordinal))
-        {
             scriptName = firstLine[11..].Trim();
-        }
 
         return scriptName;
     }

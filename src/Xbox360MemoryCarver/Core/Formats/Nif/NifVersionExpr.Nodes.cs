@@ -1,8 +1,6 @@
 // AST node types for NIF version expression parser
 // Supports recursive evaluation of version conditions
 
-// S3218: Method shadowing is intentional in this expression tree visitor pattern
-
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 
 /// <summary>
@@ -14,7 +12,7 @@ public sealed partial class NifVersionExpr
 
     private interface IExprNode
     {
-        bool Evaluate(NifVersionContext ctx);
+        bool Eval(NifVersionContext ctx);
     }
 
     private enum VariableType
@@ -36,7 +34,7 @@ public sealed partial class NifVersionExpr
 
     private sealed class CompareNode(VariableType variable, CompareOp op, long value) : IExprNode
     {
-        public bool Evaluate(NifVersionContext ctx)
+        public bool Eval(NifVersionContext ctx)
         {
             var varValue = variable switch
             {
@@ -61,25 +59,25 @@ public sealed partial class NifVersionExpr
 
     private sealed class AndNode(IExprNode left, IExprNode right) : IExprNode
     {
-        public bool Evaluate(NifVersionContext ctx)
+        public bool Eval(NifVersionContext ctx)
         {
-            return left.Evaluate(ctx) && right.Evaluate(ctx);
+            return left.Eval(ctx) && right.Eval(ctx);
         }
     }
 
     private sealed class OrNode(IExprNode left, IExprNode right) : IExprNode
     {
-        public bool Evaluate(NifVersionContext ctx)
+        public bool Eval(NifVersionContext ctx)
         {
-            return left.Evaluate(ctx) || right.Evaluate(ctx);
+            return left.Eval(ctx) || right.Eval(ctx);
         }
     }
 
     private sealed class NotNode(IExprNode inner) : IExprNode
     {
-        public bool Evaluate(NifVersionContext ctx)
+        public bool Eval(NifVersionContext ctx)
         {
-            return !inner.Evaluate(ctx);
+            return !inner.Eval(ctx);
         }
     }
 

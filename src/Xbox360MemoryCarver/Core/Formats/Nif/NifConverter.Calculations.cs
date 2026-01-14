@@ -24,13 +24,6 @@ internal sealed partial class NifConverter
         };
     }
 
-    private readonly record struct GeometryBlockFields(
-        ushort NumVertices,
-        ushort BsDataFlags,
-        byte HasVertices,
-        byte HasNormals,
-        byte HasVertexColors);
-
     private static GeometryBlockFields? ParseGeometryBlockFields(byte[] data, BlockInfo block)
     {
         var pos = block.DataOffset;
@@ -77,10 +70,7 @@ internal sealed partial class NifConverter
         var sizeIncrease = 0;
         var numVertices = fields.NumVertices;
 
-        if (fields.HasVertices == 0 && packedData.Positions != null)
-        {
-            sizeIncrease += numVertices * 12;
-        }
+        if (fields.HasVertices == 0 && packedData.Positions != null) sizeIncrease += numVertices * 12;
 
         if (fields.HasNormals == 0 && packedData.Normals != null)
         {
@@ -91,15 +81,10 @@ internal sealed partial class NifConverter
 
         // Vertex colors: skip for skinned meshes (ubyte4 is bone indices)
         if (fields.HasVertexColors == 0 && packedData.VertexColors != null && !isSkinned)
-        {
             sizeIncrease += numVertices * 16;
-        }
 
         var numUVSets = fields.BsDataFlags & 1;
-        if (numUVSets == 0 && packedData.UVs != null)
-        {
-            sizeIncrease += numVertices * 8;
-        }
+        if (numUVSets == 0 && packedData.UVs != null) sizeIncrease += numVertices * 8;
 
         return sizeIncrease;
     }
@@ -113,16 +98,10 @@ internal sealed partial class NifConverter
         var newIndex = 0;
 
         for (var i = 0; i < blockCount; i++)
-        {
             if (_blocksToStrip.Contains(i))
-            {
                 remap[i] = -1;
-            }
             else
-            {
                 remap[i] = newIndex++;
-            }
-        }
 
         return remap;
     }
@@ -178,4 +157,11 @@ internal sealed partial class NifConverter
 
         return size;
     }
+
+    private readonly record struct GeometryBlockFields(
+        ushort NumVertices,
+        ushort BsDataFlags,
+        byte HasVertices,
+        byte HasNormals,
+        byte HasVertexColors);
 }

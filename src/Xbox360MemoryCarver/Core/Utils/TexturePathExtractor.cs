@@ -41,7 +41,8 @@ internal static class TexturePathExtractor
         return null;
     }
 
-    private static string? TryExtractPath(ReadOnlySpan<byte> searchArea, int extPosition, int extLength, string extension)
+    private static string? TryExtractPath(ReadOnlySpan<byte> searchArea, int extPosition, int extLength,
+        string extension)
     {
         var pathEnd = extPosition + extLength;
         var pathStart = FindPathStart(searchArea, extPosition);

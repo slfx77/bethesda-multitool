@@ -30,16 +30,13 @@ internal sealed partial class NifConverter
             // Parse the NIF header to understand structure
             var info = NifParser.Parse(data);
             if (info == null)
-            {
                 return new ConversionResult
                 {
                     Success = false,
                     ErrorMessage = "Failed to parse NIF header"
                 };
-            }
 
             if (!info.IsBigEndian)
-            {
                 return new ConversionResult
                 {
                     Success = true,
@@ -47,17 +44,14 @@ internal sealed partial class NifConverter
                     SourceInfo = info,
                     ErrorMessage = "File is already little-endian (PC format)"
                 };
-            }
 
             // Check if this is a Bethesda version we can fully convert
             if (!NifParser.IsBethesdaVersion(info.BinaryVersion, info.UserVersion))
-            {
                 return new ConversionResult
                 {
                     Success = false,
                     ErrorMessage = $"Unsupported NIF version {info.BinaryVersion:X8} (only Bethesda versions supported)"
                 };
-            }
 
             Log.Debug(
                 $"Converting NIF: {info.BlockCount} blocks, version {info.BinaryVersion:X8}, BS version {info.BsVersion}");

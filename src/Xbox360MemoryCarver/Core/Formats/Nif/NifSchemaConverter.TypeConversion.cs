@@ -10,23 +10,23 @@ internal sealed partial class NifSchemaConverter
 {
     private void ConvertSingleValue(ConversionContext ctx, string typeName, int depth = 0)
     {
-        typeName = ResolveTypeName(ctx, typeName);
-        if (typeName == null) return;
+        var resolvedTypeName = ResolveTypeName(ctx, typeName);
+        if (resolvedTypeName == null) return;
 
         // Handle special string types
-        if (TryConvertStringType(ctx, typeName)) return;
+        if (TryConvertStringType(ctx, resolvedTypeName)) return;
 
         // Handle basic types
-        if (TryConvertBasicType(ctx, typeName)) return;
+        if (TryConvertBasicType(ctx, resolvedTypeName)) return;
 
         // Handle enums
-        if (TryConvertEnumType(ctx, typeName)) return;
+        if (TryConvertEnumType(ctx, resolvedTypeName)) return;
 
         // Handle structs
-        if (TryConvertStructType(ctx, typeName, depth)) return;
+        if (TryConvertStructType(ctx, resolvedTypeName, depth)) return;
 
         // Unknown type - try bulk swap based on size
-        ConvertUnknownType(ctx, typeName);
+        ConvertUnknownType(ctx, resolvedTypeName);
     }
 
     private static string? ResolveTypeName(ConversionContext ctx, string typeName)
@@ -64,10 +64,7 @@ internal sealed partial class NifSchemaConverter
     private bool TryConvertEnumType(ConversionContext ctx, string typeName)
     {
         if (!_schema.Enums.TryGetValue(typeName, out var enumDef)) return false;
-        if (_schema.BasicTypes.TryGetValue(enumDef.Storage, out var storageType))
-        {
-            ConvertBasicType(ctx, storageType);
-        }
+        if (_schema.BasicTypes.TryGetValue(enumDef.Storage, out var storageType)) ConvertBasicType(ctx, storageType);
         return true;
     }
 
@@ -80,10 +77,7 @@ internal sealed partial class NifSchemaConverter
         if (TryBulkSwapFixedSizeStruct(ctx, structDef)) return true;
 
         // Clear field values for fresh struct instance
-        foreach (var field in structDef.Fields)
-        {
-            ctx.FieldValues.Remove(field.Name);
-        }
+        foreach (var field in structDef.Fields) ctx.FieldValues.Remove(field.Name);
 
         ConvertFields(ctx, structDef.Fields, depth + 1);
         return true;

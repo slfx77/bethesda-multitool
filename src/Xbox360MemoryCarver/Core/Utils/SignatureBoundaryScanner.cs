@@ -155,15 +155,9 @@ public static class SignatureBoundaryScanner
         for (var i = scanStart; i < scanEnd; i++)
         {
             var signatureMatch = TryMatchKnownSignature(data, i, knownSignatures, excludeSignature, validateRiff);
-            if (signatureMatch >= 0)
-            {
-                return signatureMatch - offset;
-            }
+            if (signatureMatch >= 0) return signatureMatch - offset;
 
-            if (TryMatchGamebryoSignature(data, i))
-            {
-                return i - offset;
-            }
+            if (TryMatchGamebryoSignature(data, i)) return i - offset;
         }
 
         return -1;
@@ -180,20 +174,11 @@ public static class SignatureBoundaryScanner
 
         foreach (var sig in knownSignatures)
         {
-            if (!IsSignatureMatch(slice, sig))
-            {
-                continue;
-            }
+            if (!IsSignatureMatch(slice, sig)) continue;
 
-            if (ShouldExcludeSignature(sig, excludeSignature))
-            {
-                continue;
-            }
+            if (ShouldExcludeSignature(sig, excludeSignature)) continue;
 
-            if (validateRiff && slice.SequenceEqual("RIFF"u8) && !IsValidRiffHeader(data, position))
-            {
-                continue;
-            }
+            if (validateRiff && slice.SequenceEqual("RIFF"u8) && !IsValidRiffHeader(data, position)) continue;
 
             return position;
         }
@@ -203,20 +188,14 @@ public static class SignatureBoundaryScanner
 
     private static bool IsSignatureMatch(ReadOnlySpan<byte> slice, byte[] signature)
     {
-        if (signature.Length > slice.Length)
-        {
-            return false;
-        }
+        if (signature.Length > slice.Length) return false;
 
         return slice[..signature.Length].SequenceEqual(signature);
     }
 
     private static bool ShouldExcludeSignature(ReadOnlySpan<byte> signature, ReadOnlySpan<byte> excludeSignature)
     {
-        if (excludeSignature.IsEmpty)
-        {
-            return false;
-        }
+        if (excludeSignature.IsEmpty) return false;
 
         return signature.Length == excludeSignature.Length && excludeSignature.SequenceEqual(signature);
     }

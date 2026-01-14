@@ -13,11 +13,9 @@ public class NifSchemaTests
             "Xbox360MemoryCarver", "Core", "Formats", "Nif", "nif.xml");
 
         if (!File.Exists(xmlPath))
-        {
             // Try alternate path
             xmlPath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "src",
                 "Xbox360MemoryCarver", "Core", "Formats", "Nif", "nif.xml"));
-        }
 
         Assert.True(File.Exists(xmlPath), $"nif.xml not found at {xmlPath}");
         return NifSchema.LoadFromFile(xmlPath);

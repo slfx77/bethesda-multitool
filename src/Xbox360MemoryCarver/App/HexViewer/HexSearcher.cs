@@ -153,6 +153,7 @@ internal sealed class HexSearcher
         {
             if (buffer[offset + j] != pattern[j]) return false;
         }
+
         return true;
     }
 
@@ -206,6 +207,7 @@ internal sealed class HexSearcher
             var b = buffer[offset + j];
             if (b != upperPattern[j] && b != lowerPattern[j]) return false;
         }
+
         return true;
     }
 }

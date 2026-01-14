@@ -124,10 +124,7 @@ public sealed class EspFormat : FileFormatBase
                 return i - offset;
 
             // Check for NIF
-            if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual("Gamebryo File Format"u8))
-            {
-                return i - offset;
-            }
+            if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual("Gamebryo File Format"u8)) return i - offset;
         }
 
         // No boundary found, use header data size or cap at available data

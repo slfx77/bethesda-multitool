@@ -315,35 +315,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         });
     }
 
-    private sealed class ScanProgressTracker(int totalCount, Microsoft.UI.Dispatching.DispatcherQueue dispatcher, Microsoft.UI.Xaml.Controls.ProgressBar progressBar)
-    {
-        private int _processedCount;
-        private int _lastReportedProgress;
-
-        public void IncrementAndReport()
-        {
-            var currentCount = Interlocked.Increment(ref _processedCount);
-            if (currentCount % 100 != 0 && currentCount != totalCount) return;
-
-            var previousMax = _lastReportedProgress;
-            while (currentCount > previousMax)
-            {
-                if (Interlocked.CompareExchange(ref _lastReportedProgress, currentCount, previousMax) == previousMax)
-                {
-                    var progressValue = currentCount;
-                    dispatcher.TryEnqueue(() =>
-                    {
-                        if (progressValue > progressBar.Value)
-                            progressBar.Value = progressValue;
-                    });
-                    break;
-                }
-
-                previousMax = _lastReportedProgress;
-            }
-        }
-    }
-
     private void InitializeScanProgress(int fileCount)
     {
         DispatcherQueue.TryEnqueue(() =>
@@ -355,7 +326,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         });
     }
 
-    private async Task ProcessNifFileAsync(
+    private static async Task ProcessNifFileAsync(
         string directory,
         string filePath,
         (string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)[] result,
@@ -577,6 +548,38 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     {
         _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
+    }
+
+    private sealed class ScanProgressTracker(
+        int totalCount,
+        Microsoft.UI.Dispatching.DispatcherQueue dispatcher,
+        Microsoft.UI.Xaml.Controls.ProgressBar progressBar)
+    {
+        private int _lastReportedProgress;
+        private int _processedCount;
+
+        public void IncrementAndReport()
+        {
+            var currentCount = Interlocked.Increment(ref _processedCount);
+            if (currentCount % 100 != 0 && currentCount != totalCount) return;
+
+            var previousMax = _lastReportedProgress;
+            while (currentCount > previousMax)
+            {
+                if (Interlocked.CompareExchange(ref _lastReportedProgress, currentCount, previousMax) == previousMax)
+                {
+                    var progressValue = currentCount;
+                    dispatcher.TryEnqueue(() =>
+                    {
+                        if (progressValue > progressBar.Value)
+                            progressBar.Value = progressValue;
+                    });
+                    break;
+                }
+
+                previousMax = _lastReportedProgress;
+            }
+        }
     }
 
     #region Sorting

@@ -77,10 +77,7 @@ internal sealed partial class NifSchemaConverter
             if (ctx.Position >= ctx.End) break;
             if (!ShouldProcessField(ctx, field, depth)) continue;
 
-            if (depth == 0)
-            {
-                Log.Trace($"    Converting field {field.Name} at pos {ctx.Position:X}");
-            }
+            if (depth == 0) Log.Trace($"    Converting field {field.Name} at pos {ctx.Position:X}");
 
             ConvertField(ctx, field, depth);
         }
@@ -106,10 +103,7 @@ internal sealed partial class NifSchemaConverter
 
         if (_schema.Inherits(ctx.BlockType, field.OnlyT)) return true;
 
-        if (depth == 0)
-        {
-            Log.Trace($"    Skipping {field.Name} (onlyT={field.OnlyT}, block={ctx.BlockType})");
-        }
+        if (depth == 0) Log.Trace($"    Skipping {field.Name} (onlyT={field.OnlyT}, block={ctx.BlockType})");
         return false;
     }
 
@@ -118,18 +112,15 @@ internal sealed partial class NifSchemaConverter
         if (!IsVersionInRange(field.Since, field.Until))
         {
             if (depth == 0)
-            {
-                Log.Trace($"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
-            }
+                Log.Trace(
+                    $"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
             return false;
         }
 
         if (!EvaluateVersionCondition(field.VersionCond))
         {
             if (depth == 0 || field.Name == "LOD Level" || field.Name == "Global VB")
-            {
                 Log.Trace($"    Skipping {field.Name} (vercond failed: {field.VersionCond})");
-            }
             return false;
         }
 
@@ -143,10 +134,7 @@ internal sealed partial class NifSchemaConverter
         var condResult = EvaluateCondition(field.Condition, ctx.FieldValues);
         if (condResult) return true;
 
-        if (depth == 0)
-        {
-            Log.Trace($"    Skipping {field.Name} (cond failed: {field.Condition})");
-        }
+        if (depth == 0) Log.Trace($"    Skipping {field.Name} (cond failed: {field.Condition})");
         return false;
     }
 
@@ -203,10 +191,7 @@ internal sealed partial class NifSchemaConverter
 
         // If field has a template attribute, save it for use by nested generic structs
         var previousTemplate = ctx.TemplateType;
-        if (field.Template != null)
-        {
-            ctx.TemplateType = ResolveTemplateType(field.Template, ctx.TemplateType);
-        }
+        if (field.Template != null) ctx.TemplateType = ResolveTemplateType(field.Template, ctx.TemplateType);
 
         try
         {
@@ -227,16 +212,12 @@ internal sealed partial class NifSchemaConverter
             : template; // Use the new template type directly
     }
 
-    private static void RestoreArgValue(ConversionContext ctx, NifFieldDef field, bool hadPreviousArg, object? previousArg)
+    private static void RestoreArgValue(ConversionContext ctx, NifFieldDef field, bool hadPreviousArg,
+        object? previousArg)
     {
         if (hadPreviousArg)
-        {
             ctx.FieldValues[ArgPlaceholder] = previousArg!;
-        }
-        else if (field.Arg != null)
-        {
-            ctx.FieldValues.Remove(ArgPlaceholder);
-        }
+        else if (field.Arg != null) ctx.FieldValues.Remove(ArgPlaceholder);
     }
 
     private void ConvertFieldValue(ConversionContext ctx, NifFieldDef field, int depth)
@@ -298,9 +279,7 @@ internal sealed partial class NifSchemaConverter
         }
 
         if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
-        {
             Log.Trace($"    2D array: {field.Name} = {count} x {width} = {count * width} elements");
-        }
 
         return count * width;
     }
@@ -308,17 +287,14 @@ internal sealed partial class NifSchemaConverter
     private void ConvertJaggedArray(ConversionContext ctx, NifFieldDef field, int rowCount, int[] widthArray, int depth)
     {
         if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
-        {
-            Log.Trace($"    Jagged array: {field.Name} = {rowCount} rows with variable widths (total {widthArray.Sum()} elements)");
-        }
+            Log.Trace(
+                $"    Jagged array: {field.Name} = {rowCount} rows with variable widths (total {widthArray.Sum()} elements)");
 
         for (var row = 0; row < rowCount && row < widthArray.Length && ctx.Position < ctx.End; row++)
         {
             var rowWidth = widthArray[row];
             for (var col = 0; col < rowWidth && ctx.Position < ctx.End; col++)
-            {
                 ConvertSingleValue(ctx, field.Type, depth);
-            }
         }
     }
 
@@ -334,9 +310,7 @@ internal sealed partial class NifSchemaConverter
         for (var i = 0; i < count && ctx.Position < ctx.End; i++)
         {
             if (arrayValues != null && ctx.Position + 2 <= ctx.End)
-            {
                 arrayValues[i] = BinaryPrimitives.ReadUInt16BigEndian(ctx.Buffer.AsSpan(ctx.Position, 2));
-            }
             ConvertSingleValue(ctx, field.Type, depth);
         }
 
@@ -350,9 +324,7 @@ internal sealed partial class NifSchemaConverter
     private static void LogSkippedArray(NifFieldDef field, int depth, string reason)
     {
         if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
-        {
             Log.Trace($"    Skipping array {field.Name} ({reason})");
-        }
     }
 
     private static long EvaluateArgExpression(string argExpr, Dictionary<string, object> fieldValues)
@@ -410,7 +382,6 @@ internal sealed partial class NifSchemaConverter
     {
         // Try to get value from field context (simple field reference)
         if (fieldValues.TryGetValue(lengthExpr, out var val))
-        {
             return val switch
             {
                 int i => i,
@@ -420,7 +391,6 @@ internal sealed partial class NifSchemaConverter
                 long l => (int)l,
                 _ => -1
             };
-        }
 
         // Try to parse as literal
         if (int.TryParse(lengthExpr, CultureInfo.InvariantCulture, out var literal))

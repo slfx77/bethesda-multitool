@@ -2,8 +2,6 @@
 // Handles expressions like: ((#BSVER# #GTE# 130) #AND# (#BSVER# #LTE# 159))
 // Uses recursive descent parsing for clean, maintainable code
 
-// S3218: Method shadowing is intentional in this expression tree visitor pattern
-
 using System.Globalization;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -118,12 +116,8 @@ public sealed partial class NifVersionExpr
     {
         // Iterate through all tokens and expand them
         foreach (var (token, expansion) in TokenExpansions)
-        {
             if (expression.Contains(token, StringComparison.OrdinalIgnoreCase))
-            {
                 expression = expression.Replace(token, expansion, StringComparison.OrdinalIgnoreCase);
-            }
-        }
 
         return expression;
     }
@@ -158,13 +152,13 @@ public sealed partial class NifVersionExpr
 
         var parser = new NifVersionExpr(expression);
         var ast = parser.ParseExpr();
-        return ctx => ast.Evaluate(ctx);
+        return ctx => ast.Eval(ctx);
     }
 
     private bool ParseAndEvaluate(NifVersionContext context)
     {
         var ast = ParseExpr();
-        return ast.Evaluate(context);
+        return ast.Eval(context);
     }
 
     #region Lexer
@@ -219,10 +213,7 @@ public sealed partial class NifVersionExpr
         if (_pos >= _expression.Length || _expression[_pos] != '#') return false;
 
         _pos++;
-        while (_pos < _expression.Length && _expression[_pos] != '#')
-        {
-            _pos++;
-        }
+        while (_pos < _expression.Length && _expression[_pos] != '#') _pos++;
         if (_pos < _expression.Length) _pos++; // consume closing #
         return true;
     }
@@ -244,9 +235,7 @@ public sealed partial class NifVersionExpr
     {
         while (_pos < _expression.Length &&
                (char.IsLetterOrDigit(_expression[_pos]) || _expression[_pos] == '_' || _expression[_pos] == '.'))
-        {
             _pos++;
-        }
     }
 
     private long ReadNumber()
@@ -260,10 +249,7 @@ public sealed partial class NifVersionExpr
             (_expression[_pos + 1] == 'x' || _expression[_pos + 1] == 'X'))
         {
             _pos += 2;
-            while (_pos < _expression.Length && IsHexDigit(_expression[_pos]))
-            {
-                _pos++;
-            }
+            while (_pos < _expression.Length && IsHexDigit(_expression[_pos])) _pos++;
             return long.Parse(_expression[(start + 2).._pos], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
         }
 

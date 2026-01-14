@@ -60,7 +60,7 @@ internal static class XmaRepairer
             ? BinaryUtils.ReadUInt16LE(data.AsSpan(), fmtOffset + 8)
             : (ushort)0;
 
-        var (channels, sampleRate) = (formatTag == 0x0165 || convertToXma2)
+        var (channels, sampleRate) = formatTag == 0x0165 || convertToXma2
             ? ExtractXma1Params(data, fmtOffset)
             : ExtractXma2Params(data, fmtOffset);
 
@@ -87,10 +87,15 @@ internal static class XmaRepairer
         return (channels, sampleRate);
     }
 
-    private static int ValidateChannels(int channels) => channels is >= 1 and <= 8 ? channels : 1;
+    private static int ValidateChannels(int channels)
+    {
+        return channels is >= 1 and <= 8 ? channels : 1;
+    }
 
-    private static int ValidateSampleRate(int sampleRate) =>
-        sampleRate is >= 8000 and <= 96000 ? sampleRate : DefaultSampleRate;
+    private static int ValidateSampleRate(int sampleRate)
+    {
+        return sampleRate is >= 8000 and <= 96000 ? sampleRate : DefaultSampleRate;
+    }
 
     private static byte[] GenerateSeekTable(int dataSize)
     {
@@ -161,16 +166,11 @@ internal static class XmaRepairer
 
         // Fallback: linear scan
         for (var i = 12; i < data.Length - 8; i++)
-        {
             if (data.AsSpan(i, 4).SequenceEqual(chunkId))
             {
                 var size = BinaryUtils.ReadUInt32LE(data.AsSpan(), i + 4);
-                if (size <= 100_000_000)
-                {
-                    return i;
-                }
+                if (size <= 100_000_000) return i;
             }
-        }
 
         return -1;
     }

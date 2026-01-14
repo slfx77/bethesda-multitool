@@ -113,14 +113,10 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
                 var chunkRecords = ScanChunkForRecords(buffer, toRead, offset);
 
                 foreach (var record in chunkRecords)
-                {
                     // Only add records that start within the main chunk area (not in overlap)
                     // unless this is the last chunk
                     if (record.Offset - offset < chunkSize || offset + chunkSize >= fileSize)
-                    {
                         records.Add(record);
-                    }
-                }
 
                 offset += chunkSize;
             }
@@ -230,7 +226,6 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
         var searchEnd = Math.Min(searchStart + 200, data.Length - 10);
 
         for (var i = searchStart; i < searchEnd; i++)
-        {
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'T' && data[i + 3] == 'X')
             {
                 var length = BinaryUtils.ReadUInt16LE(data, i + 4);
@@ -240,7 +235,6 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
                     return (text, i);
                 }
             }
-        }
 
         return (null, 0);
     }
@@ -251,7 +245,6 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
         var searchEnd = Math.Min(searchStart + 200, dataLength - 10);
 
         for (var i = searchStart; i < searchEnd; i++)
-        {
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'T' && data[i + 3] == 'X')
             {
                 if (i + 6 > dataLength) break;
@@ -262,7 +255,6 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
                     return (text, i);
                 }
             }
-        }
 
         return (null, 0);
     }
@@ -273,20 +265,15 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
         var searchEnd = Math.Min(searchStart + 500, data.Length - 10);
 
         for (var i = searchStart; i < searchEnd; i++)
-        {
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'R' && data[i + 3] == 'O')
             {
                 var length = BinaryUtils.ReadUInt16LE(data, i + 4);
                 if (length == 4 && i + 10 <= data.Length)
                 {
                     var formId = BinaryUtils.ReadUInt32LE(data, i + 6);
-                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F)
-                    {
-                        formIds.Add(formId);
-                    }
+                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F) formIds.Add(formId);
                 }
             }
-        }
 
         return formIds;
     }
@@ -297,7 +284,6 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
         var searchEnd = Math.Min(searchStart + 500, dataLength - 10);
 
         for (var i = searchStart; i < searchEnd; i++)
-        {
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'R' && data[i + 3] == 'O')
             {
                 if (i + 10 > dataLength) break;
@@ -305,13 +291,9 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
                 if (length == 4)
                 {
                     var formId = BinaryUtils.ReadUInt32LE(data, i + 6);
-                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F)
-                    {
-                        formIds.Add(formId);
-                    }
+                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F) formIds.Add(formId);
                 }
             }
-        }
 
         return formIds;
     }
