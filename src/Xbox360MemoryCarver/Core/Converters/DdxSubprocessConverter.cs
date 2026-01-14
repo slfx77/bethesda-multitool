@@ -1,15 +1,31 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace Xbox360MemoryCarver.Core.Converters;
 
 /// <summary>
+///     Result from batch DDX to DDS conversion.
+/// </summary>
+public sealed class BatchConversionResult
+{
+    public int TotalFiles { get; set; }
+    public int Converted { get; set; }
+    public int Failed { get; set; }
+    public int Unsupported { get; set; }
+    public int Skipped { get; set; }
+    public int ExitCode { get; set; }
+    public bool WasCancelled { get; set; }
+    public List<string> Errors { get; } = [];
+}
+
+/// <summary>
 ///     Converts DDX files by invoking DDXConv as a subprocess.
 /// </summary>
-public class DdxSubprocessConverter
+public partial class DdxSubprocessConverter
 {
     private const string DdxConvExeName = "DDXConv.exe";
     private const string DdxConvFolderName = "DDXConv";
-    private const string TargetFramework = "net9.0";
+    private const string TargetFramework = "net10.0";
     private readonly bool _saveAtlas;
 
     private readonly bool _verbose;
@@ -155,6 +171,144 @@ public class DdxSubprocessConverter
     {
         return Task.Run(() => ConvertFile(inputPath, outputPath));
     }
+
+    /// <summary>
+    ///     Callback for batch conversion progress updates.
+    /// </summary>
+    /// <param name="inputPath">The input file path that was converted.</param>
+    /// <param name="status">Status: OK, FAIL, or UNSUPPORTED.</param>
+    /// <param name="error">Error message if conversion failed.</param>
+    public delegate void BatchProgressCallback(string inputPath, string status, string? error);
+
+    /// <summary>
+    ///     Converts all DDX files in the input directory to DDS using DDXConv's batch mode.
+    ///     This spawns a single DDXConv process for the entire directory, which is much faster
+    ///     than spawning individual processes for each file.
+    /// </summary>
+    /// <param name="inputDir">Input directory containing DDX files.</param>
+    /// <param name="outputDir">Output directory for DDS files.</param>
+    /// <param name="progressCallback">Callback invoked for each file as it completes.</param>
+    /// <param name="cancellationToken">Cancellation token to stop the conversion.</param>
+    /// <returns>Batch conversion result with statistics.</returns>
+    public async Task<BatchConversionResult> ConvertBatchAsync(
+        string inputDir,
+        string outputDir,
+        BatchProgressCallback? progressCallback = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new BatchConversionResult();
+
+        // Build arguments for batch mode with --progress flag for machine-parseable output
+        var args = $"\"{inputDir}\" \"{outputDir}\" --progress";
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = DdxConvPath,
+            Arguments = args,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+
+        using var process = new Process { StartInfo = psi };
+
+        // Regex patterns for parsing [PROGRESS] lines
+        var progressRegex = ProgressLineRegex();
+        var doneRegex = DoneLineRegex();
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (string.IsNullOrEmpty(e.Data))
+            {
+                return;
+            }
+
+            // Parse "[PROGRESS] STATUS path [error]" lines
+            var progressMatch = progressRegex.Match(e.Data);
+            if (progressMatch.Success)
+            {
+                var status = progressMatch.Groups[1].Value;
+                var inputPath = progressMatch.Groups[2].Value;
+                var error = progressMatch.Groups[3].Success ? progressMatch.Groups[3].Value : null;
+
+                switch (status)
+                {
+                    case "OK":
+                        result.Converted++;
+                        break;
+                    case "FAIL":
+                        result.Failed++;
+                        break;
+                    case "UNSUPPORTED":
+                        result.Unsupported++;
+                        break;
+                }
+
+                progressCallback?.Invoke(inputPath, status, error);
+                return;
+            }
+
+            // Parse "[PROGRESS] DONE converted failed unsupported" line
+            var doneMatch = doneRegex.Match(e.Data);
+            if (doneMatch.Success)
+            {
+                // Final stats from DDXConv (we track our own, but can verify)
+                return;
+            }
+
+            // Parse "[PROGRESS] START count" line
+            if (e.Data.StartsWith("[PROGRESS] START ", StringComparison.Ordinal))
+            {
+                if (int.TryParse(e.Data.AsSpan(17), out var total))
+                {
+                    result.TotalFiles = total;
+                }
+            }
+        };
+
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrEmpty(e.Data))
+            {
+                result.Errors.Add(e.Data);
+            }
+        };
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        try
+        {
+            // Wait for process to exit, with cancellation support
+            await process.WaitForExitAsync(cancellationToken);
+            result.ExitCode = process.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            // Kill the process if cancelled
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // Best effort
+            }
+
+            result.WasCancelled = true;
+            throw;
+        }
+
+        return result;
+    }
+
+    [GeneratedRegex(@"^\[PROGRESS\] (OK|FAIL|UNSUPPORTED) ""([^""]+)""(?: (.+))?$", RegexOptions.Compiled)]
+    private static partial Regex ProgressLineRegex();
+
+    [GeneratedRegex(@"^\[PROGRESS\] DONE (\d+) (\d+) (\d+)$", RegexOptions.Compiled)]
+    private static partial Regex DoneLineRegex();
 
     public DdxConversionResult ConvertFromMemoryWithResult(byte[] ddxData)
     {

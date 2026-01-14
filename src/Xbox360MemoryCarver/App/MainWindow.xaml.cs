@@ -89,5 +89,6 @@ public sealed partial class MainWindow : Window
         SingleFileTabContent.Visibility = selectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
         BatchModeTabContent.Visibility = selectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
         NifConverterTabContent.Visibility = selectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+        DdxConverterTabContent.Visibility = selectedIndex == 3 ? Visibility.Visible : Visibility.Collapsed;
     }
 }

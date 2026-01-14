@@ -154,11 +154,26 @@ internal static class NifPackedDataExtractor
         // Type 16 + UnitSize 8 = half4 (positions, normals, tangents, bitangents)
         // Type 14 + UnitSize 4 = half2 (UVs)
         // Type 28 + UnitSize 4 = ubyte4 (bone indices at offset 16, or vertex colors)
-        return new CategorizedStreams(
-            streams.Where(s => s.Type == 16 && s.UnitSize == 8).OrderBy(s => s.BlockOffset).ToList(),
-            streams.Where(s => s.Type == 14 && s.UnitSize == 4).OrderBy(s => s.BlockOffset).ToList(),
-            streams.Where(s => s.Type == 28 && s.UnitSize == 4).OrderBy(s => s.BlockOffset).ToList()
-        );
+        // Use single iteration to categorize, then sort in-place to avoid multiple allocations
+        var half4List = new List<DataStreamInfo>();
+        var half2List = new List<DataStreamInfo>();
+        var ubyte4List = new List<DataStreamInfo>();
+
+        foreach (var s in streams)
+        {
+            if (s.Type == 16 && s.UnitSize == 8)
+                half4List.Add(s);
+            else if (s.Type == 14 && s.UnitSize == 4)
+                half2List.Add(s);
+            else if (s.Type == 28 && s.UnitSize == 4)
+                ubyte4List.Add(s);
+        }
+
+        half4List.Sort((a, b) => a.BlockOffset.CompareTo(b.BlockOffset));
+        half2List.Sort((a, b) => a.BlockOffset.CompareTo(b.BlockOffset));
+        ubyte4List.Sort((a, b) => a.BlockOffset.CompareTo(b.BlockOffset));
+
+        return new CategorizedStreams(half4List, half2List, ubyte4List);
     }
 
     private static void ExtractUVs(byte[] data, int rawDataOffset, int numVertices, int stride,

@@ -328,7 +328,16 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         if (string.IsNullOrEmpty(name) || name.Length < 2 || name.Length > 200) return false;
         if (!char.IsLetter(name[0])) return false;
 
-        var validChars = name.Count(c => char.IsLetterOrDigit(c) || c == '_');
+        // Direct iteration instead of LINQ Count to avoid delegate allocation
+        var validChars = 0;
+        foreach (var c in name)
+        {
+            if (char.IsLetterOrDigit(c) || c == '_')
+            {
+                validChars++;
+            }
+        }
+
         return validChars >= name.Length * 0.9;
     }
 
@@ -337,7 +346,17 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         if (string.IsNullOrEmpty(name) || name.Length < 2) return false;
 
         var firstChar = char.ToLower(name[0], CultureInfo.InvariantCulture);
-        return firstChar is 'f' or 'i' or 's' or 'b' && name.All(c => char.IsLetterOrDigit(c) || c == '_');
+        if (firstChar is not ('f' or 'i' or 's' or 'b')) return false;
+
+        foreach (var c in name)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool ContainsScriptKeywords(string text)

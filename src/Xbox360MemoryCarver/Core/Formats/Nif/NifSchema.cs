@@ -99,6 +99,9 @@ public sealed class NifObjectDef
 /// </summary>
 public sealed class NifSchema
 {
+    // Static cached instance - schema never changes at runtime
+    private static readonly Lazy<NifSchema> CachedEmbeddedSchema = new(LoadEmbeddedInternal);
+
     private readonly Dictionary<string, NifBasicType> _basicTypes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, NifEnumDef> _enums = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, NifObjectDef> _objects = new(StringComparer.OrdinalIgnoreCase);
@@ -110,9 +113,14 @@ public sealed class NifSchema
     public IReadOnlyDictionary<string, NifObjectDef> Objects => _objects;
 
     /// <summary>
-    ///     Loads schema from the embedded nif.xml resource.
+    ///     Gets the cached embedded schema (loaded once per application lifetime).
     /// </summary>
-    public static NifSchema LoadEmbedded()
+    public static NifSchema LoadEmbedded() => CachedEmbeddedSchema.Value;
+
+    /// <summary>
+    ///     Internal implementation that loads schema from the embedded nif.xml resource.
+    /// </summary>
+    private static NifSchema LoadEmbeddedInternal()
     {
         var assembly = typeof(NifSchema).Assembly;
         var resourceName = assembly.GetManifestResourceNames()

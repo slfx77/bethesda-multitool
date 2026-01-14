@@ -13,9 +13,14 @@ public static class SignatureBoundaryScanner
     private static readonly byte[] GamebryoSignature = "Gamebryo File Format"u8.ToArray();
 
     /// <summary>
-    ///     Get all known signatures from the FormatRegistry for boundary scanning.
+    ///     Cached known signatures from the FormatRegistry (built once, reused).
     /// </summary>
-    private static byte[][] GetKnownSignatures()
+    private static readonly Lazy<byte[][]> CachedKnownSignatures = new(BuildKnownSignatures);
+
+    /// <summary>
+    ///     Build the known signatures array (called once via Lazy).
+    /// </summary>
+    private static byte[][] BuildKnownSignatures()
     {
         // Dynamically get all signatures from registered formats
         return FormatRegistry.All
@@ -23,6 +28,11 @@ public static class SignatureBoundaryScanner
             .Select(s => s.MagicBytes)
             .ToArray();
     }
+
+    /// <summary>
+    ///     Get all known signatures from the FormatRegistry for boundary scanning.
+    /// </summary>
+    private static byte[][] GetKnownSignatures() => CachedKnownSignatures.Value;
 
     /// <summary>
     ///     Scan for the next file signature starting from a given position.

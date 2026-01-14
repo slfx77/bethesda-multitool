@@ -216,9 +216,7 @@ public sealed partial class MemoryDumpAnalyzer
 
     private static void SortCarvedFilesByOffset(AnalysisResult result)
     {
-        var sortedFiles = result.CarvedFiles.OrderBy(f => f.Offset).ToList();
-        result.CarvedFiles.Clear();
-        foreach (var file in sortedFiles) result.CarvedFiles.Add(file);
+        result.CarvedFiles.Sort((a, b) => a.Offset.CompareTo(b.Offset));
     }
 
     private static async Task ExtractMetadataAsync(

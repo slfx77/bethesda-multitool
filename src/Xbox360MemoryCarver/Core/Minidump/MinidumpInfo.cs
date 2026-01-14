@@ -97,7 +97,9 @@ public class MinidumpInfo
         var totalCaptured = capturedEnd - moduleStart;
 
         var currentVa = regionEnd;
-        foreach (var region in MemoryRegions.Where(r => r.VirtualAddress >= regionEnd).OrderBy(r => r.VirtualAddress))
+        // Pre-sort regions once rather than using LINQ OrderBy in iteration
+        var sortedRegions = GetSortedRegionsAfter(regionEnd);
+        foreach (var region in sortedRegions)
         {
             if (region.VirtualAddress != currentVa) break;
             if (region.VirtualAddress >= moduleEnd) break;
@@ -110,5 +112,25 @@ public class MinidumpInfo
         }
 
         return totalCaptured;
+    }
+
+    /// <summary>
+    ///     Get memory regions after a given virtual address, sorted by address.
+    ///     Used to avoid repeated LINQ Where().OrderBy() allocations.
+    /// </summary>
+    private List<MinidumpMemoryRegion> GetSortedRegionsAfter(long minVirtualAddress)
+    {
+        // Sort once and filter - more efficient than Where().OrderBy() which allocates
+        var sorted = new List<MinidumpMemoryRegion>();
+        foreach (var r in MemoryRegions)
+        {
+            if (r.VirtualAddress >= minVirtualAddress)
+            {
+                sorted.Add(r);
+            }
+        }
+
+        sorted.Sort((a, b) => a.VirtualAddress.CompareTo(b.VirtualAddress));
+        return sorted;
     }
 }

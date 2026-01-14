@@ -212,14 +212,16 @@ public static class MemoryDumpExtractor
         return (extractedCount, extractedOffsets);
     }
 
+    // Cached invalid filename characters to avoid repeated array allocation
+    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
+
     /// <summary>
     ///     Sanitize a filename by removing invalid characters.
     /// </summary>
     private static string SanitizeFilename(string name)
     {
-        var invalidChars = Path.GetInvalidFileNameChars();
         var sanitized = new char[name.Length];
-        for (var i = 0; i < name.Length; i++) sanitized[i] = Array.IndexOf(invalidChars, name[i]) >= 0 ? '_' : name[i];
+        for (var i = 0; i < name.Length; i++) sanitized[i] = InvalidFileNameChars.Contains(name[i]) ? '_' : name[i];
         return new string(sanitized);
     }
 }

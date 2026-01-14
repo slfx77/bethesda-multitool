@@ -2,6 +2,7 @@
 // Handles expressions like: ((#BSVER# #GTE# 130) #AND# (#BSVER# #LTE# 159))
 // Uses recursive descent parsing for clean, maintainable code
 
+using System.Collections.Concurrent;
 using System.Globalization;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -99,20 +100,34 @@ public sealed partial class NifVersionExpr
         ["#DIVINITY2#"] = "((#USER# #EQ# 0x20000) #OR# (#USER# #EQ# 0x30000))"
     };
 
+    // Cache for expanded expressions - expressions are constant strings from nif.xml
+    private static readonly ConcurrentDictionary<string, string> ExpandedExpressionCache = new(StringComparer.OrdinalIgnoreCase);
+
+    // Cache for compiled version expressions - expressions are static from nif.xml
+    private static readonly ConcurrentDictionary<string, Func<NifVersionContext, bool>> CompiledExpressionCache = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly string _expression;
     private int _pos;
 
     private NifVersionExpr(string expression)
     {
-        // Expand any known tokens before parsing
-        _expression = ExpandTokens(expression.Trim());
+        // Expand any known tokens before parsing (with caching)
+        _expression = ExpandTokensCached(expression.Trim());
         _pos = 0;
     }
 
     /// <summary>
-    ///     Expands tokens like #BS_GT_FO3# to their full expressions.
+    ///     Expands tokens like #BS_GT_FO3# to their full expressions (cached).
     /// </summary>
-    private static string ExpandTokens(string expression)
+    private static string ExpandTokensCached(string expression)
+    {
+        return ExpandedExpressionCache.GetOrAdd(expression, ExpandTokensInternal);
+    }
+
+    /// <summary>
+    ///     Internal implementation for token expansion.
+    /// </summary>
+    private static string ExpandTokensInternal(string expression)
     {
         // Iterate through all tokens and expand them
         foreach (var (token, expansion) in TokenExpansions)
@@ -130,16 +145,9 @@ public sealed partial class NifVersionExpr
         if (string.IsNullOrWhiteSpace(expression))
             return true; // No condition = always include
 
-        try
-        {
-            var parser = new NifVersionExpr(expression);
-            return parser.ParseAndEvaluate(context);
-        }
-        catch
-        {
-            // On parse error, default to including the field
-            return true;
-        }
+        // Use cached compiled expression
+        var evaluator = Compile(expression);
+        return evaluator(context);
     }
 
     /// <summary>
@@ -150,15 +158,21 @@ public sealed partial class NifVersionExpr
         if (string.IsNullOrWhiteSpace(expression))
             return _ => true;
 
-        var parser = new NifVersionExpr(expression);
-        var ast = parser.ParseExpr();
-        return ctx => ast.Eval(ctx);
-    }
-
-    private bool ParseAndEvaluate(NifVersionContext context)
-    {
-        var ast = ParseExpr();
-        return ast.Eval(context);
+        // Use cached compiled expression or compile and cache
+        return CompiledExpressionCache.GetOrAdd(expression, static expr =>
+        {
+            try
+            {
+                var parser = new NifVersionExpr(expr);
+                var ast = parser.ParseExpr();
+                return ctx => ast.Eval(ctx);
+            }
+            catch
+            {
+                // On parse error, return a function that always returns true (conservative)
+                return _ => true;
+            }
+        });
     }
 
     #region Lexer

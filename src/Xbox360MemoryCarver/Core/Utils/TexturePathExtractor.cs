@@ -77,7 +77,33 @@ internal static class TexturePathExtractor
     /// </summary>
     public static string SanitizeFilename(string filename)
     {
-        return new string(filename.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
+        // Use stackalloc for short filenames to avoid allocations
+        if (filename.Length <= 260)
+        {
+            Span<char> buffer = stackalloc char[filename.Length];
+            var pos = 0;
+            foreach (var c in filename)
+            {
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                {
+                    buffer[pos++] = c;
+                }
+            }
+
+            return new string(buffer[..pos]);
+        }
+
+        // Fallback for very long filenames - use StringBuilder
+        var sb = new System.Text.StringBuilder(filename.Length);
+        foreach (var c in filename)
+        {
+            if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>

@@ -61,18 +61,18 @@ public static partial class ScdaExtractor
 
         // Add grouped scripts with quest names
         foreach (var (questName, records) in groups)
-        foreach (var record in records)
-        {
-            var scriptName = ExtractScriptNameFromSource(record.SourceText);
-            scripts.Add(new ScriptInfo
+            foreach (var record in records)
             {
-                Offset = record.Offset,
-                BytecodeSize = record.BytecodeLength,
-                ScriptName = scriptName,
-                QuestName = questName,
-                HasSource = record.HasAssociatedSctx
-            });
-        }
+                var scriptName = ExtractScriptNameFromSource(record.SourceText);
+                scripts.Add(new ScriptInfo
+                {
+                    Offset = record.Offset,
+                    BytecodeSize = record.BytecodeLength,
+                    ScriptName = scriptName,
+                    QuestName = questName,
+                    HasSource = record.HasAssociatedSctx
+                });
+            }
 
         // Add ungrouped scripts
         foreach (var record in ungrouped)
@@ -153,8 +153,14 @@ public static partial class ScdaExtractor
         {
             if (stages.Count < 2) continue;
 
-            var minOffset = stages.Min(s => s.Offset);
-            var maxOffset = stages.Max(s => s.Offset);
+            // Use direct iteration instead of LINQ Min/Max to avoid repeated enumeration
+            var minOffset = long.MaxValue;
+            var maxOffset = long.MinValue;
+            foreach (var stage in stages)
+            {
+                if (stage.Offset < minOffset) minOffset = stage.Offset;
+                if (stage.Offset > maxOffset) maxOffset = stage.Offset;
+            }
 
             if (offset >= minOffset && offset <= maxOffset) return questName;
         }
@@ -189,11 +195,13 @@ public static partial class ScdaExtractor
         }
     }
 
+    // Cached invalid filename characters to avoid repeated array allocation
+    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
+
     private static string SanitizeFilename(string name)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sb = new StringBuilder();
-        foreach (var c in name) sb.Append(invalid.Contains(c) ? '_' : c);
+        var sb = new StringBuilder(name.Length);
+        foreach (var c in name) sb.Append(InvalidFileNameChars.Contains(c) ? '_' : c);
         return sb.ToString();
     }
 

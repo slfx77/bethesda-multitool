@@ -2,6 +2,7 @@
 // Handles expressions like: "Has Vertices", "Num Vertices > 0", "((Data Flags #BITAND# 63) != 0)"
 // These conditions depend on field values read at runtime, not just version info
 
+using System.Collections.Concurrent;
 using System.Globalization;
 
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
@@ -21,6 +22,10 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 /// </summary>
 public sealed partial class NifConditionExpr
 {
+    // Static caches for compiled expressions - expressions are constant strings from nif.xml
+    private static readonly ConcurrentDictionary<string, Func<IReadOnlyDictionary<string, object>, bool>> ConditionCache = new();
+    private static readonly ConcurrentDictionary<string, Func<IReadOnlyDictionary<string, object>, long>> ValueCache = new();
+
     private readonly string _expression;
     private int _pos;
 
@@ -38,19 +43,23 @@ public sealed partial class NifConditionExpr
         if (string.IsNullOrWhiteSpace(expression))
             return true; // No condition = always include
 
-        try
+        // Use cached compiled expression or compile and cache
+        var evaluator = ConditionCache.GetOrAdd(expression, static expr =>
         {
-            var parser = new NifConditionExpr(expression);
-            var ast = parser.ParseExpr();
-            return ast.Eval(fieldValues);
-        }
-        catch (Exception ex)
-        {
-            // DEBUG: Print the parse error to console
-            Console.WriteLine($"    [DEBUG] Condition eval error for '{expression}': {ex.Message}");
-            // On parse error, default to including the field (conservative)
-            return true;
-        }
+            try
+            {
+                var parser = new NifConditionExpr(expr);
+                var ast = parser.ParseExpr();
+                return ctx => ast.Eval(ctx);
+            }
+            catch
+            {
+                // On parse error, return a function that always returns true (conservative)
+                return _ => true;
+            }
+        });
+
+        return evaluator(fieldValues);
     }
 
     /// <summary>
@@ -62,17 +71,23 @@ public sealed partial class NifConditionExpr
         if (string.IsNullOrWhiteSpace(expression))
             return 0;
 
-        try
+        // Use cached compiled expression or compile and cache
+        var evaluator = ValueCache.GetOrAdd(expression, static expr =>
         {
-            var parser = new NifConditionExpr(expression);
-            var valueAst = parser.ParseValueExpr();
-            return valueAst.Eval(fieldValues);
-        }
-        catch
-        {
-            // On parse error, return 0
-            return 0;
-        }
+            try
+            {
+                var parser = new NifConditionExpr(expr);
+                var valueAst = parser.ParseValueExpr();
+                return ctx => valueAst.Eval(ctx);
+            }
+            catch
+            {
+                // On parse error, return 0
+                return _ => 0;
+            }
+        });
+
+        return evaluator(fieldValues);
     }
 
     /// <summary>

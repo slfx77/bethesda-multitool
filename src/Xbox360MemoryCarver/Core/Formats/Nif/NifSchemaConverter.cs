@@ -19,8 +19,6 @@ internal sealed partial class NifSchemaConverter
 
     private static readonly Logger Log = Logger.Instance;
 
-    // Cache compiled version conditions
-    private readonly Dictionary<string, Func<NifVersionContext, bool>> _conditionCache = [];
     private readonly NifSchema _schema;
     private readonly NifVersionContext _versionContext;
 
@@ -360,13 +358,8 @@ internal sealed partial class NifSchemaConverter
     {
         if (string.IsNullOrEmpty(vercond)) return true;
 
-        // Use cached compiled expression or compile and cache
-        if (!_conditionCache.TryGetValue(vercond, out var evaluator))
-        {
-            evaluator = NifVersionExpr.Compile(vercond);
-            _conditionCache[vercond] = evaluator;
-        }
-
+        // NifVersionExpr.Compile is globally cached, no need for per-instance cache
+        var evaluator = NifVersionExpr.Compile(vercond);
         return evaluator(_versionContext);
     }
 

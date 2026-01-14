@@ -55,11 +55,11 @@ public sealed class ScriptFormat : FileFormatBase
             var invalidChar = scriptName.IndexOfAny([';', '\r', '\t', ' ']);
             if (invalidChar >= 0) scriptName = scriptName[..invalidChar];
 
-            if (string.IsNullOrEmpty(scriptName) || !scriptName.All(c => char.IsLetterOrDigit(c) || c == '_'))
+            if (string.IsNullOrEmpty(scriptName) || !IsValidScriptName(scriptName))
                 return null;
 
             var endPos = FindScriptEnd(scriptData, firstLineEnd);
-            var safeName = new string([.. scriptName.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')]);
+            var safeName = SanitizeScriptName(scriptName);
 
             return new ParseResult
             {
@@ -134,5 +134,49 @@ public sealed class ScriptFormat : FileFormatBase
         }
 
         return lastValidPos;
+    }
+
+    private static bool IsValidScriptName(string name)
+    {
+        foreach (var c in name)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string SanitizeScriptName(string name)
+    {
+        // Use stackalloc for short names to avoid allocations
+        if (name.Length <= 260)
+        {
+            Span<char> buffer = stackalloc char[name.Length];
+            var pos = 0;
+            foreach (var c in name)
+            {
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                {
+                    buffer[pos++] = c;
+                }
+            }
+
+            return new string(buffer[..pos]);
+        }
+
+        // Fallback for very long names
+        var sb = new System.Text.StringBuilder(name.Length);
+        foreach (var c in name)
+        {
+            if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 }

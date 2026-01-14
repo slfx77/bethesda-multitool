@@ -1,5 +1,3 @@
-using System.Buffers;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Windows.Storage.Pickers;
 using Microsoft.UI;
@@ -16,18 +14,22 @@ namespace Xbox360MemoryCarver;
 /// </summary>
 public sealed class NifFileEntry : INotifyPropertyChanged
 {
-    // Cached brushes to avoid creating new instances for each entry
-    private static readonly SolidColorBrush GrayBrush = new(Colors.Gray);
-    private static readonly SolidColorBrush GreenBrush = new(Colors.Green);
-    private static readonly SolidColorBrush OrangeBrush = new(Colors.Orange);
-    private static readonly SolidColorBrush RedBrush = new(Colors.Red);
-    private static readonly SolidColorBrush YellowBrush = new(Colors.Yellow);
+    // Brushes are created lazily on first access (which happens on UI thread via binding)
+    private static SolidColorBrush? _grayBrush;
+    private static SolidColorBrush? _greenBrush;
+    private static SolidColorBrush? _orangeBrush;
+    private static SolidColorBrush? _redBrush;
+    private static SolidColorBrush? _yellowBrush;
 
-    private SolidColorBrush _formatColor = GrayBrush;
+    private static SolidColorBrush GrayBrush => _grayBrush ??= new SolidColorBrush(Colors.Gray);
+    private static SolidColorBrush GreenBrush => _greenBrush ??= new SolidColorBrush(Colors.Green);
+    private static SolidColorBrush OrangeBrush => _orangeBrush ??= new SolidColorBrush(Colors.Orange);
+    private static SolidColorBrush RedBrush => _redBrush ??= new SolidColorBrush(Colors.Red);
+    private static SolidColorBrush YellowBrush => _yellowBrush ??= new SolidColorBrush(Colors.Yellow);
+
     private string _formatDescription = "";
     private bool _isSelected = true;
     private string _status = "Pending";
-    private SolidColorBrush _statusColor = GrayBrush;
 
     public required string FullPath { get; init; }
     public required string RelativePath { get; init; }
@@ -62,22 +64,24 @@ public sealed class NifFileEntry : INotifyPropertyChanged
             {
                 _status = value;
                 OnPropertyChanged(nameof(Status));
+                OnPropertyChanged(nameof(StatusColor)); // Computed from Status
             }
         }
     }
 
-    public SolidColorBrush StatusColor
+    /// <summary>
+    ///     Computed color based on Status. Evaluated on UI thread when binding reads it.
+    /// </summary>
+    public SolidColorBrush StatusColor => _status switch
     {
-        get => _statusColor;
-        set
-        {
-            if (_statusColor != value)
-            {
-                _statusColor = value;
-                OnPropertyChanged(nameof(StatusColor));
-            }
-        }
-    }
+        "Converted" => GreenBrush,
+        "Converting..." => YellowBrush,
+        "Cancelled" => OrangeBrush,
+        "Skipped (exists)" or "Pending" => GrayBrush,
+        _ when _status.StartsWith("Error", StringComparison.Ordinal) => RedBrush,
+        _ when _status.StartsWith("Failed", StringComparison.Ordinal) => RedBrush,
+        _ => GrayBrush
+    };
 
     public string FormatDescription
     {
@@ -88,55 +92,23 @@ public sealed class NifFileEntry : INotifyPropertyChanged
             {
                 _formatDescription = value;
                 OnPropertyChanged(nameof(FormatDescription));
+                OnPropertyChanged(nameof(FormatColor)); // Computed from FormatDescription
             }
         }
     }
 
-    public SolidColorBrush FormatColor
+    /// <summary>
+    ///     Computed color based on FormatDescription. Evaluated on UI thread when binding reads it.
+    /// </summary>
+    public SolidColorBrush FormatColor => _formatDescription switch
     {
-        get => _formatColor;
-        set
-        {
-            if (_formatColor != value)
-            {
-                _formatColor = value;
-                OnPropertyChanged(nameof(FormatColor));
-            }
-        }
-    }
+        "Xbox 360 (BE)" => OrangeBrush,
+        "PC (LE)" => GreenBrush,
+        "Invalid" or "Error" => RedBrush,
+        _ => GrayBrush
+    };
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
-    /// <summary>
-    ///     Get cached brush for format description.
-    /// </summary>
-    public static SolidColorBrush GetFormatBrush(string formatDesc)
-    {
-        return formatDesc switch
-        {
-            "Xbox 360 (BE)" => OrangeBrush,
-            "PC (LE)" => GreenBrush,
-            "Invalid" or "Error" => RedBrush,
-            _ => GrayBrush
-        };
-    }
-
-    /// <summary>
-    ///     Get cached brush for status.
-    /// </summary>
-    public static SolidColorBrush GetStatusBrush(string status)
-    {
-        return status switch
-        {
-            "Converted" => GreenBrush,
-            "Converting..." => YellowBrush,
-            "Cancelled" => OrangeBrush,
-            "Skipped (exists)" or "Pending" => GrayBrush,
-            _ when status.StartsWith("Error", StringComparison.Ordinal) => RedBrush,
-            _ when status.StartsWith("Failed", StringComparison.Ordinal) => RedBrush,
-            _ => GrayBrush
-        };
-    }
 
     private void OnPropertyChanged(string propertyName)
     {
@@ -149,17 +121,15 @@ public sealed class NifFileEntry : INotifyPropertyChanged
 /// </summary>
 public sealed partial class NifConverterTab : UserControl, IDisposable
 {
-    private const int MaxConcurrentFileReads = 8; // Limit concurrent file I/O
-
     private readonly List<NifFileEntry> _allNifFiles = [];
-    private readonly ObservableCollection<NifFileEntry> _nifFiles = [];
+    private List<NifFileEntry> _nifFiles = [];  // Using List instead of ObservableCollection for batch performance
     private readonly NifFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _scanCts;
 
     public NifConverterTab()
     {
         InitializeComponent();
-        NifFilesListView.ItemsSource = _nifFiles;
         SetupTextBoxContextMenus();
     }
 
@@ -225,8 +195,9 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         }
         else
         {
-            _nifFiles.Clear();
+            _nifFiles = [];
             _allNifFiles.Clear();
+            NifFilesListView.ItemsSource = null;
             _sorter.Reset();
             UpdateSortIcons();
             UpdateFileCount();
@@ -255,8 +226,16 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
 
     private async Task ScanForNifFilesAsync(string directory)
     {
-        _nifFiles.Clear();
+        // Cancel any in-progress scan
+        _scanCts?.Cancel();
+        _scanCts?.Dispose();
+        _scanCts = new CancellationTokenSource();
+        var cancellationToken = _scanCts.Token;
+
+        _nifFiles = [];
         _allNifFiles.Clear();
+        _allNifFiles.TrimExcess();
+        NifFilesListView.ItemsSource = null;
         _sorter.Reset();
         UpdateSortIcons();
         StatusTextBlock.Text = "Scanning for NIF files...";
@@ -275,8 +254,19 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
 
         try
         {
-            var entries = await ScanDirectoryForNifFilesAsync(directory);
-            PopulateNifFilesList(entries);
+            // Scan and create entries on background thread
+            var entries = await ScanAndCreateNifEntriesAsync(directory, cancellationToken);
+
+            // Check if cancelled before updating UI
+            if (cancellationToken.IsCancellationRequested) return;
+
+            // Only the ItemsSource assignment happens on UI thread
+            _allNifFiles.Clear();
+            _allNifFiles.Capacity = entries.Length;
+            _allNifFiles.AddRange(entries);
+            _nifFiles = new List<NifFileEntry>(_allNifFiles);
+            NifFilesListView.ItemsSource = _nifFiles;
+
             UpdateFileCount();
             UpdateButtonStates();
             StatusTextBlock.Text =
@@ -289,30 +279,93 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         }
     }
 
-    private async Task<(string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)[]>
-        ScanDirectoryForNifFilesAsync(string directory)
+    private async Task<NifFileEntry[]> ScanAndCreateNifEntriesAsync(string directory, CancellationToken cancellationToken)
     {
-        return await Task.Run(async () =>
+        return await Task.Run(() =>
         {
             var nifFiles = Directory.EnumerateFiles(directory, "*.nif", SearchOption.AllDirectories).ToList();
-            if (nifFiles.Count == 0)
+            if (nifFiles.Count == 0 || cancellationToken.IsCancellationRequested)
             {
-                return Array.Empty<(string, string, long, string, bool)>();
+                return Array.Empty<NifFileEntry>();
             }
 
             InitializeScanProgress(nifFiles.Count);
 
-            var result = new (string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)
-                [nifFiles.Count];
-            var progressTracker = new ScanProgressTracker(nifFiles.Count, DispatcherQueue, ScanProgressBar);
+            var entries = new NifFileEntry[nifFiles.Count];
+            var processedCount = 0;
+            var dispatcher = DispatcherQueue;
 
-            using var semaphore = new SemaphoreSlim(MaxConcurrentFileReads);
-            var tasks = nifFiles.Select((filePath, index) =>
-                ProcessNifFileAsync(directory, filePath, result, index, semaphore, progressTracker)).ToArray();
+            // Use Parallel.ForEach with synchronous I/O - much faster than async for small reads
+            Parallel.ForEach(
+                Enumerable.Range(0, nifFiles.Count),
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Environment.ProcessorCount * 2,
+                    CancellationToken = cancellationToken
+                },
+                index =>
+                {
+                    var filePath = nifFiles[index];
+                    var relativePath = Path.GetRelativePath(directory, filePath);
+                    var (fileSize, formatDesc) = ReadNifFileHeaderSync(filePath);
+                    var isXbox360 = formatDesc == "Xbox 360 (BE)";
 
-            await Task.WhenAll(tasks);
-            return result;
-        });
+                    entries[index] = new NifFileEntry
+                    {
+                        FullPath = filePath,
+                        RelativePath = relativePath,
+                        FileSize = fileSize,
+                        FormatDescription = formatDesc,
+                        IsSelected = isXbox360
+                    };
+
+                    // Update progress every 100 files
+                    var current = Interlocked.Increment(ref processedCount);
+                    if (current % 100 == 0 || current == nifFiles.Count)
+                    {
+                        dispatcher.TryEnqueue(() => ScanProgressBar.Value = current);
+                    }
+                });
+
+            return entries;
+        }, cancellationToken);
+    }
+
+    private static (long fileSize, string formatDesc) ReadNifFileHeaderSync(string filePath)
+    {
+        try
+        {
+            var fileInfo = new FileInfo(filePath);
+            var fileSize = fileInfo.Length;
+
+            // Use stackalloc for small header buffer - no heap allocation
+            Span<byte> headerBytes = stackalloc byte[50];
+
+            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 64);
+            var bytesRead = fs.Read(headerBytes);
+
+            var formatDesc = DetermineNifFormat(headerBytes[..bytesRead]);
+            return (fileSize, formatDesc);
+        }
+        catch
+        {
+            return (0, "Error");
+        }
+    }
+
+    private static string DetermineNifFormat(ReadOnlySpan<byte> headerBytes)
+    {
+        if (headerBytes.Length < 50) return "Invalid";
+
+        var newlinePos = headerBytes[..50].IndexOf((byte)0x0A);
+        if (newlinePos <= 0 || newlinePos + 5 >= 50) return "Invalid";
+
+        return headerBytes[newlinePos + 5] switch
+        {
+            0 => "Xbox 360 (BE)",
+            1 => "PC (LE)",
+            _ => "Unknown"
+        };
     }
 
     private void InitializeScanProgress(int fileCount)
@@ -324,93 +377,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
             ScanProgressBar.Value = 0;
             StatusTextBlock.Text = $"Scanning {fileCount} NIF files...";
         });
-    }
-
-    private static async Task ProcessNifFileAsync(
-        string directory,
-        string filePath,
-        (string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)[] result,
-        int index,
-        SemaphoreSlim semaphore,
-        ScanProgressTracker progressTracker)
-    {
-        await semaphore.WaitAsync();
-        try
-        {
-            var relativePath = Path.GetRelativePath(directory, filePath);
-            var (fileSize, formatDesc) = await ReadNifFileHeaderAsync(filePath);
-            result[index] = (filePath, relativePath, fileSize, formatDesc, formatDesc == "Xbox 360 (BE)");
-
-            progressTracker.IncrementAndReport();
-        }
-        finally
-        {
-            semaphore.Release();
-        }
-    }
-
-    private static async Task<(long fileSize, string formatDesc)> ReadNifFileHeaderAsync(string filePath)
-    {
-        var headerBytes = ArrayPool<byte>.Shared.Rent(50);
-        try
-        {
-            var fileInfo = new FileInfo(filePath);
-            var fileSize = fileInfo.Length;
-
-            await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var bytesRead = await fs.ReadAsync(headerBytes.AsMemory(0, 50));
-
-            var formatDesc = DetermineNifFormat(headerBytes, bytesRead);
-            return (fileSize, formatDesc);
-        }
-        catch
-        {
-            return (0, "Error");
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(headerBytes);
-        }
-    }
-
-    private static string DetermineNifFormat(byte[] headerBytes, int bytesRead)
-    {
-        if (bytesRead < 50) return "Invalid";
-
-        var newlinePos = Array.IndexOf(headerBytes, (byte)0x0A, 0, 50);
-        if (newlinePos <= 0 || newlinePos + 5 >= 50) return "Invalid";
-
-        return headerBytes[newlinePos + 5] switch
-        {
-            0 => "Xbox 360 (BE)",
-            1 => "PC (LE)",
-            _ => "Unknown"
-        };
-    }
-
-    private void PopulateNifFilesList(
-        (string fullPath, string relativePath, long fileSize, string formatDesc, bool isXbox360)[] entries)
-    {
-        NifFilesListView.ItemsSource = null;
-
-        foreach (var (fullPath, relativePath, fileSize, formatDesc, isXbox360) in entries)
-        {
-            var entry = new NifFileEntry
-            {
-                FullPath = fullPath,
-                RelativePath = relativePath,
-                FileSize = fileSize,
-                FormatDescription = formatDesc,
-                FormatColor = NifFileEntry.GetFormatBrush(formatDesc),
-                IsSelected = isXbox360
-            };
-
-            _allNifFiles.Add(entry);
-            _nifFiles.Add(entry);
-        }
-
-        NifFilesListView.ItemsSource = _nifFiles;
     }
 
     private void SelectAllButton_Click(object sender, RoutedEventArgs e)
@@ -468,7 +434,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
                 var file = selectedFiles[i];
                 StatusTextBlock.Text = $"Converting {i + 1}/{selectedFiles.Count}: {file.RelativePath}";
                 file.Status = "Converting...";
-                file.StatusColor = NifFileEntry.GetStatusBrush("Converting...");
 
                 try
                 {
@@ -489,7 +454,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
                     if (File.Exists(outputPath) && !overwrite)
                     {
                         file.Status = "Skipped (exists)";
-                        file.StatusColor = NifFileEntry.GetStatusBrush("Skipped (exists)");
                         skipped++;
                         continue;
                     }
@@ -503,26 +467,22 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
                         await File.WriteAllBytesAsync(outputPath, result.OutputData, _cts.Token);
 
                         file.Status = "Converted";
-                        file.StatusColor = NifFileEntry.GetStatusBrush("Converted");
                         converted++;
                     }
                     else
                     {
                         file.Status = result.ErrorMessage ?? "Failed";
-                        file.StatusColor = NifFileEntry.GetStatusBrush("Failed");
                         failed++;
                     }
                 }
                 catch (OperationCanceledException)
                 {
                     file.Status = "Cancelled";
-                    file.StatusColor = NifFileEntry.GetStatusBrush("Cancelled");
                     throw;
                 }
                 catch (Exception ex)
                 {
                     file.Status = $"Error: {ex.Message}";
-                    file.StatusColor = NifFileEntry.GetStatusBrush("Error");
                     failed++;
                 }
 
@@ -548,38 +508,6 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     {
         _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
-    }
-
-    private sealed class ScanProgressTracker(
-        int totalCount,
-        Microsoft.UI.Dispatching.DispatcherQueue dispatcher,
-        Microsoft.UI.Xaml.Controls.ProgressBar progressBar)
-    {
-        private int _lastReportedProgress;
-        private int _processedCount;
-
-        public void IncrementAndReport()
-        {
-            var currentCount = Interlocked.Increment(ref _processedCount);
-            if (currentCount % 100 != 0 && currentCount != totalCount) return;
-
-            var previousMax = _lastReportedProgress;
-            while (currentCount > previousMax)
-            {
-                if (Interlocked.CompareExchange(ref _lastReportedProgress, currentCount, previousMax) == previousMax)
-                {
-                    var progressValue = currentCount;
-                    dispatcher.TryEnqueue(() =>
-                    {
-                        if (progressValue > progressBar.Value)
-                            progressBar.Value = progressValue;
-                    });
-                    break;
-                }
-
-                previousMax = _lastReportedProgress;
-            }
-        }
     }
 
     #region Sorting
@@ -637,10 +565,8 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         var selectedItem = NifFilesListView.SelectedItem as NifFileEntry;
         var sorted = _sorter.Sort(_allNifFiles);
 
-        // Batch update - suspend UI binding during sort refresh
-        NifFilesListView.ItemsSource = null;
-        _nifFiles.Clear();
-        foreach (var file in sorted) _nifFiles.Add(file);
+        // Replace list entirely - much faster than clear + add loop
+        _nifFiles = sorted.ToList();
         NifFilesListView.ItemsSource = _nifFiles;
 
         if (selectedItem != null && _nifFiles.Contains(selectedItem))

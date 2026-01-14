@@ -213,26 +213,59 @@ internal static class XmaParser
 
     private static string? TryExtractPath(ReadOnlySpan<byte> data)
     {
-        var pathIndicators = new[] { "sound\\", "music\\", "fx\\", ".xma", ".wav" };
-        var str = Encoding.ASCII.GetString(data.ToArray());
+        ReadOnlySpan<byte> pathIndicator1 = "sound\\"u8;
+        ReadOnlySpan<byte> pathIndicator2 = "music\\"u8;
+        ReadOnlySpan<byte> pathIndicator3 = "fx\\"u8;
+        ReadOnlySpan<byte> pathIndicator4 = ".xma"u8;
+        ReadOnlySpan<byte> pathIndicator5 = ".wav"u8;
 
-        foreach (var indicator in pathIndicators)
+        // Try to find an indicator in the data
+        var idx = FindIndicator(data, pathIndicator1);
+        if (idx < 0) idx = FindIndicator(data, pathIndicator2);
+        if (idx < 0) idx = FindIndicator(data, pathIndicator3);
+        if (idx < 0) idx = FindIndicator(data, pathIndicator4);
+        if (idx < 0) idx = FindIndicator(data, pathIndicator5);
+        if (idx < 0) return null;
+
+        // Find the start of the path by walking backwards
+        var start = idx;
+        while (start > 0 && IsPrintablePathChar((char)data[start - 1])) start--;
+
+        // Find the end of the path by walking forwards
+        var end = idx + 1;
+        while (end < data.Length && IsPrintablePathChar((char)data[end])) end++;
+
+        var pathLength = end - start;
+        if (pathLength <= 5) return null;
+
+        var path = Encoding.ASCII.GetString(data.Slice(start, pathLength)).Trim('\0', ' ');
+        return path.Length > 5 ? path : null;
+    }
+
+    private static int FindIndicator(ReadOnlySpan<byte> data, ReadOnlySpan<byte> indicator)
+    {
+        // Simple case-insensitive search
+        for (var i = 0; i <= data.Length - indicator.Length; i++)
         {
-            var idx = str.IndexOf(indicator, StringComparison.OrdinalIgnoreCase);
-            if (idx >= 0)
+            var matched = true;
+            for (var j = 0; j < indicator.Length; j++)
             {
-                var start = idx;
-                while (start > 0 && IsPrintablePathChar(str[start - 1])) start--;
-
-                var end = idx + indicator.Length;
-                while (end < str.Length && IsPrintablePathChar(str[end])) end++;
-
-                var path = str.Substring(start, end - start).Trim('\0', ' ');
-                if (path.Length > 5) return path;
+                var dataByte = data[i + j];
+                var indicatorByte = indicator[j];
+                // Convert both to lowercase for comparison
+                if (dataByte >= 'A' && dataByte <= 'Z') dataByte = (byte)(dataByte + 32);
+                if (indicatorByte >= 'A' && indicatorByte <= 'Z') indicatorByte = (byte)(indicatorByte + 32);
+                if (dataByte != indicatorByte)
+                {
+                    matched = false;
+                    break;
+                }
             }
+
+            if (matched) return i;
         }
 
-        return null;
+        return -1;
     }
 
     private static bool IsPrintablePathChar(char c)
@@ -240,14 +273,21 @@ internal static class XmaParser
         return c >= 0x20 && c < 0x7F && c != '"' && c != '<' && c != '>' && c != '|';
     }
 
+    // Cached invalid filename characters to avoid repeated array allocation
+    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
+
     private static string SanitizeFilename(string path)
     {
         var filename = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(filename)) filename = path.Replace('\\', '_').Replace('/', '_');
 
-        foreach (var c in Path.GetInvalidFileNameChars()) filename = filename.Replace(c, '_');
+        var sb = new StringBuilder(filename.Length);
+        foreach (var c in filename)
+        {
+            sb.Append(InvalidFileNameChars.Contains(c) ? '_' : c);
+        }
 
-        return filename;
+        return sb.ToString();
     }
 
     private struct XmaParseState
