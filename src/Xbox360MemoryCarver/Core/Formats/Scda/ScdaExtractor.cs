@@ -11,6 +11,9 @@ public static partial class ScdaExtractor
 {
     private static readonly Logger Log = Logger.Instance;
 
+    // Cached invalid filename characters to avoid repeated array allocation
+    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
+
     /// <summary>
     ///     Extract all SCDA records from a dump, grouping by quest name.
     /// </summary>
@@ -61,18 +64,18 @@ public static partial class ScdaExtractor
 
         // Add grouped scripts with quest names
         foreach (var (questName, records) in groups)
-            foreach (var record in records)
+        foreach (var record in records)
+        {
+            var scriptName = ExtractScriptNameFromSource(record.SourceText);
+            scripts.Add(new ScriptInfo
             {
-                var scriptName = ExtractScriptNameFromSource(record.SourceText);
-                scripts.Add(new ScriptInfo
-                {
-                    Offset = record.Offset,
-                    BytecodeSize = record.BytecodeLength,
-                    ScriptName = scriptName,
-                    QuestName = questName,
-                    HasSource = record.HasAssociatedSctx
-                });
-            }
+                Offset = record.Offset,
+                BytecodeSize = record.BytecodeLength,
+                ScriptName = scriptName,
+                QuestName = questName,
+                HasSource = record.HasAssociatedSctx
+            });
+        }
 
         // Add ungrouped scripts
         foreach (var record in ungrouped)
@@ -194,9 +197,6 @@ public static partial class ScdaExtractor
             await File.WriteAllTextAsync(scriptPath, content);
         }
     }
-
-    // Cached invalid filename characters to avoid repeated array allocation
-    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
 
     private static string SanitizeFilename(string name)
     {

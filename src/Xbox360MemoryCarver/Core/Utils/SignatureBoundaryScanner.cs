@@ -32,7 +32,10 @@ public static class SignatureBoundaryScanner
     /// <summary>
     ///     Get all known signatures from the FormatRegistry for boundary scanning.
     /// </summary>
-    private static byte[][] GetKnownSignatures() => CachedKnownSignatures.Value;
+    private static byte[][] GetKnownSignatures()
+    {
+        return CachedKnownSignatures.Value;
+    }
 
     /// <summary>
     ///     Scan for the next file signature starting from a given position.

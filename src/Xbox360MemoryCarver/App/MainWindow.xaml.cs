@@ -103,8 +103,8 @@ public sealed partial class MainWindow : Window
 
         // Detect current theme
         var isDark = (Content as FrameworkElement)?.ActualTheme == ElementTheme.Dark
-            || ((Content as FrameworkElement)?.ActualTheme == ElementTheme.Default
-                && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+                     || ((Content as FrameworkElement)?.ActualTheme == ElementTheme.Default
+                         && Application.Current.RequestedTheme == ApplicationTheme.Dark);
 
         if (isDark)
         {

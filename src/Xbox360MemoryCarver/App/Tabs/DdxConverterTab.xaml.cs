@@ -22,16 +22,16 @@ public sealed class DdxFileEntry : INotifyPropertyChanged
     private static SolidColorBrush? _yellowBrush;
     private static SolidColorBrush? _blueBrush;
 
+    private string _formatDescription = "";
+    private bool _isSelected = true;
+    private string _status = "Pending";
+
     private static SolidColorBrush GrayBrush => _grayBrush ??= new SolidColorBrush(Colors.Gray);
     private static SolidColorBrush GreenBrush => _greenBrush ??= new SolidColorBrush(Colors.Green);
     private static SolidColorBrush OrangeBrush => _orangeBrush ??= new SolidColorBrush(Colors.Orange);
     private static SolidColorBrush RedBrush => _redBrush ??= new SolidColorBrush(Colors.Red);
     private static SolidColorBrush YellowBrush => _yellowBrush ??= new SolidColorBrush(Colors.Yellow);
     private static SolidColorBrush BlueBrush => _blueBrush ??= new SolidColorBrush(Colors.DodgerBlue);
-
-    private string _formatDescription = "";
-    private bool _isSelected = true;
-    private string _status = "Pending";
 
     public required string FullPath { get; init; }
     public required string RelativePath { get; init; }
@@ -126,9 +126,9 @@ public sealed class DdxFileEntry : INotifyPropertyChanged
 public sealed partial class DdxConverterTab : UserControl, IDisposable
 {
     private readonly List<DdxFileEntry> _allDdxFiles = [];
-    private List<DdxFileEntry> _ddxFiles = [];
     private readonly DdxFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
+    private List<DdxFileEntry> _ddxFiles = [];
     private CancellationTokenSource? _scanCts;
 
     public DdxConverterTab()
@@ -286,7 +286,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
 
             var xdoCount = _ddxFiles.Count(f => f.FormatDescription == "3XDO");
             var xdrCount = _ddxFiles.Count(f => f.FormatDescription == "3XDR");
-            StatusTextBlock.Text = $"Found {_ddxFiles.Count} DDX files. {xdoCount} 3XDO (convertible), {xdrCount} 3XDR (experimental).";
+            StatusTextBlock.Text =
+                $"Found {_ddxFiles.Count} DDX files. {xdoCount} 3XDO (convertible), {xdrCount} 3XDR (experimental).";
         }
         catch (OperationCanceledException)
         {
@@ -300,7 +301,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
         }
     }
 
-    private async Task<DdxFileEntry[]> ScanAndCreateDdxEntriesAsync(string directory, CancellationToken cancellationToken)
+    private async Task<DdxFileEntry[]> ScanAndCreateDdxEntriesAsync(string directory,
+        CancellationToken cancellationToken)
     {
         return await Task.Run(() =>
         {
@@ -368,7 +370,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
             var fileSize = fileInfo.Length;
 
             Span<byte> header = stackalloc byte[4];
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4, FileOptions.SequentialScan);
+            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4,
+                FileOptions.SequentialScan);
             var bytesRead = fs.Read(header);
 
             var formatDesc = bytesRead < 4 ? "Invalid" : DetermineDdxFormat(header);
@@ -391,6 +394,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
                 _ => "Invalid"
             };
         }
+
         return "Invalid";
     }
 

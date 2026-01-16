@@ -50,7 +50,7 @@ public sealed partial class NifFormat
             var converter = new NifConverter(verbose);
             var result = converter.Convert(data);
 
-            if (result.Success && result.OutputData != null)
+            if (result is { Success: true, OutputData: not null })
             {
                 ConvertedCount++;
                 return Task.FromResult(new DdxConversionResult

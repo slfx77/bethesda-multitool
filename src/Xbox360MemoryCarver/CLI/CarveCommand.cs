@@ -211,7 +211,7 @@ public static class CarveCommand
 
     private static void PrintDdxConversionStats(ExtractionSummary summary)
     {
-        if (summary.DdxConverted == 0 && summary.DdxFailed == 0) return;
+        if (summary is { DdxConverted: 0, DdxFailed: 0 }) return;
 
         AnsiConsole.WriteLine();
         var converted = FormatSuccessCount(summary.DdxConverted);
@@ -221,7 +221,7 @@ public static class CarveCommand
 
     private static void PrintXurConversionStats(ExtractionSummary summary)
     {
-        if (summary.XurConverted == 0 && summary.XurFailed == 0) return;
+        if (summary is { XurConverted: 0, XurFailed: 0 }) return;
 
         var converted = FormatSuccessCount(summary.XurConverted);
         var failed = FormatFailedCount(summary.XurFailed);

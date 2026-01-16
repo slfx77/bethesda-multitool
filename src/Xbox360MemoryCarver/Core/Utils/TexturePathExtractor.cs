@@ -83,25 +83,17 @@ internal static class TexturePathExtractor
             Span<char> buffer = stackalloc char[filename.Length];
             var pos = 0;
             foreach (var c in filename)
-            {
                 if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
-                {
                     buffer[pos++] = c;
-                }
-            }
 
             return new string(buffer[..pos]);
         }
 
         // Fallback for very long filenames - use StringBuilder
-        var sb = new System.Text.StringBuilder(filename.Length);
+        var sb = new StringBuilder(filename.Length);
         foreach (var c in filename)
-        {
             if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
-            {
                 sb.Append(c);
-            }
-        }
 
         return sb.ToString();
     }

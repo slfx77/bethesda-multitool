@@ -107,7 +107,7 @@ public sealed class EspFormat : FileFormatBase
             {
                 // Validate it looks like a real TES4 header
                 var nextDataSize = BinaryUtils.ReadUInt32LE(data, i + 4);
-                if (nextDataSize > 0 && nextDataSize < 500 * 1024 * 1024) return i - offset;
+                if (nextDataSize is > 0 and < 500 * 1024 * 1024) return i - offset;
             }
 
             // Check for other known file signatures

@@ -101,10 +101,12 @@ public sealed partial class NifVersionExpr
     };
 
     // Cache for expanded expressions - expressions are constant strings from nif.xml
-    private static readonly ConcurrentDictionary<string, string> ExpandedExpressionCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, string> ExpandedExpressionCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     // Cache for compiled version expressions - expressions are static from nif.xml
-    private static readonly ConcurrentDictionary<string, Func<NifVersionContext, bool>> CompiledExpressionCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, Func<NifVersionContext, bool>> CompiledExpressionCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private readonly string _expression;
     private int _pos;
@@ -288,7 +290,7 @@ public sealed partial class NifVersionExpr
 
     private static bool IsHexDigit(char c)
     {
-        return char.IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        return char.IsDigit(c) || c is >= 'a' and <= 'f' or >= 'A' and <= 'F';
     }
 
     #endregion

@@ -57,8 +57,10 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     }
 
     // XAML event handlers require instance methods - cannot be made static
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "XAML event handler requires instance method")]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarQube", "S2325:Methods should be static", Justification = "XAML event handler requires instance method")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "XAML event handler requires instance method")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarQube", "S2325:Methods should be static",
+        Justification = "XAML event handler requires instance method")]
     private void ParallelCountBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (double.IsNaN(args.NewValue)) sender.Value = 2;

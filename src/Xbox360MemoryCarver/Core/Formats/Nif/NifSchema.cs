@@ -115,7 +115,10 @@ public sealed class NifSchema
     /// <summary>
     ///     Gets the cached embedded schema (loaded once per application lifetime).
     /// </summary>
-    public static NifSchema LoadEmbedded() => CachedEmbeddedSchema.Value;
+    public static NifSchema LoadEmbedded()
+    {
+        return CachedEmbeddedSchema.Value;
+    }
 
     /// <summary>
     ///     Internal implementation that loads schema from the embedded nif.xml resource.

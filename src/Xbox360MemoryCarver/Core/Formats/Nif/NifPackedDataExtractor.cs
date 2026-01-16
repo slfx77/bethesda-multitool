@@ -6,6 +6,25 @@ using System.Buffers.Binary;
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 
 /// <summary>
+///     Context for extraction operations, grouping common parameters.
+/// </summary>
+/// <param name="Data">Source byte array containing packed geometry.</param>
+/// <param name="RawDataOffset">Offset to raw vertex data within the block.</param>
+/// <param name="NumVertices">Number of vertices to extract.</param>
+/// <param name="Stride">Bytes per vertex (36, 40, or 48).</param>
+/// <param name="IsBigEndian">Whether source data is big-endian.</param>
+internal readonly record struct ExtractionContext(
+    byte[] Data,
+    int RawDataOffset,
+    int NumVertices,
+    int Stride,
+    bool IsBigEndian)
+{
+    /// <summary>Whether this is a skinned mesh (stride 48).</summary>
+    public bool IsSkinned => Stride == 48;
+}
+
+/// <summary>
 ///     Extracts geometry data from BSPackedAdditionalGeometryData blocks.
 ///     Xbox 360 NIFs store vertex data in packed format (half-floats) that must
 ///     be expanded for PC compatibility.
@@ -39,14 +58,12 @@ internal static class NifPackedDataExtractor
 
             var categorizedStreams = CategorizeStreams(streams);
             var result = new PackedGeometryData { NumVertices = numVertices };
+            var ctx = new ExtractionContext(data, rawDataOffset, numVertices, stride, isBigEndian);
 
-            ExtractUVs(data, rawDataOffset, numVertices, stride, categorizedStreams.Half2Streams, isBigEndian, result);
-            ExtractSkinnedOrVertexColorData(data, rawDataOffset, numVertices, stride, categorizedStreams, isBigEndian,
-                result);
-            ExtractPositions(data, rawDataOffset, numVertices, stride, categorizedStreams.Half4Streams, isBigEndian,
-                result);
-            ExtractNormalsTangentsBitangents(data, rawDataOffset, numVertices, stride, categorizedStreams.Half4Streams,
-                isBigEndian, stride == 48, result);
+            ExtractUVs(ctx, categorizedStreams.Half2Streams, result);
+            ExtractSkinnedOrVertexColorData(ctx, categorizedStreams, result);
+            ExtractPositions(ctx, categorizedStreams.Half4Streams, result);
+            ExtractNormalsTangentsBitangents(ctx, categorizedStreams.Half4Streams, result);
             ComputeMissingBitangents(numVertices, result);
             CalculateBsDataFlags(result);
 
@@ -160,14 +177,12 @@ internal static class NifPackedDataExtractor
         var ubyte4List = new List<DataStreamInfo>();
 
         foreach (var s in streams)
-        {
-            if (s.Type == 16 && s.UnitSize == 8)
+            if (s is { Type: 16, UnitSize: 8 })
                 half4List.Add(s);
-            else if (s.Type == 14 && s.UnitSize == 4)
+            else if (s is { Type: 14, UnitSize: 4 })
                 half2List.Add(s);
-            else if (s.Type == 28 && s.UnitSize == 4)
+            else if (s is { Type: 28, UnitSize: 4 })
                 ubyte4List.Add(s);
-        }
 
         half4List.Sort((a, b) => a.BlockOffset.CompareTo(b.BlockOffset));
         half2List.Sort((a, b) => a.BlockOffset.CompareTo(b.BlockOffset));
@@ -176,87 +191,85 @@ internal static class NifPackedDataExtractor
         return new CategorizedStreams(half4List, half2List, ubyte4List);
     }
 
-    private static void ExtractUVs(byte[] data, int rawDataOffset, int numVertices, int stride,
-        List<DataStreamInfo> half2Streams, bool isBigEndian, PackedGeometryData result)
+    private static void ExtractUVs(ExtractionContext ctx, List<DataStreamInfo> half2Streams, PackedGeometryData result)
     {
         if (half2Streams.Count > 0)
-            result.UVs = ExtractHalf2Stream(data, rawDataOffset, numVertices, stride, half2Streams[0], isBigEndian);
+            result.UVs = ExtractHalf2Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride, half2Streams[0],
+                ctx.IsBigEndian);
     }
 
-    private static void ExtractSkinnedOrVertexColorData(byte[] data, int rawDataOffset, int numVertices, int stride,
-        CategorizedStreams streams, bool isBigEndian, PackedGeometryData result)
+    private static void ExtractSkinnedOrVertexColorData(ExtractionContext ctx, CategorizedStreams streams,
+        PackedGeometryData result)
     {
-        // Determine if this is a skinned mesh based on STRIDE, not ubyte4 presence.
-        var isSkinned = stride == 48;
         var hasBoneIndicesStream = streams.Ubyte4Streams.Any(s => s.BlockOffset == 16);
 
-        if (isSkinned && hasBoneIndicesStream)
+        if (ctx.IsSkinned && hasBoneIndicesStream)
         {
-            ExtractBoneData(data, rawDataOffset, numVertices, stride, streams, isBigEndian, result);
+            ExtractBoneData(ctx, streams, result);
         }
         else if (streams.Ubyte4Streams.Count > 0)
         {
             // Non-skinned mesh: ubyte4 (if present) is vertex colors
-            result.VertexColors = ExtractUbyte4Stream(data, rawDataOffset, numVertices, stride,
+            result.VertexColors = ExtractUbyte4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride,
                 streams.Ubyte4Streams[0]);
             Log.Debug("      Non-skinned mesh: extracted vertex colors");
         }
     }
 
-    private static void ExtractBoneData(byte[] data, int rawDataOffset, int numVertices, int stride,
-        CategorizedStreams streams, bool isBigEndian, PackedGeometryData result)
+    private static void ExtractBoneData(ExtractionContext ctx, CategorizedStreams streams, PackedGeometryData result)
     {
         // Extract bone indices from ubyte4 stream at offset 16
         var boneIndicesStream = streams.Ubyte4Streams.First(s => s.BlockOffset == 16);
-        result.BoneIndices = ExtractUbyte4Stream(data, rawDataOffset, numVertices, stride, boneIndicesStream);
+        result.BoneIndices = ExtractUbyte4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride,
+            boneIndicesStream);
 
         // Bone weights are at offset 8 for skinned meshes (stride 48)
         var hasBoneWeightsStream = streams.Half4Streams.Any(s => s.BlockOffset == 8);
         if (hasBoneWeightsStream)
         {
             var boneWeightsStream = streams.Half4Streams.First(s => s.BlockOffset == 8);
-            result.BoneWeights = ExtractHalf4WeightsStream(data, rawDataOffset, numVertices, stride,
-                boneWeightsStream, isBigEndian);
+            result.BoneWeights = ExtractHalf4WeightsStream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride,
+                boneWeightsStream, ctx.IsBigEndian);
             Log.Debug("      Extracted bone weights from offset 8");
         }
 
         Log.Debug("      Skinned mesh (stride 48): extracted bone indices");
     }
 
-    private static void ExtractPositions(byte[] data, int rawDataOffset, int numVertices, int stride,
-        List<DataStreamInfo> half4Streams, bool isBigEndian, PackedGeometryData result)
+    private static void ExtractPositions(ExtractionContext ctx, List<DataStreamInfo> half4Streams,
+        PackedGeometryData result)
     {
         // Position is always the first stream (offset 0)
-        if (half4Streams.Count >= 1 && half4Streams[0].BlockOffset == 0)
-            result.Positions = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, half4Streams[0],
-                isBigEndian);
+        if (half4Streams is [{ BlockOffset: 0 }, ..])
+            result.Positions = ExtractHalf4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride,
+                half4Streams[0], ctx.IsBigEndian);
     }
 
-    private static void ExtractNormalsTangentsBitangents(byte[] data, int rawDataOffset, int numVertices, int stride,
-        List<DataStreamInfo> half4Streams, bool isBigEndian, bool isSkinned, PackedGeometryData result)
+    private static void ExtractNormalsTangentsBitangents(ExtractionContext ctx, List<DataStreamInfo> half4Streams,
+        PackedGeometryData result)
     {
         // Find ALL unit-length streams (including offset 8 for non-skinned meshes)
-        var unitStreams = FindUnitLengthStreams(data, rawDataOffset, numVertices, stride, half4Streams, isBigEndian);
+        var unitStreams = FindUnitLengthStreams(ctx, half4Streams);
 
         // Assign unit-length streams based on layout type
-        AssignUnitLengthStreams(unitStreams, isSkinned, result);
+        AssignUnitLengthStreams(unitStreams, ctx.IsSkinned, result);
     }
 
     private static List<(DataStreamInfo stream, float[] data, int offset)> FindUnitLengthStreams(
-        byte[] data, int rawDataOffset, int numVertices, int stride, List<DataStreamInfo> half4Streams,
-        bool isBigEndian)
+        ExtractionContext ctx, List<DataStreamInfo> half4Streams)
     {
         var unitStreams = new List<(DataStreamInfo stream, float[] data, int offset)>();
 
         foreach (var stream in half4Streams.Where(s => s.BlockOffset >= 8))
         {
-            var streamData = ExtractHalf4Stream(data, rawDataOffset, numVertices, stride, stream, isBigEndian);
+            var streamData = ExtractHalf4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride, stream,
+                ctx.IsBigEndian);
             if (streamData == null) continue;
 
-            var avgLen = CalculateAverageVectorLength(streamData, numVertices);
+            var avgLen = CalculateAverageVectorLength(streamData, ctx.NumVertices);
 
             // Unit-length streams have avgLen ≈ 1.0 (allow some tolerance)
-            if (avgLen > 0.9 && avgLen < 1.1)
+            if (avgLen is > 0.9 and < 1.1)
             {
                 unitStreams.Add((stream, streamData, (int)stream.BlockOffset));
                 Log.Debug($"      Found unit-length stream at offset {stream.BlockOffset}, avgLen={avgLen:F3}");
@@ -310,7 +323,7 @@ internal static class NifPackedDataExtractor
     {
         // If we have normals and tangents but no bitangents, compute them
         // Bitangent = cross(Normal, Tangent) - common for meshes with only 2 unit-length streams
-        if (result.Normals != null && result.Tangents != null && result.Bitangents == null)
+        if (result is { Normals: not null, Tangents: not null, Bitangents: null })
         {
             result.Bitangents = ComputeBitangents(result.Normals, result.Tangents, numVertices);
             Log.Debug("      Computed bitangents from normals and tangents");

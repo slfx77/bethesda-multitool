@@ -89,19 +89,6 @@ public class XurSubprocessConverter
         return null;
     }
 
-    public static bool IsAvailable()
-    {
-        try
-        {
-            _ = new XurSubprocessConverter();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     /// <summary>
     ///     Detects XUR version from file header.
     /// </summary>
@@ -209,11 +196,6 @@ public class XurSubprocessConverter
         });
     }
 
-    public Task<bool> ConvertFileAsync(string inputPath, string outputPath, int? version = null)
-    {
-        return Task.Run(() => ConvertFile(inputPath, outputPath, version));
-    }
-
     public XurConversionResult ConvertFromMemoryWithResult(byte[] xurData)
     {
         Processed++;
@@ -301,25 +283,5 @@ public class XurSubprocessConverter
     public Task<XurConversionResult> ConvertFromMemoryWithResultAsync(byte[] xurData)
     {
         return Task.Run(() => ConvertFromMemoryWithResult(xurData));
-    }
-
-    /// <summary>
-    ///     Checks if data is a valid XUR file (XUIB or XUIS magic).
-    /// </summary>
-    public static bool IsXurFile(byte[] data)
-    {
-        return data.Length >= 4 &&
-               data[0] == 'X' && data[1] == 'U' && data[2] == 'I' &&
-               (data[3] == 'B' || data[3] == 'S');
-    }
-
-    /// <summary>
-    ///     Checks if data is a valid XUR file (XUIB or XUIS magic).
-    /// </summary>
-    public static bool IsXurFile(ReadOnlySpan<byte> data)
-    {
-        return data.Length >= 4 &&
-               data[0] == 'X' && data[1] == 'U' && data[2] == 'I' &&
-               (data[3] == 'B' || data[3] == 'S');
     }
 }

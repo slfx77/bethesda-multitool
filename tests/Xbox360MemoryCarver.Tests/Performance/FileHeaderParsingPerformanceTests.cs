@@ -23,10 +23,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     {
         try
         {
-            if (Directory.Exists(_tempDir))
-            {
-                Directory.Delete(_tempDir, recursive: true);
-            }
+            if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true);
         }
         catch
         {
@@ -50,7 +47,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     public async Task ScanAndParseHeaders_100NifFiles_CompletesUnder500ms()
     {
         // Arrange - Create 100 test NIF files with valid Xbox 360 header
-        var header = CreateNifHeader(isXbox360: true);
+        var header = CreateNifHeader(true);
         CreateTestFiles(100, ".nif", header);
 
         var sw = Stopwatch.StartNew();
@@ -87,7 +84,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     public async Task ScanAndParseHeaders_1000NifFiles_CompletesUnder2000ms()
     {
         // Arrange
-        var header = CreateNifHeader(isXbox360: true);
+        var header = CreateNifHeader(true);
         CreateTestFiles(1000, ".nif", header);
 
         var sw = Stopwatch.StartNew();
@@ -160,19 +157,19 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     public async Task ScanAndParseHeaders_MixedFormats_CorrectlyParses()
     {
         // Arrange - Create mix of Xbox 360 and PC NIF files
-        var xbox360Header = CreateNifHeader(isXbox360: true);
-        var pcHeader = CreateNifHeader(isXbox360: false);
+        var xbox360Header = CreateNifHeader(true);
+        var pcHeader = CreateNifHeader(false);
 
         for (var i = 0; i < 50; i++)
         {
             var filePath = Path.Combine(_tempDir, $"xbox_{i:D3}.nif");
-            File.WriteAllBytes(filePath, xbox360Header);
+            await File.WriteAllBytesAsync(filePath, xbox360Header);
         }
 
         for (var i = 0; i < 50; i++)
         {
             var filePath = Path.Combine(_tempDir, $"pc_{i:D3}.nif");
-            File.WriteAllBytes(filePath, pcHeader);
+            await File.WriteAllBytesAsync(filePath, pcHeader);
         }
 
         // Act
@@ -205,7 +202,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     [Fact]
     public void ParseNifHeader_Xbox360Format_ReturnsCorrect()
     {
-        var header = CreateNifHeader(isXbox360: true);
+        var header = CreateNifHeader(true);
         var format = DetermineNifFormat(header, header.Length);
 
         Assert.Equal("Xbox 360 (BE)", format);
@@ -214,7 +211,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     [Fact]
     public void ParseNifHeader_PCFormat_ReturnsCorrect()
     {
-        var header = CreateNifHeader(isXbox360: false);
+        var header = CreateNifHeader(false);
         var format = DetermineNifFormat(header, header.Length);
 
         Assert.Equal("PC (LE)", format);
@@ -319,14 +316,12 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         if (bytesRead < 4) return "Invalid";
 
         if (headerBytes[0] == '3' && headerBytes[1] == 'X' && headerBytes[2] == 'D')
-        {
             return headerBytes[3] switch
             {
                 (byte)'O' => "3XDO",
                 (byte)'R' => "3XDR",
                 _ => "Invalid"
             };
-        }
 
         return "Invalid";
     }
@@ -340,10 +335,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
 
         // Byte at position after newline + 5 determines endianness
         var newlinePos = Array.IndexOf(header, (byte)0x0A);
-        if (newlinePos > 0 && newlinePos + 5 < header.Length)
-        {
-            header[newlinePos + 5] = (byte)(isXbox360 ? 0 : 1);
-        }
+        if (newlinePos > 0 && newlinePos + 5 < header.Length) header[newlinePos + 5] = (byte)(isXbox360 ? 0 : 1);
 
         return header;
     }

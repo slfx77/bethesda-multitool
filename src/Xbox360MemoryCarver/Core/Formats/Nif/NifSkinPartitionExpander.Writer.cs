@@ -202,7 +202,7 @@ internal static partial class NifSkinPartitionExpander
 
         if (!partition.HasFaces) return outPos;
 
-        if (partition.NumStrips > 0 && partition.Strips != null)
+        if (partition is { NumStrips: > 0, Strips: not null })
             outPos = WriteStrips(partition, output, outPos);
         else if (partition.Triangles != null) outPos = WriteTriangles(partition, output, outPos);
 

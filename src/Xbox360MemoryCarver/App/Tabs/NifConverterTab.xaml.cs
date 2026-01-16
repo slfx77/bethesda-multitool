@@ -21,15 +21,15 @@ public sealed class NifFileEntry : INotifyPropertyChanged
     private static SolidColorBrush? _redBrush;
     private static SolidColorBrush? _yellowBrush;
 
+    private string _formatDescription = "";
+    private bool _isSelected = true;
+    private string _status = "Pending";
+
     private static SolidColorBrush GrayBrush => _grayBrush ??= new SolidColorBrush(Colors.Gray);
     private static SolidColorBrush GreenBrush => _greenBrush ??= new SolidColorBrush(Colors.Green);
     private static SolidColorBrush OrangeBrush => _orangeBrush ??= new SolidColorBrush(Colors.Orange);
     private static SolidColorBrush RedBrush => _redBrush ??= new SolidColorBrush(Colors.Red);
     private static SolidColorBrush YellowBrush => _yellowBrush ??= new SolidColorBrush(Colors.Yellow);
-
-    private string _formatDescription = "";
-    private bool _isSelected = true;
-    private string _status = "Pending";
 
     public required string FullPath { get; init; }
     public required string RelativePath { get; init; }
@@ -122,9 +122,9 @@ public sealed class NifFileEntry : INotifyPropertyChanged
 public sealed partial class NifConverterTab : UserControl, IDisposable
 {
     private readonly List<NifFileEntry> _allNifFiles = [];
-    private List<NifFileEntry> _nifFiles = [];  // Using List instead of ObservableCollection for batch performance
     private readonly NifFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
+    private List<NifFileEntry> _nifFiles = []; // Using List instead of ObservableCollection for batch performance
     private CancellationTokenSource? _scanCts;
 
     public NifConverterTab()
@@ -279,7 +279,8 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         }
     }
 
-    private async Task<NifFileEntry[]> ScanAndCreateNifEntriesAsync(string directory, CancellationToken cancellationToken)
+    private async Task<NifFileEntry[]> ScanAndCreateNifEntriesAsync(string directory,
+        CancellationToken cancellationToken)
     {
         return await Task.Run(() =>
         {

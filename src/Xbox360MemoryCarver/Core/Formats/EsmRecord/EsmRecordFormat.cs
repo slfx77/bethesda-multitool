@@ -302,7 +302,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         if (formId == 0 || formId == 0xFFFFFFFF || formId >> 24 > 0x0F) return 0;
 
         var size = BinaryUtils.ReadUInt32LE(data, checkOffset + 4);
-        if (size > 0 && size < 10_000_000 && edidOffset < checkOffset + 24 + size) return formId;
+        if (size is > 0 and < 10_000_000 && edidOffset < checkOffset + 24 + size) return formId;
 
         return 0;
     }
@@ -331,12 +331,8 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         // Direct iteration instead of LINQ Count to avoid delegate allocation
         var validChars = 0;
         foreach (var c in name)
-        {
             if (char.IsLetterOrDigit(c) || c == '_')
-            {
                 validChars++;
-            }
-        }
 
         return validChars >= name.Length * 0.9;
     }
@@ -349,12 +345,8 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         if (firstChar is not ('f' or 'i' or 's' or 'b')) return false;
 
         foreach (var c in name)
-        {
             if (!char.IsLetterOrDigit(c) && c != '_')
-            {
                 return false;
-            }
-        }
 
         return true;
     }

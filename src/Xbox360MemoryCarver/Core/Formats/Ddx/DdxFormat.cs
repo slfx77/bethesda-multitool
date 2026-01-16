@@ -9,6 +9,9 @@ namespace Xbox360MemoryCarver.Core.Formats.Ddx;
 /// </summary>
 public sealed class DdxFormat : FileFormatBase, IFileConverter
 {
+    private const string SignatureId3Xdo = "ddx_3xdo";
+    private const string SignatureId3Xdr = "ddx_3xdr";
+
     private int _convertedCount;
     private DdxSubprocessConverter? _converter;
     private int _failedCount;
@@ -25,13 +28,13 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     [
         new()
         {
-            Id = "ddx_3xdo",
+            Id = SignatureId3Xdo,
             MagicBytes = "3XDO"u8.ToArray(),
             Description = "Xbox 360 DDX texture (3XDO format)"
         },
         new()
         {
-            Id = "ddx_3xdr",
+            Id = SignatureId3Xdr,
             MagicBytes = "3XDR"u8.ToArray(),
             Description = "Xbox 360 DDX texture (3XDR engine-tiled format)"
         }
@@ -63,8 +66,8 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
         IReadOnlyDictionary<string, object>? metadata = null)
     {
         if (metadata?.TryGetValue("dimensions", out var dims) == true)
-            return signatureId == "ddx_3xdr" ? $"DDX 3XDR ({dims})" : $"DDX 3XDO ({dims})";
-        return signatureId == "ddx_3xdr" ? "DDX (3XDR)" : "DDX (3XDO)";
+            return signatureId == SignatureId3Xdr ? $"DDX 3XDR ({dims})" : $"DDX 3XDO ({dims})";
+        return signatureId == SignatureId3Xdr ? "DDX (3XDR)" : "DDX (3XDO)";
     }
 
     #region IFileConverter
@@ -94,8 +97,8 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
 
     public bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata)
     {
-        // Only convert 3XDO files - 3XDR (alternate tiling) not yet supported
-        return signatureId == "ddx_3xdo";
+        // Both 3XDO (Morton-swizzled) and 3XDR (macro-block tiled) are supported
+        return signatureId == SignatureId3Xdo || signatureId == SignatureId3Xdr;
     }
 
     public async Task<DdxConversionResult> ConvertAsync(byte[] data,
@@ -103,13 +106,7 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     {
         if (_converter == null) return new DdxConversionResult { Success = false, Notes = "Converter not initialized" };
 
-        // Check for 3XDR which isn't supported yet
-        if (data.Length >= 4 && data[3] == 'R')
-        {
-            Interlocked.Increment(ref _failedCount);
-            return new DdxConversionResult { Success = false, Notes = "3XDR format not yet supported" };
-        }
-
+        // Both 3XDO and 3XDR formats are now supported
         var result = await _converter.ConvertFromMemoryWithResultAsync(data);
 
         if (result.Success)

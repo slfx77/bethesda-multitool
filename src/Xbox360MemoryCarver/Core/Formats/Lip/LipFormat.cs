@@ -46,7 +46,7 @@ public sealed class LipFormat : FileFormatBase
             var reportedSize = BinaryUtils.ReadUInt32LE(data, offset + 8);
 
             int estimatedSize;
-            if (reportedSize > minHeaderSize && reportedSize < 5 * 1024 * 1024)
+            if (reportedSize is > minHeaderSize and < 5 * 1024 * 1024)
             {
                 estimatedSize = (int)reportedSize;
             }

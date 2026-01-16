@@ -130,7 +130,7 @@ internal sealed partial class NifConverter
 
     private static int WriteVerticesFromPackedData(GeometryWriteContext ctx, int outPos)
     {
-        if (ctx.VertexMap != null && ctx.VertexMap.Length > 0) return WriteRemappedVertices(ctx, outPos);
+        if (ctx.VertexMap is { Length: > 0 }) return WriteRemappedVertices(ctx, outPos);
         return WriteSequentialVertices(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Positions!);
     }
 
@@ -270,7 +270,7 @@ internal sealed partial class NifConverter
     /// </summary>
     private static int WriteVec3Array(byte[] output, int outPos, ushort numVertices, float[] data, ushort[]? vertexMap)
     {
-        if (vertexMap != null && vertexMap.Length > 0)
+        if (vertexMap is { Length: > 0 })
         {
             var dataSize = numVertices * 12;
             var basePos = outPos;
@@ -335,7 +335,7 @@ internal sealed partial class NifConverter
 
     private static int WriteVertexColorsFromPackedData(GeometryWriteContext ctx, int outPos)
     {
-        if (ctx.VertexMap != null && ctx.VertexMap.Length > 0) return WriteRemappedVertexColors(ctx, outPos);
+        if (ctx.VertexMap is { Length: > 0 }) return WriteRemappedVertexColors(ctx, outPos);
         return WriteSequentialVertexColors(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.VertexColors!);
     }
 
@@ -433,7 +433,7 @@ internal sealed partial class NifConverter
 
     private static int WriteUVsFromPackedData(GeometryWriteContext ctx, int outPos)
     {
-        if (ctx.VertexMap != null && ctx.VertexMap.Length > 0) return WriteRemappedUVs(ctx, outPos);
+        if (ctx.VertexMap is { Length: > 0 }) return WriteRemappedUVs(ctx, outPos);
         return WriteSequentialUVs(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.UVs!);
     }
 
@@ -523,9 +523,7 @@ internal sealed partial class NifConverter
 
             // points[numStrips][stripLengths[i]]
             if (hasPoints != 0)
-            {
                 for (var i = 0; i < numStrips; i++)
-                {
                     for (var j = 0; j < stripLengths[i]; j++)
                     {
                         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
@@ -533,8 +531,6 @@ internal sealed partial class NifConverter
                         srcPos += 2;
                         outPos += 2;
                     }
-                }
-            }
         }
         else if (blockType == "NiTriShapeData")
         {
@@ -558,7 +554,7 @@ internal sealed partial class NifConverter
         var srcHasTriangles = input[srcPos++];
 
         // If we have triangles extracted from NiSkinPartition, use them
-        if (triangles != null && triangles.Length >= 3)
+        if (triangles is { Length: >= 3 })
         {
             var numTriangles = (ushort)(triangles.Length / 3);
             var numTrianglePoints = (uint)(numTriangles * 3);

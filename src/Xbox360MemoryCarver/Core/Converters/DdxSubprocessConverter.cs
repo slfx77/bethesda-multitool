@@ -12,7 +12,6 @@ public sealed class BatchConversionResult
     public int Converted { get; set; }
     public int Failed { get; set; }
     public int Unsupported { get; set; }
-    public int Skipped { get; set; }
     public int ExitCode { get; set; }
     public bool WasCancelled { get; set; }
     public List<string> Errors { get; } = [];
@@ -23,6 +22,14 @@ public sealed class BatchConversionResult
 /// </summary>
 public partial class DdxSubprocessConverter
 {
+    /// <summary>
+    ///     Callback for batch conversion progress updates.
+    /// </summary>
+    /// <param name="inputPath">The input file path that was converted.</param>
+    /// <param name="status">Status: OK, FAIL, or UNSUPPORTED.</param>
+    /// <param name="error">Error message if conversion failed.</param>
+    public delegate void BatchProgressCallback(string inputPath, string status, string? error);
+
     private const string DdxConvExeName = "DDXConv.exe";
     private const string DdxConvFolderName = "DDXConv";
     private const string TargetFramework = "net10.0";
@@ -167,19 +174,6 @@ public partial class DdxSubprocessConverter
         });
     }
 
-    public Task<bool> ConvertFileAsync(string inputPath, string outputPath)
-    {
-        return Task.Run(() => ConvertFile(inputPath, outputPath));
-    }
-
-    /// <summary>
-    ///     Callback for batch conversion progress updates.
-    /// </summary>
-    /// <param name="inputPath">The input file path that was converted.</param>
-    /// <param name="status">Status: OK, FAIL, or UNSUPPORTED.</param>
-    /// <param name="error">Error message if conversion failed.</param>
-    public delegate void BatchProgressCallback(string inputPath, string status, string? error);
-
     /// <summary>
     ///     Converts all DDX files in the input directory to DDS using DDXConv's batch mode.
     ///     This spawns a single DDXConv process for the entire directory, which is much faster
@@ -219,10 +213,7 @@ public partial class DdxSubprocessConverter
 
         process.OutputDataReceived += (_, e) =>
         {
-            if (string.IsNullOrEmpty(e.Data))
-            {
-                return;
-            }
+            if (string.IsNullOrEmpty(e.Data)) return;
 
             // Parse "[PROGRESS] STATUS path [error]" lines
             var progressMatch = progressRegex.Match(e.Data);
@@ -252,27 +243,20 @@ public partial class DdxSubprocessConverter
             // Parse "[PROGRESS] DONE converted failed unsupported" line
             var doneMatch = doneRegex.Match(e.Data);
             if (doneMatch.Success)
-            {
                 // Final stats from DDXConv (we track our own, but can verify)
                 return;
-            }
 
             // Parse "[PROGRESS] START count" line
-            if (e.Data.StartsWith("[PROGRESS] START ", StringComparison.Ordinal))
+            if (e.Data.StartsWith("[PROGRESS] START ", StringComparison.Ordinal)
+                && int.TryParse(e.Data.AsSpan(17), out var total))
             {
-                if (int.TryParse(e.Data.AsSpan(17), out var total))
-                {
-                    result.TotalFiles = total;
-                }
+                result.TotalFiles = total;
             }
         };
 
         process.ErrorDataReceived += (_, e) =>
         {
-            if (!string.IsNullOrEmpty(e.Data))
-            {
-                result.Errors.Add(e.Data);
-            }
+            if (!string.IsNullOrEmpty(e.Data)) result.Errors.Add(e.Data);
         };
 
         process.Start();
@@ -290,7 +274,7 @@ public partial class DdxSubprocessConverter
             // Kill the process if cancelled
             try
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
             }
             catch
             {
@@ -414,15 +398,5 @@ public partial class DdxSubprocessConverter
     public Task<DdxConversionResult> ConvertFromMemoryWithResultAsync(byte[] ddxData)
     {
         return Task.Run(() => ConvertFromMemoryWithResult(ddxData));
-    }
-
-    public static bool IsDdxFile(byte[] data)
-    {
-        return data.Length >= 4 && BitConverter.ToUInt32(data, 0) is 0x4F445833 or 0x52445833;
-    }
-
-    public static bool IsDdxFile(ReadOnlySpan<byte> data)
-    {
-        return data.Length >= 4 && BitConverter.ToUInt32(data) is 0x4F445833 or 0x52445833;
     }
 }

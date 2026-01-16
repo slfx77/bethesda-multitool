@@ -79,12 +79,8 @@ public static class BinaryUtils
 
         var printableCount = 0;
         foreach (var b in data)
-        {
             if (b is >= 32 and < 127 or 9 or 10 or 13)
-            {
                 printableCount++;
-            }
-        }
 
         return (double)printableCount / data.Length >= minRatio;
     }

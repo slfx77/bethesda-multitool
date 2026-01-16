@@ -287,7 +287,7 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         numBlocks = BinaryUtils.ReadUInt32LE(data, pos);
         pos += 4;
 
-        return numBlocks > 0 && numBlocks <= 100000;
+        return numBlocks is > 0 and <= 100000;
     }
 
     /// <summary>
@@ -347,7 +347,7 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
                 ? BinaryUtils.ReadUInt16BE(data, pos + 1)
                 : BinaryUtils.ReadUInt16LE(data, pos + 1);
 
-            if (testNumBlockTypes2 > 0 && testNumBlockTypes2 < 500) pos += 1;
+            if (testNumBlockTypes2 is > 0 and < 500) pos += 1;
         }
     }
 

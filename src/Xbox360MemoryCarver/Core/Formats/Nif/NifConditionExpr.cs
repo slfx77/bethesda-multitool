@@ -23,8 +23,11 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 public sealed partial class NifConditionExpr
 {
     // Static caches for compiled expressions - expressions are constant strings from nif.xml
-    private static readonly ConcurrentDictionary<string, Func<IReadOnlyDictionary<string, object>, bool>> ConditionCache = new();
-    private static readonly ConcurrentDictionary<string, Func<IReadOnlyDictionary<string, object>, long>> ValueCache = new();
+    private static readonly ConcurrentDictionary<string, Func<IReadOnlyDictionary<string, object>, bool>>
+        ConditionCache = new();
+
+    private static readonly ConcurrentDictionary<string, Func<IReadOnlyDictionary<string, object>, long>> ValueCache =
+        new();
 
     private readonly string _expression;
     private int _pos;
@@ -267,7 +270,7 @@ public sealed partial class NifConditionExpr
 
     private static bool IsHexDigit(char c)
     {
-        return char.IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        return char.IsDigit(c) || c is >= 'a' and <= 'f' or >= 'A' and <= 'F';
     }
 
     #endregion

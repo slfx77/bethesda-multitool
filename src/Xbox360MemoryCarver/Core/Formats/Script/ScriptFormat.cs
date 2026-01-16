@@ -139,12 +139,8 @@ public sealed class ScriptFormat : FileFormatBase
     private static bool IsValidScriptName(string name)
     {
         foreach (var c in name)
-        {
             if (!char.IsLetterOrDigit(c) && c != '_')
-            {
                 return false;
-            }
-        }
 
         return true;
     }
@@ -157,25 +153,17 @@ public sealed class ScriptFormat : FileFormatBase
             Span<char> buffer = stackalloc char[name.Length];
             var pos = 0;
             foreach (var c in name)
-            {
                 if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
-                {
                     buffer[pos++] = c;
-                }
-            }
 
             return new string(buffer[..pos]);
         }
 
         // Fallback for very long names
-        var sb = new System.Text.StringBuilder(name.Length);
+        var sb = new StringBuilder(name.Length);
         foreach (var c in name)
-        {
             if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
-            {
                 sb.Append(c);
-            }
-        }
 
         return sb.ToString();
     }

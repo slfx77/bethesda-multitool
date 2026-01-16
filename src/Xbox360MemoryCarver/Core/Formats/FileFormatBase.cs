@@ -28,12 +28,4 @@ public abstract class FileFormatBase : IFileFormat
         var sig = Signatures.FirstOrDefault(s => s.Id.Equals(signatureId, StringComparison.OrdinalIgnoreCase));
         return sig?.Description ?? DisplayName;
     }
-
-    /// <summary>
-    ///     Helper to check if data starts with expected magic bytes.
-    /// </summary>
-    protected static bool HasMagic(ReadOnlySpan<byte> data, ReadOnlySpan<byte> magic)
-    {
-        return data.Length >= magic.Length && data[..magic.Length].SequenceEqual(magic);
-    }
 }

@@ -165,7 +165,7 @@ internal sealed partial class NifConverter
 
             if (!_packedGeometryByBlock.TryGetValue(packedBlockIndex, out var packedData)) continue;
 
-            if (packedData.BoneIndices != null && packedData.BoneWeights != null)
+            if (packedData is { BoneIndices: not null, BoneWeights: not null })
                 _skinPartitionToPackedData[skinPartitionIndex] = packedData;
         }
 

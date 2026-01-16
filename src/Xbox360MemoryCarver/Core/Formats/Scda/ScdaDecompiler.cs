@@ -148,7 +148,9 @@ public sealed partial class ScdaDecompiler
 
     private int DecompileFunctionCall(byte[] bytecode, ushort opcode, DecompileContext ctx)
     {
-        var name = _opcodeTable.TryGetValue(opcode, out var info) ? info.Name : string.Create(CultureInfo.InvariantCulture, $"Function_{opcode:X4}");
+        var name = _opcodeTable.TryGetValue(opcode, out var info)
+            ? info.Name
+            : string.Create(CultureInfo.InvariantCulture, $"Function_{opcode:X4}");
         var paramLen = BinaryUtils.ReadUInt16LE(bytecode, ctx.Pos + 2);
 
         var call = paramLen == 0
@@ -177,7 +179,8 @@ public sealed partial class ScdaDecompiler
 
     private static int DecompileUnknown(ushort opcode, DecompileContext ctx)
     {
-        ctx.Output.Append(ctx.GetIndent()).Append("; Unknown opcode 0x").AppendLine(opcode.ToString("X4", CultureInfo.InvariantCulture));
+        ctx.Output.Append(ctx.GetIndent()).Append("; Unknown opcode 0x")
+            .AppendLine(opcode.ToString("X4", CultureInfo.InvariantCulture));
         return ctx.Pos + 2;
     }
 

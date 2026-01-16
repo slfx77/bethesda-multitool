@@ -36,7 +36,7 @@ internal sealed partial class NifConverter
     private void ExtractVertexMapFromBlock(byte[] data, BlockInfo block, bool isBigEndian)
     {
         var vertexMap = NifSkinPartitionParser.ExtractVertexMap(data, block.DataOffset, block.Size, isBigEndian);
-        if (vertexMap != null && vertexMap.Length > 0)
+        if (vertexMap is { Length: > 0 })
         {
             _vertexMaps[block.Index] = vertexMap;
             Log.Debug($"    Block {block.Index}: NiSkinPartition - extracted {vertexMap.Length} vertex mappings");
@@ -50,7 +50,7 @@ internal sealed partial class NifConverter
     private void ExtractTrianglesFromBlock(byte[] data, BlockInfo block, bool isBigEndian)
     {
         var triangles = NifSkinPartitionParser.ExtractTriangles(data, block.DataOffset, block.Size, isBigEndian);
-        if (triangles != null && triangles.Length > 0)
+        if (triangles is { Length: > 0 })
         {
             _skinPartitionTriangles[block.Index] = triangles;
             Log.Debug(
@@ -139,7 +139,7 @@ internal sealed partial class NifConverter
             if (!_geometryExpansions.ContainsKey(block.Index)) continue;
 
             var triangles = ExtractTrianglesFromTriStripsData(data, block, info.IsBigEndian);
-            if (triangles != null && triangles.Length > 0)
+            if (triangles is { Length: > 0 })
             {
                 _geometryStripTriangles[block.Index] = triangles;
                 Log.Debug(

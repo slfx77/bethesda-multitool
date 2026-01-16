@@ -38,30 +38,6 @@ internal static class NifEndianUtils
     }
 
     /// <summary>
-    ///     Reads a big-endian uint16 from the buffer.
-    /// </summary>
-    public static ushort ReadUInt16BE(byte[] buf, int pos)
-    {
-        return BinaryPrimitives.ReadUInt16BigEndian(buf.AsSpan(pos, 2));
-    }
-
-    /// <summary>
-    ///     Reads a big-endian uint32 from the buffer.
-    /// </summary>
-    public static uint ReadUInt32BE(byte[] buf, int pos)
-    {
-        return BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(pos, 4));
-    }
-
-    /// <summary>
-    ///     Reads a big-endian int32 from the buffer.
-    /// </summary>
-    public static int ReadInt32BE(byte[] buf, int pos)
-    {
-        return BinaryPrimitives.ReadInt32BigEndian(buf.AsSpan(pos, 4));
-    }
-
-    /// <summary>
     ///     Reads a little-endian uint16 from the buffer.
     /// </summary>
     public static ushort ReadUInt16LE(byte[] buf, int pos)
@@ -75,37 +51,5 @@ internal static class NifEndianUtils
     public static uint ReadUInt32LE(byte[] buf, int pos)
     {
         return BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos, 4));
-    }
-
-    /// <summary>
-    ///     Reads a little-endian int32 from the buffer.
-    /// </summary>
-    public static int ReadInt32LE(byte[] buf, int pos)
-    {
-        return BinaryPrimitives.ReadInt32LittleEndian(buf.AsSpan(pos, 4));
-    }
-
-    /// <summary>
-    ///     Writes a little-endian uint16 to the buffer.
-    /// </summary>
-    public static void WriteUInt16LE(byte[] buf, int pos, ushort value)
-    {
-        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(pos, 2), value);
-    }
-
-    /// <summary>
-    ///     Writes a little-endian uint32 to the buffer.
-    /// </summary>
-    public static void WriteUInt32LE(byte[] buf, int pos, uint value)
-    {
-        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(pos, 4), value);
-    }
-
-    /// <summary>
-    ///     Writes a little-endian int32 to the buffer.
-    /// </summary>
-    public static void WriteInt32LE(byte[] buf, int pos, int value)
-    {
-        BinaryPrimitives.WriteInt32LittleEndian(buf.AsSpan(pos, 4), value);
     }
 }

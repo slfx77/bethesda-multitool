@@ -10,6 +10,9 @@ internal static class XmaParser
 {
     private static readonly ushort[] XmaFormatCodes = [0x0165, 0x0166];
 
+    // Cached invalid filename characters to avoid repeated array allocation
+    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
+
     public static ParseResult? ParseXmaChunks(ReadOnlySpan<byte> data, int offset, int reportedSize, int boundarySize)
     {
         var searchOffset = offset + 12;
@@ -213,11 +216,11 @@ internal static class XmaParser
 
     private static string? TryExtractPath(ReadOnlySpan<byte> data)
     {
-        ReadOnlySpan<byte> pathIndicator1 = "sound\\"u8;
-        ReadOnlySpan<byte> pathIndicator2 = "music\\"u8;
-        ReadOnlySpan<byte> pathIndicator3 = "fx\\"u8;
-        ReadOnlySpan<byte> pathIndicator4 = ".xma"u8;
-        ReadOnlySpan<byte> pathIndicator5 = ".wav"u8;
+        var pathIndicator1 = "sound\\"u8;
+        var pathIndicator2 = "music\\"u8;
+        var pathIndicator3 = "fx\\"u8;
+        var pathIndicator4 = ".xma"u8;
+        var pathIndicator5 = ".wav"u8;
 
         // Try to find an indicator in the data
         var idx = FindIndicator(data, pathIndicator1);
@@ -273,19 +276,13 @@ internal static class XmaParser
         return c >= 0x20 && c < 0x7F && c != '"' && c != '<' && c != '>' && c != '|';
     }
 
-    // Cached invalid filename characters to avoid repeated array allocation
-    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
-
     private static string SanitizeFilename(string path)
     {
         var filename = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(filename)) filename = path.Replace('\\', '_').Replace('/', '_');
 
         var sb = new StringBuilder(filename.Length);
-        foreach (var c in filename)
-        {
-            sb.Append(InvalidFileNameChars.Contains(c) ? '_' : c);
-        }
+        foreach (var c in filename) sb.Append(InvalidFileNameChars.Contains(c) ? '_' : c);
 
         return sb.ToString();
     }
