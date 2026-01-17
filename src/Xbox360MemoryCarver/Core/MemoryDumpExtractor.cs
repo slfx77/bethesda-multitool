@@ -12,7 +12,7 @@ namespace Xbox360MemoryCarver.Core;
 public static class MemoryDumpExtractor
 {
     // Cached invalid filename characters to avoid repeated array allocation
-    private static readonly HashSet<char> InvalidFileNameChars = [..Path.GetInvalidFileNameChars()];
+    private static readonly HashSet<char> InvalidFileNameChars = [.. Path.GetInvalidFileNameChars()];
 
     /// <summary>
     ///     Extract files from a memory dump based on prior analysis.

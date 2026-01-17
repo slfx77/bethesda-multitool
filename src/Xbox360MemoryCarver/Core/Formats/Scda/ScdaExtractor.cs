@@ -12,7 +12,7 @@ public static partial class ScdaExtractor
     private static readonly Logger Log = Logger.Instance;
 
     // Cached invalid filename characters to avoid repeated array allocation
-    private static readonly HashSet<char> InvalidFileNameChars = [..Path.GetInvalidFileNameChars()];
+    private static readonly HashSet<char> InvalidFileNameChars = [.. Path.GetInvalidFileNameChars()];
 
     /// <summary>
     ///     Extract all SCDA records from a dump, grouping by quest name.
@@ -64,18 +64,18 @@ public static partial class ScdaExtractor
 
         // Add grouped scripts with quest names
         foreach (var (questName, records) in groups)
-        foreach (var record in records)
-        {
-            var scriptName = ExtractScriptNameFromSource(record.SourceText);
-            scripts.Add(new ScriptInfo
+            foreach (var record in records)
             {
-                Offset = record.Offset,
-                BytecodeSize = record.BytecodeLength,
-                ScriptName = scriptName,
-                QuestName = questName,
-                HasSource = record.HasAssociatedSctx
-            });
-        }
+                var scriptName = ExtractScriptNameFromSource(record.SourceText);
+                scripts.Add(new ScriptInfo
+                {
+                    Offset = record.Offset,
+                    BytecodeSize = record.BytecodeLength,
+                    ScriptName = scriptName,
+                    QuestName = questName,
+                    HasSource = record.HasAssociatedSctx
+                });
+            }
 
         // Add ungrouped scripts
         foreach (var record in ungrouped)
@@ -157,6 +157,7 @@ public static partial class ScdaExtractor
             if (stages.Count < 2) continue;
 
             // Use direct iteration instead of LINQ Min/Max to avoid repeated enumeration
+#pragma warning disable S3267 // Loops should be simplified - intentionally avoiding LINQ for performance
             var minOffset = long.MaxValue;
             var maxOffset = long.MinValue;
             foreach (var stage in stages)
@@ -164,6 +165,7 @@ public static partial class ScdaExtractor
                 if (stage.Offset < minOffset) minOffset = stage.Offset;
                 if (stage.Offset > maxOffset) maxOffset = stage.Offset;
             }
+#pragma warning restore S3267
 
             if (offset >= minOffset && offset <= maxOffset) return questName;
         }

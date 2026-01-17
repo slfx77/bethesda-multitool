@@ -34,6 +34,7 @@ public sealed class TabDependencyResult
 /// <summary>
 ///     Checks for external dependencies required by various tabs.
 /// </summary>
+#pragma warning disable S1075 // URIs should not be hardcoded - these are intentional download URLs
 public static class DependencyChecker
 {
     /// <summary>
@@ -270,13 +271,15 @@ public static class DependencyChecker
             : new[] { "ffmpeg" };
 
         foreach (var dir in pathDirs)
-        foreach (var exeName in exeNames)
         {
-            var ffmpegPath = Path.Combine(dir, exeName);
-            if (File.Exists(ffmpegPath))
+            foreach (var exeName in exeNames)
             {
-                var version = GetFfmpegVersion(ffmpegPath);
-                return (true, version, ffmpegPath);
+                var ffmpegPath = Path.Combine(dir, exeName);
+                if (File.Exists(ffmpegPath))
+                {
+                    var version = GetFfmpegVersion(ffmpegPath);
+                    return (true, version, ffmpegPath);
+                }
             }
         }
 

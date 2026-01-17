@@ -11,7 +11,7 @@ internal static class XmaParser
     private static readonly ushort[] XmaFormatCodes = [0x0165, 0x0166];
 
     // Cached invalid filename characters to avoid repeated array allocation
-    private static readonly HashSet<char> InvalidFileNameChars = [..Path.GetInvalidFileNameChars()];
+    private static readonly HashSet<char> InvalidFileNameChars = [.. Path.GetInvalidFileNameChars()];
 
     public static ParseResult? ParseXmaChunks(ReadOnlySpan<byte> data, int offset, int reportedSize, int boundarySize)
     {

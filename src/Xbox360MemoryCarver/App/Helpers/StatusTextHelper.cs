@@ -6,7 +6,10 @@ namespace Xbox360MemoryCarver;
 /// </summary>
 public sealed class StatusTextHelper
 {
+    // Intentionally instance property to allow StatusTextBlock.Text = "message" pattern
+#pragma warning disable CA1822, S2325
     public string Text
+#pragma warning restore CA1822, S2325
     {
         get => "";
         set => MainWindow.Instance?.SetStatus(value);

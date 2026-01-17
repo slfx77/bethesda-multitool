@@ -33,7 +33,9 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     /// <summary>
     ///     Helper to route status text to the global status bar.
     /// </summary>
+#pragma warning disable CA1822, S2325
     private StatusTextHelper StatusTextBlock => new();
+#pragma warning restore CA1822, S2325
 
     public void Dispose()
     {

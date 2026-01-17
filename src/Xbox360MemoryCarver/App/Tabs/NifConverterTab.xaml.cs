@@ -138,7 +138,9 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     /// <summary>
     ///     Helper to route status text to the global status bar.
     /// </summary>
+#pragma warning disable CA1822, S2325
     private StatusTextHelper StatusTextBlock => new();
+#pragma warning restore CA1822, S2325
 
     public void Dispose()
     {
@@ -258,8 +260,12 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     private async Task ScanForNifFilesAsync(string directory)
     {
         // Cancel any in-progress scan
-        _scanCts?.Cancel();
-        _scanCts?.Dispose();
+        if (_scanCts != null)
+        {
+            await _scanCts.CancelAsync();
+            _scanCts.Dispose();
+        }
+
         _scanCts = new CancellationTokenSource();
         var cancellationToken = _scanCts.Token;
 

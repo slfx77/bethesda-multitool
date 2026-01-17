@@ -77,10 +77,16 @@ public static class BinaryUtils
     {
         if (data.IsEmpty) return false;
 
+#pragma warning disable S3267 // Loops should be simplified - intentionally avoiding LINQ for Span<T> performance
         var printableCount = 0;
         foreach (var b in data)
+        {
             if (b is >= 32 and < 127 or 9 or 10 or 13)
+            {
                 printableCount++;
+            }
+        }
+#pragma warning restore S3267
 
         return (double)printableCount / data.Length >= minRatio;
     }
