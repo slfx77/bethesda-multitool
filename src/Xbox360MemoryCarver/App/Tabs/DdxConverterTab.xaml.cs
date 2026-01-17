@@ -215,7 +215,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker,
+            WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder == null) return;
@@ -261,7 +262,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker,
+            WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)

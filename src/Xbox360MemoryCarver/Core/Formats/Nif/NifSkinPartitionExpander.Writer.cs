@@ -202,7 +202,7 @@ internal static partial class NifSkinPartitionExpander
 
         if (!partition.HasFaces) return outPos;
 
-        if (partition is { NumStrips: > 0, Strips: not null })
+        if (partition is { NumStrips: > 0, Strips.Length: > 0 })
             outPos = WriteStrips(partition, output, outPos);
         else if (partition.Triangles != null) outPos = WriteTriangles(partition, output, outPos);
 
@@ -214,7 +214,7 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     private static int WriteStrips(PartitionInfo partition, byte[] output, int outPos)
     {
-        for (var s = 0; s < partition.NumStrips && s < partition.Strips!.Length; s++)
+        for (var s = 0; s < partition.NumStrips && s < partition.Strips.Length; s++)
             foreach (var idx in partition.Strips[s])
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), idx);

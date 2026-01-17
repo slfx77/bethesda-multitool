@@ -147,7 +147,8 @@ public sealed partial class SingleFileTab : UserControl
     {
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add(".dmp");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker,
+            WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
 
         var file = await picker.PickSingleFileAsync();
         if (file == null) return;
@@ -164,7 +165,8 @@ public sealed partial class SingleFileTab : UserControl
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker,
+            WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
         {

@@ -44,6 +44,9 @@ tools/*
 !tools/NifAnalyzer/
 tools/NifAnalyzer/bin/
 tools/NifAnalyzer/obj/
+!tools/TextureAnalyzer/
+tools/TextureAnalyzer/bin/
+tools/TextureAnalyzer/obj/
 
 # Python remnants (if any)
 .venv/

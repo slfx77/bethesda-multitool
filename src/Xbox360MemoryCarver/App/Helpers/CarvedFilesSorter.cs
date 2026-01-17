@@ -5,15 +5,6 @@ namespace Xbox360MemoryCarver;
 /// </summary>
 internal sealed class CarvedFilesSorter
 {
-    public enum SortColumn
-    {
-        None,
-        Offset,
-        Length,
-        Type,
-        Filename
-    }
-
     public SortColumn CurrentColumn { get; private set; } = SortColumn.None;
 
     public bool IsAscending { get; private set; } = true;
@@ -84,5 +75,14 @@ internal sealed class CarvedFilesSorter
                 .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset)
             : files.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
                 .ThenByDescending(f => f.FileName, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset);
+    }
+
+    public enum SortColumn
+    {
+        None,
+        Offset,
+        Length,
+        Type,
+        Filename
     }
 }

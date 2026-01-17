@@ -12,7 +12,7 @@ public static partial class ScdaExtractor
     private static readonly Logger Log = Logger.Instance;
 
     // Cached invalid filename characters to avoid repeated array allocation
-    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
+    private static readonly HashSet<char> InvalidFileNameChars = [..Path.GetInvalidFileNameChars()];
 
     /// <summary>
     ///     Extract all SCDA records from a dump, grouping by quest name.

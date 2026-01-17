@@ -205,7 +205,8 @@ public partial class DdxSubprocessConverter
             CreateNoWindow = true
         };
 
-        using var process = new Process { StartInfo = psi };
+        using var process = new Process();
+        process.StartInfo = psi;
 
         // Regex patterns for parsing [PROGRESS] lines
         var progressRegex = ProgressLineRegex();
