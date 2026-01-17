@@ -106,31 +106,11 @@ public static class CarveCommand
                                                 t.Contains("script", StringComparison.OrdinalIgnoreCase))
         };
 
-        ExtractionSummary? summary = null;
+        ExtractionSummary summary;
 
         try
         {
-            await AnsiConsole.Progress()
-                .AutoClear(false)
-                .Columns(
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new PercentageColumn(),
-                    new SpinnerColumn())
-                .StartAsync(async ctx =>
-                {
-                    var task = ctx.AddTask("[yellow]Extracting files[/]", maxValue: 100);
-
-                    var progress = new Progress<ExtractionProgress>(p =>
-                    {
-                        task.Value = p.PercentComplete;
-                        task.Description = $"[yellow]{p.CurrentOperation}[/]";
-                    });
-
-                    summary = await MemoryDumpExtractor.Extract(file, options, progress);
-                    task.Value = 100;
-                    task.Description = "[green]Complete[/]";
-                });
+            summary = await ExtractWithProgressAsync(file, options);
         }
         catch (Exception ex)
         {
@@ -140,16 +120,40 @@ public static class CarveCommand
 
         stopwatch.Stop();
 
-        if (summary is null)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] Extraction failed");
-            return;
-        }
-
         AnsiConsole.MarkupLine(
             $"[green]Extracted[/] {summary.TotalExtracted} files in [blue]{stopwatch.Elapsed.TotalSeconds:F2}s[/]");
 
         PrintSummary(summary, convertDdx);
+    }
+
+    private static async Task<ExtractionSummary> ExtractWithProgressAsync(string file, ExtractionOptions options)
+    {
+        ExtractionSummary? summary = null;
+
+        await AnsiConsole.Progress()
+            .AutoClear(false)
+            .Columns(
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new SpinnerColumn())
+            .StartAsync(async ctx =>
+            {
+                var task = ctx.AddTask("[yellow]Extracting files[/]", maxValue: 100);
+
+                var progress = new Progress<ExtractionProgress>(p =>
+                {
+                    task.Value = p.PercentComplete;
+                    task.Description = $"[yellow]{p.CurrentOperation}[/]";
+                });
+
+                summary = await MemoryDumpExtractor.Extract(file, options, progress);
+                task.Value = 100;
+                task.Description = "[green]Complete[/]";
+            });
+
+        // Summary will always be non-null after successful completion
+        return summary!;
     }
 
     private static void PrintSummary(ExtractionSummary summary, bool convertDdx)

@@ -170,16 +170,13 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         var hasGeometry = blockTypes.Any(bt => GeometryBlockTypes.Contains(bt));
         var hasAnimation = blockTypes.Any(bt => AnimationBlockTypes.Contains(bt));
 
-        if (hasGeometry && !hasAnimation)
-            return ("geometry", "meshes", null); // Use default .nif extension
-
-        if (hasAnimation && !hasGeometry)
-            return ("animation", "anims", ".kf"); // Animation files use .kf extension
-
-        if (hasGeometry) // At this point, hasAnimation must also be true (mixed content)
-            return ("mixed", "meshes", null); // Prefer meshes for mixed content
-
-        return ("unknown", "models", null); // Fallback to generic models folder
+        return (hasGeometry, hasAnimation) switch
+        {
+            (true, false) => ("geometry", "meshes", null),    // Geometry only
+            (false, true) => ("animation", "anims", ".kf"),   // Animation only (.kf extension)
+            (true, true) => ("mixed", "meshes", null),        // Mixed content - prefer meshes
+            _ => ("unknown", "models", null)                   // Fallback for unknown content
+        };
     }
 
     /// <summary>
