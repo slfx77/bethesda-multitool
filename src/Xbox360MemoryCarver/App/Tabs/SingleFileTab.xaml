@@ -46,7 +46,7 @@
     </Grid>
 
     <!--  MIDDLE: Memory Map and Discovered Files side-by-side  -->
-    <Grid Grid.Row="1">
+    <Grid Grid.Row="1" VerticalAlignment="Stretch">
       <Grid.ColumnDefinitions>
         <ColumnDefinition
           Width="*"
@@ -60,6 +60,7 @@
       <!--  Hex Viewer - always dark like code editors  -->
       <Border
         Grid.Column="0"
+        VerticalAlignment="Stretch"
         Style="{StaticResource DarkCardBorderStyle}">
         <hexviewer:HexViewerControl
           x:Name="HexViewer" />
@@ -71,8 +72,9 @@
       <!--  Files Table Card  -->
       <Border
         Grid.Column="2"
+        VerticalAlignment="Stretch"
         Style="{StaticResource CardBorderStyle}">
-        <Grid>
+        <Grid VerticalAlignment="Stretch">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />

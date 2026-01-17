@@ -42,8 +42,9 @@
     <!--  Dump Files List Card  -->
     <Border
       Grid.Row="1"
+      VerticalAlignment="Stretch"
       Style="{StaticResource CardBorderStyle}">
-      <Grid>
+      <Grid VerticalAlignment="Stretch">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />

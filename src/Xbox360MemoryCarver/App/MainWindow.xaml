@@ -35,6 +35,7 @@
     <!--  Navigation View with hamburger menu - fills entire window  -->
     <NavigationView
       x:Name="NavView"
+      Background="Transparent"
       IsBackButtonVisible="Collapsed"
       IsPaneToggleButtonVisible="True"
       IsSettingsVisible="False"
@@ -45,6 +46,8 @@
 
       <!--  Make NavigationView content area transparent so Mica shows in title bar  -->
       <NavigationView.Resources>
+        <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+        <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
       </NavigationView.Resources>
 
       <NavigationView.MenuItems>
@@ -108,7 +111,7 @@
           Grid.Row="1"
           Background="{ThemeResource LayerOnMicaBaseAltFillColorDefaultBrush}"
           CornerRadius="8,0,0,8">
-          <Grid>
+          <Grid VerticalAlignment="Stretch">
             <tabs:SingleFileTab
               x:Name="SingleFileTabContent"
               VerticalAlignment="Stretch"

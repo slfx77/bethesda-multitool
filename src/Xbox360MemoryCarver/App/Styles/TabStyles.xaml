@@ -81,7 +81,7 @@
   <Style x:Key="IoSectionGridStyle"
          TargetType="Grid">
     <Setter Property="Margin"
-            Value="0,8,0,0" />
+            Value="0,16,0,0" />
     <Setter Property="RowSpacing"
             Value="8" />
   </Style>
@@ -106,7 +106,7 @@
   <Style x:Key="ActionBarGridStyle"
          TargetType="Grid">
     <Setter Property="Margin"
-            Value="0,18,0,18" />
+            Value="0,8,0,0" />
     <Setter Property="ColumnSpacing"
             Value="16" />
   </Style>
