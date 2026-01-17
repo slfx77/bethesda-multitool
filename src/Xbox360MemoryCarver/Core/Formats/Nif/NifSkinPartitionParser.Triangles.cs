@@ -15,8 +15,9 @@ internal static partial class NifSkinPartitionParser
     ///     The triangles use mesh vertex indices (remapped via VertexMap).
     ///     Returns null if no faces are present.
     /// </summary>
-    public static ushort[]? ExtractTriangles(byte[] data, int offset, int size, bool isBigEndian, bool _verbose = false)
+    public static ushort[]? ExtractTriangles(byte[] data, int offset, int size, bool isBigEndian, bool verbose = false)
     {
+        _ = verbose; // Reserved for future diagnostic use
         if (size < 4) return null;
 
         var reader = new TriangleReader

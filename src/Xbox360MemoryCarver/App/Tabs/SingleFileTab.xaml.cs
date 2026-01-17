@@ -110,7 +110,7 @@ public sealed partial class SingleFileTab : UserControl
         UpdateButtonStates();
     }
 
-    private void OutputPathTextBox_TextChanged(object _sender, TextChangedEventArgs _e)
+    private void OutputPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         UpdateButtonStates();
     }
@@ -147,7 +147,7 @@ public sealed partial class SingleFileTab : UserControl
     {
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add(".dmp");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
 
         var file = await picker.PickSingleFileAsync();
         if (file == null) return;
@@ -164,7 +164,7 @@ public sealed partial class SingleFileTab : UserControl
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
         {
@@ -297,22 +297,22 @@ public sealed partial class SingleFileTab : UserControl
 
     #region Sorting
 
-    private void SortByOffset_Click(object _sender, RoutedEventArgs _e)
+    private void SortByOffset_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(CarvedFilesSorter.SortColumn.Offset);
     }
 
-    private void SortByLength_Click(object _sender, RoutedEventArgs _e)
+    private void SortByLength_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(CarvedFilesSorter.SortColumn.Length);
     }
 
-    private void SortByType_Click(object _sender, RoutedEventArgs _e)
+    private void SortByType_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(CarvedFilesSorter.SortColumn.Type);
     }
 
-    private void SortByFilename_Click(object _sender, RoutedEventArgs _e)
+    private void SortByFilename_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(CarvedFilesSorter.SortColumn.Filename);
     }

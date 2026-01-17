@@ -215,7 +215,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder == null) return;
@@ -261,7 +261,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
@@ -634,7 +634,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
         }
     }
 
-    private void CancelButton_Click(object _sender, RoutedEventArgs _e)
+    private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
@@ -642,22 +642,22 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
 
     #region Sorting
 
-    private void SortByFilePath_Click(object _sender, RoutedEventArgs _e)
+    private void SortByFilePath_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(DdxFilesSorter.SortColumn.FilePath);
     }
 
-    private void SortBySize_Click(object _sender, RoutedEventArgs _e)
+    private void SortBySize_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(DdxFilesSorter.SortColumn.Size);
     }
 
-    private void SortByFormat_Click(object _sender, RoutedEventArgs _e)
+    private void SortByFormat_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(DdxFilesSorter.SortColumn.Format);
     }
 
-    private void SortByStatus_Click(object _sender, RoutedEventArgs _e)
+    private void SortByStatus_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(DdxFilesSorter.SortColumn.Status);
     }

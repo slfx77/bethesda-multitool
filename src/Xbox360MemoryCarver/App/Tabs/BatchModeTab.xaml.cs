@@ -114,7 +114,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder == null) return;
@@ -130,7 +130,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(global::Xbox360MemoryCarver.App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
@@ -170,7 +170,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         UpdateButtonStates();
     }
 
-    private void InputDirectoryTextBox_TextChanged(object _sender, TextChangedEventArgs _e)
+    private void InputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (Directory.Exists(InputDirectoryTextBox.Text))
         {
@@ -186,22 +186,22 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         }
     }
 
-    private void OutputDirectoryTextBox_TextChanged(object _sender, TextChangedEventArgs _e)
+    private void OutputDirectoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         UpdateButtonStates();
     }
 
-    private void SelectAllButton_Click(object _sender, RoutedEventArgs _e)
+    private void SelectAllButton_Click(object sender, RoutedEventArgs e)
     {
         foreach (var entry in _dumpFiles) entry.IsSelected = true;
     }
 
-    private void SelectNoneButton_Click(object _sender, RoutedEventArgs _e)
+    private void SelectNoneButton_Click(object sender, RoutedEventArgs e)
     {
         foreach (var entry in _dumpFiles) entry.IsSelected = false;
     }
 
-    private async void ExtractButton_Click(object _sender, RoutedEventArgs _e)
+    private async void ExtractButton_Click(object sender, RoutedEventArgs e)
     {
         var selectedFiles = _dumpFiles.Where(f => f.IsSelected).ToList();
         if (selectedFiles.Count == 0) return;
@@ -328,7 +328,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         });
     }
 
-    private void CancelButton_Click(object _sender, RoutedEventArgs _e)
+    private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
@@ -336,17 +336,17 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
 
     #region Sorting
 
-    private void SortByFilename_Click(object _sender, RoutedEventArgs _e)
+    private void SortByFilename_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(BatchSortColumn.Filename);
     }
 
-    private void SortBySize_Click(object _sender, RoutedEventArgs _e)
+    private void SortBySize_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(BatchSortColumn.Size);
     }
 
-    private void SortByStatus_Click(object _sender, RoutedEventArgs _e)
+    private void SortByStatus_Click(object sender, RoutedEventArgs e)
     {
         ApplySort(BatchSortColumn.Status);
     }

@@ -101,8 +101,9 @@ public static class Program
         rootCommand.Options.Add(verboseOption);
         rootCommand.Options.Add(maxFilesOption);
 
-        rootCommand.SetAction(async (parseResult, _cancellationToken) =>
+        rootCommand.SetAction(async (parseResult, cancellationToken) =>
         {
+            _ = cancellationToken; // Reserved for future use
             var input = parseResult.GetValue(inputArgument);
             var output = parseResult.GetValue(outputOption)!;
             var convertDdx = parseResult.GetValue(convertDdxOption);
