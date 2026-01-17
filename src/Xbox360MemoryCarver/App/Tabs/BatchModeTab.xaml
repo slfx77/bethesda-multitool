@@ -7,120 +7,52 @@
   xmlns:ctk="using:CommunityToolkit.WinUI.Controls"
   xmlns:local="using:Xbox360MemoryCarver">
 
-  <Grid Padding="16">
+  <Grid Padding="16"
+        VerticalAlignment="Stretch">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!--  TOP: Input/Output Section - transparent for Mica  -->
-    <Grid
-      Grid.Row="0"
-      Margin="0,0,0,8"
-      RowSpacing="8">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
+    <!--  Header row: Title + Select buttons (outside card)  -->
+    <Grid Grid.Row="0"
+          Margin="0,0,0,8">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-
-      <!--  Input Directory  -->
       <TextBlock
-        Grid.Row="0"
-        Grid.Column="0"
-        Margin="0,0,12,0"
-        VerticalAlignment="Center"
-        Text="Input Directory" />
-      <TextBox
-        x:Name="InputDirectoryTextBox"
-        Grid.Row="0"
+        Style="{StaticResource SubtitleTextBlockStyle}"
+        Text="Minidump Batch Carver" />
+      <StackPanel
         Grid.Column="1"
-        Margin="0,0,8,0"
-        PlaceholderText="Select or enter a folder containing .dmp files..."
-        TextChanged="InputDirectoryTextBox_TextChanged" />
-      <Button
-        Grid.Row="0"
-        Grid.Column="2"
-        Click="BrowseInputButton_Click"
-        Content="Browse..." />
-
-      <!--  Output Directory  -->
-      <TextBlock
-        Grid.Row="1"
-        Grid.Column="0"
-        Margin="0,0,12,0"
-        VerticalAlignment="Center"
-        Text="Output Directory" />
-      <TextBox
-        x:Name="OutputDirectoryTextBox"
-        Grid.Row="1"
-        Grid.Column="1"
-        Margin="0,0,8,0"
-        PlaceholderText="Select or enter output directory..."
-        TextChanged="OutputDirectoryTextBox_TextChanged" />
-      <Button
-        Grid.Row="1"
-        Grid.Column="2"
-        Click="BrowseOutputButton_Click"
-        Content="Browse..." />
+        Style="{StaticResource SelectButtonsPanelStyle}">
+        <Button
+          Click="SelectAllButton_Click"
+          Content="Select All" />
+        <Button
+          Click="SelectNoneButton_Click"
+          Content="Select None" />
+      </StackPanel>
     </Grid>
 
-    <!--  Progress Bar  -->
-    <ProgressBar
-      x:Name="BatchProgressBar"
-      Grid.Row="1"
-      Margin="0,0,0,8"
-      Visibility="Collapsed"
-      Value="0" />
-
-    <!--  MIDDLE: Dump Files List - semi-transparent for Mica  -->
+    <!--  Dump Files List Card  -->
     <Border
-      Grid.Row="2"
-      Padding="8"
-      Background="{ThemeResource CardBackgroundBrush}"
-      CornerRadius="8">
+      Grid.Row="1"
+      Style="{StaticResource CardBorderStyle}">
       <Grid>
         <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0"
-              Margin="0,0,0,8">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <TextBlock
-            Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Dump Files" />
-          <StackPanel
-            Grid.Column="1"
-            Orientation="Horizontal"
-            Spacing="8">
-            <Button
-              Click="SelectAllButton_Click"
-              Content="Select All" />
-            <Button
-              Click="SelectNoneButton_Click"
-              Content="Select None" />
-          </StackPanel>
-        </Grid>
-
         <!--  Sortable column headers  -->
         <Grid
-          Grid.Row="1"
-          Margin="0,0,0,4"
-          Padding="8,4"
-          Background="{ThemeResource SystemControlBackgroundListLowBrush}"
-          CornerRadius="4">
+          Grid.Row="0"
+          Style="{StaticResource ColumnHeaderGridStyle}">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="40" />
             <ColumnDefinition Width="*"
@@ -134,10 +66,7 @@
             Text="" />
           <Button
             Grid.Column="1"
-            Padding="0"
-            HorizontalAlignment="Left"
-            Background="Transparent"
-            BorderThickness="0"
+            Style="{StaticResource SortableColumnHeaderButtonStyle}"
             Click="SortByFilename_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
@@ -145,17 +74,12 @@
                          Text="Filename" />
               <FontIcon
                 x:Name="FilenameSortIcon"
-                FontSize="10"
-                Glyph=""
-                Visibility="Collapsed" />
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
           <Button
             Grid.Column="2"
-            Padding="0"
-            HorizontalAlignment="Left"
-            Background="Transparent"
-            BorderThickness="0"
+            Style="{StaticResource SortableColumnHeaderButtonStyle}"
             Click="SortBySize_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
@@ -163,17 +87,12 @@
                          Text="Size" />
               <FontIcon
                 x:Name="SizeSortIcon"
-                FontSize="10"
-                Glyph=""
-                Visibility="Collapsed" />
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
           <Button
             Grid.Column="3"
-            Padding="0"
-            HorizontalAlignment="Left"
-            Background="Transparent"
-            BorderThickness="0"
+            Style="{StaticResource SortableColumnHeaderButtonStyle}"
             Click="SortByStatus_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
@@ -181,17 +100,15 @@
                          Text="Status" />
               <FontIcon
                 x:Name="StatusSortIcon"
-                FontSize="10"
-                Glyph=""
-                Visibility="Collapsed" />
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
         </Grid>
 
         <ListView
           x:Name="DumpFilesListView"
-          Grid.Row="2"
-          SelectionMode="None">
+          Grid.Row="1"
+          Style="{StaticResource FileListViewStyle}">
           <ListView.ItemTemplate>
             <DataTemplate x:DataType="local:DumpFileEntry">
               <Grid Padding="8,4">
@@ -234,9 +151,68 @@
       </Grid>
     </Border>
 
-    <!--  BOTTOM: File Types, Options, and Process Button - transparent for Mica  -->
+    <!--  Progress Bar (above I/O)  -->
+    <ProgressBar
+      x:Name="BatchProgressBar"
+      Grid.Row="2"
+      Style="{StaticResource TabProgressBarStyle}" />
+
+    <!--  Input/Output Section  -->
     <Grid
       Grid.Row="3"
+      Style="{StaticResource IoSectionGridStyle}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <!--  Input Directory  -->
+      <TextBlock
+        Grid.Row="0"
+        Grid.Column="0"
+        Style="{StaticResource IoLabelStyle}"
+        Text="Input Directory" />
+      <TextBox
+        x:Name="InputDirectoryTextBox"
+        Grid.Row="0"
+        Grid.Column="1"
+        Style="{StaticResource IoTextBoxStyle}"
+        PlaceholderText="Select or enter a folder containing .dmp files..."
+        TextChanged="InputDirectoryTextBox_TextChanged" />
+      <Button
+        Grid.Row="0"
+        Grid.Column="2"
+        Click="BrowseInputButton_Click"
+        Content="Browse..." />
+
+      <!--  Output Directory  -->
+      <TextBlock
+        Grid.Row="1"
+        Grid.Column="0"
+        Style="{StaticResource IoLabelStyle}"
+        Text="Output Directory" />
+      <TextBox
+        x:Name="OutputDirectoryTextBox"
+        Grid.Row="1"
+        Grid.Column="1"
+        Style="{StaticResource IoTextBoxStyle}"
+        PlaceholderText="Select or enter output directory..."
+        TextChanged="OutputDirectoryTextBox_TextChanged" />
+      <Button
+        Grid.Row="1"
+        Grid.Column="2"
+        Click="BrowseOutputButton_Click"
+        Content="Browse..." />
+    </Grid>
+
+    <!--  BOTTOM: File Types, Options, and Process Button  -->
+    <Grid
+      Grid.Row="4"
       Margin="0,8,0,0">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
@@ -334,11 +310,6 @@
           Grid.Column="1"
           Orientation="Horizontal"
           Spacing="8">
-          <TextBlock
-            x:Name="StatusTextBlock"
-            VerticalAlignment="Center"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            Text="" />
           <Button
             x:Name="CancelButton"
             MinWidth="80"

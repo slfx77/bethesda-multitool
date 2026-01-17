@@ -129,18 +129,53 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
     private readonly DdxFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
     private List<DdxFileEntry> _ddxFiles = [];
+    private bool _dependencyCheckDone;
     private CancellationTokenSource? _scanCts;
 
     public DdxConverterTab()
     {
         InitializeComponent();
         SetupTextBoxContextMenus();
+        Loaded += DdxConverterTab_Loaded;
     }
+
+    /// <summary>
+    ///     Helper to route status text to the global status bar.
+    /// </summary>
+    private StatusTextHelper StatusTextBlock => new();
 
     public void Dispose()
     {
         _cts?.Dispose();
         _scanCts?.Dispose();
+    }
+
+    private async void DdxConverterTab_Loaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= DdxConverterTab_Loaded;
+
+        // Check dependencies on first load
+        if (!_dependencyCheckDone)
+        {
+            _dependencyCheckDone = true;
+            await CheckDependenciesAsync();
+        }
+    }
+
+    private async Task CheckDependenciesAsync()
+    {
+        // Only show the dialog once per session
+        if (DependencyChecker.DdxConverterDependenciesShown) return;
+
+        // Small delay to ensure the UI is fully loaded
+        await Task.Delay(100);
+
+        var result = DependencyChecker.CheckDdxConverterDependencies();
+        if (!result.AllAvailable)
+        {
+            DependencyChecker.DdxConverterDependenciesShown = true;
+            await DependencyDialogHelper.ShowIfMissingAsync(result, XamlRoot);
+        }
     }
 
     private void SetupTextBoxContextMenus()
@@ -161,7 +196,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
     {
         var total = _ddxFiles.Count;
         var selected = _ddxFiles.Count(f => f.IsSelected);
-        FileCountTextBlock.Text = $"({selected}/{total} selected)";
+        StatusTextBlock.Text = $"{selected} of {total} files selected";
     }
 
     private async Task ShowDialogAsync(string title, string message)
@@ -259,9 +294,9 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
             return;
         }
 
-        ScanProgressBar.Visibility = Visibility.Visible;
-        ScanProgressBar.IsIndeterminate = true;
-        ScanProgressBar.Value = 0;
+        ConversionProgressBar.Visibility = Visibility.Visible;
+        ConversionProgressBar.IsIndeterminate = true;
+        ConversionProgressBar.Value = 0;
 
         try
         {
@@ -269,10 +304,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
             var entries = await ScanAndCreateDdxEntriesAsync(directory, token);
 
             // Check if cancelled before updating UI
-            if (token.IsCancellationRequested)
-            {
-                return;
-            }
+            if (token.IsCancellationRequested) return;
 
             // Only the ItemsSource assignment happens on UI thread
             _allDdxFiles.Clear();
@@ -296,8 +328,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
         }
         finally
         {
-            ScanProgressBar.Visibility = Visibility.Collapsed;
-            ScanProgressBar.IsIndeterminate = true;
+            ConversionProgressBar.Visibility = Visibility.Collapsed;
+            ConversionProgressBar.IsIndeterminate = false;
         }
     }
 
@@ -308,10 +340,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
         {
             var ddxFiles = Directory.EnumerateFiles(directory, "*.ddx", SearchOption.AllDirectories).ToArray();
 
-            if (ddxFiles.Length == 0)
-            {
-                return Array.Empty<DdxFileEntry>();
-            }
+            if (ddxFiles.Length == 0) return Array.Empty<DdxFileEntry>();
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -346,15 +375,10 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
                     // Update progress every 100 files
                     var current = Interlocked.Increment(ref processedCount);
                     if (current % 100 == 0 || current == ddxFiles.Length)
-                    {
                         DispatcherQueue.TryEnqueue(() =>
                         {
-                            if (current > ScanProgressBar.Value)
-                            {
-                                ScanProgressBar.Value = current;
-                            }
+                            if (current > ConversionProgressBar.Value) ConversionProgressBar.Value = current;
                         });
-                    }
                 });
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -386,14 +410,12 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
     private static string DetermineDdxFormat(ReadOnlySpan<byte> header)
     {
         if (header[0] == '3' && header[1] == 'X' && header[2] == 'D')
-        {
             return header[3] switch
             {
                 (byte)'O' => "3XDO",
                 (byte)'R' => "3XDR",
                 _ => "Invalid"
             };
-        }
 
         return "Invalid";
     }
@@ -402,9 +424,9 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            ScanProgressBar.IsIndeterminate = false;
-            ScanProgressBar.Maximum = fileCount;
-            ScanProgressBar.Value = 0;
+            ConversionProgressBar.IsIndeterminate = false;
+            ConversionProgressBar.Maximum = fileCount;
+            ConversionProgressBar.Value = 0;
             StatusTextBlock.Text = $"Scanning {fileCount} DDX files...";
         });
     }
@@ -462,6 +484,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
         UpdateButtonStates();
 
         ConversionProgressBar.Visibility = Visibility.Visible;
+        ConversionProgressBar.IsIndeterminate = false;
         ConversionProgressBar.Maximum = selectedFiles.Count;
         ConversionProgressBar.Value = 0;
 
@@ -537,10 +560,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
         }
 
         // Mark all files as converting
-        foreach (var file in filesToConvert)
-        {
-            file.Status = "Converting...";
-        }
+        foreach (var file in filesToConvert) file.Status = "Converting...";
 
         StatusTextBlock.Text = $"Converting {filesToConvert.Count} files using DDXConv batch mode...";
 
@@ -552,10 +572,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
             void OnFileCompleted(string inputPath, string status, string? error)
             {
                 // Find the entry for this file
-                if (!filePathToEntry.TryGetValue(inputPath, out var entry))
-                {
-                    return;
-                }
+                if (!filePathToEntry.TryGetValue(inputPath, out var entry)) return;
 
                 // Update on UI thread
                 DispatcherQueue.TryEnqueue(() =>
@@ -590,10 +607,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
                 _cts.Token);
 
             // Mark any remaining files that didn't get a callback (shouldn't happen with --progress flag)
-            foreach (var file in filesToConvert.Where(f => f.Status == "Converting..."))
-            {
-                file.Status = "Unknown";
-            }
+            foreach (var file in filesToConvert.Where(f => f.Status == "Converting...")) file.Status = "Unknown";
 
             var statusParts = new List<string>();
             if (converted > 0) statusParts.Add($"Converted: {converted}");
@@ -607,9 +621,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
         {
             // Mark remaining files as cancelled
             foreach (var file in filesToConvert.Where(f => f.Status is "Converting..." or "Queued"))
-            {
                 file.Status = "Cancelled";
-            }
 
             StatusTextBlock.Text = "Conversion cancelled.";
         }

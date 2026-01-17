@@ -183,12 +183,8 @@ public static class Program
     private static string? GetFlagValue(string[] args, string flag)
     {
         for (var i = 0; i < args.Length - 1; i++)
-        {
             if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
-            {
                 return args[i + 1];
-            }
-        }
 
         return null;
     }

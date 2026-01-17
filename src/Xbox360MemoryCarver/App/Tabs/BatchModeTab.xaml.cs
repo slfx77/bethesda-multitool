@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using Windows.Storage.Pickers;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -15,6 +16,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     private readonly ObservableCollection<DumpFileEntry> _dumpFiles = [];
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
     private CancellationTokenSource? _cts;
+    private bool _dependencyCheckDone;
     private bool _sortAscending = true;
     private BatchSortColumn _sortColumn = BatchSortColumn.None;
 
@@ -25,11 +27,45 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         InitializeFileTypeCheckboxes();
         SetupTextBoxContextMenus();
         ParallelCountBox.Maximum = Environment.ProcessorCount;
+        Loaded += BatchModeTab_Loaded;
     }
+
+    /// <summary>
+    ///     Helper to route status text to the global status bar.
+    /// </summary>
+    private StatusTextHelper StatusTextBlock => new();
 
     public void Dispose()
     {
         _cts?.Dispose();
+    }
+
+    private async void BatchModeTab_Loaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= BatchModeTab_Loaded;
+
+        // Check dependencies on first load
+        if (!_dependencyCheckDone)
+        {
+            _dependencyCheckDone = true;
+            await CheckDependenciesAsync();
+        }
+    }
+
+    private async Task CheckDependenciesAsync()
+    {
+        // Only show the dialog once per session (shared with SingleFileTab)
+        if (DependencyChecker.CarverDependenciesShown) return;
+
+        // Small delay to ensure the UI is fully loaded
+        await Task.Delay(100);
+
+        var result = DependencyChecker.CheckCarverDependencies();
+        if (!result.AllAvailable)
+        {
+            DependencyChecker.CarverDependenciesShown = true;
+            await DependencyDialogHelper.ShowIfMissingAsync(result, XamlRoot);
+        }
     }
 
     private void SetupTextBoxContextMenus()
@@ -57,9 +93,9 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     }
 
     // XAML event handlers require instance methods - cannot be made static
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+    [SuppressMessage("Performance", "CA1822:Mark members as static",
         Justification = "XAML event handler requires instance method")]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarQube", "S2325:Methods should be static",
+    [SuppressMessage("SonarQube", "S2325:Methods should be static",
         Justification = "XAML event handler requires instance method")]
     private void ParallelCountBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
@@ -69,13 +105,9 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
     private async Task ShowDialogAsync(string title, string message, bool isError = false)
     {
         if (isError)
-        {
             await ErrorDialogHelper.ShowErrorAsync(title, message, XamlRoot);
-        }
         else
-        {
             await ErrorDialogHelper.ShowInfoAsync(title, message, XamlRoot);
-        }
     }
 
     private async void BrowseInputButton_Click(object sender, RoutedEventArgs e)
@@ -213,7 +245,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         catch (Exception ex)
         {
             await ShowDialogAsync("Batch Processing Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
-                isError: true);
+                true);
         }
         finally
         {

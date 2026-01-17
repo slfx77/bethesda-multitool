@@ -139,20 +139,15 @@ internal sealed class HexSearcher
     {
         var searchEnd = bufferLength - pattern.Length + 1;
         for (var i = 0; i < searchEnd && results.Count < maxResults; i++)
-        {
             if (IsPatternMatch(buffer, i, pattern))
-            {
                 results.Add(baseOffset + i);
-            }
-        }
     }
 
     private static bool IsPatternMatch(byte[] buffer, int offset, byte[] pattern)
     {
         for (var j = 0; j < pattern.Length; j++)
-        {
-            if (buffer[offset + j] != pattern[j]) return false;
-        }
+            if (buffer[offset + j] != pattern[j])
+                return false;
 
         return true;
     }
@@ -192,12 +187,8 @@ internal sealed class HexSearcher
     {
         var searchEnd = bufferLength - upperPattern.Length + 1;
         for (var i = 0; i < searchEnd && results.Count < maxResults; i++)
-        {
             if (IsCaseInsensitiveMatch(buffer, i, upperPattern, lowerPattern))
-            {
                 results.Add(baseOffset + i);
-            }
-        }
     }
 
     private static bool IsCaseInsensitiveMatch(byte[] buffer, int offset, byte[] upperPattern, byte[] lowerPattern)

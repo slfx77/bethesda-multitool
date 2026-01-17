@@ -249,9 +249,7 @@ public partial class DdxSubprocessConverter
             // Parse "[PROGRESS] START count" line
             if (e.Data.StartsWith("[PROGRESS] START ", StringComparison.Ordinal)
                 && int.TryParse(e.Data.AsSpan(17), out var total))
-            {
                 result.TotalFiles = total;
-            }
         };
 
         process.ErrorDataReceived += (_, e) =>

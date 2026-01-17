@@ -524,13 +524,13 @@ internal sealed partial class NifConverter
             // points[numStrips][stripLengths[i]]
             if (hasPoints != 0)
                 for (var i = 0; i < numStrips; i++)
-                    for (var j = 0; j < stripLengths[i]; j++)
-                    {
-                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                            ReadUInt16BE(input, srcPos));
-                        srcPos += 2;
-                        outPos += 2;
-                    }
+                for (var j = 0; j < stripLengths[i]; j++)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                        ReadUInt16BE(input, srcPos));
+                    srcPos += 2;
+                    outPos += 2;
+                }
         }
         else if (blockType == "NiTriShapeData")
         {

@@ -5,6 +5,15 @@ namespace Xbox360MemoryCarver;
 /// </summary>
 internal sealed class CarvedFilesSorter
 {
+    public enum SortColumn
+    {
+        None,
+        Offset,
+        Length,
+        Type,
+        Filename
+    }
+
     public SortColumn CurrentColumn { get; private set; } = SortColumn.None;
 
     public bool IsAscending { get; private set; } = true;
@@ -51,30 +60,29 @@ internal sealed class CarvedFilesSorter
         };
     }
 
-    private IEnumerable<CarvedFileEntry> SortByOffset(IList<CarvedFileEntry> files) =>
-        IsAscending ? files.OrderBy(f => f.Offset) : files.OrderByDescending(f => f.Offset);
+    private IEnumerable<CarvedFileEntry> SortByOffset(IList<CarvedFileEntry> files)
+    {
+        return IsAscending ? files.OrderBy(f => f.Offset) : files.OrderByDescending(f => f.Offset);
+    }
 
-    private IEnumerable<CarvedFileEntry> SortByLength(IList<CarvedFileEntry> files) =>
-        IsAscending ? files.OrderBy(f => f.Length) : files.OrderByDescending(f => f.Length);
+    private IEnumerable<CarvedFileEntry> SortByLength(IList<CarvedFileEntry> files)
+    {
+        return IsAscending ? files.OrderBy(f => f.Length) : files.OrderByDescending(f => f.Length);
+    }
 
-    private IEnumerable<CarvedFileEntry> SortByType(IList<CarvedFileEntry> files) =>
-        IsAscending
+    private IEnumerable<CarvedFileEntry> SortByType(IList<CarvedFileEntry> files)
+    {
+        return IsAscending
             ? files.OrderBy(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset)
             : files.OrderByDescending(f => f.FileType, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset);
+    }
 
-    private IEnumerable<CarvedFileEntry> SortByFilename(IList<CarvedFileEntry> files) =>
-        IsAscending
+    private IEnumerable<CarvedFileEntry> SortByFilename(IList<CarvedFileEntry> files)
+    {
+        return IsAscending
             ? files.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
                 .ThenBy(f => f.FileName, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset)
             : files.OrderBy(f => string.IsNullOrEmpty(f.FileName) ? 1 : 0)
                 .ThenByDescending(f => f.FileName, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Offset);
-
-    public enum SortColumn
-    {
-        None,
-        Offset,
-        Length,
-        Type,
-        Filename
     }
 }

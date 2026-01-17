@@ -263,9 +263,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
 
         if (e.Key is VirtualKey.PageUp or VirtualKey.PageDown or VirtualKey.Home or VirtualKey.End or VirtualKey.Up
             or VirtualKey.Down)
-        {
             HexViewerControl_KeyDown(sender, e);
-        }
     }
 
     private void HexViewerControl_KeyDown(object sender, KeyRoutedEventArgs e)

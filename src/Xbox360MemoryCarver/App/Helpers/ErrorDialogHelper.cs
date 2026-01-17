@@ -41,10 +41,7 @@ internal static class ErrorDialogHelper
 
         var result = await dialog.ShowAsync();
 
-        if (result == ContentDialogResult.Primary)
-        {
-            ClipboardHelper.CopyText(message);
-        }
+        if (result == ContentDialogResult.Primary) ClipboardHelper.CopyText(message);
     }
 
     /// <summary>

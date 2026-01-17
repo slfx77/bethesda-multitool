@@ -124,6 +124,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     private readonly List<NifFileEntry> _allNifFiles = [];
     private readonly NifFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
+    private bool _dependencyCheckDone;
     private List<NifFileEntry> _nifFiles = []; // Using List instead of ObservableCollection for batch performance
     private CancellationTokenSource? _scanCts;
 
@@ -131,11 +132,39 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     {
         InitializeComponent();
         SetupTextBoxContextMenus();
+        Loaded += NifConverterTab_Loaded;
     }
+
+    /// <summary>
+    ///     Helper to route status text to the global status bar.
+    /// </summary>
+    private StatusTextHelper StatusTextBlock => new();
 
     public void Dispose()
     {
         _cts?.Dispose();
+    }
+
+    private async void NifConverterTab_Loaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= NifConverterTab_Loaded;
+
+        // Check dependencies on first load
+        if (!_dependencyCheckDone)
+        {
+            _dependencyCheckDone = true;
+            await CheckDependenciesAsync();
+        }
+    }
+
+    private async Task CheckDependenciesAsync()
+    {
+        // Small delay to ensure the UI is fully loaded
+        await Task.Delay(100);
+
+        var result = DependencyChecker.CheckNifConverterDependencies();
+        if (!result.AllAvailable) await DependencyDialogHelper.ShowIfMissingAsync(result, XamlRoot);
+        // NIF Converter has no external dependencies, so this will always pass
     }
 
     private void SetupTextBoxContextMenus()
@@ -156,7 +185,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     {
         var total = _nifFiles.Count;
         var selected = _nifFiles.Count(f => f.IsSelected);
-        FileCountTextBlock.Text = $"({selected}/{total} selected)";
+        StatusTextBlock.Text = $"{selected} of {total} files selected";
     }
 
     private async Task ShowDialogAsync(string title, string message)
@@ -248,9 +277,9 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
             return;
         }
 
-        ScanProgressBar.Visibility = Visibility.Visible;
-        ScanProgressBar.IsIndeterminate = true;
-        ScanProgressBar.Value = 0;
+        ConversionProgressBar.Visibility = Visibility.Visible;
+        ConversionProgressBar.IsIndeterminate = true;
+        ConversionProgressBar.Value = 0;
 
         try
         {
@@ -274,8 +303,8 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         }
         finally
         {
-            ScanProgressBar.Visibility = Visibility.Collapsed;
-            ScanProgressBar.IsIndeterminate = true;
+            ConversionProgressBar.Visibility = Visibility.Collapsed;
+            ConversionProgressBar.IsIndeterminate = false;
         }
     }
 
@@ -285,10 +314,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         return await Task.Run(() =>
         {
             var nifFiles = Directory.EnumerateFiles(directory, "*.nif", SearchOption.AllDirectories).ToList();
-            if (nifFiles.Count == 0 || cancellationToken.IsCancellationRequested)
-            {
-                return Array.Empty<NifFileEntry>();
-            }
+            if (nifFiles.Count == 0 || cancellationToken.IsCancellationRequested) return Array.Empty<NifFileEntry>();
 
             InitializeScanProgress(nifFiles.Count);
 
@@ -323,9 +349,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
                     // Update progress every 100 files
                     var current = Interlocked.Increment(ref processedCount);
                     if (current % 100 == 0 || current == nifFiles.Count)
-                    {
-                        dispatcher.TryEnqueue(() => ScanProgressBar.Value = current);
-                    }
+                        dispatcher.TryEnqueue(() => ConversionProgressBar.Value = current);
                 });
 
             return entries;
@@ -342,7 +366,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
             // Use stackalloc for small header buffer - no heap allocation
             Span<byte> headerBytes = stackalloc byte[50];
 
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 64);
+            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64);
             var bytesRead = fs.Read(headerBytes);
 
             var formatDesc = DetermineNifFormat(headerBytes[..bytesRead]);
@@ -373,9 +397,9 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            ScanProgressBar.IsIndeterminate = false;
-            ScanProgressBar.Maximum = fileCount;
-            ScanProgressBar.Value = 0;
+            ConversionProgressBar.IsIndeterminate = false;
+            ConversionProgressBar.Maximum = fileCount;
+            ConversionProgressBar.Value = 0;
             StatusTextBlock.Text = $"Scanning {fileCount} NIF files...";
         });
     }
@@ -417,6 +441,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable
         UpdateButtonStates();
 
         ConversionProgressBar.Visibility = Visibility.Visible;
+        ConversionProgressBar.IsIndeterminate = false;
         ConversionProgressBar.Maximum = selectedFiles.Count;
         ConversionProgressBar.Value = 0;
 

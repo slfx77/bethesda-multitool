@@ -6,165 +6,61 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:Xbox360MemoryCarver">
 
-  <Grid Padding="16">
+  <Grid Padding="16"
+        VerticalAlignment="Stretch">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Header with description -->
-    <StackPanel Grid.Row="0"
-                Margin="0,0,0,16">
-      <TextBlock
-        Style="{StaticResource SubtitleTextBlockStyle}"
-        Text="NIF Converter" />
-      <TextBlock
-        Margin="0,4,0,0"
-        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-        TextWrapping="Wrap"
-        Text="Convert Xbox 360 NIF files to PC format." />
-    </StackPanel>
-
-    <!-- Input/Output Section -->
-    <Grid
-      Grid.Row="1"
-      Margin="0,0,0,8"
-      RowSpacing="8">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
+    <!-- Header row: Title + Select buttons (outside card) -->
+    <Grid Grid.Row="0"
+          Margin="0,0,0,8">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-
-      <!-- Input Directory -->
-      <TextBlock
-        Grid.Row="0"
-        Grid.Column="0"
-        Margin="0,0,12,0"
-        VerticalAlignment="Center"
-        Text="Input Directory" />
-      <TextBox
-        x:Name="InputDirectoryTextBox"
-        Grid.Row="0"
+      <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
+        <TextBlock
+          Style="{StaticResource SubtitleTextBlockStyle}"
+          Text="NIF Converter" />
+        <TextBlock
+          Style="{StaticResource TabSubtitleStyle}"
+          Text="Convert Xbox 360 NIF files to PC format." />
+      </StackPanel>
+      <StackPanel
         Grid.Column="1"
-        Margin="0,0,8,0"
-        PlaceholderText="Select or enter a folder containing Xbox 360 .nif files..."
-        TextChanged="InputDirectoryTextBox_TextChanged" />
-      <Button
-        Grid.Row="0"
-        Grid.Column="2"
-        Click="BrowseInputButton_Click"
-        Content="Browse..." />
-
-      <!-- Output Directory -->
-      <TextBlock
-        Grid.Row="1"
-        Grid.Column="0"
-        Margin="0,0,12,0"
-        VerticalAlignment="Center"
-        Text="Output Directory" />
-      <TextBox
-        x:Name="OutputDirectoryTextBox"
-        Grid.Row="1"
-        Grid.Column="1"
-        Margin="0,0,8,0"
-        PlaceholderText="Select or enter output directory for converted files..."
-        TextChanged="OutputDirectoryTextBox_TextChanged" />
-      <Button
-        Grid.Row="1"
-        Grid.Column="2"
-        Click="BrowseOutputButton_Click"
-        Content="Browse..." />
+        Style="{StaticResource SelectButtonsPanelStyle}">
+        <Button
+          Click="SelectAllButton_Click"
+          Content="Select All" />
+        <Button
+          Click="SelectNoneButton_Click"
+          Content="Select None" />
+      </StackPanel>
     </Grid>
 
-    <!-- Progress Section -->
-    <Grid Grid.Row="2"
-          Margin="0,0,0,8">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <ProgressBar
-        x:Name="ScanProgressBar"
-        Grid.Row="0"
-        Margin="0,0,0,4"
-        Visibility="Collapsed"
-        Value="0" />
-      <ProgressBar
-        x:Name="ConversionProgressBar"
-        Grid.Row="1"
-        Margin="0,0,0,4"
-        Visibility="Collapsed"
-        Value="0" />
-      <TextBlock
-        x:Name="StatusTextBlock"
-        Grid.Row="2"
-        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-        Text="" />
-    </Grid>
-
-    <!-- Files List -->
+    <!-- Files List Card -->
     <Border
-      Grid.Row="3"
-      Padding="8"
-      Background="{ThemeResource CardBackgroundBrush}"
-      CornerRadius="8">
+      Grid.Row="1"
+      Style="{StaticResource CardBorderStyle}">
       <Grid>
         <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0"
-              Margin="0,0,0,8">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
-            <TextBlock
-              Style="{StaticResource SubtitleTextBlockStyle}"
-              Text="NIF Files" />
-            <TextBlock
-              x:Name="FileCountTextBlock"
-              VerticalAlignment="Center"
-              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-              Text="" />
-          </StackPanel>
-          <StackPanel
-            Grid.Column="1"
-            Orientation="Horizontal"
-            Spacing="8">
-            <Button
-              Click="SelectAllButton_Click"
-              Content="Select All" />
-            <Button
-              Click="SelectNoneButton_Click"
-              Content="Select None" />
-          </StackPanel>
-        </Grid>
-
         <!-- Column headers -->
-        <Grid Grid.Row="1"
-              Margin="0,0,0,4"
-              Padding="8,4"
-              Background="{ThemeResource SystemControlBackgroundListLowBrush}"
-              CornerRadius="4">
+        <Grid Grid.Row="0"
+              Style="{StaticResource ColumnHeaderGridStyle}">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="40" />
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="80" />
-            <ColumnDefinition Width="80" />
+            <ColumnDefinition Width="120" />
             <ColumnDefinition Width="200" />
           </Grid.ColumnDefinitions>
           <TextBlock Grid.Column="0"
@@ -172,10 +68,7 @@
                      Text="" />
           <Button
             Grid.Column="1"
-            Padding="0"
-            HorizontalAlignment="Left"
-            Background="Transparent"
-            BorderThickness="0"
+            Style="{StaticResource SortableColumnHeaderButtonStyle}"
             Click="SortByFilePath_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
@@ -183,17 +76,12 @@
                          Text="File Path" />
               <FontIcon
                 x:Name="FilePathSortIcon"
-                FontSize="10"
-                Glyph=""
-                Visibility="Collapsed" />
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
           <Button
             Grid.Column="2"
-            Padding="0"
-            HorizontalAlignment="Left"
-            Background="Transparent"
-            BorderThickness="0"
+            Style="{StaticResource SortableColumnHeaderButtonStyle}"
             Click="SortBySize_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
@@ -201,17 +89,12 @@
                          Text="Size" />
               <FontIcon
                 x:Name="SizeSortIcon"
-                FontSize="10"
-                Glyph=""
-                Visibility="Collapsed" />
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
           <Button
             Grid.Column="3"
-            Padding="0"
-            HorizontalAlignment="Left"
-            Background="Transparent"
-            BorderThickness="0"
+            Style="{StaticResource SortableColumnHeaderButtonStyle}"
             Click="SortByFormat_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
@@ -219,17 +102,12 @@
                          Text="Format" />
               <FontIcon
                 x:Name="FormatSortIcon"
-                FontSize="10"
-                Glyph=""
-                Visibility="Collapsed" />
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
           <Button
             Grid.Column="4"
-            Padding="0"
-            HorizontalAlignment="Left"
-            Background="Transparent"
-            BorderThickness="0"
+            Style="{StaticResource SortableColumnHeaderButtonStyle}"
             Click="SortByStatus_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
@@ -237,9 +115,7 @@
                          Text="Status" />
               <FontIcon
                 x:Name="StatusSortIcon"
-                FontSize="10"
-                Glyph=""
-                Visibility="Collapsed" />
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
         </Grid>
@@ -247,21 +123,16 @@
         <!-- Files ListView -->
         <ListView
           x:Name="NifFilesListView"
-          Grid.Row="2"
-          SelectionMode="None">
-          <ListView.ItemsPanel>
-            <ItemsPanelTemplate>
-              <ItemsStackPanel CacheLength="2.0" />
-            </ItemsPanelTemplate>
-          </ListView.ItemsPanel>
+          Grid.Row="1"
+          Style="{StaticResource FileListViewStyle}">
           <ListView.ItemTemplate>
             <DataTemplate x:DataType="local:NifFileEntry">
-              <Grid Margin="0,2">
+              <Grid Style="{StaticResource ListItemRowGridStyle}">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="40" />
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="80" />
-                  <ColumnDefinition Width="80" />
+                  <ColumnDefinition Width="120" />
                   <ColumnDefinition Width="200" />
                 </Grid.ColumnDefinitions>
                 <CheckBox
@@ -296,11 +167,69 @@
       </Grid>
     </Border>
 
+    <!--  Progress Bar (above I/O)  -->
+    <ProgressBar
+      x:Name="ConversionProgressBar"
+      Grid.Row="2"
+      Style="{StaticResource TabProgressBarStyle}" />
+
+    <!-- Input/Output Section -->
+    <Grid
+      Grid.Row="3"
+      Style="{StaticResource IoSectionGridStyle}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <!-- Input Directory -->
+      <TextBlock
+        Grid.Row="0"
+        Grid.Column="0"
+        Style="{StaticResource IoLabelStyle}"
+        Text="Input Directory" />
+      <TextBox
+        x:Name="InputDirectoryTextBox"
+        Grid.Row="0"
+        Grid.Column="1"
+        Style="{StaticResource IoTextBoxStyle}"
+        PlaceholderText="Select or enter a folder containing Xbox 360 .nif files..."
+        TextChanged="InputDirectoryTextBox_TextChanged" />
+      <Button
+        Grid.Row="0"
+        Grid.Column="2"
+        Click="BrowseInputButton_Click"
+        Content="Browse..." />
+
+      <!-- Output Directory -->
+      <TextBlock
+        Grid.Row="1"
+        Grid.Column="0"
+        Style="{StaticResource IoLabelStyle}"
+        Text="Output Directory" />
+      <TextBox
+        x:Name="OutputDirectoryTextBox"
+        Grid.Row="1"
+        Grid.Column="1"
+        Style="{StaticResource IoTextBoxStyle}"
+        PlaceholderText="Select or enter output directory for converted files..."
+        TextChanged="OutputDirectoryTextBox_TextChanged" />
+      <Button
+        Grid.Row="1"
+        Grid.Column="2"
+        Click="BrowseOutputButton_Click"
+        Content="Browse..." />
+    </Grid>
+
     <!-- Bottom Action Bar -->
     <Grid
       Grid.Row="4"
-      Margin="0,12,0,0"
-      ColumnSpacing="16">
+      Style="{StaticResource ActionBarGridStyle}">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />

@@ -9,82 +9,19 @@
   xmlns:hexviewer="using:Xbox360MemoryCarver"
   xmlns:local="using:Xbox360MemoryCarver">
 
-  <Grid Padding="16">
+  <Grid Padding="16"
+        VerticalAlignment="Stretch">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!--  TOP: File Input Section - transparent for Mica  -->
-    <Grid
-      Grid.Row="0"
-      Margin="0,0,0,8"
-      RowSpacing="8">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-
-      <!--  Minidump Path  -->
-      <TextBlock
-        Grid.Row="0"
-        Grid.Column="0"
-        Margin="0,0,12,0"
-        VerticalAlignment="Center"
-        Text="Minidump Path" />
-      <TextBox
-        x:Name="MinidumpPathTextBox"
-        Grid.Row="0"
-        Grid.Column="1"
-        Margin="0,0,8,0"
-        AllowDrop="True"
-        PlaceholderText="Select or enter a .dmp file path..."
-        TextChanged="MinidumpPathTextBox_TextChanged" />
-      <Button
-        Grid.Row="0"
-        Grid.Column="2"
-        Click="OpenMinidumpButton_Click"
-        Content="Browse..." />
-
-      <!--  Output Directory  -->
-      <TextBlock
-        Grid.Row="1"
-        Grid.Column="0"
-        Margin="0,0,12,0"
-        VerticalAlignment="Center"
-        Text="Output Directory" />
-      <TextBox
-        x:Name="OutputPathTextBox"
-        Grid.Row="1"
-        Grid.Column="1"
-        Margin="0,0,8,0"
-        AllowDrop="True"
-        PlaceholderText="Select or enter output directory..."
-        TextChanged="OutputPathTextBox_TextChanged" />
-      <Button
-        Grid.Row="1"
-        Grid.Column="2"
-        Click="BrowseOutputButton_Click"
-        Content="Browse..." />
-    </Grid>
-
-    <!--  Progress Bar  -->
-    <ProgressBar
-      x:Name="AnalysisProgressBar"
-      Grid.Row="1"
-      Margin="0,0,0,8"
-      IsIndeterminate="True"
-      Visibility="Collapsed" />
-
-    <!--  MIDDLE: Memory Map and Discovered Files side-by-side - darker semi-transparent for Mica  -->
-    <Grid Grid.Row="2">
+    <!--  Header row: Titles (outside cards)  -->
+    <Grid Grid.Row="0"
+          Margin="0,0,0,8">
       <Grid.ColumnDefinitions>
         <ColumnDefinition
           Width="*"
@@ -95,60 +32,56 @@
           MinWidth="400" />
       </Grid.ColumnDefinitions>
 
-      <!--  Memory Map (Hex Viewer) - always dark like code editors  -->
+      <TextBlock
+        Grid.Column="0"
+        VerticalAlignment="Bottom"
+        Style="{StaticResource SubtitleTextBlockStyle}"
+        Text="Minidump Analyzer" />
+
+      <TextBlock
+        Grid.Column="2"
+        VerticalAlignment="Bottom"
+        Style="{StaticResource SubtitleTextBlockStyle}"
+        Text="Discovered Files" />
+    </Grid>
+
+    <!--  MIDDLE: Memory Map and Discovered Files side-by-side  -->
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition
+          Width="*"
+          MinWidth="500" />
+        <ColumnDefinition Width="8" />
+        <ColumnDefinition
+          Width="*"
+          MinWidth="400" />
+      </Grid.ColumnDefinitions>
+
+      <!--  Hex Viewer - always dark like code editors  -->
       <Border
         Grid.Column="0"
-        Padding="8"
-        Background="#FF1E1E1E"
-        CornerRadius="8">
-        <Grid>
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-          </Grid.RowDefinitions>
-
-          <TextBlock
-            Grid.Row="0"
-            Margin="0,0,0,8"
-            Foreground="White"
-            Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Memory Map" />
-
-          <hexviewer:HexViewerControl
-            x:Name="HexViewer"
-            Grid.Row="1" />
-        </Grid>
+        Style="{StaticResource DarkCardBorderStyle}">
+        <hexviewer:HexViewerControl
+          x:Name="HexViewer" />
       </Border>
 
       <!--  Splitter space  -->
       <controls:ContentPresenter Grid.Column="1" />
 
-      <!--  Discovered Files Table  -->
+      <!--  Files Table Card  -->
       <Border
         Grid.Column="2"
-        Padding="8"
-        Background="{ThemeResource CardBackgroundBrush}"
-        CornerRadius="8">
+        Style="{StaticResource CardBorderStyle}">
         <Grid>
           <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
           </Grid.RowDefinitions>
 
-          <TextBlock
-            Grid.Row="0"
-            Margin="0,0,0,8"
-            Style="{StaticResource SubtitleTextBlockStyle}"
-            Text="Discovered Files" />
-
           <!--  Sticky column headers  -->
           <Grid
-            Grid.Row="1"
-            Margin="0,0,0,4"
-            Padding="8,4"
-            Background="{ThemeResource SystemControlBackgroundListLowBrush}"
-            CornerRadius="4">
+            Grid.Row="0"
+            Style="{StaticResource ColumnHeaderGridStyle}">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="90" />
               <ColumnDefinition Width="70" />
@@ -158,10 +91,7 @@
             </Grid.ColumnDefinitions>
             <Button
               Grid.Column="0"
-              Padding="0"
-              HorizontalAlignment="Left"
-              Background="Transparent"
-              BorderThickness="0"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
               Click="SortByOffset_Click">
               <StackPanel
                 Orientation="Horizontal"
@@ -171,17 +101,12 @@
                   Text="Offset" />
                 <FontIcon
                   x:Name="OffsetSortIcon"
-                  FontSize="10"
-                  Glyph=""
-                  Visibility="Collapsed" />
+                  Style="{StaticResource SortIconStyle}" />
               </StackPanel>
             </Button>
             <Button
               Grid.Column="1"
-              Padding="0"
-              HorizontalAlignment="Left"
-              Background="Transparent"
-              BorderThickness="0"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
               Click="SortByLength_Click">
               <StackPanel
                 Orientation="Horizontal"
@@ -191,17 +116,12 @@
                   Text="Size" />
                 <FontIcon
                   x:Name="LengthSortIcon"
-                  FontSize="10"
-                  Glyph=""
-                  Visibility="Collapsed" />
+                  Style="{StaticResource SortIconStyle}" />
               </StackPanel>
             </Button>
             <Button
               Grid.Column="2"
-              Padding="0"
-              HorizontalAlignment="Left"
-              Background="Transparent"
-              BorderThickness="0"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
               Click="SortByType_Click">
               <StackPanel
                 Orientation="Horizontal"
@@ -211,17 +131,12 @@
                   Text="Type" />
                 <FontIcon
                   x:Name="TypeSortIcon"
-                  FontSize="10"
-                  Glyph=""
-                  Visibility="Collapsed" />
+                  Style="{StaticResource SortIconStyle}" />
               </StackPanel>
             </Button>
             <Button
               Grid.Column="3"
-              Padding="0"
-              HorizontalAlignment="Left"
-              Background="Transparent"
-              BorderThickness="0"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
               Click="SortByFilename_Click">
               <StackPanel
                 Orientation="Horizontal"
@@ -231,9 +146,7 @@
                   Text="Filename" />
                 <FontIcon
                   x:Name="FilenameSortIcon"
-                  FontSize="10"
-                  Glyph=""
-                  Visibility="Collapsed" />
+                  Style="{StaticResource SortIconStyle}" />
               </StackPanel>
             </Button>
             <TextBlock
@@ -245,7 +158,7 @@
           <!--  Scrollable file list  -->
           <ListView
             x:Name="ResultsListView"
-            Grid.Row="2"
+            Grid.Row="1"
             RightTapped="ResultsListView_RightTapped"
             SelectionChanged="ResultsListView_SelectionChanged"
             SelectionMode="Single">
@@ -332,9 +245,71 @@
       </Border>
     </Grid>
 
-    <!--  BOTTOM: File Types, Options, and Extract Button - transparent for Mica  -->
+    <!--  Progress Bar (above I/O)  -->
+    <ProgressBar
+      x:Name="AnalysisProgressBar"
+      Grid.Row="2"
+      IsIndeterminate="True"
+      Style="{StaticResource TabProgressBarStyle}" />
+
+    <!--  Input/Output Section  -->
     <Grid
       Grid.Row="3"
+      Style="{StaticResource IoSectionGridStyle}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <!--  Minidump Path  -->
+      <TextBlock
+        Grid.Row="0"
+        Grid.Column="0"
+        Style="{StaticResource IoLabelStyle}"
+        Text="Minidump Path" />
+      <TextBox
+        x:Name="MinidumpPathTextBox"
+        Grid.Row="0"
+        Grid.Column="1"
+        Style="{StaticResource IoTextBoxStyle}"
+        AllowDrop="True"
+        PlaceholderText="Select or enter a .dmp file path..."
+        TextChanged="MinidumpPathTextBox_TextChanged" />
+      <Button
+        Grid.Row="0"
+        Grid.Column="2"
+        Click="OpenMinidumpButton_Click"
+        Content="Browse..." />
+
+      <!--  Output Directory  -->
+      <TextBlock
+        Grid.Row="1"
+        Grid.Column="0"
+        Style="{StaticResource IoLabelStyle}"
+        Text="Output Directory" />
+      <TextBox
+        x:Name="OutputPathTextBox"
+        Grid.Row="1"
+        Grid.Column="1"
+        Style="{StaticResource IoTextBoxStyle}"
+        AllowDrop="True"
+        PlaceholderText="Select or enter output directory..."
+        TextChanged="OutputPathTextBox_TextChanged" />
+      <Button
+        Grid.Row="1"
+        Grid.Column="2"
+        Click="BrowseOutputButton_Click"
+        Content="Browse..." />
+    </Grid>
+
+    <!--  BOTTOM: File Types, Options, and Extract Button  -->
+    <Grid
+      Grid.Row="4"
       Margin="0,8,0,0">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />

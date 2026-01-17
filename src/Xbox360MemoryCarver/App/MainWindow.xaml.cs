@@ -10,12 +10,13 @@ using Microsoft.UI.Xaml.Media;
 namespace Xbox360MemoryCarver;
 
 /// <summary>
-///     Main application window with tabbed interface.
+///     Main application window with NavigationView sidebar.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
     public MainWindow()
     {
+        Instance = this;
         try
         {
             Console.WriteLine("[MainWindow] Constructor starting...");
@@ -24,7 +25,7 @@ public sealed partial class MainWindow : Window
 
             // Set minimum window size
             var appWindow = AppWindow;
-            appWindow.Resize(new SizeInt32(1400, 900));
+            appWindow.Resize(new SizeInt32(1450, 900));
 
             // Center the window
             var displayArea = DisplayArea.GetFromWindowId(
@@ -43,9 +44,6 @@ public sealed partial class MainWindow : Window
             // Extend content into title bar and set up drag region
             SetupTitleBar();
 
-            // Handle tab selection changes
-            MainTabView.SelectionChanged += MainTabView_SelectionChanged;
-
             Console.WriteLine("[MainWindow] Constructor complete");
         }
         catch (Exception ex)
@@ -54,6 +52,8 @@ public sealed partial class MainWindow : Window
             throw;
         }
     }
+
+    public static MainWindow? Instance { get; private set; }
 
     private void TrySetMicaBackdrop()
     {
@@ -86,9 +86,7 @@ public sealed partial class MainWindow : Window
 
         // Listen for theme changes
         if (Content is FrameworkElement rootElement)
-        {
             rootElement.ActualThemeChanged += (s, e) => UpdateCaptionButtonColors();
-        }
 
         Console.WriteLine("[MainWindow] Title bar extended with custom drag region");
     }
@@ -96,10 +94,7 @@ public sealed partial class MainWindow : Window
     private void UpdateCaptionButtonColors()
     {
         var titleBar = AppWindow.TitleBar;
-        if (titleBar == null)
-        {
-            return;
-        }
+        if (titleBar == null) return;
 
         // Detect current theme
         var isDark = (Content as FrameworkElement)?.ActualTheme == ElementTheme.Dark
@@ -132,13 +127,47 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
     }
 
-    private void MainTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        var selectedIndex = MainTabView.SelectedIndex;
+        if (args.SelectedItem is NavigationViewItem selectedItem)
+        {
+            var tag = selectedItem.Tag?.ToString();
 
-        SingleFileTabContent.Visibility = selectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
-        BatchModeTabContent.Visibility = selectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
-        NifConverterTabContent.Visibility = selectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
-        DdxConverterTabContent.Visibility = selectedIndex == 3 ? Visibility.Visible : Visibility.Collapsed;
+            // Hide all content
+            SingleFileTabContent.Visibility = Visibility.Collapsed;
+            BatchModeTabContent.Visibility = Visibility.Collapsed;
+            NifConverterTabContent.Visibility = Visibility.Collapsed;
+            DdxConverterTabContent.Visibility = Visibility.Collapsed;
+
+            // Clear status bar when switching tabs
+            SetStatus("");
+
+            // Show selected content
+            switch (tag)
+            {
+                case "SingleFile":
+                    SingleFileTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "BatchMode":
+                    BatchModeTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "NifConverter":
+                    NifConverterTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "DdxConverter":
+                    DdxConverterTabContent.Visibility = Visibility.Visible;
+                    break;
+            }
+
+            Console.WriteLine($"[MainWindow] Navigated to: {tag}");
+        }
+    }
+
+    /// <summary>
+    ///     Updates the global status bar text.
+    /// </summary>
+    public void SetStatus(string message)
+    {
+        GlobalStatusTextBlock.Text = message;
     }
 }

@@ -84,7 +84,6 @@ internal sealed class HexRowRenderer
     private void RenderHexRow(byte[] buffer, int bufferOffset, long rowOffset, int rowBytes)
     {
         for (var i = 0; i < BytesPerRow; i++)
-        {
             if (i < rowBytes && bufferOffset + i < buffer.Length)
             {
                 var byteOffset = rowOffset + i;
@@ -115,7 +114,6 @@ internal sealed class HexRowRenderer
             {
                 _hexTextBlock.Inlines.Add(new Run { Text = "   ", Foreground = TextBrush });
             }
-        }
     }
 
     private static void RenderAsciiRow(StringBuilder asciiBuilder, byte[] buffer, int bufferOffset, int rowBytes)

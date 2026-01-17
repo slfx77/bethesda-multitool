@@ -140,6 +140,27 @@ dotnet run --project src/DDXConv/DDXConv -- texture.ddx output.dds
 dotnet run --project src/DDXConv/DDXConv -- ddx_folder/ output_folder/
 ```
 
+## External Dependencies
+
+Some features require external tools or libraries. The GUI will show a notification on startup if any are missing.
+
+### Microsoft XNA Framework 4.0 (Required for DDX conversion)
+
+DDX texture conversion requires `XnaNative.dll` from the Microsoft XNA Framework:
+
+- **Download**: [Microsoft XNA Framework Redistributable 4.0](https://www.microsoft.com/en-us/download/details.aspx?id=20914)
+- **Affected features**: DDX→DDS texture conversion in Memory Carver and DDX Converter tabs
+- **Without it**: DDX files will be extracted but not converted to DDS format
+
+### FFmpeg (Required for XMA audio conversion)
+
+XMA audio conversion to WAV format requires FFmpeg:
+
+- **Download**: [FFmpeg.org](https://www.ffmpeg.org/download.html)
+- **Installation**: Add the `bin` folder to your system PATH, or place `ffmpeg.exe` in `C:\ffmpeg\bin\`
+- **Affected features**: XMA→WAV audio conversion in Memory Carver tabs
+- **Without it**: XMA files will be extracted but not converted to WAV format
+
 ## Technical Details
 
 ### Xbox 360 Specifics
@@ -154,10 +175,6 @@ dotnet run --project src/DDXConv/DDXConv -- ddx_folder/ output_folder/
 - Stream type 4: `MINIDUMP_MODULE_LIST` - Loaded module info with accurate sizes
 - Stream type 9: `MINIDUMP_MEMORY64_LIST` - Memory region descriptors
 - Modules extracted from metadata have correct sizes; signature carving uses heuristics
-
-### XCompression Setup
-
-For DDX texture conversion, install Microsoft XNA Framework 4.0. The application uses `XnaNative.dll` for LZX decompression. Without it, DDX conversion will fail.
 
 ## Project Structure
 

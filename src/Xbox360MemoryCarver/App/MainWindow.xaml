@@ -4,102 +4,144 @@
   x:Class="Xbox360MemoryCarver.MainWindow"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-  xmlns:controls="using:Microsoft.UI.Xaml.Controls"
   xmlns:tabs="using:Xbox360MemoryCarver"
   Title="Xbox 360 Memory Carver">
 
   <Grid>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-    </Grid.RowDefinitions>
-
-    <!--  Custom title bar - compact, transparent for Mica  -->
+    <!--  Title bar with app name (behind NavigationView so expanded pane covers it)  -->
     <Grid
       x:Name="AppTitleBar"
-      Grid.Row="0"
-      Height="40"
+      Height="32"
+      Margin="33,0,0,0"
+      HorizontalAlignment="Stretch"
+      VerticalAlignment="Top"
       Background="Transparent">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-
-      <!--  App icon  -->
-      <Image
-        Grid.Column="0"
-        Width="16"
-        Height="16"
-        Margin="12,0,0,0"
-        VerticalAlignment="Center"
-        Source="Assets/StoreLogo.png" />
-
-      <!--  App title - vertically centered with tabs  -->
-      <TextBlock
-        Grid.Column="1"
-        Margin="-12,6,0,0"
-        VerticalAlignment="Center"
-        FontSize="12"
-        Text="Xbox 360 Memory Carver" />
-
-      <!--  Tab strip area - fixed width tabs  -->
-      <controls:TabView
-        x:Name="MainTabView"
-        Grid.Column="2"
-        Margin="8,0,0,0"
-        VerticalAlignment="Stretch"
-        Background="Transparent"
-        IsAddTabButtonVisible="False"
-        SelectedIndex="0"
-        TabWidthMode="Equal">
-        <controls:TabView.Resources />
-        <controls:TabView.TabStripHeader>
-          <Grid
-            x:Name="TabStripDragRegion"
-            Background="Transparent" />
-        </controls:TabView.TabStripHeader>
-        <controls:TabView.TabItems>
-          <controls:TabViewItem
-            Header="Single File"
-            IsClosable="False" />
-          <controls:TabViewItem
-            Header="Batch Mode"
-            IsClosable="False" />
-          <controls:TabViewItem
-            Header="NIF Converter"
-            IsClosable="False" />
-          <controls:TabViewItem
-            Header="DDX Converter"
-            IsClosable="False" />
-        </controls:TabView.TabItems>
-      </controls:TabView>
-
-      <!--  Caption buttons spacer (min/max/close)  -->
-      <Grid
-        x:Name="CaptionButtonsSpacer"
-        Grid.Column="3"
-        Width="138"
-        Background="Transparent" />
+      <StackPanel
+        Orientation="Horizontal"
+        VerticalAlignment="Center">
+        <Image
+          Width="16"
+          Height="16"
+          Margin="8,0,8,0"
+          VerticalAlignment="Center"
+          Source="Assets/StoreLogo.png" />
+        <TextBlock
+          VerticalAlignment="Center"
+          FontSize="12"
+          Text="Xbox 360 Memory Carver" />
+      </StackPanel>
     </Grid>
 
-    <!--  Main content area  -->
-    <Grid
-      Grid.Row="1"
-      Background="Transparent">
-      <tabs:SingleFileTab
-        x:Name="SingleFileTabContent"
-        Visibility="Visible" />
-      <tabs:BatchModeTab
-        x:Name="BatchModeTabContent"
-        Visibility="Collapsed" />
-      <tabs:NifConverterTab
-        x:Name="NifConverterTabContent"
-        Visibility="Collapsed" />
-      <tabs:DdxConverterTab
-        x:Name="DdxConverterTabContent"
-        Visibility="Collapsed" />
-    </Grid>
+    <!--  Navigation View with hamburger menu - fills entire window  -->
+    <NavigationView
+      x:Name="NavView"
+      IsBackButtonVisible="Collapsed"
+      IsPaneToggleButtonVisible="True"
+      IsSettingsVisible="False"
+      IsTitleBarAutoPaddingEnabled="True"
+      OpenPaneLength="200"
+      PaneDisplayMode="LeftCompact"
+      SelectionChanged="NavView_SelectionChanged">
+
+      <!--  Make NavigationView content area transparent so Mica shows in title bar  -->
+      <NavigationView.Resources>
+      </NavigationView.Resources>
+
+      <NavigationView.MenuItems>
+        <NavigationViewItemHeader Content="Minidump" />
+
+        <!--  Single File Analysis  -->
+        <NavigationViewItem
+          Content="Single File"
+          IsSelected="True"
+          Tag="SingleFile">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE8A5;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
+        <!--  Batch Mode  -->
+        <NavigationViewItem
+          Content="Batch Mode"
+          Tag="BatchMode">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE8B7;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
+        <NavigationViewItemSeparator />
+
+        <NavigationViewItemHeader Content="Converters" />
+
+        <!--  NIF Converter  -->
+        <NavigationViewItem
+          Content="NIF Converter"
+          Tag="NifConverter">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xF158;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+
+        <!--  DDX Converter  -->
+        <NavigationViewItem
+          Content="DDX Converter"
+          Tag="DdxConverter">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xEB9F;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+      </NavigationView.MenuItems>
+
+      <!--  Main content area  -->
+      <Grid Background="Transparent">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="32" />
+          <!--  Window controls area (title bar)  -->
+          <RowDefinition Height="*" />
+          <!--  Content  -->
+          <RowDefinition Height="Auto" />
+          <!--  Status bar  -->
+        </Grid.RowDefinitions>
+
+        <!--  Tab content with rounded corners at top-left and bottom-left  -->
+        <Border
+          Grid.Row="1"
+          Background="{ThemeResource LayerOnMicaBaseAltFillColorDefaultBrush}"
+          CornerRadius="8,0,0,8">
+          <Grid>
+            <tabs:SingleFileTab
+              x:Name="SingleFileTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Visible" />
+            <tabs:BatchModeTab
+              x:Name="BatchModeTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Collapsed" />
+            <tabs:NifConverterTab
+              x:Name="NifConverterTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Collapsed" />
+            <tabs:DdxConverterTab
+              x:Name="DdxConverterTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Collapsed" />
+          </Grid>
+        </Border>
+
+        <!--  Status bar (same transparent Mica as title bar)  -->
+        <Grid
+          Grid.Row="2"
+          Height="24"
+          Padding="15,0,16,0"
+          Background="Transparent">
+          <TextBlock
+            x:Name="GlobalStatusTextBlock"
+            VerticalAlignment="Center"
+            FontSize="12"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="" />
+        </Grid>
+      </Grid>
+    </NavigationView>
   </Grid>
 </Window>

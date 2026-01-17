@@ -19,6 +19,8 @@ public sealed partial class SingleFileTab : UserControl
     private readonly CarvedFilesSorter _sorter = new();
     private AnalysisResult? _analysisResult;
     private CarvedFileEntry? _contextMenuTarget;
+
+    private bool _dependencyCheckDone;
     private string? _lastInputPath;
 
     public SingleFileTab()
@@ -30,6 +32,9 @@ public sealed partial class SingleFileTab : UserControl
         Loaded += SingleFileTab_Loaded;
     }
 
+    /// <summary>Helper to route status messages to the global status bar.</summary>
+    private StatusTextHelper StatusTextBlock => new();
+
     private void SetupTextBoxContextMenus()
     {
         TextBoxContextMenuHelper.AttachContextMenu(MinidumpPathTextBox);
@@ -39,6 +44,14 @@ public sealed partial class SingleFileTab : UserControl
     private async void SingleFileTab_Loaded(object sender, RoutedEventArgs e)
     {
         Loaded -= SingleFileTab_Loaded;
+
+        // Check dependencies on first load
+        if (!_dependencyCheckDone)
+        {
+            _dependencyCheckDone = true;
+            await CheckDependenciesAsync();
+        }
+
         var autoLoadFile = Program.AutoLoadFile;
         if (string.IsNullOrEmpty(autoLoadFile) || !File.Exists(autoLoadFile)) return;
 
@@ -47,6 +60,22 @@ public sealed partial class SingleFileTab : UserControl
         UpdateButtonStates();
         await Task.Delay(500);
         if (AnalyzeButton.IsEnabled) AnalyzeButton_Click(this, new RoutedEventArgs());
+    }
+
+    private async Task CheckDependenciesAsync()
+    {
+        // Only show the dialog once per session (shared with BatchModeTab)
+        if (DependencyChecker.CarverDependenciesShown) return;
+
+        // Small delay to ensure the UI is fully loaded
+        await Task.Delay(100);
+
+        var result = DependencyChecker.CheckCarverDependencies();
+        if (!result.AllAvailable)
+        {
+            DependencyChecker.CarverDependenciesShown = true;
+            await DependencyDialogHelper.ShowIfMissingAsync(result, XamlRoot);
+        }
     }
 
     private void InitializeFileTypeCheckboxes()
@@ -104,13 +133,9 @@ public sealed partial class SingleFileTab : UserControl
     private async Task ShowDialogAsync(string title, string message, bool isError = false)
     {
         if (isError)
-        {
             await ErrorDialogHelper.ShowErrorAsync(title, message, XamlRoot);
-        }
         else
-        {
             await ErrorDialogHelper.ShowInfoAsync(title, message, XamlRoot);
-        }
     }
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -189,11 +214,17 @@ public sealed partial class SingleFileTab : UserControl
 
             HexViewer.LoadData(filePath, _analysisResult);
             UpdateButtonStates();
+
+            // Report number of files found
+            var fileCount = _allCarvedFiles.Count;
+            StatusTextBlock.Text = fileCount == 1
+                ? "Found 1 file to carve."
+                : $"Found {fileCount:N0} files to carve.";
         }
         catch (Exception ex)
         {
             await ShowDialogAsync("Analysis Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
-                isError: true);
+                true);
         }
         finally
         {
@@ -232,23 +263,15 @@ public sealed partial class SingleFileTab : UserControl
 
             // Update status for extracted files
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedOffsets.Contains(x.Offset)))
-            {
                 // Check if conversion failed for this file
                 if (summary.FailedConversionOffsets.Contains(entry.Offset))
-                {
                     entry.Status = ExtractionStatus.Failed;
-                }
                 else
-                {
                     entry.Status = ExtractionStatus.Extracted;
-                }
-            }
 
             // Update status for extracted modules (from minidump metadata)
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedModuleOffsets.Contains(x.Offset)))
-            {
                 entry.Status = ExtractionStatus.Extracted;
-            }
 
             var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
             if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";
@@ -262,7 +285,7 @@ public sealed partial class SingleFileTab : UserControl
         catch (Exception ex)
         {
             await ShowDialogAsync("Extraction Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
-                isError: true);
+                true);
         }
         finally
         {

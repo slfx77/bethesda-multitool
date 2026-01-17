@@ -5,6 +5,15 @@ namespace Xbox360MemoryCarver;
 /// </summary>
 internal sealed class NifFilesSorter
 {
+    public enum SortColumn
+    {
+        None,
+        FilePath,
+        Size,
+        Format,
+        Status
+    }
+
     public SortColumn CurrentColumn { get; private set; } = SortColumn.None;
 
     public bool IsAscending { get; private set; } = true;
@@ -61,14 +70,5 @@ internal sealed class NifFilesSorter
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
             _ => files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
         };
-    }
-
-    public enum SortColumn
-    {
-        None,
-        FilePath,
-        Size,
-        Format,
-        Status
     }
 }
