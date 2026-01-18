@@ -102,7 +102,7 @@ public static class NifSchemaValidator
     {
         if (!size.HasValue) return -1;
         if (field.Length == null) return offset + size.Value;
-        if (int.TryParse(field.Length, out var count)) return offset + size.Value * count;
+        if (int.TryParse(field.Length, out var count)) return offset + (size.Value * count);
         return -1;
     }
 }

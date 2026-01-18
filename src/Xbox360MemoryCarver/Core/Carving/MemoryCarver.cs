@@ -110,16 +110,20 @@ public sealed class MemoryCarver : IDisposable
 
         foreach (var format in FormatRegistry.All)
             if (format is IFileConverter converter && converter.Initialize(verbose, options))
+            {
                 _converters[format.FormatId] = converter;
+            }
     }
 
     private static HashSet<string> GetSignatureIdsToSearch(List<string>? fileTypes)
     {
         if (fileTypes == null || fileTypes.Count == 0)
+        {
             return FormatRegistry.All
                 .Where(f => f.EnableSignatureScanning)
                 .SelectMany(f => f.Signatures.Select(s => s.Id))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
 
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var ft in fileTypes)
@@ -160,8 +164,12 @@ public sealed class MemoryCarver : IDisposable
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
                 foreach (var (name, _, position) in _signatureMatcher.Search(buffer.AsSpan(0, toRead), offset))
+                {
                     if (_stats.GetValueOrDefault(name, 0) < _maxFilesPerType)
+                    {
                         allMatches.Add((name, position));
+                    }
+                }
 
                 offset += chunkSize;
                 progress?.Report(Math.Min((double)offset / fileSize * 0.5, 0.5));
@@ -217,7 +225,9 @@ public sealed class MemoryCarver : IDisposable
                 var currentCount = Interlocked.Increment(ref processedCount);
                 if (progress != null &&
                     (currentCount % Math.Max(1, totalMatches / 100) == 0 || currentCount == totalMatches))
-                    progress.Report(0.5 + (double)currentCount / totalMatches * 0.5);
+                {
+                    progress.Report(0.5 + ((double)currentCount / totalMatches * 0.5));
+                }
             });
     }
 }

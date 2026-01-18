@@ -244,13 +244,17 @@ public partial class DdxSubprocessConverter
             // Parse "[PROGRESS] DONE converted failed unsupported" line
             var doneMatch = doneRegex.Match(e.Data);
             if (doneMatch.Success)
+            {
                 // Final stats from DDXConv (we track our own, but can verify)
                 return;
+            }
 
             // Parse "[PROGRESS] START count" line
             if (e.Data.StartsWith("[PROGRESS] START ", StringComparison.Ordinal)
                 && int.TryParse(e.Data.AsSpan(17), out var total))
+            {
                 result.TotalFiles = total;
+            }
         };
 
         process.ErrorDataReceived += (_, e) =>

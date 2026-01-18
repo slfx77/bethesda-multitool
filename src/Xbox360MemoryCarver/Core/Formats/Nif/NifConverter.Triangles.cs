@@ -118,8 +118,10 @@ internal sealed partial class NifConverter
 
             // Also check for NiTriStripsData triangles (non-skinned meshes)
             if (_geometryStripTriangles.TryGetValue(geomBlockIndex, out var stripTriangles))
+            {
                 Log.Debug(
                     $"    Block {geomBlockIndex}: Has {stripTriangles.Length / 3} triangles from NiTriStripsData strips");
+            }
         }
     }
 
@@ -241,7 +243,7 @@ internal sealed partial class NifConverter
         for (var i = 0; i < numStrips; i++)
         {
             var stripLen = stripLengths[i];
-            if (pos + stripLen * 2 > end) return null;
+            if (pos + (stripLen * 2) > end) return null;
 
             var strip = new ushort[stripLen];
             for (var j = 0; j < stripLen; j++)

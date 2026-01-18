@@ -25,41 +25,41 @@ public static class FormatRegistry
     /// </summary>
     public const uint UnknownColor = 0xFF3D3D3D;
 
-    private static readonly Lazy<IReadOnlyList<IFileFormat>> _formatsLazy = new(CreateFormats);
+    private static readonly Lazy<IReadOnlyList<IFileFormat>> FormatsLazy = new(CreateFormats);
 
-    private static readonly Lazy<FrozenDictionary<string, IFileFormat>> _formatsByIdLazy =
-        new(() => _formatsLazy.Value.ToFrozenDictionary(f => f.FormatId, StringComparer.OrdinalIgnoreCase));
+    private static readonly Lazy<FrozenDictionary<string, IFileFormat>> FormatsByIdLazy =
+        new(() => FormatsLazy.Value.ToFrozenDictionary(f => f.FormatId, StringComparer.OrdinalIgnoreCase));
 
-    private static readonly Lazy<FrozenDictionary<string, IFileFormat>> _formatsBySignatureIdLazy =
+    private static readonly Lazy<FrozenDictionary<string, IFileFormat>> FormatsBySignatureIdLazy =
         new(BuildFormatsBySignatureId);
 
-    private static readonly Lazy<FrozenDictionary<FileCategory, uint>> _categoryColorsLazy =
+    private static readonly Lazy<FrozenDictionary<FileCategory, uint>> CategoryColorsLazy =
         new(BuildCategoryColors);
 
     /// <summary>
     ///     All registered file format modules.
     /// </summary>
-    public static IReadOnlyList<IFileFormat> All => _formatsLazy.Value;
+    public static IReadOnlyList<IFileFormat> All => FormatsLazy.Value;
 
     /// <summary>
     ///     Formats keyed by FormatId.
     /// </summary>
-    public static FrozenDictionary<string, IFileFormat> ByFormatId => _formatsByIdLazy.Value;
+    public static FrozenDictionary<string, IFileFormat> ByFormatId => FormatsByIdLazy.Value;
 
     /// <summary>
     ///     Formats keyed by SignatureId (allows lookup from any signature variant).
     /// </summary>
-    public static FrozenDictionary<string, IFileFormat> BySignatureId => _formatsBySignatureIdLazy.Value;
+    public static FrozenDictionary<string, IFileFormat> BySignatureId => FormatsBySignatureIdLazy.Value;
 
     /// <summary>
     ///     Colors for each category (ARGB format).
     /// </summary>
-    public static FrozenDictionary<FileCategory, uint> CategoryColors => _categoryColorsLazy.Value;
+    public static FrozenDictionary<FileCategory, uint> CategoryColors => CategoryColorsLazy.Value;
 
     /// <summary>
     ///     Display names for UI filter checkboxes.
     /// </summary>
-    public static IReadOnlyList<string> DisplayNames { get; } = _formatsLazy.Value
+    public static IReadOnlyList<string> DisplayNames { get; } = FormatsLazy.Value
         .Where(f => f.ShowInFilterUI)
         .Select(f => f.DisplayName)
         .ToArray();
@@ -197,7 +197,7 @@ public static class FormatRegistry
     {
         var dict = new Dictionary<string, IFileFormat>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var format in _formatsLazy.Value)
+        foreach (var format in FormatsLazy.Value)
         {
             // Add the FormatId itself as a lookup key
             dict[format.FormatId] = format;

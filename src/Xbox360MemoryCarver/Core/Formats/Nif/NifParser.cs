@@ -21,7 +21,10 @@ internal static class NifParser
 
         pos = ParseVersionInfo(data, pos, info);
         if (!IsBethesdaVersion(info.BinaryVersion,
-                info.UserVersion)) return info; // Return minimal info for non-Bethesda files
+                info.UserVersion))
+        {
+            return info; // Return minimal info for non-Bethesda files
+        }
 
         pos = ParseBethesdaHeader(data, pos, info);
         var numBlockTypes = ReadUInt16(data, pos, info.IsBigEndian);
@@ -103,7 +106,7 @@ internal static class NifParser
     private static int SkipGroups(byte[] data, int pos, bool isBigEndian)
     {
         var numGroups = ReadUInt32(data, pos, isBigEndian);
-        return pos + 4 + (int)numGroups * 4;
+        return pos + 4 + ((int)numGroups * 4);
     }
 
     private static void BuildBlockList(NifInfo info, ushort[] blockTypeIndices, uint[] blockSizes, int dataStart)

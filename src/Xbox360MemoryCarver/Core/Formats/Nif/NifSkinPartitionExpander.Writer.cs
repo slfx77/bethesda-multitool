@@ -106,11 +106,13 @@ internal static partial class NifSkinPartitionExpander
         output[outPos++] = (byte)(partition.HasVertexMap ? 1 : 0);
 
         if (partition.HasVertexMap)
+        {
             foreach (var idx in partition.VertexMap)
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), idx);
                 outPos += 2;
             }
+        }
 
         return outPos;
     }
@@ -203,8 +205,13 @@ internal static partial class NifSkinPartitionExpander
         if (!partition.HasFaces) return outPos;
 
         if (partition is { NumStrips: > 0, Strips.Length: > 0 })
-            outPos = WriteStrips(partition, output, outPos);
-        else if (partition.Triangles != null) outPos = WriteTriangles(partition, output, outPos);
+        {
+            return WriteStrips(partition, output, outPos);
+        }
+        else if (partition.Triangles != null)
+        {
+            return WriteTriangles(partition, output, outPos);
+        }
 
         return outPos;
     }
@@ -215,11 +222,13 @@ internal static partial class NifSkinPartitionExpander
     private static int WriteStrips(PartitionInfo partition, byte[] output, int outPos)
     {
         for (var s = 0; s < partition.NumStrips && s < partition.Strips.Length; s++)
+        {
             foreach (var idx in partition.Strips[s])
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), idx);
                 outPos += 2;
             }
+        }
 
         return outPos;
     }
@@ -309,8 +318,12 @@ internal static partial class NifSkinPartitionExpander
     private static byte MapToPartitionBoneIndex(byte globalBoneIdx, ushort[] partitionBones)
     {
         for (var i = 0; i < partitionBones.Length; i++)
+        {
             if (partitionBones[i] == globalBoneIdx)
+            {
                 return (byte)i;
+            }
+        }
 
         // Bone not found in partition - return 0 as fallback
         return 0;

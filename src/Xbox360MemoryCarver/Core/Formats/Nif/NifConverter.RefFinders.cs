@@ -102,7 +102,7 @@ internal sealed partial class NifConverter
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4));
 
         if (numProperties > 100) return -1;
-        pos += 4 + (int)numProperties * 4;
+        pos += 4 + ((int)numProperties * 4);
         if (pos > end) return -1;
 
         // Skip collision object ref
@@ -164,7 +164,7 @@ internal sealed partial class NifConverter
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4));
 
         if (numProperties > 100) return -1;
-        pos += 4 + (int)numProperties * 4;
+        pos += 4 + ((int)numProperties * 4);
         if (pos > end) return -1;
 
         // Skip collision object ref

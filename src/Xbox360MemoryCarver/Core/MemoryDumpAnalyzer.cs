@@ -81,7 +81,7 @@ public sealed partial class MemoryDumpAnalyzer
         if (includeMetadata) await ExtractMetadataAsync(accessor, result, progress, cancellationToken);
 
         progress?.Report(new AnalysisProgress
-            { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
+        { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
 
         stopwatch.Stop();
         result.AnalysisTime = stopwatch.Elapsed;
@@ -99,6 +99,7 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Add minidump header as a colored region
         if (minidumpInfo.HeaderSize > 0)
+        {
             result.CarvedFiles.Add(new CarvedFileInfo
             {
                 Offset = 0,
@@ -108,6 +109,7 @@ public sealed partial class MemoryDumpAnalyzer
                 SignatureId = "minidump_header",
                 Category = FileCategory.Header
             });
+        }
 
         // Add modules directly to results
         AddModulesFromMinidump(result, minidumpInfo);
@@ -115,11 +117,10 @@ public sealed partial class MemoryDumpAnalyzer
 
     private static HashSet<long> BuildModuleOffsetSet(MinidumpInfo minidumpInfo)
     {
-        return new HashSet<long>(
-            minidumpInfo.Modules
+        return [.. minidumpInfo.Modules
                 .Select(m => minidumpInfo.GetModuleFileRange(m))
                 .Where(r => r.HasValue)
-                .Select(r => r!.Value.fileOffset));
+                .Select(r => r!.Value.fileOffset)];
     }
 
     private static Progress<AnalysisProgress>? CreateScanProgress(IProgress<AnalysisProgress>? progress)
@@ -227,7 +228,7 @@ public sealed partial class MemoryDumpAnalyzer
     {
         // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-            { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
+        { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
         await Task.Run(() =>
         {
             var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
@@ -239,7 +240,7 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Phase 4: ESM scan (80-90%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-            { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
+        { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
         await Task.Run(() =>
         {
             var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
@@ -248,7 +249,7 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Phase 5: FormID mapping (90-100%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-            { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
+        { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
         await Task.Run(
             () =>
             {
@@ -382,14 +383,20 @@ public sealed partial class MemoryDumpAnalyzer
 
                     if (parseResult.Metadata.TryGetValue("fileName", out var fileNameObj) &&
                         fileNameObj is string fn && !string.IsNullOrEmpty(fn))
+                    {
                         fileName = fn;
+                    }
                     else if (parseResult.Metadata.TryGetValue("scriptName", out var scriptNameObj) &&
-                             scriptNameObj is string sn && !string.IsNullOrEmpty(sn))
+                                                 scriptNameObj is string sn && !string.IsNullOrEmpty(sn))
+                    {
                         fileName = sn;
+                    }
                     else if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) &&
-                             pathObj is string texturePath)
+                                                 pathObj is string texturePath)
+                    {
                         // Fall back to extracting filename from path
                         fileName = Path.GetFileName(texturePath);
+                    }
 
                     return (length, fileName);
                 }
@@ -416,13 +423,17 @@ public sealed partial class MemoryDumpAnalyzer
             var name = Path.GetFileName(module.Name);
             if (name.Contains("Debug", StringComparison.OrdinalIgnoreCase) &&
                 !name.Contains("MemDebug", StringComparison.OrdinalIgnoreCase))
+            {
                 return "Debug";
+            }
 
             if (name.Contains("MemDebug", StringComparison.OrdinalIgnoreCase)) return "Release MemDebug";
 
             if (name.Contains("Release_Beta", StringComparison.OrdinalIgnoreCase) ||
                 name.Contains("ReleaseBeta", StringComparison.OrdinalIgnoreCase))
+            {
                 return "Release Beta";
+            }
         }
 
         // Default to Release if game exe found but no debug indicators

@@ -108,9 +108,9 @@ internal static class XmaRepairer
         {
             var cumulativeSamples = (uint)((i + 1) * samplesPerPacket);
             seekTable[i * 4] = (byte)(cumulativeSamples >> 24);
-            seekTable[i * 4 + 1] = (byte)(cumulativeSamples >> 16);
-            seekTable[i * 4 + 2] = (byte)(cumulativeSamples >> 8);
-            seekTable[i * 4 + 3] = (byte)cumulativeSamples;
+            seekTable[(i * 4) + 1] = (byte)(cumulativeSamples >> 16);
+            seekTable[(i * 4) + 2] = (byte)(cumulativeSamples >> 8);
+            seekTable[(i * 4) + 3] = (byte)cumulativeSamples;
         }
 
         return seekTable;
@@ -166,11 +166,13 @@ internal static class XmaRepairer
 
         // Fallback: linear scan
         for (var i = 12; i < data.Length - 8; i++)
+        {
             if (data.AsSpan(i, 4).SequenceEqual(chunkId))
             {
                 var size = BinaryUtils.ReadUInt32LE(data.AsSpan(), i + 4);
                 if (size <= 100_000_000) return i;
             }
+        }
 
         return -1;
     }

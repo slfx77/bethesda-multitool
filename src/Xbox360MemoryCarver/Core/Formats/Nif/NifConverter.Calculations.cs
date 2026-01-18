@@ -98,10 +98,7 @@ internal sealed partial class NifConverter
         var newIndex = 0;
 
         for (var i = 0; i < blockCount; i++)
-            if (_blocksToStrip.Contains(i))
-                remap[i] = -1;
-            else
-                remap[i] = newIndex++;
+            remap[i] = _blocksToStrip.Contains(i) ? -1 : newIndex++;
 
         return remap;
     }

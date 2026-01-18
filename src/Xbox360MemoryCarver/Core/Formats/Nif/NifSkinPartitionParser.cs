@@ -187,20 +187,12 @@ internal static partial class NifSkinPartitionParser
     }
 
     /// <summary>Reader context for partition parsing.</summary>
-    private ref struct PartitionReader
+    private ref struct PartitionReader(byte[] data, int offset, int size, bool isBigEndian)
     {
-        public readonly byte[] Data;
-        public readonly int End;
-        public readonly bool IsBigEndian;
-        public int Pos;
-
-        public PartitionReader(byte[] data, int offset, int size, bool isBigEndian)
-        {
-            Data = data;
-            End = offset + size;
-            IsBigEndian = isBigEndian;
-            Pos = offset;
-        }
+        private readonly byte[] _data = data;
+        private readonly bool _isBigEndian = isBigEndian;
+        public readonly int End = offset + size;
+        public int Pos = offset;
 
         public readonly bool CanRead(int bytes)
         {
@@ -209,25 +201,25 @@ internal static partial class NifSkinPartitionParser
 
         public ushort ReadUInt16()
         {
-            var value = IsBigEndian
-                ? BinaryPrimitives.ReadUInt16BigEndian(Data.AsSpan(Pos, 2))
-                : BinaryPrimitives.ReadUInt16LittleEndian(Data.AsSpan(Pos, 2));
+            var value = _isBigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(Pos, 2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(Pos, 2));
             Pos += 2;
             return value;
         }
 
         public uint ReadUInt32()
         {
-            var value = IsBigEndian
-                ? BinaryPrimitives.ReadUInt32BigEndian(Data.AsSpan(Pos, 4))
-                : BinaryPrimitives.ReadUInt32LittleEndian(Data.AsSpan(Pos, 4));
+            var value = _isBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(Pos, 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(Pos, 4));
             Pos += 4;
             return value;
         }
 
         public byte ReadByte()
         {
-            return Data[Pos++];
+            return _data[Pos++];
         }
 
         public void Skip(int bytes)

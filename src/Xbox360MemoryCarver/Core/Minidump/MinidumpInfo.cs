@@ -54,11 +54,13 @@ public class MinidumpInfo
     public long? VirtualAddressToFileOffset(long virtualAddress)
     {
         foreach (var region in MemoryRegions)
+        {
             if (virtualAddress >= region.VirtualAddress && virtualAddress < region.VirtualAddress + region.Size)
             {
                 var offsetInRegion = virtualAddress - region.VirtualAddress;
                 return region.FileOffset + offsetInRegion;
             }
+        }
 
         return null;
     }
@@ -123,8 +125,12 @@ public class MinidumpInfo
         // Sort once and filter - more efficient than Where().OrderBy() which allocates
         var sorted = new List<MinidumpMemoryRegion>();
         foreach (var r in MemoryRegions)
+        {
             if (r.VirtualAddress >= minVirtualAddress)
+            {
                 sorted.Add(r);
+            }
+        }
 
         sorted.Sort((a, b) => a.VirtualAddress.CompareTo(b.VirtualAddress));
         return sorted;

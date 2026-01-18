@@ -249,7 +249,7 @@ public sealed partial class ScdaDecompiler
     private sealed class DecompileContext
     {
         public StringBuilder Output { get; } = new();
-        public int Indent { get; set; }
+        private int Indent { get; set; }
         public int Pos { get; set; }
 
         public string GetIndent()

@@ -32,7 +32,7 @@ public enum LogLevel
 public sealed class Logger
 {
     private static Logger? _instance;
-    private static readonly Lock _syncLock = new();
+    private static readonly Lock SyncLock = new();
 
     private TextWriter _output = Console.Out;
 
@@ -48,10 +48,12 @@ public sealed class Logger
         get
         {
             if (_instance == null)
-                lock (_syncLock)
+            {
+                lock (SyncLock)
                 {
                     _instance ??= new Logger();
                 }
+            }
 
             return _instance;
         }
@@ -195,6 +197,7 @@ public sealed class Logger
             parts.Add(string.Format(CultureInfo.InvariantCulture, "[{0:HH:mm:ss.fff}]", DateTime.Now));
 
         if (IncludeLevel)
+        {
             parts.Add(level switch
             {
                 LogLevel.Error => "[ERR]",
@@ -204,6 +207,7 @@ public sealed class Logger
                 LogLevel.Trace => "[TRC]",
                 _ => ""
             });
+        }
 
         return parts.Count > 0 ? string.Join(" ", parts) + " " : "";
     }

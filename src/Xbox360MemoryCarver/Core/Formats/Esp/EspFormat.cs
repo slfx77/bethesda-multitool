@@ -121,7 +121,9 @@ public sealed class EspFormat : FileFormatBase
                 slice.SequenceEqual("LIPS"u8) ||
                 slice.SequenceEqual("DDS "u8) ||
                 SignatureBoundaryScanner.IsPngSignature(data, i))
+            {
                 return i - offset;
+            }
 
             // Check for NIF
             if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual("Gamebryo File Format"u8)) return i - offset;

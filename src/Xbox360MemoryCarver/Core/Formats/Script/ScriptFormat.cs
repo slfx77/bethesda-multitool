@@ -83,22 +83,30 @@ public sealed class ScriptFormat : FileFormatBase
     private static int FindLineEnd(ReadOnlySpan<byte> data)
     {
         for (var i = 0; i < data.Length; i++)
+        {
             if (data[i] == '\r' || data[i] == '\n')
+            {
                 return i;
+            }
+        }
 
         return -1;
     }
 
     private static string? ExtractScriptName(string firstLine)
     {
-        string? scriptName = null;
+        const string? scriptName = null;
         var lower = firstLine.ToLowerInvariant();
 
         if (lower.StartsWith("scn ", StringComparison.Ordinal) || lower.StartsWith("scn\t", StringComparison.Ordinal))
-            scriptName = firstLine[4..].Trim();
+        {
+            return firstLine[4..].Trim();
+        }
         else if (lower.StartsWith("scriptname ", StringComparison.Ordinal) ||
-                 lower.StartsWith("scriptname\t", StringComparison.Ordinal))
-            scriptName = firstLine[11..].Trim();
+                         lower.StartsWith("scriptname\t", StringComparison.Ordinal))
+        {
+            return firstLine[11..].Trim();
+        }
 
         return scriptName;
     }
@@ -139,8 +147,12 @@ public sealed class ScriptFormat : FileFormatBase
     private static bool IsValidScriptName(string name)
     {
         foreach (var c in name)
+        {
             if (!char.IsLetterOrDigit(c) && c != '_')
+            {
                 return false;
+            }
+        }
 
         return true;
     }
@@ -153,8 +165,12 @@ public sealed class ScriptFormat : FileFormatBase
             Span<char> buffer = stackalloc char[name.Length];
             var pos = 0;
             foreach (var c in name)
+            {
                 if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                {
                     buffer[pos++] = c;
+                }
+            }
 
             return new string(buffer[..pos]);
         }
@@ -162,8 +178,12 @@ public sealed class ScriptFormat : FileFormatBase
         // Fallback for very long names
         var sb = new StringBuilder(name.Length);
         foreach (var c in name)
+        {
             if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+            {
                 sb.Append(c);
+            }
+        }
 
         return sb.ToString();
     }

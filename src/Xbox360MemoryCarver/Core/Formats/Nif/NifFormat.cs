@@ -148,8 +148,13 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     private static int FindNewlinePosition(ReadOnlySpan<byte> data, int start)
     {
         for (var i = start; i < Math.Min(start + 20, data.Length); i++)
+        {
             if (data[i] == 0x0A)
+            {
                 return i;
+            }
+        }
+
         return -1;
     }
 

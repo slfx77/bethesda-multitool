@@ -133,8 +133,12 @@ public sealed partial class NifVersionExpr
     {
         // Iterate through all tokens and expand them
         foreach (var (token, expansion) in TokenExpansions)
+        {
             if (expression.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
                 expression = expression.Replace(token, expansion, StringComparison.OrdinalIgnoreCase);
+            }
+        }
 
         return expression;
     }
@@ -279,10 +283,12 @@ public sealed partial class NifVersionExpr
             // Version number like 20.2.0.7 - convert to uint
             var parts = numStr.Split('.');
             if (parts.Length == 4)
+            {
                 return (long.Parse(parts[0], CultureInfo.InvariantCulture) << 24) |
                        (long.Parse(parts[1], CultureInfo.InvariantCulture) << 16) |
                        (long.Parse(parts[2], CultureInfo.InvariantCulture) << 8) |
                        long.Parse(parts[3], CultureInfo.InvariantCulture);
+            }
         }
 
         return long.Parse(numStr, CultureInfo.InvariantCulture);

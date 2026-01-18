@@ -64,6 +64,7 @@ public static partial class ScdaExtractor
 
         // Add grouped scripts with quest names
         foreach (var (questName, records) in groups)
+        {
             foreach (var record in records)
             {
                 var scriptName = ExtractScriptNameFromSource(record.SourceText);
@@ -76,6 +77,7 @@ public static partial class ScdaExtractor
                     HasSource = record.HasAssociatedSctx
                 });
             }
+        }
 
         // Add ungrouped scripts
         foreach (var record in ungrouped)

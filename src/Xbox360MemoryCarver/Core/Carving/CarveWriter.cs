@@ -18,25 +18,17 @@ internal sealed record WriteFileParams(
 /// <summary>
 ///     Handles file writing, conversion, and repair operations for carved files.
 /// </summary>
-internal sealed class CarveWriter
+internal sealed class CarveWriter(
+    Dictionary<string, IFileConverter> converters,
+    bool enableConversion,
+    bool saveAtlas,
+    Action<CarveEntry> addToManifest)
 {
-    private readonly Action<CarveEntry> _addToManifest;
-    private readonly Dictionary<string, IFileConverter> _converters;
-    private readonly bool _enableConversion;
+    private readonly Action<CarveEntry> _addToManifest = addToManifest;
+    private readonly Dictionary<string, IFileConverter> _converters = converters;
+    private readonly bool _enableConversion = enableConversion;
     private readonly ConcurrentBag<long> _failedConversionOffsets = [];
-    private readonly bool _saveAtlas;
-
-    public CarveWriter(
-        Dictionary<string, IFileConverter> converters,
-        bool enableConversion,
-        bool saveAtlas,
-        Action<CarveEntry> addToManifest)
-    {
-        _converters = converters;
-        _enableConversion = enableConversion;
-        _saveAtlas = saveAtlas;
-        _addToManifest = addToManifest;
-    }
+    private readonly bool _saveAtlas = saveAtlas;
 
     /// <summary>
     ///     Offsets of files that failed conversion (DDX→DDS, XMA→WAV, etc.).
@@ -128,6 +120,7 @@ internal sealed class CarveWriter
     {
         var currentPath = outputFile;
         for (var attempt = 0; attempt < maxRetries; attempt++)
+        {
             try
             {
                 await File.WriteAllBytesAsync(currentPath, data);
@@ -141,5 +134,6 @@ internal sealed class CarveWriter
                 var suffix = Guid.NewGuid().ToString("N")[..8];
                 currentPath = Path.Combine(dir, $"{nameWithoutExt}_{suffix}{ext}");
             }
+        }
     }
 }

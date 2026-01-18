@@ -44,8 +44,10 @@ internal sealed partial class NifConverter
 
             var actualSize = outPos - blockStartPos;
             if (actualSize != expectedSize)
+            {
                 Log.Debug(
                     $"  BLOCK SIZE MISMATCH: Block {block.Index} ({block.TypeName}) wrote {actualSize} bytes, expected {expectedSize}");
+            }
         }
 
         // Write footer with remapped indices
@@ -129,12 +131,16 @@ internal sealed partial class NifConverter
         ushort[]? triangles)
     {
         if (vertexMap != null)
+        {
             Log.Debug(
                 $"    Block {blockIndex}: Using vertex map from skin partition {skinPartitionIndex}, length={vertexMap.Length}");
+        }
 
         if (triangles != null)
+        {
             Log.Debug(
                 $"    Block {blockIndex}: Using {triangles.Length / 3} triangles from skin partition {skinPartitionIndex}");
+        }
     }
 
     /// <summary>
@@ -403,8 +409,10 @@ internal sealed partial class NifConverter
 
         // Convert using schema
         if (!schemaConverter.TryConvert(output, outPos, block.Size, block.TypeName, blockRemap))
+        {
             // Fallback: bulk swap
             BulkSwap32(output, outPos, block.Size);
+        }
 
         // Restore node name if we have one from the palette
         if (_nodeNameStringIndices.TryGetValue(block.Index, out var stringIndex))

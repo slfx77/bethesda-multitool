@@ -440,25 +440,15 @@ internal sealed partial class NifSchemaConverter
         }
     }
 
-    private sealed class ConversionContext
+    private sealed class ConversionContext(byte[] buffer, int position, int end, int[] blockRemap,
+        Dictionary<string, object> fieldValues, string blockType)
     {
-        public ConversionContext(byte[] buffer, int position, int end, int[] blockRemap,
-            Dictionary<string, object> fieldValues, string blockType)
-        {
-            Buffer = buffer;
-            Position = position;
-            End = end;
-            BlockRemap = blockRemap;
-            FieldValues = fieldValues;
-            BlockType = blockType;
-        }
-
-        public byte[] Buffer { get; }
-        public int Position { get; set; }
-        public int End { get; }
-        public int[] BlockRemap { get; }
-        public Dictionary<string, object> FieldValues { get; }
-        public string BlockType { get; }
+        public byte[] Buffer { get; } = buffer;
+        public int Position { get; set; } = position;
+        public int End { get; } = end;
+        public int[] BlockRemap { get; } = blockRemap;
+        public Dictionary<string, object> FieldValues { get; } = fieldValues;
+        public string BlockType { get; } = blockType;
 
         /// <summary>
         ///     Current template type parameter (#T#) for generic structs like KeyGroup&lt;float&gt;.

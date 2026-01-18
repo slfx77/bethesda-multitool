@@ -40,8 +40,12 @@ internal static class NifPaletteParser
         // Parse NiDefaultAVObjectPalette for block→name mappings
         var blockNames = Parse(data, info);
         if (blockNames != null)
+        {
             foreach (var kvp in blockNames)
+            {
                 result.BlockNames[kvp.Key] = kvp.Value;
+            }
+        }
 
         // Parse NiControllerSequence for Accum Root Name
         var accumRootName = ParseAccumRootName(data, info);
@@ -63,11 +67,13 @@ internal static class NifPaletteParser
         // Find NiDefaultAVObjectPalette block
         BlockInfo? paletteBlock = null;
         foreach (var block in info.Blocks)
+        {
             if (block.TypeName == "NiDefaultAVObjectPalette")
             {
                 paletteBlock = block;
                 break;
             }
+        }
 
         if (paletteBlock == null)
         {
@@ -139,11 +145,13 @@ internal static class NifPaletteParser
         // Find first NiControllerSequence block
         BlockInfo? seqBlock = null;
         foreach (var block in info.Blocks)
+        {
             if (block.TypeName == "NiControllerSequence")
             {
                 seqBlock = block;
                 break;
             }
+        }
 
         if (seqBlock == null)
         {
@@ -249,11 +257,13 @@ internal static class NifPaletteParser
             var suffix = name.AsSpan(colonIdx + 1);
             var isNumeric = true;
             foreach (var c in suffix)
+            {
                 if (c < '0' || c > '9')
                 {
                     isNumeric = false;
                     break;
                 }
+            }
 
             if (isNumeric) return name[..colonIdx];
         }

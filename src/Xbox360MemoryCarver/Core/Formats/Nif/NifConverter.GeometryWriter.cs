@@ -253,6 +253,7 @@ internal sealed partial class NifConverter
 
         // Copy existing tangents/bitangents if present
         if ((origBsDataFlags & 4096) != 0)
+        {
             for (var v = 0; v < numVertices * 6; v++) // 3 floats tangent + 3 floats bitangent
             {
                 BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos),
@@ -260,6 +261,7 @@ internal sealed partial class NifConverter
                 srcPos += 4;
                 outPos += 4;
             }
+        }
 
         newSrcPos = srcPos;
         return outPos;
@@ -354,7 +356,7 @@ internal sealed partial class NifConverter
             // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
             var (r, g, b, a) = ExtractArgbAsRgba(ctx.PackedData.VertexColors, partitionIdx);
 
-            var writePos = basePos + meshIdx * 16;
+            var writePos = basePos + (meshIdx * 16);
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos), r);
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 4), g);
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 8), b);
@@ -385,10 +387,10 @@ internal sealed partial class NifConverter
 
     private static (float r, float g, float b, float a) ExtractArgbAsRgba(byte[] colors, int index)
     {
-        var a = colors[index * 4 + 0] / 255.0f;
-        var r = colors[index * 4 + 1] / 255.0f;
-        var g = colors[index * 4 + 2] / 255.0f;
-        var b = colors[index * 4 + 3] / 255.0f;
+        var a = colors[(index * 4) + 0] / 255.0f;
+        var r = colors[(index * 4) + 1] / 255.0f;
+        var g = colors[(index * 4) + 2] / 255.0f;
+        var b = colors[(index * 4) + 3] / 255.0f;
         return (r, g, b, a);
     }
 
