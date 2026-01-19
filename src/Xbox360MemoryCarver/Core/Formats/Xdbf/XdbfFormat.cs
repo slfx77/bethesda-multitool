@@ -28,10 +28,16 @@ public sealed class XdbfFormat : FileFormatBase
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         const int minHeaderSize = 24;
-        if (data.Length < offset + minHeaderSize) return null;
+        if (data.Length < offset + minHeaderSize)
+        {
+            return null;
+        }
 
         var magic = data.Slice(offset, 4);
-        if (!magic.SequenceEqual("XDBF"u8)) return null;
+        if (!magic.SequenceEqual("XDBF"u8))
+        {
+            return null;
+        }
 
         try
         {
@@ -40,7 +46,10 @@ public sealed class XdbfFormat : FileFormatBase
             var entryTableOffset = BinaryUtils.ReadUInt32BE(data, offset + 12);
             var freeCount = BinaryUtils.ReadUInt32BE(data, offset + 16);
 
-            if (entryCount > 10000 || freeCount > 10000) return null;
+            if (entryCount > 10000 || freeCount > 10000)
+            {
+                return null;
+            }
 
             const int headerSize = 24;
             var minSize = Math.Max(headerSize + (int)entryTableOffset, 1024);

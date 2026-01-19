@@ -149,7 +149,9 @@ public sealed partial class NifVersionExpr
     public static bool Evaluate(string? expression, NifVersionContext context)
     {
         if (string.IsNullOrWhiteSpace(expression))
+        {
             return true; // No condition = always include
+        }
 
         // Use cached compiled expression
         var evaluator = Compile(expression);
@@ -162,7 +164,9 @@ public sealed partial class NifVersionExpr
     public static Func<NifVersionContext, bool> Compile(string? expression)
     {
         if (string.IsNullOrWhiteSpace(expression))
+        {
             return _ => true;
+        }
 
         // Use cached compiled expression or compile and cache
         return CompiledExpressionCache.GetOrAdd(expression, static expr =>
@@ -186,7 +190,9 @@ public sealed partial class NifVersionExpr
     private void SkipWhitespace()
     {
         while (_pos < _expression.Length && char.IsWhiteSpace(_expression[_pos]))
+        {
             _pos++;
+        }
     }
 
     private bool Match(string s)
@@ -212,7 +218,10 @@ public sealed partial class NifVersionExpr
     {
         SkipWhitespace();
         if (_pos >= _expression.Length || _expression[_pos] != c)
+        {
             throw new FormatException($"Expected '{c}' at position {_pos}");
+        }
+
         _pos++;
     }
 
@@ -221,8 +230,16 @@ public sealed partial class NifVersionExpr
         SkipWhitespace();
         var start = _pos;
 
-        if (TryReadHashToken()) return _expression[start.._pos];
-        if (TryReadComparisonOperator()) return _expression[start.._pos];
+        if (TryReadHashToken())
+        {
+            return _expression[start.._pos];
+        }
+
+        if (TryReadComparisonOperator())
+        {
+            return _expression[start.._pos];
+        }
+
         ReadIdentifierOrNumber();
 
         return _expression[start.._pos];
@@ -230,24 +247,45 @@ public sealed partial class NifVersionExpr
 
     private bool TryReadHashToken()
     {
-        if (_pos >= _expression.Length || _expression[_pos] != '#') return false;
+        if (_pos >= _expression.Length || _expression[_pos] != '#')
+        {
+            return false;
+        }
 
         _pos++;
-        while (_pos < _expression.Length && _expression[_pos] != '#') _pos++;
-        if (_pos < _expression.Length) _pos++; // consume closing #
+        while (_pos < _expression.Length && _expression[_pos] != '#')
+        {
+            _pos++;
+        }
+
+        if (_pos < _expression.Length)
+        {
+            _pos++; // consume closing #
+        }
+
         return true;
     }
 
     private bool TryReadComparisonOperator()
     {
-        if (_pos >= _expression.Length) return false;
+        if (_pos >= _expression.Length)
+        {
+            return false;
+        }
 
         var c = _expression[_pos];
-        if (c is not ('=' or '!' or '>' or '<')) return false;
+        if (c is not ('=' or '!' or '>' or '<'))
+        {
+            return false;
+        }
 
         _pos++;
         // Check for two-character operators (==, !=, >=, <=)
-        if (_pos < _expression.Length && _expression[_pos] == '=') _pos++;
+        if (_pos < _expression.Length && _expression[_pos] == '=')
+        {
+            _pos++;
+        }
+
         return true;
     }
 
@@ -255,7 +293,9 @@ public sealed partial class NifVersionExpr
     {
         while (_pos < _expression.Length &&
                (char.IsLetterOrDigit(_expression[_pos]) || _expression[_pos] == '_' || _expression[_pos] == '.'))
+        {
             _pos++;
+        }
     }
 
     private long ReadNumber()
@@ -269,13 +309,19 @@ public sealed partial class NifVersionExpr
             (_expression[_pos + 1] == 'x' || _expression[_pos + 1] == 'X'))
         {
             _pos += 2;
-            while (_pos < _expression.Length && IsHexDigit(_expression[_pos])) _pos++;
+            while (_pos < _expression.Length && IsHexDigit(_expression[_pos]))
+            {
+                _pos++;
+            }
+
             return long.Parse(_expression[(start + 2).._pos], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
         }
 
         // Decimal number
         while (_pos < _expression.Length && (char.IsDigit(_expression[_pos]) || _expression[_pos] == '.'))
+        {
             _pos++;
+        }
 
         var numStr = _expression[start.._pos];
         if (numStr.Contains('.'))
@@ -337,7 +383,9 @@ public sealed partial class NifVersionExpr
     private IExprNode ParseUnary()
     {
         if (Match("!") || Match("#NOT#"))
+        {
             return new NotNode(ParseUnary());
+        }
 
         return ParsePrimary();
     }

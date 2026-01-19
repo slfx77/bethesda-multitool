@@ -36,46 +36,52 @@ public sealed partial class NifFormat
     {
         // Only convert big-endian NIF files
         if (metadata?.TryGetValue("bigEndian", out var beValue) == true && beValue is bool isBigEndian)
+        {
             return isBigEndian;
+        }
 
         return false;
     }
 
     /// <inheritdoc />
-    public Task<DdxConversionResult> ConvertAsync(byte[] data, IReadOnlyDictionary<string, object>? metadata = null)
+    public Task<ConversionResult> ConvertAsync(byte[] data, IReadOnlyDictionary<string, object>? metadata = null)
     {
         try
         {
             var verbose = metadata?.TryGetValue("verbose", out var v) == true && v is true;
             var converter = new NifConverter(verbose);
-            var result = converter.Convert(data);
+            var nifResult = converter.Convert(data);
 
-            if (result is { Success: true, OutputData: not null })
+            if (nifResult.Success)
             {
                 ConvertedCount++;
-                return Task.FromResult(new DdxConversionResult
+                // NifConversionResult inherits from ConversionResult, so we can return it directly
+                // Just add the success notes if not already set
+                if (string.IsNullOrEmpty(nifResult.Notes))
                 {
-                    Success = true,
-                    DdsData = result.OutputData,
-                    Notes = result.ErrorMessage ??
-                            "Successfully converted Xbox 360 NIF to PC format with geometry unpacking."
-                });
+                    return Task.FromResult<ConversionResult>(new NifConversionResult
+                    {
+                        Success = true,
+                        OutputData = nifResult.OutputData,
+                        SourceInfo = nifResult.SourceInfo,
+                        OutputInfo = nifResult.OutputInfo,
+                        ErrorMessage = "Successfully converted Xbox 360 NIF to PC format with geometry unpacking."
+                    });
+                }
+
+                return Task.FromResult<ConversionResult>(nifResult);
             }
 
             FailedCount++;
-            return Task.FromResult(new DdxConversionResult
-            {
-                Success = false,
-                Notes = result.ErrorMessage ?? "Failed to convert NIF - file may already be little-endian or invalid"
-            });
+            return Task.FromResult<ConversionResult>(nifResult);
         }
         catch (Exception ex)
         {
             FailedCount++;
-            return Task.FromResult(new DdxConversionResult
+            return Task.FromResult<ConversionResult>(new NifConversionResult
             {
                 Success = false,
-                Notes = $"NIF conversion error: {ex.Message}"
+                ErrorMessage = $"NIF conversion error: {ex.Message}"
             });
         }
     }

@@ -109,7 +109,9 @@ public static class AnalyzeCommand
         }
 
         if (!string.IsNullOrEmpty(extractEsm) && result.EsmRecords != null)
+        {
             await ExtractEsmRecordsAsync(input, extractEsm, result, verbose);
+        }
     }
 
     /// <summary>
@@ -158,7 +160,10 @@ public static class AnalyzeCommand
         AnalysisResult result, bool verbose)
     {
         // Set logger level based on verbose flag
-        if (verbose) Logger.Instance.Level = Debug;
+        if (verbose)
+        {
+            Logger.Instance.Level = Debug;
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[blue]Exporting ESM records to:[/] {extractEsm}");

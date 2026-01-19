@@ -30,16 +30,28 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 10) return null;
+        if (data.Length < offset + 10)
+        {
+            return null;
+        }
 
         var span = data[offset..];
-        if (!span[..4].SequenceEqual("SCDA"u8)) return null;
+        if (!span[..4].SequenceEqual("SCDA"u8))
+        {
+            return null;
+        }
 
         var length = BinaryUtils.ReadUInt16LE(span, 4);
-        if (length == 0 || offset + 6 + length > data.Length) return null;
+        if (length == 0 || offset + 6 + length > data.Length)
+        {
+            return null;
+        }
 
         var bytecode = span.Slice(6, length);
-        if (!ValidateBytecode(bytecode)) return null;
+        if (!ValidateBytecode(bytecode))
+        {
+            return null;
+        }
 
         return new ParseResult
         {
@@ -113,9 +125,9 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
                 var chunkRecords = ScanChunkForRecords(buffer, toRead, offset);
 
                 foreach (var record in chunkRecords)
-                {
                     // Only add records that start within the main chunk area (not in overlap)
                     // unless this is the last chunk
+                {
                     if (record.Offset - offset < chunkSize || offset + chunkSize >= fileSize)
                     {
                         records.Add(record);
@@ -176,10 +188,16 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
     private static ScdaRecord? TryParseScdaRecord(byte[] data, int offset)
     {
         var length = BinaryUtils.ReadUInt16LE(data, offset + 4);
-        if (length == 0 || length >= 65535 || offset + 6 + length > data.Length) return null;
+        if (length == 0 || length >= 65535 || offset + 6 + length > data.Length)
+        {
+            return null;
+        }
 
         var bytecodeSpan = data.AsSpan(offset + 6, length);
-        if (!ValidateBytecode(bytecodeSpan)) return null;
+        if (!ValidateBytecode(bytecodeSpan))
+        {
+            return null;
+        }
 
         var bytecode = new byte[length];
         Array.Copy(data, offset + 6, bytecode, 0, length);
@@ -200,13 +218,22 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
     private static ScdaRecord? TryParseScdaRecordFromChunk(byte[] data, int localOffset, int dataLength,
         long baseOffset)
     {
-        if (localOffset + 6 > dataLength) return null;
+        if (localOffset + 6 > dataLength)
+        {
+            return null;
+        }
 
         var length = BinaryUtils.ReadUInt16LE(data, localOffset + 4);
-        if (length == 0 || length >= 65535 || localOffset + 6 + length > dataLength) return null;
+        if (length == 0 || length >= 65535 || localOffset + 6 + length > dataLength)
+        {
+            return null;
+        }
 
         var bytecodeSpan = data.AsSpan(localOffset + 6, length);
-        if (!ValidateBytecode(bytecodeSpan)) return null;
+        if (!ValidateBytecode(bytecodeSpan))
+        {
+            return null;
+        }
 
         var bytecode = new byte[length];
         Array.Copy(data, localOffset + 6, bytecode, 0, length);
@@ -234,7 +261,7 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'T' && data[i + 3] == 'X')
             {
                 var length = BinaryUtils.ReadUInt16LE(data, i + 4);
-                if (length > 0 && length < 65535 && i + 6 + length <= data.Length)
+                if (length is > 0 and < 65535 && i + 6 + length <= data.Length)
                 {
                     var text = Encoding.ASCII.GetString(data, i + 6, length).TrimEnd('\0');
                     return (text, i);
@@ -254,9 +281,13 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
         {
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'T' && data[i + 3] == 'X')
             {
-                if (i + 6 > dataLength) break;
+                if (i + 6 > dataLength)
+                {
+                    break;
+                }
+
                 var length = BinaryUtils.ReadUInt16LE(data, i + 4);
-                if (length > 0 && length < 65535 && i + 6 + length <= dataLength)
+                if (length is > 0 and < 65535 && i + 6 + length <= dataLength)
                 {
                     var text = Encoding.ASCII.GetString(data, i + 6, length).TrimEnd('\0');
                     return (text, i);
@@ -280,7 +311,10 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
                 if (length == 4 && i + 10 <= data.Length)
                 {
                     var formId = BinaryUtils.ReadUInt32LE(data, i + 6);
-                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F) formIds.Add(formId);
+                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F)
+                    {
+                        formIds.Add(formId);
+                    }
                 }
             }
         }
@@ -297,12 +331,19 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
         {
             if (data[i] == 'S' && data[i + 1] == 'C' && data[i + 2] == 'R' && data[i + 3] == 'O')
             {
-                if (i + 10 > dataLength) break;
+                if (i + 10 > dataLength)
+                {
+                    break;
+                }
+
                 var length = BinaryUtils.ReadUInt16LE(data, i + 4);
                 if (length == 4)
                 {
                     var formId = BinaryUtils.ReadUInt32LE(data, i + 6);
-                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F) formIds.Add(formId);
+                    if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0x0F)
+                    {
+                        formIds.Add(formId);
+                    }
                 }
             }
         }
@@ -312,15 +353,24 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
 
     private static bool ValidateBytecode(ReadOnlySpan<byte> bytecode)
     {
-        if (bytecode.Length < 4) return false;
+        if (bytecode.Length < 4)
+        {
+            return false;
+        }
 
         var firstOpcode = BinaryUtils.ReadUInt16LE(bytecode);
 
         // Opcode 0x0000 is not valid (padding/empty data)
-        if (firstOpcode == 0) return false;
+        if (firstOpcode == 0)
+        {
+            return false;
+        }
 
         // Valid opcodes: 0x01-0x1F (core) and 0x100-0x12FF (FUNCTION_*)
-        if (firstOpcode > 0x20 && (firstOpcode < 0x100 || firstOpcode > 0x2000)) return false;
+        if (firstOpcode > 0x20 && (firstOpcode < 0x100 || firstOpcode > 0x2000))
+        {
+            return false;
+        }
 
         return true;
     }

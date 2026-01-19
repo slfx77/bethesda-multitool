@@ -283,45 +283,12 @@ public static class EsmRecordTypes
     /// </summary>
     public static string SignatureToString(ReadOnlySpan<byte> sig)
     {
-        if (sig.Length < 4) return "????";
+        if (sig.Length < 4)
+        {
+            return "????";
+        }
+
         return Encoding.ASCII.GetString(sig[..4]);
-    }
-
-    /// <summary>
-    ///     Converts a string signature to a 4-byte array.
-    /// </summary>
-    public static byte[] StringToSignature(string sig)
-    {
-        if (string.IsNullOrEmpty(sig)) return [0x3F, 0x3F, 0x3F, 0x3F]; // "????"
-        var bytes = Encoding.ASCII.GetBytes(sig.PadRight(4)[..4]);
-        return bytes;
-    }
-
-    /// <summary>
-    ///     Checks if a signature matches one of the known main record types.
-    /// </summary>
-    public static bool IsMainRecordSignature(ReadOnlySpan<byte> sig)
-    {
-        var str = SignatureToString(sig);
-        return MainRecordTypes.ContainsKey(str);
-    }
-
-    /// <summary>
-    ///     Gets the record type info for a signature, or null if not found.
-    /// </summary>
-    public static RecordTypeInfo? GetRecordTypeInfo(ReadOnlySpan<byte> sig)
-    {
-        var str = SignatureToString(sig);
-        return MainRecordTypes.TryGetValue(str, out var info) ? info : null;
-    }
-
-    /// <summary>
-    ///     Gets the subrecord type info for a signature, or null if not found.
-    /// </summary>
-    public static SubrecordTypeInfo? GetSubrecordTypeInfo(ReadOnlySpan<byte> sig)
-    {
-        var str = SignatureToString(sig);
-        return CommonSubrecordTypes.TryGetValue(str, out var info) ? info : null;
     }
 }
 

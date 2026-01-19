@@ -10,32 +10,32 @@
   <Grid Padding="16"
         VerticalAlignment="Stretch">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
     <!--  Header row: Title + Select buttons (outside card)  -->
     <Grid Grid.Row="0"
           Margin="0,0,0,8">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
       <TextBlock
         Style="{StaticResource SubtitleTextBlockStyle}"
-        Text="Minidump Batch Carver"/>
+        Text="Minidump Batch Carver" />
       <StackPanel
         Grid.Column="1"
         Style="{StaticResource SelectButtonsPanelStyle}">
         <Button
           Click="SelectAllButton_Click"
-          Content="Select All"/>
+          Content="Select All" />
         <Button
           Click="SelectNoneButton_Click"
-          Content="Select None"/>
+          Content="Select None" />
       </StackPanel>
     </Grid>
 
@@ -46,8 +46,8 @@
       Style="{StaticResource CardBorderStyle}">
       <Grid VerticalAlignment="Stretch">
         <Grid.RowDefinitions>
-          <RowDefinition Height="Auto"/>
-          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <!--  Sortable column headers  -->
@@ -55,16 +55,16 @@
           Grid.Row="0"
           Style="{StaticResource ColumnHeaderGridStyle}">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="40"/>
+            <ColumnDefinition Width="40" />
             <ColumnDefinition Width="*"
-                              MinWidth="150"/>
-            <ColumnDefinition Width="80"/>
-            <ColumnDefinition Width="200"/>
+                              MinWidth="150" />
+            <ColumnDefinition Width="80" />
+            <ColumnDefinition Width="200" />
           </Grid.ColumnDefinitions>
           <TextBlock
             Grid.Column="0"
             FontWeight="SemiBold"
-            Text=""/>
+            Text="" />
           <Button
             Grid.Column="1"
             Style="{StaticResource SortableColumnHeaderButtonStyle}"
@@ -72,10 +72,10 @@
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
               <TextBlock FontWeight="SemiBold"
-                         Text="Filename"/>
+                         Text="Filename" />
               <FontIcon
                 x:Name="FilenameSortIcon"
-                Style="{StaticResource SortIconStyle}"/>
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
           <Button
@@ -85,10 +85,10 @@
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
               <TextBlock FontWeight="SemiBold"
-                         Text="Size"/>
+                         Text="Size" />
               <FontIcon
                 x:Name="SizeSortIcon"
-                Style="{StaticResource SortIconStyle}"/>
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
           <Button
@@ -98,10 +98,10 @@
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
               <TextBlock FontWeight="SemiBold"
-                         Text="Status"/>
+                         Text="Status" />
               <FontIcon
                 x:Name="StatusSortIcon"
-                Style="{StaticResource SortIconStyle}"/>
+                Style="{StaticResource SortIconStyle}" />
             </StackPanel>
           </Button>
         </Grid>
@@ -114,28 +114,28 @@
             <DataTemplate x:DataType="local:DumpFileEntry">
               <Grid Padding="8,4">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="40"/>
+                  <ColumnDefinition Width="40" />
                   <ColumnDefinition Width="*"
-                                    MinWidth="150"/>
-                  <ColumnDefinition Width="80"/>
-                  <ColumnDefinition Width="200"/>
+                                    MinWidth="150" />
+                  <ColumnDefinition Width="80" />
+                  <ColumnDefinition Width="200" />
                 </Grid.ColumnDefinitions>
                 <CheckBox
                   Grid.Column="0"
                   MinWidth="0"
-                  IsChecked="{x:Bind IsSelected, Mode=TwoWay}"/>
+                  IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
                 <TextBlock
                   Grid.Column="1"
                   VerticalAlignment="Center"
                   FontSize="11"
                   Text="{x:Bind FileName}"
                   TextTrimming="CharacterEllipsis"
-                  ToolTipService.ToolTip="{x:Bind FilePath}"/>
+                  ToolTipService.ToolTip="{x:Bind FilePath}" />
                 <TextBlock
                   Grid.Column="2"
                   VerticalAlignment="Center"
                   FontSize="11"
-                  Text="{x:Bind SizeFormatted}"/>
+                  Text="{x:Bind SizeFormatted}" />
                 <TextBlock
                   Grid.Column="3"
                   VerticalAlignment="Center"
@@ -144,7 +144,7 @@
                   Text="{x:Bind Status, Mode=OneWay}"
                   TextTrimming="CharacterEllipsis"
                   TextWrapping="NoWrap"
-                  ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}"/>
+                  ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}" />
               </Grid>
             </DataTemplate>
           </ListView.ItemTemplate>
@@ -156,20 +156,20 @@
     <ProgressBar
       x:Name="BatchProgressBar"
       Grid.Row="2"
-      Style="{StaticResource TabProgressBarStyle}"/>
+      Style="{StaticResource TabProgressBarStyle}" />
 
     <!--  Input/Output Section  -->
     <Grid
       Grid.Row="3"
       Style="{StaticResource IoSectionGridStyle}">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
 
       <!--  Input Directory  -->
@@ -177,38 +177,38 @@
         Grid.Row="0"
         Grid.Column="0"
         Style="{StaticResource IoLabelStyle}"
-        Text="Input Directory"/>
+        Text="Input Directory" />
       <TextBox
         x:Name="InputDirectoryTextBox"
         Grid.Row="0"
         Grid.Column="1"
         Style="{StaticResource IoTextBoxStyle}"
         PlaceholderText="Select or enter a folder containing .dmp files..."
-        TextChanged="InputDirectoryTextBox_TextChanged"/>
+        TextChanged="InputDirectoryTextBox_TextChanged" />
       <Button
         Grid.Row="0"
         Grid.Column="2"
         Click="BrowseInputButton_Click"
-        Content="Browse..."/>
+        Content="Browse..." />
 
       <!--  Output Directory  -->
       <TextBlock
         Grid.Row="1"
         Grid.Column="0"
         Style="{StaticResource IoLabelStyle}"
-        Text="Output Directory"/>
+        Text="Output Directory" />
       <TextBox
         x:Name="OutputDirectoryTextBox"
         Grid.Row="1"
         Grid.Column="1"
         Style="{StaticResource IoTextBoxStyle}"
         PlaceholderText="Select or enter output directory..."
-        TextChanged="OutputDirectoryTextBox_TextChanged"/>
+        TextChanged="OutputDirectoryTextBox_TextChanged" />
       <Button
         Grid.Row="1"
         Grid.Column="2"
         Click="BrowseOutputButton_Click"
-        Content="Browse..."/>
+        Content="Browse..." />
     </Grid>
 
     <!--  BOTTOM: File Types, Options, and Process Button  -->
@@ -216,9 +216,9 @@
       Grid.Row="4"
       Margin="0,8,0,0">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
       <!--  File Type Filters  -->
@@ -245,13 +245,13 @@
         FontSize="12"
         Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
         Text=""
-        Visibility="Collapsed"/>
+        Visibility="Collapsed" />
 
       <!--  Options and Action Buttons  -->
       <Grid Grid.Row="2">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <StackPanel
@@ -267,16 +267,16 @@
               MinWidth="0"
               Content="Convert Formats"
               ToolTipService.ToolTip="Convert DDX→DDS textures and XUR→XUI interfaces"
-              IsChecked="True"/>
+              IsChecked="True" />
             <CheckBox
               x:Name="BatchSaveAtlasCheckBox"
               Margin="16,0,0,0"
-              Content="Save Atlas Files"/>
+              Content="Save Atlas Files" />
           </StackPanel>
 
           <Border Width="1"
                   Height="20"
-                  Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                  Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
 
           <!--  Batch Options  -->
           <StackPanel Orientation="Horizontal"
@@ -284,7 +284,7 @@
             <TextBlock
               Margin="0,0,0,2"
               VerticalAlignment="Center"
-              Text="Threads:"/>
+              Text="Threads:" />
             <NumberBox
               x:Name="ParallelCountBox"
               MinWidth="50"
@@ -293,17 +293,17 @@
               Minimum="1"
               SpinButtonPlacementMode="Hidden"
               Value="2"
-              ValueChanged="ParallelCountBox_ValueChanged"/>
+              ValueChanged="ParallelCountBox_ValueChanged" />
             <CheckBox
               x:Name="SkipExistingCheckBox"
               Margin="16,0,0,0"
               Content="Skip Existing"
-              IsChecked="True"/>
+              IsChecked="True" />
             <CheckBox
               x:Name="BatchVerboseCheckBox"
               MinWidth="0"
               Content="Verbose"
-              ToolTipService.ToolTip="Output detailed progress to the terminal (when launched from command line)"/>
+              ToolTipService.ToolTip="Output detailed progress to the terminal (when launched from command line)" />
           </StackPanel>
         </StackPanel>
 
@@ -316,14 +316,14 @@
             MinWidth="80"
             Click="CancelButton_Click"
             Content="Cancel"
-            IsEnabled="False"/>
+            IsEnabled="False" />
           <Button
             x:Name="ExtractButton"
             MinWidth="120"
             Click="ExtractButton_Click"
             Content="Extract Files"
             IsEnabled="False"
-            Style="{StaticResource AccentButtonStyle}"/>
+            Style="{StaticResource AccentButtonStyle}" />
         </StackPanel>
       </Grid>
     </Grid>

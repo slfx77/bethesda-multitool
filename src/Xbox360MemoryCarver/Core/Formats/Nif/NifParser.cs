@@ -13,11 +13,17 @@ internal static class NifParser
     /// </summary>
     public static NifInfo? Parse(byte[] data)
     {
-        if (data.Length < 50) return null;
+        if (data.Length < 50)
+        {
+            return null;
+        }
 
         var info = new NifInfo();
         var pos = ParseHeaderString(data, info);
-        if (pos < 0) return null;
+        if (pos < 0)
+        {
+            return null;
+        }
 
         pos = ParseVersionInfo(data, pos, info);
         if (!IsBethesdaVersion(info.BinaryVersion,
@@ -31,7 +37,10 @@ internal static class NifParser
         pos += 2;
 
         pos = ParseBlockTypeNames(data, pos, numBlockTypes, info);
-        if (pos < 0) return null;
+        if (pos < 0)
+        {
+            return null;
+        }
 
         var (blockTypeIndices, blockSizes) = ParseBlockMetadata(data, pos, info.BlockCount, info.IsBigEndian);
         pos += info.BlockCount * 6; // 2 bytes for type index + 4 bytes for size
@@ -46,7 +55,10 @@ internal static class NifParser
     private static int ParseHeaderString(byte[] data, NifInfo info)
     {
         var newlinePos = Array.IndexOf(data, (byte)0x0A, 0, Math.Min(60, data.Length));
-        if (newlinePos < 0) return -1;
+        if (newlinePos < 0)
+        {
+            return -1;
+        }
 
         info.HeaderString = Encoding.ASCII.GetString(data, 0, newlinePos);
         return newlinePos + 1;
@@ -67,7 +79,10 @@ internal static class NifParser
         pos += 4;
 
         // Skip ShortStrings (author, process script, export script)
-        for (var i = 0; i < 3; i++) pos += 1 + data[pos];
+        for (var i = 0; i < 3; i++)
+        {
+            pos += 1 + data[pos];
+        }
 
         return pos;
     }
@@ -76,12 +91,18 @@ internal static class NifParser
     {
         for (var i = 0; i < numBlockTypes; i++)
         {
-            if (pos + 4 > data.Length) return -1;
+            if (pos + 4 > data.Length)
+            {
+                return -1;
+            }
 
             var strLen = ReadUInt32(data, pos, info.IsBigEndian);
             pos += 4;
 
-            if (strLen > 256 || pos + strLen > data.Length) return -1;
+            if (strLen > 256 || pos + strLen > data.Length)
+            {
+                return -1;
+            }
 
             info.BlockTypeNames.Add(Encoding.ASCII.GetString(data, pos, (int)strLen));
             pos += (int)strLen;
@@ -94,11 +115,17 @@ internal static class NifParser
         byte[] data, int pos, int numBlocks, bool isBigEndian)
     {
         var blockTypeIndices = new ushort[numBlocks];
-        for (var i = 0; i < numBlocks; i++) blockTypeIndices[i] = ReadUInt16(data, pos + i * 2, isBigEndian);
+        for (var i = 0; i < numBlocks; i++)
+        {
+            blockTypeIndices[i] = ReadUInt16(data, pos + i * 2, isBigEndian);
+        }
 
         var sizePos = pos + numBlocks * 2;
         var blockSizes = new uint[numBlocks];
-        for (var i = 0; i < numBlocks; i++) blockSizes[i] = ReadUInt32(data, sizePos + i * 4, isBigEndian);
+        for (var i = 0; i < numBlocks; i++)
+        {
+            blockSizes[i] = ReadUInt32(data, sizePos + i * 4, isBigEndian);
+        }
 
         return (blockTypeIndices, blockSizes);
     }
@@ -106,7 +133,7 @@ internal static class NifParser
     private static int SkipGroups(byte[] data, int pos, bool isBigEndian)
     {
         var numGroups = ReadUInt32(data, pos, isBigEndian);
-        return pos + 4 + ((int)numGroups * 4);
+        return pos + 4 + (int)numGroups * 4;
     }
 
     private static void BuildBlockList(NifInfo info, ushort[] blockTypeIndices, uint[] blockSizes, int dataStart)

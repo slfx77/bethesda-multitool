@@ -7,7 +7,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Converts a big-endian NIF file to little-endian.
     /// </summary>
-    public ConversionResult Convert(byte[] data)
+    public NifConversionResult Convert(byte[] data)
     {
         try
         {
@@ -31,7 +31,7 @@ internal sealed partial class NifConverter
             var info = NifParser.Parse(data);
             if (info == null)
             {
-                return new ConversionResult
+                return new NifConversionResult
                 {
                     Success = false,
                     ErrorMessage = "Failed to parse NIF header"
@@ -40,7 +40,7 @@ internal sealed partial class NifConverter
 
             if (!info.IsBigEndian)
             {
-                return new ConversionResult
+                return new NifConversionResult
                 {
                     Success = true,
                     OutputData = data,
@@ -52,7 +52,7 @@ internal sealed partial class NifConverter
             // Check if this is a Bethesda version we can fully convert
             if (!NifParser.IsBethesdaVersion(info.BinaryVersion, info.UserVersion))
             {
-                return new ConversionResult
+                return new NifConversionResult
                 {
                     Success = false,
                     ErrorMessage = $"Unsupported NIF version {info.BinaryVersion:X8} (only Bethesda versions supported)"
@@ -96,7 +96,7 @@ internal sealed partial class NifConverter
             // Step 5: Convert and write output
             WriteConvertedOutput(data, output, info, blockRemap);
 
-            return new ConversionResult
+            return new NifConversionResult
             {
                 Success = true,
                 OutputData = output,
@@ -107,7 +107,7 @@ internal sealed partial class NifConverter
         {
             Log.Debug($"  Stack trace: {ex.StackTrace}");
 
-            return new ConversionResult
+            return new NifConversionResult
             {
                 Success = false,
                 ErrorMessage = $"Conversion failed: {ex.Message}"

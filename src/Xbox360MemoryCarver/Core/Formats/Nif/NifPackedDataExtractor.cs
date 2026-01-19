@@ -46,7 +46,10 @@ internal static class NifPackedDataExtractor
                 return null;
             }
 
-            if (streams.Count == 0) return null;
+            if (streams.Count == 0)
+            {
+                return null;
+            }
 
             var stride = (int)streams[0].Stride;
             var end = blockOffset + blockSize;
@@ -88,12 +91,20 @@ internal static class NifPackedDataExtractor
         var end = blockOffset + blockSize;
 
         // NumVertices (ushort)
-        if (pos + 2 > end) return false;
+        if (pos + 2 > end)
+        {
+            return false;
+        }
+
         numVertices = ReadUInt16(data, pos, isBigEndian);
         pos += 2;
 
         // NumBlockInfos (uint) - number of data streams
-        if (pos + 4 > end) return false;
+        if (pos + 4 > end)
+        {
+            return false;
+        }
+
         var numBlockInfos = ReadUInt32(data, pos, isBigEndian);
         pos += 4;
 
@@ -111,7 +122,11 @@ internal static class NifPackedDataExtractor
         }
 
         // Skip past NumDataBlocks field
-        if (pos + 4 > end) return false;
+        if (pos + 4 > end)
+        {
+            return false;
+        }
+
         pos += 4;
 
         return true;
@@ -135,7 +150,11 @@ internal static class NifPackedDataExtractor
     {
         // Rewind to read NumDataBlocks
         pos -= 4;
-        if (pos + 4 > end) return -1;
+        if (pos + 4 > end)
+        {
+            return -1;
+        }
+
         var numDataBlocks = ReadUInt32(data, pos, isBigEndian);
         pos += 4;
 
@@ -143,9 +162,16 @@ internal static class NifPackedDataExtractor
         for (var b = 0; b < numDataBlocks && pos < end; b++)
         {
             var hasData = data[pos++];
-            if (hasData == 0) continue;
+            if (hasData == 0)
+            {
+                continue;
+            }
 
-            if (pos + 8 > end) break;
+            if (pos + 8 > end)
+            {
+                break;
+            }
+
             var blockDataSize = ReadUInt32(data, pos, isBigEndian);
             var numInnerBlocks = ReadUInt32(data, pos + 4, isBigEndian);
             pos += 8;
@@ -153,7 +179,11 @@ internal static class NifPackedDataExtractor
             // Block offsets
             pos += (int)numInnerBlocks * 4;
 
-            if (pos + 4 > end) break;
+            if (pos + 4 > end)
+            {
+                break;
+            }
+
             var numData = ReadUInt32(data, pos, isBigEndian);
             pos += 4;
 
@@ -278,7 +308,10 @@ internal static class NifPackedDataExtractor
         {
             var streamData = ExtractHalf4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride, stream,
                 ctx.IsBigEndian);
-            if (streamData == null) continue;
+            if (streamData == null)
+            {
+                continue;
+            }
 
             var avgLen = CalculateAverageVectorLength(streamData, ctx.NumVertices);
 
@@ -302,10 +335,10 @@ internal static class NifPackedDataExtractor
 
         for (var v = 0; v < sampleCount; v++)
         {
-            var x = streamData[(v * 3) + 0];
-            var y = streamData[(v * 3) + 1];
-            var z = streamData[(v * 3) + 2];
-            avgLen += Math.Sqrt((x * x) + (y * y) + (z * z));
+            var x = streamData[v * 3 + 0];
+            var y = streamData[v * 3 + 1];
+            var z = streamData[v * 3 + 2];
+            avgLen += Math.Sqrt(x * x + y * y + z * z);
         }
 
         return avgLen / sampleCount;
@@ -320,16 +353,38 @@ internal static class NifPackedDataExtractor
         {
             // For skinned meshes, skip offset 8 (it contains bone weights, extracted earlier)
             var skinnedUnitStreams = unitStreams.Where(s => s.offset >= 20).ToList();
-            if (skinnedUnitStreams.Count >= 1) result.Normals = skinnedUnitStreams[0].data;
-            if (skinnedUnitStreams.Count >= 2) result.Tangents = skinnedUnitStreams[1].data;
-            if (skinnedUnitStreams.Count >= 3) result.Bitangents = skinnedUnitStreams[2].data;
+            if (skinnedUnitStreams.Count >= 1)
+            {
+                result.Normals = skinnedUnitStreams[0].data;
+            }
+
+            if (skinnedUnitStreams.Count >= 2)
+            {
+                result.Tangents = skinnedUnitStreams[1].data;
+            }
+
+            if (skinnedUnitStreams.Count >= 3)
+            {
+                result.Bitangents = skinnedUnitStreams[2].data;
+            }
         }
         else
         {
             // For non-skinned meshes, offset 8 is normals!
-            if (unitStreams.Count >= 1) result.Normals = unitStreams[0].data;
-            if (unitStreams.Count >= 2) result.Tangents = unitStreams[1].data;
-            if (unitStreams.Count >= 3) result.Bitangents = unitStreams[2].data;
+            if (unitStreams.Count >= 1)
+            {
+                result.Normals = unitStreams[0].data;
+            }
+
+            if (unitStreams.Count >= 2)
+            {
+                result.Tangents = unitStreams[1].data;
+            }
+
+            if (unitStreams.Count >= 3)
+            {
+                result.Bitangents = unitStreams[2].data;
+            }
         }
     }
 
@@ -348,8 +403,16 @@ internal static class NifPackedDataExtractor
     {
         // Bit 0: has UVs, Bit 12 (4096): has tangents/bitangents
         ushort bsDataFlags = 0;
-        if (result.UVs != null) bsDataFlags |= 1;
-        if (result.Tangents != null || result.Bitangents != null) bsDataFlags |= 4096;
+        if (result.UVs != null)
+        {
+            bsDataFlags |= 1;
+        }
+
+        if (result.Tangents != null || result.Bitangents != null)
+        {
+            bsDataFlags |= 4096;
+        }
+
         result.BsDataFlags = bsDataFlags;
     }
 
@@ -364,7 +427,7 @@ internal static class NifPackedDataExtractor
     /// <summary>
     ///     Extract a half4 stream (4 half-floats = 8 bytes per vertex) as Vector3 floats.
     /// </summary>
-    private static float[]? ExtractHalf4Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
+    private static float[] ExtractHalf4Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
         DataStreamInfo stream, bool isBigEndian)
     {
         var result = new float[numVertices * 3];
@@ -372,13 +435,16 @@ internal static class NifPackedDataExtractor
 
         for (var v = 0; v < numVertices; v++)
         {
-            var vertexOffset = rawDataOffset + (v * stride) + offset;
-            if (vertexOffset + 6 > data.Length) break;
+            var vertexOffset = rawDataOffset + v * stride + offset;
+            if (vertexOffset + 6 > data.Length)
+            {
+                break;
+            }
 
             // Read 3 half-floats (ignore the 4th W component)
-            result[(v * 3) + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
-            result[(v * 3) + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
-            result[(v * 3) + 2] = HalfToFloat(ReadUInt16(data, vertexOffset + 4, isBigEndian));
+            result[v * 3 + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
+            result[v * 3 + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
+            result[v * 3 + 2] = HalfToFloat(ReadUInt16(data, vertexOffset + 4, isBigEndian));
         }
 
         return result;
@@ -396,24 +462,24 @@ internal static class NifPackedDataExtractor
         for (var v = 0; v < numVertices; v++)
         {
             // Normal vector
-            var nx = normals[(v * 3) + 0];
-            var ny = normals[(v * 3) + 1];
-            var nz = normals[(v * 3) + 2];
+            var nx = normals[v * 3 + 0];
+            var ny = normals[v * 3 + 1];
+            var nz = normals[v * 3 + 2];
 
             // Tangent vector
-            var tx = tangents[(v * 3) + 0];
-            var ty = tangents[(v * 3) + 1];
-            var tz = tangents[(v * 3) + 2];
+            var tx = tangents[v * 3 + 0];
+            var ty = tangents[v * 3 + 1];
+            var tz = tangents[v * 3 + 2];
 
             // Cross product: N × T
-            var bx = (ny * tz) - (nz * ty);
-            var by = (nz * tx) - (nx * tz);
-            var bz = (nx * ty) - (ny * tx);
+            var bx = ny * tz - nz * ty;
+            var by = nz * tx - nx * tz;
+            var bz = nx * ty - ny * tx;
 
             // Store bitangent (already unit-length if N and T are unit-length and perpendicular)
-            bitangents[(v * 3) + 0] = bx;
-            bitangents[(v * 3) + 1] = by;
-            bitangents[(v * 3) + 2] = bz;
+            bitangents[v * 3 + 0] = bx;
+            bitangents[v * 3 + 1] = by;
+            bitangents[v * 3 + 2] = bz;
         }
 
         return bitangents;
@@ -423,7 +489,7 @@ internal static class NifPackedDataExtractor
     ///     Extract a half4 stream as bone weights (4 floats per vertex).
     ///     Unlike positions/normals, we need all 4 components for bone weights.
     /// </summary>
-    private static float[]? ExtractHalf4WeightsStream(byte[] data, int rawDataOffset, int numVertices, int stride,
+    private static float[] ExtractHalf4WeightsStream(byte[] data, int rawDataOffset, int numVertices, int stride,
         DataStreamInfo stream, bool isBigEndian)
     {
         var result = new float[numVertices * 4];
@@ -432,13 +498,16 @@ internal static class NifPackedDataExtractor
         for (var v = 0; v < numVertices; v++)
         {
             var vertexOffset = rawDataOffset + v * stride + offset;
-            if (vertexOffset + 8 > data.Length) break;
+            if (vertexOffset + 8 > data.Length)
+            {
+                break;
+            }
 
             // Read all 4 half-floats for bone weights
-            result[(v * 4) + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
-            result[(v * 4) + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
-            result[(v * 4) + 2] = HalfToFloat(ReadUInt16(data, vertexOffset + 4, isBigEndian));
-            result[(v * 4) + 3] = HalfToFloat(ReadUInt16(data, vertexOffset + 6, isBigEndian));
+            result[v * 4 + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
+            result[v * 4 + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
+            result[v * 4 + 2] = HalfToFloat(ReadUInt16(data, vertexOffset + 4, isBigEndian));
+            result[v * 4 + 3] = HalfToFloat(ReadUInt16(data, vertexOffset + 6, isBigEndian));
         }
 
         return result;
@@ -447,7 +516,7 @@ internal static class NifPackedDataExtractor
     /// <summary>
     ///     Extract a half2 stream (2 half-floats = 4 bytes per vertex) as Vector2 floats.
     /// </summary>
-    private static float[]? ExtractHalf2Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
+    private static float[] ExtractHalf2Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
         DataStreamInfo stream, bool isBigEndian)
     {
         var result = new float[numVertices * 2];
@@ -455,11 +524,14 @@ internal static class NifPackedDataExtractor
 
         for (var v = 0; v < numVertices; v++)
         {
-            var vertexOffset = rawDataOffset + (v * stride) + offset;
-            if (vertexOffset + 4 > data.Length) break;
+            var vertexOffset = rawDataOffset + v * stride + offset;
+            if (vertexOffset + 4 > data.Length)
+            {
+                break;
+            }
 
-            result[(v * 2) + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
-            result[(v * 2) + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
+            result[v * 2 + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
+            result[v * 2 + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
         }
 
         return result;
@@ -470,7 +542,7 @@ internal static class NifPackedDataExtractor
     ///     Vertex colors are stored as RGBA (4 bytes per vertex).
     ///     Note: No endian conversion needed for single-byte values.
     /// </summary>
-    private static byte[]? ExtractUbyte4Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
+    private static byte[] ExtractUbyte4Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
         DataStreamInfo stream)
     {
         var result = new byte[numVertices * 4];
@@ -478,13 +550,16 @@ internal static class NifPackedDataExtractor
 
         for (var v = 0; v < numVertices; v++)
         {
-            var vertexOffset = rawDataOffset + (v * stride) + offset;
-            if (vertexOffset + 4 > data.Length) break;
+            var vertexOffset = rawDataOffset + v * stride + offset;
+            if (vertexOffset + 4 > data.Length)
+            {
+                break;
+            }
 
-            result[(v * 4) + 0] = data[vertexOffset + 0];
-            result[(v * 4) + 1] = data[vertexOffset + 1];
-            result[(v * 4) + 2] = data[vertexOffset + 2];
-            result[(v * 4) + 3] = data[vertexOffset + 3];
+            result[v * 4 + 0] = data[vertexOffset + 0];
+            result[v * 4 + 1] = data[vertexOffset + 1];
+            result[v * 4 + 2] = data[vertexOffset + 2];
+            result[v * 4 + 3] = data[vertexOffset + 3];
         }
 
         return result;
@@ -522,7 +597,11 @@ internal static class NifPackedDataExtractor
         if (exp == 0)
         {
             // Zero or denormalized
-            if (mant == 0) return sign == 0 ? 0f : -0f;
+            if (mant == 0)
+            {
+                return sign == 0 ? 0f : -0f;
+            }
+
             // Denormalized
             var val = mant / 1024.0f * (float)Math.Pow(2, -14);
             return sign == 0 ? val : -val;
@@ -532,7 +611,10 @@ internal static class NifPackedDataExtractor
         {
             // Infinity or NaN
             if (mant != 0)
+            {
                 return float.NaN;
+            }
+
             return sign == 0 ? float.PositiveInfinity : float.NegativeInfinity;
         }
 

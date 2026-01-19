@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Text;
 using Xbox360MemoryCarver.Core.Utils;
 
@@ -7,12 +6,10 @@ namespace Xbox360MemoryCarver.Core.Formats.EsmRecord;
 /// <summary>
 ///     Parses ESM file structure including the TES4 header, groups, and records.
 ///     Based on xEdit format documentation.
-///     
 ///     ESM Structure:
 ///     [TES4 Record] - File header
 ///     [GRUP Record] - Top-level groups for each record type
-///         [Records...] - Actual data records
-///     
+///     [Records...] - Actual data records
 ///     Xbox 360 ESM files use big-endian byte order.
 ///     PC ESM files use little-endian byte order.
 /// </summary>
@@ -36,7 +33,9 @@ public static class EsmParser
     public static bool IsBigEndian(ReadOnlySpan<byte> data)
     {
         if (data.Length < 4)
+        {
             return false;
+        }
 
         // Xbox 360 big-endian: bytes are reversed, so "TES4" reads as "4SET" (0x34 0x53 0x45 0x54)
         // PC little-endian: "TES4" reads normally (0x54 0x45 0x53 0x34)
@@ -49,7 +48,9 @@ public static class EsmParser
     private static string ReadSignature(ReadOnlySpan<byte> data, bool bigEndian)
     {
         if (data.Length < 4)
+        {
             return string.Empty;
+        }
 
         if (bigEndian)
         {
@@ -96,7 +97,9 @@ public static class EsmParser
     public static EsmFileHeader? ParseFileHeader(ReadOnlySpan<byte> data)
     {
         if (data.Length < MainRecordHeaderSize)
+        {
             return null;
+        }
 
         // Detect endianness
         var bigEndian = IsBigEndian(data);
@@ -104,11 +107,15 @@ public static class EsmParser
         // Check for TES4 signature
         var sig = ReadSignature(data, bigEndian);
         if (sig != "TES4")
+        {
             return null;
+        }
 
         var header = ParseRecordHeader(data, bigEndian);
         if (header == null)
+        {
             return null;
+        }
 
         // Parse TES4 subrecords
         var headerData = data.Slice(MainRecordHeaderSize, (int)header.DataSize);
@@ -131,6 +138,7 @@ public static class EsmParser
                         // Records count at offset 4
                         nextObjectId = ReadUInt32(sub.Data, 8, bigEndian);
                     }
+
                     break;
                 case "CNAM":
                     author = ReadNullTermString(sub.Data);
@@ -162,7 +170,9 @@ public static class EsmParser
     public static MainRecordHeader? ParseRecordHeader(ReadOnlySpan<byte> data, bool bigEndian = false)
     {
         if (data.Length < MainRecordHeaderSize)
+        {
             return null;
+        }
 
         // Read signature with endianness
         var signature = ReadSignature(data, bigEndian);
@@ -171,7 +181,9 @@ public static class EsmParser
         foreach (var c in signature)
         {
             if (!char.IsAsciiLetterOrDigit(c) && c != '_')
+            {
                 return null;
+            }
         }
 
         var dataSize = ReadUInt32(data, 4, bigEndian);
@@ -182,7 +194,9 @@ public static class EsmParser
 
         // Basic validation
         if (dataSize > 100_000_000) // 100 MB max
+        {
             return null;
+        }
 
         return new MainRecordHeader
         {
@@ -201,11 +215,15 @@ public static class EsmParser
     public static GroupHeader? ParseGroupHeader(ReadOnlySpan<byte> data, bool bigEndian = false)
     {
         if (data.Length < 24)
+        {
             return null;
+        }
 
         var sig = ReadSignature(data, bigEndian);
         if (sig != "GRUP")
+        {
             return null;
+        }
 
         var groupSize = ReadUInt32(data, 4, bigEndian);
         var label = data.Slice(8, 4).ToArray();
@@ -245,7 +263,9 @@ public static class EsmParser
             }
 
             if (!validSig)
+            {
                 break;
+            }
 
             var dataLen = ReadUInt16(data, offset + 4, bigEndian);
 
@@ -271,11 +291,14 @@ public static class EsmParser
                         offset += (int)extendedSize;
                     }
                 }
+
                 continue;
             }
 
             if (offset + SubrecordHeaderSize + dataLen > data.Length)
+            {
                 break;
+            }
 
             result.Add(new ParsedSubrecord
             {
@@ -303,7 +326,9 @@ public static class EsmParser
         // Skip TES4 header
         var tes4Header = ParseRecordHeader(data, bigEndian);
         if (tes4Header == null || tes4Header.Signature != "TES4")
+        {
             return results;
+        }
 
         var offset = MainRecordHeaderSize + (int)tes4Header.DataSize;
 
@@ -316,7 +341,9 @@ public static class EsmParser
                 // Parse group header and skip to content
                 var groupHeader = ParseGroupHeader(data[offset..], bigEndian);
                 if (groupHeader == null || groupHeader.GroupSize < 24)
+                {
                     break;
+                }
 
                 // Parse records within the group
                 var groupEnd = offset + (int)groupHeader.GroupSize;
@@ -331,7 +358,10 @@ public static class EsmParser
                         // Nested group - skip for now
                         var nestedGroup = ParseGroupHeader(data[offset..], bigEndian);
                         if (nestedGroup == null)
+                        {
                             break;
+                        }
+
                         offset += (int)nestedGroup.GroupSize;
                     }
                     else
@@ -339,7 +369,9 @@ public static class EsmParser
                         // Regular record
                         var recordHeader = ParseRecordHeader(data[offset..], bigEndian);
                         if (recordHeader == null)
+                        {
                             break;
+                        }
 
                         var recordDataSlice = data.Slice(offset + MainRecordHeaderSize, (int)recordHeader.DataSize);
                         var subrecords = ParseSubrecords(recordDataSlice, bigEndian);
@@ -360,7 +392,9 @@ public static class EsmParser
                 // Top-level record (shouldn't happen in normal ESM but handle it)
                 var recordHeader = ParseRecordHeader(data[offset..], bigEndian);
                 if (recordHeader == null)
+                {
                     break;
+                }
 
                 var recordDataSlice = data.Slice(offset + MainRecordHeaderSize, (int)recordHeader.DataSize);
                 var subrecords = ParseSubrecords(recordDataSlice, bigEndian);
@@ -393,7 +427,9 @@ public static class EsmParser
         // Skip TES4 header
         var tes4Header = ParseRecordHeader(data, bigEndian);
         if (tes4Header == null || tes4Header.Signature != "TES4")
+        {
             return results;
+        }
 
         // Add TES4 record
         results.Add(new RecordInfo
@@ -414,7 +450,9 @@ public static class EsmParser
             {
                 var groupSize = ReadUInt32(data, offset + 4, bigEndian);
                 if (groupSize < 24 || offset + groupSize > data.Length)
+                {
                     break;
+                }
 
                 // Scan records within group
                 var groupEnd = offset + (int)groupSize;
@@ -428,7 +466,10 @@ public static class EsmParser
                     {
                         var nestedSize = ReadUInt32(data, innerOffset + 4, bigEndian);
                         if (nestedSize < 24)
+                        {
                             break;
+                        }
+
                         innerOffset += (int)nestedSize;
                     }
                     else
@@ -445,13 +486,17 @@ public static class EsmParser
                         }
 
                         if (!validSig)
+                        {
                             break;
+                        }
 
                         var dataSize = ReadUInt32(data, innerOffset + 4, bigEndian);
                         var formId = ReadUInt32(data, innerOffset + 12, bigEndian);
 
                         if (dataSize > 100_000_000)
+                        {
                             break;
+                        }
 
                         results.Add(new RecordInfo
                         {
@@ -487,7 +532,10 @@ public static class EsmParser
         foreach (var rec in records)
         {
             if (!counts.TryGetValue(rec.Signature, out var count))
+            {
                 count = 0;
+            }
+
             counts[rec.Signature] = count + 1;
         }
 
@@ -497,7 +545,11 @@ public static class EsmParser
     private static string ReadNullTermString(ReadOnlySpan<byte> data)
     {
         var end = data.IndexOf((byte)0);
-        if (end < 0) end = data.Length;
+        if (end < 0)
+        {
+            end = data.Length;
+        }
+
         return Encoding.UTF8.GetString(data[..end]);
     }
 }
@@ -556,9 +608,9 @@ public record ParsedSubrecord
     public required byte[] Data { get; init; }
 
     public string DataAsString => Encoding.UTF8.GetString(Data).TrimEnd('\0');
-    public uint DataAsFormId => Data.Length >= 4 ? BinaryUtils.ReadUInt32LE(Data, 0) : 0;
-    public float DataAsFloat => Data.Length >= 4 ? BinaryUtils.ReadFloatLE(Data, 0) : 0f;
-    public int DataAsInt32 => Data.Length >= 4 ? BinaryUtils.ReadInt32LE(Data, 0) : 0;
+    public uint DataAsFormId => Data.Length >= 4 ? BinaryUtils.ReadUInt32LE(Data) : 0;
+    public float DataAsFloat => Data.Length >= 4 ? BinaryUtils.ReadFloatLE(Data) : 0f;
+    public int DataAsInt32 => Data.Length >= 4 ? BinaryUtils.ReadInt32LE(Data) : 0;
 }
 
 /// <summary>
@@ -571,7 +623,6 @@ public record ParsedMainRecord
     public List<ParsedSubrecord> Subrecords { get; init; } = [];
 
     public string? EditorId => Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
-    public string? FullName => Subrecords.FirstOrDefault(s => s.Signature == "FULL")?.DataAsString;
 }
 
 /// <summary>

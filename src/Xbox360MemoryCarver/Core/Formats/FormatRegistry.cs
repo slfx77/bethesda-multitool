@@ -35,6 +35,9 @@ public static class FormatRegistry
     private static readonly Lazy<FrozenDictionary<string, IFileFormat>> FormatsBySignatureIdLazy =
         new(BuildFormatsBySignatureId);
 
+    private static readonly Lazy<FrozenDictionary<string, IFileFormat>> FormatsByExtensionLazy =
+        new(BuildFormatsByExtension);
+
     private static readonly Lazy<FrozenDictionary<FileCategory, uint>> CategoryColorsLazy =
         new(BuildCategoryColors);
 
@@ -52,6 +55,11 @@ public static class FormatRegistry
     ///     Formats keyed by SignatureId (allows lookup from any signature variant).
     /// </summary>
     public static FrozenDictionary<string, IFileFormat> BySignatureId => FormatsBySignatureIdLazy.Value;
+
+    /// <summary>
+    ///     Formats keyed by file extension (e.g., ".ddx", ".xma", ".nif").
+    /// </summary>
+    public static FrozenDictionary<string, IFileFormat> ByExtension => FormatsByExtensionLazy.Value;
 
     /// <summary>
     ///     Colors for each category (ARGB format).
@@ -83,13 +91,36 @@ public static class FormatRegistry
     }
 
     /// <summary>
+    ///     Get a format by file extension.
+    /// </summary>
+    public static IFileFormat? GetByExtension(string extension)
+    {
+        // Normalize extension to lowercase with dot
+        var normalizedExt = extension.StartsWith('.') ? extension : "." + extension;
+        return ByExtension.GetValueOrDefault(normalizedExt.ToLowerInvariant());
+    }
+
+    /// <summary>
+    ///     Get a converter for the given file extension, if available.
+    /// </summary>
+    /// <param name="extension">File extension (e.g., ".ddx", ".xma", ".nif")</param>
+    /// <returns>IFileConverter if the format supports conversion, null otherwise.</returns>
+    public static IFileConverter? GetConverterByExtension(string extension)
+    {
+        var format = GetByExtension(extension);
+        return format as IFileConverter;
+    }
+
+    /// <summary>
     ///     Get the category for a signature ID.
     /// </summary>
     public static FileCategory GetCategory(string signatureId)
     {
         // Special pseudo-signatures that aren't registered formats
         if (signatureId.Equals("minidump_header", StringComparison.OrdinalIgnoreCase))
+        {
             return FileCategory.Header;
+        }
 
         return GetBySignatureId(signatureId)?.Category ?? FileCategory.Texture;
     }
@@ -122,10 +153,16 @@ public static class FormatRegistry
         var lower = input.ToLowerInvariant();
 
         // Direct match on signature ID
-        if (BySignatureId.ContainsKey(lower)) return lower;
+        if (BySignatureId.ContainsKey(lower))
+        {
+            return lower;
+        }
 
         // Direct match on format ID
-        if (ByFormatId.TryGetValue(lower, out var format)) return format.Signatures[0].Id;
+        if (ByFormatId.TryGetValue(lower, out var format))
+        {
+            return format.Signatures[0].Id;
+        }
 
         // Description-based matching
         return lower switch
@@ -151,20 +188,75 @@ public static class FormatRegistry
     private static string FallbackNormalize(string lower)
     {
         // Try to match by keywords
-        if (lower.Contains("3xdo", StringComparison.Ordinal)) return "ddx_3xdo";
-        if (lower.Contains("3xdr", StringComparison.Ordinal)) return "ddx_3xdr";
-        if (lower.Contains("ddx", StringComparison.Ordinal)) return "ddx_3xdo";
-        if (lower.Contains("texture", StringComparison.Ordinal)) return "dds";
-        if (lower.Contains("png", StringComparison.Ordinal)) return "png";
-        if (lower.Contains("image", StringComparison.Ordinal)) return "png";
-        if (lower.Contains("xma", StringComparison.Ordinal)) return "xma";
-        if (lower.Contains("audio", StringComparison.Ordinal)) return "xma";
-        if (lower.Contains("nif", StringComparison.Ordinal)) return "nif";
-        if (lower.Contains("model", StringComparison.Ordinal)) return "nif";
-        if (lower.Contains("module", StringComparison.Ordinal)) return "xex";
-        if (lower.Contains("executable", StringComparison.Ordinal)) return "xex";
-        if (lower.Contains("xex", StringComparison.Ordinal)) return "xex";
-        if (lower.Contains("script", StringComparison.Ordinal)) return "script_scn";
+        if (lower.Contains("3xdo", StringComparison.Ordinal))
+        {
+            return "ddx_3xdo";
+        }
+
+        if (lower.Contains("3xdr", StringComparison.Ordinal))
+        {
+            return "ddx_3xdr";
+        }
+
+        if (lower.Contains("ddx", StringComparison.Ordinal))
+        {
+            return "ddx_3xdo";
+        }
+
+        if (lower.Contains("texture", StringComparison.Ordinal))
+        {
+            return "dds";
+        }
+
+        if (lower.Contains("png", StringComparison.Ordinal))
+        {
+            return "png";
+        }
+
+        if (lower.Contains("image", StringComparison.Ordinal))
+        {
+            return "png";
+        }
+
+        if (lower.Contains("xma", StringComparison.Ordinal))
+        {
+            return "xma";
+        }
+
+        if (lower.Contains("audio", StringComparison.Ordinal))
+        {
+            return "xma";
+        }
+
+        if (lower.Contains("nif", StringComparison.Ordinal))
+        {
+            return "nif";
+        }
+
+        if (lower.Contains("model", StringComparison.Ordinal))
+        {
+            return "nif";
+        }
+
+        if (lower.Contains("module", StringComparison.Ordinal))
+        {
+            return "xex";
+        }
+
+        if (lower.Contains("executable", StringComparison.Ordinal))
+        {
+            return "xex";
+        }
+
+        if (lower.Contains("xex", StringComparison.Ordinal))
+        {
+            return "xex";
+        }
+
+        if (lower.Contains("script", StringComparison.Ordinal))
+        {
+            return "script_scn";
+        }
 
         return lower.Replace(" ", "_");
     }
@@ -207,7 +299,24 @@ public static class FormatRegistry
             dict[format.FormatId] = format;
 
             // Add each signature ID
-            foreach (var sig in format.Signatures) dict[sig.Id] = format;
+            foreach (var sig in format.Signatures)
+            {
+                dict[sig.Id] = format;
+            }
+        }
+
+        return dict.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static FrozenDictionary<string, IFileFormat> BuildFormatsByExtension()
+    {
+        var dict = new Dictionary<string, IFileFormat>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var format in FormatsLazy.Value)
+        {
+            // Normalize extension to lowercase with dot
+            var ext = format.Extension.StartsWith('.') ? format.Extension : "." + format.Extension;
+            dict.TryAdd(ext.ToLowerInvariant(), format);
         }
 
         return dict.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);

@@ -62,9 +62,13 @@ public static class CarveCommand
         var files = new List<string>();
 
         if (File.Exists(inputPath))
+        {
             files.Add(inputPath);
+        }
         else if (Directory.Exists(inputPath))
+        {
             files.AddRange(Directory.GetFiles(inputPath, "*.dmp", SearchOption.TopDirectoryOnly));
+        }
 
         if (files.Count == 0)
         {
@@ -74,7 +78,10 @@ public static class CarveCommand
 
         AnsiConsole.MarkupLine($"[blue]Found[/] {files.Count} file(s) to process");
 
-        foreach (var file in files) await ProcessFileAsync(file, outputDir, fileTypes, convertDdx, verbose, maxFiles);
+        foreach (var file in files)
+        {
+            await ProcessFileAsync(file, outputDir, fileTypes, convertDdx, verbose, maxFiles);
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[green]Done![/]");
@@ -165,7 +172,10 @@ public static class CarveCommand
 
     private static void PrintCategoryTable(ExtractionSummary summary)
     {
-        if (summary.TypeCounts.Count == 0) return;
+        if (summary.TypeCounts.Count == 0)
+        {
+            return;
+        }
 
         AnsiConsole.WriteLine();
 
@@ -196,18 +206,27 @@ public static class CarveCommand
         table.AddColumn(new TableColumn("[bold]Count[/]").RightAligned());
 
         foreach (var (category, count) in categorized.OrderByDescending(x => x.Value))
+        {
             if (count > 0)
+            {
                 table.AddRow(category, count.ToString(CultureInfo.InvariantCulture));
+            }
+        }
 
         if (modulesExtracted > 0)
+        {
             table.AddRow("[grey]Modules (from header)[/]", modulesExtracted.ToString(CultureInfo.InvariantCulture));
+        }
 
         return table;
     }
 
     private static void PrintConversionStats(ExtractionSummary summary, bool convertDdx)
     {
-        if (!convertDdx) return;
+        if (!convertDdx)
+        {
+            return;
+        }
 
         PrintDdxConversionStats(summary);
         PrintXurConversionStats(summary);
@@ -215,7 +234,10 @@ public static class CarveCommand
 
     private static void PrintDdxConversionStats(ExtractionSummary summary)
     {
-        if (summary is { DdxConverted: 0, DdxFailed: 0 }) return;
+        if (summary is { DdxConverted: 0, DdxFailed: 0 })
+        {
+            return;
+        }
 
         AnsiConsole.WriteLine();
         var converted = FormatSuccessCount(summary.DdxConverted);
@@ -225,7 +247,10 @@ public static class CarveCommand
 
     private static void PrintXurConversionStats(ExtractionSummary summary)
     {
-        if (summary is { XurConverted: 0, XurFailed: 0 }) return;
+        if (summary is { XurConverted: 0, XurFailed: 0 })
+        {
+            return;
+        }
 
         var converted = FormatSuccessCount(summary.XurConverted);
         var failed = FormatFailedCount(summary.XurFailed);
@@ -244,7 +269,10 @@ public static class CarveCommand
 
     private static void PrintScriptStats(ExtractionSummary summary)
     {
-        if (summary.ScriptsExtracted == 0) return;
+        if (summary.ScriptsExtracted == 0)
+        {
+            return;
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine(

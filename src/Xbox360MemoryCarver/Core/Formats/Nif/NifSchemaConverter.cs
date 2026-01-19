@@ -26,11 +26,7 @@ internal sealed partial class NifSchemaConverter
     {
         _schema = schema;
         _versionContext = new NifVersionContext
-        {
-            Version = version,
-            UserVersion = (uint)userVersion,
-            BsVersion = bsVersion
-        };
+            { Version = version, UserVersion = (uint)userVersion, BsVersion = bsVersion };
     }
 
     /// <summary>
@@ -72,10 +68,20 @@ internal sealed partial class NifSchemaConverter
 
         foreach (var field in fields)
         {
-            if (ctx.Position >= ctx.End) break;
-            if (!ShouldProcessField(ctx, field, depth)) continue;
+            if (ctx.Position >= ctx.End)
+            {
+                break;
+            }
 
-            if (depth == 0) Log.Trace($"    Converting field {field.Name} at pos {ctx.Position:X}");
+            if (!ShouldProcessField(ctx, field, depth))
+            {
+                continue;
+            }
+
+            if (depth == 0)
+            {
+                Log.Trace($"    Converting field {field.Name} at pos {ctx.Position:X}");
+            }
 
             ConvertField(ctx, field, depth);
         }
@@ -84,24 +90,43 @@ internal sealed partial class NifSchemaConverter
     private bool ShouldProcessField(ConversionContext ctx, NifFieldDef field, int depth)
     {
         // Check onlyT (type-specific field)
-        if (!IsFieldTypeMatch(ctx, field, depth)) return false;
+        if (!IsFieldTypeMatch(ctx, field, depth))
+        {
+            return false;
+        }
 
         // Check version constraints
-        if (!IsFieldVersionValid(field, depth)) return false;
+        if (!IsFieldVersionValid(field, depth))
+        {
+            return false;
+        }
 
         // Check runtime conditions
-        if (!IsFieldConditionMet(ctx, field, depth)) return false;
+        if (!IsFieldConditionMet(ctx, field, depth))
+        {
+            return false;
+        }
 
         return true;
     }
 
     private bool IsFieldTypeMatch(ConversionContext ctx, NifFieldDef field, int depth)
     {
-        if (string.IsNullOrEmpty(field.OnlyT)) return true;
+        if (string.IsNullOrEmpty(field.OnlyT))
+        {
+            return true;
+        }
 
-        if (_schema.Inherits(ctx.BlockType, field.OnlyT)) return true;
+        if (_schema.Inherits(ctx.BlockType, field.OnlyT))
+        {
+            return true;
+        }
 
-        if (depth == 0) Log.Trace($"    Skipping {field.Name} (onlyT={field.OnlyT}, block={ctx.BlockType})");
+        if (depth == 0)
+        {
+            Log.Trace($"    Skipping {field.Name} (onlyT={field.OnlyT}, block={ctx.BlockType})");
+        }
+
         return false;
     }
 
@@ -110,15 +135,21 @@ internal sealed partial class NifSchemaConverter
         if (!IsVersionInRange(field.Since, field.Until))
         {
             if (depth == 0)
+            {
                 Log.Trace(
                     $"    Skipping {field.Name} (version out of range: since={field.Since}, until={field.Until})");
+            }
+
             return false;
         }
 
         if (!EvaluateVersionCondition(field.VersionCond))
         {
             if (depth == 0 || field.Name == "LOD Level" || field.Name == "Global VB")
+            {
                 Log.Trace($"    Skipping {field.Name} (vercond failed: {field.VersionCond})");
+            }
+
             return false;
         }
 
@@ -127,12 +158,22 @@ internal sealed partial class NifSchemaConverter
 
     private static bool IsFieldConditionMet(ConversionContext ctx, NifFieldDef field, int depth)
     {
-        if (string.IsNullOrEmpty(field.Condition)) return true;
+        if (string.IsNullOrEmpty(field.Condition))
+        {
+            return true;
+        }
 
         var condResult = EvaluateCondition(field.Condition, ctx.FieldValues);
-        if (condResult) return true;
+        if (condResult)
+        {
+            return true;
+        }
 
-        if (depth == 0) Log.Trace($"    Skipping {field.Name} (cond failed: {field.Condition})");
+        if (depth == 0)
+        {
+            Log.Trace($"    Skipping {field.Name} (cond failed: {field.Condition})");
+        }
+
         return false;
     }
 
@@ -147,14 +188,20 @@ internal sealed partial class NifSchemaConverter
         if (!string.IsNullOrEmpty(since))
         {
             var sinceVersion = ParseVersionString(since);
-            if (currentVersion < sinceVersion) return false;
+            if (currentVersion < sinceVersion)
+            {
+                return false;
+            }
         }
 
         // Parse "until" version
         if (!string.IsNullOrEmpty(until))
         {
             var untilVersion = ParseVersionString(until);
-            if (currentVersion > untilVersion) return false;
+            if (currentVersion > untilVersion)
+            {
+                return false;
+            }
         }
 
         return true;
@@ -166,7 +213,10 @@ internal sealed partial class NifSchemaConverter
     private static uint ParseVersionString(string version)
     {
         var parts = version.Split('.');
-        if (parts.Length < 4) return 0;
+        if (parts.Length < 4)
+        {
+            return 0;
+        }
 
         return (uint)(
             (byte.Parse(parts[0], CultureInfo.InvariantCulture) << 24) |
@@ -189,7 +239,10 @@ internal sealed partial class NifSchemaConverter
 
         // If field has a template attribute, save it for use by nested generic structs
         var previousTemplate = ctx.TemplateType;
-        if (field.Template != null) ctx.TemplateType = ResolveTemplateType(field.Template, ctx.TemplateType);
+        if (field.Template != null)
+        {
+            ctx.TemplateType = ResolveTemplateType(field.Template, ctx.TemplateType);
+        }
 
         try
         {
@@ -214,8 +267,13 @@ internal sealed partial class NifSchemaConverter
         object? previousArg)
     {
         if (hadPreviousArg)
+        {
             ctx.FieldValues[ArgPlaceholder] = previousArg!;
-        else if (field.Arg != null) ctx.FieldValues.Remove(ArgPlaceholder);
+        }
+        else if (field.Arg != null)
+        {
+            ctx.FieldValues.Remove(ArgPlaceholder);
+        }
     }
 
     private void ConvertFieldValue(ConversionContext ctx, NifFieldDef field, int depth)
@@ -245,7 +303,10 @@ internal sealed partial class NifSchemaConverter
         if (field.Width != null)
         {
             count = ResolveTwoDimensionalArrayCount(ctx, field, count, depth);
-            if (count < 0) return;
+            if (count < 0)
+            {
+                return;
+            }
         }
 
         if (count > 100000)
@@ -277,7 +338,9 @@ internal sealed partial class NifSchemaConverter
         }
 
         if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
+        {
             Log.Trace($"    2D array: {field.Name} = {count} x {width} = {count * width} elements");
+        }
 
         return count * width;
     }
@@ -285,14 +348,18 @@ internal sealed partial class NifSchemaConverter
     private void ConvertJaggedArray(ConversionContext ctx, NifFieldDef field, int rowCount, int[] widthArray, int depth)
     {
         if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
+        {
             Log.Trace(
                 $"    Jagged array: {field.Name} = {rowCount} rows with variable widths (total {widthArray.Sum()} elements)");
+        }
 
         for (var row = 0; row < rowCount && row < widthArray.Length && ctx.Position < ctx.End; row++)
         {
             var rowWidth = widthArray[row];
             for (var col = 0; col < rowWidth && ctx.Position < ctx.End; col++)
+            {
                 ConvertSingleValue(ctx, field.Type, depth);
+            }
         }
     }
 
@@ -302,17 +369,20 @@ internal sealed partial class NifSchemaConverter
         // store individual values so jagged arrays can reference them
         var shouldStoreArrayValues = field.Name.EndsWith(" Lengths", StringComparison.Ordinal) &&
                                      field.Type == "ushort" &&
-                                     count > 0 && count <= 100;
+                                     count is > 0 and <= 100;
         var arrayValues = shouldStoreArrayValues ? new int[count] : null;
 
         for (var i = 0; i < count && ctx.Position < ctx.End; i++)
         {
-            if (arrayValues != null && ctx.Position + 2 <= ctx.End)
+            if (arrayValues is not null && ctx.Position + 2 <= ctx.End)
+            {
                 arrayValues[i] = BinaryPrimitives.ReadUInt16BigEndian(ctx.Buffer.AsSpan(ctx.Position, 2));
+            }
+
             ConvertSingleValue(ctx, field.Type, depth);
         }
 
-        if (arrayValues != null)
+        if (arrayValues is not null)
         {
             ctx.FieldValues[$"#{field.Name}#Array"] = arrayValues;
             Log.Trace($"      Stored array {field.Name} = [{string.Join(", ", arrayValues)}] at depth {depth}");
@@ -322,20 +392,27 @@ internal sealed partial class NifSchemaConverter
     private static void LogSkippedArray(NifFieldDef field, int depth, string reason)
     {
         if (depth == 0 || field.Name == StripsFieldName || field.Name == TrianglesFieldName)
+        {
             Log.Trace($"    Skipping array {field.Name} ({reason})");
+        }
     }
 
     private static long EvaluateArgExpression(string argExpr, Dictionary<string, object> fieldValues)
     {
         // Handle simple literal values
         if (long.TryParse(argExpr, out var literalValue))
+        {
             return literalValue;
+        }
 
         // Handle #ARG# propagation from parent
         if (argExpr == ArgPlaceholder)
         {
             if (fieldValues.TryGetValue(ArgPlaceholder, out var parentArg))
+            {
                 return Convert.ToInt64(parentArg, CultureInfo.InvariantCulture);
+            }
+
             return 0;
         }
 
@@ -356,7 +433,10 @@ internal sealed partial class NifSchemaConverter
 
     private bool EvaluateVersionCondition(string? vercond)
     {
-        if (string.IsNullOrEmpty(vercond)) return true;
+        if (string.IsNullOrEmpty(vercond))
+        {
+            return true;
+        }
 
         // NifVersionExpr.Compile is globally cached, no need for per-instance cache
         var evaluator = NifVersionExpr.Compile(vercond);
@@ -365,7 +445,10 @@ internal sealed partial class NifSchemaConverter
 
     private static bool EvaluateCondition(string? condition, Dictionary<string, object> fieldValues)
     {
-        if (string.IsNullOrEmpty(condition)) return true;
+        if (string.IsNullOrEmpty(condition))
+        {
+            return true;
+        }
 
         // Use the full condition expression evaluator
         return NifConditionExpr.Evaluate(condition, fieldValues);
@@ -375,6 +458,7 @@ internal sealed partial class NifSchemaConverter
     {
         // Try to get value from field context (simple field reference)
         if (fieldValues.TryGetValue(lengthExpr, out var val))
+        {
             return val switch
             {
                 int i => i,
@@ -384,10 +468,13 @@ internal sealed partial class NifSchemaConverter
                 long l => (int)l,
                 _ => -1
             };
+        }
 
         // Try to parse as literal
         if (int.TryParse(lengthExpr, CultureInfo.InvariantCulture, out var literal))
+        {
             return literal;
+        }
 
         // Try to evaluate as an expression (e.g., "((Data Flags #BITAND# 63) #BITOR# (BS Data Flags #BITAND# 1))")
         try
@@ -415,7 +502,10 @@ internal sealed partial class NifSchemaConverter
                           field.Name == "Compressed" ||
                           field.Name == "Interpolation"; // For KeyGroup -> Key #ARG# propagation
 
-        if (!shouldStore) return;
+        if (!shouldStore)
+        {
+            return;
+        }
 
         // Get the size from the schema - this handles enums, bitfields, basic types correctly
         var size = _schema.GetTypeSize(field.Type) ?? 0;
@@ -432,7 +522,9 @@ internal sealed partial class NifSchemaConverter
 
             // For "Has X" fields (bool), normalize to 0/1
             if (field.Name.StartsWith("Has ", StringComparison.Ordinal) && size == 1)
+            {
                 val = ctx.Buffer[ctx.Position - 1] != 0 ? 1 : 0;
+            }
 
             ctx.FieldValues[field.Name] = val;
 
@@ -440,8 +532,13 @@ internal sealed partial class NifSchemaConverter
         }
     }
 
-    private sealed class ConversionContext(byte[] buffer, int position, int end, int[] blockRemap,
-        Dictionary<string, object> fieldValues, string blockType)
+    private sealed class ConversionContext(
+        byte[] buffer,
+        int position,
+        int end,
+        int[] blockRemap,
+        Dictionary<string, object> fieldValues,
+        string blockType)
     {
         public byte[] Buffer { get; } = buffer;
         public int Position { get; set; } = position;

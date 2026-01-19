@@ -23,11 +23,9 @@ public sealed partial class MemoryDumpAnalyzer
         // Register all signatures from the format registry for analysis
         // (includes all formats for visualization, even those with scanning disabled)
         foreach (var format in FormatRegistry.All)
+        foreach (var sig in format.Signatures)
         {
-            foreach (var sig in format.Signatures)
-            {
-                _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
-            }
+            _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
         }
 
         _signatureMatcher.Build();
@@ -78,10 +76,13 @@ public sealed partial class MemoryDumpAnalyzer
         SortCarvedFilesByOffset(result);
 
         // Extract metadata (SCDA records, ESM records, FormID mapping) using memory-mapped access
-        if (includeMetadata) await ExtractMetadataAsync(accessor, result, progress, cancellationToken);
+        if (includeMetadata)
+        {
+            await ExtractMetadataAsync(accessor, result, progress, cancellationToken);
+        }
 
         progress?.Report(new AnalysisProgress
-        { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
+            { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
 
         stopwatch.Stop();
         result.AnalysisTime = stopwatch.Elapsed;
@@ -91,7 +92,10 @@ public sealed partial class MemoryDumpAnalyzer
 
     private static void ProcessMinidumpInfo(AnalysisResult result, MinidumpInfo minidumpInfo)
     {
-        if (!minidumpInfo.IsValid) return;
+        if (!minidumpInfo.IsValid)
+        {
+            return;
+        }
 
         result.BuildType = DetectBuildType(minidumpInfo);
         Console.WriteLine(
@@ -117,15 +121,22 @@ public sealed partial class MemoryDumpAnalyzer
 
     private static HashSet<long> BuildModuleOffsetSet(MinidumpInfo minidumpInfo)
     {
-        return [.. minidumpInfo.Modules
+        return
+        [
+            .. minidumpInfo.Modules
                 .Select(m => minidumpInfo.GetModuleFileRange(m))
                 .Where(r => r.HasValue)
-                .Select(r => r!.Value.fileOffset)];
+                .Select(r => r!.Value.fileOffset)
+        ];
     }
 
     private static Progress<AnalysisProgress>? CreateScanProgress(IProgress<AnalysisProgress>? progress)
     {
-        if (progress == null) return null;
+        if (progress == null)
+        {
+            return null;
+        }
+
         return new Progress<AnalysisProgress>(p =>
         {
             // Scale scan progress to 0-50%
@@ -176,17 +187,29 @@ public sealed partial class MemoryDumpAnalyzer
         HashSet<long> moduleOffsets)
     {
         // Skip signatures at module offsets (modules are added from minidump metadata)
-        if (moduleOffsets.Contains(offset)) return false;
+        if (moduleOffsets.Contains(offset))
+        {
+            return false;
+        }
 
         var format = FormatRegistry.GetBySignatureId(signatureId);
-        if (format == null) return false;
+        if (format == null)
+        {
+            return false;
+        }
 
         var signature =
             format.Signatures.FirstOrDefault(s => s.Id.Equals(signatureId, StringComparison.OrdinalIgnoreCase));
-        if (signature == null) return false;
+        if (signature == null)
+        {
+            return false;
+        }
 
         var (length, fileName) = EstimateFileSizeAndExtractName(accessor, result.FileSize, offset, signatureId, format);
-        if (length <= 0) return false;
+        if (length <= 0)
+        {
+            return false;
+        }
 
         result.CarvedFiles.Add(new CarvedFileInfo
         {
@@ -204,7 +227,10 @@ public sealed partial class MemoryDumpAnalyzer
     private static void ReportParsingProgress(
         IProgress<AnalysisProgress>? progress, int processed, int total, int filesFound)
     {
-        if (progress == null || processed % 100 != 0) return;
+        if (progress == null || processed % 100 != 0)
+        {
+            return;
+        }
 
         var parsePercent = 50 + processed * 20.0 / total;
         progress.Report(new AnalysisProgress
@@ -228,19 +254,21 @@ public sealed partial class MemoryDumpAnalyzer
     {
         // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-        { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
+            { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
         await Task.Run(() =>
         {
             var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
             foreach (var record in scdaScanResult.Records)
+            {
                 record.ScriptName = ScdaExtractor.ExtractScriptNameFromSourcePublic(record.SourceText);
+            }
 
             result.ScdaRecords = scdaScanResult.Records;
         }, cancellationToken);
 
         // Phase 4: ESM scan (80-90%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-        { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
+            { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
         await Task.Run(() =>
         {
             var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
@@ -249,7 +277,7 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Phase 5: FormID mapping (90-100%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-        { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
+            { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
         await Task.Run(
             () =>
             {
@@ -316,7 +344,10 @@ public sealed partial class MemoryDumpAnalyzer
                 var span = buffer.AsSpan(0, toRead);
                 var matches = _signatureMatcher.Search(span, offset);
 
-                foreach (var (name, _, position) in matches) allMatches.Add((name, position));
+                foreach (var (name, _, position) in matches)
+                {
+                    allMatches.Add((name, position));
+                }
 
                 offset += chunkSize;
 
@@ -387,14 +418,14 @@ public sealed partial class MemoryDumpAnalyzer
                         fileName = fn;
                     }
                     else if (parseResult.Metadata.TryGetValue("scriptName", out var scriptNameObj) &&
-                                                 scriptNameObj is string sn && !string.IsNullOrEmpty(sn))
+                             scriptNameObj is string sn && !string.IsNullOrEmpty(sn))
                     {
                         fileName = sn;
                     }
                     else if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) &&
-                                                 pathObj is string texturePath)
-                    {
+                             pathObj is string texturePath)
                         // Fall back to extracting filename from path
+                    {
                         fileName = Path.GetFileName(texturePath);
                     }
 
@@ -427,7 +458,10 @@ public sealed partial class MemoryDumpAnalyzer
                 return "Debug";
             }
 
-            if (name.Contains("MemDebug", StringComparison.OrdinalIgnoreCase)) return "Release MemDebug";
+            if (name.Contains("MemDebug", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Release MemDebug";
+            }
 
             if (name.Contains("Release_Beta", StringComparison.OrdinalIgnoreCase) ||
                 name.Contains("ReleaseBeta", StringComparison.OrdinalIgnoreCase))
@@ -438,7 +472,9 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Default to Release if game exe found but no debug indicators
         if (info.Modules.Any(m => Path.GetFileName(m.Name).StartsWith("Fallout", StringComparison.OrdinalIgnoreCase)))
+        {
             return "Release";
+        }
 
         return null;
     }

@@ -133,7 +133,10 @@ public static class Program
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
-                if (verbose) AnsiConsole.WriteException(ex);
+                if (verbose)
+                {
+                    AnsiConsole.WriteException(ex);
+                }
 
                 return 1;
             }

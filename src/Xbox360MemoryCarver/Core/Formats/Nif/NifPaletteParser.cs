@@ -127,7 +127,9 @@ internal static class NifPaletteParser
 
                 // Prefer simpler (shorter) names for block mappings
                 if (!result.TryGetValue(blockRef, out var existingName) || existingName.Length > baseName.Length)
+                {
                     result[blockRef] = baseName;
+                }
             }
         }
 
@@ -239,7 +241,10 @@ internal static class NifPaletteParser
         Log.Debug($"  Accum Root Name Index: {accumRootNameIdx}");
 
         // Look up the string
-        if (accumRootNameIdx >= 0 && accumRootNameIdx < info.Strings.Count) return info.Strings[accumRootNameIdx];
+        if (accumRootNameIdx >= 0 && accumRootNameIdx < info.Strings.Count)
+        {
+            return info.Strings[accumRootNameIdx];
+        }
 
         return null;
     }
@@ -265,7 +270,10 @@ internal static class NifPaletteParser
                 }
             }
 
-            if (isNumeric) return name[..colonIdx];
+            if (isNumeric)
+            {
+                return name[..colonIdx];
+            }
         }
 
         return name;
@@ -275,9 +283,14 @@ internal static class NifPaletteParser
     {
         int value;
         if (bigEndian)
+        {
             value = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3];
+        }
         else
+        {
             value = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24);
+        }
+
         pos += 4;
         return value;
     }

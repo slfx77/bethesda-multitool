@@ -194,7 +194,7 @@ public interface IFileConverter
     /// <param name="data">Original file data.</param>
     /// <param name="metadata">Metadata from parsing.</param>
     /// <returns>Conversion result with data and status.</returns>
-    Task<DdxConversionResult> ConvertAsync(byte[] data, IReadOnlyDictionary<string, object>? metadata = null);
+    Task<ConversionResult> ConvertAsync(byte[] data, IReadOnlyDictionary<string, object>? metadata = null);
 
     /// <summary>
     ///     Initialize the converter (e.g., find external tools).

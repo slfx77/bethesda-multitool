@@ -28,15 +28,24 @@ public sealed class PngFormat : FileFormatBase
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 33) return null;
+        if (data.Length < offset + 33)
+        {
+            return null;
+        }
 
-        if (!data.Slice(offset, 8).SequenceEqual(PngMagic)) return null;
+        if (!data.Slice(offset, 8).SequenceEqual(PngMagic))
+        {
+            return null;
+        }
 
         try
         {
             // Find IEND chunk to determine file size
             var size = FindIendChunk(data, offset);
-            if (size <= 0) return null;
+            if (size <= 0)
+            {
+                return null;
+            }
 
             // Try to extract dimensions from IHDR chunk (at offset 8)
             var width = 0;
@@ -74,7 +83,11 @@ public sealed class PngFormat : FileFormatBase
     public override string GetDisplayDescription(string signatureId,
         IReadOnlyDictionary<string, object>? metadata = null)
     {
-        if (metadata?.TryGetValue("dimensions", out var dims) == true) return $"PNG ({dims})";
+        if (metadata?.TryGetValue("dimensions", out var dims) == true)
+        {
+            return $"PNG ({dims})";
+        }
+
         return "PNG image";
     }
 
@@ -86,9 +99,9 @@ public sealed class PngFormat : FileFormatBase
         for (var i = offset + 8; i <= offset + maxScan - 8; i++)
         {
             if (data.Slice(i, 4).SequenceEqual(IendMagic))
-            {
                 // IEND chunk includes 4 byte length (before), 4 byte type, and 4 byte CRC (after)
                 // The position i is at "IEND", so total size is i - offset + 4 (type) + 4 (CRC)
+            {
                 return i - offset + 8;
             }
         }

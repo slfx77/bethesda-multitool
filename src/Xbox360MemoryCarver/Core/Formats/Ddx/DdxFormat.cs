@@ -43,13 +43,19 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         const int minHeaderSize = 68;
-        if (data.Length < offset + minHeaderSize) return null;
+        if (data.Length < offset + minHeaderSize)
+        {
+            return null;
+        }
 
         var magic = data.Slice(offset, 4);
         var is3Xdo = magic.SequenceEqual("3XDO"u8);
         var is3Xdr = magic.SequenceEqual("3XDR"u8);
 
-        if (!is3Xdo && !is3Xdr) return null;
+        if (!is3Xdo && !is3Xdr)
+        {
+            return null;
+        }
 
         try
         {
@@ -66,7 +72,10 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
         IReadOnlyDictionary<string, object>? metadata = null)
     {
         if (metadata?.TryGetValue("dimensions", out var dims) == true)
+        {
             return signatureId == SignatureId3Xdr ? $"DDX 3XDR ({dims})" : $"DDX 3XDO ({dims})";
+        }
+
         return signatureId == SignatureId3Xdr ? "DDX (3XDR)" : "DDX (3XDO)";
     }
 
@@ -101,18 +110,25 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
         return signatureId == SignatureId3Xdo || signatureId == SignatureId3Xdr;
     }
 
-    public async Task<DdxConversionResult> ConvertAsync(byte[] data,
+    public async Task<ConversionResult> ConvertAsync(byte[] data,
         IReadOnlyDictionary<string, object>? metadata = null)
     {
-        if (_converter == null) return new DdxConversionResult { Success = false, Notes = "Converter not initialized" };
+        if (_converter == null)
+        {
+            return new ConversionResult { Success = false, Notes = "Converter not initialized" };
+        }
 
         // Both 3XDO and 3XDR formats are now supported
         var result = await _converter.ConvertFromMemoryWithResultAsync(data);
 
         if (result.Success)
+        {
             Interlocked.Increment(ref _convertedCount);
+        }
         else
+        {
             Interlocked.Increment(ref _failedCount);
+        }
 
         return result;
     }
@@ -124,7 +140,10 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     private static ParseResult? ParseDdxHeader(ReadOnlySpan<byte> data, int offset, bool is3Xdo)
     {
         var version = BinaryUtils.ReadUInt16LE(data, offset + 7);
-        if (version < 3 || !ValidateDdxHeader(data, offset)) return null;
+        if (version < 3 || !ValidateDdxHeader(data, offset))
+        {
+            return null;
+        }
 
         var formatDword = BinaryUtils.ReadUInt32BE(data, offset + 0x28);
         var formatByte = (int)(formatDword & 0xFF);
@@ -136,11 +155,18 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
         var isTiled = ((flagsDword >> 22) & 0x1) != 0;
 
         // Validate dimensions are reasonable (non-zero, power-of-two friendly, max 4096)
-        if (width == 0 || height == 0 || width > 4096 || height > 4096) return null;
+        if (width == 0 || height == 0 || width > 4096 || height > 4096)
+        {
+            return null;
+        }
 
         // Validate GPU format is a known Xbox 360 texture format - reject unknown formats
         // This significantly reduces false positives from random data matching "3XDO"/"3XDR" magic
-        if (!TextureFormats.Xbox360GpuTextureFormats.TryGetValue(formatByte, out var formatName)) return null;
+        if (!TextureFormats.Xbox360GpuTextureFormats.TryGetValue(formatByte, out var formatName))
+        {
+            return null;
+        }
+
         var uncompressedSize = CalculateUncompressedSize(width, height, mipCount, formatName);
         var estimatedSize = FindDdxBoundary(data, offset, uncompressedSize);
         var texturePath = TexturePathExtractor.FindPrecedingPath(data, offset, ".ddx");
@@ -172,7 +198,9 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
 
             var safeFileName = Path.GetFileNameWithoutExtension(texturePath);
             if (!string.IsNullOrEmpty(safeFileName))
+            {
                 metadata["safeName"] = TexturePathExtractor.SanitizeFilename(safeFileName);
+            }
         }
 
         return new ParseResult
@@ -218,11 +246,15 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
 
             // Check for DDX signatures with validation
             if ((slice.SequenceEqual("3XDO"u8) || slice.SequenceEqual("3XDR"u8)) && IsValidNextDdxHeader(data, i))
+            {
                 return i - offset;
+            }
 
             // Check for RIFF with validation
             if (slice.SequenceEqual("RIFF"u8) && SignatureBoundaryScanner.IsValidRiffHeader(data, i))
+            {
                 return i - offset;
+            }
 
             // Check for other file signatures
             if (slice.SequenceEqual("XEX2"u8) ||
@@ -234,10 +266,15 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
                 slice.SequenceEqual("scn "u8) ||
                 slice.SequenceEqual("DDS "u8) ||
                 SignatureBoundaryScanner.IsPngSignature(data, i))
+            {
                 return i - offset;
+            }
 
             // Check for NIF (Gamebryo)
-            if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual("Gamebryo File Format"u8)) return i - offset;
+            if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual("Gamebryo File Format"u8))
+            {
+                return i - offset;
+            }
         }
 
         return headerSize + Math.Max(100, uncompressedSize * 7 / 10);
@@ -245,7 +282,11 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
 
     private static bool IsValidNextDdxHeader(ReadOnlySpan<byte> data, int position)
     {
-        if (position + 68 > data.Length) return false;
+        if (position + 68 > data.Length)
+        {
+            return false;
+        }
+
         var version = BinaryUtils.ReadUInt16LE(data, position + 7);
         return version >= 3 && data[position + 0x04] != 0xFF && data[position + 0x24] >= 0x80;
     }

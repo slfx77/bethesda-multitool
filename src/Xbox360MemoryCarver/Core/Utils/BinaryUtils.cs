@@ -75,7 +75,10 @@ public static class BinaryUtils
     /// </summary>
     public static bool IsPrintableText(ReadOnlySpan<byte> data, double minRatio = 0.8)
     {
-        if (data.IsEmpty) return false;
+        if (data.IsEmpty)
+        {
+            return false;
+        }
 
 #pragma warning disable S3267 // Loops should be simplified - intentionally avoiding LINQ for Span<T> performance
         var printableCount = 0;
@@ -99,7 +102,10 @@ public static class BinaryUtils
         ArgumentNullException.ThrowIfNull(filename);
 
         var invalid = Path.GetInvalidFileNameChars();
-        foreach (var c in invalid) filename = filename.Replace(c, '_');
+        foreach (var c in invalid)
+        {
+            filename = filename.Replace(c, '_');
+        }
 
         return filename;
     }
@@ -127,7 +133,10 @@ public static class BinaryUtils
     /// </summary>
     public static int FindPattern(ReadOnlySpan<byte> data, ReadOnlySpan<byte> pattern, int start = 0)
     {
-        if (pattern.IsEmpty || data.Length < pattern.Length || start + pattern.Length > data.Length) return -1;
+        if (pattern.IsEmpty || data.Length < pattern.Length || start + pattern.Length > data.Length)
+        {
+            return -1;
+        }
 
         if (pattern.Length == 1)
         {
@@ -142,16 +151,23 @@ public static class BinaryUtils
         while (searchOffset <= searchSpan.Length - pattern.Length)
         {
             var idx = searchSpan[searchOffset..].IndexOf(firstByte);
-            if (idx < 0) return -1;
+            if (idx < 0)
+            {
+                return -1;
+            }
 
             var candidateOffset = searchOffset + idx;
 
             // Bounds check before slicing
             if (candidateOffset + pattern.Length > searchSpan.Length)
+            {
                 return -1;
+            }
 
             if (searchSpan.Slice(candidateOffset, pattern.Length).SequenceEqual(pattern))
+            {
                 return start + candidateOffset;
+            }
 
             searchOffset = candidateOffset + 1;
         }
@@ -164,13 +180,19 @@ public static class BinaryUtils
     /// </summary>
     public static string? ExtractNullTerminatedString(ReadOnlySpan<byte> data, int offset = 0, int maxLength = 256)
     {
-        if (offset >= data.Length) return null;
+        if (offset >= data.Length)
+        {
+            return null;
+        }
 
         var endOffset = Math.Min(offset + maxLength, data.Length);
         var searchSpan = data[offset..endOffset];
         var nullPos = searchSpan.IndexOf((byte)0);
 
-        if (nullPos < 0) return null;
+        if (nullPos < 0)
+        {
+            return null;
+        }
 
         var stringBytes = data.Slice(offset, nullPos);
         return !IsPrintableText(stringBytes, 0.9) ? null : Encoding.ASCII.GetString(stringBytes);
@@ -199,7 +221,10 @@ public static class BinaryUtils
 
         var remainder = data.Length % 8;
         var remainderStart = data.Length - remainder;
-        for (var i = remainderStart; i < data.Length - 1; i += 2) (data[i], data[i + 1]) = (data[i + 1], data[i]);
+        for (var i = remainderStart; i < data.Length - 1; i += 2)
+        {
+            (data[i], data[i + 1]) = (data[i + 1], data[i]);
+        }
     }
 
     /// <summary>

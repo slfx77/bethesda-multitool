@@ -47,13 +47,18 @@ public sealed partial class MemoryDumpAnalyzer
         }
 
         if (result.CarvedFiles.Count > 0)
+        {
             sb.AppendLine(CultureInfo.InvariantCulture, $"Carved Files: {result.CarvedFiles.Count}");
+        }
 
         if (result.ScdaRecords.Count > 0)
         {
             sb.AppendLine(CultureInfo.InvariantCulture, $"SCDA Records: {result.ScdaRecords.Count}");
             var withSource = result.ScdaRecords.Count(s => s.HasAssociatedSctx);
-            if (withSource > 0) sb.AppendLine(CultureInfo.InvariantCulture, $"With Source: {withSource}");
+            if (withSource > 0)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture, $"With Source: {withSource}");
+            }
         }
 
         if (result.EsmRecords != null)
@@ -77,7 +82,10 @@ public sealed partial class MemoryDumpAnalyzer
 
     private static void AppendCarvedFilesSection(StringBuilder sb, AnalysisResult result)
     {
-        if (result.CarvedFiles.Count == 0) return;
+        if (result.CarvedFiles.Count == 0)
+        {
+            return;
+        }
 
         sb.AppendLine();
         sb.AppendLine("## Carved Files Summary");
@@ -89,14 +97,20 @@ public sealed partial class MemoryDumpAnalyzer
         var byType = result.TypeCounts.OrderByDescending(kv => kv.Value).ToList();
         sb.AppendLine("| File Type | Count |");
         sb.AppendLine("|-----------|-------|");
-        foreach (var (type, count) in byType) sb.AppendLine(CultureInfo.InvariantCulture, $"| {type} | {count} |");
+        foreach (var (type, count) in byType)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| {type} | {count} |");
+        }
 
         sb.AppendLine();
     }
 
     private static void AppendModuleSection(StringBuilder sb, AnalysisResult result)
     {
-        if (result.MinidumpInfo?.IsValid != true) return;
+        if (result.MinidumpInfo?.IsValid != true)
+        {
+            return;
+        }
 
         var info = result.MinidumpInfo;
         sb.AppendLine(CultureInfo.InvariantCulture,
@@ -138,7 +152,10 @@ public sealed partial class MemoryDumpAnalyzer
         sb.AppendLine(CultureInfo.InvariantCulture, $"**With Script Names**: {withNames}");
         sb.AppendLine();
 
-        if (result.ScdaRecords.Count == 0) return;
+        if (result.ScdaRecords.Count == 0)
+        {
+            return;
+        }
 
         sb.AppendLine("| Offset | Script Name | Bytecode Size | Has Source |");
         sb.AppendLine("|--------|-------------|--------------|------------|");
@@ -161,7 +178,10 @@ public sealed partial class MemoryDumpAnalyzer
 
     private static void AppendEsmSection(StringBuilder sb, AnalysisResult result)
     {
-        if (result.EsmRecords == null) return;
+        if (result.EsmRecords == null)
+        {
+            return;
+        }
 
         sb.AppendLine("## ESM Records");
         sb.AppendLine();
@@ -177,7 +197,10 @@ public sealed partial class MemoryDumpAnalyzer
 
     private static void AppendFormIdSection(StringBuilder sb, AnalysisResult result)
     {
-        if (result.FormIdMap.Count == 0) return;
+        if (result.FormIdMap.Count == 0)
+        {
+            return;
+        }
 
         sb.AppendLine("## FormID Correlations");
         sb.AppendLine();
@@ -188,9 +211,13 @@ public sealed partial class MemoryDumpAnalyzer
         sb.AppendLine("|--------|-----------|");
 
         foreach (var (formId, name) in result.FormIdMap.Take(30).OrderBy(kv => kv.Key))
+        {
             sb.AppendLine(CultureInfo.InvariantCulture, $"| 0x{formId:X8} | {name} |");
+        }
 
         if (result.FormIdMap.Count > 30)
+        {
             sb.AppendLine(CultureInfo.InvariantCulture, $"| ... | ({result.FormIdMap.Count - 30} more) |");
+        }
     }
 }

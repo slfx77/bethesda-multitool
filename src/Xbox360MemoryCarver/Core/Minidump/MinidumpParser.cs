@@ -31,15 +31,23 @@ public static class MinidumpParser
     public static MinidumpInfo Parse(Stream stream)
     {
         var headerBuffer = new byte[32];
-        if (stream.Read(headerBuffer, 0, 32) < 32) return new MinidumpInfo { IsValid = false };
+        if (stream.Read(headerBuffer, 0, 32) < 32)
+        {
+            return new MinidumpInfo { IsValid = false };
+        }
 
-        if (!headerBuffer.AsSpan(0, 4).SequenceEqual(MinidumpSignature)) return new MinidumpInfo { IsValid = false };
+        if (!headerBuffer.AsSpan(0, 4).SequenceEqual(MinidumpSignature))
+        {
+            return new MinidumpInfo { IsValid = false };
+        }
 
         var numberOfStreams = BinaryUtils.ReadUInt32LE(headerBuffer, 8);
         var streamDirectoryRva = BinaryUtils.ReadUInt32LE(headerBuffer, 12);
 
         if (numberOfStreams == 0 || numberOfStreams > 100 || streamDirectoryRva == 0)
+        {
             return new MinidumpInfo { IsValid = false };
+        }
 
         var directorySize = (int)(numberOfStreams * 12);
         var directoryBuffer = ArrayPool<byte>.Shared.Rent(directorySize);
@@ -47,7 +55,9 @@ public static class MinidumpParser
         {
             stream.Seek(streamDirectoryRva, SeekOrigin.Begin);
             if (stream.Read(directoryBuffer, 0, directorySize) < directorySize)
+            {
                 return new MinidumpInfo { IsValid = false };
+            }
 
             var result = new MinidumpInfo { IsValid = true, NumberOfStreams = numberOfStreams };
 
@@ -77,7 +87,10 @@ public static class MinidumpParser
     {
         var buffer = new byte[4];
         stream.Seek(rva, SeekOrigin.Begin);
-        if (stream.Read(buffer, 0, 4) >= 4) result.ProcessorArchitecture = BinaryUtils.ReadUInt16LE(buffer);
+        if (stream.Read(buffer, 0, 4) >= 4)
+        {
+            result.ProcessorArchitecture = BinaryUtils.ReadUInt16LE(buffer);
+        }
     }
 
     private static void ParseModuleList(Stream stream, uint rva, MinidumpInfo result)
@@ -85,10 +98,16 @@ public static class MinidumpParser
         stream.Seek(rva, SeekOrigin.Begin);
 
         var countBuffer = new byte[4];
-        if (stream.Read(countBuffer, 0, 4) < 4) return;
+        if (stream.Read(countBuffer, 0, 4) < 4)
+        {
+            return;
+        }
 
         var numberOfModules = BinaryUtils.ReadUInt32LE(countBuffer);
-        if (numberOfModules == 0 || numberOfModules > 1000) return;
+        if (numberOfModules == 0 || numberOfModules > 1000)
+        {
+            return;
+        }
 
         const int moduleEntrySize = 108;
         var modulesBuffer = ArrayPool<byte>.Shared.Rent((int)(numberOfModules * moduleEntrySize));
@@ -96,13 +115,19 @@ public static class MinidumpParser
         try
         {
             var bytesToRead = (int)(numberOfModules * moduleEntrySize);
-            if (stream.Read(modulesBuffer, 0, bytesToRead) < bytesToRead) return;
+            if (stream.Read(modulesBuffer, 0, bytesToRead) < bytesToRead)
+            {
+                return;
+            }
 
             for (var i = 0; i < numberOfModules; i++)
             {
                 var offset = i * moduleEntrySize;
                 var module = ParseModule(stream, modulesBuffer, offset);
-                if (module != null) result.Modules.Add(module);
+                if (module != null)
+                {
+                    result.Modules.Add(module);
+                }
             }
         }
         finally
@@ -116,12 +141,18 @@ public static class MinidumpParser
         stream.Seek(rva, SeekOrigin.Begin);
 
         var headerBuffer = new byte[16];
-        if (stream.Read(headerBuffer, 0, 16) < 16) return;
+        if (stream.Read(headerBuffer, 0, 16) < 16)
+        {
+            return;
+        }
 
         var numberOfRanges = BinaryUtils.ReadUInt64LE(headerBuffer);
         var baseRva = (long)BinaryUtils.ReadUInt64LE(headerBuffer, 8);
 
-        if (numberOfRanges == 0 || numberOfRanges > 10000) return;
+        if (numberOfRanges == 0 || numberOfRanges > 10000)
+        {
+            return;
+        }
 
         const int descriptorSize = 16;
         var descriptorsSize = (int)(numberOfRanges * descriptorSize);
@@ -129,7 +160,10 @@ public static class MinidumpParser
 
         try
         {
-            if (stream.Read(descriptorsBuffer, 0, descriptorsSize) < descriptorsSize) return;
+            if (stream.Read(descriptorsBuffer, 0, descriptorsSize) < descriptorsSize)
+            {
+                return;
+            }
 
             var currentFileOffset = baseRva;
 
@@ -163,10 +197,16 @@ public static class MinidumpParser
         var timestamp = BinaryUtils.ReadUInt32LE(buffer, offset + 0x10);
         var nameRva = BinaryUtils.ReadUInt32LE(buffer, offset + 0x14);
 
-        if (nameRva == 0 || size == 0) return null;
+        if (nameRva == 0 || size == 0)
+        {
+            return null;
+        }
 
         var name = ReadMinidumpString(stream, nameRva);
-        if (string.IsNullOrEmpty(name)) return null;
+        if (string.IsNullOrEmpty(name))
+        {
+            return null;
+        }
 
         return new MinidumpModule
         {
@@ -186,13 +226,22 @@ public static class MinidumpParser
             stream.Seek(rva, SeekOrigin.Begin);
 
             var lengthBuffer = new byte[4];
-            if (stream.Read(lengthBuffer, 0, 4) < 4) return null;
+            if (stream.Read(lengthBuffer, 0, 4) < 4)
+            {
+                return null;
+            }
 
             var length = (int)BinaryUtils.ReadUInt32LE(lengthBuffer);
-            if (length == 0 || length > 520) return null;
+            if (length == 0 || length > 520)
+            {
+                return null;
+            }
 
             var stringBuffer = new byte[length];
-            if (stream.Read(stringBuffer, 0, length) < length) return null;
+            if (stream.Read(stringBuffer, 0, length) < length)
+            {
+                return null;
+            }
 
             return Encoding.Unicode.GetString(stringBuffer).TrimEnd('\0');
         }

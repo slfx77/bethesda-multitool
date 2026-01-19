@@ -44,7 +44,10 @@ internal sealed class CarveWriter(
             converter.CanConvert(p.SignatureId, p.Metadata))
         {
             var convertResult = await TryConvertAsync(converter, p);
-            if (convertResult) return;
+            if (convertResult)
+            {
+                return;
+            }
         }
 
         // Repair files if needed using IFileRepairer interface
@@ -73,7 +76,7 @@ internal sealed class CarveWriter(
     private async Task<bool> TryConvertAsync(IFileConverter converter, WriteFileParams p)
     {
         var result = await converter.ConvertAsync(p.Data, p.Metadata);
-        if (!result.Success || result.DdsData == null)
+        if (!result.Success || result.OutputData == null)
         {
             // Track that this file failed conversion
             _failedConversionOffsets.Add(p.Offset);
@@ -89,18 +92,20 @@ internal sealed class CarveWriter(
             Path.DirectorySeparatorChar + targetFolder + Path.DirectorySeparatorChar), converter.TargetExtension);
         Directory.CreateDirectory(Path.GetDirectoryName(convertedOutputFile)!);
 
-        await WriteFileWithRetryAsync(convertedOutputFile, result.DdsData);
+        await WriteFileWithRetryAsync(convertedOutputFile, result.OutputData);
 
         // Save atlas if available
         if (result.AtlasData != null && _saveAtlas)
+        {
             await WriteFileWithRetryAsync(convertedOutputFile.Replace(".dds", "_full_atlas.dds"), result.AtlasData);
+        }
 
         _addToManifest(new CarveEntry
         {
             FileType = p.SignatureId,
             Offset = p.Offset,
             SizeInDump = p.FileSize,
-            SizeOutput = result.DdsData.Length,
+            SizeOutput = result.OutputData.Length,
             Filename = Path.GetFileName(convertedOutputFile),
             OriginalPath = p.OriginalPath,
             IsCompressed = true,

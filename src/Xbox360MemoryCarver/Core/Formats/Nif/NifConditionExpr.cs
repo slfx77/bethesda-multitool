@@ -44,7 +44,9 @@ public sealed partial class NifConditionExpr
     public static bool Evaluate(string? expression, IReadOnlyDictionary<string, object> fieldValues)
     {
         if (string.IsNullOrWhiteSpace(expression))
+        {
             return true; // No condition = always include
+        }
 
         // Use cached compiled expression or compile and cache
         var evaluator = ConditionCache.GetOrAdd(expression, static expr =>
@@ -72,7 +74,9 @@ public sealed partial class NifConditionExpr
     public static long EvaluateValue(string? expression, IReadOnlyDictionary<string, object> fieldValues)
     {
         if (string.IsNullOrWhiteSpace(expression))
+        {
             return 0;
+        }
 
         // Use cached compiled expression or compile and cache
         var evaluator = ValueCache.GetOrAdd(expression, static expr =>
@@ -99,7 +103,9 @@ public sealed partial class NifConditionExpr
     public static Func<IReadOnlyDictionary<string, object>, bool> Compile(string? expression)
     {
         if (string.IsNullOrWhiteSpace(expression))
+        {
             return _ => true;
+        }
 
         try
         {
@@ -113,35 +119,14 @@ public sealed partial class NifConditionExpr
         }
     }
 
-    /// <summary>
-    ///     Gets all field names referenced by this condition expression.
-    /// </summary>
-    public static HashSet<string> GetReferencedFields(string? expression)
-    {
-        var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(expression))
-            return fields;
-
-        try
-        {
-            var parser = new NifConditionExpr(expression);
-            var ast = parser.ParseExpr();
-            ast.GatherFields(fields);
-        }
-        catch
-        {
-            // Ignore parse errors
-        }
-
-        return fields;
-    }
-
     #region Lexer
 
     private void SkipWhitespace()
     {
         while (_pos < _expression.Length && char.IsWhiteSpace(_expression[_pos]))
+        {
             _pos++;
+        }
     }
 
     private bool Match(string s)
@@ -166,7 +151,10 @@ public sealed partial class NifConditionExpr
     private bool PeekOperator()
     {
         SkipWhitespace();
-        if (_pos >= _expression.Length) return false;
+        if (_pos >= _expression.Length)
+        {
+            return false;
+        }
 
         // Check for multi-char operators
         var remaining = _expression.AsSpan(_pos);
@@ -188,7 +176,10 @@ public sealed partial class NifConditionExpr
     {
         SkipWhitespace();
         if (_pos >= _expression.Length || _expression[_pos] != c)
+        {
             throw new FormatException($"Expected '{c}' at position {_pos}");
+        }
+
         _pos++;
     }
 
@@ -207,7 +198,9 @@ public sealed partial class NifConditionExpr
             if (c == '(' || c == ')' || c == '!' || c == '#' ||
                 c == '>' || c == '<' || c == '=' ||
                 c == '&' || c == '|')
+            {
                 break;
+            }
 
             _pos++;
         }
@@ -222,7 +215,9 @@ public sealed partial class NifConditionExpr
         value = 0;
 
         if (_pos >= _expression.Length)
+        {
             return false;
+        }
 
         // Check for hex prefix
         if (_pos + 2 < _expression.Length &&
@@ -232,7 +227,9 @@ public sealed partial class NifConditionExpr
             _pos += 2;
             var hexStart = _pos;
             while (_pos < _expression.Length && IsHexDigit(_expression[_pos]))
+            {
                 _pos++;
+            }
 
             if (_pos > hexStart)
             {
@@ -255,12 +252,18 @@ public sealed partial class NifConditionExpr
         // Decimal number
         var numStart = _pos;
         while (_pos < _expression.Length && char.IsDigit(_expression[_pos]))
+        {
             _pos++;
+        }
 
         if (_pos > numStart)
         {
             value = long.Parse(_expression[numStart.._pos], CultureInfo.InvariantCulture);
-            if (negative) value = -value;
+            if (negative)
+            {
+                value = -value;
+            }
+
             return true;
         }
 
@@ -311,7 +314,9 @@ public sealed partial class NifConditionExpr
     private ICondNode ParseUnary()
     {
         if (Match("!") || Match("#NOT#"))
+        {
             return new NotCondNode(ParseUnary());
+        }
 
         return ParsePrimary();
     }
@@ -342,7 +347,10 @@ public sealed partial class NifConditionExpr
                 // Not followed by operator - could be boolean field in parens like "(Has Normals)"
                 // or a parenthesized condition expression
                 // If it's just a field, treat as boolean
-                if (valueExpr is FieldNode) return new BoolCondNode(valueExpr);
+                if (valueExpr is FieldNode)
+                {
+                    return new BoolCondNode(valueExpr);
+                }
 
                 // If it's a bitwise expression result, treat as boolean (non-zero = true)
                 return new BoolCondNode(valueExpr);
@@ -432,20 +440,26 @@ public sealed partial class NifConditionExpr
 
         // Try to read a number first
         if (TryReadNumber(out var num))
+        {
             return new LiteralNode(num);
+        }
 
         // Handle special tokens that start with # (like #ARG#)
         if (Peek('#'))
         {
             var specialToken = ReadSpecialToken();
             if (!string.IsNullOrEmpty(specialToken))
+            {
                 return new FieldNode(specialToken);
+            }
         }
 
         // Otherwise it's a field name
         var fieldName = ReadIdentifier();
         if (string.IsNullOrEmpty(fieldName))
+        {
             throw new FormatException($"Expected field name or number at position {_pos}");
+        }
 
         return new FieldNode(fieldName);
     }
@@ -457,13 +471,18 @@ public sealed partial class NifConditionExpr
     {
         SkipWhitespace();
         if (_pos >= _expression.Length || _expression[_pos] != '#')
+        {
             return string.Empty;
+        }
 
         var start = _pos;
         _pos++; // Skip opening #
 
         // Read until we find the closing #
-        while (_pos < _expression.Length && _expression[_pos] != '#') _pos++;
+        while (_pos < _expression.Length && _expression[_pos] != '#')
+        {
+            _pos++;
+        }
 
         if (_pos < _expression.Length && _expression[_pos] == '#')
         {
@@ -478,12 +497,36 @@ public sealed partial class NifConditionExpr
 
     private CompareOp ReadOperator()
     {
-        if (Match("#GT#") || Match(">")) return CompareOp.Gt;
-        if (Match("#GTE#") || Match(">=")) return CompareOp.Gte;
-        if (Match("#LT#") || Match("<")) return CompareOp.Lt;
-        if (Match("#LTE#") || Match("<=")) return CompareOp.Lte;
-        if (Match("#EQ#") || Match("==")) return CompareOp.Eq;
-        if (Match("#NEQ#") || Match("!=")) return CompareOp.Neq;
+        if (Match("#GT#") || Match(">"))
+        {
+            return CompareOp.Gt;
+        }
+
+        if (Match("#GTE#") || Match(">="))
+        {
+            return CompareOp.Gte;
+        }
+
+        if (Match("#LT#") || Match("<"))
+        {
+            return CompareOp.Lt;
+        }
+
+        if (Match("#LTE#") || Match("<="))
+        {
+            return CompareOp.Lte;
+        }
+
+        if (Match("#EQ#") || Match("=="))
+        {
+            return CompareOp.Eq;
+        }
+
+        if (Match("#NEQ#") || Match("!="))
+        {
+            return CompareOp.Neq;
+        }
+
         throw new FormatException($"Expected operator at position {_pos}");
     }
 

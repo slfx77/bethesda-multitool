@@ -38,7 +38,10 @@ public sealed class ScriptFormat : FileFormatBase
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 10) return null;
+        if (data.Length < offset + 10)
+        {
+            return null;
+        }
 
         try
         {
@@ -46,17 +49,28 @@ public sealed class ScriptFormat : FileFormatBase
             var scriptData = data[offset..maxEnd];
 
             var firstLineEnd = FindLineEnd(scriptData);
-            if (firstLineEnd == -1) return null;
+            if (firstLineEnd == -1)
+            {
+                return null;
+            }
 
             var firstLine = Encoding.ASCII.GetString(scriptData[..firstLineEnd]).Trim();
             var scriptName = ExtractScriptName(firstLine);
-            if (string.IsNullOrEmpty(scriptName)) return null;
+            if (string.IsNullOrEmpty(scriptName))
+            {
+                return null;
+            }
 
             var invalidChar = scriptName.IndexOfAny([';', '\r', '\t', ' ']);
-            if (invalidChar >= 0) scriptName = scriptName[..invalidChar];
+            if (invalidChar >= 0)
+            {
+                scriptName = scriptName[..invalidChar];
+            }
 
             if (string.IsNullOrEmpty(scriptName) || !IsValidScriptName(scriptName))
+            {
                 return null;
+            }
 
             var endPos = FindScriptEnd(scriptData, firstLineEnd);
             var safeName = SanitizeScriptName(scriptName);
@@ -102,8 +116,9 @@ public sealed class ScriptFormat : FileFormatBase
         {
             return firstLine[4..].Trim();
         }
-        else if (lower.StartsWith("scriptname ", StringComparison.Ordinal) ||
-                         lower.StartsWith("scriptname\t", StringComparison.Ordinal))
+
+        if (lower.StartsWith("scriptname ", StringComparison.Ordinal) ||
+            lower.StartsWith("scriptname\t", StringComparison.Ordinal))
         {
             return firstLine[11..].Trim();
         }
@@ -131,7 +146,10 @@ public sealed class ScriptFormat : FileFormatBase
                 else
                 {
                     consecutiveNonPrintable++;
-                    if (consecutiveNonPrintable > 3) return lastValidPos;
+                    if (consecutiveNonPrintable > 3)
+                    {
+                        return lastValidPos;
+                    }
                 }
             }
             else

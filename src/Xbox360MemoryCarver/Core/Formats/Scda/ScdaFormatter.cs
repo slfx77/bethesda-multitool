@@ -35,7 +35,10 @@ public static class ScdaFormatter
             };
 
             var foundPath = locations.FirstOrDefault(File.Exists);
-            if (foundPath != null) await _decompiler.LoadOpcodeTableAsync(foundPath);
+            if (foundPath != null)
+            {
+                await _decompiler.LoadOpcodeTableAsync(foundPath);
+            }
         }
     }
 
@@ -95,8 +98,10 @@ public static class ScdaFormatter
         sb.AppendLine("; ═══════════════════════════════════════════════════════════════");
 
         if (stage.FormIdReferences.Count > 0)
+        {
             sb.AppendLine(CultureInfo.InvariantCulture,
                 $"; SCRO References: {string.Join(", ", stage.FormIdReferences.Select((id, i) => $"#{i + 1}=0x{id:X8}"))}");
+        }
 
         AppendSourceTextInline(sb, stage);
         sb.AppendLine();
@@ -106,11 +111,16 @@ public static class ScdaFormatter
 
     private static void AppendFormIdReferences(StringBuilder sb, List<uint> formIds)
     {
-        if (formIds.Count == 0) return;
+        if (formIds.Count == 0)
+        {
+            return;
+        }
 
         sb.AppendLine(CultureInfo.InvariantCulture, $"; SCRO References ({formIds.Count}):");
         for (var j = 0; j < formIds.Count; j++)
+        {
             sb.AppendLine(CultureInfo.InvariantCulture, $";   SCRO#{j + 1} = FormID 0x{formIds[j]:X8}");
+        }
     }
 
     private static void AppendSourceText(StringBuilder sb, ScdaRecord record)
@@ -130,7 +140,9 @@ public static class ScdaFormatter
             sb.AppendLine();
             sb.AppendLine("; Source:");
             foreach (var line in stage.SourceText!.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries))
+            {
                 sb.Append(";   ").AppendLine(line.Trim());
+            }
         }
     }
 

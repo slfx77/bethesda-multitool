@@ -23,14 +23,19 @@ public sealed partial class ScdaDecompiler
     /// </summary>
     public async Task LoadOpcodeTableAsync(string csvPath)
     {
-        if (!File.Exists(csvPath)) return;
+        if (!File.Exists(csvPath))
+        {
+            return;
+        }
 
         var lines = await File.ReadAllLinesAsync(csvPath);
         foreach (var line in lines.Skip(1)) // Skip header
         {
             var parts = line.Split(',');
             if (parts.Length >= 4 && ushort.TryParse(parts[0], out var opcode))
+            {
                 _opcodeTable[opcode] = (parts[2], parts[3]);
+            }
         }
     }
 
@@ -220,7 +225,10 @@ public sealed partial class ScdaDecompiler
 
     private static (string Name, int BytesConsumed) ParseVariable(byte[] bytes, int offset)
     {
-        if (offset >= bytes.Length) return ("?", 1);
+        if (offset >= bytes.Length)
+        {
+            return ("?", 1);
+        }
 
         var marker = bytes[offset];
         return marker switch

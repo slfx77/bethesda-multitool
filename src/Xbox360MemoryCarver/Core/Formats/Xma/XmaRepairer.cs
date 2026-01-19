@@ -39,14 +39,20 @@ internal static class XmaRepairer
         var fmtOffset = FindChunk(data, "fmt "u8);
         var dataOffset = FindChunk(data, "data"u8);
 
-        if (fmtOffset < 0 || dataOffset < 0) return data;
+        if (fmtOffset < 0 || dataOffset < 0)
+        {
+            return data;
+        }
 
         var (channels, sampleRate) = ExtractAudioParams(data, fmtOffset, convertToXma2);
         var dataSize = BinaryUtils.ReadUInt32LE(data.AsSpan(), dataOffset + 4);
         var dataStart = dataOffset + 8;
         var actualDataSize = Math.Min((int)dataSize, data.Length - dataStart);
 
-        if (actualDataSize <= 0) return data;
+        if (actualDataSize <= 0)
+        {
+            return data;
+        }
 
         var seekTable = GenerateSeekTable(actualDataSize);
         var result = BuildXmaFile(data.AsSpan(dataStart, actualDataSize), seekTable, channels, sampleRate);
@@ -108,9 +114,9 @@ internal static class XmaRepairer
         {
             var cumulativeSamples = (uint)((i + 1) * samplesPerPacket);
             seekTable[i * 4] = (byte)(cumulativeSamples >> 24);
-            seekTable[(i * 4) + 1] = (byte)(cumulativeSamples >> 16);
-            seekTable[(i * 4) + 2] = (byte)(cumulativeSamples >> 8);
-            seekTable[(i * 4) + 3] = (byte)cumulativeSamples;
+            seekTable[i * 4 + 1] = (byte)(cumulativeSamples >> 16);
+            seekTable[i * 4 + 2] = (byte)(cumulativeSamples >> 8);
+            seekTable[i * 4 + 3] = (byte)cumulativeSamples;
         }
 
         return seekTable;
@@ -152,7 +158,10 @@ internal static class XmaRepairer
         var offset = 12;
         while (offset < data.Length - 8)
         {
-            if (data.AsSpan(offset, 4).SequenceEqual(chunkId)) return offset;
+            if (data.AsSpan(offset, 4).SequenceEqual(chunkId))
+            {
+                return offset;
+            }
 
             var chunkSize = BinaryUtils.ReadUInt32LE(data.AsSpan(), offset + 4);
             if (chunkSize > 0 && chunkSize < (uint)(data.Length - offset - 8))
@@ -170,7 +179,10 @@ internal static class XmaRepairer
             if (data.AsSpan(i, 4).SequenceEqual(chunkId))
             {
                 var size = BinaryUtils.ReadUInt32LE(data.AsSpan(), i + 4);
-                if (size <= 100_000_000) return i;
+                if (size <= 100_000_000)
+                {
+                    return i;
+                }
             }
         }
 

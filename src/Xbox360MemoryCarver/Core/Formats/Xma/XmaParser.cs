@@ -25,16 +25,26 @@ internal static class XmaParser
             var chunkId = data.Slice(searchOffset, 4);
             var chunkSize = BinaryUtils.ReadUInt32LE(data, searchOffset + 4);
 
-            if (chunkSize > int.MaxValue - 16) break;
+            if (chunkSize > int.MaxValue - 16)
+            {
+                break;
+            }
 
             ProcessChunk(data, searchOffset, chunkId, chunkSize, ref parseState);
 
             var nextOffset = searchOffset + 8 + (int)((chunkSize + 1) & ~1u);
-            if (nextOffset <= searchOffset) break;
+            if (nextOffset <= searchOffset)
+            {
+                break;
+            }
+
             searchOffset = nextOffset;
         }
 
-        if (parseState.FormatTag == null || !XmaFormatCodes.Contains(parseState.FormatTag.Value)) return null;
+        if (parseState.FormatTag == null || !XmaFormatCodes.Contains(parseState.FormatTag.Value))
+        {
+            return null;
+        }
 
         return BuildParseResult(data, offset, reportedSize, boundarySize, parseState);
     }
@@ -67,7 +77,10 @@ internal static class XmaParser
 
     private static void ProcessFmtChunk(ReadOnlySpan<byte> data, int searchOffset, ref XmaParseState state)
     {
-        if (searchOffset + 10 > data.Length) return;
+        if (searchOffset + 10 > data.Length)
+        {
+            return;
+        }
 
         state.FormatTag = (ushort)(BinaryUtils.ReadUInt32LE(data, searchOffset + 8) & 0xFFFF);
 
@@ -98,7 +111,10 @@ internal static class XmaParser
             var dataEnd = state.DataChunkOffset.Value + 8 + state.DataChunkSize.Value;
             actualSize = dataEnd - offset;
 
-            if (reportedSize > actualSize + 100) state.NeedsRepair = true;
+            if (reportedSize > actualSize + 100)
+            {
+                state.NeedsRepair = true;
+            }
         }
         else
         {
@@ -130,11 +146,16 @@ internal static class XmaParser
             metadata["reportedSize"] = reportedSize;
         }
 
-        if (usablePercent < 50) metadata["likelyCorrupted"] = true;
+        if (usablePercent < 50)
+        {
+            metadata["likelyCorrupted"] = true;
+        }
 
         string? fileName = null;
         if (metadata.TryGetValue("safeName", out var safeName) && safeName is string safeNameStr)
+        {
             fileName = safeNameStr + ".xma";
+        }
 
         return new ParseResult
         {
@@ -150,7 +171,10 @@ internal static class XmaParser
         int dataStart,
         int dataSize)
     {
-        if (dataSize <= 0 || dataStart >= data.Length) return (100, 100);
+        if (dataSize <= 0 || dataStart >= data.Length)
+        {
+            return (100, 100);
+        }
 
         var corruptBytes = 0;
         var endOffset = Math.Min(dataStart + dataSize, data.Length);
@@ -210,7 +234,10 @@ internal static class XmaParser
         if (runLength >= 8)
         {
             corruptBytes += runLength;
-            if (firstCorruptionOffset < 0) firstCorruptionOffset = runStart;
+            if (firstCorruptionOffset < 0)
+            {
+                firstCorruptionOffset = runStart;
+            }
         }
     }
 
@@ -224,22 +251,50 @@ internal static class XmaParser
 
         // Try to find an indicator in the data
         var idx = FindIndicator(data, pathIndicator1);
-        if (idx < 0) idx = FindIndicator(data, pathIndicator2);
-        if (idx < 0) idx = FindIndicator(data, pathIndicator3);
-        if (idx < 0) idx = FindIndicator(data, pathIndicator4);
-        if (idx < 0) idx = FindIndicator(data, pathIndicator5);
-        if (idx < 0) return null;
+        if (idx < 0)
+        {
+            idx = FindIndicator(data, pathIndicator2);
+        }
+
+        if (idx < 0)
+        {
+            idx = FindIndicator(data, pathIndicator3);
+        }
+
+        if (idx < 0)
+        {
+            idx = FindIndicator(data, pathIndicator4);
+        }
+
+        if (idx < 0)
+        {
+            idx = FindIndicator(data, pathIndicator5);
+        }
+
+        if (idx < 0)
+        {
+            return null;
+        }
 
         // Find the start of the path by walking backwards
         var start = idx;
-        while (start > 0 && IsPrintablePathChar((char)data[start - 1])) start--;
+        while (start > 0 && IsPrintablePathChar((char)data[start - 1]))
+        {
+            start--;
+        }
 
         // Find the end of the path by walking forwards
         var end = idx + 1;
-        while (end < data.Length && IsPrintablePathChar((char)data[end])) end++;
+        while (end < data.Length && IsPrintablePathChar((char)data[end]))
+        {
+            end++;
+        }
 
         var pathLength = end - start;
-        if (pathLength <= 5) return null;
+        if (pathLength <= 5)
+        {
+            return null;
+        }
 
         var path = Encoding.ASCII.GetString(data.Slice(start, pathLength)).Trim('\0', ' ');
         return path.Length > 5 ? path : null;
@@ -256,8 +311,16 @@ internal static class XmaParser
                 var dataByte = data[i + j];
                 var indicatorByte = indicator[j];
                 // Convert both to lowercase for comparison
-                if (dataByte >= 'A' && dataByte <= 'Z') dataByte = (byte)(dataByte + 32);
-                if (indicatorByte >= 'A' && indicatorByte <= 'Z') indicatorByte = (byte)(indicatorByte + 32);
+                if (dataByte >= 'A' && dataByte <= 'Z')
+                {
+                    dataByte = (byte)(dataByte + 32);
+                }
+
+                if (indicatorByte >= 'A' && indicatorByte <= 'Z')
+                {
+                    indicatorByte = (byte)(indicatorByte + 32);
+                }
+
                 if (dataByte != indicatorByte)
                 {
                     matched = false;
@@ -265,7 +328,10 @@ internal static class XmaParser
                 }
             }
 
-            if (matched) return i;
+            if (matched)
+            {
+                return i;
+            }
         }
 
         return -1;
@@ -279,10 +345,16 @@ internal static class XmaParser
     private static string SanitizeFilename(string path)
     {
         var filename = Path.GetFileNameWithoutExtension(path);
-        if (string.IsNullOrEmpty(filename)) filename = path.Replace('\\', '_').Replace('/', '_');
+        if (string.IsNullOrEmpty(filename))
+        {
+            filename = path.Replace('\\', '_').Replace('/', '_');
+        }
 
         var sb = new StringBuilder(filename.Length);
-        foreach (var c in filename) sb.Append(InvalidFileNameChars.Contains(c) ? '_' : c);
+        foreach (var c in filename)
+        {
+            sb.Append(InvalidFileNameChars.Contains(c) ? '_' : c);
+        }
 
         return sb.ToString();
     }

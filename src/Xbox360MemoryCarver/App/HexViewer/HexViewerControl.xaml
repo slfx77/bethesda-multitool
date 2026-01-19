@@ -8,15 +8,15 @@
 
   <Grid>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*"/>
-      <ColumnDefinition Width="120"/>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="120" />
     </Grid.ColumnDefinitions>
 
     <!--  Main Hex View  -->
     <Grid Grid.Column="0">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
       <!--  Legend - populated dynamically from FileTypeColors  -->
@@ -28,8 +28,8 @@
         CornerRadius="4">
         <Grid>
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
           <ctk:WrapPanel
@@ -37,7 +37,7 @@
             Grid.Column="0"
             VerticalAlignment="Center"
             HorizontalSpacing="12"
-            VerticalSpacing="4"/>
+            VerticalSpacing="4" />
 
           <Button
             x:Name="SearchToggleButton"
@@ -52,7 +52,7 @@
             <FontIcon
               FontSize="14"
               Foreground="#FF888888"
-              Glyph="&#xE721;"/>
+              Glyph="&#xE721;" />
           </Button>
         </Grid>
       </Border>
@@ -67,13 +67,13 @@
         <Grid>
           <!--  Custom ScrollBar for virtual scrolling  -->
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
           <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
 
           <!--  Hex display area with three separate columns  -->
@@ -87,9 +87,9 @@
             SizeChanged="HexDisplayArea_SizeChanged">
             <Grid>
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
 
               <!--  Offset column (not selectable)  -->
@@ -102,7 +102,7 @@
                 FontSize="12"
                 Foreground="#FF569CD6"
                 IsTextSelectionEnabled="False"
-                TextWrapping="NoWrap"/>
+                TextWrapping="NoWrap" />
 
               <!--  Hex column (selectable with custom context menu)  -->
               <TextBlock
@@ -123,7 +123,7 @@
                       <MenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator
                           Key="C"
-                          Modifiers="Control"/>
+                          Modifiers="Control" />
                       </MenuFlyoutItem.KeyboardAccelerators>
                     </MenuFlyoutItem>
                   </MenuFlyout>
@@ -149,7 +149,7 @@
                       <MenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator
                           Key="C"
-                          Modifiers="Control"/>
+                          Modifiers="Control" />
                       </MenuFlyoutItem.KeyboardAccelerators>
                     </MenuFlyoutItem>
                   </MenuFlyout>
@@ -173,7 +173,7 @@
             SnapsTo="StepValues"
             StepFrequency="1"
             TickFrequency="0"
-            ValueChanged="VirtualScrollBar_ValueChanged"/>
+            ValueChanged="VirtualScrollBar_ValueChanged" />
 
           <!--  Search Panel (above position indicator)  -->
           <Border
@@ -187,13 +187,13 @@
             Visibility="Collapsed">
             <Grid>
               <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
 
               <!--  Row 1, Col 0: Search box with embedded prev/next buttons  -->
@@ -216,11 +216,11 @@
                     BorderThickness="0"
                     FontSize="13"
                     KeyDown="SearchTextBox_KeyDown"
-                    PlaceholderText="Search..."/>
+                    PlaceholderText="Search..." />
                   <Border
                     Width="1"
                     Margin="0,4"
-                    Background="#FF3C3C3C"/>
+                    Background="#FF3C3C3C" />
                   <Button
                     x:Name="SearchPrevButton"
                     Width="28"
@@ -233,7 +233,7 @@
                     <FontIcon
                       FontSize="11"
                       Foreground="#FFAAAAAA"
-                      Glyph="&#xE010;"/>
+                      Glyph="&#xE010;" />
                   </Button>
                   <Button
                     x:Name="SearchNextButton"
@@ -247,7 +247,7 @@
                     <FontIcon
                       FontSize="11"
                       Foreground="#FFAAAAAA"
-                      Glyph="&#xE011;"/>
+                      Glyph="&#xE011;" />
                   </Button>
                 </StackPanel>
               </Border>
@@ -263,7 +263,7 @@
                 VerticalAlignment="Center"
                 Click="SearchButton_Click"
                 Content="Search"
-                Style="{StaticResource AccentButtonStyle}"/>
+                Style="{StaticResource AccentButtonStyle}" />
 
               <!--  Row 1, Col 2: Results text  -->
               <TextBlock
@@ -274,7 +274,7 @@
                 VerticalAlignment="Center"
                 FontSize="12"
                 Foreground="#FF888888"
-                Text=""/>
+                Text="" />
 
               <!--  Row 2: Mode selection - aligned with Search button end  -->
               <StackPanel
@@ -293,7 +293,7 @@
                   Content="Text"
                   FontSize="12"
                   GroupName="SearchMode"
-                  IsChecked="True"/>
+                  IsChecked="True" />
                 <RadioButton
                   x:Name="SearchModeHex"
                   MinWidth="0"
@@ -303,7 +303,7 @@
                   VerticalContentAlignment="Center"
                   Content="Hex"
                   FontSize="12"
-                  GroupName="SearchMode"/>
+                  GroupName="SearchMode" />
                 <CheckBox
                   x:Name="SearchCaseSensitive"
                   MinWidth="0"
@@ -312,7 +312,7 @@
                   VerticalAlignment="Center"
                   VerticalContentAlignment="Center"
                   Content="Match case"
-                  FontSize="12"/>
+                  FontSize="12" />
               </StackPanel>
             </Grid>
           </Border>
@@ -331,7 +331,7 @@
               FontFamily="Consolas"
               FontSize="10"
               Foreground="#FFCCCCCC"
-              Text="Offset: 0x00000000"/>
+              Text="Offset: 0x00000000" />
           </Border>
         </Grid>
       </Border>
@@ -346,9 +346,9 @@
       CornerRadius="4">
       <Grid>
         <Grid.RowDefinitions>
-          <RowDefinition Height="Auto"/>
-          <RowDefinition Height="Auto"/>
-          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <TextBlock
@@ -357,7 +357,7 @@
           HorizontalAlignment="Center"
           FontSize="10"
           Foreground="#FF888888"
-          Text="Minimap"/>
+          Text="Minimap" />
 
         <!--  Zoom controls with proper height  -->
         <Grid
@@ -367,9 +367,9 @@
           HorizontalAlignment="Stretch"
           VerticalAlignment="Center">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="20"/>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="24"/>
+            <ColumnDefinition Width="20" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="24" />
           </Grid.ColumnDefinitions>
           <TextBlock
             Grid.Column="0"
@@ -377,7 +377,7 @@
             VerticalAlignment="Center"
             FontSize="9"
             Foreground="#FF666666"
-            Text="1x"/>
+            Text="1x" />
           <Slider
             x:Name="MinimapZoomSlider"
             Grid.Column="1"
@@ -389,14 +389,14 @@
             Maximum="10"
             Minimum="1"
             ValueChanged="MinimapZoomSlider_ValueChanged"
-            Value="1"/>
+            Value="1" />
           <TextBlock
             Grid.Column="2"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             FontSize="9"
             Foreground="#FF666666"
-            Text="10x"/>
+            Text="10x" />
         </Grid>
 
         <!--  Minimap container  -->
@@ -423,7 +423,7 @@
                 BorderBrush="#FFFFFFFF"
                 BorderThickness="2"
                 CornerRadius="2"
-                Visibility="Collapsed"/>
+                Visibility="Collapsed" />
             </Canvas>
           </ScrollViewer>
         </Border>

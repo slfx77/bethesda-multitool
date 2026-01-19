@@ -1,18 +1,25 @@
 namespace Xbox360MemoryCarver.Core.Converters;
 
-/// <summary>
-///     Result of DDX to DDS conversion.
-/// </summary>
-public class DdxConversionResult
-{
-    public bool Success { get; init; }
-    public byte[]? DdsData { get; init; }
-    public byte[]? AtlasData { get; init; }
-    public bool IsPartial { get; init; }
-    public string? Notes { get; init; }
-    public string? ConsoleOutput { get; init; }
+// This file is deprecated. Use ConversionResult.cs instead.
+// Keeping for backwards compatibility during transition.
 
-    public static DdxConversionResult Failure(string notes)
+/// <summary>
+///     Result of a file format conversion operation.
+///     DEPRECATED: Use ConversionResult instead.
+/// </summary>
+[Obsolete("Use ConversionResult instead")]
+public class DdxConversionResult : ConversionResult
+{
+    /// <summary>
+    ///     Backwards compatibility alias for OutputData.
+    /// </summary>
+    public byte[]? DdsData
+    {
+        get => OutputData;
+        init => OutputData = value;
+    }
+
+    public new static DdxConversionResult Failure(string notes)
     {
         return new DdxConversionResult { Success = false, Notes = notes };
     }

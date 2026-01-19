@@ -43,7 +43,10 @@ public sealed class SignatureMatcher
     /// </summary>
     public void Build()
     {
-        if (_patterns.Count == 0) return;
+        if (_patterns.Count == 0)
+        {
+            return;
+        }
 
         var queue = new Queue<Node>();
 
@@ -64,10 +67,16 @@ public sealed class SignatureMatcher
                 queue.Enqueue(child);
 
                 var failure = current.Failure;
-                while (failure?.Children.ContainsKey(b) == false) failure = failure.Failure;
+                while (failure?.Children.ContainsKey(b) == false)
+                {
+                    failure = failure.Failure;
+                }
 
                 child.Failure = failure?.Children.GetValueOrDefault(b) ?? _root;
-                if (child.Failure == child) child.Failure = _root;
+                if (child.Failure == child)
+                {
+                    child.Failure = _root;
+                }
 
                 // Merge output from failure link
                 child.Failure?.Output.ForEach(o => child.Output.Add(o));
@@ -88,7 +97,10 @@ public sealed class SignatureMatcher
         {
             var b = data[i];
 
-            while (current != _root && !current.Children.ContainsKey(b)) current = current.Failure!;
+            while (current != _root && !current.Children.ContainsKey(b))
+            {
+                current = current.Failure!;
+            }
 
             current = current.Children.GetValueOrDefault(b) ?? _root;
 

@@ -79,15 +79,24 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 64) return null;
+        if (data.Length < offset + 64)
+        {
+            return null;
+        }
 
         var headerMagic = data.Slice(offset, 20);
-        if (!headerMagic.SequenceEqual("Gamebryo File Format"u8)) return null;
+        if (!headerMagic.SequenceEqual("Gamebryo File Format"u8))
+        {
+            return null;
+        }
 
         try
         {
             var versionInfo = ValidateAndExtractVersion(data, offset);
-            if (versionInfo == null) return null;
+            if (versionInfo == null)
+            {
+                return null;
+            }
 
             var (versionString, majorVersion, newlinePos) = versionInfo.Value;
 
@@ -95,7 +104,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
             var headerInfo = ParseNifHeader(data, offset, newlinePos);
 
             // If ParseNifHeader returns -1, this is not a valid NIF file (e.g., false positive)
-            if (headerInfo.Size < 0) return null;
+            if (headerInfo.Size < 0)
+            {
+                return null;
+            }
 
             // Determine if this is animation or geometry based on block types
             var (contentType, outputFolder, extension) = ClassifyNifContent(headerInfo.BlockTypes);
@@ -126,21 +138,36 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     private static (string versionString, int majorVersion, int newlinePos)? ValidateAndExtractVersion(
         ReadOnlySpan<byte> data, int offset)
     {
-        if (data.Length < offset + 50) return null;
+        if (data.Length < offset + 50)
+        {
+            return null;
+        }
 
         // Check for ", Version " after the magic
         var versionPrefixSpan = data.Slice(offset + 20, 10);
-        if (!versionPrefixSpan.SequenceEqual(", Version "u8)) return null;
+        if (!versionPrefixSpan.SequenceEqual(", Version "u8))
+        {
+            return null;
+        }
 
         var versionOffset = offset + 30;
         var newlinePos = FindNewlinePosition(data, versionOffset);
-        if (newlinePos == -1 || newlinePos <= versionOffset || newlinePos > data.Length) return null;
+        if (newlinePos == -1 || newlinePos <= versionOffset || newlinePos > data.Length)
+        {
+            return null;
+        }
 
         var versionString = Encoding.ASCII.GetString(data[versionOffset..newlinePos]).TrimEnd('\r');
-        if (!VersionPattern().IsMatch(versionString)) return null;
+        if (!VersionPattern().IsMatch(versionString))
+        {
+            return null;
+        }
 
         var majorVersion = ExtractMajorVersion(versionString);
-        if (majorVersion < 2 || majorVersion > 30) return null;
+        if (majorVersion < 2 || majorVersion > 30)
+        {
+            return null;
+        }
 
         return (versionString, majorVersion, newlinePos);
     }
@@ -161,7 +188,11 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     private static int ExtractMajorVersion(string versionString)
     {
         var dotIdx = versionString.IndexOf('.');
-        if (dotIdx > 0 && int.TryParse(versionString[..dotIdx], out var major)) return major;
+        if (dotIdx > 0 && int.TryParse(versionString[..dotIdx], out var major))
+        {
+            return major;
+        }
+
         return 0;
     }
 
@@ -177,10 +208,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
         return (hasGeometry, hasAnimation) switch
         {
-            (true, false) => ("geometry", "meshes", null),    // Geometry only
-            (false, true) => ("animation", "anims", ".kf"),   // Animation only (.kf extension)
-            (true, true) => ("mixed", "meshes", null),        // Mixed content - prefer meshes
-            _ => ("unknown", "models", null)                   // Fallback for unknown content
+            (true, false) => ("geometry", "meshes", null), // Geometry only
+            (false, true) => ("animation", "anims", ".kf"), // Animation only (.kf extension)
+            (true, true) => ("mixed", "meshes", null), // Mixed content - prefer meshes
+            _ => ("unknown", "models", null) // Fallback for unknown content
         };
     }
 
@@ -199,30 +230,43 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
 
             // Parse initial header fields
             if (!TryParseInitialHeader(data, ref pos, out var binaryVersion, out var isBigEndian, out var userVersion))
+            {
                 return new NifHeaderInfo(-1, false, []);
+            }
 
             // Parse number of blocks
             if (!TryReadNumBlocks(data, ref pos, out var numBlocks))
+            {
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            }
 
             // Skip Bethesda header if present
             if (IsBethesdaVersion(binaryVersion, userVersion) && !TrySkipBethesdaHeader(data, ref pos))
+            {
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            }
 
             // Handle optional alignment padding
             TrySkipAlignmentPadding(data, ref pos, isBigEndian);
 
             // Read block types
             if (!TryReadBlockTypes(data, ref pos, isBigEndian, blockTypes))
+            {
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            }
 
             // Skip block type indices
             pos += (int)numBlocks * 2;
-            if (pos > data.Length) return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            if (pos > data.Length)
+            {
+                return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            }
 
             // Read block sizes and calculate total
             if (!TryReadBlockSizes(data, ref pos, isBigEndian, numBlocks, out var totalBlockSize))
+            {
                 return new NifHeaderInfo(FallbackSize(data, fileOffset), isBigEndian, blockTypes);
+            }
 
             // Skip strings section
             TrySkipStringsSection(data, ref pos, isBigEndian);
@@ -258,16 +302,25 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         isBigEndian = false;
         userVersion = 0;
 
-        if (pos + 9 > data.Length) return false;
+        if (pos + 9 > data.Length)
+        {
+            return false;
+        }
 
         binaryVersion = BinaryUtils.ReadUInt32LE(data, pos);
         pos += 4;
 
         // Validate binary version
-        if (binaryVersion < 0x04000000 || binaryVersion > 0x20000000) return false;
+        if (binaryVersion < 0x04000000 || binaryVersion > 0x20000000)
+        {
+            return false;
+        }
 
         var endianByte = data[pos];
-        if (endianByte > 1) return false;
+        if (endianByte > 1)
+        {
+            return false;
+        }
 
         pos += 1;
         isBigEndian = endianByte == 0;
@@ -284,7 +337,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     private static bool TryReadNumBlocks(ReadOnlySpan<byte> data, ref int pos, out uint numBlocks)
     {
         numBlocks = 0;
-        if (pos + 4 > data.Length) return false;
+        if (pos + 4 > data.Length)
+        {
+            return false;
+        }
 
         numBlocks = BinaryUtils.ReadUInt32LE(data, pos);
         pos += 4;
@@ -297,25 +353,43 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     /// </summary>
     private static bool TrySkipBethesdaHeader(ReadOnlySpan<byte> data, ref int pos)
     {
-        if (pos + 4 > data.Length) return false;
+        if (pos + 4 > data.Length)
+        {
+            return false;
+        }
 
         var bsVersion = BinaryUtils.ReadUInt32LE(data, pos);
         pos += 4;
 
         // Skip Author string
-        if (!TrySkipExportString(data, ref pos)) return false;
+        if (!TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
 
         // Unknown int if bsVersion > 130
-        if (bsVersion > 130) pos += 4;
+        if (bsVersion > 130)
+        {
+            pos += 4;
+        }
 
         // Skip Process Script if bsVersion < 131
-        if (bsVersion < 131 && !TrySkipExportString(data, ref pos)) return false;
+        if (bsVersion < 131 && !TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
 
         // Skip Export Script
-        if (!TrySkipExportString(data, ref pos)) return false;
+        if (!TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
 
         // Skip Max Filepath if bsVersion >= 103
-        if (bsVersion >= 103 && !TrySkipExportString(data, ref pos)) return false;
+        if (bsVersion >= 103 && !TrySkipExportString(data, ref pos))
+        {
+            return false;
+        }
 
         return true;
     }
@@ -325,7 +399,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     /// </summary>
     private static bool TrySkipExportString(ReadOnlySpan<byte> data, ref int pos)
     {
-        if (pos + 1 > data.Length) return false;
+        if (pos + 1 > data.Length)
+        {
+            return false;
+        }
 
         var len = data[pos];
         pos += 1 + len;
@@ -337,7 +414,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     /// </summary>
     private static void TrySkipAlignmentPadding(ReadOnlySpan<byte> data, ref int pos, bool isBigEndian)
     {
-        if (pos + 4 > data.Length) return;
+        if (pos + 4 > data.Length)
+        {
+            return;
+        }
 
         var testNumBlockTypes = isBigEndian
             ? BinaryUtils.ReadUInt16BE(data, pos)
@@ -349,7 +429,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
                 ? BinaryUtils.ReadUInt16BE(data, pos + 1)
                 : BinaryUtils.ReadUInt16LE(data, pos + 1);
 
-            if (testNumBlockTypes2 is > 0 and < 500) pos += 1;
+            if (testNumBlockTypes2 is > 0 and < 500)
+            {
+                pos += 1;
+            }
         }
     }
 
@@ -362,20 +445,32 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         bool isBigEndian,
         List<string> blockTypes)
     {
-        if (pos + 2 > data.Length) return false;
+        if (pos + 2 > data.Length)
+        {
+            return false;
+        }
 
         var numBlockTypes = isBigEndian
             ? BinaryUtils.ReadUInt16BE(data, pos)
             : BinaryUtils.ReadUInt16LE(data, pos);
         pos += 2;
 
-        if (numBlockTypes == 0 || numBlockTypes > 1000) return false;
+        if (numBlockTypes == 0 || numBlockTypes > 1000)
+        {
+            return false;
+        }
 
         for (var i = 0; i < numBlockTypes; i++)
         {
-            if (!TryReadSizedString(data, ref pos, isBigEndian, out var blockTypeName)) return false;
+            if (!TryReadSizedString(data, ref pos, isBigEndian, out var blockTypeName))
+            {
+                return false;
+            }
 
-            if (!string.IsNullOrEmpty(blockTypeName)) blockTypes.Add(blockTypeName);
+            if (!string.IsNullOrEmpty(blockTypeName))
+            {
+                blockTypes.Add(blockTypeName);
+            }
         }
 
         return true;
@@ -391,16 +486,25 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         out string result)
     {
         result = string.Empty;
-        if (pos + 4 > data.Length) return false;
+        if (pos + 4 > data.Length)
+        {
+            return false;
+        }
 
         var strLen = isBigEndian
             ? BinaryUtils.ReadUInt32BE(data, pos)
             : BinaryUtils.ReadUInt32LE(data, pos);
         pos += 4;
 
-        if (strLen > 256) return false;
+        if (strLen > 256)
+        {
+            return false;
+        }
 
-        if (pos + strLen <= data.Length && strLen > 0) result = Encoding.ASCII.GetString(data.Slice(pos, (int)strLen));
+        if (pos + strLen <= data.Length && strLen > 0)
+        {
+            result = Encoding.ASCII.GetString(data.Slice(pos, (int)strLen));
+        }
 
         pos += (int)strLen;
         return true;
@@ -417,7 +521,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
         out long totalBlockSize)
     {
         totalBlockSize = 0;
-        if (pos + numBlocks * 4 > data.Length) return false;
+        if (pos + numBlocks * 4 > data.Length)
+        {
+            return false;
+        }
 
         for (var i = 0; i < numBlocks; i++)
         {
@@ -426,7 +533,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
                 : BinaryUtils.ReadUInt32LE(data, pos);
             pos += 4;
 
-            if (blockSize > 50 * 1024 * 1024) return false;
+            if (blockSize > 50 * 1024 * 1024)
+            {
+                return false;
+            }
 
             totalBlockSize += blockSize;
         }
@@ -439,7 +549,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     /// </summary>
     private static void TrySkipStringsSection(ReadOnlySpan<byte> data, ref int pos, bool isBigEndian)
     {
-        if (pos + 8 > data.Length) return;
+        if (pos + 8 > data.Length)
+        {
+            return;
+        }
 
         var numStrings = isBigEndian
             ? BinaryUtils.ReadUInt32BE(data, pos)
@@ -457,7 +570,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
                 : BinaryUtils.ReadUInt32LE(data, pos);
             pos += 4;
 
-            if (strLen > 1024) break;
+            if (strLen > 1024)
+            {
+                break;
+            }
 
             pos += (int)strLen;
         }
@@ -468,7 +584,10 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter
     /// </summary>
     private static void TrySkipGroupsSection(ReadOnlySpan<byte> data, ref int pos, bool isBigEndian)
     {
-        if (pos + 4 > data.Length) return;
+        if (pos + 4 > data.Length)
+        {
+            return;
+        }
 
         var numGroups = isBigEndian
             ? BinaryUtils.ReadUInt32BE(data, pos)

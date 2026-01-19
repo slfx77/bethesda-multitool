@@ -55,8 +55,15 @@ internal sealed partial class NifConverter
         // bsDataFlags - update flags based on packed data
         var origBsDataFlags = ReadUInt16BE(input, srcPos);
         var newBsDataFlags = origBsDataFlags;
-        if (packedData.Tangents != null) newBsDataFlags |= 4096; // Has tangents flag
-        if (packedData.UVs != null) newBsDataFlags |= 1; // Has UVs flag
+        if (packedData.Tangents != null)
+        {
+            newBsDataFlags |= 4096; // Has tangents flag
+        }
+
+        if (packedData.UVs != null)
+        {
+            newBsDataFlags |= 1; // Has UVs flag
+        }
 
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), newBsDataFlags);
         srcPos += 2;
@@ -100,7 +107,9 @@ internal sealed partial class NifConverter
         // Copy and convert remaining block data (strips/triangles specific to NiTriStripsData/NiTriShapeData)
         var remainingOriginalBytes = block.Size - (srcPos - block.DataOffset);
         if (remainingOriginalBytes > 0)
+        {
             outPos = WriteTriStripSpecificData(input, output, srcPos, outPos, block.TypeName, triangles);
+        }
 
         return outPos;
     }
@@ -130,7 +139,11 @@ internal sealed partial class NifConverter
 
     private static int WriteVerticesFromPackedData(GeometryWriteContext ctx, int outPos)
     {
-        if (ctx.VertexMap is { Length: > 0 }) return WriteRemappedVertices(ctx, outPos);
+        if (ctx.VertexMap is { Length: > 0 })
+        {
+            return WriteRemappedVertices(ctx, outPos);
+        }
+
         return WriteSequentialVertices(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Positions!);
     }
 
@@ -144,7 +157,10 @@ internal sealed partial class NifConverter
         for (var partitionIdx = 0; partitionIdx < packedVertexCount; partitionIdx++)
         {
             var meshIdx = ctx.VertexMap[partitionIdx];
-            if (meshIdx >= ctx.NumVertices) continue;
+            if (meshIdx >= ctx.NumVertices)
+            {
+                continue;
+            }
 
             var writePos = basePos + meshIdx * 12;
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos),
@@ -233,7 +249,9 @@ internal sealed partial class NifConverter
 
             // Write bitangents if available (with optional remapping)
             if (ctx.PackedData.Bitangents != null)
+            {
                 outPos = WriteVec3Array(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Bitangents, ctx.VertexMap);
+            }
         }
 
         return outPos;
@@ -282,7 +300,10 @@ internal sealed partial class NifConverter
             for (var partitionIdx = 0; partitionIdx < packedCount; partitionIdx++)
             {
                 var meshIdx = vertexMap[partitionIdx];
-                if (meshIdx >= numVertices) continue;
+                if (meshIdx >= numVertices)
+                {
+                    continue;
+                }
 
                 var writePos = basePos + meshIdx * 12;
                 BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(writePos), data[partitionIdx * 3 + 0]);
@@ -337,7 +358,11 @@ internal sealed partial class NifConverter
 
     private static int WriteVertexColorsFromPackedData(GeometryWriteContext ctx, int outPos)
     {
-        if (ctx.VertexMap is { Length: > 0 }) return WriteRemappedVertexColors(ctx, outPos);
+        if (ctx.VertexMap is { Length: > 0 })
+        {
+            return WriteRemappedVertexColors(ctx, outPos);
+        }
+
         return WriteSequentialVertexColors(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.VertexColors!);
     }
 
@@ -351,12 +376,15 @@ internal sealed partial class NifConverter
         for (var partitionIdx = 0; partitionIdx < packedColorCount; partitionIdx++)
         {
             var meshIdx = ctx.VertexMap[partitionIdx];
-            if (meshIdx >= ctx.NumVertices) continue;
+            if (meshIdx >= ctx.NumVertices)
+            {
+                continue;
+            }
 
             // Xbox packed format: A, R, G, B -> NIF Color4 format: R, G, B, A
             var (r, g, b, a) = ExtractArgbAsRgba(ctx.PackedData.VertexColors, partitionIdx);
 
-            var writePos = basePos + (meshIdx * 16);
+            var writePos = basePos + meshIdx * 16;
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos), r);
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 4), g);
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos + 8), b);
@@ -387,10 +415,10 @@ internal sealed partial class NifConverter
 
     private static (float r, float g, float b, float a) ExtractArgbAsRgba(byte[] colors, int index)
     {
-        var a = colors[(index * 4) + 0] / 255.0f;
-        var r = colors[(index * 4) + 1] / 255.0f;
-        var g = colors[(index * 4) + 2] / 255.0f;
-        var b = colors[(index * 4) + 3] / 255.0f;
+        var a = colors[index * 4 + 0] / 255.0f;
+        var r = colors[index * 4 + 1] / 255.0f;
+        var g = colors[index * 4 + 2] / 255.0f;
+        var b = colors[index * 4 + 3] / 255.0f;
         return (r, g, b, a);
     }
 
@@ -435,7 +463,11 @@ internal sealed partial class NifConverter
 
     private static int WriteUVsFromPackedData(GeometryWriteContext ctx, int outPos)
     {
-        if (ctx.VertexMap is { Length: > 0 }) return WriteRemappedUVs(ctx, outPos);
+        if (ctx.VertexMap is { Length: > 0 })
+        {
+            return WriteRemappedUVs(ctx, outPos);
+        }
+
         return WriteSequentialUVs(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.UVs!);
     }
 
@@ -449,7 +481,10 @@ internal sealed partial class NifConverter
         for (var partitionIdx = 0; partitionIdx < packedUvCount; partitionIdx++)
         {
             var meshIdx = ctx.VertexMap[partitionIdx];
-            if (meshIdx >= ctx.NumVertices) continue;
+            if (meshIdx >= ctx.NumVertices)
+            {
+                continue;
+            }
 
             var writePos = basePos + meshIdx * 8;
             BinaryPrimitives.WriteSingleLittleEndian(ctx.Output.AsSpan(writePos),
@@ -527,14 +562,12 @@ internal sealed partial class NifConverter
             if (hasPoints != 0)
             {
                 for (var i = 0; i < numStrips; i++)
+                for (var j = 0; j < stripLengths[i]; j++)
                 {
-                    for (var j = 0; j < stripLengths[i]; j++)
-                    {
-                        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                            ReadUInt16BE(input, srcPos));
-                        srcPos += 2;
-                        outPos += 2;
-                    }
+                    BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
+                        ReadUInt16BE(input, srcPos));
+                    srcPos += 2;
+                    outPos += 2;
                 }
             }
         }
@@ -577,14 +610,17 @@ internal sealed partial class NifConverter
             output[outPos++] = 1;
 
             // Write triangles
-            for (var i = 0; i < triangles.Length; i++)
+            foreach (var triangle in triangles)
             {
-                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), triangles[i]);
+                BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), triangle);
                 outPos += 2;
             }
 
             // Skip source triangles if any (shouldn't be any since srcHasTriangles=0)
-            if (srcHasTriangles != 0) srcPos += srcNumTriangles * 6;
+            if (srcHasTriangles != 0)
+            {
+                srcPos += srcNumTriangles * 6;
+            }
         }
         else
         {
@@ -597,6 +633,7 @@ internal sealed partial class NifConverter
 
             // Copy source triangles if present
             if (srcHasTriangles != 0)
+            {
                 for (var i = 0; i < srcNumTriangles * 3; i++)
                 {
                     BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
@@ -604,6 +641,7 @@ internal sealed partial class NifConverter
                     srcPos += 2;
                     outPos += 2;
                 }
+            }
         }
 
         // numMatchGroups (ushort)

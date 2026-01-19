@@ -4,7 +4,7 @@
 namespace Xbox360MemoryCarver.Core.Formats.Bsa;
 
 /// <summary>
-/// BSA archive header structure (36 bytes).
+///     BSA archive header structure (36 bytes).
 /// </summary>
 public record BsaHeader
 {
@@ -46,7 +46,7 @@ public record BsaHeader
 }
 
 /// <summary>
-/// BSA archive flags.
+///     BSA archive flags.
 /// </summary>
 [Flags]
 public enum BsaArchiveFlags : uint
@@ -81,11 +81,11 @@ public enum BsaArchiveFlags : uint
     EmbedFileNames = 0x0100,
 
     /// <summary>XMem codec compression (Xbox 360).</summary>
-    XMemCodec = 0x0200,
+    XMemCodec = 0x0200
 }
 
 /// <summary>
-/// BSA file content type flags.
+///     BSA file content type flags.
 /// </summary>
 [Flags]
 public enum BsaFileFlags : ushort
@@ -99,11 +99,11 @@ public enum BsaFileFlags : ushort
     Shaders = 0x0020,
     Trees = 0x0040,
     Fonts = 0x0080,
-    Misc = 0x0100,
+    Misc = 0x0100
 }
 
 /// <summary>
-/// BSA folder record structure.
+///     BSA folder record structure.
 /// </summary>
 public record BsaFolderRecord
 {
@@ -124,7 +124,7 @@ public record BsaFolderRecord
 }
 
 /// <summary>
-/// BSA file record structure.
+///     BSA file record structure.
 /// </summary>
 public record BsaFileRecord
 {
@@ -156,7 +156,7 @@ public record BsaFileRecord
 }
 
 /// <summary>
-/// Result of BSA archive parsing.
+///     Result of BSA archive parsing.
 /// </summary>
 public record BsaArchive
 {
@@ -180,7 +180,7 @@ public record BsaArchive
 }
 
 /// <summary>
-/// Result of extracting a single file from BSA.
+///     Result of extracting a single file from BSA.
 /// </summary>
 public record BsaExtractResult
 {

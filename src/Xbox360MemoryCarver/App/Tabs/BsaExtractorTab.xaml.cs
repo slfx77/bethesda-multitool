@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 #if WINDOWS_GUI
-
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Threading.Channels;
@@ -497,7 +496,8 @@ public sealed partial class BsaExtractorTab : UserControl
         try
         {
             // Create a channel for files that need conversion
-            var conversionChannel = Channel.CreateBounded<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)>(
+            var conversionChannel =
+ Channel.CreateBounded<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)>(
                 new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.Wait });
 
             var total = selectedEntries.Count;
@@ -603,7 +603,8 @@ public sealed partial class BsaExtractorTab : UserControl
                                             (convertFiles && nifConversionAvailable && ext == ".nif");
                             if (!wasQueued)
                             {
-                                entry.Status = extractionSucceeded ? BsaExtractionStatus.Done : BsaExtractionStatus.Failed;
+                                entry.Status =
+ extractionSucceeded ? BsaExtractionStatus.Done : BsaExtractionStatus.Failed;
                                 entry.StatusMessage = statusMessage;
                             }
                         }
@@ -705,7 +706,7 @@ public sealed partial class BsaExtractorTab : UserControl
 
                     try
                     {
-                        DdxConversionResult result;
+                        ConversionResult result;
                         string originalExtension;
 
                         switch (conversionType)
@@ -723,7 +724,8 @@ public sealed partial class BsaExtractorTab : UserControl
                                 originalExtension = ".nif";
                                 break;
                             default:
-                                result = new DdxConversionResult { Success = false, Notes = $"Unknown conversion type: {conversionType}" };
+                                result = new ConversionResult { Success = false, Notes =
+ $"Unknown conversion type: {conversionType}" };
                                 originalExtension = "";
                                 break;
                         }
@@ -731,9 +733,9 @@ public sealed partial class BsaExtractorTab : UserControl
                         var dir = Path.GetDirectoryName(outputPath)!;
                         Directory.CreateDirectory(dir);
 
-                        if (result.Success && result.DdsData != null)
+                        if (result.Success && result.OutputData != null)
                         {
-                            await File.WriteAllBytesAsync(outputPath, result.DdsData, cancellationToken);
+                            await File.WriteAllBytesAsync(outputPath, result.OutputData, cancellationToken);
                             onConverted();
                             conversionSucceeded = true;
                             statusMessage = "Converted";
@@ -746,7 +748,8 @@ public sealed partial class BsaExtractorTab : UserControl
                                 : Path.ChangeExtension(outputPath, originalExtension);
                             await File.WriteAllBytesAsync(fallbackPath, data, cancellationToken);
                             conversionSucceeded = true; // File was saved, just not converted
-                            statusMessage = $"Saved as {originalExtension.ToUpperInvariant().TrimStart('.')} ({result.Notes})";
+                            statusMessage =
+ $"Saved as {originalExtension.ToUpperInvariant().TrimStart('.')} ({result.Notes})";
                         }
                     }
                     catch (Exception ex)

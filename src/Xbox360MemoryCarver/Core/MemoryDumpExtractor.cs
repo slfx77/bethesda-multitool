@@ -60,7 +60,10 @@ public static class MemoryDumpExtractor
 
         // Extract compiled scripts if requested
         var scriptResult = new ScdaExtractionResult();
-        if (options.ExtractScripts) scriptResult = await ExtractScriptsAsync(filePath, options, progress);
+        if (options.ExtractScripts)
+        {
+            scriptResult = await ExtractScriptsAsync(filePath, options, progress);
+        }
 
         // Return summary
         return new ExtractionSummary
@@ -137,19 +140,28 @@ public static class MemoryDumpExtractor
         var minidumpInfo = MinidumpParser.Parse(filePath);
         if (!minidumpInfo.IsValid)
         {
-            if (options.Verbose) Console.WriteLine("[Module] Minidump is not valid");
+            if (options.Verbose)
+            {
+                Console.WriteLine("[Module] Minidump is not valid");
+            }
 
             return (0, extractedOffsets);
         }
 
         if (minidumpInfo.Modules.Count == 0)
         {
-            if (options.Verbose) Console.WriteLine("[Module] No modules found in minidump");
+            if (options.Verbose)
+            {
+                Console.WriteLine("[Module] No modules found in minidump");
+            }
 
             return (0, extractedOffsets);
         }
 
-        if (options.Verbose) Console.WriteLine($"[Module] Found {minidumpInfo.Modules.Count} modules in minidump");
+        if (options.Verbose)
+        {
+            Console.WriteLine($"[Module] Found {minidumpInfo.Modules.Count} modules in minidump");
+        }
 
         // Create modules output directory matching the MemoryCarver pattern:
         // {output_dir}/{dmp_filename}/modules/
@@ -170,7 +182,9 @@ public static class MemoryDumpExtractor
             if (!fileRange.HasValue || fileRange.Value.size <= 0)
             {
                 if (options.Verbose)
+                {
                     Console.WriteLine($"[Module] Skipping {Path.GetFileName(module.Name)} - not captured in dump");
+                }
 
                 continue;
             }
@@ -197,7 +211,10 @@ public static class MemoryDumpExtractor
                 extractedCount++;
                 extractedOffsets.Add(fileRange.Value.fileOffset);
 
-                if (options.Verbose) Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
+                if (options.Verbose)
+                {
+                    Console.WriteLine($"[Module] Extracted {fileName} ({size:N0} bytes)");
+                }
 
                 progress?.Report(new ExtractionProgress
                 {
@@ -208,7 +225,10 @@ public static class MemoryDumpExtractor
             }
             catch (Exception ex)
             {
-                if (options.Verbose) Console.WriteLine($"[Module] Failed to extract {fileName}: {ex.Message}");
+                if (options.Verbose)
+                {
+                    Console.WriteLine($"[Module] Failed to extract {fileName}: {ex.Message}");
+                }
             }
         }
 
@@ -221,7 +241,11 @@ public static class MemoryDumpExtractor
     private static string SanitizeFilename(string name)
     {
         var sanitized = new char[name.Length];
-        for (var i = 0; i < name.Length; i++) sanitized[i] = InvalidFileNameChars.Contains(name[i]) ? '_' : name[i];
+        for (var i = 0; i < name.Length; i++)
+        {
+            sanitized[i] = InvalidFileNameChars.Contains(name[i]) ? '_' : name[i];
+        }
+
         return new string(sanitized);
     }
 }

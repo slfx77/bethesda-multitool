@@ -209,6 +209,6 @@ public class NifFormatTests
 
         // Assert
         Assert.False(result.Success);
-        Assert.Null(result.DdsData);
+        Assert.Null(result.OutputData);
     }
 }

@@ -24,7 +24,10 @@ internal static class TexturePathExtractor
     {
         var searchStart = Math.Max(0, headerOffset - maxSearchDistance);
         var searchLength = headerOffset - searchStart;
-        if (searchLength < extension.Length + 1) return null;
+        if (searchLength < extension.Length + 1)
+        {
+            return null;
+        }
 
         var searchArea = data.Slice(searchStart, searchLength);
         var extBytes = Encoding.ASCII.GetBytes(extension.ToLowerInvariant());
@@ -32,10 +35,16 @@ internal static class TexturePathExtractor
         // Look for the extension - start from end of search area
         for (var i = searchLength - extBytes.Length; i >= 0; i--)
         {
-            if (!IsExtensionMatch(searchArea, i, extBytes)) continue;
+            if (!IsExtensionMatch(searchArea, i, extBytes))
+            {
+                continue;
+            }
 
             var path = TryExtractPath(searchArea, i, extBytes.Length, extension);
-            if (path != null) return path;
+            if (path != null)
+            {
+                return path;
+            }
         }
 
         return null;
@@ -47,10 +56,16 @@ internal static class TexturePathExtractor
         var pathEnd = extPosition + extLength;
         var pathStart = FindPathStart(searchArea, extPosition);
 
-        if (pathStart < 0 || pathEnd <= pathStart) return null;
+        if (pathStart < 0 || pathEnd <= pathStart)
+        {
+            return null;
+        }
 
         var pathLength = pathEnd - pathStart;
-        if (pathLength is < 5 or > 260) return null;
+        if (pathLength is < 5 or > 260)
+        {
+            return null;
+        }
 
         var path = Encoding.ASCII.GetString(searchArea.Slice(pathStart, pathLength));
         return CleanupPath(path, extension);
@@ -123,10 +138,16 @@ internal static class TexturePathExtractor
 
     private static bool IsExtensionMatch(ReadOnlySpan<byte> data, int position, byte[] extBytes)
     {
-        if (position + extBytes.Length > data.Length) return false;
+        if (position + extBytes.Length > data.Length)
+        {
+            return false;
+        }
 
         // First char must be '.'
-        if (data[position] != '.' && data[position] != 0x2E) return false;
+        if (data[position] != '.' && data[position] != 0x2E)
+        {
+            return false;
+        }
 
         // Compare remaining chars case-insensitively
         for (var j = 1; j < extBytes.Length; j++)
@@ -135,9 +156,15 @@ internal static class TexturePathExtractor
             var extByte = extBytes[j];
 
             // Convert to lowercase for comparison
-            if (dataByte >= 'A' && dataByte <= 'Z') dataByte = (byte)(dataByte + 32);
+            if (dataByte >= 'A' && dataByte <= 'Z')
+            {
+                dataByte = (byte)(dataByte + 32);
+            }
 
-            if (dataByte != extByte) return false;
+            if (dataByte != extByte)
+            {
+                return false;
+            }
         }
 
         return true;
@@ -150,7 +177,9 @@ internal static class TexturePathExtractor
             var b = data[i];
             // Stop at null, control chars (except we allow space now), or non-ASCII
             if (b == 0 || b < 0x20 || b > 0x7E || !IsValidPathChar((char)b))
+            {
                 return i + 1;
+            }
         }
 
         return 0;
@@ -159,13 +188,25 @@ internal static class TexturePathExtractor
     private static string? CleanupPath(string path, string expectedExtension)
     {
         if (string.IsNullOrEmpty(path) || !path.EndsWith(expectedExtension, StringComparison.OrdinalIgnoreCase))
+        {
             return null;
+        }
 
         var rootIndex = FindRootIndex(path);
-        if (rootIndex > 0) path = path[rootIndex..];
-        else if (rootIndex < 0) path = TrimLeadingGarbage(path);
+        if (rootIndex > 0)
+        {
+            path = path[rootIndex..];
+        }
+        else if (rootIndex < 0)
+        {
+            path = TrimLeadingGarbage(path);
+        }
 
-        if (path.Length < 5) return null;
+        if (path.Length < 5)
+        {
+            return null;
+        }
+
         foreach (var c in path)
         {
             if (!IsValidPathChar(c))
@@ -180,13 +221,27 @@ internal static class TexturePathExtractor
     private static int FindRootIndex(string path)
     {
         var texturesIndex = path.IndexOf("textures\\", StringComparison.OrdinalIgnoreCase);
-        if (texturesIndex < 0) texturesIndex = path.IndexOf("textures/", StringComparison.OrdinalIgnoreCase);
+        if (texturesIndex < 0)
+        {
+            texturesIndex = path.IndexOf("textures/", StringComparison.OrdinalIgnoreCase);
+        }
 
         var meshesIndex = path.IndexOf("meshes\\", StringComparison.OrdinalIgnoreCase);
-        if (meshesIndex < 0) meshesIndex = path.IndexOf("meshes/", StringComparison.OrdinalIgnoreCase);
+        if (meshesIndex < 0)
+        {
+            meshesIndex = path.IndexOf("meshes/", StringComparison.OrdinalIgnoreCase);
+        }
 
-        if (texturesIndex >= 0 && (meshesIndex < 0 || texturesIndex < meshesIndex)) return texturesIndex;
-        if (meshesIndex >= 0) return meshesIndex;
+        if (texturesIndex >= 0 && (meshesIndex < 0 || texturesIndex < meshesIndex))
+        {
+            return texturesIndex;
+        }
+
+        if (meshesIndex >= 0)
+        {
+            return meshesIndex;
+        }
+
         return -1;
     }
 
@@ -196,7 +251,9 @@ internal static class TexturePathExtractor
         {
             var c = path[i];
             if (char.IsLetter(c) || c == '\\' || c == '/')
+            {
                 return i > 0 ? path[i..] : path;
+            }
         }
 
         return path;

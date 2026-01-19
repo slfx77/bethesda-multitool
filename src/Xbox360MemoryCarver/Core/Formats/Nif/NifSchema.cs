@@ -158,13 +158,19 @@ public sealed class NifSchema
         foreach (var basic in root.Elements("basic"))
         {
             var name = basic.Attribute("name")?.Value;
-            if (name == null) continue;
+            if (name == null)
+            {
+                continue;
+            }
 
             var sizeStr = basic.Attribute("size")?.Value;
             var size = sizeStr != null ? int.Parse(sizeStr, CultureInfo.InvariantCulture) : 0;
 
             // Special case: bool changes size based on version
-            if (name == "bool") size = 1; // Use modern size
+            if (name == "bool")
+            {
+                size = 1; // Use modern size
+            }
 
             schema._basicTypes[name] = new NifBasicType
             {
@@ -182,7 +188,10 @@ public sealed class NifSchema
         {
             var name = elem.Attribute("name")?.Value;
             var storage = elem.Attribute("storage")?.Value;
-            if (name == null || storage == null) continue;
+            if (name == null || storage == null)
+            {
+                continue;
+            }
 
             schema._enums[name] = new NifEnumDef
             {
@@ -195,7 +204,10 @@ public sealed class NifSchema
         foreach (var structElem in root.Elements("struct"))
         {
             var name = structElem.Attribute("name")?.Value;
-            if (name == null) continue;
+            if (name == null)
+            {
+                continue;
+            }
 
             var sizeStr = structElem.Attribute("size")?.Value;
 
@@ -211,7 +223,10 @@ public sealed class NifSchema
         foreach (var objElem in root.Elements("niobject"))
         {
             var name = objElem.Attribute("name")?.Value;
-            if (name == null) continue;
+            if (name == null)
+            {
+                continue;
+            }
 
             schema._objects[name] = new NifObjectDef
             {
@@ -223,7 +238,10 @@ public sealed class NifSchema
         }
 
         // Resolve inheritance for all objects
-        foreach (var obj in schema._objects.Values) schema.ResolveInheritance(obj);
+        foreach (var obj in schema._objects.Values)
+        {
+            schema.ResolveInheritance(obj);
+        }
 
         return schema;
     }
@@ -236,7 +254,10 @@ public sealed class NifSchema
         {
             var name = field.Attribute("name")?.Value;
             var type = field.Attribute("type")?.Value;
-            if (name == null || type == null) continue;
+            if (name == null || type == null)
+            {
+                continue;
+            }
 
             fields.Add(new NifFieldDef
             {
@@ -259,7 +280,10 @@ public sealed class NifSchema
 
     private void ResolveInheritance(NifObjectDef obj)
     {
-        if (obj.AllFields.Count > 0) return; // Already resolved
+        if (obj.AllFields.Count > 0)
+        {
+            return; // Already resolved
+        }
 
         var allFields = new List<NifFieldDef>();
 
@@ -282,14 +306,22 @@ public sealed class NifSchema
     public int? GetTypeSize(string typeName)
     {
         // Check basic types
-        if (_basicTypes.TryGetValue(typeName, out var basic)) return basic.Size > 0 ? basic.Size : null;
+        if (_basicTypes.TryGetValue(typeName, out var basic))
+        {
+            return basic.Size > 0 ? basic.Size : null;
+        }
 
         // Check enums (use storage type size)
-        if (_enums.TryGetValue(typeName, out var enumDef)) return GetTypeSize(enumDef.Storage);
+        if (_enums.TryGetValue(typeName, out var enumDef))
+        {
+            return GetTypeSize(enumDef.Storage);
+        }
 
         // Check structs with fixed size
         if (_structs.TryGetValue(typeName, out var structDef) && structDef.FixedSize.HasValue)
+        {
             return structDef.FixedSize;
+        }
 
         return null;
     }
@@ -324,20 +356,28 @@ public sealed class NifSchema
     public bool Inherits(string blockType, string ancestorType)
     {
         if (string.Equals(blockType, ancestorType, StringComparison.OrdinalIgnoreCase))
+        {
             return true;
+        }
 
         if (!_objects.TryGetValue(blockType, out var obj))
+        {
             return false;
+        }
 
         // Walk up the inheritance chain
         var current = obj;
-        while (current?.Inherit != null)
+        while (current.Inherit != null)
         {
             if (string.Equals(current.Inherit, ancestorType, StringComparison.OrdinalIgnoreCase))
+            {
                 return true;
+            }
 
             if (!_objects.TryGetValue(current.Inherit, out current))
+            {
                 break;
+            }
         }
 
         return false;

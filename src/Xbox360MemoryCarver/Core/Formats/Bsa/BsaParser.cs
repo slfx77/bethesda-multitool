@@ -6,9 +6,9 @@ using System.Text;
 namespace Xbox360MemoryCarver.Core.Formats.Bsa;
 
 /// <summary>
-/// Parser for Bethesda BSA archive files.
-/// BSA files are ALWAYS little-endian, even for Xbox 360 archives.
-/// The Xbox360Archive flag (bit 7) indicates Xbox 360 origin but does NOT affect byte order.
+///     Parser for Bethesda BSA archive files.
+///     BSA files are ALWAYS little-endian, even for Xbox 360 archives.
+///     The Xbox360Archive flag (bit 7) indicates Xbox 360 origin but does NOT affect byte order.
 /// </summary>
 public static class BsaParser
 {
@@ -16,7 +16,7 @@ public static class BsaParser
     private static readonly byte[] BsaMagic = "BSA\0"u8.ToArray();
 
     /// <summary>
-    /// Parse a BSA archive header and file listing.
+    ///     Parse a BSA archive header and file listing.
     /// </summary>
     public static BsaArchive Parse(string filePath)
     {
@@ -25,18 +25,19 @@ public static class BsaParser
     }
 
     /// <summary>
-    /// Parse a BSA archive from a stream.
-    /// BSA format is ALWAYS little-endian - BinaryReader default is correct.
+    ///     Parse a BSA archive from a stream.
+    ///     BSA format is ALWAYS little-endian - BinaryReader default is correct.
     /// </summary>
     public static BsaArchive Parse(Stream stream, string filePath = "")
     {
-        using var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
+        using var reader = new BinaryReader(stream, Encoding.ASCII, true);
 
         // Read and validate magic
         var magic = reader.ReadBytes(4);
         if (!magic.SequenceEqual(BsaMagic))
         {
-            throw new InvalidDataException($"Invalid BSA magic: expected 'BSA\\0', got '{Encoding.ASCII.GetString(magic)}'");
+            throw new InvalidDataException(
+                $"Invalid BSA magic: expected 'BSA\\0', got '{Encoding.ASCII.GetString(magic)}'");
         }
 
         // Read version - BSA is always little-endian
@@ -73,7 +74,7 @@ public static class BsaParser
 
         // Read folder records
         var folders = new List<BsaFolderRecord>((int)folderCount);
-        for (int i = 0; i < folderCount; i++)
+        for (var i = 0; i < folderCount; i++)
         {
             var nameHash = reader.ReadUInt64();
             var count = reader.ReadUInt32();
@@ -103,7 +104,7 @@ public static class BsaParser
             }
 
             // Read file records for this folder
-            for (int i = 0; i < folder.FileCount; i++)
+            for (var i = 0; i < folder.FileCount; i++)
             {
                 var fileNameHash = reader.ReadUInt64();
                 var size = reader.ReadUInt32();
@@ -124,12 +125,10 @@ public static class BsaParser
         if (archiveFlags.HasFlag(BsaArchiveFlags.IncludeFileNames))
         {
             foreach (var folder in folders)
+            foreach (var file in folder.Files)
             {
-                foreach (var file in folder.Files)
-                {
-                    var fileName = ReadNullTerminatedString(reader);
-                    file.Name = fileName;
-                }
+                var fileName = ReadNullTerminatedString(reader);
+                file.Name = fileName;
             }
         }
 
@@ -142,7 +141,7 @@ public static class BsaParser
     }
 
     /// <summary>
-    /// Check if a file is a valid BSA archive.
+    ///     Check if a file is a valid BSA archive.
     /// </summary>
     public static bool IsBsaFile(string filePath)
     {
@@ -151,7 +150,10 @@ public static class BsaParser
             using var stream = File.OpenRead(filePath);
             var magic = new byte[4];
             if (stream.Read(magic, 0, 4) != 4)
+            {
                 return false;
+            }
+
             return magic.SequenceEqual(BsaMagic);
         }
         catch
@@ -161,12 +163,15 @@ public static class BsaParser
     }
 
     /// <summary>
-    /// Check if a file is a valid BSA archive from data.
+    ///     Check if a file is a valid BSA archive from data.
     /// </summary>
     public static bool IsBsaFile(ReadOnlySpan<byte> data)
     {
         if (data.Length < 4)
+        {
             return false;
+        }
+
         return data[..4].SequenceEqual(BsaMagic);
     }
 
@@ -178,6 +183,7 @@ public static class BsaParser
         {
             bytes.Add(b);
         }
+
         return Encoding.ASCII.GetString(bytes.ToArray());
     }
 }

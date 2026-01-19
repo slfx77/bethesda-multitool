@@ -39,11 +39,13 @@ public class MinidumpInfo
     public long? FileOffsetToVirtualAddress(long fileOffset)
     {
         foreach (var region in MemoryRegions)
+        {
             if (fileOffset >= region.FileOffset && fileOffset < region.FileOffset + region.Size)
             {
                 var offsetInRegion = fileOffset - region.FileOffset;
                 return region.VirtualAddress + offsetInRegion;
             }
+        }
 
         return null;
     }
@@ -103,14 +105,24 @@ public class MinidumpInfo
         var sortedRegions = GetSortedRegionsAfter(regionEnd);
         foreach (var region in sortedRegions)
         {
-            if (region.VirtualAddress != currentVa) break;
-            if (region.VirtualAddress >= moduleEnd) break;
+            if (region.VirtualAddress != currentVa)
+            {
+                break;
+            }
+
+            if (region.VirtualAddress >= moduleEnd)
+            {
+                break;
+            }
 
             var regionCapturedEnd = Math.Min(region.VirtualAddress + region.Size, moduleEnd);
             totalCaptured += regionCapturedEnd - region.VirtualAddress;
             currentVa = region.VirtualAddress + region.Size;
 
-            if (currentVa >= moduleEnd) break;
+            if (currentVa >= moduleEnd)
+            {
+                break;
+            }
         }
 
         return totalCaptured;

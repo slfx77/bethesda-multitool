@@ -15,7 +15,11 @@ public sealed partial class ScdaDecompiler
 
         while (pos < length)
         {
-            if (offset + pos >= bytes.Length) break;
+            if (offset + pos >= bytes.Length)
+            {
+                break;
+            }
+
             ProcessExpressionToken(bytes, offset, length, ref pos, stack);
         }
 
@@ -30,7 +34,11 @@ public sealed partial class ScdaDecompiler
         {
             case 0x20: // Push
                 pos++;
-                if (pos >= length || offset + pos >= bytes.Length) return;
+                if (pos >= length || offset + pos >= bytes.Length)
+                {
+                    return;
+                }
+
                 ParsePushValue(bytes, offset, length, ref pos, stack);
                 return;
 
@@ -66,8 +74,16 @@ public sealed partial class ScdaDecompiler
                 return;
 
             default:
-                if (TryParseOperator(bytes, offset, length, ref pos, stack)) return;
-                if (marker >= 0x30 && marker <= 0x39) stack.Push(((char)marker).ToString());
+                if (TryParseOperator(bytes, offset, length, ref pos, stack))
+                {
+                    return;
+                }
+
+                if (marker is >= 0x30 and <= 0x39)
+                {
+                    stack.Push(((char)marker).ToString());
+                }
+
                 pos++;
                 return;
         }
@@ -75,15 +91,37 @@ public sealed partial class ScdaDecompiler
 
     private void ParsePushValue(byte[] bytes, int offset, int length, ref int pos, Stack<string> stack)
     {
-        if (offset + pos >= bytes.Length) return;
+        if (offset + pos >= bytes.Length)
+        {
+            return;
+        }
 
         var next = bytes[offset + pos];
 
-        if (TryParseAsciiDigit(next, stack, ref pos)) return;
-        if (TryParseReferenceWithVariable(bytes, offset, length, ref pos, stack, next)) return;
-        if (TryParseLocalVariable(bytes, offset, length, ref pos, stack, next)) return;
-        if (TryParseFunctionCallMarker(bytes, offset, length, ref pos, stack, next)) return;
-        if (TryParseOperator(bytes, offset, length, ref pos, stack)) return;
+        if (TryParseAsciiDigit(next, stack, ref pos))
+        {
+            return;
+        }
+
+        if (TryParseReferenceWithVariable(bytes, offset, length, ref pos, stack, next))
+        {
+            return;
+        }
+
+        if (TryParseLocalVariable(bytes, offset, length, ref pos, stack, next))
+        {
+            return;
+        }
+
+        if (TryParseFunctionCallMarker(bytes, offset, length, ref pos, stack, next))
+        {
+            return;
+        }
+
+        if (TryParseOperator(bytes, offset, length, ref pos, stack))
+        {
+            return;
+        }
 
         // Other literal values
         stack.Push(next.ToString(CultureInfo.InvariantCulture));
@@ -92,7 +130,11 @@ public sealed partial class ScdaDecompiler
 
     private static bool TryParseAsciiDigit(byte next, Stack<string> stack, ref int pos)
     {
-        if (next < 0x30 || next > 0x39) return false;
+        if (next < 0x30 || next > 0x39)
+        {
+            return false;
+        }
+
         stack.Push(((char)next).ToString());
         pos++;
         return true;
@@ -101,7 +143,10 @@ public sealed partial class ScdaDecompiler
     private static bool TryParseReferenceWithVariable(
         byte[] bytes, int offset, int length, ref int pos, Stack<string> stack, byte next)
     {
-        if (next != 0x72 || pos + 3 > length) return false;
+        if (next != 0x72 || pos + 3 > length)
+        {
+            return false;
+        }
 
         var refIdx = BinaryUtils.ReadUInt16LE(bytes, offset + pos + 1);
         pos += 3;
@@ -146,7 +191,11 @@ public sealed partial class ScdaDecompiler
     private bool TryParseFunctionCallMarker(
         byte[] bytes, int offset, int length, ref int pos, Stack<string> stack, byte next)
     {
-        if (next != 0x58 || pos + 5 > length) return false;
+        if (next != 0x58 || pos + 5 > length)
+        {
+            return false;
+        }
+
         pos++; // skip 0x58
         ParseFunctionCall(bytes, offset, length, ref pos, stack);
         return true;
@@ -160,7 +209,10 @@ public sealed partial class ScdaDecompiler
             return;
         }
 
-        if (bytes[offset + pos] == 0x58) pos++; // skip marker if present
+        if (bytes[offset + pos] == 0x58)
+        {
+            pos++; // skip marker if present
+        }
 
         var funcCode = BinaryUtils.ReadUInt16LE(bytes, offset + pos);
         var funcName = _opcodeTable.TryGetValue(funcCode, out var info) ? info.Name : $"Function_{funcCode:X4}";
@@ -201,7 +253,10 @@ public sealed partial class ScdaDecompiler
 
     private static bool TryParseOperator(byte[] bytes, int offset, int length, ref int pos, Stack<string> stack)
     {
-        if (offset + pos >= bytes.Length) return false;
+        if (offset + pos >= bytes.Length)
+        {
+            return false;
+        }
 
         var marker = bytes[offset + pos];
         var hasNext = pos + 1 < length && offset + pos + 1 < bytes.Length;
@@ -253,7 +308,10 @@ public sealed partial class ScdaDecompiler
 
     private static (string Value, int BytesConsumed) ParseSingleValue(byte[] bytes, int offset, int maxLen)
     {
-        if (maxLen <= 0 || offset >= bytes.Length) return ("?", 1);
+        if (maxLen <= 0 || offset >= bytes.Length)
+        {
+            return ("?", 1);
+        }
 
         var marker = bytes[offset];
         return marker switch
@@ -351,6 +409,9 @@ public sealed partial class ScdaDecompiler
             (0x1085, "ForceAV")
         };
 
-        foreach (var (opcode, name) in defaults) _opcodeTable[opcode] = (name, "Function");
+        foreach (var (opcode, name) in defaults)
+        {
+            _opcodeTable[opcode] = (name, "Function");
+        }
     }
 }

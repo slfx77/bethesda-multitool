@@ -62,7 +62,10 @@ internal sealed partial class NifConverter
     public NifConverter(bool verbose = false)
     {
         // Configure logger level based on verbose flag
-        if (verbose) Log.Level = LogLevel.Debug;
+        if (verbose)
+        {
+            Log.Level = LogLevel.Debug;
+        }
 
         _schema = NifSchema.LoadEmbedded();
     }
@@ -82,7 +85,9 @@ internal sealed partial class NifConverter
         // Swap all 4-byte aligned values as a fallback
         var end = Math.Min(start + size, buf.Length - 3);
         for (var i = start; i < end; i += 4)
+        {
             SwapUInt32InPlace(buf, i);
+        }
     }
 
     // Big-endian read helpers

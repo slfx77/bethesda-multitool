@@ -24,11 +24,11 @@
           Height="16"
           Margin="8,0,8,0"
           VerticalAlignment="Center"
-          Source="Assets/StoreLogo.png"/>
+          Source="Assets/StoreLogo.png" />
         <TextBlock
           VerticalAlignment="Center"
           FontSize="12"
-          Text="Xbox 360 Memory Carver"/>
+          Text="Xbox 360 Memory Carver" />
       </StackPanel>
     </Grid>
 
@@ -47,13 +47,13 @@
       <!--  Make NavigationView content area transparent so Mica shows in title bar  -->
       <NavigationView.Resources>
         <SolidColorBrush x:Key="NavigationViewContentBackground"
-                         Color="Transparent"/>
+                         Color="Transparent" />
         <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush"
-                         Color="Transparent"/>
+                         Color="Transparent" />
       </NavigationView.Resources>
 
       <NavigationView.MenuItems>
-        <NavigationViewItemHeader Content="Minidump"/>
+        <NavigationViewItemHeader Content="Minidump" />
 
         <!--  Single File Analysis  -->
         <NavigationViewItem
@@ -61,7 +61,7 @@
           IsSelected="True"
           Tag="SingleFile">
           <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE8A5;"/>
+            <FontIcon Glyph="&#xE8A5;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
@@ -70,20 +70,20 @@
           Content="Batch Mode"
           Tag="BatchMode">
           <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE8B7;"/>
+            <FontIcon Glyph="&#xE8B7;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
-        <NavigationViewItemSeparator/>
+        <NavigationViewItemSeparator />
 
-        <NavigationViewItemHeader Content="Converters"/>
+        <NavigationViewItemHeader Content="Converters" />
 
         <!--  NIF Converter  -->
         <NavigationViewItem
           Content="NIF Converter"
           Tag="NifConverter">
           <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xF158;"/>
+            <FontIcon Glyph="&#xF158;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
@@ -92,7 +92,7 @@
           Content="DDX Converter"
           Tag="DdxConverter">
           <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xEB9F;"/>
+            <FontIcon Glyph="&#xEB9F;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
@@ -101,7 +101,7 @@
           Content="BSA Extractor"
           Tag="BsaExtractor">
           <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE7B8;"/>
+            <FontIcon Glyph="&#xE7B8;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
       </NavigationView.MenuItems>
@@ -109,11 +109,11 @@
       <!--  Main content area  -->
       <Grid Background="Transparent">
         <Grid.RowDefinitions>
-          <RowDefinition Height="32"/>
+          <RowDefinition Height="32" />
           <!--  Window controls area (title bar)  -->
-          <RowDefinition Height="*"/>
+          <RowDefinition Height="*" />
           <!--  Content  -->
-          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto" />
           <!--  Status bar  -->
         </Grid.RowDefinitions>
 
@@ -126,23 +126,23 @@
             <tabs:SingleFileTab
               x:Name="SingleFileTabContent"
               VerticalAlignment="Stretch"
-              Visibility="Visible"/>
+              Visibility="Visible" />
             <tabs:BatchModeTab
               x:Name="BatchModeTabContent"
               VerticalAlignment="Stretch"
-              Visibility="Collapsed"/>
+              Visibility="Collapsed" />
             <tabs:NifConverterTab
               x:Name="NifConverterTabContent"
               VerticalAlignment="Stretch"
-              Visibility="Collapsed"/>
+              Visibility="Collapsed" />
             <tabs:DdxConverterTab
               x:Name="DdxConverterTabContent"
               VerticalAlignment="Stretch"
-              Visibility="Collapsed"/>
+              Visibility="Collapsed" />
             <tabs:BsaExtractorTab
               x:Name="BsaExtractorTabContent"
               VerticalAlignment="Stretch"
-              Visibility="Collapsed"/>
+              Visibility="Collapsed" />
           </Grid>
         </Border>
 
@@ -157,7 +157,7 @@
             VerticalAlignment="Center"
             FontSize="12"
             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            Text=""/>
+            Text="" />
         </Grid>
       </Grid>
     </NavigationView>

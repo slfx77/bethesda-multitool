@@ -38,13 +38,19 @@ public sealed class XuiFormat : FileFormatBase, IFileConverter
         // Offset 14: FileSize (4 bytes) - total file size
         // Offset 18: SectionsCount (2 bytes)
         const int minHeaderSize = 20;
-        if (data.Length < offset + minHeaderSize) return null;
+        if (data.Length < offset + minHeaderSize)
+        {
+            return null;
+        }
 
         var magic = data.Slice(offset, 4);
         var isScene = magic.SequenceEqual("XUIS"u8);
         var isBinary = magic.SequenceEqual("XUIB"u8);
 
-        if (!isScene && !isBinary) return null;
+        if (!isScene && !isBinary)
+        {
+            return null;
+        }
 
         try
         {
@@ -121,26 +127,29 @@ public sealed class XuiFormat : FileFormatBase, IFileConverter
         return signatureId == "xui_binary";
     }
 
-    public async Task<DdxConversionResult> ConvertAsync(byte[] data,
+    public async Task<ConversionResult> ConvertAsync(byte[] data,
         IReadOnlyDictionary<string, object>? metadata = null)
     {
-        if (_converter == null) return new DdxConversionResult { Success = false, Notes = "Converter not initialized" };
+        if (_converter == null)
+        {
+            return new ConversionResult { Success = false, Notes = "Converter not initialized" };
+        }
 
         var result = await _converter.ConvertFromMemoryWithResultAsync(data);
 
         if (result.Success)
         {
             Interlocked.Increment(ref _convertedCount);
-            return new DdxConversionResult
+            return new ConversionResult
             {
                 Success = true,
-                DdsData = result.XuiData, // Using DdsData to hold XUI XML data
+                OutputData = result.XuiData, // Using OutputData to hold XUI XML data
                 Notes = $"XUR v{result.XurVersion} → XUI v12"
             };
         }
 
         Interlocked.Increment(ref _failedCount);
-        return new DdxConversionResult
+        return new ConversionResult
         {
             Success = false,
             Notes = result.Notes,

@@ -57,7 +57,10 @@ internal sealed partial class NifConverter
         var pos = info.HeaderString.Length + 1 + 4; // +1 for newline, +4 for binary version
 
         // Change endian byte from 0 to 1
-        if (buf[pos] == 0) buf[pos] = 1;
+        if (buf[pos] == 0)
+        {
+            buf[pos] = 1;
+        }
 
         // Swap header fields
         SwapHeaderFields(buf, info);
@@ -75,7 +78,10 @@ internal sealed partial class NifConverter
         var lastBlock = info.Blocks[^1];
         var footerPos = lastBlock.DataOffset + lastBlock.Size;
 
-        if (footerPos + 4 > buf.Length) return;
+        if (footerPos + 4 > buf.Length)
+        {
+            return;
+        }
 
         // Swap num roots
         SwapUInt32InPlace(buf, footerPos);
@@ -114,7 +120,10 @@ internal sealed partial class NifConverter
         pos += 1 + authorLen;
 
         // Unknown int if bsVersion > 130
-        if (bsVersion > 130) pos += 4;
+        if (bsVersion > 130)
+        {
+            pos += 4;
+        }
 
         // Process Script if bsVersion < 131
         if (bsVersion < 131)
@@ -203,7 +212,10 @@ internal sealed partial class NifConverter
         if (exp == 0)
         {
             // Zero or denormalized
-            if (mant == 0) return sign != 0 ? -0.0f : 0.0f;
+            if (mant == 0)
+            {
+                return sign != 0 ? -0.0f : 0.0f;
+            }
 
             // Denormalized: convert to normalized
             while ((mant & 0x0400) == 0)
@@ -218,7 +230,10 @@ internal sealed partial class NifConverter
         else if (exp == 31)
         {
             // Inf or NaN
-            if (mant != 0) return float.NaN;
+            if (mant != 0)
+            {
+                return float.NaN;
+            }
 
             return sign != 0 ? float.NegativeInfinity : float.PositiveInfinity;
         }

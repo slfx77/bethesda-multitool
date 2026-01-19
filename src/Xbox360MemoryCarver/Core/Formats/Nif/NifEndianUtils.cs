@@ -12,7 +12,11 @@ internal static class NifEndianUtils
     /// </summary>
     public static void SwapUInt16InPlace(byte[] buf, int pos)
     {
-        if (pos + 2 > buf.Length) return;
+        if (pos + 2 > buf.Length)
+        {
+            return;
+        }
+
         (buf[pos], buf[pos + 1]) = (buf[pos + 1], buf[pos]);
     }
 
@@ -21,7 +25,11 @@ internal static class NifEndianUtils
     /// </summary>
     public static void SwapUInt32InPlace(byte[] buf, int pos)
     {
-        if (pos + 4 > buf.Length) return;
+        if (pos + 4 > buf.Length)
+        {
+            return;
+        }
+
         (buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]) =
             (buf[pos + 3], buf[pos + 2], buf[pos + 1], buf[pos]);
     }
@@ -31,7 +39,11 @@ internal static class NifEndianUtils
     /// </summary>
     public static void SwapUInt64InPlace(byte[] buf, int pos)
     {
-        if (pos + 8 > buf.Length) return;
+        if (pos + 8 > buf.Length)
+        {
+            return;
+        }
+
         (buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3], buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7]) =
             (buf[pos + 7], buf[pos + 6], buf[pos + 5], buf[pos + 4], buf[pos + 3], buf[pos + 2], buf[pos + 1],
                 buf[pos]);

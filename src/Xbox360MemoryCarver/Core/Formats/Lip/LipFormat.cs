@@ -11,13 +11,10 @@ namespace Xbox360MemoryCarver.Core.Formats.Lip;
 ///     - DataSize (uint32)
 ///     - Unknown (uint32)
 ///     - Phoneme count/data
-///     
 ///     The "LIPS" string appears in memory dumps only as part of asset path strings
 ///     (e.g., "sound/voice/falloutnv.esm/maleadult01/lips_....lip"), not as file headers.
-///     
 ///     Across 50+ crash dumps analyzed, 0 valid LIP files were found - they are loaded
 ///     on-demand during dialogue playback and aren't resident in crash dumps.
-///     
 ///     This format is DISABLED for signature scanning since there's no reliable magic
 ///     to detect actual LIP files vs. path strings containing "lip".
 /// </remarks>
@@ -46,7 +43,10 @@ public sealed class LipFormat : FileFormatBase
         // LIP files have no magic header, so we can't reliably parse them from memory dumps.
         // This parser exists only for potential future use with known file offsets.
         const int minHeaderSize = 12;
-        if (data.Length < offset + minHeaderSize) return null;
+        if (data.Length < offset + minHeaderSize)
+        {
+            return null;
+        }
 
         // LIP format (based on actual files):
         // 0x00: Version (uint32, typically 1)
@@ -55,14 +55,23 @@ public sealed class LipFormat : FileFormatBase
         // 0x0C: Phoneme data...
 
         var version = BinaryUtils.ReadUInt32LE(data, offset);
-        if (version == 0 || version > 10) return null;
+        if (version == 0 || version > 10)
+        {
+            return null;
+        }
 
         var dataSize = BinaryUtils.ReadUInt32LE(data, offset + 4);
-        if (dataSize == 0 || dataSize > 1 * 1024 * 1024) return null;
+        if (dataSize == 0 || dataSize > 1 * 1024 * 1024)
+        {
+            return null;
+        }
 
         // Estimate size as header + reported data size
         var estimatedSize = 12 + (int)dataSize;
-        if (estimatedSize > MaxSize) return null;
+        if (estimatedSize > MaxSize)
+        {
+            return null;
+        }
 
         return new ParseResult
         {

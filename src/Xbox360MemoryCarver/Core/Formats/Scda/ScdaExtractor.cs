@@ -32,7 +32,10 @@ public static partial class ScdaExtractor
         progress?.Report("Scanning for SCDA records...");
         var records = ScdaFormat.ScanForRecords(dumpData);
 
-        if (records.Records.Count == 0) return new ScdaExtractionResult();
+        if (records.Records.Count == 0)
+        {
+            return new ScdaExtractionResult();
+        }
 
         progress?.Report($"Found {records.Records.Count} SCDA records, grouping by quest...");
 
@@ -64,19 +67,17 @@ public static partial class ScdaExtractor
 
         // Add grouped scripts with quest names
         foreach (var (questName, records) in groups)
+        foreach (var record in records)
         {
-            foreach (var record in records)
+            var scriptName = ExtractScriptNameFromSource(record.SourceText);
+            scripts.Add(new ScriptInfo
             {
-                var scriptName = ExtractScriptNameFromSource(record.SourceText);
-                scripts.Add(new ScriptInfo
-                {
-                    Offset = record.Offset,
-                    BytecodeSize = record.BytecodeLength,
-                    ScriptName = scriptName,
-                    QuestName = questName,
-                    HasSource = record.HasAssociatedSctx
-                });
-            }
+                Offset = record.Offset,
+                BytecodeSize = record.BytecodeLength,
+                ScriptName = scriptName,
+                QuestName = questName,
+                HasSource = record.HasAssociatedSctx
+            });
         }
 
         // Add ungrouped scripts
@@ -128,7 +129,10 @@ public static partial class ScdaExtractor
         ungrouped = AssignByProximity(groups, ungrouped);
 
         // Sort each group by offset
-        foreach (var list in groups.Values) list.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+        foreach (var list in groups.Values)
+        {
+            list.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+        }
 
         return (groups, ungrouped);
     }
@@ -144,9 +148,13 @@ public static partial class ScdaExtractor
             var assignedGroup = FindGroupByOffset(groups, record.Offset);
 
             if (assignedGroup != null)
+            {
                 groups[assignedGroup].Add(record);
+            }
             else
+            {
                 stillUngrouped.Add(record);
+            }
         }
 
         return stillUngrouped;
@@ -156,7 +164,10 @@ public static partial class ScdaExtractor
     {
         foreach (var (questName, stages) in groups)
         {
-            if (stages.Count < 2) continue;
+            if (stages.Count < 2)
+            {
+                continue;
+            }
 
             // Use direct iteration instead of LINQ Min/Max to avoid repeated enumeration
 #pragma warning disable S3267 // Loops should be simplified - intentionally avoiding LINQ for performance
@@ -164,12 +175,22 @@ public static partial class ScdaExtractor
             var maxOffset = long.MinValue;
             foreach (var stage in stages)
             {
-                if (stage.Offset < minOffset) minOffset = stage.Offset;
-                if (stage.Offset > maxOffset) maxOffset = stage.Offset;
+                if (stage.Offset < minOffset)
+                {
+                    minOffset = stage.Offset;
+                }
+
+                if (stage.Offset > maxOffset)
+                {
+                    maxOffset = stage.Offset;
+                }
             }
 #pragma warning restore S3267
 
-            if (offset >= minOffset && offset <= maxOffset) return questName;
+            if (offset >= minOffset && offset <= maxOffset)
+            {
+                return questName;
+            }
         }
 
         return null;
@@ -205,7 +226,11 @@ public static partial class ScdaExtractor
     private static string SanitizeFilename(string name)
     {
         var sb = new StringBuilder(name.Length);
-        foreach (var c in name) sb.Append(InvalidFileNameChars.Contains(c) ? '_' : c);
+        foreach (var c in name)
+        {
+            sb.Append(InvalidFileNameChars.Contains(c) ? '_' : c);
+        }
+
         return sb.ToString();
     }
 
@@ -224,15 +249,24 @@ public static partial class ScdaExtractor
 
     private static string? ExtractQuestName(string? source)
     {
-        if (string.IsNullOrEmpty(source)) return null;
+        if (string.IsNullOrEmpty(source))
+        {
+            return null;
+        }
 
         // Try quest variable pattern (e.g., "VMS03.nPowerConfiguration")
         var match = QuestNamePattern().Match(source);
-        if (match.Success) return match.Groups[1].Value;
+        if (match.Success)
+        {
+            return match.Groups[1].Value;
+        }
 
         // Try command pattern (e.g., "SetObjectiveDisplayed VFreeformCampGolf 10 1")
         match = CommandQuestPattern().Match(source);
-        if (match.Success) return match.Groups[1].Value;
+        if (match.Success)
+        {
+            return match.Groups[1].Value;
+        }
 
         // Try variable access pattern
         return TryExtractFromVariableAccess(source);
@@ -241,10 +275,17 @@ public static partial class ScdaExtractor
     private static string? TryExtractFromVariableAccess(string source)
     {
         var match = VariableAccessPattern().Match(source);
-        if (!match.Success) return null;
+        if (!match.Success)
+        {
+            return null;
+        }
 
         var name = match.Groups[1].Value;
-        if (IsValidQuestPrefix(name)) return name;
+        if (IsValidQuestPrefix(name))
+        {
+            return name;
+        }
+
         return null;
     }
 
@@ -266,13 +307,19 @@ public static partial class ScdaExtractor
 
     private static string? ExtractScriptNameFromSource(string? source)
     {
-        if (string.IsNullOrEmpty(source)) return null;
+        if (string.IsNullOrEmpty(source))
+        {
+            return null;
+        }
 
         var patterns = new[] { "set ", "Set ", "Get", "If ", "if " };
         foreach (var p in patterns)
         {
             var name = TryExtractNameAfterPattern(source, p);
-            if (name != null) return name;
+            if (name != null)
+            {
+                return name;
+            }
         }
 
         return null;
@@ -281,14 +328,20 @@ public static partial class ScdaExtractor
     private static string? TryExtractNameAfterPattern(string source, string pattern)
     {
         var idx = source.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
-        if (idx < 0) return null;
+        if (idx < 0)
+        {
+            return null;
+        }
 
         var start = idx + pattern.Length;
         var end = source.IndexOfAny([' ', '.', '(', '\r', '\n'], start);
-        if (end <= start) return null;
+        if (end <= start)
+        {
+            return null;
+        }
 
         var name = source[start..end];
-        return name.Length > 3 && name.Length < 50 ? name : null;
+        return name.Length is > 3 and < 50 ? name : null;
     }
 
     #endregion

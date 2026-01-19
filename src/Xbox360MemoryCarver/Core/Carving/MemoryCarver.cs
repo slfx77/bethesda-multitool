@@ -43,7 +43,10 @@ public sealed class MemoryCarver : IDisposable
         InitializeSignatures();
         _signatureMatcher.Build();
 
-        if (_enableConversion) InitializeConverters(verbose);
+        if (_enableConversion)
+        {
+            InitializeConverters(verbose);
+        }
     }
 
     public int DdxConvertedCount => _converters.TryGetValue("ddx", out var c) ? c.ConvertedCount : 0;
@@ -59,7 +62,11 @@ public sealed class MemoryCarver : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
     }
 
@@ -87,7 +94,10 @@ public sealed class MemoryCarver : IDisposable
     {
         _manifest.Clear();
         _processedOffsets.Clear();
-        foreach (var key in _stats.Keys) _stats[key] = 0;
+        foreach (var key in _stats.Keys)
+        {
+            _stats[key] = 0;
+        }
     }
 
     private void InitializeSignatures()
@@ -109,10 +119,12 @@ public sealed class MemoryCarver : IDisposable
         var options = new Dictionary<string, object> { ["saveAtlas"] = _saveAtlas };
 
         foreach (var format in FormatRegistry.All)
+        {
             if (format is IFileConverter converter && converter.Initialize(verbose, options))
             {
                 _converters[format.FormatId] = converter;
             }
+        }
     }
 
     private static HashSet<string> GetSignatureIdsToSearch(List<string>? fileTypes)
@@ -131,13 +143,19 @@ public sealed class MemoryCarver : IDisposable
             var format = FormatRegistry.GetByFormatId(ft);
             if (format != null)
             {
-                foreach (var sig in format.Signatures) result.Add(sig.Id);
+                foreach (var sig in format.Signatures)
+                {
+                    result.Add(sig.Id);
+                }
 
                 continue;
             }
 
             format = FormatRegistry.GetBySignatureId(ft);
-            if (format != null) result.Add(ft);
+            if (format != null)
+            {
+                result.Add(ft);
+            }
         }
 
         return result;
@@ -149,7 +167,10 @@ public sealed class MemoryCarver : IDisposable
         IProgress<double>? progress)
     {
         const int chunkSize = 64 * 1024 * 1024;
-        if (_signatureIdsToSearch.Count == 0) return [];
+        if (_signatureIdsToSearch.Count == 0)
+        {
+            return [];
+        }
 
         var maxPatternLength = _signatureMatcher.MaxPatternLength;
         var allMatches = new List<(string SignatureId, long Offset)>();
@@ -190,7 +211,10 @@ public sealed class MemoryCarver : IDisposable
         string outputPath,
         IProgress<double>? progress)
     {
-        if (matches.Count == 0) return;
+        if (matches.Count == 0)
+        {
+            return;
+        }
 
         _writer = new CarveWriter(_converters, _enableConversion, _saveAtlas, _manifest.Add);
         var processedCount = 0;
@@ -200,11 +224,21 @@ public sealed class MemoryCarver : IDisposable
             new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
             async (match, _) =>
             {
-                if (_stats.GetValueOrDefault(match.SignatureId, 0) >= _maxFilesPerType) return;
-                if (!_processedOffsets.TryAdd(match.Offset, 0)) return;
+                if (_stats.GetValueOrDefault(match.SignatureId, 0) >= _maxFilesPerType)
+                {
+                    return;
+                }
+
+                if (!_processedOffsets.TryAdd(match.Offset, 0))
+                {
+                    return;
+                }
 
                 var format = FormatRegistry.GetBySignatureId(match.SignatureId);
-                if (format == null) return;
+                if (format == null)
+                {
+                    return;
+                }
 
                 var extraction = CarveExtractor.PrepareExtraction(accessor, fileSize, match.Offset,
                     match.SignatureId, format, outputPath);
@@ -226,7 +260,7 @@ public sealed class MemoryCarver : IDisposable
                 if (progress != null &&
                     (currentCount % Math.Max(1, totalMatches / 100) == 0 || currentCount == totalMatches))
                 {
-                    progress.Report(0.5 + ((double)currentCount / totalMatches * 0.5));
+                    progress.Report(0.5 + (double)currentCount / totalMatches * 0.5);
                 }
             });
     }

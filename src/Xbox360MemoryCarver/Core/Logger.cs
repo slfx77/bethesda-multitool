@@ -183,7 +183,10 @@ public sealed class Logger
     /// </summary>
     public void Log(LogLevel level, string message)
     {
-        if (!IsEnabled(level)) return;
+        if (!IsEnabled(level))
+        {
+            return;
+        }
 
         var prefix = BuildPrefix(level);
         _output.WriteLine(prefix + message);
@@ -194,7 +197,9 @@ public sealed class Logger
         var parts = new List<string>(2);
 
         if (IncludeTimestamp)
+        {
             parts.Add(string.Format(CultureInfo.InvariantCulture, "[{0:HH:mm:ss.fff}]", DateTime.Now));
+        }
 
         if (IncludeLevel)
         {

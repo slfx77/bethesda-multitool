@@ -63,10 +63,16 @@ internal sealed partial class NifConverter
         foreach (var block in info.Blocks.Where(b => b.TypeName is "NiTriShape" or "NiTriStrips"))
         {
             var skinInstanceRef = FindSkinInstanceRef(data, block, info);
-            if (skinInstanceRef < 0) continue;
+            if (skinInstanceRef < 0)
+            {
+                continue;
+            }
 
             var skinInstanceBlock = info.Blocks.FirstOrDefault(b => b.Index == skinInstanceRef);
-            if (skinInstanceBlock?.TypeName is not ("BSDismemberSkinInstance" or "NiSkinInstance")) continue;
+            if (skinInstanceBlock?.TypeName is not ("BSDismemberSkinInstance" or "NiSkinInstance"))
+            {
+                continue;
+            }
 
             TryMapGeometryToSkinPartition(data, block, skinInstanceBlock, info);
         }
@@ -77,13 +83,19 @@ internal sealed partial class NifConverter
     {
         // Read the skin partition ref from offset 4 in the skin instance
         var skinPartitionRefPos = skinInstanceBlock.DataOffset + 4;
-        if (skinPartitionRefPos + 4 > data.Length) return;
+        if (skinPartitionRefPos + 4 > data.Length)
+        {
+            return;
+        }
 
         var skinPartitionRef = info.IsBigEndian
             ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(skinPartitionRefPos, 4))
             : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(skinPartitionRefPos, 4));
 
-        if (skinPartitionRef < 0) return;
+        if (skinPartitionRef < 0)
+        {
+            return;
+        }
 
         // Find the data ref in the NiTriShape
         var dataRef = FindDataRef(data, geometryBlock, info);
@@ -135,10 +147,16 @@ internal sealed partial class NifConverter
         foreach (var block in info.Blocks.Where(b => b.TypeName == "NiTriStripsData"))
         {
             // Skip if this geometry block has a skin partition (triangles come from there)
-            if (_geometryToSkinPartition.ContainsKey(block.Index)) continue;
+            if (_geometryToSkinPartition.ContainsKey(block.Index))
+            {
+                continue;
+            }
 
             // Skip if not in our geometry expansions (no packed data to expand)
-            if (!_geometryExpansions.ContainsKey(block.Index)) continue;
+            if (!_geometryExpansions.ContainsKey(block.Index))
+            {
+                continue;
+            }
 
             var triangles = ExtractTrianglesFromTriStripsData(data, block, info.IsBigEndian);
             if (triangles is { Length: > 0 })
@@ -160,7 +178,10 @@ internal sealed partial class NifConverter
 
         // Skip NiGeometryData common fields to get to strip data
         pos = SkipGeometryDataFields(data, pos, end, isBigEndian);
-        if (pos < 0) return null;
+        if (pos < 0)
+        {
+            return null;
+        }
 
         // Now at NiTriStripsData specific fields
         return ExtractStripsSection(data, pos, end, isBigEndian);
@@ -170,36 +191,68 @@ internal sealed partial class NifConverter
     {
         pos += 4; // GroupId
 
-        if (pos + 2 > end) return -1;
+        if (pos + 2 > end)
+        {
+            return -1;
+        }
+
         var numVerts = ReadUInt16(data, pos, isBigEndian);
         pos += 2;
 
         pos += 2; // KeepFlags, CompressFlags
 
-        if (pos + 1 > end) return -1;
-        var hasVertices = data[pos++];
-        if (hasVertices != 0) pos += numVerts * 12;
+        if (pos + 1 > end)
+        {
+            return -1;
+        }
 
-        if (pos + 2 > end) return -1;
+        var hasVertices = data[pos++];
+        if (hasVertices != 0)
+        {
+            pos += numVerts * 12;
+        }
+
+        if (pos + 2 > end)
+        {
+            return -1;
+        }
+
         var bsDataFlags = ReadUInt16(data, pos, isBigEndian);
         pos += 2;
 
-        if (pos + 1 > end) return -1;
+        if (pos + 1 > end)
+        {
+            return -1;
+        }
+
         var hasNormals = data[pos++];
         if (hasNormals != 0)
         {
             pos += numVerts * 12;
-            if ((bsDataFlags & 4096) != 0) pos += numVerts * 24;
+            if ((bsDataFlags & 4096) != 0)
+            {
+                pos += numVerts * 24;
+            }
         }
 
         pos += 16; // BoundingSphere
 
-        if (pos + 1 > end) return -1;
+        if (pos + 1 > end)
+        {
+            return -1;
+        }
+
         var hasVertexColors = data[pos++];
-        if (hasVertexColors != 0) pos += numVerts * 16;
+        if (hasVertexColors != 0)
+        {
+            pos += numVerts * 16;
+        }
 
         var numUVSets = bsDataFlags & 1;
-        if (numUVSets != 0) pos += numVerts * 8;
+        if (numUVSets != 0)
+        {
+            pos += numVerts * 8;
+        }
 
         pos += 2; // ConsistencyFlags
         pos += 4; // AdditionalData ref
@@ -216,34 +269,59 @@ internal sealed partial class NifConverter
 
     private static ushort[]? ExtractStripsSection(byte[] data, int pos, int end, bool isBigEndian)
     {
-        if (pos + 2 > end) return null;
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
         pos += 2; // NumTriangles
 
-        if (pos + 2 > end) return null;
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
         var numStrips = ReadUInt16(data, pos, isBigEndian);
         pos += 2;
 
-        if (numStrips == 0) return null;
+        if (numStrips == 0)
+        {
+            return null;
+        }
 
         // Read strip lengths
         var stripLengths = new ushort[numStrips];
         for (var i = 0; i < numStrips; i++)
         {
-            if (pos + 2 > end) return null;
+            if (pos + 2 > end)
+            {
+                return null;
+            }
+
             stripLengths[i] = ReadUInt16(data, pos, isBigEndian);
             pos += 2;
         }
 
-        if (pos + 1 > end) return null;
+        if (pos + 1 > end)
+        {
+            return null;
+        }
+
         var hasPoints = data[pos++];
-        if (hasPoints == 0) return null;
+        if (hasPoints == 0)
+        {
+            return null;
+        }
 
         // Read all strip indices
         var allStrips = new List<ushort[]>();
         for (var i = 0; i < numStrips; i++)
         {
             var stripLen = stripLengths[i];
-            if (pos + (stripLen * 2) > end) return null;
+            if (pos + stripLen * 2 > end)
+            {
+                return null;
+            }
 
             var strip = new ushort[stripLen];
             for (var j = 0; j < stripLen; j++)
@@ -267,12 +345,18 @@ internal sealed partial class NifConverter
 
         foreach (var strip in strips)
         {
-            if (strip.Length < 3) continue;
+            if (strip.Length < 3)
+            {
+                continue;
+            }
 
             for (var i = 0; i < strip.Length - 2; i++)
             {
                 // Skip degenerate triangles
-                if (strip[i] == strip[i + 1] || strip[i + 1] == strip[i + 2] || strip[i] == strip[i + 2]) continue;
+                if (strip[i] == strip[i + 1] || strip[i + 1] == strip[i + 2] || strip[i] == strip[i + 2])
+                {
+                    continue;
+                }
 
                 // Alternate winding order
                 if ((i & 1) == 0)

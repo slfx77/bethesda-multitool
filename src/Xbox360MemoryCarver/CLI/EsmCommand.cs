@@ -1,4 +1,6 @@
 using System.CommandLine;
+using System.Text;
+using System.Text.Json;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
@@ -21,7 +23,8 @@ public static class EsmCommand
             DefaultValueFactory = _ => "text"
         };
         var outputOpt = new Option<string?>("-o", "--output") { Description = "Output file path" };
-        var recordTypeOpt = new Option<string?>("-t", "--type") { Description = "Filter by record type (e.g., WEAP, NPC_, CELL)" };
+        var recordTypeOpt = new Option<string?>("-t", "--type")
+            { Description = "Filter by record type (e.g., WEAP, NPC_, CELL)" };
         var limitOpt = new Option<int?>("-l", "--limit") { Description = "Limit number of records shown" };
 
         command.Arguments.Add(inputArg);
@@ -62,7 +65,8 @@ public static class EsmCommand
         AnsiConsole.MarkupLine("[blue]Loading:[/] {0}", Path.GetFileName(input));
 
         var fileInfo = new FileInfo(input);
-        AnsiConsole.MarkupLine("[dim]Size:[/] {0:N0} bytes ({1:N2} MB)", fileInfo.Length, fileInfo.Length / 1024.0 / 1024.0);
+        AnsiConsole.MarkupLine("[dim]Size:[/] {0:N0} bytes ({1:N2} MB)", fileInfo.Length,
+            fileInfo.Length / 1024.0 / 1024.0);
 
         // Load file into memory
         var data = await File.ReadAllBytesAsync(input);
@@ -86,7 +90,9 @@ public static class EsmCommand
         foreach (var record in EsmParser.EnumerateRecords(data))
         {
             if (!string.IsNullOrEmpty(record.EditorId))
+            {
                 formIdMap[record.Header.FormId] = record.EditorId;
+            }
         }
 
         // Generate output
@@ -128,7 +134,10 @@ public static class EsmCommand
             if (typeInfo != null)
             {
                 if (!result.TryGetValue(typeInfo.Category, out var existing))
+                {
                     existing = 0;
+                }
+
                 result[typeInfo.Category] = existing + count;
             }
         }
@@ -138,7 +147,7 @@ public static class EsmCommand
 
     private static string FormatText(EsmFileScanResult result, bool verbose, string? recordTypeFilter, int? limit)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
 
         sb.AppendLine("═══════════════════════════════════════════════════════════════════");
         sb.AppendLine("                        ESM File Analysis                          ");
@@ -148,7 +157,8 @@ public static class EsmCommand
         // Header info
         sb.AppendLine("FILE HEADER");
         sb.AppendLine("───────────────────────────────────────────────────────────────────");
-        sb.AppendLine($"  Platform:       {(result.Header?.IsBigEndian == true ? "Xbox 360 (Big-Endian)" : "PC (Little-Endian)")}");
+        sb.AppendLine(
+            $"  Platform:       {(result.Header?.IsBigEndian == true ? "Xbox 360 (Big-Endian)" : "PC (Little-Endian)")}");
         sb.AppendLine($"  Version:        {result.Header?.Version:F2}");
         sb.AppendLine($"  Author:         {result.Header?.Author ?? "(none)"}");
         sb.AppendLine($"  Description:    {result.Header?.Description ?? "(none)"}");
@@ -161,7 +171,10 @@ public static class EsmCommand
             sb.AppendLine("MASTER FILES");
             sb.AppendLine("───────────────────────────────────────────────────────────────────");
             foreach (var master in result.Header.Masters)
+            {
                 sb.AppendLine($"  • {master}");
+            }
+
             sb.AppendLine();
         }
 
@@ -181,6 +194,7 @@ public static class EsmCommand
             var name = typeInfo?.Name ?? "Unknown";
             sb.AppendLine($"  {sig,-8} {name,-30} {count,10:N0}");
         }
+
         sb.AppendLine();
 
         // Category summary
@@ -189,7 +203,10 @@ public static class EsmCommand
             sb.AppendLine("RECORDS BY CATEGORY");
             sb.AppendLine("───────────────────────────────────────────────────────────────────");
             foreach (var (category, count) in result.RecordsByCategory.OrderByDescending(kvp => kvp.Value))
+            {
                 sb.AppendLine($"  {category,-20} {count,10:N0}");
+            }
+
             sb.AppendLine();
         }
 
@@ -208,16 +225,20 @@ public static class EsmCommand
             }
 
             if (result.FormIdToEditorId.Count > toShow)
+            {
                 sb.AppendLine($"  ... and {result.FormIdToEditorId.Count - shown:N0} more");
+            }
+
             sb.AppendLine();
         }
 
         return sb.ToString();
     }
 
-    private static string FormatMarkdown(EsmFileScanResult result, string fileName, string? recordTypeFilter, int? limit)
+    private static string FormatMarkdown(EsmFileScanResult result, string fileName, string? recordTypeFilter,
+        int? limit)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
 
         sb.AppendLine($"# ESM Analysis: {fileName}");
         sb.AppendLine();
@@ -239,7 +260,10 @@ public static class EsmCommand
             sb.AppendLine("## Master Files");
             sb.AppendLine();
             foreach (var master in result.Header.Masters)
+            {
                 sb.AppendLine($"- `{master}`");
+            }
+
             sb.AppendLine();
         }
 
@@ -259,6 +283,7 @@ public static class EsmCommand
             var category = typeInfo?.Category.ToString() ?? "Unknown";
             sb.AppendLine($"| `{sig}` | {name} | {count:N0} | {category} |");
         }
+
         sb.AppendLine();
 
         if (result.RecordsByCategory.Count > 0)
@@ -268,7 +293,10 @@ public static class EsmCommand
             sb.AppendLine("| Category | Count |");
             sb.AppendLine("|----------|------:|");
             foreach (var (category, count) in result.RecordsByCategory.OrderByDescending(kvp => kvp.Value))
+            {
                 sb.AppendLine($"| {category} | {count:N0} |");
+            }
+
             sb.AppendLine();
         }
 
@@ -277,29 +305,31 @@ public static class EsmCommand
 
     private static string FormatJson(EsmFileScanResult result)
     {
-        var options = new System.Text.Json.JsonSerializerOptions
+        var options = new JsonSerializerOptions
         {
             WriteIndented = true,
-            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
         // Create a serializable version
         var jsonObj = new
         {
-            header = result.Header != null ? new
-            {
-                version = result.Header.Version,
-                author = result.Header.Author,
-                description = result.Header.Description,
-                nextObjectId = result.Header.NextObjectId,
-                masters = result.Header.Masters
-            } : null,
+            header = result.Header != null
+                ? new
+                {
+                    version = result.Header.Version,
+                    author = result.Header.Author,
+                    description = result.Header.Description,
+                    nextObjectId = result.Header.NextObjectId,
+                    masters = result.Header.Masters
+                }
+                : null,
             totalRecords = result.TotalRecords,
             uniqueEditorIds = result.FormIdToEditorId.Count,
             recordTypeCounts = result.RecordTypeCounts,
             recordsByCategory = result.RecordsByCategory.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value)
         };
 
-        return System.Text.Json.JsonSerializer.Serialize(jsonObj, options);
+        return JsonSerializer.Serialize(jsonObj, options);
     }
 }

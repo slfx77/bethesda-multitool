@@ -1,14 +1,30 @@
+using Xbox360MemoryCarver.Core.Converters;
+
 namespace Xbox360MemoryCarver.Core.Formats.Nif;
 
 /// <summary>
-///     Result of a NIF conversion operation.
+///     Result of a NIF conversion operation. Extends the base ConversionResult
+///     with NIF-specific metadata about source and output file info.
 /// </summary>
-public sealed class ConversionResult
+internal sealed class NifConversionResult : ConversionResult
 {
-    public required bool Success { get; init; }
-    public byte[]? OutputData { get; init; }
-    public string? ErrorMessage { get; init; }
+    /// <summary>
+    ///     NIF-specific error message (maps to Notes in base class).
+    /// </summary>
+    public string? ErrorMessage
+    {
+        get => Notes;
+        init => Notes = value;
+    }
+
+    /// <summary>
+    ///     Information about the source NIF file.
+    /// </summary>
     public NifInfo? SourceInfo { get; init; }
+
+    /// <summary>
+    ///     Information about the converted output NIF file.
+    /// </summary>
     public NifInfo? OutputInfo { get; init; }
 }
 
@@ -33,7 +49,10 @@ public sealed class NifInfo
     public string GetBlockTypeName(int blockIndex)
     {
         if (blockIndex < 0 || blockIndex >= Blocks.Count)
+        {
             return "Invalid";
+        }
+
         return Blocks[blockIndex].TypeName;
     }
 }

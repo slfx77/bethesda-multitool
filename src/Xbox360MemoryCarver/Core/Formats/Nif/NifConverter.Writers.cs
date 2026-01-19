@@ -36,7 +36,10 @@ internal sealed partial class NifConverter
         // Write each block
         foreach (var block in info.Blocks)
         {
-            if (_blocksToStrip.Contains(block.Index)) continue;
+            if (_blocksToStrip.Contains(block.Index))
+            {
+                continue;
+            }
 
             var blockStartPos = outPos;
             var (newPos, expectedSize) = WriteBlockByType(input, output, outPos, block, schemaConverter, blockRemap);
@@ -223,13 +226,19 @@ internal sealed partial class NifConverter
         }
 
         // Process Script if bsVersion < 131
-        if (bsVersion < 131) (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
+        if (bsVersion < 131)
+        {
+            (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
+        }
 
         // Export Script
         (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
 
         // Max Filepath if bsVersion >= 103
-        if (bsVersion >= 103) (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
+        if (bsVersion >= 103)
+        {
+            (srcPos, outPos) = CopyLengthPrefixedString(input, output, srcPos, outPos);
+        }
 
         return (srcPos, outPos);
     }
@@ -299,11 +308,20 @@ internal sealed partial class NifConverter
     private int GetBlockOutputSize(BlockInfo block)
     {
         if (_geometryExpansions.TryGetValue(block.Index, out var expansion))
+        {
             return expansion.NewSize;
+        }
+
         if (_havokExpansions.TryGetValue(block.Index, out var havokExpansion))
+        {
             return havokExpansion.NewSize;
+        }
+
         if (_skinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))
+        {
             return skinPartExpansion.NewSize;
+        }
+
         return block.Size;
     }
 
@@ -377,7 +395,10 @@ internal sealed partial class NifConverter
         var lastBlock = info.Blocks[^1];
         var footerPos = lastBlock.DataOffset + lastBlock.Size;
 
-        if (footerPos + 4 > input.Length) return outPos;
+        if (footerPos + 4 > input.Length)
+        {
+            return outPos;
+        }
 
         // numRoots (uint BE -> LE)
         var numRoots = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(footerPos));
@@ -409,8 +430,8 @@ internal sealed partial class NifConverter
 
         // Convert using schema
         if (!schemaConverter.TryConvert(output, outPos, block.Size, block.TypeName, blockRemap))
-        {
             // Fallback: bulk swap
+        {
             BulkSwap32(output, outPos, block.Size);
         }
 

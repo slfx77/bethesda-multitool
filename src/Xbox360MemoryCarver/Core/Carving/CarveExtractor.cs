@@ -41,7 +41,10 @@ internal static class CarveExtractor
             var sigOffset = actualPreRead;
 
             var parseResult = format.Parse(span, sigOffset);
-            if (parseResult == null) return null;
+            if (parseResult == null)
+            {
+                return null;
+            }
 
             var extractionInfo = BuildExtractionInfo(parseResult, actualPreRead);
             var (leadingBytes, customFilename, originalPath, metadata) = extractionInfo;
@@ -50,7 +53,10 @@ internal static class CarveExtractor
             var adjustedOffset = offset - leadingBytes;
             var adjustedSize = parseResult.EstimatedSize + leadingBytes;
 
-            if (adjustedSize < format.MinSize || adjustedSize > format.MaxSize) return null;
+            if (adjustedSize < format.MinSize || adjustedSize > format.MaxSize)
+            {
+                return null;
+            }
 
             adjustedSize = (int)Math.Min(adjustedSize, fileSize - adjustedOffset);
 
@@ -78,21 +84,30 @@ internal static class CarveExtractor
         var leadingBytes = 0;
 
         // Get the safe filename for extraction
-        if (parseResult.Metadata.TryGetValue("safeName", out var safeName)) customFilename = safeName.ToString();
+        if (parseResult.Metadata.TryGetValue("safeName", out var safeName))
+        {
+            customFilename = safeName.ToString();
+        }
 
         // Get the original path for the manifest (DDX textures)
         if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) && pathObj is string path)
+        {
             originalPath = path;
+        }
 
         // Get embedded path for XMA files
         if (parseResult.Metadata.TryGetValue("embeddedPath", out var embeddedPathObj) &&
             embeddedPathObj is string embeddedPath)
+        {
             originalPath ??= embeddedPath;
+        }
 
         // Check for leading comments (scripts with comments before the scn keyword)
         if (parseResult.Metadata.TryGetValue("leadingCommentSize", out var leadingObj) &&
             leadingObj is int leading)
+        {
             leadingBytes = Math.Min(leading, actualPreRead);
+        }
 
         return (leadingBytes, customFilename, originalPath, parseResult.Metadata);
     }
@@ -112,7 +127,9 @@ internal static class CarveExtractor
 
         var counter = 1;
         while (File.Exists(outputFile))
+        {
             outputFile = Path.Combine(typePath, $"{filename}_{counter++}{extension}");
+        }
 
         return outputFile;
     }

@@ -1,7 +1,7 @@
+root = true
 # EditorConfig is awesome: https://EditorConfig.org
 
 # top-most EditorConfig file
-root = true
 
 # All files
 [*]
@@ -12,15 +12,22 @@ charset = utf-8
 trim_trailing_whitespace = true
 insert_final_newline = true
 
+# Microsoft .NET properties
+csharp_prefer_braces = true:none
+
+# ReSharper properties
+resharper_apply_on_completion = true
+resharper_braces_redundant = true
+
 # C# files
 [*.cs]
 indent_size = 4
 
 # Unused code detection (enable as warnings)
-dotnet_diagnostic.IDE0051.severity = warning  # Unused private member
-dotnet_diagnostic.IDE0052.severity = warning  # Unread private member
-dotnet_diagnostic.CA1812.severity = warning   # Internal class never instantiated
-dotnet_diagnostic.CA1823.severity = warning   # Unused private field
+dotnet_diagnostic.ide0051.severity = warning # Unused private member
+dotnet_diagnostic.ide0052.severity = warning # Unread private member
+dotnet_diagnostic.ca1812.severity = warning # Internal class never instantiated
+dotnet_diagnostic.ca1823.severity = warning # Unused private field
 
 # XAML files
 [*.xaml]

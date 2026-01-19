@@ -28,10 +28,16 @@ public sealed class DdsFormat : FileFormatBase
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
-        if (data.Length < offset + 128) return null;
+        if (data.Length < offset + 128)
+        {
+            return null;
+        }
 
         var headerData = data.Slice(offset, 128);
-        if (!headerData[..4].SequenceEqual("DDS "u8)) return null;
+        if (!headerData[..4].SequenceEqual("DDS "u8))
+        {
+            return null;
+        }
 
         try
         {
@@ -53,7 +59,10 @@ public sealed class DdsFormat : FileFormatBase
                 endianness = "big";
             }
 
-            if (height == 0 || width == 0 || height > 16384 || width > 16384) return null;
+            if (height == 0 || width == 0 || height > 16384 || width > 16384)
+            {
+                return null;
+            }
 
             var fourccStr = Encoding.ASCII.GetString(fourcc).TrimEnd('\0');
             var bytesPerBlock = GetBytesPerBlock(fourccStr);
@@ -105,7 +114,9 @@ public sealed class DdsFormat : FileFormatBase
         IReadOnlyDictionary<string, object>? metadata = null)
     {
         if (metadata != null && metadata.TryGetValue("width", out var w) && metadata.TryGetValue("height", out var h))
+        {
             return $"DDS ({w}x{h})";
+        }
 
         return "DirectDraw Surface texture";
     }

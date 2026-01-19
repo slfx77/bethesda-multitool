@@ -29,10 +29,16 @@ public sealed class EspFormat : FileFormatBase
     {
         const int minHeaderSize = 24;
         const int hedrSubrecordSize = 18; // HEDR(4) + size(2) + data(12)
-        if (data.Length < offset + minHeaderSize + hedrSubrecordSize) return null;
+        if (data.Length < offset + minHeaderSize + hedrSubrecordSize)
+        {
+            return null;
+        }
 
         var magic = data.Slice(offset, 4);
-        if (!magic.SequenceEqual("TES4"u8)) return null;
+        if (!magic.SequenceEqual("TES4"u8))
+        {
+            return null;
+        }
 
         try
         {
@@ -42,21 +48,33 @@ public sealed class EspFormat : FileFormatBase
 
             // Reject if dataSize is 0 (false positive from debug strings like "TES4@I...")
             // Valid TES4 headers always have at least HEDR subrecord
-            if (dataSize == 0 || dataSize > 500 * 1024 * 1024) return null;
+            if (dataSize == 0 || dataSize > 500 * 1024 * 1024)
+            {
+                return null;
+            }
 
             // Validate flags - must be reasonable (not floating point garbage)
             // Valid flags: 0x01=ESM, 0x80=Localized, 0x200=Compressed
             // High bits should not be set for valid plugin files
-            if ((flags & 0xFFFFF800) != 0) return null;
+            if ((flags & 0xFFFFF800) != 0)
+            {
+                return null;
+            }
 
             // Verify HEDR subrecord exists immediately after TES4 header
             // TES4 header: magic(4) + dataSize(4) + flags(4) + formId(4) + revision(4) + version(4) = 24 bytes
             var hedrOffset = offset + 24;
-            if (!data.Slice(hedrOffset, 4).SequenceEqual("HEDR"u8)) return null;
+            if (!data.Slice(hedrOffset, 4).SequenceEqual("HEDR"u8))
+            {
+                return null;
+            }
 
             // Validate HEDR size (should be 12 bytes for version + numRecords + nextObjectId)
             var hedrSize = BinaryUtils.ReadUInt16LE(data, hedrOffset + 4);
-            if (hedrSize != 12) return null;
+            if (hedrSize != 12)
+            {
+                return null;
+            }
 
             var isMaster = (flags & 0x01) != 0;
             var headerDataSize = (int)dataSize + 24;
@@ -86,7 +104,10 @@ public sealed class EspFormat : FileFormatBase
         IReadOnlyDictionary<string, object>? metadata = null)
     {
         if (metadata?.TryGetValue("isMaster", out var isMaster) == true && isMaster is true)
+        {
             return "Elder Scrolls Master";
+        }
+
         return "Elder Scrolls Plugin";
     }
 
@@ -107,7 +128,10 @@ public sealed class EspFormat : FileFormatBase
             {
                 // Validate it looks like a real TES4 header
                 var nextDataSize = BinaryUtils.ReadUInt32LE(data, i + 4);
-                if (nextDataSize is > 0 and < 500 * 1024 * 1024) return i - offset;
+                if (nextDataSize is > 0 and < 500 * 1024 * 1024)
+                {
+                    return i - offset;
+                }
             }
 
             // Check for other known file signatures
@@ -126,7 +150,10 @@ public sealed class EspFormat : FileFormatBase
             }
 
             // Check for NIF
-            if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual("Gamebryo File Format"u8)) return i - offset;
+            if (i + 20 <= data.Length && data.Slice(i, 20).SequenceEqual("Gamebryo File Format"u8))
+            {
+                return i - offset;
+            }
         }
 
         // No boundary found, use header data size or cap at available data

@@ -26,7 +26,10 @@ public static class EsmRecordExporter
 
     private static async Task ExportEditorIdsAsync(List<EdidRecord> editorIds, string outputDir)
     {
-        if (editorIds.Count == 0) return;
+        if (editorIds.Count == 0)
+        {
+            return;
+        }
 
         var edidPath = Path.Combine(outputDir, "editor_ids.txt");
         var edidLines = editorIds
@@ -39,7 +42,10 @@ public static class EsmRecordExporter
 
     private static async Task ExportGameSettingsAsync(List<GmstRecord> gameSettings, string outputDir)
     {
-        if (gameSettings.Count == 0) return;
+        if (gameSettings.Count == 0)
+        {
+            return;
+        }
 
         var gmstPath = Path.Combine(outputDir, "game_settings.txt");
         var gmstLines = gameSettings
@@ -53,7 +59,10 @@ public static class EsmRecordExporter
 
     private static async Task ExportScriptSourcesAsync(List<SctxRecord> scriptSources, string outputDir)
     {
-        if (scriptSources.Count == 0) return;
+        if (scriptSources.Count == 0)
+        {
+            return;
+        }
 
         var sctxDir = Path.Combine(outputDir, "script_sources");
         Directory.CreateDirectory(sctxDir);
@@ -70,7 +79,10 @@ public static class EsmRecordExporter
 
     private static async Task ExportFormIdMapAsync(Dictionary<uint, string> formIdMap, string outputDir)
     {
-        if (formIdMap.Count == 0) return;
+        if (formIdMap.Count == 0)
+        {
+            return;
+        }
 
         var formIdPath = Path.Combine(outputDir, "formid_map.csv");
         var formIdLines = new List<string> { "FormID,EditorID" };
@@ -87,7 +99,10 @@ public static class EsmRecordExporter
         Dictionary<uint, string> formIdMap,
         string outputDir)
     {
-        if (formIdReferences.Count == 0) return;
+        if (formIdReferences.Count == 0)
+        {
+            return;
+        }
 
         var scroPath = Path.Combine(outputDir, "formid_references.txt");
         var scroLines = formIdReferences

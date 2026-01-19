@@ -21,7 +21,10 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     public static SkinPartitionData? Parse(byte[] data, int offset, int size, bool isBigEndian)
     {
-        if (size < 4) return null;
+        if (size < 4)
+        {
+            return null;
+        }
 
         var reader = new ExpanderReader
         {
@@ -32,7 +35,10 @@ internal static partial class NifSkinPartitionExpander
         };
 
         var numPartitions = reader.ReadUInt32();
-        if (numPartitions == 0 || numPartitions > 1000) return null;
+        if (numPartitions == 0 || numPartitions > 1000)
+        {
+            return null;
+        }
 
         var result = new SkinPartitionData
         {
@@ -45,7 +51,10 @@ internal static partial class NifSkinPartitionExpander
         for (var p = 0; p < numPartitions && reader.Pos < reader.End; p++)
         {
             var partition = TryParsePartition(ref reader, p);
-            if (partition == null) break;
+            if (partition == null)
+            {
+                break;
+            }
 
             result.Partitions.Add(partition);
         }
@@ -58,23 +67,44 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     private static PartitionInfo? TryParsePartition(ref ExpanderReader reader, int index)
     {
-        if (!TryReadPartitionHeader(ref reader, out var partition)) return null;
+        if (!TryReadPartitionHeader(ref reader, out var partition))
+        {
+            return null;
+        }
 
         Log.Debug(
             $"        Partition {index}: {partition.NumVertices} verts, {partition.NumTriangles} tris, " +
             $"{partition.NumBones} bones, {partition.NumStrips} strips, {partition.NumWeightsPerVertex} weights/vert");
 
-        if (!TryReadBonesArray(ref reader, partition)) return null;
+        if (!TryReadBonesArray(ref reader, partition))
+        {
+            return null;
+        }
 
-        if (!TryReadVertexMapSection(ref reader, partition)) return null;
+        if (!TryReadVertexMapSection(ref reader, partition))
+        {
+            return null;
+        }
 
-        if (!TryReadVertexWeightsSection(ref reader, partition)) return null;
+        if (!TryReadVertexWeightsSection(ref reader, partition))
+        {
+            return null;
+        }
 
-        if (!TryReadStripLengthsArray(ref reader, partition)) return null;
+        if (!TryReadStripLengthsArray(ref reader, partition))
+        {
+            return null;
+        }
 
-        if (!TryReadFacesSection(ref reader, partition)) return null;
+        if (!TryReadFacesSection(ref reader, partition))
+        {
+            return null;
+        }
 
-        if (!TryReadBoneIndicesSection(ref reader, partition)) return null;
+        if (!TryReadBoneIndicesSection(ref reader, partition))
+        {
+            return null;
+        }
 
         return partition;
     }
@@ -85,7 +115,10 @@ internal static partial class NifSkinPartitionExpander
     private static bool TryReadPartitionHeader(ref ExpanderReader reader, out PartitionInfo partition)
     {
         partition = new PartitionInfo();
-        if (!reader.CanRead(10)) return false;
+        if (!reader.CanRead(10))
+        {
+            return false;
+        }
 
         partition.NumVertices = reader.ReadUInt16();
         partition.NumTriangles = reader.ReadUInt16();
@@ -103,7 +136,10 @@ internal static partial class NifSkinPartitionExpander
         partition.Bones = new ushort[partition.NumBones];
         for (var i = 0; i < partition.NumBones; i++)
         {
-            if (!reader.CanRead(2)) return false;
+            if (!reader.CanRead(2))
+            {
+                return false;
+            }
 
             partition.Bones[i] = reader.ReadUInt16();
         }
@@ -116,15 +152,24 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     private static bool TryReadVertexMapSection(ref ExpanderReader reader, PartitionInfo partition)
     {
-        if (!reader.CanRead(1)) return false;
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
 
         partition.HasVertexMap = reader.ReadByte() != 0;
-        if (!partition.HasVertexMap) return true;
+        if (!partition.HasVertexMap)
+        {
+            return true;
+        }
 
         partition.VertexMap = new ushort[partition.NumVertices];
         for (var i = 0; i < partition.NumVertices; i++)
         {
-            if (!reader.CanRead(2)) return false;
+            if (!reader.CanRead(2))
+            {
+                return false;
+            }
 
             partition.VertexMap[i] = reader.ReadUInt16();
         }
@@ -137,20 +182,27 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     private static bool TryReadVertexWeightsSection(ref ExpanderReader reader, PartitionInfo partition)
     {
-        if (!reader.CanRead(1)) return false;
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
 
         partition.HasVertexWeights = reader.ReadByte() != 0;
-        if (!partition.HasVertexWeights) return true;
+        if (!partition.HasVertexWeights)
+        {
+            return true;
+        }
 
         partition.VertexWeights = new float[partition.NumVertices, partition.NumWeightsPerVertex];
         for (var v = 0; v < partition.NumVertices; v++)
+        for (var w = 0; w < partition.NumWeightsPerVertex; w++)
         {
-            for (var w = 0; w < partition.NumWeightsPerVertex; w++)
+            if (!reader.CanRead(4))
             {
-                if (!reader.CanRead(4)) return false;
-
-                partition.VertexWeights[v, w] = reader.ReadFloat();
+                return false;
             }
+
+            partition.VertexWeights[v, w] = reader.ReadFloat();
         }
 
         return true;
@@ -164,7 +216,10 @@ internal static partial class NifSkinPartitionExpander
         partition.StripLengths = new ushort[partition.NumStrips];
         for (var i = 0; i < partition.NumStrips; i++)
         {
-            if (!reader.CanRead(2)) return false;
+            if (!reader.CanRead(2))
+            {
+                return false;
+            }
 
             partition.StripLengths[i] = reader.ReadUInt16();
         }
@@ -177,12 +232,21 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     private static bool TryReadFacesSection(ref ExpanderReader reader, PartitionInfo partition)
     {
-        if (!reader.CanRead(1)) return false;
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
 
         partition.HasFaces = reader.ReadByte() != 0;
-        if (!partition.HasFaces) return true;
+        if (!partition.HasFaces)
+        {
+            return true;
+        }
 
-        if (partition.NumStrips > 0) return TryReadStrips(ref reader, partition);
+        if (partition.NumStrips > 0)
+        {
+            return TryReadStrips(ref reader, partition);
+        }
 
         return TryReadTriangles(ref reader, partition);
     }
@@ -198,7 +262,10 @@ internal static partial class NifSkinPartitionExpander
             partition.Strips[s] = new ushort[partition.StripLengths[s]];
             for (var i = 0; i < partition.StripLengths[s]; i++)
             {
-                if (!reader.CanRead(2)) return false;
+                if (!reader.CanRead(2))
+                {
+                    return false;
+                }
 
                 partition.Strips[s][i] = reader.ReadUInt16();
             }
@@ -215,7 +282,10 @@ internal static partial class NifSkinPartitionExpander
         partition.Triangles = new ushort[partition.NumTriangles, 3];
         for (var t = 0; t < partition.NumTriangles; t++)
         {
-            if (!reader.CanRead(6)) return false;
+            if (!reader.CanRead(6))
+            {
+                return false;
+            }
 
             partition.Triangles[t, 0] = reader.ReadUInt16();
             partition.Triangles[t, 1] = reader.ReadUInt16();
@@ -230,20 +300,27 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     private static bool TryReadBoneIndicesSection(ref ExpanderReader reader, PartitionInfo partition)
     {
-        if (!reader.CanRead(1)) return false;
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
 
         partition.HasBoneIndices = reader.ReadByte() != 0;
-        if (!partition.HasBoneIndices) return true;
+        if (!partition.HasBoneIndices)
+        {
+            return true;
+        }
 
         partition.BoneIndices = new byte[partition.NumVertices, partition.NumWeightsPerVertex];
         for (var v = 0; v < partition.NumVertices; v++)
+        for (var w = 0; w < partition.NumWeightsPerVertex; w++)
         {
-            for (var w = 0; w < partition.NumWeightsPerVertex; w++)
+            if (!reader.CanRead(1))
             {
-                if (!reader.CanRead(1)) return false;
-
-                partition.BoneIndices[v, w] = reader.ReadByte();
+                return false;
             }
+
+            partition.BoneIndices[v, w] = reader.ReadByte();
         }
 
         return true;
@@ -256,7 +333,10 @@ internal static partial class NifSkinPartitionExpander
     {
         var size = 4; // NumPartitions
 
-        foreach (var p in skinPartition.Partitions) size += CalculatePartitionSize(p);
+        foreach (var p in skinPartition.Partitions)
+        {
+            size += CalculatePartitionSize(p);
+        }
 
         return size;
     }
@@ -269,7 +349,10 @@ internal static partial class NifSkinPartitionExpander
         var size = 10; // NumVertices, NumTriangles, NumBones, NumStrips, NumWeightsPerVertex
         size += p.NumBones * 2; // Bones array
         size += 1; // HasVertexMap
-        if (p.HasVertexMap) size += p.NumVertices * 2; // VertexMap
+        if (p.HasVertexMap)
+        {
+            size += p.NumVertices * 2; // VertexMap
+        }
 
         size += 1; // HasVertexWeights
         // Vertex weights are always included in expansion
@@ -277,7 +360,10 @@ internal static partial class NifSkinPartitionExpander
 
         size += p.NumStrips * 2; // StripLengths
         size += 1; // HasFaces
-        if (p.HasFaces) size += CalculateFacesSize(p);
+        if (p.HasFaces)
+        {
+            size += CalculateFacesSize(p);
+        }
 
         size += 1; // HasBoneIndices
         // Bone indices are always included in expansion
@@ -294,7 +380,10 @@ internal static partial class NifSkinPartitionExpander
         if (p.NumStrips > 0)
         {
             var size = 0;
-            foreach (var len in p.StripLengths) size += len * 2;
+            foreach (var len in p.StripLengths)
+            {
+                size += len * 2;
+            }
 
             return size;
         }

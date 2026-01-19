@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Xbox360MemoryCarver Contributors
 // Licensed under the MIT License.
 
-using System.Buffers.Binary;
 using System.CommandLine;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.Bsa;
@@ -9,7 +8,7 @@ using Xbox360MemoryCarver.Core.Formats.Bsa;
 namespace Xbox360MemoryCarver.CLI;
 
 /// <summary>
-/// CLI command for BSA archive operations.
+///     CLI command for BSA archive operations.
 /// </summary>
 public static class BsaCommand
 {
@@ -47,7 +46,8 @@ public static class BsaCommand
         var command = new Command("list", "List files in a BSA archive");
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
-        var filterOption = new Option<string?>("-f", "--filter") { Description = "Filter by extension (e.g., .nif, .dds)" };
+        var filterOption = new Option<string?>("-f", "--filter")
+            { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
 
         command.Arguments.Add(inputArg);
@@ -76,10 +76,12 @@ public static class BsaCommand
             Description = "Output directory",
             Required = true
         };
-        var filterOption = new Option<string?>("-f", "--filter") { Description = "Filter by extension (e.g., .nif, .dds)" };
+        var filterOption = new Option<string?>("-f", "--filter")
+            { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
         var overwriteOption = new Option<bool>("--overwrite") { Description = "Overwrite existing files" };
-        var convertOption = new Option<bool>("-c", "--convert") { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->OGG, NIF endian)" };
+        var convertOption = new Option<bool>("-c", "--convert")
+            { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->OGG, NIF endian)" };
         var verboseOption = new Option<bool>("-v", "--verbose") { Description = "Verbose output" };
 
         command.Arguments.Add(inputArg);
@@ -136,40 +138,83 @@ public static class BsaCommand
             // Archive flags
             var flags = new List<string>();
             if (archive.Header.ArchiveFlags.HasFlag(BsaArchiveFlags.IncludeDirectoryNames))
+            {
                 flags.Add("DirNames");
+            }
+
             if (archive.Header.ArchiveFlags.HasFlag(BsaArchiveFlags.IncludeFileNames))
+            {
                 flags.Add("FileNames");
+            }
+
             if (archive.Header.ArchiveFlags.HasFlag(BsaArchiveFlags.CompressedArchive))
+            {
                 flags.Add("Compressed");
+            }
+
             if (archive.Header.ArchiveFlags.HasFlag(BsaArchiveFlags.Xbox360Archive))
+            {
                 flags.Add("Xbox360");
+            }
+
             if (archive.Header.ArchiveFlags.HasFlag(BsaArchiveFlags.EmbedFileNames))
+            {
                 flags.Add("EmbedNames");
+            }
+
             if (archive.Header.ArchiveFlags.HasFlag(BsaArchiveFlags.XMemCodec))
+            {
                 flags.Add("XMem");
+            }
 
             table.AddRow("Flags", string.Join(", ", flags));
 
             // File type flags
             var fileTypes = new List<string>();
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Meshes))
+            {
                 fileTypes.Add("Meshes");
+            }
+
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Textures))
+            {
                 fileTypes.Add("Textures");
+            }
+
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Menus))
+            {
                 fileTypes.Add("Menus");
+            }
+
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Sounds))
+            {
                 fileTypes.Add("Sounds");
+            }
+
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Voices))
+            {
                 fileTypes.Add("Voices");
+            }
+
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Shaders))
+            {
                 fileTypes.Add("Shaders");
+            }
+
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Trees))
+            {
                 fileTypes.Add("Trees");
+            }
+
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Fonts))
+            {
                 fileTypes.Add("Fonts");
+            }
+
             if (archive.Header.FileFlags.HasFlag(BsaFileFlags.Misc))
+            {
                 fileTypes.Add("Misc");
+            }
 
             table.AddRow("Content Types", string.Join(", ", fileTypes));
 
@@ -297,7 +342,8 @@ public static class BsaCommand
         }
     }
 
-    private static async Task RunExtractAsync(string input, string output, string? filter, string? folder, bool overwrite, bool convert = false, bool verbose = false)
+    private static async Task RunExtractAsync(string input, string output, string? filter, string? folder,
+        bool overwrite, bool convert = false, bool verbose = false)
     {
         if (!File.Exists(input))
         {
@@ -314,15 +360,11 @@ public static class BsaCommand
             AnsiConsole.MarkupLine("[cyan]Output:[/] {0}", output);
 
             // Initialize converters if requested
-            var ddxAvailable = false;
-            var xmaAvailable = false;
-            var nifAvailable = false;
-
             if (convert)
             {
-                ddxAvailable = extractor.EnableDdxConversion(true, verbose);
-                xmaAvailable = extractor.EnableXmaConversion(true);
-                nifAvailable = extractor.EnableNifConversion(true, verbose);
+                var ddxAvailable = extractor.EnableDdxConversion(true, verbose);
+                var xmaAvailable = extractor.EnableXmaConversion(true);
+                var nifAvailable = extractor.EnableNifConversion(true, verbose);
 
                 AnsiConsole.MarkupLine("[cyan]Conversion:[/] DDX->DDS: {0}, XMA->OGG: {1}, NIF: {2}",
                     ddxAvailable ? "[green]Yes[/]" : "[yellow]No (DDXConv not found)[/]",
@@ -341,13 +383,17 @@ public static class BsaCommand
                     {
                         var ext = filter.StartsWith('.') ? filter : $".{filter}";
                         if (file.Name?.EndsWith(ext, StringComparison.OrdinalIgnoreCase) != true)
+                        {
                             return false;
+                        }
                     }
 
                     if (!string.IsNullOrEmpty(folder))
                     {
                         if (file.Folder?.Name?.Contains(folder, StringComparison.OrdinalIgnoreCase) != true)
+                        {
                             return false;
+                        }
                     }
 
                     return true;
@@ -403,9 +449,20 @@ public static class BsaCommand
                 var nifConverted = results.Count(r => r.ConversionType == "NIF BE->LE");
 
                 var parts = new List<string>();
-                if (ddxConverted > 0) parts.Add($"{ddxConverted} DDX→DDS");
-                if (xmaConverted > 0) parts.Add($"{xmaConverted} XMA→OGG");
-                if (nifConverted > 0) parts.Add($"{nifConverted} NIF");
+                if (ddxConverted > 0)
+                {
+                    parts.Add($"{ddxConverted} DDX→DDS");
+                }
+
+                if (xmaConverted > 0)
+                {
+                    parts.Add($"{xmaConverted} XMA→OGG");
+                }
+
+                if (nifConverted > 0)
+                {
+                    parts.Add($"{nifConverted} NIF");
+                }
 
                 AnsiConsole.MarkupLine("[blue]↻ Converted:[/] {0}", string.Join(", ", parts));
             }
@@ -437,5 +494,8 @@ public static class BsaCommand
         };
     }
 
-    private static string FormatSize(uint bytes) => FormatSize((long)bytes);
+    private static string FormatSize(uint bytes)
+    {
+        return FormatSize((long)bytes);
+    }
 }

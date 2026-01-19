@@ -14,7 +14,10 @@ internal sealed partial class NifConverter
     private void ParseNodeNamesFromPalette(byte[] data, NifInfo info)
     {
         var nameMappings = NifPaletteParser.ParseAll(data, info);
-        if (nameMappings == null) return;
+        if (nameMappings.BlockNames.Count == 0)
+        {
+            return;
+        }
 
         // Store original string count for index calculations
         _originalStringCount = info.Strings.Count;
@@ -27,7 +30,10 @@ internal sealed partial class NifConverter
         {
             // Check if this is a node block (NiNode, BSFadeNode, etc.)
             var typeName = info.GetBlockTypeName(blockIndex);
-            if (!IsNodeType(typeName)) continue;
+            if (!IsNodeType(typeName))
+            {
+                continue;
+            }
 
             _nodeNamesByBlock[blockIndex] = name;
             _nodeNameStringIndices[blockIndex] = GetOrAddStringIndex(info, existingStrings, name);
@@ -47,13 +53,19 @@ internal sealed partial class NifConverter
     {
         // Check if the name already exists in the string table
         var existingIndex = info.Strings.IndexOf(name);
-        if (existingIndex >= 0) return existingIndex;
+        if (existingIndex >= 0)
+        {
+            return existingIndex;
+        }
 
         // Already added as a new string - find its index
         if (existingStrings.Contains(name))
         {
             var newIdx = _newStrings.IndexOf(name);
-            if (newIdx >= 0) return _originalStringCount + newIdx;
+            if (newIdx >= 0)
+            {
+                return _originalStringCount + newIdx;
+            }
         }
 
         // Need to add a new string
@@ -65,10 +77,16 @@ internal sealed partial class NifConverter
 
     private void ProcessAccumRootName(NifInfo info, HashSet<string> existingStrings, NifNameMappings nameMappings)
     {
-        if (nameMappings.AccumRootName == null || _nodeNamesByBlock.ContainsKey(0)) return;
+        if (nameMappings.AccumRootName == null || _nodeNamesByBlock.ContainsKey(0))
+        {
+            return;
+        }
 
         var rootTypeName = info.GetBlockTypeName(0);
-        if (!IsNodeType(rootTypeName)) return;
+        if (!IsNodeType(rootTypeName))
+        {
+            return;
+        }
 
         var rootName = nameMappings.AccumRootName;
         _nodeNamesByBlock[0] = rootName;
@@ -141,6 +159,7 @@ internal sealed partial class NifConverter
     private void FindHavokExpansions(byte[] data, NifInfo info)
     {
         foreach (var block in info.Blocks)
+        {
             if (block.TypeName == "hkPackedNiTriStripsData")
             {
                 var expansion = ParseHavokBlock(data, block, info.IsBigEndian);
@@ -152,6 +171,7 @@ internal sealed partial class NifConverter
                         $"  Block {block.Index}: hkPackedNiTriStripsData -> expand from {expansion.OriginalSize} to {expansion.NewSize} bytes ({expansion.NumVertices} vertices)");
                 }
             }
+        }
     }
 
     /// <summary>
@@ -165,21 +185,35 @@ internal sealed partial class NifConverter
             var geomBlockIndex = kvp.Key;
             var packedBlockIndex = kvp.Value.PackedBlockIndex;
 
-            if (!_geometryToSkinPartition.TryGetValue(geomBlockIndex, out var skinPartitionIndex)) continue;
+            if (!_geometryToSkinPartition.TryGetValue(geomBlockIndex, out var skinPartitionIndex))
+            {
+                continue;
+            }
 
-            if (!_packedGeometryByBlock.TryGetValue(packedBlockIndex, out var packedData)) continue;
+            if (!_packedGeometryByBlock.TryGetValue(packedBlockIndex, out var packedData))
+            {
+                continue;
+            }
 
             if (packedData is { BoneIndices: not null, BoneWeights: not null })
+            {
                 _skinPartitionToPackedData[skinPartitionIndex] = packedData;
+            }
         }
 
         // Now find all NiSkinPartition blocks that need expansion
         foreach (var block in info.Blocks.Where(b => b.TypeName == "NiSkinPartition"))
         {
-            if (!_skinPartitionToPackedData.ContainsKey(block.Index)) continue;
+            if (!_skinPartitionToPackedData.ContainsKey(block.Index))
+            {
+                continue;
+            }
 
             var skinData = NifSkinPartitionExpander.Parse(data, block.DataOffset, block.Size, info.IsBigEndian);
-            if (skinData == null) continue;
+            if (skinData == null)
+            {
+                continue;
+            }
 
             var newSize = NifSkinPartitionExpander.CalculateExpandedSize(skinData);
             var sizeIncrease = newSize - block.Size;
@@ -212,7 +246,11 @@ internal sealed partial class NifConverter
         pos += 4;
 
         // NumVertices (ushort)
-        if (pos + 2 > end) return -1;
+        if (pos + 2 > end)
+        {
+            return -1;
+        }
+
         var numVertices = ReadUInt16BE(data, pos);
         pos += 2;
 
@@ -220,41 +258,73 @@ internal sealed partial class NifConverter
         pos += 2;
 
         // HasVertices (bool as byte)
-        if (pos + 1 > end) return -1;
+        if (pos + 1 > end)
+        {
+            return -1;
+        }
+
         var hasVertices = data[pos++];
-        if (hasVertices != 0) pos += numVertices * 12; // Vector3 * numVerts
+        if (hasVertices != 0)
+        {
+            pos += numVertices * 12; // Vector3 * numVerts
+        }
 
         // BSDataFlags (ushort)
-        if (pos + 2 > end) return -1;
+        if (pos + 2 > end)
+        {
+            return -1;
+        }
+
         var bsDataFlags = ReadUInt16BE(data, pos);
         pos += 2;
 
         // HasNormals (bool)
-        if (pos + 1 > end) return -1;
+        if (pos + 1 > end)
+        {
+            return -1;
+        }
+
         var hasNormals = data[pos++];
         if (hasNormals != 0)
         {
             pos += numVertices * 12; // Normals
-            if ((bsDataFlags & 4096) != 0) pos += numVertices * 24; // Tangents + Bitangents
+            if ((bsDataFlags & 4096) != 0)
+            {
+                pos += numVertices * 24; // Tangents + Bitangents
+            }
         }
 
         // BoundingSphere (16 bytes)
         pos += 16;
 
         // HasVertexColors (bool)
-        if (pos + 1 > end) return -1;
+        if (pos + 1 > end)
+        {
+            return -1;
+        }
+
         var hasVertexColors = data[pos++];
-        if (hasVertexColors != 0) pos += numVertices * 16; // Color4 * numVerts
+        if (hasVertexColors != 0)
+        {
+            pos += numVertices * 16; // Color4 * numVerts
+        }
 
         // UV Sets based on BSDataFlags bit 0
         var numUVSets = bsDataFlags & 1;
-        if (numUVSets != 0) pos += numVertices * 8; // TexCoord * numVerts
+        if (numUVSets != 0)
+        {
+            pos += numVertices * 8; // TexCoord * numVerts
+        }
 
         // ConsistencyFlags (ushort)
         pos += 2;
 
         // AdditionalData (Ref = int)
-        if (pos + 4 > end) return -1;
+        if (pos + 4 > end)
+        {
+            return -1;
+        }
+
         var additionalDataRef = ReadInt32BE(data, pos);
 
         return additionalDataRef;

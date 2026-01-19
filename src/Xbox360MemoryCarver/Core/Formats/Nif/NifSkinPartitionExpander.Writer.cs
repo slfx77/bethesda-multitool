@@ -34,7 +34,9 @@ internal static partial class NifSkinPartitionExpander
         var packedVertexOffset = 0;
 
         foreach (var partition in skinPartition.Partitions)
+        {
             outPos = WritePartition(partition, packedData, output, outPos, ref packedVertexOffset);
+        }
 
         Log.Debug(
             $"      Wrote expanded NiSkinPartition: {outPos - startPos} bytes (was {skinPartition.OriginalSize})");
@@ -61,7 +63,10 @@ internal static partial class NifSkinPartitionExpander
         outPos = WriteBoneIndicesSection(partition, packedData, output, outPos, packedVertexOffset);
 
         // Track offset for non-mapped partitions
-        if (!partition.HasVertexMap) packedVertexOffset += partition.NumVertices;
+        if (!partition.HasVertexMap)
+        {
+            packedVertexOffset += partition.NumVertices;
+        }
 
         return outPos;
     }
@@ -175,7 +180,10 @@ internal static partial class NifSkinPartitionExpander
     /// </summary>
     private static float GetBoneWeight(PackedGeometryData packedData, int globalVertexIdx, int weightIdx)
     {
-        if (packedData.BoneWeights == null || globalVertexIdx >= packedData.NumVertices) return 0f;
+        if (packedData.BoneWeights == null || globalVertexIdx >= packedData.NumVertices)
+        {
+            return 0f;
+        }
 
         var idx = globalVertexIdx * 4 + weightIdx;
         return idx < packedData.BoneWeights.Length ? packedData.BoneWeights[idx] : 0f;
@@ -202,13 +210,17 @@ internal static partial class NifSkinPartitionExpander
     {
         output[outPos++] = (byte)(partition.HasFaces ? 1 : 0);
 
-        if (!partition.HasFaces) return outPos;
+        if (!partition.HasFaces)
+        {
+            return outPos;
+        }
 
         if (partition is { NumStrips: > 0, Strips.Length: > 0 })
         {
             return WriteStrips(partition, output, outPos);
         }
-        else if (partition.Triangles != null)
+
+        if (partition.Triangles != null)
         {
             return WriteTriangles(partition, output, outPos);
         }
@@ -302,10 +314,16 @@ internal static partial class NifSkinPartitionExpander
         int weightIdx,
         ushort[] partitionBones)
     {
-        if (packedData.BoneIndices == null || globalVertexIdx >= packedData.NumVertices) return 0;
+        if (packedData.BoneIndices == null || globalVertexIdx >= packedData.NumVertices)
+        {
+            return 0;
+        }
 
         var idx = globalVertexIdx * 4 + weightIdx;
-        if (idx >= packedData.BoneIndices.Length) return 0;
+        if (idx >= packedData.BoneIndices.Length)
+        {
+            return 0;
+        }
 
         var globalBoneIdx = packedData.BoneIndices[idx];
         return MapToPartitionBoneIndex(globalBoneIdx, partitionBones);

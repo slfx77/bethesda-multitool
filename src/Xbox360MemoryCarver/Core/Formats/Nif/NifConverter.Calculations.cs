@@ -11,10 +11,16 @@ internal sealed partial class NifConverter
         byte[] data, BlockInfo block, PackedGeometryData packedData, bool isSkinned = false)
     {
         var fields = ParseGeometryBlockFields(data, block);
-        if (fields == null) return null;
+        if (fields == null)
+        {
+            return null;
+        }
 
         var sizeIncrease = CalculateSizeIncrease(fields.Value, packedData, isSkinned);
-        if (sizeIncrease == 0) return null;
+        if (sizeIncrease == 0)
+        {
+            return null;
+        }
 
         return new GeometryBlockExpansion
         {
@@ -31,35 +37,61 @@ internal sealed partial class NifConverter
 
         pos += 4; // GroupId
 
-        if (pos + 2 > end) return null;
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
         var numVertices = ReadUInt16BE(data, pos);
         pos += 2;
 
         pos += 2; // KeepFlags, CompressFlags
 
-        if (pos + 1 > end) return null;
+        if (pos + 1 > end)
+        {
+            return null;
+        }
+
         var hasVertices = data[pos];
         pos += 1;
 
-        if (hasVertices != 0) pos += numVertices * 12;
+        if (hasVertices != 0)
+        {
+            pos += numVertices * 12;
+        }
 
-        if (pos + 2 > end) return null;
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
         var bsDataFlags = ReadUInt16BE(data, pos);
         pos += 2;
 
-        if (pos + 1 > end) return null;
+        if (pos + 1 > end)
+        {
+            return null;
+        }
+
         var hasNormals = data[pos];
         pos += 1;
 
         if (hasNormals != 0)
         {
             pos += numVertices * 12;
-            if ((bsDataFlags & 4096) != 0) pos += numVertices * 24;
+            if ((bsDataFlags & 4096) != 0)
+            {
+                pos += numVertices * 24;
+            }
         }
 
         pos += 16; // center + radius
 
-        if (pos + 1 > end) return null;
+        if (pos + 1 > end)
+        {
+            return null;
+        }
+
         var hasVertexColors = data[pos];
 
         return new GeometryBlockFields(numVertices, bsDataFlags, hasVertices, hasNormals, hasVertexColors);
@@ -70,21 +102,36 @@ internal sealed partial class NifConverter
         var sizeIncrease = 0;
         var numVertices = fields.NumVertices;
 
-        if (fields.HasVertices == 0 && packedData.Positions != null) sizeIncrease += numVertices * 12;
+        if (fields.HasVertices == 0 && packedData.Positions != null)
+        {
+            sizeIncrease += numVertices * 12;
+        }
 
         if (fields.HasNormals == 0 && packedData.Normals != null)
         {
             sizeIncrease += numVertices * 12;
-            if (packedData.Tangents != null) sizeIncrease += numVertices * 12;
-            if (packedData.Bitangents != null) sizeIncrease += numVertices * 12;
+            if (packedData.Tangents != null)
+            {
+                sizeIncrease += numVertices * 12;
+            }
+
+            if (packedData.Bitangents != null)
+            {
+                sizeIncrease += numVertices * 12;
+            }
         }
 
         // Vertex colors: skip for skinned meshes (ubyte4 is bone indices)
         if (fields.HasVertexColors == 0 && packedData.VertexColors != null && !isSkinned)
+        {
             sizeIncrease += numVertices * 16;
+        }
 
         var numUVSets = fields.BsDataFlags & 1;
-        if (numUVSets == 0 && packedData.UVs != null) sizeIncrease += numVertices * 8;
+        if (numUVSets == 0 && packedData.UVs != null)
+        {
+            sizeIncrease += numVertices * 8;
+        }
 
         return sizeIncrease;
     }
@@ -98,7 +145,9 @@ internal sealed partial class NifConverter
         var newIndex = 0;
 
         for (var i = 0; i < blockCount; i++)
+        {
             remap[i] = _blocksToStrip.Contains(i) ? -1 : newIndex++;
+        }
 
         return remap;
     }

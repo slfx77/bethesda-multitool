@@ -44,7 +44,9 @@ public partial class DdxSubprocessConverter
         DdxConvPath = ddxConvPath ?? FindDdxConvPath();
 
         if (string.IsNullOrEmpty(DdxConvPath) || !File.Exists(DdxConvPath))
+        {
             throw new FileNotFoundException($"{DdxConvExeName} not found.", DdxConvExeName);
+        }
     }
 
     public int Processed { get; private set; }
@@ -55,7 +57,10 @@ public partial class DdxSubprocessConverter
     private static string FindDdxConvPath()
     {
         var envPath = Environment.GetEnvironmentVariable("DDXCONV_PATH");
-        if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath)) return envPath;
+        if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath))
+        {
+            return envPath;
+        }
 
         var assemblyDir = AppContext.BaseDirectory;
         var workspaceRoot = FindWorkspaceRoot(assemblyDir);
@@ -63,7 +68,10 @@ public partial class DdxSubprocessConverter
         foreach (var path in BuildCandidatePaths(assemblyDir, workspaceRoot))
         {
             var fullPath = Path.GetFullPath(path);
-            if (File.Exists(fullPath)) return fullPath;
+            if (File.Exists(fullPath))
+            {
+                return fullPath;
+            }
         }
 
         return string.Empty;
@@ -97,9 +105,17 @@ public partial class DdxSubprocessConverter
         var dir = startDir;
         while (!string.IsNullOrEmpty(dir))
         {
-            if (Directory.GetFiles(dir, "*.slnx").Length > 0 || Directory.GetFiles(dir, "*.sln").Length > 0) return dir;
+            if (Directory.GetFiles(dir, "*.slnx").Length > 0 || Directory.GetFiles(dir, "*.sln").Length > 0)
+            {
+                return dir;
+            }
+
             var parent = Directory.GetParent(dir);
-            if (parent == null) break;
+            if (parent == null)
+            {
+                break;
+            }
+
             dir = parent.FullName;
         }
 
@@ -135,7 +151,11 @@ public partial class DdxSubprocessConverter
             var stdout = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
 
-            if (_verbose && !string.IsNullOrEmpty(stdout)) Console.WriteLine(stdout);
+            if (_verbose && !string.IsNullOrEmpty(stdout))
+            {
+                Console.WriteLine(stdout);
+            }
+
             if (process.ExitCode != 0 || !File.Exists(outputPath))
             {
                 Failed++;
@@ -156,8 +176,16 @@ public partial class DdxSubprocessConverter
     private string BuildConversionArguments(string inputPath, string outputPath)
     {
         var args = $"\"{inputPath}\" \"{outputPath}\"";
-        if (_verbose) args += " --verbose";
-        if (_saveAtlas) args += " --atlas";
+        if (_verbose)
+        {
+            args += " --verbose";
+        }
+
+        if (_saveAtlas)
+        {
+            args += " --atlas";
+        }
+
         return args;
     }
 
@@ -214,7 +242,10 @@ public partial class DdxSubprocessConverter
 
         process.OutputDataReceived += (_, e) =>
         {
-            if (string.IsNullOrEmpty(e.Data)) return;
+            if (string.IsNullOrEmpty(e.Data))
+            {
+                return;
+            }
 
             // Parse "[PROGRESS] STATUS path [error]" lines
             var progressMatch = progressRegex.Match(e.Data);
@@ -244,8 +275,8 @@ public partial class DdxSubprocessConverter
             // Parse "[PROGRESS] DONE converted failed unsupported" line
             var doneMatch = doneRegex.Match(e.Data);
             if (doneMatch.Success)
-            {
                 // Final stats from DDXConv (we track our own, but can verify)
+            {
                 return;
             }
 
@@ -259,7 +290,10 @@ public partial class DdxSubprocessConverter
 
         process.ErrorDataReceived += (_, e) =>
         {
-            if (!string.IsNullOrEmpty(e.Data)) result.Errors.Add(e.Data);
+            if (!string.IsNullOrEmpty(e.Data))
+            {
+                result.Errors.Add(e.Data);
+            }
         };
 
         process.Start();
@@ -297,7 +331,7 @@ public partial class DdxSubprocessConverter
     [GeneratedRegex(@"^\[PROGRESS\] DONE (\d+) (\d+) (\d+)$", RegexOptions.Compiled)]
     private static partial Regex DoneLineRegex();
 
-    public DdxConversionResult ConvertFromMemoryWithResult(byte[] ddxData)
+    public ConversionResult ConvertFromMemoryWithResult(byte[] ddxData)
     {
         Processed++;
         string? tempInputPath = null, tempOutputPath = null;
@@ -310,13 +344,16 @@ public partial class DdxSubprocessConverter
 
             File.WriteAllBytes(tempInputPath, ddxData);
             var args = $"\"{tempInputPath}\" \"{tempOutputPath}\" --verbose";
-            if (_saveAtlas) args += " --atlas";
+            if (_saveAtlas)
+            {
+                args += " --atlas";
+            }
 
             using var process = StartDdxConvProcess(args);
             if (process == null)
             {
                 Failed++;
-                return DdxConversionResult.Failure("Failed to start DDXConv");
+                return ConversionResult.Failure("Failed to start DDXConv");
             }
 
             var stdout = process.StandardOutput.ReadToEnd();
@@ -324,14 +361,17 @@ public partial class DdxSubprocessConverter
             process.WaitForExit();
 
             var consoleOutput = stdout + (string.IsNullOrEmpty(stderr) ? "" : $"\nSTDERR: {stderr}");
-            if (_verbose && !string.IsNullOrWhiteSpace(stdout)) Console.WriteLine(stdout.TrimEnd());
+            if (_verbose && !string.IsNullOrWhiteSpace(stdout))
+            {
+                Console.WriteLine(stdout.TrimEnd());
+            }
 
             var (isPartial, notes) = AnalyzeOutput(consoleOutput);
 
             if (!File.Exists(tempOutputPath))
             {
                 Failed++;
-                return new DdxConversionResult
+                return new ConversionResult
                 {
                     Success = false,
                     IsPartial = isPartial,
@@ -345,10 +385,10 @@ public partial class DdxSubprocessConverter
             var atlasData = _saveAtlas && File.Exists(atlasPath) ? File.ReadAllBytes(atlasPath) : null;
 
             Succeeded++;
-            return new DdxConversionResult
+            return new ConversionResult
             {
                 Success = true,
-                DdsData = ddsData,
+                OutputData = ddsData,
                 AtlasData = atlasData,
                 IsPartial = isPartial,
                 Notes = notes,
@@ -358,7 +398,7 @@ public partial class DdxSubprocessConverter
         catch (Exception ex)
         {
             Failed++;
-            return DdxConversionResult.Failure($"Exception: {ex.Message}");
+            return ConversionResult.Failure($"Exception: {ex.Message}");
         }
         finally
         {
@@ -384,12 +424,23 @@ public partial class DdxSubprocessConverter
     {
         try
         {
-            if (input != null && File.Exists(input)) File.Delete(input);
-            if (output != null && File.Exists(output)) File.Delete(output);
+            if (input != null && File.Exists(input))
+            {
+                File.Delete(input);
+            }
+
+            if (output != null && File.Exists(output))
+            {
+                File.Delete(output);
+            }
+
             if (output != null)
             {
                 var atlas = output.Replace(".dds", "_full_atlas.dds");
-                if (File.Exists(atlas)) File.Delete(atlas);
+                if (File.Exists(atlas))
+                {
+                    File.Delete(atlas);
+                }
             }
         }
         catch
@@ -398,7 +449,7 @@ public partial class DdxSubprocessConverter
         }
     }
 
-    public Task<DdxConversionResult> ConvertFromMemoryWithResultAsync(byte[] ddxData)
+    public Task<ConversionResult> ConvertFromMemoryWithResultAsync(byte[] ddxData)
     {
         return Task.Run(() => ConvertFromMemoryWithResult(ddxData));
     }

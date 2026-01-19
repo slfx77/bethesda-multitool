@@ -57,7 +57,10 @@ public static class ConvertNifCommand
     private static async Task ExecuteAsync(string input, string? output, bool recursive, bool verbose, bool overwrite)
     {
         var context = BuildConversionContext(input, output, recursive, verbose, overwrite);
-        if (context == null) return;
+        if (context == null)
+        {
+            return;
+        }
 
         PrintStartMessage(context);
         await ProcessFilesAsync(context);
@@ -167,14 +170,20 @@ public static class ConvertNifCommand
         {
             var outputPath = GetOutputPath(context, file, fileName);
 
-            if (ShouldSkipExistingFile(context, outputPath, fileName)) return;
+            if (ShouldSkipExistingFile(context, outputPath, fileName))
+            {
+                return;
+            }
 
             await ConvertFileAsync(context, converter, file, fileName, outputPath);
         }
         catch (Exception ex)
         {
             context.Failed++;
-            if (context.Verbose) AnsiConsole.MarkupLine($"[red]Failed:[/] {fileName} - {ex.Message}");
+            if (context.Verbose)
+            {
+                AnsiConsole.MarkupLine($"[red]Failed:[/] {fileName} - {ex.Message}");
+            }
         }
     }
 
@@ -183,13 +192,19 @@ public static class ConvertNifCommand
     /// </summary>
     private static string GetOutputPath(ConversionContext context, string file, string fileName)
     {
-        if (context.InputBaseDir == null) return Path.Combine(context.Output, fileName);
+        if (context.InputBaseDir == null)
+        {
+            return Path.Combine(context.Output, fileName);
+        }
 
         var fullFilePath = Path.GetFullPath(file);
         var relativePath = Path.GetRelativePath(context.InputBaseDir, fullFilePath);
         var outputPath = Path.Combine(context.Output, relativePath);
         var outputDir = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrEmpty(outputDir)) Directory.CreateDirectory(outputDir);
+        if (!string.IsNullOrEmpty(outputDir))
+        {
+            Directory.CreateDirectory(outputDir);
+        }
 
         return outputPath;
     }
@@ -199,9 +214,15 @@ public static class ConvertNifCommand
     /// </summary>
     private static bool ShouldSkipExistingFile(ConversionContext context, string outputPath, string fileName)
     {
-        if (!File.Exists(outputPath) || context.Overwrite) return false;
+        if (!File.Exists(outputPath) || context.Overwrite)
+        {
+            return false;
+        }
 
-        if (context.Verbose) AnsiConsole.MarkupLine($"[grey]Skipping (exists):[/] {fileName}");
+        if (context.Verbose)
+        {
+            AnsiConsole.MarkupLine($"[grey]Skipping (exists):[/] {fileName}");
+        }
 
         context.Skipped++;
         return true;
@@ -229,14 +250,18 @@ public static class ConvertNifCommand
             {
                 AnsiConsole.MarkupLine($"[green]Converted:[/] {fileName}");
                 if (!string.IsNullOrEmpty(result.ErrorMessage))
+                {
                     AnsiConsole.MarkupLine($"[dim]  {result.ErrorMessage}[/]");
+                }
             }
         }
         else
         {
             if (context.Verbose)
+            {
                 AnsiConsole.MarkupLine(
                     $"[yellow]Skipped:[/] {fileName} - {result.ErrorMessage ?? "already LE or invalid"}");
+            }
 
             context.Skipped++;
         }
@@ -250,9 +275,15 @@ public static class ConvertNifCommand
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[green]Converted:[/] {context.Converted}");
 
-        if (context.Skipped > 0) AnsiConsole.MarkupLine($"[yellow]Skipped:[/] {context.Skipped}");
+        if (context.Skipped > 0)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Skipped:[/] {context.Skipped}");
+        }
 
-        if (context.Failed > 0) AnsiConsole.MarkupLine($"[red]Failed:[/] {context.Failed}");
+        if (context.Failed > 0)
+        {
+            AnsiConsole.MarkupLine($"[red]Failed:[/] {context.Failed}");
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[dim]Xbox 360 NIFs have been converted with geometry unpacking.[/]");

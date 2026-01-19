@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Xbox360MemoryCarver.Core.Converters;
+using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Xma;
 
@@ -8,32 +9,29 @@ namespace Xbox360MemoryCarver.Core.Formats.Xma;
 /// </summary>
 internal sealed class XmaWavConverter
 {
-    private const string FfmpegExeName = "ffmpeg.exe";
-    private const string FfmpegName = "ffmpeg";
-
     private static readonly Logger Log = Logger.Instance;
-    private readonly string? _ffmpegPath;
 
     public XmaWavConverter()
     {
-        _ffmpegPath = FindFfmpeg();
-
-        if (_ffmpegPath == null)
+        if (!FfmpegLocator.IsAvailable)
         {
-            Log.Debug("[XmaFormat] FFmpeg not found - XMA to WAV conversion disabled");
-            Log.Debug("[XmaFormat] Install FFmpeg and add to PATH for XMA→WAV conversion");
+            Log.Debug("[XmaWavConverter] FFmpeg not found - XMA to WAV conversion disabled");
+            Log.Debug("[XmaWavConverter] Install FFmpeg and add to PATH for XMA→WAV conversion");
         }
         else
         {
-            Log.Debug($"[XmaFormat] FFmpeg found at: {_ffmpegPath}");
+            Log.Debug($"[XmaWavConverter] FFmpeg found at: {FfmpegLocator.FfmpegPath}");
         }
     }
 
-    public bool IsAvailable => _ffmpegPath != null;
+    public bool IsAvailable => FfmpegLocator.IsAvailable;
 
-    public async Task<DdxConversionResult> ConvertAsync(byte[] xmaData)
+    public async Task<ConversionResult> ConvertAsync(byte[] xmaData)
     {
-        if (_ffmpegPath == null) return new DdxConversionResult { Success = false, Notes = "FFmpeg not available" };
+        if (!FfmpegLocator.IsAvailable)
+        {
+            return new ConversionResult { Success = false, Notes = "FFmpeg not available" };
+        }
 
         var tempDir = Path.GetTempPath();
         var inputPath = Path.Combine(tempDir, $"xma_decode_{Guid.NewGuid():N}.xma");
@@ -45,7 +43,7 @@ internal sealed class XmaWavConverter
 
             var startInfo = new ProcessStartInfo
             {
-                FileName = _ffmpegPath,
+                FileName = FfmpegLocator.FfmpegPath!,
                 Arguments = $"-y -hide_banner -loglevel error -i \"{inputPath}\" -c:a pcm_s16le \"{outputPath}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -63,22 +61,28 @@ internal sealed class XmaWavConverter
             if (process.ExitCode != 0 || !File.Exists(outputPath))
             {
                 if (!string.IsNullOrEmpty(stderr))
+                {
                     Log.Debug($"[XmaFormat] FFmpeg error: {stderr.Trim()}");
-                return new DdxConversionResult { Success = false, Notes = "FFmpeg decode failed" };
+                }
+
+                return new ConversionResult { Success = false, Notes = "FFmpeg decode failed" };
             }
 
             var wavData = await File.ReadAllBytesAsync(outputPath);
 
-            if (wavData.Length <= 44) return new DdxConversionResult { Success = false, Notes = "No audio decoded" };
+            if (wavData.Length <= 44)
+            {
+                return new ConversionResult { Success = false, Notes = "No audio decoded" };
+            }
 
             var duration = EstimateWavDuration(wavData);
             Log.Debug(
                 $"[XmaFormat] Decoded {xmaData.Length} bytes XMA → {wavData.Length} bytes WAV ({duration:F2}s)");
 
-            return new DdxConversionResult
+            return new ConversionResult
             {
                 Success = true,
-                DdsData = wavData,
+                OutputData = wavData,
                 Notes = "Decoded to WAV"
             };
         }
@@ -93,7 +97,10 @@ internal sealed class XmaWavConverter
     {
         try
         {
-            if (File.Exists(path)) File.Delete(path);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
         catch
         {
@@ -101,41 +108,18 @@ internal sealed class XmaWavConverter
         }
     }
 
-    private static string? FindFfmpeg()
-    {
-        var pathDirs = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
-
-        foreach (var dir in pathDirs)
-        {
-            var ffmpegPath = Path.Combine(dir, FfmpegExeName);
-            if (File.Exists(ffmpegPath)) return ffmpegPath;
-
-            ffmpegPath = Path.Combine(dir, FfmpegName);
-            if (File.Exists(ffmpegPath)) return ffmpegPath;
-        }
-
-        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var systemDrive = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:";
-
-        var commonPaths = new[]
-        {
-            Path.Combine(systemDrive, FfmpegName, "bin", FfmpegExeName),
-            Path.Combine(programFiles, FfmpegName, "bin", FfmpegExeName),
-            Path.Combine(programFilesX86, FfmpegName, "bin", FfmpegExeName),
-            Path.Combine(localAppData, FfmpegName, "bin", FfmpegExeName)
-        };
-
-        return commonPaths.FirstOrDefault(File.Exists);
-    }
-
     private static double EstimateWavDuration(byte[] wavData)
     {
-        if (wavData.Length < 44) return 0;
+        if (wavData.Length < 44)
+        {
+            return 0;
+        }
 
         var byteRate = BitConverter.ToInt32(wavData, 28);
-        if (byteRate <= 0) return 0;
+        if (byteRate <= 0)
+        {
+            return 0;
+        }
 
         var dataSize = wavData.Length - 44;
         return (double)dataSize / byteRate;

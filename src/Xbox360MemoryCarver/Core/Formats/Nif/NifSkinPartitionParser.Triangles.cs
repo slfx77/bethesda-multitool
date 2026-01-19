@@ -18,7 +18,10 @@ internal static partial class NifSkinPartitionParser
     public static ushort[]? ExtractTriangles(byte[] data, int offset, int size, bool isBigEndian, bool verbose = false)
     {
         _ = verbose; // Reserved for future diagnostic use
-        if (size < 4) return null;
+        if (size < 4)
+        {
+            return null;
+        }
 
         var reader = new TriangleReader
         {
@@ -29,13 +32,20 @@ internal static partial class NifSkinPartitionParser
         };
 
         var numPartitions = reader.ReadUInt32();
-        if (numPartitions == 0 || numPartitions > 1000) return null;
+        if (numPartitions == 0 || numPartitions > 1000)
+        {
+            return null;
+        }
 
         var allTriangles = new List<ushort>();
 
         for (var p = 0; p < numPartitions && reader.Pos < reader.End; p++)
+        {
             if (!TryExtractPartitionTriangles(ref reader, allTriangles))
+            {
                 break;
+            }
+        }
 
         return allTriangles.Count == 0 ? null : [.. allTriangles];
     }
@@ -45,23 +55,41 @@ internal static partial class NifSkinPartitionParser
     /// </summary>
     private static bool TryExtractPartitionTriangles(ref TriangleReader reader, List<ushort> allTriangles)
     {
-        if (!TryReadTrianglePartitionHeader(ref reader, out var header)) return false;
+        if (!TryReadTrianglePartitionHeader(ref reader, out var header))
+        {
+            return false;
+        }
 
         // Skip Bones array
         reader.Skip(header.NumBones * 2);
-        if (reader.Pos > reader.End) return false;
+        if (reader.Pos > reader.End)
+        {
+            return false;
+        }
 
         // Read vertex map
-        if (!TryReadTriangleVertexMap(ref reader, header.NumVertices, out var vertexMap)) return false;
+        if (!TryReadTriangleVertexMap(ref reader, header.NumVertices, out var vertexMap))
+        {
+            return false;
+        }
 
         // Skip vertex weights
-        if (!TrySkipVertexWeights(ref reader, header.NumVertices, header.NumWeightsPerVertex)) return false;
+        if (!TrySkipVertexWeights(ref reader, header.NumVertices, header.NumWeightsPerVertex))
+        {
+            return false;
+        }
 
         // Read strip lengths
-        if (!TryReadStripLengths(ref reader, header.NumStrips, out var stripLengths)) return false;
+        if (!TryReadStripLengths(ref reader, header.NumStrips, out var stripLengths))
+        {
+            return false;
+        }
 
         // Read faces
-        if (!TryReadFaces(ref reader, header, vertexMap, stripLengths, allTriangles)) return false;
+        if (!TryReadFaces(ref reader, header, vertexMap, stripLengths, allTriangles))
+        {
+            return false;
+        }
 
         // Skip bone indices
         return TrySkipBoneIndices(ref reader, header.NumVertices, header.NumWeightsPerVertex);
@@ -73,7 +101,10 @@ internal static partial class NifSkinPartitionParser
     private static bool TryReadTrianglePartitionHeader(ref TriangleReader reader, out TrianglePartitionHeader header)
     {
         header = default;
-        if (!reader.CanRead(10)) return false;
+        if (!reader.CanRead(10))
+        {
+            return false;
+        }
 
         header = new TrianglePartitionHeader(
             reader.ReadUInt16(),
@@ -90,15 +121,27 @@ internal static partial class NifSkinPartitionParser
     private static bool TryReadTriangleVertexMap(ref TriangleReader reader, ushort numVertices, out ushort[]? vertexMap)
     {
         vertexMap = null;
-        if (!reader.CanRead(1)) return false;
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
 
         var hasVertexMap = reader.ReadByte();
-        if (hasVertexMap == 0) return true;
+        if (hasVertexMap == 0)
+        {
+            return true;
+        }
 
-        if (!reader.CanRead(numVertices * 2)) return false;
+        if (!reader.CanRead(numVertices * 2))
+        {
+            return false;
+        }
 
         vertexMap = new ushort[numVertices];
-        for (var i = 0; i < numVertices; i++) vertexMap[i] = reader.ReadUInt16();
+        for (var i = 0; i < numVertices; i++)
+        {
+            vertexMap[i] = reader.ReadUInt16();
+        }
 
         return true;
     }
@@ -108,13 +151,19 @@ internal static partial class NifSkinPartitionParser
     /// </summary>
     private static bool TrySkipVertexWeights(ref TriangleReader reader, ushort numVertices, ushort numWeightsPerVertex)
     {
-        if (!reader.CanRead(1)) return false;
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
 
         var hasVertexWeights = reader.ReadByte();
         if (hasVertexWeights != 0)
         {
             reader.Skip(numVertices * numWeightsPerVertex * 4);
-            if (reader.Pos > reader.End) return false;
+            if (reader.Pos > reader.End)
+            {
+                return false;
+            }
         }
 
         return true;
@@ -128,7 +177,10 @@ internal static partial class NifSkinPartitionParser
         stripLengths = new ushort[numStrips];
         for (var i = 0; i < numStrips; i++)
         {
-            if (!reader.CanRead(2)) return false;
+            if (!reader.CanRead(2))
+            {
+                return false;
+            }
 
             stripLengths[i] = reader.ReadUInt16();
         }
@@ -146,12 +198,21 @@ internal static partial class NifSkinPartitionParser
         ushort[] stripLengths,
         List<ushort> allTriangles)
     {
-        if (!reader.CanRead(1)) return false;
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
 
         var hasFaces = reader.ReadByte();
-        if (hasFaces == 0) return true;
+        if (hasFaces == 0)
+        {
+            return true;
+        }
 
-        if (header.NumStrips != 0) return TryReadStrips(ref reader, stripLengths, vertexMap, allTriangles);
+        if (header.NumStrips != 0)
+        {
+            return TryReadStrips(ref reader, stripLengths, vertexMap, allTriangles);
+        }
 
         return TryReadDirectTriangles(ref reader, header.NumTriangles, vertexMap, allTriangles);
     }
@@ -167,10 +228,16 @@ internal static partial class NifSkinPartitionParser
     {
         foreach (var stripLength in stripLengths)
         {
-            if (!reader.CanRead(stripLength * 2)) return false;
+            if (!reader.CanRead(stripLength * 2))
+            {
+                return false;
+            }
 
             var strip = new ushort[stripLength];
-            for (var i = 0; i < stripLength; i++) strip[i] = reader.ReadUInt16();
+            for (var i = 0; i < stripLength; i++)
+            {
+                strip[i] = reader.ReadUInt16();
+            }
 
             ConvertStripToTriangles(strip, vertexMap, allTriangles);
         }
@@ -189,7 +256,10 @@ internal static partial class NifSkinPartitionParser
     {
         for (var t = 0; t < numTriangles; t++)
         {
-            if (!reader.CanRead(6)) return false;
+            if (!reader.CanRead(6))
+            {
+                return false;
+            }
 
             var v0 = reader.ReadUInt16();
             var v1 = reader.ReadUInt16();
@@ -213,11 +283,20 @@ internal static partial class NifSkinPartitionParser
     {
         if (vertexMap != null)
         {
-            if (v0 < vertexMap.Length) v0 = vertexMap[v0];
+            if (v0 < vertexMap.Length)
+            {
+                v0 = vertexMap[v0];
+            }
 
-            if (v1 < vertexMap.Length) v1 = vertexMap[v1];
+            if (v1 < vertexMap.Length)
+            {
+                v1 = vertexMap[v1];
+            }
 
-            if (v2 < vertexMap.Length) v2 = vertexMap[v2];
+            if (v2 < vertexMap.Length)
+            {
+                v2 = vertexMap[v2];
+            }
         }
 
         triangles.Add(v0);
@@ -230,13 +309,19 @@ internal static partial class NifSkinPartitionParser
     /// </summary>
     private static bool TrySkipBoneIndices(ref TriangleReader reader, ushort numVertices, ushort numWeightsPerVertex)
     {
-        if (!reader.CanRead(1)) return false;
+        if (!reader.CanRead(1))
+        {
+            return false;
+        }
 
         var hasBoneIndices = reader.ReadByte();
         if (hasBoneIndices != 0)
         {
             reader.Skip(numVertices * numWeightsPerVertex);
-            if (reader.Pos > reader.End) return false;
+            if (reader.Pos > reader.End)
+            {
+                return false;
+            }
         }
 
         return true;
@@ -248,7 +333,10 @@ internal static partial class NifSkinPartitionParser
     /// </summary>
     private static void ConvertStripToTriangles(ushort[] strip, ushort[]? vertexMap, List<ushort> triangles)
     {
-        if (strip.Length < 3) return;
+        if (strip.Length < 3)
+        {
+            return;
+        }
 
         for (var i = 0; i < strip.Length - 2; i++)
         {
@@ -256,7 +344,10 @@ internal static partial class NifSkinPartitionParser
             var v1 = strip[i + 1];
             var v2 = strip[i + 2];
 
-            if (IsDegenerateTriangle(v0, v1, v2)) continue;
+            if (IsDegenerateTriangle(v0, v1, v2))
+            {
+                continue;
+            }
 
             AddStripTriangle(i, v0, v1, v2, vertexMap, triangles);
         }
@@ -284,11 +375,20 @@ internal static partial class NifSkinPartitionParser
         // Remap to mesh indices if vertex map exists
         if (vertexMap != null)
         {
-            if (v0 < vertexMap.Length) v0 = vertexMap[v0];
+            if (v0 < vertexMap.Length)
+            {
+                v0 = vertexMap[v0];
+            }
 
-            if (v1 < vertexMap.Length) v1 = vertexMap[v1];
+            if (v1 < vertexMap.Length)
+            {
+                v1 = vertexMap[v1];
+            }
 
-            if (v2 < vertexMap.Length) v2 = vertexMap[v2];
+            if (v2 < vertexMap.Length)
+            {
+                v2 = vertexMap[v2];
+            }
         }
 
         // Alternate winding order for each triangle in the strip

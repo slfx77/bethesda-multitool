@@ -1,3 +1,4 @@
+using System.Text;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Formats.FaceGen;
@@ -11,7 +12,6 @@ namespace Xbox360MemoryCarver.Core.Formats.FaceGen;
 ///     - FREGM002 - Face morph data (.egm)
 ///     - FREGT003 - Face tint data (.egt)
 ///     - FRTRI003 - Face triangle morphs (.tri)
-///     
 ///     These files are used for character face customization and may be loaded
 ///     when NPCs or the player character are rendered.
 /// </remarks>
@@ -50,11 +50,17 @@ public sealed class FaceGenFormat : FileFormatBase
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         const int minHeaderSize = 32;
-        if (data.Length < offset + minHeaderSize) return null;
+        if (data.Length < offset + minHeaderSize)
+        {
+            return null;
+        }
 
         // Detect which FaceGen type this is
         var (formatType, extension) = DetectFaceGenType(data, offset);
-        if (formatType == null) return null;
+        if (formatType == null)
+        {
+            return null;
+        }
 
         try
         {
@@ -63,16 +69,26 @@ public sealed class FaceGenFormat : FileFormatBase
             // After magic: Various counts and offsets
 
             // Read version suffix (e.g., "002", "003")
-            var versionStr = System.Text.Encoding.ASCII.GetString(data.Slice(offset + 5, 3));
-            if (!int.TryParse(versionStr, out var version)) return null;
-            if (version < 1 || version > 10) return null;
+            var versionStr = Encoding.ASCII.GetString(data.Slice(offset + 5, 3));
+            if (!int.TryParse(versionStr, out var version))
+            {
+                return null;
+            }
+
+            if (version < 1 || version > 10)
+            {
+                return null;
+            }
 
             // Read first size field after magic (at offset 8)
             var size1 = BinaryUtils.ReadUInt32LE(data, offset + 8);
             var size2 = BinaryUtils.ReadUInt32LE(data, offset + 12);
 
             // Sanity check sizes
-            if (size1 > 100000 || size2 > 100000) return null;
+            if (size1 > 100000 || size2 > 100000)
+            {
+                return null;
+            }
 
             // Estimate size using boundary scanning
             // Use current format's magic as exclude signature to avoid matching self
@@ -108,18 +124,27 @@ public sealed class FaceGenFormat : FileFormatBase
 
     private static (string? formatType, string? extension) DetectFaceGenType(ReadOnlySpan<byte> data, int offset)
     {
-        if (data.Length < offset + 8) return (null, null);
+        if (data.Length < offset + 8)
+        {
+            return (null, null);
+        }
 
         var magic5 = data.Slice(offset, 5);
 
         if (magic5.SequenceEqual("FREGM"u8))
+        {
             return ("EGM", ".egm");
+        }
 
         if (magic5.SequenceEqual("FREGT"u8))
+        {
             return ("EGT", ".egt");
+        }
 
         if (magic5.SequenceEqual("FRTRI"u8))
+        {
             return ("TRI", ".tri");
+        }
 
         return (null, null);
     }

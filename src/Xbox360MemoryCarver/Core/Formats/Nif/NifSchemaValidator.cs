@@ -22,18 +22,31 @@ public static class NifSchemaValidator
         foreach (var field in objDef.AllFields)
         {
             // Skip conditional fields for minimum size
-            if (field.VersionCond != null || field.Condition != null) continue;
+            if (field.VersionCond != null || field.Condition != null)
+            {
+                continue;
+            }
 
             // Arrays have dynamic size
-            if (field.Length != null && !int.TryParse(field.Length, out _)) return null;
+            if (field.Length != null && !int.TryParse(field.Length, out _))
+            {
+                return null;
+            }
 
             var fieldSize = GetFieldSize(schema, field);
-            if (fieldSize == null) return null;
+            if (fieldSize == null)
+            {
+                return null;
+            }
 
             if (field.Length != null && int.TryParse(field.Length, out var count))
+            {
                 totalSize += fieldSize.Value * count;
+            }
             else
+            {
                 totalSize += fieldSize.Value;
+            }
         }
 
         return totalSize;
@@ -42,11 +55,17 @@ public static class NifSchemaValidator
     private static int? GetFieldSize(NifSchema schema, NifFieldDef field)
     {
         var size = schema.GetTypeSize(field.Type);
-        if (size.HasValue) return size.Value;
+        if (size.HasValue)
+        {
+            return size.Value;
+        }
 
         // Check if it's a struct
         var structDef = schema.GetStruct(field.Type);
-        if (structDef?.FixedSize.HasValue == true) return structDef.FixedSize.Value;
+        if (structDef?.FixedSize.HasValue == true)
+        {
+            return structDef.FixedSize.Value;
+        }
 
         return null;
     }
@@ -58,7 +77,10 @@ public static class NifSchemaValidator
     public static string GetBlockFieldLayout(NifSchema schema, string blockType)
     {
         var objDef = schema.GetObject(blockType);
-        if (objDef == null) return $"Unknown block type: {blockType}";
+        if (objDef == null)
+        {
+            return $"Unknown block type: {blockType}";
+        }
 
         var lines = new List<string>
         {
@@ -93,18 +115,36 @@ public static class NifSchemaValidator
 
     private static string GetConditionalString(NifFieldDef field)
     {
-        if (field.VersionCond != null) return $" [vercond: {field.VersionCond}]";
-        if (field.Condition != null) return $" [cond: {field.Condition}]";
+        if (field.VersionCond != null)
+        {
+            return $" [vercond: {field.VersionCond}]";
+        }
+
+        if (field.Condition != null)
+        {
+            return $" [cond: {field.Condition}]";
+        }
+
         return "";
     }
 
     private static int UpdateOffset(int offset, int? size, NifFieldDef field)
     {
-        if (!size.HasValue) return -1;
-        if (field.Length == null) return offset + size.Value;
-        if (int.TryParse(field.Length, out var count)) return offset + (size.Value * count);
+        if (!size.HasValue)
+        {
+            return -1;
+        }
+
+        if (field.Length == null)
+        {
+            return offset + size.Value;
+        }
+
+        if (int.TryParse(field.Length, out var count))
+        {
+            return offset + size.Value * count;
+        }
+
         return -1;
     }
 }
-
-public record ValidationResult(bool IsValid, string Message);

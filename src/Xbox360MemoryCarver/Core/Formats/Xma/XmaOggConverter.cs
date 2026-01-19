@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Xbox360MemoryCarver.Core.Converters;
+using Xbox360MemoryCarver.Core.Utils;
 
 namespace Xbox360MemoryCarver.Core.Formats.Xma;
 
@@ -9,28 +10,22 @@ namespace Xbox360MemoryCarver.Core.Formats.Xma;
 /// </summary>
 internal sealed class XmaOggConverter
 {
-    private const string FfmpegExeName = "ffmpeg.exe";
-    private const string FfmpegName = "ffmpeg";
-
     private static readonly Logger Log = Logger.Instance;
-    private readonly string? _ffmpegPath;
 
     public XmaOggConverter()
     {
-        _ffmpegPath = FindFfmpeg();
-
-        if (_ffmpegPath == null)
+        if (!FfmpegLocator.IsAvailable)
         {
             Log.Debug("[XmaOggConverter] FFmpeg not found - XMA to OGG conversion disabled");
             Log.Debug("[XmaOggConverter] Install FFmpeg and add to PATH for XMA→OGG conversion");
         }
         else
         {
-            Log.Debug($"[XmaOggConverter] FFmpeg found at: {_ffmpegPath}");
+            Log.Debug($"[XmaOggConverter] FFmpeg found at: {FfmpegLocator.FfmpegPath}");
         }
     }
 
-    public bool IsAvailable => _ffmpegPath != null;
+    public bool IsAvailable => FfmpegLocator.IsAvailable;
 
     /// <summary>
     ///     Convert XMA audio to OGG Vorbis format matching PC game settings.
@@ -39,11 +34,11 @@ internal sealed class XmaOggConverter
     /// <param name="targetSampleRate">Target sample rate (default 24000 Hz for dialogue, 44100 for music)</param>
     /// <param name="targetBitrate">Target bitrate in kbps (default ~40 for dialogue quality)</param>
     /// <returns>Conversion result with OGG data</returns>
-    public async Task<DdxConversionResult> ConvertAsync(byte[] xmaData, int targetSampleRate = 0, int targetBitrate = 0)
+    public async Task<ConversionResult> ConvertAsync(byte[] xmaData, int targetSampleRate = 0, int targetBitrate = 0)
     {
-        if (_ffmpegPath == null)
+        if (!FfmpegLocator.IsAvailable)
         {
-            return new DdxConversionResult { Success = false, Notes = "FFmpeg not available" };
+            return new ConversionResult { Success = false, Notes = "FFmpeg not available" };
         }
 
         var tempDir = Path.GetTempPath();
@@ -65,8 +60,8 @@ internal sealed class XmaOggConverter
                 audioArgs += $" -b:a {targetBitrate}k";
             }
             else
-            {
                 // Use quality-based VBR (quality 2-3 matches typical dialogue quality)
+            {
                 audioArgs += " -q:a 2";
             }
 
@@ -77,7 +72,7 @@ internal sealed class XmaOggConverter
 
             var startInfo = new ProcessStartInfo
             {
-                FileName = _ffmpegPath,
+                FileName = FfmpegLocator.FfmpegPath!,
                 Arguments = $"-y -hide_banner -loglevel error -i \"{inputPath}\" {audioArgs} \"{outputPath}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -99,28 +94,28 @@ internal sealed class XmaOggConverter
                     Log.Debug($"[XmaOggConverter] FFmpeg error: {stderr.Trim()}");
                 }
 
-                return new DdxConversionResult { Success = false, Notes = "FFmpeg XMA→OGG failed" };
+                return new ConversionResult { Success = false, Notes = "FFmpeg XMA→OGG failed" };
             }
 
             var oggData = await File.ReadAllBytesAsync(outputPath);
 
             if (oggData.Length < 28)
             {
-                return new DdxConversionResult { Success = false, Notes = "No audio decoded" };
+                return new ConversionResult { Success = false, Notes = "No audio decoded" };
             }
 
             // Verify OGG signature
             if (oggData[0] != 'O' || oggData[1] != 'g' || oggData[2] != 'g' || oggData[3] != 'S')
             {
-                return new DdxConversionResult { Success = false, Notes = "Invalid OGG output" };
+                return new ConversionResult { Success = false, Notes = "Invalid OGG output" };
             }
 
             Log.Debug($"[XmaOggConverter] Converted {xmaData.Length} bytes XMA → {oggData.Length} bytes OGG");
 
-            return new DdxConversionResult
+            return new ConversionResult
             {
                 Success = true,
-                DdsData = oggData,
+                OutputData = oggData,
                 Notes = "Converted to OGG Vorbis"
             };
         }
@@ -144,40 +139,5 @@ internal sealed class XmaOggConverter
         {
             // Cleanup failures are non-critical
         }
-    }
-
-    private static string? FindFfmpeg()
-    {
-        var pathDirs = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
-
-        foreach (var dir in pathDirs)
-        {
-            var ffmpegPath = Path.Combine(dir, FfmpegExeName);
-            if (File.Exists(ffmpegPath))
-            {
-                return ffmpegPath;
-            }
-
-            ffmpegPath = Path.Combine(dir, FfmpegName);
-            if (File.Exists(ffmpegPath))
-            {
-                return ffmpegPath;
-            }
-        }
-
-        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var systemDrive = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:";
-
-        var commonPaths = new[]
-        {
-            Path.Combine(systemDrive, FfmpegName, "bin", FfmpegExeName),
-            Path.Combine(programFiles, FfmpegName, "bin", FfmpegExeName),
-            Path.Combine(programFilesX86, FfmpegName, "bin", FfmpegExeName),
-            Path.Combine(localAppData, FfmpegName, "bin", FfmpegExeName)
-        };
-
-        return commonPaths.FirstOrDefault(File.Exists);
     }
 }
