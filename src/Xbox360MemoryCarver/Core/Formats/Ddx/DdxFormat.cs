@@ -135,11 +135,12 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
         var flagsDword = BinaryUtils.ReadUInt32BE(data, offset + 0x24);
         var isTiled = ((flagsDword >> 22) & 0x1) != 0;
 
+        // Validate dimensions are reasonable (non-zero, power-of-two friendly, max 4096)
         if (width == 0 || height == 0 || width > 4096 || height > 4096) return null;
 
-        var formatName = TextureFormats.Xbox360GpuTextureFormats.TryGetValue(formatByte, out var gpuFormatName)
-            ? gpuFormatName
-            : $"Unknown(0x{formatByte:X2})";
+        // Validate GPU format is a known Xbox 360 texture format - reject unknown formats
+        // This significantly reduces false positives from random data matching "3XDO"/"3XDR" magic
+        if (!TextureFormats.Xbox360GpuTextureFormats.TryGetValue(formatByte, out var formatName)) return null;
         var uncompressedSize = CalculateUncompressedSize(width, height, mipCount, formatName);
         var estimatedSize = FindDdxBoundary(data, offset, uncompressedSize);
         var texturePath = TexturePathExtractor.FindPrecedingPath(data, offset, ".ddx");

@@ -526,16 +526,16 @@ dotnet run --project tools/RegionAnalyzer -- dump.dmp --sample 0x06EBD91E 512
 
 #### New Core Parsers
 
-| Parser            | Location                          | Description                                 |
-| ----------------- | --------------------------------- | ------------------------------------------- |
-| `ScdaParser`      | `Core/Parsers/ScdaParser.cs`      | Compiled script bytecode (SCDA)             |
-| `EsmRecordParser` | `Core/Parsers/EsmRecordParser.cs` | ESM record extraction (EDID/GMST/SCTX/SCRO) |
+| Parser            | Location                                    | Description                                                     |
+| ----------------- | ------------------------------------------- | --------------------------------------------------------------- |
+| `ScdaFormat`      | `Core/Formats/Scda/ScdaFormat.cs`           | Compiled script bytecode (SCDA) with `IDumpScanner`             |
+| `EsmRecordFormat` | `Core/Formats/EsmRecord/EsmRecordFormat.cs` | ESM record extraction (EDID/GMST/SCTX/SCRO) with `IDumpScanner` |
 
 #### New Analysis Module
 
-| Class          | Location                        | Description                          |
-| -------------- | ------------------------------- | ------------------------------------ |
-| `DumpAnalyzer` | `Core/Analysis/DumpAnalyzer.cs` | Unified dump analysis with reporting |
+| Class                | Location                     | Description                          |
+| -------------------- | ---------------------------- | ------------------------------------ |
+| `MemoryDumpAnalyzer` | `Core/MemoryDumpAnalyzer.cs` | Unified dump analysis with reporting |
 
 #### New CLI Commands
 
@@ -568,9 +568,9 @@ The `analyze` command provides:
 The standalone tools in `tools/` remain for reference but functionality is now in the main codebase:
 
 - `ModuleCorrelator` → `Xbox360MemoryCarver modules` command
-- `ESMRecordExtractor` → `EsmRecordParser` class
-- `FormIdCorrelator` → `DumpAnalyzer.CorrelateFormIdsToNames()`
-- `ScriptDisassembler` → `ScriptExtractor` class (with quest grouping)
+- `ESMRecordExtractor` → `EsmRecordFormat` class (implements `IDumpScanner`)
+- `FormIdCorrelator` → `MemoryDumpAnalyzer.CorrelateFormIdsToNames()`
+- `ScriptDisassembler` → `ScdaFormat` class (implements `IDumpScanner`)
 
 ---
 
@@ -787,17 +787,14 @@ The `--missed` scan reports 22,517 NIF signatures in release dumps but only 171 
 #### Key Findings
 
 1. **XEX Code Section** (~32 MB): PowerPC executable code with debug strings
-
    - Contains function prologues (`mflr r12`), returns (`blr`), branches
    - UTF-16 source file paths embedded in debug builds
 
 2. **INI Settings Table** (~35 KB at 0x06EBD91E):
-
    - Setting names: `fStarsRotateDays`, `fSneakBaseValue`, etc.
    - `SettingT<*>` structure is 12 bytes (name ptr + value + collection ptr)
 
 3. **ESM Record Data** (scattered, ~400+ KB total):
-
    - DIAL/INFO dialogue strings with bytecode interleaved
    - Asset paths (.xma, .nif, .dds files)
    - Quest objectives, DLC content names, cell names

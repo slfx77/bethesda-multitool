@@ -80,7 +80,6 @@ public sealed class DdxFileEntry : INotifyPropertyChanged
         "Converting..." => YellowBrush,
         "Cancelled" => OrangeBrush,
         "Skipped (exists)" or "Pending" => GrayBrush,
-        "Unsupported (3XDR)" => BlueBrush,
         _ when _status.StartsWith("Error", StringComparison.Ordinal) => RedBrush,
         _ when _status.StartsWith("Failed", StringComparison.Ordinal) => RedBrush,
         _ => GrayBrush
@@ -323,7 +322,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
             var xdoCount = _ddxFiles.Count(f => f.FormatDescription == "3XDO");
             var xdrCount = _ddxFiles.Count(f => f.FormatDescription == "3XDR");
             StatusTextBlock.Text =
-                $"Found {_ddxFiles.Count} DDX files. {xdoCount} 3XDO (convertible), {xdrCount} 3XDR (experimental).";
+                $"Found {_ddxFiles.Count} DDX files. {xdoCount} 3XDO, {xdrCount} 3XDR.";
         }
         catch (OperationCanceledException)
         {
@@ -373,7 +372,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
                         RelativePath = relativePath,
                         FileSize = fileSize,
                         FormatDescription = formatDesc,
-                        IsSelected = formatDesc == "3XDO"
+                        IsSelected = formatDesc is "3XDO" or "3XDR"
                     };
 
                     // Update progress every 100 files
@@ -511,14 +510,6 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable
 
         foreach (var file in selectedFiles)
         {
-            // 3XDR format is not fully supported
-            if (file.FormatDescription == "3XDR")
-            {
-                file.Status = "Unsupported (3XDR)";
-                unsupported++;
-                continue;
-            }
-
             // Calculate expected output path
             string outputPath;
             if (preserveStructure)

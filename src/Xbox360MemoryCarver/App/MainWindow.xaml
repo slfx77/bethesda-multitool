@@ -95,6 +95,15 @@
             <FontIcon Glyph="&#xEB9F;"/>
           </NavigationViewItem.Icon>
         </NavigationViewItem>
+
+        <!--  BSA Extractor  -->
+        <NavigationViewItem
+          Content="BSA Extractor"
+          Tag="BsaExtractor">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE7B8;"/>
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
       </NavigationView.MenuItems>
 
       <!--  Main content area  -->
@@ -128,6 +137,10 @@
               Visibility="Collapsed"/>
             <tabs:DdxConverterTab
               x:Name="DdxConverterTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Collapsed"/>
+            <tabs:BsaExtractorTab
+              x:Name="BsaExtractorTabContent"
               VerticalAlignment="Stretch"
               Visibility="Collapsed"/>
           </Grid>

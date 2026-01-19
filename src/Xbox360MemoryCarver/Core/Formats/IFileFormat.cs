@@ -11,6 +11,7 @@ public enum FileCategory
     Texture,
     Image,
     Audio,
+    Video,
     Model,
     Module,
     Script,
@@ -226,7 +227,7 @@ public interface IFileRepairer
 
 /// <summary>
 ///     Optional interface for formats that can scan entire dumps for records.
-///     Used by DumpAnalyzer to gather format-specific information.
+///     Used by MemoryDumpAnalyzer to gather format-specific information.
 /// </summary>
 public interface IDumpScanner
 {

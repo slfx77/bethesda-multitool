@@ -35,8 +35,8 @@ This document describes the internal architecture of the Xbox 360 Memory Carver,
 ├──────────────────────────────────┴─────────────────────────────────────────┤
 │                              Core Layer                                    │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────────────────────┐ │
-│  │  Carving/   │ │  Formats/   │ │  Analysis/  │ │   FormatRegistry      │ │
-│  │MemoryCarver │ │ 13 modules  │ │DumpAnalyzer │ │   IFileFormat         │ │
+│  │  Carving/   │ │  Formats/   │ │  Dump       │ │   FormatRegistry      │ │
+│  │MemoryCarver │ │ 12 modules  │ │  Analyzer   │ │   IFileFormat         │ │
 │  │CarveManifest│ │IFileFormat  │ │             │ │   FileFormatBase      │ │
 │  └─────────────┘ └─────────────┘ └─────────────┘ └───────────────────────┘ │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────────────────────┐ │
@@ -51,18 +51,18 @@ This document describes the internal architecture of the Xbox 360 Memory Carver,
 ```
 src/Xbox360MemoryCarver/
 ├── Core/
-│   ├── Analysis/           # Dump analysis and reporting
-│   │   └── DumpAnalyzer.cs
 │   ├── Carving/            # File carving engine
+│   │   ├── CarveExtractor.cs
 │   │   ├── CarveManifest.cs
+│   │   ├── CarveWriter.cs
 │   │   └── MemoryCarver.cs
-│   ├── Converters/         # DDX to DDS conversion
+│   ├── Converters/         # DDX/XUR conversion
 │   │   ├── DdxConversionResult.cs
-│   │   └── DdxSubprocessConverter.cs
-│   ├── Extractors/         # Specialized extraction logic
-│   │   └── ScriptExtractor.cs
+│   │   ├── DdxSubprocessConverter.cs
+│   │   ├── XurConversionResult.cs
+│   │   └── XurSubprocessConverter.cs
 │   ├── Formats/            # Self-contained format modules
-│   │   ├── FormatRegistry.cs   # Auto-discovers format modules
+│   │   ├── FormatRegistry.cs   # Explicit format registration (no reflection)
 │   │   ├── IFileFormat.cs      # Base interface + IFileConverter, IDumpScanner
 │   │   ├── FileFormatBase.cs   # Base class with common implementation
 │   │   ├── Dds/DdsFormat.cs
@@ -75,9 +75,8 @@ src/Xbox360MemoryCarver/
 │   │   ├── Scda/ScdaFormat.cs  # Implements IDumpScanner
 │   │   ├── Script/ScriptFormat.cs
 │   │   ├── Xdbf/XdbfFormat.cs
-│   │   ├── Xex/XexFormat.cs
-│   │   ├── Xma/XmaFormat.cs    # Implements IFileRepairer
-│   │   └── Xui/XuiFormat.cs
+│   │   ├── Xma/XmaFormat.cs    # Implements IFileRepairer, IFileConverter
+│   │   └── Xui/XuiFormat.cs    # Implements IFileConverter
 │   ├── Minidump/           # Minidump format parsing
 │   │   ├── MinidumpInfo.cs
 │   │   ├── MinidumpModels.cs
@@ -86,9 +85,11 @@ src/Xbox360MemoryCarver/
 │   │   ├── BinaryUtils.cs
 │   │   ├── SignatureBoundaryScanner.cs
 │   │   └── TexturePathExtractor.cs
-│   ├── SignatureMatcher.cs # Aho-Corasick multi-pattern search
-│   └── Models.cs           # Shared model types
-├── *.xaml / *.xaml.cs      # WinUI 3 GUI components
+│   ├── MemoryDumpAnalyzer.cs   # Build detection, ESM extraction
+│   ├── SignatureMatcher.cs     # Aho-Corasick multi-pattern search
+│   └── Models.cs               # Shared model types
+├── App/                    # WinUI 3 GUI components (Windows only)
+├── CLI/                    # CLI command implementations
 ├── Program.cs              # CLI entry point
 └── GuiEntryPoint.cs        # GUI bootstrap (Windows only)
 ```
@@ -180,11 +181,11 @@ MinidumpInfo
 
 ### FormatRegistry
 
-Central registry of all supported file formats. Auto-discovers format modules at runtime via reflection.
+Central registry of all supported file formats. Uses explicit registration for trim/AOT compatibility.
 
 **Key Features:**
 
-- Auto-discovery of `IFileFormat` implementations in `Core.Formats` namespace
+- Explicit registration of `IFileFormat` implementations (no reflection)
 - Type definitions with signatures, extensions, and size constraints
 - Category-based organization and coloring
 - Support for optional interfaces: `IFileConverter`, `IFileRepairer`, `IDumpScanner`
@@ -264,38 +265,39 @@ All format modules extend `FileFormatBase` and are self-contained in their own f
 
 ### Format Module Structure
 
-| Format Module     | Location                  | Capabilities                           |
-| ----------------- | ------------------------- | -------------------------------------- |
-| `DdsFormat`       | `Core/Formats/Dds/`       | Parsing only                           |
-| `DdxFormat`       | `Core/Formats/Ddx/`       | Parsing + `IFileConverter`             |
-| `EsmRecordFormat` | `Core/Formats/EsmRecord/` | `IDumpScanner` (ESM record extraction) |
-| `EspFormat`       | `Core/Formats/Esp/`       | Parsing only                           |
-| `LipFormat`       | `Core/Formats/Lip/`       | Parsing only                           |
-| `NifFormat`       | `Core/Formats/Nif/`       | Parsing + BE→LE conversion             |
-| `PngFormat`       | `Core/Formats/Png/`       | Parsing only                           |
-| `ScdaFormat`      | `Core/Formats/Scda/`      | Parsing + `IDumpScanner`               |
-| `ScriptFormat`    | `Core/Formats/Script/`    | Parsing only                           |
-| `XdbfFormat`      | `Core/Formats/Xdbf/`      | Parsing only                           |
-| `XexFormat`       | `Core/Formats/Xex/`       | Parsing only                           |
-| `XmaFormat`       | `Core/Formats/Xma/`       | Parsing + `IFileRepairer`              |
-| `XuiFormat`       | `Core/Formats/Xui/`       | Parsing only                           |
+| Format Module     | Location                  | Capabilities                                 |
+| ----------------- | ------------------------- | -------------------------------------------- |
+| `DdsFormat`       | `Core/Formats/Dds/`       | Parsing only                                 |
+| `DdxFormat`       | `Core/Formats/Ddx/`       | Parsing + `IFileConverter`                   |
+| `EsmRecordFormat` | `Core/Formats/EsmRecord/` | `IDumpScanner` (ESM record extraction)       |
+| `EspFormat`       | `Core/Formats/Esp/`       | Parsing only                                 |
+| `LipFormat`       | `Core/Formats/Lip/`       | Parsing only                                 |
+| `NifFormat`       | `Core/Formats/Nif/`       | Parsing + BE→LE conversion                   |
+| `PngFormat`       | `Core/Formats/Png/`       | Parsing only                                 |
+| `ScdaFormat`      | `Core/Formats/Scda/`      | Parsing + `IDumpScanner`                     |
+| `ScriptFormat`    | `Core/Formats/Script/`    | Parsing only                                 |
+| `XdbfFormat`      | `Core/Formats/Xdbf/`      | Parsing only                                 |
+| `XmaFormat`       | `Core/Formats/Xma/`       | Parsing + `IFileRepairer` + `IFileConverter` |
+| `XuiFormat`       | `Core/Formats/Xui/`       | Parsing + `IFileConverter`                   |
 
 ### NIF Converter Module Structure
 
 The NIF converter has been modularized into specialized components:
 
-| Component               | Purpose                                                |
-| ----------------------- | ------------------------------------------------------ |
-| `NifFormat`             | Main format module with signature and parsing          |
-| `NifParser`             | Parses NIF header, block types, and block offsets      |
-| `NifConverter`          | Orchestrates conversion from Xbox 360 to PC format     |
-| `NifWriter`             | Writes converted header, blocks, and footer            |
-| `NifGeometryExtractor`  | Extracts geometry from BSPackedAdditionalGeometryData  |
-| `NifGeometryWriter`     | Writes expanded geometry blocks with unpacked data     |
-| `NifGeometryDataConverter` | Endian conversion for NiTriStripsData/NiTriShapeData |
-| `NifBlockConverters`    | Type-specific block endian converters                  |
-| `NifEndianUtils`        | Low-level byte-swapping utilities                      |
-| `NifTypes`              | Shared types: NifInfo, BlockInfo, ConversionResult     |
+| Component                     | Purpose                                               |
+| ----------------------------- | ----------------------------------------------------- |
+| `NifFormat`                   | Main format module with signature and parsing         |
+| `NifFormat.Converter`         | `IFileConverter` implementation                       |
+| `NifParser`                   | Parses NIF header, block types, and block offsets     |
+| `NifConverter`                | Orchestrates conversion from Xbox 360 to PC format    |
+| `NifConverter.Writers`        | Writes converted header, blocks, and footer           |
+| `NifConverter.GeometryWriter` | Writes expanded geometry blocks                       |
+| `NifPackedDataExtractor`      | Extracts geometry from BSPackedAdditionalGeometryData |
+| `NifSchemaConverter`          | Schema-driven endian conversion                       |
+| `NifSkinPartitionParser`      | Parses NiSkinPartition for triangles/bones            |
+| `NifSkinPartitionExpander`    | Expands bone weights/indices for PC format            |
+| `NifEndianUtils`              | Low-level byte-swapping utilities                     |
+| `NifTypes`                    | Shared types: NifInfo, BlockInfo, ConversionResult    |
 
 ### ParseResult
 
@@ -315,7 +317,7 @@ public record ParseResult
 
 ## Analysis Module
 
-### DumpAnalyzer
+### MemoryDumpAnalyzer
 
 Provides comprehensive dump analysis combining multiple data sources.
 
@@ -323,8 +325,8 @@ Provides comprehensive dump analysis combining multiple data sources.
 
 1. Parse minidump header → Modules, memory regions
 2. Detect build type (Debug, Release Beta, Release MemDebug)
-3. Scan for SCDA records → Compiled scripts
-4. Scan for ESM records → EDID, GMST, SCTX, SCRO
+3. Scan for SCDA records → Compiled scripts (via `ScdaFormat.IDumpScanner`)
+4. Scan for ESM records → EDID, GMST, SCTX, SCRO (via `EsmRecordFormat.IDumpScanner`)
 5. Correlate FormIDs to names
 
 **Output Formats:**
@@ -334,23 +336,6 @@ Provides comprehensive dump analysis combining multiple data sources.
 | Text     | `analyze dump.dmp`         | Console summary         |
 | Markdown | `analyze dump.dmp -f md`   | Full report with tables |
 | JSON     | `analyze dump.dmp -f json` | Machine-readable        |
-
-### ScriptExtractor
-
-Extracts and groups compiled script bytecode (SCDA records) by quest name.
-
-**Grouping Algorithm:**
-
-1. Scan dump for all SCDA records
-2. Extract quest name from associated SCTX source
-3. Group scripts with same quest prefix
-4. Assign orphans by offset proximity
-5. Output grouped files: `QuestName_stages.txt`
-
-**Quest Name Patterns:**
-
-- `VMS03.nPowerConfiguration` → Quest: `VMS03`
-- `SetObjectiveDisplayed VFreeformCampGolf 10 1` → Quest: `VFreeformCampGolf`
 
 ---
 
@@ -456,7 +441,7 @@ public sealed class NewFormatFormat : FileFormatBase
 }
 ```
 
-3. The format is auto-discovered by `FormatRegistry` via reflection
+3. Register the format in `FormatRegistry.CreateFormats()` method
 4. For conversion/repair capabilities, implement `IFileConverter` or `IFileRepairer`
 5. For dump-wide scanning, implement `IDumpScanner`
 
@@ -507,7 +492,7 @@ public static class NewAnalyzer
 }
 ```
 
-2. Integrate with `DumpAnalyzer.AnalyzeAsync()` if needed for unified reporting.
+2. Integrate with `MemoryDumpAnalyzer.AnalyzeAsync()` if needed for unified reporting.
 
 ---
 
@@ -558,3 +543,4 @@ dotnet run -f net10.0 -- analyze Sample/MemoryDump/test.dmp -f md
 
 ```bash
 dotnet test --collect:"XPlat Code Coverage"
+```

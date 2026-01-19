@@ -213,4 +213,21 @@ public static class BinaryUtils
             (data[i + 1], data[i + 2]) = (data[i + 2], data[i + 1]);
         }
     }
+
+    /// <summary>
+    ///     Read a 32-bit signed integer in little-endian format.
+    /// </summary>
+    public static int ReadInt32LE(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        return data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
+    }
+
+    /// <summary>
+    ///     Read a 32-bit float in little-endian format.
+    /// </summary>
+    public static float ReadFloatLE(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        var value = ReadUInt32LE(data, offset);
+        return BitConverter.UInt32BitsToSingle(value);
+    }
 }

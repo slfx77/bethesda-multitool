@@ -138,6 +138,7 @@ public sealed partial class MainWindow : Window
             BatchModeTabContent.Visibility = Visibility.Collapsed;
             NifConverterTabContent.Visibility = Visibility.Collapsed;
             DdxConverterTabContent.Visibility = Visibility.Collapsed;
+            BsaExtractorTabContent.Visibility = Visibility.Collapsed;
 
             // Clear status bar when switching tabs
             SetStatus("");
@@ -156,6 +157,9 @@ public sealed partial class MainWindow : Window
                     break;
                 case "DdxConverter":
                     DdxConverterTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "BsaExtractor":
+                    BsaExtractorTabContent.Visibility = Visibility.Visible;
                     break;
             }
 

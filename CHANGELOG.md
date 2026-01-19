@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **FaceGen Format Detection**: New format module for Bethesda FaceGen files
+  - Detects EGM (face morphs), EGT (face tints), and TRI (triangle morphs) files
+  - Magic signatures: `FREGM`, `FREGT`, `FRTRI`
+  - Used for character face customization data
+- **Bink Video Format Detection**: New format module for RAD Game Tools Bink video
+  - Detects Bink 2.x video files (BIKi, BIKh, BIKb variants)
+  - Validates dimensions, frame count, and file size from header
+  - Used for pre-rendered cinematics and logo videos
+- **Video File Category**: New category for video file formats (purple-pink color)
+- Tests for DDX GPU format validation covering unknown format rejection and known format acceptance
+- Tests for new FaceGen and Bink signature detection
+
+### Changed
+
+- **DDX Format Validation**: Stricter GPU format validation to reduce false positives during memory dump carving
+  - DDX headers with unknown/invalid GPU format bytes are now rejected
+  - Only known Xbox 360 texture formats (DXT1, DXT3, DXT5, ATI1, ATI2) are accepted
+  - Prevents random data matching "3XDO"/"3XDR" magic from being incorrectly identified as textures
+
+### Fixed
+
+- **LIP Format Detection Removed**: The "LIPS" signature was matching asset path strings in memory
+  (e.g., "sound/voice/.../filename.lip"), not actual LIP files
+  - Real LIP files have no magic header - they start with version/data bytes
+  - Across 50+ crash dumps analyzed, 0 valid LIP files were found
+  - LIP scanning is now disabled (`EnableSignatureScanning = false`)
+  - The format module remains for potential future use with known file offsets
+
 ## [1.0.0] - 2026-01-17
 
 ### Added
@@ -17,12 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **NIF Converter Refactoring**: Modularized NIF converter into specialized components
   - `NifParser` - Header and block structure parsing
-  - `NifConverter` - Conversion orchestration
-  - `NifWriter` - Output file writing
-  - `NifGeometryExtractor` - BSPackedAdditionalGeometryData extraction
-  - `NifGeometryWriter` - Expanded geometry block output
-  - `NifGeometryDataConverter` - Geometry data endian conversion
-  - `NifBlockConverters` - Type-specific block converters
+  - `NifConverter` - Conversion orchestration with partial class files (.Writers, .GeometryWriter, etc.)
+  - `NifPackedDataExtractor` - BSPackedAdditionalGeometryData extraction
+  - `NifSchemaConverter` - Schema-driven endian conversion
+  - `NifSkinPartitionParser` - NiSkinPartition parsing for triangles/bones
+  - `NifSkinPartitionExpander` - Expands bone weights/indices for PC format
   - `NifEndianUtils` - Low-level byte-swapping utilities
   - `NifTypes` - Shared type definitions
 - Added JSON source generation contexts for AOT compatibility

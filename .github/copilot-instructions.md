@@ -17,12 +17,11 @@ The project uses multi-targeting to produce both GUI and CLI builds from a singl
 
 - `MemoryCarver` - Main file carving engine with Aho-Corasick multi-pattern matching
 - `SignatureMatcher` - Aho-Corasick algorithm for efficient multi-signature scanning
-- `FormatRegistry` - Auto-discovers and registers format modules from `Core/Formats/`
+- `FormatRegistry` - Explicitly registers format modules from `Core/Formats/` (no reflection)
 - `IFileFormat` - Interface for self-contained format modules (parsing, conversion, repair)
 - `MinidumpParser` - Parses Xbox 360 minidump structures for module extraction
-- `DumpAnalyzer` - Comprehensive dump analysis with build detection and ESM record extraction
-- `ScriptExtractor` - Extracts and groups compiled scripts (SCDA) by quest name
-- `NifEndianConverter` - Converts Xbox 360 NIF models (big-endian) to PC format (little-endian)
+- `MemoryDumpAnalyzer` - Comprehensive dump analysis with build detection and ESM record extraction
+- `NifConverter` - Converts Xbox 360 NIF models (big-endian) to PC format (little-endian)
 - `HexViewerControl` / `HexMinimapControl` - Interactive hex viewing with VS Code-style minimap
 
 ### Submodules
@@ -275,12 +274,10 @@ src/Xbox360MemoryCarver/
 │   ├── ConvertNifCommand.cs     # NIF conversion command
 │   └── ModulesCommand.cs        # Module listing command
 ├── Core/                        # Cross-platform carving logic
-│   ├── Analysis/                # DumpAnalyzer - build detection, ESM extraction
 │   ├── Carving/                 # MemoryCarver, CarveManifest
-│   ├── Converters/              # DDX subprocess converter, NIF endian converter
-│   ├── Extractors/              # ScriptExtractor - SCDA grouping by quest
+│   ├── Converters/              # DDX/XUR subprocess converters
 │   ├── Formats/                 # Self-contained format modules
-│   │   ├── FormatRegistry.cs    # Auto-discovers format modules
+│   │   ├── FormatRegistry.cs    # Explicit format module registration
 │   │   ├── IFileFormat.cs       # Base interface for formats
 │   │   ├── Dds/DdsFormat.cs     # DDS texture format
 │   │   ├── Ddx/DdxFormat.cs     # DDX Xbox 360 texture (w/ conversion)
@@ -292,9 +289,9 @@ src/Xbox360MemoryCarver/
 │   │   ├── Scda/ScdaFormat.cs   # Compiled script bytecode
 │   │   ├── Script/ScriptFormat.cs # Uncompiled script source
 │   │   ├── Xdbf/XdbfFormat.cs   # Xbox Dashboard format
-│   │   ├── Xex/XexFormat.cs     # Xbox executable format
-│   │   ├── Xma/XmaFormat.cs     # Xbox Media Audio (w/ repair)
-│   │   └── Xui/XuiFormat.cs     # Xbox UI format
+│   │   ├── Xma/XmaFormat.cs     # Xbox Media Audio (w/ repair + conversion)
+│   │   └── Xui/XuiFormat.cs     # Xbox UI format (w/ conversion)
+│   ├── MemoryDumpAnalyzer.cs    # Build detection, ESM extraction
 │   ├── Minidump/                # MinidumpParser, MinidumpInfo
 │   └── Utils/                   # BinaryUtils, SignatureBoundaryScanner
 ├── App/                         # WinUI 3 GUI (Windows only)
@@ -305,8 +302,7 @@ src/Xbox360MemoryCarver/
 
 tests/Xbox360MemoryCarver.Tests/
 ├── Core/
-│   ├── Converters/              # NifEndianConverterTests
-│   ├── Formats/                 # NifFormatTests
+│   ├── Formats/                 # Format tests (NifFormat, FormatRegistry, etc.)
 │   ├── Parsers/                 # Parser tests (DDS, DDX, PNG, XMA, etc.)
 │   └── Utils/                   # BinaryUtilsTests
 └── Xbox360MemoryCarver.Tests.csproj
@@ -349,7 +345,7 @@ public sealed class NewFormatFormat : FileFormatBase
 }
 ```
 
-3. The format is auto-discovered by `FormatRegistry` via reflection
+3. Register the format in `FormatRegistry.CreateFormats()` method
 4. Color is automatically derived from category
 
 See [docs/Architecture.md](../docs/Architecture.md) for detailed extensibility guide.

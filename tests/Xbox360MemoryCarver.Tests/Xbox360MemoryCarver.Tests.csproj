@@ -44,8 +44,8 @@
       - Threshold: 22% (updated baseline after adding stable core tests)
       
       TODO: Increase threshold as coverage improves:
-      - Add tests for NifConverter, NifEndianConverter (~2000 lines each)
-      - Add tests for MemoryCarver, DumpAnalyzer, ScriptExtractor
+      - Add tests for NifConverter, NifSchemaConverter
+      - Add tests for MemoryCarver, MemoryDumpAnalyzer
       
       NOTE: Textures (DDX/DDS conversion), SCDA (disassembly), and NIF (conversion)
       are documented as incomplete features. Tests for these modules should focus

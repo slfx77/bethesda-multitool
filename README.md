@@ -180,14 +180,14 @@ XMA audio conversion to WAV format requires FFmpeg:
 
 ```
 src/Xbox360MemoryCarver/
+├── CLI/                     # Command-line interface commands
 ├── Core/                    # Cross-platform carving logic
 │   ├── Carving/             # File carving engine
-│   ├── Converters/          # DDX conversion
+│   ├── Converters/          # DDX/XUR conversion
+│   ├── Formats/             # Self-contained format modules
 │   ├── Minidump/            # Minidump parsing
-│   ├── Models/              # File signatures, metadata
-│   ├── Parsers/             # File format parsers
 │   └── Utils/               # Binary utilities
-├── *.xaml / *.xaml.cs       # WinUI 3 GUI (Windows only)
+├── App/                     # WinUI 3 GUI (Windows only)
 ├── Program.cs               # Entry point (CLI/GUI switch)
 └── GuiEntryPoint.cs         # GUI bootstrap (Windows only)
 
@@ -216,19 +216,20 @@ This project is licensed under the **MIT License** - See [LICENSE](LICENSE) file
 
 This project uses the following external components:
 
-| Component                                                | License    | Usage                                                |
-| -------------------------------------------------------- | ---------- | ---------------------------------------------------- |
-| [DDXConv](https://github.com/kran27/DDXConv)             | Unlicensed | DDX→DDS texture conversion (forked, built-in)        |
-| [XCompression](https://github.com/gibbed/XCompression)   | zlib       | LZX decompression (submodule, called as subprocess)  |
-| [XUIHelper](https://github.com/SGCSam/XUIHelper)         | GPLv3      | XUR→XUI conversion (submodule, called as subprocess) |
-| [NifSkope nif.xml](https://github.com/niftools/nifskope) | BSD-3      | NIF format schema for endian conversion (embedded)   |
+| Component                                                 | License                                                                       | Usage                                                |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [DDXConv](https://github.com/GamesPastOrg/DDXConv)        | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE)            | DDX→DDS texture conversion (forked, built-in)        |
+| [XCompression](https://github.com/gibbed/XCompression)    | [zlib](https://github.com/gibbed/XCompression/blob/vs2017/LICENSE.txt)        | LZX decompression (submodule, called as subprocess)  |
+| [XUIHelper](https://github.com/SGCSam/XUIHelper)          | [GPLv3](https://github.com/SGCSam/XUIHelper/blob/main/LICENSE)                | XUR→XUI conversion (submodule, called as subprocess) |
+| [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema for endian conversion (embedded)   |
 
 **Note**: XUIHelper is licensed under GPLv3. Since it is invoked as a separate subprocess (not linked), this project remains MIT licensed. XUIHelper's GPLv3 license applies only to the XUIHelper component itself.
 
 ## Acknowledgments
 
-- [kran27/DDXConv](https://github.com/kran27/DDXConv) - Original DDX texture conversion tool
-- [gibbed/XCompression](https://github.com/gibbed/XCompression) - Xbox LZX decompression library
-- [SGCSam/XUIHelper](https://github.com/SGCSam/XUIHelper) - Xbox UI format conversion tool
-- [NifTools/NifSkope](https://github.com/niftools/nifskope) - NIF format schema (nif.xml) for block-by-block endian conversion
+- [AlexxEG/BSA_Browser](https://github.com/AlexxEG/BSA_Browser) - BSA format reference (helped clarify that BSA files are always little-endian)
+- [GamesPastOrg/DDXConv](https://github.com/GamesPastOrg/DDXConv) - DDX texture conversion tool (MIT License, Copyright © 2026 Kran)
+- [gibbed/XCompression](https://github.com/gibbed/XCompression) - Xbox LZX decompression library (zlib License, Copyright © 2018 Rick)
+- [SGCSam/XUIHelper](https://github.com/SGCSam/XUIHelper) - Xbox UI format conversion tool (GPLv3)
+- [fo76utils/NifSkope](https://github.com/fo76utils/nifskope) - NIF format schema (nif.xml) (BSD-3-Clause, Copyright © 2005-2014 NIF File Format Library and Tools)
 - [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia) - Format documentation and research

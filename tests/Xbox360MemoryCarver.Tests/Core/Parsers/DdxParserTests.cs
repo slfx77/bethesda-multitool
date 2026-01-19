@@ -79,6 +79,41 @@ public class DdxFormatTests
 
     #endregion
 
+    #region GPU Format Validation Tests
+
+    [Fact]
+    public void ParseHeader_UnknownGpuFormat_ReturnsNull()
+    {
+        // Arrange - create header with an unknown/invalid GPU format byte (0xFF)
+        var data = CreateDdxHeaderWithFormat("3XDO", 256, 256, 4, 0xFF);
+
+        // Act
+        var result = _parser.Parse(data);
+
+        // Assert - unknown GPU formats should be rejected to reduce false positives
+        Assert.Null(result);
+    }
+
+    [Theory]
+    [InlineData(0x12, "DXT1")] // Known DXT1 format
+    [InlineData(0x52, "DXT1")] // Known DXT1 format (alternate)
+    [InlineData(0x14, "DXT5")] // Known DXT5 format
+    [InlineData(0x54, "DXT5")] // Known DXT5 format (alternate)
+    public void ParseHeader_KnownGpuFormat_ReturnsResult(int formatByte, string expectedFormat)
+    {
+        // Arrange
+        var data = CreateDdxHeaderWithFormat("3XDO", 256, 256, 4, (byte)formatByte);
+
+        // Act
+        var result = _parser.Parse(data);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedFormat, result.Metadata["formatName"]);
+    }
+
+    #endregion
+
     #region Dimension Tests
 
     [Theory]
@@ -165,6 +200,11 @@ public class DdxFormatTests
 
     private static byte[] CreateDdxHeader(string magic, int width, int height, ushort version)
     {
+        return CreateDdxHeaderWithFormat(magic, width, height, version, 0x52); // DXT1 format
+    }
+
+    private static byte[] CreateDdxHeaderWithFormat(string magic, int width, int height, ushort version, byte gpuFormat)
+    {
         // Create a minimal DDX header (0x44 = 68 bytes minimum)
         var data = new byte[200];
 
@@ -180,7 +220,7 @@ public class DdxFormatTests
 
         // Format dword at 0x28 (big-endian) - includes mip count
         // Low byte is format, bits 16-19 are mip count - 1
-        const uint formatDword = 0x52; // DXT1 format with 1 mip level (mip count - 1 = 0)
+        uint formatDword = gpuFormat; // GPU format with 1 mip level (mip count - 1 = 0)
         data[0x28] = (byte)((formatDword >> 24) & 0xFF);
         data[0x29] = (byte)((formatDword >> 16) & 0xFF);
         data[0x2A] = (byte)((formatDword >> 8) & 0xFF);

@@ -1,8 +1,10 @@
 using System.Collections.Frozen;
+using Xbox360MemoryCarver.Core.Formats.Bik;
 using Xbox360MemoryCarver.Core.Formats.Dds;
 using Xbox360MemoryCarver.Core.Formats.Ddx;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Formats.Esp;
+using Xbox360MemoryCarver.Core.Formats.FaceGen;
 using Xbox360MemoryCarver.Core.Formats.Lip;
 using Xbox360MemoryCarver.Core.Formats.Nif;
 using Xbox360MemoryCarver.Core.Formats.Png;
@@ -176,10 +178,12 @@ public static class FormatRegistry
         // Explicitly instantiate all format modules (no reflection)
         var formats = new List<IFileFormat>
         {
+            new BikFormat(),
             new DdsFormat(),
             new DdxFormat(),
             new EsmRecordFormat(),
             new EspFormat(),
+            new FaceGenFormat(),
             new LipFormat(),
             new NifFormat(),
             new PngFormat(),
@@ -216,6 +220,7 @@ public static class FormatRegistry
             [FileCategory.Texture] = 0xFF2ECC71, // Green
             [FileCategory.Image] = 0xFF1ABC9C, // Teal/Cyan
             [FileCategory.Audio] = 0xFFE74C3C, // Red
+            [FileCategory.Video] = 0xFFAA66CC, // Purple-pink (cinematics)
             [FileCategory.Model] = 0xFFF1C40F, // Yellow
             [FileCategory.Module] = 0xFF9B59B6, // Purple
             [FileCategory.Script] = 0xFFE67E22, // Orange
