@@ -347,8 +347,8 @@ internal static class NifPackedDataExtractor
     private static void AssignUnitLengthStreams(
         List<(DataStreamInfo stream, float[] data, int offset)> unitStreams, bool isSkinned, PackedGeometryData result)
     {
-        // Non-skinned (36-byte): offsets 8, 20, 28 → Normals, Tangents, Bitangents
-        // Skinned (48-byte): offsets 20, 32, 40 → Normals, Tangents, Bitangents (offset 8 = bone weights)
+        // Non-skinned (36-byte): offsets 8, 20, 28 -> Normals, Tangents, Bitangents
+        // Skinned (48-byte): offsets 20, 32, 40 -> Normals, Tangents, Bitangents (offset 8 = bone weights)
         if (isSkinned)
         {
             // For skinned meshes, skip offset 8 (it contains bone weights, extracted earlier)

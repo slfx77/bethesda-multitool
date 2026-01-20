@@ -1,5 +1,5 @@
 // Parser for NiDefaultAVObjectPalette and NiControllerSequence blocks
-// Extracts block index → name mappings for node name restoration
+// Extracts block index -> name mappings for node name restoration
 
 using System.Text;
 
@@ -11,7 +11,7 @@ namespace Xbox360MemoryCarver.Core.Formats.Nif;
 internal sealed class NifNameMappings
 {
     /// <summary>
-    ///     Block index → name mappings from NiDefaultAVObjectPalette.
+    ///     Block index -> name mappings from NiDefaultAVObjectPalette.
     /// </summary>
     public Dictionary<int, string> BlockNames { get; } = [];
 
@@ -23,7 +23,7 @@ internal sealed class NifNameMappings
 }
 
 /// <summary>
-///     Parses NiDefaultAVObjectPalette blocks to extract block→name mappings.
+///     Parses NiDefaultAVObjectPalette blocks to extract block -> name mappings.
 ///     Used to restore node names that are NULL in Xbox 360 NIFs.
 /// </summary>
 internal static class NifPaletteParser
@@ -37,7 +37,7 @@ internal static class NifPaletteParser
     {
         var result = new NifNameMappings();
 
-        // Parse NiDefaultAVObjectPalette for block→name mappings
+        // Parse NiDefaultAVObjectPalette for block -> name mappings
         var blockNames = Parse(data, info);
         if (blockNames != null)
         {
@@ -133,7 +133,7 @@ internal static class NifPaletteParser
             }
         }
 
-        Log.Debug($"  Found {result.Count} block→name mappings");
+        Log.Debug($"  Found {result.Count} block -> name mappings");
 
         return result;
     }

@@ -3,7 +3,7 @@ using Xbox360MemoryCarver.Core.Utils;
 namespace Xbox360MemoryCarver.Core.Formats.Xma;
 
 /// <summary>
-///     XMA file repair and XMA1→XMA2 conversion.
+///     XMA file repair and XMA1 -> XMA2 conversion.
 /// </summary>
 internal static class XmaRepairer
 {

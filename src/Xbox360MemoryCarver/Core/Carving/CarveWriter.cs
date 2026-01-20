@@ -31,7 +31,7 @@ internal sealed class CarveWriter(
     private readonly bool _saveAtlas = saveAtlas;
 
     /// <summary>
-    ///     Offsets of files that failed conversion (DDX→DDS, XMA→WAV, etc.).
+    ///     Offsets of files that failed conversion (DDX -> DDS, XMA -> WAV, etc.).
     /// </summary>
     public IReadOnlyCollection<long> FailedConversionOffsets => _failedConversionOffsets;
 

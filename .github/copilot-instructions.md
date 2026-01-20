@@ -40,7 +40,18 @@ The project uses multi-targeting to produce both GUI and CLI builds from a singl
   - `dotnet run --project tools/NifAnalyzer -f net10.0 -- hex <file> <offset> <length>` - Hex dump at offset
   - `dotnet run --project tools/NifAnalyzer -f net10.0 -- compare <file1> <file2>` - Compare two NIF files
 
+- **EsmAnalyzer** (`tools/EsmAnalyzer/`) - **Always use this tool for ESM file analysis**. Commands:
+  - `dotnet run --project tools/EsmAnalyzer -c Release -- stats <file>` - Display record type statistics
+  - `dotnet run --project tools/EsmAnalyzer -c Release -- dump <file> <type>` - Dump records of a specific type
+  - `dotnet run --project tools/EsmAnalyzer -c Release -- trace <file> -o <offset>` - Trace record structure at offset
+  - `dotnet run --project tools/EsmAnalyzer -c Release -- search <file> <pattern>` - Search for ASCII string in file
+  - `dotnet run --project tools/EsmAnalyzer -c Release -- convert <file>` - Convert Xbox 360 ESM to PC format
+  - `dotnet run --project tools/EsmAnalyzer -c Release -- compare <file1> <file2>` - Compare two ESM files
+  - `dotnet run --project tools/EsmAnalyzer -c Release -- diff <file1> <file2> <type> <formid>` - Diff specific record
+
 > **IMPORTANT**: When analyzing NIF files, always use NifAnalyzer instead of manual PowerShell byte parsing. The tool handles endianness, block parsing, and structure interpretation correctly.
+
+> **IMPORTANT**: When analyzing ESM files or searching binary files, always use EsmAnalyzer or create an appropriately named tool instead of PowerShell. PowerShell is extremely slow for binary file operations and should never be used for searching, parsing, or analyzing binary data.
 
 ## Research Documentation
 
@@ -63,7 +74,7 @@ Located in `Fallout New Vegas (July 21, 2010)/FalloutNV/`:
 - **Hex Viewer**: Virtual-scrolling hex editor supporting 200MB+ files
 - **Minimap**: VS Code-style overview with file type region coloring
 - **Analysis Tab**: File signature detection with filtering and statistics
-- **Extraction**: Carve and export detected files with DDX→DDS conversion
+- **Extraction**: Carve and export detected files with DDX -> DDS conversion
 
 ## CLI Mode (Cross-platform)
 
@@ -129,7 +140,7 @@ dotnet publish -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-conta
 
 - **Textures**: DDX (3XDO/3XDR), DDS, PNG
 - **Audio**: XMA (Xbox Media Audio), LIP (lip sync)
-- **Models**: NIF (NetImmerse/Gamebryo) - with BE→LE conversion
+- **Models**: NIF (NetImmerse/Gamebryo) - with BE -> LE conversion
 - **Executables**: XEX (Xbox Executable)
 - **Scripts**: Uncompiled ObScript (`scn`/`ScriptName` format) - debug builds; Compiled bytecode (SCDA) - release builds
 - **Data**: ESP/ESM (Bethesda plugins), XUI (Xbox UI), XDBF
@@ -152,12 +163,12 @@ Xbox 360 NIFs differ from PC NIFs in several ways:
 
 1. **Endian conversion** - All multi-byte fields swapped via schema-driven conversion
 2. **Geometry expansion** - BSPackedAdditionalGeometryData unpacked to standard geometry blocks:
-   - Positions (half4 → float3)
-   - Normals (half4 → float3, unit-length stream detection)
-   - UVs (half2 → float2)
-   - Tangents/Bitangents (half4 → float3)
+   - Positions (half4 -> float3)
+   - Normals (half4 -> float3, unit-length stream detection)
+   - UVs (half2 -> float2)
+   - Tangents/Bitangents (half4 -> float3)
 3. **Block stripping** - BSPackedAdditionalGeometryData blocks removed
-4. **Havok conversion** - hkPackedNiTriStripsData vertices expanded (HalfVector3 → Vector3)
+4. **Havok conversion** - hkPackedNiTriStripsData vertices expanded (HalfVector3 -> Vector3)
 5. **Block reference remapping** - All Ref<T> indices updated after block removal
 
 #### Xbox 360 Packed Data Stream Layouts

@@ -116,7 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hex viewer with virtual scrolling for 200MB+ files
   - VS Code-style minimap with file type region coloring
   - Analysis tab with file signature detection, filtering, and statistics
-  - File extraction with DDX→DDS conversion
+  - File extraction with DDX -> DDS conversion
 - **Cross-platform CLI**:
   - Batch file carving from memory dumps
   - Verbose progress reporting

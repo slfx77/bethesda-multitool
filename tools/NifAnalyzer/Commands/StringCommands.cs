@@ -61,7 +61,7 @@ internal static class StringCommands
 
     public static Command CreatePaletteCommand()
     {
-        var command = new Command("palette", "Parse NiDefaultAVObjectPalette to show object→block mappings");
+        var command = new Command("palette", "Parse NiDefaultAVObjectPalette to show object -> block mappings");
         var fileArg = new Argument<string>("file") { Description = "Path to NIF file" };
         var blockArg = new Argument<int>("block") { Description = "Block index of NiDefaultAVObjectPalette" };
         command.Arguments.Add(fileArg);

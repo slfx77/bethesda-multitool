@@ -67,7 +67,7 @@ public static class DependencyChecker
 
     /// <summary>
     ///     Checks if Microsoft XNA Framework 4.0 (XnaNative.dll) is available.
-    ///     Required for DDX → DDS texture conversion.
+    ///     Required for DDX -> DDS texture conversion.
     /// </summary>
     public static DependencyStatus CheckXnaNative(bool forceRecheck = false)
     {
@@ -92,7 +92,7 @@ public static class DependencyChecker
 
     /// <summary>
     ///     Checks if FFmpeg is available in PATH or common locations.
-    ///     Required for XMA → WAV audio conversion.
+    ///     Required for XMA -> WAV audio conversion.
     /// </summary>
     public static DependencyStatus CheckFfmpeg(bool forceRecheck = false)
     {
@@ -142,7 +142,7 @@ public static class DependencyChecker
 
     /// <summary>
     ///     Checks if XUIHelper.CLI is available.
-    ///     This is a built-in tool for XUR → XUI conversion.
+    ///     This is a built-in tool for XUR -> XUI conversion.
     /// </summary>
     public static DependencyStatus CheckXuiHelper(bool forceRecheck = false)
     {

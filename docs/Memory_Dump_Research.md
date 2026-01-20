@@ -422,7 +422,7 @@ From `pdb_script_functions.txt`:
 
 - [x] Build ESM record extractor (GMST/GRUP/EDID/SCTX from gaps) ✅ `tools/ESMRecordExtractor/`
 - [x] Fix NIF signature false positives (22K detected vs 171 valid) ✅ Added regex version validation
-- [x] Create FormID→Name correlation tool across multiple dumps ✅ `tools/FormIdCorrelator/`
+- [x] Create FormID -> Name correlation tool across multiple dumps ✅ `tools/FormIdCorrelator/`
 - [x] Correlate minidump module info with region analysis ✅ `tools/ModuleCorrelator/`
 - [x] Classify Jacobstown.dmp (debug, release, or memdebug) ✅ Release MemDebug
 
@@ -567,10 +567,10 @@ The `analyze` command provides:
 
 The standalone tools in `tools/` remain for reference but functionality is now in the main codebase:
 
-- `ModuleCorrelator` → `Xbox360MemoryCarver modules` command
-- `ESMRecordExtractor` → `EsmRecordFormat` class (implements `IDumpScanner`)
-- `FormIdCorrelator` → `MemoryDumpAnalyzer.CorrelateFormIdsToNames()`
-- `ScriptDisassembler` → `ScdaFormat` class (implements `IDumpScanner`)
+- `ModuleCorrelator` -> `Xbox360MemoryCarver modules` command
+- `ESMRecordExtractor` -> `EsmRecordFormat` class (implements `IDumpScanner`)
+- `FormIdCorrelator` -> `MemoryDumpAnalyzer.CorrelateFormIdsToNames()`
+- `ScriptDisassembler` -> `ScdaFormat` class (implements `IDumpScanner`)
 
 ---
 
@@ -1054,6 +1054,99 @@ Then:
 - Build proper disassembler combining core opcodes (0x00-0xFF) with FUNCTION\_\* opcodes (0x100+)
 - Correlate SCRO FormIDs with bytecode reference indices
 - Handle expression parsing (postfix notation)
+
+### 2026-01-19 - Xbox 360 ESM Format Discovery
+
+**Critical finding**: Xbox 360 ESM files use **big-endian 4-byte signatures** throughout!
+
+#### Signature Reversal
+
+| PC (Little-endian) | Xbox 360 (Big-endian) | Hex           |
+| ------------------ | --------------------- | ------------- |
+| `TES4`             | `4SET`                | `34 53 45 54` |
+| `GRUP`             | `PURG`                | `50 55 52 47` |
+| `HEDR`             | `RDEH`                | `52 44 45 48` |
+| `GMST`             | `TSMG`                | `54 53 4D 47` |
+| `LAND`             | `DNAL`                | `44 4E 41 4C` |
+
+#### Xbox 360 ESM Structure Differences
+
+**Critical Discovery**: Xbox 360 ESM has a fundamentally different GRUP structure than PC!
+
+| GRUP Type    | PC ESM                                      | Xbox 360 ESM                                |
+| ------------ | ------------------------------------------- | ------------------------------------------- |
+| WRLD (World) | 192 MB (contains all cell/land data nested) | **1 MB only** (minimal nesting)             |
+| CELL groups  | Nested under WRLD                           | **Stored separately** after top-level GRUPs |
+
+The Xbox 360 ESM stores Cell Temporary groups (type 9) containing LAND records **outside** the WRLD GRUP hierarchy. This requires a "flat GRUP scan" to find all records.
+
+#### LAND Record Count Verification
+
+Both versions contain identical record counts:
+
+- **Xbox 360**: 29,363 LAND records, 30,497 CELL records
+- **PC**: 29,363 LAND records, 30,497 CELL records
+
+#### LAND Record Subrecord Conversion
+
+**All LAND subrecords are zlib-compressed** (flag 0x00040000). After decompression:
+
+| Subrecord | Size       | Xbox 360 Format                          | Conversion Required                       |
+| --------- | ---------- | ---------------------------------------- | ----------------------------------------- |
+| **DATA**  | 4 bytes    | BE uint32                                | 4-byte endian swap                        |
+| **VNML**  | 3267 bytes | byte[33×33×3]                            | **NONE** (vertex normals XYZ)             |
+| **VCLR**  | 3267 bytes | byte[33×33×3]                            | **NONE** (vertex colors RGB)              |
+| **VHGT**  | 1096 bytes | BE float + signed byte[1089]             | First 4 bytes: float swap; Rest: **NONE** |
+| **ATXT**  | 8 bytes    | BE FormID + byte + byte + BE uint16      | FormID swap + uint16 swap                 |
+| **BTXT**  | 8 bytes    | Same as ATXT                             | Same as ATXT                              |
+| **VTXT**  | 8×N bytes  | Per entry: BE uint16 + uint16 + BE float | Each entry: uint16 swap + float swap      |
+
+#### ATXT Subrecord Detail
+
+```
+Xbox 360: 00 01 F9 5D 02 00 00 00
+PC:       5D F9 01 00 02 88 00 00
+          |-FormID--| Q  ?  |-L-|
+```
+
+- Bytes 0-3: FormID (texture ref) - **SWAP 4 bytes**
+- Byte 4: Quadrant (0-3) - **NO SWAP**
+- Byte 5: Unknown - **DIFFERS** (Xbox=0x00, PC=0x88) - platform-specific?
+- Bytes 6-7: Layer (uint16) - **SWAP 2 bytes**
+
+#### VTXT Subrecord Detail
+
+Each VTXT entry is 8 bytes:
+
+```
+Xbox 360: 00 54 FF FF 3F 17 CF 6F
+PC:       54 00 FF FF 6F CF 17 3F
+          |-Pos| ?  ? |--Float---|
+```
+
+- Bytes 0-1: Position index (uint16) - **SWAP 2 bytes**
+- Bytes 2-3: Unknown/flags - appears **IDENTICAL**
+- Bytes 4-7: Opacity float - **SWAP 4 bytes**
+
+#### EsmAnalyzer Tool Updates
+
+Added new commands:
+
+- `compare-land <xbox.esm> <pc.esm> --formid <ID>` - Compare specific LAND record
+- `compare-land <xbox.esm> <pc.esm> --all` - Sample comparison of 10 LAND records
+- `dump <file.esm> --type LAND --hex` - Dump with decompression support
+
+Implemented flat GRUP scanning for Xbox 360 format to find all records regardless of nesting structure.
+
+#### Full ESM Conversion Requirements
+
+1. **4-byte signature reversal**: All record/subrecord signatures (TES4, GRUP, LAND, etc.)
+2. **uint16 endian swap**: All 2-byte integers
+3. **uint32/FormID endian swap**: All 4-byte integers and FormIDs
+4. **float endian swap**: All IEEE 754 floats
+5. **zlib decompression**: Compressed records (flag 0x00040000) - same algorithm both platforms
+6. **Byte arrays**: No conversion needed (VNML, VCLR, VHGT gradient data)
+7. **Strings**: No conversion needed (ASCII/UTF-8)
 
 ### 2026-01-01 (Update 3)
 

@@ -13,7 +13,7 @@ A cross-platform tool for Xbox 360 memory dump analysis, file carving, and DDX t
 - **Hex Viewer**: Virtual-scrolling hex editor supporting 200MB+ files
 - **Minimap**: VS Code-style overview with file type region coloring
 - **Analysis Tab**: File signature detection with filtering and statistics
-- **Extraction**: Carve and export detected files with DDX→DDS conversion
+- **Extraction**: Carve and export detected files with DDX -> DDS conversion
 
 ### CLI (Cross-platform)
 
@@ -149,7 +149,7 @@ Some features require external tools or libraries. The GUI will show a notificat
 DDX texture conversion requires `XnaNative.dll` from the Microsoft XNA Framework:
 
 - **Download**: [Microsoft XNA Framework Redistributable 4.0](https://www.microsoft.com/en-us/download/details.aspx?id=20914)
-- **Affected features**: DDX→DDS texture conversion in Memory Carver and DDX Converter tabs
+- **Affected features**: DDX -> DDS texture conversion in Memory Carver and DDX Converter tabs
 - **Without it**: DDX files will be extracted but not converted to DDS format
 
 ### FFmpeg (Required for XMA audio conversion)
@@ -158,7 +158,7 @@ XMA audio conversion to WAV format requires FFmpeg:
 
 - **Download**: [FFmpeg.org](https://www.ffmpeg.org/download.html)
 - **Installation**: Add the `bin` folder to your system PATH, or place `ffmpeg.exe` in `C:\ffmpeg\bin\`
-- **Affected features**: XMA→WAV audio conversion in Memory Carver tabs
+- **Affected features**: XMA -> WAV audio conversion in Memory Carver tabs
 - **Without it**: XMA files will be extracted but not converted to WAV format
 
 ## Technical Details
@@ -216,12 +216,12 @@ This project is licensed under the **MIT License** - See [LICENSE](LICENSE) file
 
 This project uses the following external components:
 
-| Component                                                 | License                                                                       | Usage                                                |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------- |
-| [DDXConv](https://github.com/GamesPastOrg/DDXConv)        | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE)            | DDX→DDS texture conversion (forked, built-in)        |
-| [XCompression](https://github.com/gibbed/XCompression)    | [zlib](https://github.com/gibbed/XCompression/blob/vs2017/LICENSE.txt)        | LZX decompression (submodule, called as subprocess)  |
-| [XUIHelper](https://github.com/SGCSam/XUIHelper)          | [GPLv3](https://github.com/SGCSam/XUIHelper/blob/main/LICENSE)                | XUR→XUI conversion (submodule, called as subprocess) |
-| [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema for endian conversion (embedded)   |
+| Component                                                 | License                                                                       | Usage                                                   |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------- |
+| [DDXConv](https://github.com/GamesPastOrg/DDXConv)        | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE)            | DDX -> DDS texture conversion (forked, built-in)        |
+| [XCompression](https://github.com/gibbed/XCompression)    | [zlib](https://github.com/gibbed/XCompression/blob/vs2017/LICENSE.txt)        | LZX decompression (submodule, called as subprocess)     |
+| [XUIHelper](https://github.com/SGCSam/XUIHelper)          | [GPLv3](https://github.com/SGCSam/XUIHelper/blob/main/LICENSE)                | XUR -> XUI conversion (submodule, called as subprocess) |
+| [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema for endian conversion (embedded)      |
 
 **Note**: XUIHelper is licensed under GPLv3. Since it is invoked as a separate subprocess (not linked), this project remains MIT licensed. XUIHelper's GPLv3 license applies only to the XUIHelper component itself.
 

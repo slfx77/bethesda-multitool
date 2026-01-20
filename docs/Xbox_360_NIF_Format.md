@@ -304,7 +304,7 @@ NumTriangles (uint)
 Triangles[NumTriangles] - each 8 bytes (3 ushorts + weldinfo)
 NumVertices (uint)
 Compressed (byte) - 1 on Xbox, 0 on PC
-Vertices[NumVertices] - HalfVector3 (6 bytes) → Vector3 (12 bytes)
+Vertices[NumVertices] - HalfVector3 (6 bytes) -> Vector3 (12 bytes)
 NumSubShapes (ushort)
 SubShapes[NumSubShapes] - HavokFilter, NumVertices, Material
 ```
@@ -318,18 +318,18 @@ SubShapes[NumSubShapes] - HavokFilter, NumVertices, Material
 | Feature                   | Status | Notes                                                |
 | ------------------------- | ------ | ---------------------------------------------------- |
 | Endian conversion         | ✅     | Schema-driven, all fields converted                  |
-| Position extraction       | ✅     | half4 → float3                                       |
+| Position extraction       | ✅     | half4 -> float3                                      |
 | Normal extraction         | ✅     | Stride-aware offsets (8 for stride 36/40, 20 for 48) |
 | Tangent extraction        | ✅     | Stride-aware offsets                                 |
 | Bitangent computation     | ✅     | Computed as cross(N,T) when not in packed            |
-| UV extraction             | ✅     | half2 → float2                                       |
+| UV extraction             | ✅     | half2 -> float2                                      |
 | Triangle extraction       | ✅     | Strips converted to triangles                        |
 | Block stripping           | ✅     | BSPackedAdditionalGeometryData blocks removed        |
 | Reference remapping       | ✅     | Ref<T> indices updated                               |
 | Rendering in NifSkope     | ✅     | Solid mode verified                                  |
 | Non-skinned meshes        | ✅     | Stride 36 and 40 formats fully supported             |
 | Vertex colors             | ✅     | Extracted from stride 40 meshes                      |
-| Havok collision           | ✅     | hkPackedNiTriStripsData vertices: half → float       |
+| Havok collision           | ✅     | hkPackedNiTriStripsData vertices: half -> float      |
 | Bone weights extraction   | ✅     | Extracted from offset 8 in stride 48 meshes          |
 | Bone indices extraction   | ✅     | Extracted from offset 16 in stride 48 meshes         |
 | NiSkinPartition expansion | ✅     | HasVertexWeights=1, HasBoneIndices=1 written         |
@@ -350,7 +350,6 @@ SubShapes[NumSubShapes] - HavokFilter, NumVertices, Material
 ### Tools Used
 
 1. **NifAnalyzer** (`tools/NifAnalyzer/`)
-
    - Block listing and comparison
    - Stream analysis with semantic detection
    - Vertex data extraction and comparison

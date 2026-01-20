@@ -53,21 +53,21 @@ Create a tool that can:
 
 ### Conversion Details
 
-#### Textures (DDX → DDS)
+#### Textures (DDX -> DDS)
 
 - **Xbox 360**: Morton-order tiled, possibly XMemCompress'd
 - **PC**: Linear DDS
 - **Converter**: `DdxSubprocessConverter` using DDXConv tool
 - **Status**: ✅ Fully working
 
-#### Models (NIF BE → NIF LE)
+#### Models (NIF BE -> NIF LE)
 
 - **Xbox 360**: Big-endian, `BSPackedAdditionalGeometryData` for geometry
 - **PC**: Little-endian, inline geometry in `NiTriShapeData`/`NiTriStripsData`
 - **Converter**: `NifConverter` with schema-driven field conversion
 - **Status**: ✅ Fully working (static + skinned meshes)
 
-#### Audio (XMA → WAV)
+#### Audio (XMA -> WAV)
 
 - **Xbox 360**: XMA compressed audio
 - **PC**: PCM WAV or XWM (Ogg Vorbis variant)
@@ -85,7 +85,7 @@ Create a tool that can:
 
 - **Xbox 360**: Archive flag bit 7 set = big-endian
 - **PC**: Little-endian (flag bit 7 clear)
-- **Converter**: Extract → Convert files → Repack
+- **Converter**: Extract -> Convert files -> Repack
 - **Status**: ⏳ Not implemented
 
 ---
@@ -117,7 +117,7 @@ Create a tool that can:
           │                  ▼                  ▼
           │           ┌──────────────┐   ┌──────────────┐
           │           │NIF Converter │   │DDX Converter │
-          │           │ BE→LE+Expand │   │ DDX→DDS      │
+          │           │ BE -> LE+Expand │   │ DDX -> DDS      │
           │           └──────┬───────┘   └──────┬───────┘
           │                  │                  │
           ▼                  ▼                  ▼
@@ -156,10 +156,10 @@ Create a tool that can:
 2. **File Conversion**
    - Identify file type by extension/signature
    - Route to appropriate converter:
-     - `.nif`, `.kf` → NIF Converter
-     - `.ddx` → DDX Converter
-     - `.xma` → XMA Converter
-     - `.lip` → LIP Converter (if needed)
+     - `.nif`, `.kf` -> NIF Converter
+     - `.ddx` -> DDX Converter
+     - `.xma` -> XMA Converter
+     - `.lip` -> LIP Converter (if needed)
    - Skip files that don't need conversion (`.txt`, `.xml`, etc.)
 
 3. **ESM/ESP Conversion**
@@ -356,7 +356,7 @@ XCLC (Cell Grid) - 12 bytes:
 
 ### Phase 2: ESM Converter
 
-1. **EsmConverter.cs** - Convert ESM BE → LE
+1. **EsmConverter.cs** - Convert ESM BE -> LE
    - Read records with BE parser
    - Write records with LE encoding
    - Handle all subrecord types
@@ -392,10 +392,10 @@ XCLC (Cell Grid) - 12 bytes:
 
 | Component       | Status | Notes                                 |
 | --------------- | ------ | ------------------------------------- |
-| DDX → DDS       | ✅     | Via DDXConv subprocess                |
-| NIF BE → LE     | ✅     | Schema-driven, skinned meshes working |
-| XMA → WAV       | ✅     | Via external tools                    |
-| XUI → XUI       | ✅     | Via XUIHelper                         |
+| DDX -> DDS      | ✅     | Via DDXConv subprocess                |
+| NIF BE -> LE    | ✅     | Schema-driven, skinned meshes working |
+| XMA -> WAV      | ✅     | Via external tools                    |
+| XUI -> XUI      | ✅     | Via XUIHelper                         |
 | ESM Parser (BE) | ✅     | 70+ record types, endian-aware        |
 
 ### ⏳ In Progress

@@ -39,6 +39,10 @@
     <!-- Enable continuous analysis -->
     <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
     <RunAnalyzersDuringLiveAnalysis>true</RunAnalyzersDuringLiveAnalysis>
+
+    <!-- Disable NuGet audit to avoid offline restore failures -->
+    <NuGetAuditMode>None</NuGetAuditMode>
+    <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 
   <!-- Code analysis packages applied to Xbox360MemoryCarver projects only (excludes submodules) -->

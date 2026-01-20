@@ -830,7 +830,7 @@ internal static class PackedCommands
         // Position table
         if (posStream != null)
         {
-            AnsiConsole.WriteLine("┌─── Position (half4 → float3) ───────────────────────────────────────────┐");
+            AnsiConsole.WriteLine("┌─── Position (half4 -> float3) ───────────────────────────────────────────┐");
             AnsiConsole.WriteLine($"│ {"Vtx",-5} {"X",-14} {"Y",-14} {"Z",-14} {"W",-10} │");
             AnsiConsole.WriteLine("├─────────────────────────────────────────────────────────────────────────┤");
 
@@ -852,7 +852,7 @@ internal static class PackedCommands
         // Normal table
         if (normalStream != null)
         {
-            AnsiConsole.WriteLine("┌─── Normal (half4 → float3, normalized) ─────────────────────────────────┐");
+            AnsiConsole.WriteLine("┌─── Normal (half4 -> float3, normalized) ─────────────────────────────────┐");
             AnsiConsole.WriteLine($"│ {"Vtx",-5} {"Nx",-12} {"Ny",-12} {"Nz",-12} {"W",-8} {"Length",-10} │");
             AnsiConsole.WriteLine("├─────────────────────────────────────────────────────────────────────────┤");
 
@@ -882,7 +882,7 @@ internal static class PackedCommands
         // UV table
         if (uvStream != null)
         {
-            AnsiConsole.WriteLine("┌─── UV (half2 → float2) ──────────────────────────────────────────────────┐");
+            AnsiConsole.WriteLine("┌─── UV (half2 -> float2) ──────────────────────────────────────────────────┐");
             AnsiConsole.WriteLine($"│ {"Vtx",-5} {"U",-20} {"V",-20} │");
             AnsiConsole.WriteLine("├───────────────────────────────────────────────────────────────────────────┤");
 
@@ -905,7 +905,7 @@ internal static class PackedCommands
         // Vertex color table
         if (colorStream != null)
         {
-            AnsiConsole.WriteLine("┌─── Vertex Color (ubyte4 → RGBA) ─────────────────────────────────────────┐");
+            AnsiConsole.WriteLine("┌─── Vertex Color (ubyte4 -> RGBA) ─────────────────────────────────────────┐");
             AnsiConsole.WriteLine($"│ {"Vtx",-5} {"R",-8} {"G",-8} {"B",-8} {"A",-8} {"Hex",-12} │");
             AnsiConsole.WriteLine("├───────────────────────────────────────────────────────────────────────────┤");
 
@@ -1201,7 +1201,7 @@ internal static class PackedCommands
         var block1Arg = new Argument<int>("block1") { Description = "Block index in first file" };
         var block2Arg = new Argument<int>("block2") { Description = "Block index in second file" };
         var countOpt = new Option<int>("-c", "--count")
-            { Description = "Max partitions to compare", DefaultValueFactory = _ => 50 };
+        { Description = "Max partitions to compare", DefaultValueFactory = _ => 50 };
         command.Arguments.Add(file1Arg);
         command.Arguments.Add(file2Arg);
         command.Arguments.Add(block1Arg);
@@ -1219,7 +1219,7 @@ internal static class PackedCommands
         var fileArg = new Argument<string>("file") { Description = "NIF file path" };
         var blockArg = new Argument<int>("block") { Description = "Block index" };
         var countOpt = new Option<int>("-c", "--count")
-            { Description = "Number of vertices to show", DefaultValueFactory = _ => 10 };
+        { Description = "Number of vertices to show", DefaultValueFactory = _ => 10 };
         command.Arguments.Add(fileArg);
         command.Arguments.Add(blockArg);
         command.Options.Add(countOpt);
@@ -1234,7 +1234,7 @@ internal static class PackedCommands
         var fileArg = new Argument<string>("file") { Description = "NIF file path" };
         var blockArg = new Argument<int>("block") { Description = "Block index" };
         var countOpt = new Option<int>("-c", "--count")
-            { Description = "Number of vertices to dump", DefaultValueFactory = _ => 10 };
+        { Description = "Number of vertices to dump", DefaultValueFactory = _ => 10 };
         command.Arguments.Add(fileArg);
         command.Arguments.Add(blockArg);
         command.Options.Add(countOpt);
@@ -1249,7 +1249,7 @@ internal static class PackedCommands
         var fileArg = new Argument<string>("file") { Description = "NIF file path" };
         var blockArg = new Argument<int>("block") { Description = "Block index" };
         var countOpt = new Option<int>("-c", "--count")
-            { Description = "Number of vertices to analyze", DefaultValueFactory = _ => 100 };
+        { Description = "Number of vertices to analyze", DefaultValueFactory = _ => 100 };
         command.Arguments.Add(fileArg);
         command.Arguments.Add(blockArg);
         command.Options.Add(countOpt);
@@ -1264,10 +1264,10 @@ internal static class PackedCommands
         var xboxArg = new Argument<string>("xbox") { Description = "Xbox NIF file path" };
         var pcArg = new Argument<string>("pc") { Description = "PC NIF file path" };
         var packedBlockArg = new Argument<int>("packed-block")
-            { Description = "BSPackedAdditionalGeometryData block index" };
+        { Description = "BSPackedAdditionalGeometryData block index" };
         var pcBlockArg = new Argument<int>("pc-block") { Description = "PC geometry block index" };
         var countOpt = new Option<int>("-c", "--count")
-            { Description = "Number of normals to compare", DefaultValueFactory = _ => 100 };
+        { Description = "Number of normals to compare", DefaultValueFactory = _ => 100 };
         command.Arguments.Add(xboxArg);
         command.Arguments.Add(pcArg);
         command.Arguments.Add(packedBlockArg);

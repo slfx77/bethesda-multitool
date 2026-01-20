@@ -56,7 +56,7 @@ public sealed class MemoryCarver : IDisposable
     public IReadOnlyDictionary<string, int> Stats => _stats;
 
     /// <summary>
-    ///     Offsets of files that failed conversion (DDX→DDS, etc.).
+    ///     Offsets of files that failed conversion (DDX -> DDS, etc.).
     /// </summary>
     public IReadOnlyCollection<long> FailedConversionOffsets => _writer?.FailedConversionOffsets ?? [];
 

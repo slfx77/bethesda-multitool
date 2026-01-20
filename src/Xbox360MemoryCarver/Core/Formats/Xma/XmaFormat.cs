@@ -5,7 +5,7 @@ namespace Xbox360MemoryCarver.Core.Formats.Xma;
 
 /// <summary>
 ///     Xbox Media Audio (XMA) format module.
-///     Handles parsing, repair, XMA1→XMA2 conversion, and XMA→WAV/OGG decoding.
+///     Handles parsing, repair, XMA1 -> XMA2 conversion, and XMA -> WAV/OGG decoding.
 /// </summary>
 public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
 {

@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.IO.Compression;
+using System.IO.MemoryMappedFiles;
 using Xbox360MemoryCarver.Core.Converters;
 using Xbox360MemoryCarver.Core.Formats.Xma;
 
@@ -11,6 +12,7 @@ namespace Xbox360MemoryCarver.Core.Formats.Bsa;
 /// <summary>
 ///     Extracts files from BSA archives.
 ///     BSA format is always little-endian, even for Xbox 360 archives.
+///     Thread-safe: uses memory-mapped file for lock-free concurrent reads.
 /// </summary>
 public sealed class BsaExtractor : IDisposable
 {
@@ -20,7 +22,7 @@ public sealed class BsaExtractor : IDisposable
     private readonly bool _defaultCompressed;
     private readonly bool _embedFileNames;
     private readonly HashSet<string> _enabledExtensions = new(StringComparer.OrdinalIgnoreCase);
-    private readonly FileStream _stream;
+    private readonly MemoryMappedFile _mappedFile;
     private bool _disposed;
     private bool _verbose;
 
@@ -33,7 +35,7 @@ public sealed class BsaExtractor : IDisposable
     public BsaExtractor(string filePath)
     {
         Archive = BsaParser.Parse(filePath);
-        _stream = File.OpenRead(filePath);
+        _mappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         _defaultCompressed = Archive.Header.DefaultCompressed;
         _embedFileNames = Archive.Header.EmbedFileNames;
     }
@@ -44,7 +46,12 @@ public sealed class BsaExtractor : IDisposable
     public BsaExtractor(BsaArchive archive, Stream stream)
     {
         Archive = archive;
-        _stream = stream as FileStream ?? throw new ArgumentException("Stream must be a FileStream", nameof(stream));
+        if (stream is not FileStream fs)
+        {
+            throw new ArgumentException("Stream must be a FileStream for memory-mapped access", nameof(stream));
+        }
+
+        _mappedFile = MemoryMappedFile.CreateFromFile(fs, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
         _defaultCompressed = Archive.Header.DefaultCompressed;
         _embedFileNames = Archive.Header.EmbedFileNames;
     }
@@ -65,7 +72,7 @@ public sealed class BsaExtractor : IDisposable
     {
         if (!_disposed)
         {
-            _stream.Dispose();
+            _mappedFile.Dispose();
             _disposed = true;
         }
     }
@@ -208,7 +215,7 @@ public sealed class BsaExtractor : IDisposable
 
         var metadata = parseResult.Metadata;
         if (!converter.CanConvert("nif", metadata))
-            // Already little-endian (PC format), no conversion needed
+        // Already little-endian (PC format), no conversion needed
         {
             return new ConversionResult
             {
@@ -243,39 +250,42 @@ public sealed class BsaExtractor : IDisposable
 
     /// <summary>
     ///     Extract a single file to a byte array.
+    ///     Thread-safe: each call creates its own view accessor for lock-free concurrent reads.
     /// </summary>
     public byte[] ExtractFile(BsaFileRecord file)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _stream.Position = file.Offset;
-
         // Determine if this file is compressed
         var isCompressed = _defaultCompressed != file.CompressionToggle;
 
+        // Calculate data offset and size (use long for offset arithmetic)
+        var dataOffset = (long)file.Offset;
+        var dataSize = (int)file.Size;
+
         // Skip embedded file name if present
-        var dataOffset = 0;
         if (_embedFileNames)
         {
-            var nameLen = _stream.ReadByte();
-            dataOffset = 1 + nameLen;
-            _stream.Position = file.Offset + dataOffset;
+            // Read the name length byte
+            using var nameAccessor = _mappedFile.CreateViewAccessor(file.Offset, 1, MemoryMappedFileAccess.Read);
+            var nameLen = nameAccessor.ReadByte(0);
+            dataOffset += 1 + nameLen;
+            dataSize -= 1 + nameLen;
         }
 
-        var dataSize = (int)file.Size - dataOffset;
+        // Create a view accessor for this file's data - thread-safe, no lock needed
+        using var accessor = _mappedFile.CreateViewAccessor(dataOffset, dataSize, MemoryMappedFileAccess.Read);
 
         if (isCompressed)
         {
             // First 4 bytes are uncompressed size (little-endian)
-            var uncompressedSizeBytes = new byte[4];
-            _stream.ReadExactly(uncompressedSizeBytes, 0, 4);
-            var uncompressedSize = BitConverter.ToUInt32(uncompressedSizeBytes, 0);
+            var uncompressedSize = accessor.ReadUInt32(0);
 
             var compressedSize = dataSize - 4;
             var compressedData = ArrayPool<byte>.Shared.Rent(compressedSize);
             try
             {
-                _stream.ReadExactly(compressedData, 0, compressedSize);
+                accessor.ReadArray(4, compressedData, 0, compressedSize);
 
                 // Decompress using zlib (deflate with 2-byte header)
                 var result = new byte[uncompressedSize];
@@ -307,7 +317,7 @@ public sealed class BsaExtractor : IDisposable
         {
             // Uncompressed - just read the data
             var result = new byte[dataSize];
-            _stream.ReadExactly(result, 0, dataSize);
+            accessor.ReadArray(0, result, 0, dataSize);
             return result;
         }
     }
@@ -322,25 +332,14 @@ public sealed class BsaExtractor : IDisposable
         var outputPath = Path.Combine(outputDir, file.FullPath);
         var outputDirectory = Path.GetDirectoryName(outputPath)!;
         var extension = Path.GetExtension(file.Name ?? "").ToLowerInvariant();
+        var wasCompressed = _defaultCompressed != file.CompressionToggle;
 
-        // Determine conversion type based on enabled extensions
-        var shouldConvertDdx = _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null &&
-                               extension == ".ddx";
-        var shouldConvertXma = _enabledExtensions.Contains(".xma") && _xmaOggConverter?.IsAvailable == true &&
-                               extension == ".xma";
-        var shouldConvertNif = _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null &&
-                               extension == ".nif";
-
-        // Adjust output path for conversions that change extension
-        if (shouldConvertDdx)
+        // Determine conversion - short-circuit on extension first (cheapest check)
+        var (conversionType, targetExtension) = GetConversionInfo(extension);
+        if (targetExtension != null)
         {
-            outputPath = Path.ChangeExtension(outputPath, ".dds");
+            outputPath = Path.ChangeExtension(outputPath, targetExtension);
         }
-        else if (shouldConvertXma)
-        {
-            outputPath = Path.ChangeExtension(outputPath, ".ogg");
-        }
-        // NIF keeps same extension
 
         if (!overwrite && File.Exists(outputPath))
         {
@@ -351,7 +350,7 @@ public sealed class BsaExtractor : IDisposable
                 Success = true,
                 OriginalSize = file.Size,
                 ExtractedSize = new FileInfo(outputPath).Length,
-                WasCompressed = _defaultCompressed != file.CompressionToggle,
+                WasCompressed = wasCompressed,
                 WasConverted = false,
                 Error = "File already exists (skipped)"
             };
@@ -362,116 +361,15 @@ public sealed class BsaExtractor : IDisposable
             Directory.CreateDirectory(outputDirectory);
             var data = ExtractFile(file);
 
-            // Convert DDX to DDS
-            if (shouldConvertDdx)
+            // Apply conversion if configured
+            if (conversionType != null)
             {
-                var conversionResult = await ConvertDdxAsync(data);
-                if (conversionResult is { Success: true, OutputData: not null })
-                {
-                    await File.WriteAllBytesAsync(outputPath, conversionResult.OutputData);
-                    return new BsaExtractResult
-                    {
-                        SourcePath = file.FullPath,
-                        OutputPath = outputPath,
-                        Success = true,
-                        OriginalSize = file.Size,
-                        ExtractedSize = conversionResult.OutputData.Length,
-                        WasCompressed = _defaultCompressed != file.CompressionToggle,
-                        WasConverted = true,
-                        ConversionType = "DDX->DDS"
-                    };
-                }
-
-                // Conversion failed - save as original DDX
-                outputPath = Path.Combine(outputDir, file.FullPath);
-                await File.WriteAllBytesAsync(outputPath, data);
-                return new BsaExtractResult
-                {
-                    SourcePath = file.FullPath,
-                    OutputPath = outputPath,
-                    Success = true,
-                    OriginalSize = file.Size,
-                    ExtractedSize = data.Length,
-                    WasCompressed = _defaultCompressed != file.CompressionToggle,
-                    WasConverted = false,
-                    Error = $"DDX conversion failed: {conversionResult.Notes}"
-                };
-            }
-
-            // Convert XMA to OGG
-            if (shouldConvertXma)
-            {
-                var conversionResult = await ConvertXmaAsync(data);
-                if (conversionResult is { Success: true, OutputData: not null })
-                {
-                    await File.WriteAllBytesAsync(outputPath, conversionResult.OutputData);
-                    return new BsaExtractResult
-                    {
-                        SourcePath = file.FullPath,
-                        OutputPath = outputPath,
-                        Success = true,
-                        OriginalSize = file.Size,
-                        ExtractedSize = conversionResult.OutputData.Length,
-                        WasCompressed = _defaultCompressed != file.CompressionToggle,
-                        WasConverted = true,
-                        ConversionType = "XMA->OGG"
-                    };
-                }
-
-                // Conversion failed - save as original XMA
-                outputPath = Path.Combine(outputDir, file.FullPath);
-                await File.WriteAllBytesAsync(outputPath, data);
-                return new BsaExtractResult
-                {
-                    SourcePath = file.FullPath,
-                    OutputPath = outputPath,
-                    Success = true,
-                    OriginalSize = file.Size,
-                    ExtractedSize = data.Length,
-                    WasCompressed = _defaultCompressed != file.CompressionToggle,
-                    WasConverted = false,
-                    Error = $"XMA conversion failed: {conversionResult.Notes}"
-                };
-            }
-
-            // Convert NIF (Xbox 360 big-endian to PC little-endian)
-            if (shouldConvertNif)
-            {
-                var conversionResult = await ConvertNifAsync(data);
-                if (conversionResult is { Success: true, OutputData: not null })
-                {
-                    await File.WriteAllBytesAsync(outputPath, conversionResult.OutputData);
-                    return new BsaExtractResult
-                    {
-                        SourcePath = file.FullPath,
-                        OutputPath = outputPath,
-                        Success = true,
-                        OriginalSize = file.Size,
-                        ExtractedSize = conversionResult.OutputData.Length,
-                        WasCompressed = _defaultCompressed != file.CompressionToggle,
-                        WasConverted = !conversionResult.Notes?.Contains("already") == true,
-                        ConversionType = conversionResult.Notes?.Contains("already") == true ? null : "NIF BE->LE"
-                    };
-                }
-
-                // Conversion failed - save as original NIF
-                await File.WriteAllBytesAsync(outputPath, data);
-                return new BsaExtractResult
-                {
-                    SourcePath = file.FullPath,
-                    OutputPath = outputPath,
-                    Success = true,
-                    OriginalSize = file.Size,
-                    ExtractedSize = data.Length,
-                    WasCompressed = _defaultCompressed != file.CompressionToggle,
-                    WasConverted = false,
-                    Error = $"NIF conversion failed: {conversionResult.Notes}"
-                };
+                return await TryConvertAndWriteAsync(
+                    file, data, outputDir, outputPath, conversionType, wasCompressed);
             }
 
             // No conversion - write as-is
             await File.WriteAllBytesAsync(outputPath, data);
-
             return new BsaExtractResult
             {
                 SourcePath = file.FullPath,
@@ -479,7 +377,7 @@ public sealed class BsaExtractor : IDisposable
                 Success = true,
                 OriginalSize = file.Size,
                 ExtractedSize = data.Length,
-                WasCompressed = _defaultCompressed != file.CompressionToggle,
+                WasCompressed = wasCompressed,
                 WasConverted = false
             };
         }
@@ -492,11 +390,89 @@ public sealed class BsaExtractor : IDisposable
                 Success = false,
                 OriginalSize = file.Size,
                 ExtractedSize = 0,
-                WasCompressed = _defaultCompressed != file.CompressionToggle,
+                WasCompressed = wasCompressed,
                 WasConverted = false,
                 Error = ex.Message
             };
         }
+    }
+
+    /// <summary>
+    ///     Determine conversion type and target extension for a file.
+    ///     Short-circuits on extension first (cheapest check).
+    /// </summary>
+    private (string? ConversionType, string? TargetExtension) GetConversionInfo(string extension)
+    {
+        return extension switch
+        {
+            ".ddx" when _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null
+                => ("DDX->DDS", ".dds"),
+            ".xma" when _enabledExtensions.Contains(".xma") && _xmaOggConverter?.IsAvailable == true
+                => ("XMA->OGG", ".ogg"),
+            ".nif" when _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null
+                => ("NIF BE->LE", null), // NIF keeps same extension
+            _ => (null, null)
+        };
+    }
+
+    /// <summary>
+    ///     Try to convert file data and write to disk, falling back to original on failure.
+    /// </summary>
+    private async Task<BsaExtractResult> TryConvertAndWriteAsync(
+        BsaFileRecord file,
+        byte[] data,
+        string outputDir,
+        string outputPath,
+        string conversionType,
+        bool wasCompressed)
+    {
+        var conversionResult = conversionType switch
+        {
+            "DDX->DDS" => await ConvertDdxAsync(data),
+            "XMA->OGG" => await ConvertXmaAsync(data),
+            "NIF BE->LE" => await ConvertNifAsync(data),
+            _ => new ConversionResult { Success = false, Notes = "Unknown conversion type" }
+        };
+
+        // Handle NIF "already PC format" case
+        var wasConverted = true;
+        var actualConversionType = conversionType;
+        if (conversionType == "NIF BE->LE" && conversionResult.Notes?.Contains("already") == true)
+        {
+            wasConverted = false;
+            actualConversionType = null;
+        }
+
+        if (conversionResult is { Success: true, OutputData: not null })
+        {
+            await File.WriteAllBytesAsync(outputPath, conversionResult.OutputData);
+            return new BsaExtractResult
+            {
+                SourcePath = file.FullPath,
+                OutputPath = outputPath,
+                Success = true,
+                OriginalSize = file.Size,
+                ExtractedSize = conversionResult.OutputData.Length,
+                WasCompressed = wasCompressed,
+                WasConverted = wasConverted,
+                ConversionType = actualConversionType
+            };
+        }
+
+        // Conversion failed - save as original
+        var originalPath = Path.Combine(outputDir, file.FullPath);
+        await File.WriteAllBytesAsync(originalPath, data);
+        return new BsaExtractResult
+        {
+            SourcePath = file.FullPath,
+            OutputPath = originalPath,
+            Success = true,
+            OriginalSize = file.Size,
+            ExtractedSize = data.Length,
+            WasCompressed = wasCompressed,
+            WasConverted = false,
+            Error = $"{conversionType} conversion failed: {conversionResult.Notes}"
+        };
     }
 
     /// <summary>

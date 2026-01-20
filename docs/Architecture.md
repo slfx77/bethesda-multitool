@@ -130,7 +130,7 @@ The main carving engine that orchestrates the entire extraction process.
 2. **Scan Phase (0-50%)** - Find all signature matches via Aho-Corasick
 3. **Parse Phase** - Use appropriate parser to determine file boundaries
 4. **Extract Phase (50-100%)** - Write files to output directory
-5. **Convert Phase** - Optional DDX→DDS conversion
+5. **Convert Phase** - Optional DDX -> DDS conversion
 6. **Manifest** - Save JSON manifest of all carved files
 
 **Configuration Options:**
@@ -229,7 +229,7 @@ public interface IFileFormat
 Formats can implement additional interfaces for extended functionality:
 
 ```csharp
-// For formats that support file conversion (e.g., DDX → DDS)
+// For formats that support file conversion (e.g., DDX -> DDS)
 public interface IFileConverter
 {
     string TargetExtension { get; }
@@ -272,7 +272,7 @@ All format modules extend `FileFormatBase` and are self-contained in their own f
 | `EsmRecordFormat` | `Core/Formats/EsmRecord/` | `IDumpScanner` (ESM record extraction)       |
 | `EspFormat`       | `Core/Formats/Esp/`       | Parsing only                                 |
 | `LipFormat`       | `Core/Formats/Lip/`       | Parsing only                                 |
-| `NifFormat`       | `Core/Formats/Nif/`       | Parsing + BE→LE conversion                   |
+| `NifFormat`       | `Core/Formats/Nif/`       | Parsing + BE -> LE conversion                |
 | `PngFormat`       | `Core/Formats/Png/`       | Parsing only                                 |
 | `ScdaFormat`      | `Core/Formats/Scda/`      | Parsing + `IDumpScanner`                     |
 | `ScriptFormat`    | `Core/Formats/Script/`    | Parsing only                                 |
@@ -323,10 +323,10 @@ Provides comprehensive dump analysis combining multiple data sources.
 
 **Analysis Pipeline:**
 
-1. Parse minidump header → Modules, memory regions
+1. Parse minidump header -> Modules, memory regions
 2. Detect build type (Debug, Release Beta, Release MemDebug)
-3. Scan for SCDA records → Compiled scripts (via `ScdaFormat.IDumpScanner`)
-4. Scan for ESM records → EDID, GMST, SCTX, SCRO (via `EsmRecordFormat.IDumpScanner`)
+3. Scan for SCDA records -> Compiled scripts (via `ScdaFormat.IDumpScanner`)
+4. Scan for ESM records -> EDID, GMST, SCTX, SCRO (via `EsmRecordFormat.IDumpScanner`)
 5. Correlate FormIDs to names
 
 **Output Formats:**

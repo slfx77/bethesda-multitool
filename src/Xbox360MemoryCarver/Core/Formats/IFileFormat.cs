@@ -164,7 +164,7 @@ public interface IFileConverter
     string TargetExtension { get; }
 
     /// <summary>
-    ///     Target folder name for converted files (e.g., "textures" for DDX→DDS).
+    ///     Target folder name for converted files (e.g., "textures" for DDX -> DDS).
     /// </summary>
     string TargetFolder { get; }
 

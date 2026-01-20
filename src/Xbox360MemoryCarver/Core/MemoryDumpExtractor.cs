@@ -267,7 +267,7 @@ public class ExtractionSummary
     public HashSet<long> ExtractedOffsets { get; init; } = [];
 
     /// <summary>
-    ///     Offsets of files that failed conversion (DDX→DDS, XMA→WAV, etc.).
+    ///     Offsets of files that failed conversion (DDX -> DDS, XMA -> WAV, etc.).
     ///     These files were extracted but conversion failed.
     /// </summary>
     public HashSet<long> FailedConversionOffsets { get; init; } = [];

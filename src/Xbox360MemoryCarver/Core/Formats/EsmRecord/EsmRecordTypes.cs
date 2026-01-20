@@ -21,6 +21,9 @@ public static class EsmRecordTypes
             // Groups
             ["GRUP"] = new("Group", RecordCategory.System),
 
+            // Game Settings (no numeric ID in xEdit enum)
+            ["GMST"] = new("Game Setting", RecordCategory.GameData),
+
             // Core types (0x04-0x15)
             ["TXST"] = new("Texture Set", RecordCategory.Graphics, 0x04),
             ["MICN"] = new("Menu Icon", RecordCategory.Graphics, 0x05),

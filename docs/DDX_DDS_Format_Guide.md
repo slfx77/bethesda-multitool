@@ -156,9 +156,9 @@ DWORD[5] bits:
 
 DDX files use **XMemCompress** (Xbox 360's LZX-based compression):
 
--   Texture data is split into 1-2 compressed chunks
--   Chunk 1: Mip atlas (smaller mip levels packed together)
--   Chunk 2: Main surface (largest mip level)
+- Texture data is split into 1-2 compressed chunks
+- Chunk 1: Mip atlas (smaller mip levels packed together)
+- Chunk 2: Main surface (largest mip level)
 
 The decompression is handled via Microsoft's XNA Framework or xcompress64.dll.
 
@@ -231,8 +231,8 @@ These tables define rectangular regions that get copied in a specific order, but
 
 **Tiling** (also called swizzling) rearranges pixel data for optimal GPU memory access:
 
--   **Linear layout**: Simple row-by-row order (good for CPUs, disk storage)
--   **Tiled layout**: Optimized for GPU's 2D cache locality (good for rendering)
+- **Linear layout**: Simple row-by-row order (good for CPUs, disk storage)
+- **Tiled layout**: Optimized for GPU's 2D cache locality (good for rendering)
 
 The Xbox 360 GPU performs best when textures are stored in Morton order because:
 
@@ -280,8 +280,8 @@ Mip Atlas Layout (for 128x128 base texture in 256x256 atlas):
 
 ### Endianness
 
--   **Xbox 360**: Big-endian (most significant byte first)
--   **PC/x86**: Little-endian (least significant byte first)
+- **Xbox 360**: Big-endian (most significant byte first)
+- **PC/x86**: Little-endian (least significant byte first)
 
 Every 16-bit word in the texture data must be byte-swapped during conversion:
 
@@ -308,8 +308,8 @@ private static byte[] ApplyEngineTilingFor3xdr(...)
 
 The `ApplyEngineTilingFor3xdr` function tries to use the extracted tiling tables, but the mapping between:
 
--   Data format → table row selection
--   Table entries → actual byte positions
+- Data format -> table row selection
+- Table entries -> actual byte positions
 
 ...is not fully understood.
 
@@ -325,9 +325,9 @@ The `ApplyEngineTilingFor3xdr` function tries to use the extracted tiling tables
 
 The extracted tables may be:
 
--   Missing entries for certain texture sizes
--   Specific to certain texture formats
--   Only partial (the full table set wasn't captured)
+- Missing entries for certain texture sizes
+- Specific to certain texture formats
+- Only partial (the full table set wasn't captured)
 
 ### 4. Format-to-Table Mapping Unknown
 
@@ -393,23 +393,23 @@ To fix 3XDR support, one would need to:
 
 ### Code Sources
 
--   **Xenia Emulator**: Xbox 360 tiling algorithms
-    -   https://github.com/xenia-project/xenia/blob/master/src/xenia/gpu/texture_conversion.cc
--   **XCompression**: Xbox 360 decompression library
-    -   https://github.com/gibbed/XCompression
+- **Xenia Emulator**: Xbox 360 tiling algorithms
+  - https://github.com/xenia-project/xenia/blob/master/src/xenia/gpu/texture_conversion.cc
+- **XCompression**: Xbox 360 decompression library
+  - https://github.com/gibbed/XCompression
 
 ### Format Documentation
 
--   **DDS File Format**: Microsoft DirectX documentation
--   **Xbox 360 Xenos GPU**: Technical documentation from Xbox development kits
--   **Gamebryo Engine**: NiXenonSourceTextureData implementation (proprietary)
+- **DDS File Format**: Microsoft DirectX documentation
+- **Xbox 360 Xenos GPU**: Technical documentation from Xbox development kits
+- **Gamebryo Engine**: NiXenonSourceTextureData implementation (proprietary)
 
 ### Statistics (from July 2010 Fallout: New Vegas prototype)
 
--   Total DDX files: 26,123
--   Successfully converted (3XDO): 22,148 (~85%)
--   Unsupported (3XDR): 3,961 (~15%)
--   Other failures: 13 (very low resolution textures)
+- Total DDX files: 26,123
+- Successfully converted (3XDO): 22,148 (~85%)
+- Unsupported (3XDR): 3,961 (~15%)
+- Other failures: 13 (very low resolution textures)
 
 ---
 

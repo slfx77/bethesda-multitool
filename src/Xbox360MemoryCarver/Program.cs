@@ -77,7 +77,7 @@ public static class Program
         };
         var convertDdxOption = new Option<bool>("--convert-ddx", "--convert")
         {
-            Description = "Enable format conversions (DDX→DDS textures, XUR→XUI interfaces)",
+            Description = "Enable format conversions (DDX -> DDS textures, XUR -> XUI interfaces)",
             DefaultValueFactory = _ => true
         };
         var typesOption = new Option<string[]>("-t", "--types")

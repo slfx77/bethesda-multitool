@@ -144,7 +144,7 @@ public sealed class XuiFormat : FileFormatBase, IFileConverter
             {
                 Success = true,
                 OutputData = result.XuiData, // Using OutputData to hold XUI XML data
-                Notes = $"XUR v{result.XurVersion} → XUI v12"
+                Notes = $"XUR v{result.XurVersion} -> XUI v12"
             };
         }
 

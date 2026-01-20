@@ -192,12 +192,6 @@ public static class EsmParser
         var versionControl1 = ReadUInt32(data, 16, bigEndian);
         var versionControl2 = ReadUInt32(data, 20, bigEndian);
 
-        // Basic validation
-        if (dataSize > 100_000_000) // 100 MB max
-        {
-            return null;
-        }
-
         return new MainRecordHeader
         {
             Signature = signature,

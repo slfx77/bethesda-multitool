@@ -47,7 +47,7 @@ public static class BsaCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
         var filterOption = new Option<string?>("-f", "--filter")
-            { Description = "Filter by extension (e.g., .nif, .dds)" };
+        { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
 
         command.Arguments.Add(inputArg);
@@ -77,11 +77,11 @@ public static class BsaCommand
             Required = true
         };
         var filterOption = new Option<string?>("-f", "--filter")
-            { Description = "Filter by extension (e.g., .nif, .dds)" };
+        { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
         var overwriteOption = new Option<bool>("--overwrite") { Description = "Overwrite existing files" };
         var convertOption = new Option<bool>("-c", "--convert")
-            { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->OGG, NIF endian)" };
+        { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->OGG, NIF endian)" };
         var verboseOption = new Option<bool>("-v", "--verbose") { Description = "Verbose output" };
 
         command.Arguments.Add(inputArg);
@@ -451,12 +451,12 @@ public static class BsaCommand
                 var parts = new List<string>();
                 if (ddxConverted > 0)
                 {
-                    parts.Add($"{ddxConverted} DDX→DDS");
+                    parts.Add($"{ddxConverted} DDX -> DDS");
                 }
 
                 if (xmaConverted > 0)
                 {
-                    parts.Add($"{xmaConverted} XMA→OGG");
+                    parts.Add($"{xmaConverted} XMA -> OGG");
                 }
 
                 if (nifConverted > 0)

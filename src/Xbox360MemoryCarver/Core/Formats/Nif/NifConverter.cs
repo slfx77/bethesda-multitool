@@ -28,16 +28,16 @@ internal sealed partial class NifConverter
     // Maps geometry block index to its associated NiSkinPartition block index
     private readonly Dictionary<int, int> _geometryToSkinPartition = [];
 
-    // Havok collision blocks that need HalfVector3→Vector3 expansion
+    // Havok collision blocks that need HalfVector3 -> Vector3 expansion
     private readonly Dictionary<int, HavokBlockExpansion> _havokExpansions = [];
 
     // New strings to add to the string table (for node names)
     private readonly List<string> _newStrings = [];
 
-    // Block index → node name mapping from NiDefaultAVObjectPalette
+    // Block index -> node name mapping from NiDefaultAVObjectPalette
     private readonly Dictionary<int, string> _nodeNamesByBlock = [];
 
-    // Maps block index → string table index (for NiNode Name field restoration)
+    // Maps block index -> string table index (for NiNode Name field restoration)
     private readonly Dictionary<int, int> _nodeNameStringIndices = [];
 
     // Extracted geometry data indexed by packed block index

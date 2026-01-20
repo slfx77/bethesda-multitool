@@ -25,7 +25,7 @@ internal sealed partial class NifConverter
         // Build a set of existing strings to avoid duplicates
         var existingStrings = new HashSet<string>(info.Strings);
 
-        // For each block→name mapping, determine if we need a new string
+        // For each block -> name mapping, determine if we need a new string
         foreach (var (blockIndex, name) in nameMappings.BlockNames)
         {
             // Check if this is a node block (NiNode, BSFadeNode, etc.)

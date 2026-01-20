@@ -24,7 +24,7 @@ public static class EsmCommand
         };
         var outputOpt = new Option<string?>("-o", "--output") { Description = "Output file path" };
         var recordTypeOpt = new Option<string?>("-t", "--type")
-            { Description = "Filter by record type (e.g., WEAP, NPC_, CELL)" };
+        { Description = "Filter by record type (e.g., WEAP, NPC_, CELL)" };
         var limitOpt = new Option<int?>("-l", "--limit") { Description = "Limit number of records shown" };
 
         command.Arguments.Add(inputArg);
@@ -220,7 +220,7 @@ public static class EsmCommand
             var shown = 0;
             foreach (var (formId, editorId) in result.FormIdToEditorId.Take(toShow))
             {
-                sb.AppendLine($"  0x{formId:X8} → {editorId}");
+                sb.AppendLine($"  0x{formId:X8} -> {editorId}");
                 shown++;
             }
 

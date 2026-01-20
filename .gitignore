@@ -47,6 +47,9 @@ tools/NifAnalyzer/obj/
 !tools/TextureAnalyzer/
 tools/TextureAnalyzer/bin/
 tools/TextureAnalyzer/obj/
+!tools/EsmAnalyzer/
+tools/EsmAnalyzer/bin/
+tools/EsmAnalyzer/obj/
 
 # Python remnants (if any)
 .venv/
@@ -67,5 +70,6 @@ NVSE/
 Xbox360MemoryCarverCLI/
 nifskope/
 TES5Edit/
+xEdit 4.1.5p/
 *.cobertura.xml
 issues.xml
