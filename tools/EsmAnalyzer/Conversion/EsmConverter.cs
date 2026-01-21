@@ -99,6 +99,18 @@ public sealed class EsmConverter : IDisposable
 
             if (TrySkipTopLevelRecord(signature, grupStack, ref inputOffset)) continue;
 
+            // If at top level and not a GRUP, try resyncing (likely orphaned data)
+            if (grupStack.Count == 0 && signature != "GRUP")
+            {
+                if (TryResyncToNextGrup(ref inputOffset))
+                    continue;
+
+                if (_verbose)
+                    Console.WriteLine($"  [0x{inputOffset:X8}] Cannot resync after '{signature}', stopping conversion.");
+
+                break;
+            }
+
             if (TryHandleGrup(signature, grupHeaderSize, index, grupStack, ref inputOffset)) continue;
 
             inputOffset = ConvertRecord(inputOffset);
@@ -532,8 +544,18 @@ public sealed class EsmConverter : IDisposable
         if (inputOffset + recordHeaderSize > _input.Length) return true;
 
         var dataSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 4));
-        var recordEnd = inputOffset + recordHeaderSize + (int)dataSize;
-        if (recordEnd > _input.Length) recordEnd = _input.Length;
+        
+        // Use long to avoid overflow when dataSize > int.MaxValue
+        var recordEnd = (long)inputOffset + recordHeaderSize + dataSize;
+
+        // Sanity check: if record extends past file end, it's orphan data - try to resync
+        if (recordEnd > _input.Length)
+        {
+            if (_verbose)
+                Console.WriteLine($"  [0x{inputOffset:X8}] Record {signature} size {dataSize:N0} exceeds file, resyncing...");
+
+            return TryResyncToNextGrup(ref inputOffset);
+        }
 
         _stats.IncrementSkippedRecordType(signature);
         _stats.TopLevelRecordsSkipped++;
@@ -541,7 +563,7 @@ public sealed class EsmConverter : IDisposable
         if (_verbose)
             Console.WriteLine($"  [0x{inputOffset:X8}] Skipping top-level record {signature} (size={dataSize:N0})");
 
-        inputOffset = recordEnd;
+        inputOffset = (int)recordEnd;
         return true;
     }
 

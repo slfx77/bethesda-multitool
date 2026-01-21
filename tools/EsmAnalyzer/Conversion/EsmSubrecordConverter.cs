@@ -221,6 +221,13 @@ internal static partial class EsmSubrecordConverter
                 Swap4Bytes(result, 0);
                 break;
 
+            // XLOD - LOD data (12 bytes) - 3 floats (prototype only, removed in final)
+            case "XLOD" when dataLength == 12:
+                Swap4Bytes(result, 0);
+                Swap4Bytes(result, 4);
+                Swap4Bytes(result, 8);
+                break;
+
             // XCNT - Item Count (4 bytes uint32)
             case "XCNT" when dataLength == 4:
                 Swap4Bytes(result, 0);
