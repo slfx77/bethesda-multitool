@@ -38,9 +38,9 @@ public static class GrupCommands
         var typeOption = new Option<int[]?>("-t", "--type") { Description = "Filter to specific GRUP type(s) (0-10)" };
         var topLevelOption = new Option<bool>("--top-level") { Description = "Show only top-level GRUPs (depth 0)" };
         var duplicatesOption = new Option<bool>("--duplicates")
-            { Description = "Find duplicate GRUP labels (same type + label at different depths)" };
+        { Description = "Find duplicate GRUP labels (same type + label at different depths)" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of GRUPs to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
+        { Description = "Maximum number of GRUPs to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(typeOption);

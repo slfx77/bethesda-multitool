@@ -30,7 +30,8 @@ internal sealed class EsmConversionIndexBuilder
 
         var grupStack = new Stack<(int end, int type, uint label)>();
 
-        // Phase 1: Scan nested structure (before TOFT)
+        // Phase 1: Scan nested structure
+        // Note: TOFT records appear INSIDE Cell Children GRUPs on Xbox 360, so we can't stop at TOFT
         while (offset + EsmParser.MainRecordHeaderSize <= _input.Length)
         {
             PopCompletedGroups(grupStack, offset);
@@ -40,8 +41,12 @@ internal sealed class EsmConversionIndexBuilder
             var recHeader = EsmParser.ParseRecordHeader(_input.AsSpan(offset), true);
             if (recHeader == null) break;
 
-            // Stop at TOFT record only when at a valid record boundary
-            if (recHeader.Signature == "TOFT") break;
+            // Skip TOFT records (Size=0, appear inside Cell Children GRUPs)
+            if (recHeader.Signature == "TOFT")
+            {
+                offset += EsmParser.MainRecordHeaderSize; // TOFT has DataSize=0
+                continue;
+            }
 
             if (!TryHandleIndexRecord(index, grupStack, ref offset)) break;
         }
