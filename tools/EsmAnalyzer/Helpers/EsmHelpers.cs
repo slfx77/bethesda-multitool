@@ -222,7 +222,7 @@ public static class EsmHelpers
     {
         var subrecords = new List<AnalyzerSubrecordInfo>();
         var offset = 0;
-        int? pendingExtendedSize = null;
+        uint? pendingExtendedSize = null;
 
         while (offset + 6 <= recordData.Length)
         {
@@ -240,17 +240,19 @@ public static class EsmHelpers
 
             var size = bigEndian
                 ? BinaryUtils.ReadUInt16BE(recordData.AsSpan(offset + 4))
-                : (int)BinaryUtils.ReadUInt16LE(recordData.AsSpan(offset + 4));
+                : (uint)BinaryUtils.ReadUInt16LE(recordData.AsSpan(offset + 4));
 
             // Handle Bethesda extended-size subrecords (XXXX)
             if (sig == "XXXX" && size == 4 && offset + 10 <= recordData.Length)
             {
                 pendingExtendedSize = bigEndian
-                    ? (int)BinaryUtils.ReadUInt32BE(recordData.AsSpan(offset + 6))
-                    : (int)BinaryUtils.ReadUInt32LE(recordData.AsSpan(offset + 6));
+                    ? BinaryUtils.ReadUInt32BE(recordData.AsSpan(offset + 6))
+                    : BinaryUtils.ReadUInt32LE(recordData.AsSpan(offset + 6));
 
                 // Skip the XXXX subrecord itself
-                offset += 6 + size;
+                var skip = 6L + size;
+                if (skip > recordData.Length - offset) break;
+                offset += (int)skip;
                 continue;
             }
 
@@ -261,10 +263,11 @@ public static class EsmHelpers
             }
 
             var dataOffset = offset + 6;
-            if (dataOffset + size > recordData.Length) break;
+            var endOffset = dataOffset + size;
+            if (size > int.MaxValue || endOffset > recordData.Length) break;
 
             var data = new byte[size];
-            Array.Copy(recordData, dataOffset, data, 0, size);
+            Array.Copy(recordData, dataOffset, data, 0, (int)size);
 
             subrecords.Add(new AnalyzerSubrecordInfo
             {
@@ -273,7 +276,7 @@ public static class EsmHelpers
                 Offset = offset
             });
 
-            offset = dataOffset + size;
+            offset = dataOffset + (int)size;
         }
 
         return subrecords;
@@ -284,16 +287,53 @@ public static class EsmHelpers
     /// </summary>
     public static byte[] DecompressZlib(byte[] compressedData, int decompressedSize)
     {
-        var output = new byte[decompressedSize];
+        try
+        {
+            using var inputStream = new MemoryStream(compressedData);
+            using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
+            using var outputStream = new MemoryStream(decompressedSize);
+            zlibStream.CopyTo(outputStream);
+            var result = outputStream.ToArray();
 
-        using var inputStream = new MemoryStream(compressedData);
-        using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
-        var bytesRead = zlibStream.Read(output, 0, decompressedSize);
+            if (result.Length != decompressedSize)
+                throw new InvalidDataException($"Decompression produced {result.Length} bytes, expected {decompressedSize}");
 
-        if (bytesRead != decompressedSize)
-            throw new InvalidDataException($"Decompression produced {bytesRead} bytes, expected {decompressedSize}");
+            return result;
+        }
+        catch (InvalidDataException ex)
+        {
+            if (compressedData.Length > 6)
+            {
+                try
+                {
+                    using var rawInput = new MemoryStream(compressedData, 2, compressedData.Length - 6);
+                    using var deflateStream = new DeflateStream(rawInput, CompressionMode.Decompress);
+                    using var rawOutput = new MemoryStream(decompressedSize);
+                    deflateStream.CopyTo(rawOutput);
+                    var rawResult = rawOutput.ToArray();
 
-        return output;
+                    if (rawResult.Length == decompressedSize)
+                        return rawResult;
+                }
+                catch (InvalidDataException)
+                {
+                    // Fall through to detailed error below.
+                }
+            }
+
+            var header = compressedData.Length >= 2
+                ? $"{compressedData[0]:X2} {compressedData[1]:X2}"
+                : "<none>";
+            var cm = compressedData.Length >= 1 ? (compressedData[0] & 0x0F) : 0;
+            var cinfo = compressedData.Length >= 1 ? (compressedData[0] >> 4) : 0;
+            var fdict = compressedData.Length >= 2 && (compressedData[1] & 0x20) != 0;
+            var checkOk = compressedData.Length >= 2 && ((compressedData[0] << 8) + compressedData[1]) % 31 == 0;
+
+            throw new InvalidDataException(
+                $"Zlib decompression failed: {ex.Message} (header={header}, cm={cm}, cinfo={cinfo}, fdict={fdict}, checkOk={checkOk}, " +
+                $"compressedLen={compressedData.Length}, expectedLen={decompressedSize})",
+                ex);
+        }
     }
 
     /// <summary>
@@ -317,11 +357,25 @@ public static class EsmHelpers
 
             sb.Append(" ");
 
-            // ASCII representation
+            // ASCII representation (escape [ and ] for Spectre.Console markup)
             for (var j = 0; j < 16 && i + j < length; j++)
             {
                 var b = data[i + j];
-                sb.Append(b >= 32 && b < 127 ? (char)b : '.');
+                if (b >= 32 && b < 127)
+                {
+                    // Escape [ and ] to avoid Spectre.Console markup parsing
+                    // [[ produces literal [, ]] produces literal ]
+                    if (b == '[')
+                        sb.Append("[[");
+                    else if (b == ']')
+                        sb.Append("]]");
+                    else
+                        sb.Append((char)b);
+                }
+                else
+                {
+                    sb.Append('.');
+                }
             }
 
             sb.AppendLine();
@@ -388,6 +442,7 @@ public static class EsmHelpers
         byte[] pcFileData, AnalyzerRecordInfo pcRec, bool pcBigEndian)
     {
         var result = new RecordComparison();
+        const int VhgtDataLength = 1093;
 
         try
         {
@@ -411,6 +466,18 @@ public static class EsmHelpers
             var xboxSubsBySig = xboxSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
             var pcSubsBySig = pcSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
 
+            static bool VhgtEquals(byte[] left, byte[] right)
+            {
+                if (left.Length < VhgtDataLength || right.Length < VhgtDataLength)
+                {
+                    var len = Math.Min(left.Length, right.Length);
+                    if (!left.AsSpan(0, len).SequenceEqual(right.AsSpan(0, len))) return false;
+                    return left.Length == right.Length;
+                }
+
+                return left.AsSpan(0, VhgtDataLength).SequenceEqual(right.AsSpan(0, VhgtDataLength));
+            }
+
             foreach (var sig in xboxSubsBySig.Keys.Union(pcSubsBySig.Keys))
             {
                 var xboxList = xboxSubsBySig.GetValueOrDefault(sig, []);
@@ -421,9 +488,8 @@ public static class EsmHelpers
                     var xboxSub = i < xboxList.Count ? xboxList[i] : null;
                     var pcSub = i < pcList.Count ? pcList[i] : null;
 
-                    if (xboxSub == null || pcSub == null ||
-                        xboxSub.Data.Length != pcSub.Data.Length ||
-                        !xboxSub.Data.AsSpan().SequenceEqual(pcSub.Data))
+                    if (xboxSub == null || pcSub == null)
+                    {
                         result.SubrecordDiffs.Add(new SubrecordDiff
                         {
                             Signature = sig,
@@ -433,16 +499,40 @@ public static class EsmHelpers
                             PcOffset = pcSub?.Offset ?? 0,
                             Xbox360Data = xboxSub?.Data,
                             PcData = pcSub?.Data,
-                            DiffType = xboxSub == null ? "Missing in Xbox"
-                                : pcSub == null ? "Missing in PC"
-                                : xboxSub.Data.Length != pcSub.Data.Length ? "Size differs"
-                                : "Content differs"
+                            DiffType = xboxSub == null ? "Missing in Xbox" : "Missing in PC"
+                        });
+                        continue;
+                    }
+
+                    var isVhgt = sig.Equals("VHGT", StringComparison.OrdinalIgnoreCase);
+                    var isEqual = isVhgt
+                        ? VhgtEquals(xboxSub.Data, pcSub.Data)
+                        : xboxSub.Data.Length == pcSub.Data.Length && xboxSub.Data.AsSpan().SequenceEqual(pcSub.Data);
+
+                    if (!isEqual)
+                        result.SubrecordDiffs.Add(new SubrecordDiff
+                        {
+                            Signature = sig,
+                            Xbox360Size = xboxSub?.Data.Length ?? 0,
+                            PcSize = pcSub?.Data.Length ?? 0,
+                            Xbox360Offset = xboxSub?.Offset ?? 0,
+                            PcOffset = pcSub?.Offset ?? 0,
+                            Xbox360Data = xboxSub?.Data,
+                            PcData = pcSub?.Data,
+                            DiffType = xboxSub.Data.Length != pcSub.Data.Length ? "Size differs" : "Content differs"
                         });
                 }
+            }
+
+            if (result.SubrecordDiffs.Count == 0)
+            {
+                result.IsIdentical = true;
+                result.OnlySizeDiffers = false;
             }
         }
         catch (Exception ex)
         {
+            Console.Error.WriteLine($"WARN: CompareRecords failed for {xboxRec.Signature} 0x{xboxRec.FormId:X8} at A:0x{xboxRec.Offset:X8} B:0x{pcRec.Offset:X8}: {ex.Message}");
             result.SubrecordDiffs.Add(new SubrecordDiff
             {
                 Signature = "ERROR",

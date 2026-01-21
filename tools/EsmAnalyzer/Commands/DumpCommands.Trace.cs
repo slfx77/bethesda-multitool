@@ -104,4 +104,38 @@ public static partial class DumpCommands
         AnsiConsole.MarkupLine($"[green]Validation OK[/] - processed {count:N0} records/groups");
         return 0;
     }
+
+    private static int ValidateDeep(string filePath, string? startStr, string? stopStr, int limit)
+    {
+        var esm = EsmFileLoader.Load(filePath);
+        if (esm == null) return 1;
+
+        var startOffset = EsmFileLoader.ParseOffset(startStr) ?? esm.FirstGrupOffset;
+        var stopOffset = EsmFileLoader.ParseOffset(stopStr) ?? esm.Data.Length;
+        if (stopOffset > esm.Data.Length) stopOffset = esm.Data.Length;
+        if (startOffset < esm.FirstGrupOffset) startOffset = esm.FirstGrupOffset;
+
+        AnsiConsole.MarkupLine($"[blue]Deep validating:[/] {Path.GetFileName(filePath)}");
+        AnsiConsole.MarkupLine($"Range: 0x{startOffset:X8} - 0x{stopOffset:X8}");
+        AnsiConsole.MarkupLine($"Limit: {(limit <= 0 ? "Unlimited" : limit.ToString())}");
+        AnsiConsole.WriteLine();
+
+        var recordCount = 0;
+        var subrecordCount = 0;
+        var compressedSkipped = 0;
+
+        if (!DumpCommandHelpers.ValidateRecursive(esm.Data, esm.IsBigEndian, startOffset, stopOffset, limit,
+                ref recordCount, ref subrecordCount, ref compressedSkipped, 0, out var error))
+        {
+            AnsiConsole.MarkupLine($"[red]{error}[/]");
+            AnsiConsole.MarkupLine($"Records processed: {recordCount:N0}");
+            AnsiConsole.MarkupLine($"Subrecords parsed: {subrecordCount:N0}");
+            AnsiConsole.MarkupLine($"Compressed skipped: {compressedSkipped:N0}");
+            return 1;
+        }
+
+        AnsiConsole.MarkupLine(
+            $"[green]Deep validation OK[/] - records {recordCount:N0}, subrecords {subrecordCount:N0}, compressed skipped {compressedSkipped:N0}");
+        return 0;
+    }
 }

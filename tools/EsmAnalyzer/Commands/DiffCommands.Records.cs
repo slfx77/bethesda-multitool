@@ -11,13 +11,13 @@ public static partial class DiffCommands
     {
         if (!File.Exists(xboxPath))
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] Xbox 360 file not found: {xboxPath}");
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Xbox 360 file not found: {Markup.Escape(xboxPath)}");
             return 1;
         }
 
         if (!File.Exists(pcPath))
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] PC file not found: {pcPath}");
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] PC file not found: {Markup.Escape(pcPath)}");
             return 1;
         }
 
@@ -82,8 +82,19 @@ public static partial class DiffCommands
     private static int DiffRecordType(byte[] xboxData, byte[] pcData, bool xboxBigEndian, bool pcBigEndian,
         string recordType, int limit, int maxBytes)
     {
-        var xboxRecords = EsmHelpers.ScanForRecordType(xboxData, xboxBigEndian, recordType);
-        var pcRecords = EsmHelpers.ScanForRecordType(pcData, pcBigEndian, recordType);
+        // Prefer GRUP-based scanning to avoid false positives from signature search
+        var xboxRecords = EsmHelpers.ScanAllRecords(xboxData, xboxBigEndian)
+            .Where(r => r.Signature == recordType)
+            .ToList();
+        var pcRecords = EsmHelpers.ScanAllRecords(pcData, pcBigEndian)
+            .Where(r => r.Signature == recordType)
+            .ToList();
+
+        // Fallback to raw signature scan if nothing found (some rare cases)
+        if (xboxRecords.Count == 0)
+            xboxRecords = EsmHelpers.ScanForRecordType(xboxData, xboxBigEndian, recordType);
+        if (pcRecords.Count == 0)
+            pcRecords = EsmHelpers.ScanForRecordType(pcData, pcBigEndian, recordType);
 
         AnsiConsole.MarkupLine($"Found [cyan]{xboxRecords.Count}[/] {recordType} records in Xbox 360 file");
         AnsiConsole.MarkupLine($"Found [cyan]{pcRecords.Count}[/] {recordType} records in PC file");
@@ -170,15 +181,17 @@ public static partial class DiffCommands
                     if (xsub != null && psub != null)
                         DiffSubrecord(sig, xsub, psub, xboxBigEndian, pcBigEndian, maxBytes);
                     else if (xsub != null)
-                        AnsiConsole.MarkupLine($"  [red]{sig}[/]: Only in Xbox 360 ({xsub.Data.Length} bytes)");
+                        AnsiConsole.MarkupLine(
+                            $"  [red]{Markup.Escape(sig)}[/]: Only in Xbox 360 ({xsub.Data.Length} bytes)");
                     else if (psub != null)
-                        AnsiConsole.MarkupLine($"  [red]{sig}[/]: Only in PC ({psub.Data.Length} bytes)");
+                        AnsiConsole.MarkupLine(
+                            $"  [red]{Markup.Escape(sig)}[/]: Only in PC ({psub.Data.Length} bytes)");
                 }
             }
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error parsing record data: {ex.Message}[/]");
+            AnsiConsole.MarkupLine($"[red]Error parsing record data: {Markup.Escape(ex.Message)}[/]");
         }
 
         AnsiConsole.WriteLine();
@@ -216,16 +229,16 @@ public static partial class DiffCommands
         else
             status = "[yellow]CONTENT DIFFERS[/]";
 
-        AnsiConsole.MarkupLine($"  [bold]{sig}[/] ({xbox.Data.Length} bytes): {status}");
+        AnsiConsole.MarkupLine($"  [bold]{Markup.Escape(sig)}[/] ({xbox.Data.Length} bytes): {status}");
 
         // Show bytes if different and not just endian-swapped
         if (!isIdentical && !isEndianSwapped && string.IsNullOrEmpty(structuredPattern))
         {
             var showLen = Math.Min(maxBytes, Math.Max(xbox.Data.Length, pc.Data.Length));
             AnsiConsole.MarkupLine(
-                $"    Xbox: {DiffCommandHelpers.FormatBytes(xbox.Data, 0, Math.Min(showLen, xbox.Data.Length))}");
+                $"    Xbox: {Markup.Escape(DiffCommandHelpers.FormatBytes(xbox.Data, 0, Math.Min(showLen, xbox.Data.Length)))}");
             AnsiConsole.MarkupLine(
-                $"    PC:   {DiffCommandHelpers.FormatBytes(pc.Data, 0, Math.Min(showLen, pc.Data.Length))}");
+                $"    PC:   {Markup.Escape(DiffCommandHelpers.FormatBytes(pc.Data, 0, Math.Min(showLen, pc.Data.Length)))}");
 
             // Try to interpret the data
             DiffCommandHelpers.TryInterpretDifference(sig, xbox.Data, pc.Data, xboxBE, pcBE);

@@ -1096,10 +1096,28 @@ Both versions contain identical record counts:
 | **DATA**  | 4 bytes    | BE uint32                                | 4-byte endian swap                        |
 | **VNML**  | 3267 bytes | byte[33×33×3]                            | **NONE** (vertex normals XYZ)             |
 | **VCLR**  | 3267 bytes | byte[33×33×3]                            | **NONE** (vertex colors RGB)              |
-| **VHGT**  | 1096 bytes | BE float + signed byte[1089]             | First 4 bytes: float swap; Rest: **NONE** |
+| **VHGT**  | 1096 bytes | BE float + signed byte[1089] + 3 padding | First 4 bytes: float swap; Rest: **NONE** |
 | **ATXT**  | 8 bytes    | BE FormID + byte + byte + BE uint16      | FormID swap + uint16 swap                 |
 | **BTXT**  | 8 bytes    | Same as ATXT                             | Same as ATXT                              |
 | **VTXT**  | 8×N bytes  | Per entry: BE uint16 + uint16 + BE float | Each entry: uint16 swap + float swap      |
+
+#### VHGT Subrecord Detail (PDB Validated)
+
+From PDB analysis (`pdb_globals.txt`):
+
+- `LANDAREA = 1089` - Height grid is 33×33 = 1089 values
+- `LANDSIZE = 33` - Grid dimension
+- `VHGT_ID = 0x54484756` - Subrecord signature ("VHGT")
+
+**VHGT Structure (1096 bytes):**
+
+| Offset | Size | Type          | Name          | Notes                                                   |
+| ------ | ---- | ------------- | ------------- | ------------------------------------------------------- |
+| 0      | 4    | float         | fBaseHeight   | Runtime: `LoadedLandData.fBaseHeight` at offset 160     |
+| 4      | 1089 | signed byte[] | Height deltas | 33×33 grid, relative to fBaseHeight                     |
+| 1093   | 3    | bytes         | **Padding**   | Not referenced in any PDB struct - zeroed on conversion |
+
+**Key Finding**: The trailing 3 bytes (1093-1095) are alignment padding. They contain arbitrary values (0x00, 0xC8, 0xFF) depending on the tool that created the ESM. The game reads exactly `fBaseHeight` (4 bytes) + `LANDAREA` (1089) height deltas and ignores the remainder.
 
 #### ATXT Subrecord Detail
 

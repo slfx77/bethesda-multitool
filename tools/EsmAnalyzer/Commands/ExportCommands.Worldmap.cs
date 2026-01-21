@@ -21,41 +21,31 @@ public static partial class ExportCommands
             targetWorldspaceFormId = KnownWorldspaces["WastelandNV"];
             worldspaceName = "WastelandNV";
         }
-        else if (worldspaceName.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            targetWorldspaceFormId = Convert.ToUInt32(worldspaceName, 16);
-        }
         else if (KnownWorldspaces.TryGetValue(worldspaceName, out var knownId))
         {
             targetWorldspaceFormId = knownId;
         }
         else
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] Unknown worldspace '{worldspaceName}'");
-            AnsiConsole.MarkupLine("[yellow]Known worldspaces:[/]");
-            foreach (var (name, formId) in KnownWorldspaces.DistinctBy(kvp => kvp.Value))
-                AnsiConsole.MarkupLine($"  {name}: 0x{formId:X8}");
-            return 1;
-        }
+            var parsed = EsmFileLoader.ParseFormId(worldspaceName);
+            if (parsed == null)
+            {
+                AnsiConsole.MarkupLine($"[red]ERROR:[/] Unknown worldspace '{worldspaceName}'");
+                AnsiConsole.MarkupLine("[yellow]Known worldspaces:[/]");
+                foreach (var (name, formId) in KnownWorldspaces.DistinctBy(kvp => kvp.Value))
+                    AnsiConsole.MarkupLine($"  {name}: 0x{formId:X8}");
+                return 1;
+            }
 
-        if (!File.Exists(filePath))
-        {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] File not found: {filePath}");
-            return 1;
+            targetWorldspaceFormId = parsed.Value;
         }
 
         Directory.CreateDirectory(outputDir);
 
-        var data = File.ReadAllBytes(filePath);
-        var header = EsmParser.ParseFileHeader(data);
+        var esm = EsmFileLoader.Load(filePath, false);
+        if (esm == null) return 1;
 
-        if (header == null)
-        {
-            AnsiConsole.MarkupLine("[red]ERROR:[/] Failed to parse ESM header");
-            return 1;
-        }
-
-        var bigEndian = header.IsBigEndian;
+        var bigEndian = esm.IsBigEndian;
 
         AnsiConsole.MarkupLine($"[blue]Generating worldmap for:[/] {worldspaceName} (0x{targetWorldspaceFormId:X8})");
         AnsiConsole.MarkupLine($"Source file: [cyan]{Path.GetFileName(filePath)}[/]");
@@ -73,16 +63,18 @@ public static partial class ExportCommands
             .Start("Scanning for CELL and LAND records...", ctx =>
             {
                 ctx.Status("Scanning for CELL records...");
-                cellRecords = EsmHelpers.ScanForRecordType(data, bigEndian, "CELL");
+                cellRecords = EsmHelpers.ScanForRecordType(esm.Data, bigEndian, "CELL");
 
                 ctx.Status("Scanning for LAND records...");
-                landRecords = EsmHelpers.ScanForRecordType(data, bigEndian, "LAND");
+                landRecords = EsmHelpers.ScanForRecordType(esm.Data, bigEndian, "LAND");
             });
 
         AnsiConsole.MarkupLine($"Found [cyan]{cellRecords.Count}[/] CELL records");
         AnsiConsole.MarkupLine($"Found [cyan]{landRecords.Count}[/] LAND records");
 
         // Step 2: Extract cell grid positions from exterior cells
+        var cellParseErrors = 0;
+
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start("Extracting cell grid positions...", ctx =>
@@ -90,7 +82,7 @@ public static partial class ExportCommands
                 foreach (var cell in cellRecords)
                     try
                     {
-                        var recordData = EsmHelpers.GetRecordData(data, cell, bigEndian);
+                        var recordData = EsmHelpers.GetRecordData(esm.Data, cell, bigEndian);
                         var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
 
                         // Look for XCLC subrecord (grid position - only exists for exterior cells)
@@ -117,13 +109,18 @@ public static partial class ExportCommands
                             };
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Skip problematic cells
+                        cellParseErrors++;
+                        if (cellParseErrors <= 5)
+                            AnsiConsole.MarkupLine(
+                                $"[yellow]WARN:[/] Failed to parse CELL 0x{cell.FormId:X8}: {ex.Message}");
                     }
             });
 
         AnsiConsole.MarkupLine($"Found [cyan]{cellMap.Count}[/] exterior cells with grid positions");
+        if (cellParseErrors > 0)
+            AnsiConsole.MarkupLine($"[yellow]WARN:[/] {cellParseErrors} CELL records failed to parse.");
 
         if (cellMap.Count == 0)
         {
@@ -196,7 +193,7 @@ public static partial class ExportCommands
                         try
                         {
                             // Extract heightmap from this LAND
-                            var recordData = EsmHelpers.GetRecordData(data, landAfterCell, bigEndian);
+                            var recordData = EsmHelpers.GetRecordData(esm.Data, landAfterCell, bigEndian);
                             var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
 
                             var vhgt = subrecords.FirstOrDefault(s => s.Signature == "VHGT");
@@ -224,6 +221,9 @@ public static partial class ExportCommands
                             // This LAND probably belongs to an interior cell, skip it and try next
                             sortedLands.Remove(landAfterCell);
                             decompressionErrors++;
+                            if (decompressionErrors <= 5)
+                                AnsiConsole.MarkupLine(
+                                    $"[yellow]WARN:[/] Decompression failed for LAND 0x{landAfterCell.FormId:X8}: {ex.Message}");
                             // Don't break - loop will try the next LAND
                         }
                         catch (Exception ex)

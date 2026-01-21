@@ -120,6 +120,7 @@ internal sealed class EsmConversionIndexBuilder
     private void ScanFlatCellGroups(ConversionIndex index, int startOffset)
     {
         var offset = startOffset;
+        var worldChildrenFound = 0;
 
         // Skip past TOFT records and duplicate INFO records
         while (offset + EsmParser.MainRecordHeaderSize <= _input.Length)
@@ -127,22 +128,38 @@ internal sealed class EsmConversionIndexBuilder
             var sigBytes = _input.AsSpan(offset, 4);
             var signature = $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
 
-            if (signature == "GRUP")
-                break; // Found start of flat GRUPs
+            if (signature == "GRUP" || signature == "PURG")
+                break; // Found start of flat GRUPs (PURG is big-endian GRUP)
 
             // Skip non-GRUP records (TOFT, duplicate INFO)
             var dataSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
             offset += EsmParser.MainRecordHeaderSize + (int)dataSize;
         }
 
-        // Now scan flat GRUPs
+        // Now scan flat GRUPs - Xbox 360 may have orphaned data between GRUPs
         while (offset + EsmParser.MainRecordHeaderSize <= _input.Length)
         {
             var sigBytes = _input.AsSpan(offset, 4);
             var signature = $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
 
-            if (signature != "GRUP")
-                break; // End of flat GRUPs
+            if (signature != "GRUP" && signature != "PURG")
+            {
+                // Not a GRUP - try to skip forward and find the next GRUP
+                var found = false;
+                for (var scan = offset + 1; scan <= _input.Length - 4 && scan < offset + 1024; scan++)
+                {
+                    if (_input[scan] == 0x50 && _input[scan + 1] == 0x55 &&
+                        _input[scan + 2] == 0x52 && _input[scan + 3] == 0x47) // "PURG"
+                    {
+                        offset = scan;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    break; // End of flat GRUPs
+                continue;
+            }
 
             var grupSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
             var labelValue = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 8));
@@ -166,6 +183,7 @@ internal sealed class EsmConversionIndexBuilder
             {
                 var worldId = labelValue;
                 ScanFlatWorldChildrenGroup(index, offset, (int)grupSize, worldId);
+                worldChildrenFound++;
             }
 
             offset += (int)grupSize;

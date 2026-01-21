@@ -33,6 +33,10 @@ public static partial class LandCommands
             Description = "Number of VHGT delta pairs to display when comparing",
             DefaultValueFactory = _ => 32
         };
+        var vhgtCompareDiffOpt = new Option<bool>("--vhgt-compare-diff")
+        {
+            Description = "Show first N differing VHGT deltas instead of the first N indices"
+        };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(formIdArg);
@@ -40,6 +44,7 @@ public static partial class LandCommands
         command.Options.Add(vhgtHistOpt);
         command.Options.Add(vhgtCompareOpt);
         command.Options.Add(vhgtCompareSamplesOpt);
+        command.Options.Add(vhgtCompareDiffOpt);
 
         command.SetAction(parseResult => SummarizeLand(
             parseResult.GetValue(fileArg)!,
@@ -47,7 +52,8 @@ public static partial class LandCommands
             parseResult.GetValue(vhgtSamplesOpt),
             parseResult.GetValue(vhgtHistOpt),
             parseResult.GetValue(vhgtCompareOpt),
-            parseResult.GetValue(vhgtCompareSamplesOpt)));
+            parseResult.GetValue(vhgtCompareSamplesOpt),
+            parseResult.GetValue(vhgtCompareDiffOpt)));
 
         return command;
     }

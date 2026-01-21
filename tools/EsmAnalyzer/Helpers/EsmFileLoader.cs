@@ -108,8 +108,9 @@ public static class EsmFileLoader
         {
             return Convert.ToInt32(offsetStr.Replace("0x", "", StringComparison.OrdinalIgnoreCase), 16);
         }
-        catch
+        catch (Exception ex)
         {
+            AnsiConsole.MarkupLine($"[yellow]WARN:[/] Invalid offset '{offsetStr}': {ex.Message}");
             return null;
         }
     }
@@ -125,8 +126,9 @@ public static class EsmFileLoader
         {
             return Convert.ToUInt32(formIdStr.Replace("0x", "", StringComparison.OrdinalIgnoreCase), 16);
         }
-        catch
+        catch (Exception ex)
         {
+            AnsiConsole.MarkupLine($"[yellow]WARN:[/] Invalid FormID '{formIdStr}': {ex.Message}");
             return null;
         }
     }

@@ -9,6 +9,8 @@ namespace EsmAnalyzer.Helpers;
 /// </summary>
 public static class EsmDisplayHelpers
 {
+    private const string UnknownLabel = "Unknown";
+
     /// <summary>
     ///     Renders a hex dump to AnsiConsole with optional highlighting.
     /// </summary>
@@ -16,44 +18,53 @@ public static class EsmDisplayHelpers
         int? highlightLength = null)
     {
         for (var i = 0; i < data.Length; i += 16)
+            RenderHexDumpLine(data, baseOffset, i, highlightStart, highlightLength);
+    }
+
+    private static void RenderHexDumpLine(byte[] data, long baseOffset, int lineStart, int? highlightStart,
+        int? highlightLength)
+    {
+        var lineOffset = baseOffset + lineStart;
+        var hexParts = new List<string>();
+        var asciiParts = new List<char>();
+
+        for (var j = 0; j < 16 && lineStart + j < data.Length; j++)
         {
-            var lineOffset = baseOffset + i;
-            var hexParts = new List<string>();
-            var asciiParts = new List<char>();
+            var b = data[lineStart + j];
+            var byteOffset = lineStart + j;
+            var isHighlight = IsHighlight(byteOffset, highlightStart, highlightLength);
 
-            for (var j = 0; j < 16 && i + j < data.Length; j++)
-            {
-                var b = data[i + j];
-                var byteOffset = i + j;
-
-                // Check if this byte should be highlighted
-                var isHighlight = highlightStart.HasValue && highlightLength.HasValue &&
-                                  byteOffset >= highlightStart.Value &&
-                                  byteOffset < highlightStart.Value + highlightLength.Value;
-
-                if (isHighlight)
-                {
-                    hexParts.Add($"[green]{b:X2}[/]");
-                    asciiParts.Add(b >= 32 && b < 127 ? (char)b : '.');
-                }
-                else
-                {
-                    hexParts.Add($"{b:X2}");
-                    asciiParts.Add(b >= 32 && b < 127 ? (char)b : '.');
-                }
-            }
-
-            var hexStr = string.Join(" ", hexParts);
-            if (hexParts.Count < 16)
-            {
-                // Pad to align ASCII column (need to account for ANSI codes if highlighting)
-                var rawLen = hexParts.Count * 3 - 1;
-                hexStr += new string(' ', 47 - rawLen);
-            }
-
-            var asciiStr = Markup.Escape(new string([.. asciiParts]));
-            AnsiConsole.MarkupLine($"  [grey]0x{lineOffset:X8}[/]: {hexStr}  {asciiStr}");
+            hexParts.Add(FormatHexByte(b, isHighlight));
+            asciiParts.Add(ToAsciiChar(b));
         }
+
+        var hexStr = string.Join(" ", hexParts);
+        if (hexParts.Count < 16)
+        {
+            // Pad to align ASCII column (need to account for ANSI codes if highlighting)
+            var rawLen = hexParts.Count * 3 - 1;
+            hexStr += new string(' ', 47 - rawLen);
+        }
+
+        var asciiStr = Markup.Escape(new string([.. asciiParts]));
+        AnsiConsole.MarkupLine($"  [grey]0x{lineOffset:X8}[/]: {hexStr}  {asciiStr}");
+    }
+
+    private static bool IsHighlight(int byteOffset, int? highlightStart, int? highlightLength)
+    {
+        return highlightStart.HasValue && highlightLength.HasValue &&
+               byteOffset >= highlightStart.Value &&
+               byteOffset < highlightStart.Value + highlightLength.Value;
+    }
+
+    private static string FormatHexByte(byte value, bool highlight)
+    {
+        return highlight ? $"[green]{value:X2}[/]" : $"{value:X2}";
+    }
+
+    private static char ToAsciiChar(byte value)
+    {
+        return value is >= 32 and < 127 ? (char)value : '.';
     }
 
     /// <summary>
@@ -181,98 +192,98 @@ public static class EsmDisplayHelpers
         switch (signature)
         {
             case "CTDA" when data.Length >= 24:
-                {
-                    var type = data[0];
-                    var compareValue = ReadSingle(data, 4, bigEndian);
-                    var compareValueRaw = ReadUInt32(data, 4, bigEndian);
-                    var function = ReadUInt16(data, 8, bigEndian);
-                    var param1 = ReadUInt32(data, 12, bigEndian);
-                    var param2 = ReadUInt32(data, 16, bigEndian);
-                    var runOn = ReadUInt32(data, 20, bigEndian);
-                    var reference = data.Length >= 28 ? ReadUInt32(data, 24, bigEndian) : 0u;
+            {
+                var type = data[0];
+                var compareValue = ReadSingle(data, 4, bigEndian);
+                var compareValueRaw = ReadUInt32(data, 4, bigEndian);
+                var function = ReadUInt16(data, 8, bigEndian);
+                var param1 = ReadUInt32(data, 12, bigEndian);
+                var param2 = ReadUInt32(data, 16, bigEndian);
+                var runOn = ReadUInt32(data, 20, bigEndian);
+                var reference = data.Length >= 28 ? ReadUInt32(data, 24, bigEndian) : 0u;
 
-                    details = string.Join(", ",
-                        FormatConditionType(type),
-                        $"Func=0x{function:X4}",
-                        $"Comp={FormatFloat(compareValue)} (0x{compareValueRaw:X8})",
-                        $"Param1=0x{param1:X8}",
-                        $"Param2=0x{param2:X8}",
-                        $"RunOn={FormatRunOn(runOn)} (0x{runOn:X8})",
-                        $"Ref=0x{reference:X8}");
-                    return true;
-                }
+                details = string.Join(", ",
+                    FormatConditionType(type),
+                    $"Func=0x{function:X4}",
+                    $"Comp={FormatFloat(compareValue)} (0x{compareValueRaw:X8})",
+                    $"Param1=0x{param1:X8}",
+                    $"Param2=0x{param2:X8}",
+                    $"RunOn={FormatRunOn(runOn)} (0x{runOn:X8})",
+                    $"Ref=0x{reference:X8}");
+                return true;
+            }
             case "TRDT" when data.Length >= 24:
-                {
-                    var emotionType = ReadUInt32(data, 0, bigEndian);
-                    var emotionValue = ReadInt32(data, 4, bigEndian);
-                    var responseNumber = data[12];
-                    var sound = ReadUInt32(data, 16, bigEndian);
-                    var useAnim = data[20] != 0;
+            {
+                var emotionType = ReadUInt32(data, 0, bigEndian);
+                var emotionValue = ReadInt32(data, 4, bigEndian);
+                var responseNumber = data[12];
+                var sound = ReadUInt32(data, 16, bigEndian);
+                var useAnim = data[20] != 0;
 
-                    details = string.Join(", ",
-                        $"Emotion={FormatEmotionType(emotionType)} (0x{emotionType:X8})",
-                        $"Value={emotionValue}",
-                        $"Response#={responseNumber}",
-                        $"Sound=0x{sound:X8}",
-                        $"UseAnim={(useAnim ? "Yes" : "No")}");
-                    return true;
-                }
+                details = string.Join(", ",
+                    $"Emotion={FormatEmotionType(emotionType)} (0x{emotionType:X8})",
+                    $"Value={emotionValue}",
+                    $"Response#={responseNumber}",
+                    $"Sound=0x{sound:X8}",
+                    $"UseAnim={(useAnim ? "Yes" : "No")}");
+                return true;
+            }
             case "SCHR" when data.Length >= 16:
+            {
+                uint refCount;
+                uint compiledSize;
+                uint variableCount;
+                ushort scriptType;
+                ushort flags;
+
+                if (data.Length >= 20)
                 {
-                    uint refCount;
-                    uint compiledSize;
-                    uint variableCount;
-                    ushort scriptType;
-                    ushort flags;
-
-                    if (data.Length >= 20)
-                    {
-                        refCount = ReadUInt32(data, 4, bigEndian);
-                        compiledSize = ReadUInt32(data, 8, bigEndian);
-                        variableCount = ReadUInt32(data, 12, bigEndian);
-                        scriptType = ReadUInt16(data, 16, bigEndian);
-                        flags = ReadUInt16(data, 18, bigEndian);
-                    }
-                    else
-                    {
-                        refCount = ReadUInt32(data, 0, bigEndian);
-                        compiledSize = ReadUInt32(data, 4, bigEndian);
-                        variableCount = ReadUInt32(data, 8, bigEndian);
-                        scriptType = ReadUInt16(data, 12, bigEndian);
-                        flags = ReadUInt16(data, 14, bigEndian);
-                    }
-
-                    details = string.Join(", ",
-                        $"RefCount={refCount}",
-                        $"CompiledSize={compiledSize}",
-                        $"VarCount={variableCount}",
-                        $"Type={FormatScriptType(scriptType)} (0x{scriptType:X4})",
-                        $"Flags=0x{flags:X4}");
-                    return true;
+                    refCount = ReadUInt32(data, 4, bigEndian);
+                    compiledSize = ReadUInt32(data, 8, bigEndian);
+                    variableCount = ReadUInt32(data, 12, bigEndian);
+                    scriptType = ReadUInt16(data, 16, bigEndian);
+                    flags = ReadUInt16(data, 18, bigEndian);
                 }
+                else
+                {
+                    refCount = ReadUInt32(data, 0, bigEndian);
+                    compiledSize = ReadUInt32(data, 4, bigEndian);
+                    variableCount = ReadUInt32(data, 8, bigEndian);
+                    scriptType = ReadUInt16(data, 12, bigEndian);
+                    flags = ReadUInt16(data, 14, bigEndian);
+                }
+
+                details = string.Join(", ",
+                    $"RefCount={refCount}",
+                    $"CompiledSize={compiledSize}",
+                    $"VarCount={variableCount}",
+                    $"Type={FormatScriptType(scriptType)} (0x{scriptType:X4})",
+                    $"Flags=0x{flags:X4}");
+                return true;
+            }
             case "RNAM":
-                {
-                    details = $"Prompt={FormatStringValue(data)}";
-                    return true;
-                }
+            {
+                details = $"Prompt={FormatStringValue(data)}";
+                return true;
+            }
             case "ANAM" when data.Length == 4:
-                {
-                    var formId = ReadUInt32(data, 0, bigEndian);
-                    details = $"Speaker=0x{formId:X8}";
-                    return true;
-                }
+            {
+                var formId = ReadUInt32(data, 0, bigEndian);
+                details = $"Speaker=0x{formId:X8}";
+                return true;
+            }
             case "KNAM" when data.Length == 4:
-                {
-                    var formId = ReadUInt32(data, 0, bigEndian);
-                    details = $"ActorValue/Perk=0x{formId:X8}";
-                    return true;
-                }
+            {
+                var formId = ReadUInt32(data, 0, bigEndian);
+                details = $"ActorValue/Perk=0x{formId:X8}";
+                return true;
+            }
             case "DNAM" when data.Length == 4:
-                {
-                    var value = ReadUInt32(data, 0, bigEndian);
-                    details = $"SpeechChallenge={FormatSpeechChallenge(value)} (0x{value:X8})";
-                    return true;
-                }
+            {
+                var value = ReadUInt32(data, 0, bigEndian);
+                details = $"SpeechChallenge={FormatSpeechChallenge(value)} (0x{value:X8})";
+                return true;
+            }
         }
 
         return false;
@@ -336,7 +347,7 @@ public static class EsmDisplayHelpers
             2 => "Reference",
             3 => "CombatTarget",
             4 => "LinkedRef",
-            _ => "Unknown"
+            _ => UnknownLabel
         };
     }
 
@@ -352,7 +363,7 @@ public static class EsmDisplayHelpers
             5 => "Happy",
             6 => "Surprise",
             7 => "Pained",
-            _ => "Unknown"
+            _ => UnknownLabel
         };
     }
 
@@ -363,7 +374,7 @@ public static class EsmDisplayHelpers
             0 => "Object",
             1 => "Quest",
             0x100 => "Effect",
-            _ => "Unknown"
+            _ => UnknownLabel
         };
     }
 
@@ -388,29 +399,22 @@ public static class EsmDisplayHelpers
 
     private static ushort ReadUInt16(byte[] data, int offset, bool bigEndian)
     {
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2))
-            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset, 2));
+        return EsmBinary.ReadUInt16(data, offset, bigEndian);
     }
 
     private static uint ReadUInt32(byte[] data, int offset, bool bigEndian)
     {
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
+        return EsmBinary.ReadUInt32(data, offset, bigEndian);
     }
 
     private static int ReadInt32(byte[] data, int offset, bool bigEndian)
     {
-        return bigEndian
-            ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4))
-            : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4));
+        return EsmBinary.ReadInt32(data, offset, bigEndian);
     }
 
     private static float ReadSingle(byte[] data, int offset, bool bigEndian)
     {
-        var value = ReadInt32(data, offset, bigEndian);
-        return BitConverter.Int32BitsToSingle(value);
+        return EsmBinary.ReadSingle(data, offset, bigEndian);
     }
 
     /// <summary>

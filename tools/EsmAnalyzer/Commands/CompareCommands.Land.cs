@@ -1,20 +1,20 @@
-using System.Globalization;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
 
 public static partial class CompareCommands
 {
+    private const int VhgtDataLength = 1093;
+
     private static int CompareLand(string xboxPath, string pcPath, string? formIdStr, bool compareAll)
     {
-        uint? targetFormId = null;
-
-        if (!string.IsNullOrEmpty(formIdStr))
-            targetFormId = formIdStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                ? Convert.ToUInt32(formIdStr, 16)
-                : uint.Parse(formIdStr, CultureInfo.InvariantCulture);
+        var targetFormId = EsmFileLoader.ParseFormId(formIdStr);
+        if (!string.IsNullOrWhiteSpace(formIdStr) && targetFormId == null)
+        {
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid FormID: {formIdStr}");
+            return 1;
+        }
 
         if (targetFormId == null && !compareAll)
         {
@@ -22,34 +22,9 @@ public static partial class CompareCommands
             return 1;
         }
 
-        if (!File.Exists(xboxPath))
-        {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] Xbox 360 file not found: {xboxPath}");
-            return 1;
-        }
+        var (xbox, pc) = EsmFileLoader.LoadPair(xboxPath, pcPath);
+        if (xbox == null || pc == null) return 1;
 
-        if (!File.Exists(pcPath))
-        {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] PC file not found: {pcPath}");
-            return 1;
-        }
-
-        var xboxData = File.ReadAllBytes(xboxPath);
-        var pcData = File.ReadAllBytes(pcPath);
-
-        var xboxHeader = EsmParser.ParseFileHeader(xboxData);
-        var pcHeader = EsmParser.ParseFileHeader(pcData);
-
-        if (xboxHeader == null || pcHeader == null)
-        {
-            AnsiConsole.MarkupLine("[red]ERROR:[/] Failed to parse ESM headers");
-            return 1;
-        }
-
-        AnsiConsole.MarkupLine(
-            $"Xbox 360: {Path.GetFileName(xboxPath)} ({(xboxHeader.IsBigEndian ? "Big-endian" : "Little-endian")})");
-        AnsiConsole.MarkupLine(
-            $"PC: {Path.GetFileName(pcPath)} ({(pcHeader.IsBigEndian ? "Big-endian" : "Little-endian")})");
         AnsiConsole.WriteLine();
 
         // Scan for LAND records using byte scan for reliable Xbox 360 detection
@@ -61,10 +36,10 @@ public static partial class CompareCommands
             .Start("Scanning for LAND records...", ctx =>
             {
                 ctx.Status("Scanning Xbox 360 file...");
-                xboxLands = EsmHelpers.ScanForRecordType(xboxData, xboxHeader.IsBigEndian, "LAND");
+                xboxLands = EsmHelpers.ScanForRecordType(xbox.Data, xbox.IsBigEndian, "LAND");
 
                 ctx.Status("Scanning PC file...");
-                pcLands = EsmHelpers.ScanForRecordType(pcData, pcHeader.IsBigEndian, "LAND");
+                pcLands = EsmHelpers.ScanForRecordType(pc.Data, pc.IsBigEndian, "LAND");
             });
 
         AnsiConsole.MarkupLine($"Xbox 360 LAND records: [cyan]{xboxLands.Count:N0}[/]");
@@ -94,106 +69,93 @@ public static partial class CompareCommands
             }
 
             // Get record data
-            var xboxRecordData = EsmHelpers.GetRecordData(xboxData, xboxRec, xboxHeader.IsBigEndian);
-            var pcRecordData = EsmHelpers.GetRecordData(pcData, pcRec, pcHeader.IsBigEndian);
+            var xboxRecordData = EsmHelpers.GetRecordData(xbox.Data, xboxRec, xbox.IsBigEndian);
+            var pcRecordData = EsmHelpers.GetRecordData(pc.Data, pcRec, pc.IsBigEndian);
 
             AnsiConsole.MarkupLine(
                 $"  Xbox 360: {xboxRec.DataSize} bytes (compressed) → {xboxRecordData.Length} bytes");
             AnsiConsole.MarkupLine($"  PC:       {pcRec.DataSize} bytes (compressed) → {pcRecordData.Length} bytes");
 
             // Parse subrecords
-            var xboxSubs = EsmHelpers.ParseSubrecords(xboxRecordData, xboxHeader.IsBigEndian);
-            var pcSubs = EsmHelpers.ParseSubrecords(pcRecordData, pcHeader.IsBigEndian);
+            var xboxSubs = EsmHelpers.ParseSubrecords(xboxRecordData, xbox.IsBigEndian);
+            var pcSubs = EsmHelpers.ParseSubrecords(pcRecordData, pc.IsBigEndian);
 
             AnsiConsole.MarkupLine($"  Xbox 360 subrecords: {xboxSubs.Count}");
             AnsiConsole.MarkupLine($"  PC subrecords: {pcSubs.Count}");
             AnsiConsole.WriteLine();
 
-            // Compare each subrecord
-            var pcSubsBySig = pcSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
-            var xboxSubsBySig = xboxSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
-
-            var subTable = new Table()
-                .Border(TableBorder.Simple)
-                .AddColumn("[bold]Subrecord[/]")
-                .AddColumn("[bold]Count[/]")
-                .AddColumn("[bold]Size[/]")
-                .AddColumn("[bold]Status[/]");
-
-            foreach (var sig in xboxSubsBySig.Keys.Union(pcSubsBySig.Keys).OrderBy(s => s))
-            {
-                var xboxList = xboxSubsBySig.GetValueOrDefault(sig, []);
-                var pcList = pcSubsBySig.GetValueOrDefault(sig, []);
-
-                if (xboxList.Count != pcList.Count)
-                {
-                    subTable.AddRow(
-                        sig,
-                        $"Xbox={xboxList.Count}, PC={pcList.Count}",
-                        "-",
-                        "[red]COUNT MISMATCH[/]"
-                    );
-                    continue;
-                }
-
-                var totalXboxSize = xboxList.Sum(s => s.Data.Length);
-                var allIdentical = true;
-                var allEndianSwapped = true;
-                var allLandTransformed = true;
-
-                for (var i = 0; i < xboxList.Count; i++)
-                {
-                    var xboxSub = xboxList[i];
-                    var pcSub = pcList[i];
-
-                    if (!xboxSub.Data.AsSpan().SequenceEqual(pcSub.Data)) allIdentical = false;
-
-                    var landTransformed = ApplyLandTransform(sig, xboxSub.Data);
-                    if (landTransformed == null)
-                        allLandTransformed = false;
-                    else if (!landTransformed.AsSpan().SequenceEqual(pcSub.Data)) allLandTransformed = false;
-
-                    // Check if 4-byte endian swapped
-                    if (xboxSub.Data.Length == pcSub.Data.Length && xboxSub.Data.Length % 4 == 0)
-                    {
-                        var swapped = new byte[xboxSub.Data.Length];
-                        for (var j = 0; j < xboxSub.Data.Length; j += 4)
-                        {
-                            swapped[j] = xboxSub.Data[j + 3];
-                            swapped[j + 1] = xboxSub.Data[j + 2];
-                            swapped[j + 2] = xboxSub.Data[j + 1];
-                            swapped[j + 3] = xboxSub.Data[j];
-                        }
-
-                        if (!swapped.AsSpan().SequenceEqual(pcSub.Data)) allEndianSwapped = false;
-                    }
-                    else
-                    {
-                        allEndianSwapped = false;
-                    }
-                }
-
-                var status = allIdentical
-                    ? "[green]IDENTICAL[/]"
-                    : allLandTransformed
-                        ? "[yellow]LAND-TRANSFORMED[/]"
-                        : allEndianSwapped
-                            ? "[yellow]ENDIAN-SWAPPED (4-byte)[/]"
-                            : "[red]DIFFERS[/]";
-
-                subTable.AddRow(
-                    sig,
-                    $"{xboxList.Count}×",
-                    $"{totalXboxSize:N0}",
-                    status
-                );
-            }
-
+            var subTable = BuildSubrecordComparisonTable(xboxSubs, pcSubs);
             AnsiConsole.Write(subTable);
             AnsiConsole.WriteLine();
+
+            if (targetFormId.HasValue)
+                PrintLandDiffDetails(xboxSubs, pcSubs, xbox.IsBigEndian);
         }
 
         return 0;
+    }
+
+    private static void PrintLandDiffDetails(List<AnalyzerSubrecordInfo> xboxSubs, List<AnalyzerSubrecordInfo> pcSubs,
+        bool xboxBigEndian)
+    {
+        var xboxBySig = xboxSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
+        var pcBySig = pcSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
+
+        if (xboxBySig.TryGetValue("VHGT", out var xboxVhgt) && pcBySig.TryGetValue("VHGT", out var pcVhgt))
+        {
+            var left = xboxBigEndian ? ApplyLandVhgt(xboxVhgt[0].Data) : xboxVhgt[0].Data;
+            if (left is not null)
+            {
+                var diffIndex = FindFirstDiffIndexVhgt(left, pcVhgt[0].Data);
+                if (diffIndex >= 0)
+                    AnsiConsole.MarkupLine(
+                        $"[yellow]VHGT first diff at byte {diffIndex}[/] (Xbox={left[diffIndex]:X2} PC={pcVhgt[0].Data[diffIndex]:X2})");
+            }
+        }
+
+        if (xboxBySig.TryGetValue("ATXT", out var xboxAtxt) && pcBySig.TryGetValue("ATXT", out var pcAtxt))
+        {
+            var left = xboxBigEndian ? ApplyLandAtxt(xboxAtxt[0].Data) : xboxAtxt[0].Data;
+            if (left is not null)
+            {
+                var diffIndex = FindFirstDiffIndex(left, pcAtxt[0].Data);
+                if (diffIndex >= 0)
+                    AnsiConsole.MarkupLine(
+                        $"[yellow]ATXT first diff at byte {diffIndex}[/] (Xbox={left[diffIndex]:X2} PC={pcAtxt[0].Data[diffIndex]:X2})");
+            }
+        }
+    }
+
+    private static int FindFirstDiffIndex(byte[] left, byte[] right)
+    {
+        var length = Math.Min(left.Length, right.Length);
+        for (var i = 0; i < length; i++)
+            if (left[i] != right[i])
+                return i;
+        return left.Length == right.Length ? -1 : length;
+    }
+
+    private static int FindFirstDiffIndexVhgt(byte[] left, byte[] right)
+    {
+        var length = Math.Min(Math.Min(left.Length, right.Length), VhgtDataLength);
+        for (var i = 0; i < length; i++)
+            if (left[i] != right[i])
+                return i;
+
+        if (length == VhgtDataLength) return -1;
+        return left.Length == right.Length ? -1 : length;
+    }
+
+    private static bool VhgtEquals(byte[] left, byte[] right)
+    {
+        if (left.Length < VhgtDataLength || right.Length < VhgtDataLength)
+        {
+            var len = Math.Min(left.Length, right.Length);
+            if (!left.AsSpan(0, len).SequenceEqual(right.AsSpan(0, len))) return false;
+            return left.Length == right.Length;
+        }
+
+        return left.AsSpan(0, VhgtDataLength).SequenceEqual(right.AsSpan(0, VhgtDataLength));
     }
 
     private static byte[]? ApplyLandTransform(string signature, byte[] data)
@@ -246,5 +208,99 @@ public static partial class CompareCommands
         }
 
         return copy;
+    }
+
+    private static string GetSubrecordStatus(bool allIdentical, bool allLandTransformed, bool allEndianSwapped)
+    {
+        if (allIdentical) return "[green]IDENTICAL[/]";
+        if (allLandTransformed) return "[yellow]LAND-TRANSFORMED[/]";
+        if (allEndianSwapped) return "[yellow]ENDIAN-SWAPPED (4-byte)[/]";
+        return "[red]DIFFERS[/]";
+    }
+
+    private static Table BuildSubrecordComparisonTable(List<AnalyzerSubrecordInfo> xboxSubs,
+        List<AnalyzerSubrecordInfo> pcSubs)
+    {
+        var pcSubsBySig = pcSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
+        var xboxSubsBySig = xboxSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
+
+        var subTable = new Table()
+            .Border(TableBorder.Simple)
+            .AddColumn("[bold]Subrecord[/]")
+            .AddColumn("[bold]Count[/]")
+            .AddColumn("[bold]Size[/]")
+            .AddColumn("[bold]Status[/]");
+
+        foreach (var sig in xboxSubsBySig.Keys.Union(pcSubsBySig.Keys).OrderBy(s => s))
+        {
+            var xboxList = xboxSubsBySig.GetValueOrDefault(sig, []);
+            var pcList = pcSubsBySig.GetValueOrDefault(sig, []);
+
+            if (xboxList.Count != pcList.Count)
+            {
+                subTable.AddRow(
+                    sig,
+                    $"Xbox={xboxList.Count}, PC={pcList.Count}",
+                    "-",
+                    "[red]COUNT MISMATCH[/]"
+                );
+                continue;
+            }
+
+            var totalXboxSize = xboxList.Sum(s => s.Data.Length);
+            var allIdentical = true;
+            var allEndianSwapped = true;
+            var allLandTransformed = true;
+
+            for (var i = 0; i < xboxList.Count; i++)
+            {
+                var xboxSub = xboxList[i];
+                var pcSub = pcList[i];
+
+                var isVhgt = sig.Equals("VHGT", StringComparison.OrdinalIgnoreCase);
+                if (isVhgt)
+                {
+                    if (!VhgtEquals(xboxSub.Data, pcSub.Data)) allIdentical = false;
+                }
+                else if (!xboxSub.Data.AsSpan().SequenceEqual(pcSub.Data))
+                {
+                    allIdentical = false;
+                }
+
+                var landTransformed = ApplyLandTransform(sig, xboxSub.Data);
+                if (landTransformed == null ||
+                    (isVhgt ? !VhgtEquals(landTransformed, pcSub.Data) : !landTransformed.AsSpan().SequenceEqual(pcSub.Data)))
+                    allLandTransformed = false;
+
+                if (!IsEndianSwapped4(xboxSub.Data, pcSub.Data))
+                    allEndianSwapped = false;
+            }
+
+            var status = GetSubrecordStatus(allIdentical, allLandTransformed, allEndianSwapped);
+            subTable.AddRow(
+                sig,
+                $"{xboxList.Count}×",
+                $"{totalXboxSize:N0}",
+                status
+            );
+        }
+
+        return subTable;
+    }
+
+    private static bool IsEndianSwapped4(byte[] xboxData, byte[] pcData)
+    {
+        if (xboxData.Length != pcData.Length || xboxData.Length % 4 != 0) return false;
+
+        var swapped = new byte[xboxData.Length];
+        for (var j = 0; j < xboxData.Length; j += 4)
+        {
+            swapped[j] = xboxData[j + 3];
+            swapped[j + 1] = xboxData[j + 2];
+            swapped[j + 2] = xboxData[j + 1];
+            swapped[j + 3] = xboxData[j];
+        }
+
+        return swapped.AsSpan().SequenceEqual(pcData);
     }
 }

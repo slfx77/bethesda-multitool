@@ -455,15 +455,15 @@ LAND records contain terrain data and have specific conversion requirements:
 
 ### LAND Subrecords
 
-| Subrecord | Size       | Content              | Conversion                                 |
-| --------- | ---------- | -------------------- | ------------------------------------------ |
-| DATA      | 4 bytes    | Flags                | 4-byte endian swap                         |
-| VNML      | 3267 bytes | Vertex normals       | **NONE** (byte array)                      |
-| VCLR      | 3267 bytes | Vertex colors        | **NONE** (byte array)                      |
-| VHGT      | 1096 bytes | Height data          | First 4 bytes swap (float), rest unchanged |
-| ATXT      | 8 bytes    | Alpha texture        | Complex (see below)                        |
-| BTXT      | 8 bytes    | Base texture         | Same as ATXT                               |
-| VTXT      | 8×N bytes  | Vertex texture blend | Complex (see below)                        |
+| Subrecord | Size       | Content              | Conversion                         |
+| --------- | ---------- | -------------------- | ---------------------------------- |
+| DATA      | 4 bytes    | Flags                | 4-byte endian swap                 |
+| VNML      | 3267 bytes | Vertex normals       | **NONE** (byte array)              |
+| VCLR      | 3267 bytes | Vertex colors        | **NONE** (byte array)              |
+| VHGT      | 1096 bytes | Height data          | Float swap + zero trailing 3 bytes |
+| ATXT      | 8 bytes    | Alpha texture        | Complex (see below)                |
+| BTXT      | 8 bytes    | Base texture         | Same as ATXT                       |
+| VTXT      | 8×N bytes  | Vertex texture blend | Complex (see below)                |
 
 ### ATXT/BTXT Structure (8 bytes)
 
@@ -487,9 +487,12 @@ Offset 4-7: Opacity (float) - 4-byte endian swap
 ### VHGT Structure (1096 bytes)
 
 ```
-Offset 0-3:    Height offset (float) - 4-byte endian swap
-Offset 4-1095: Gradient data (signed bytes) - NO SWAP
+Offset 0-3:      Height offset (float) - 4-byte endian swap
+Offset 4-1092:   Gradient data (1089 signed bytes, 33×33 grid) - NO SWAP
+Offset 1093-1095: Padding (3 bytes) - Zero out for PC format
 ```
+
+**Note**: The trailing 3 bytes at offset 1093-1095 are platform-specific. Xbox 360 has arbitrary data here. PC has varying values - some records have `[0, 39, 0]`, others have `[0, 0, 0]`. For conversion, we zero them as some PC records have all zeros anyway.
 
 ---
 

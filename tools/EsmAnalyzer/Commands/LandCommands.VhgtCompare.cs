@@ -2,12 +2,14 @@ using System.Globalization;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using static EsmAnalyzer.Helpers.EsmBinary;
 
 namespace EsmAnalyzer.Commands;
 
 public static partial class LandCommands
 {
-    private static void CompareVhgt(string leftPath, string rightPath, uint formId, int sampleCount)
+    private static void CompareVhgt(string leftPath, string rightPath, uint formId, int sampleCount,
+        bool showDifferences)
     {
         if (!File.Exists(rightPath))
         {
@@ -48,18 +50,43 @@ public static partial class LandCommands
             .AddColumn(new TableColumn("Right").RightAligned())
             .AddColumn(new TableColumn("Diff").RightAligned());
 
-        var rows = Math.Min(sampleCount, count);
-        for (var i = 0; i < rows; i++)
+        if (showDifferences)
         {
-            var diff = leftDeltas[i] - rightDeltas[i];
-            sampleTable.AddRow(
-                i.ToString("N0"),
-                leftDeltas[i].ToString(CultureInfo.InvariantCulture),
-                rightDeltas[i].ToString(CultureInfo.InvariantCulture),
-                diff.ToString(CultureInfo.InvariantCulture));
-        }
+            var displayed = 0;
+            for (var i = 0; i < count && displayed < sampleCount; i++)
+            {
+                if (leftDeltas[i] == rightDeltas[i])
+                    continue;
 
-        AnsiConsole.Write(sampleTable);
+                var diff = leftDeltas[i] - rightDeltas[i];
+                sampleTable.AddRow(
+                    i.ToString("N0"),
+                    leftDeltas[i].ToString(CultureInfo.InvariantCulture),
+                    rightDeltas[i].ToString(CultureInfo.InvariantCulture),
+                    diff.ToString(CultureInfo.InvariantCulture));
+                displayed++;
+            }
+
+            if (sampleTable.Rows.Count == 0)
+                AnsiConsole.MarkupLine("[green]VHGT deltas are identical.[/]");
+            else
+                AnsiConsole.Write(sampleTable);
+        }
+        else
+        {
+            var rows = Math.Min(sampleCount, count);
+            for (var i = 0; i < rows; i++)
+            {
+                var diff = leftDeltas[i] - rightDeltas[i];
+                sampleTable.AddRow(
+                    i.ToString("N0"),
+                    leftDeltas[i].ToString(CultureInfo.InvariantCulture),
+                    rightDeltas[i].ToString(CultureInfo.InvariantCulture),
+                    diff.ToString(CultureInfo.InvariantCulture));
+            }
+
+            AnsiConsole.Write(sampleTable);
+        }
 
         var stats = ComputeLinearFit(leftDeltas, rightDeltas, count);
         AnsiConsole.WriteLine();

@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Globalization;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
@@ -11,6 +10,17 @@ namespace EsmAnalyzer.Commands;
 /// </summary>
 public static class HeuristicCommands
 {
+    private const string ScopeFile = "file";
+    private const string ScopeRecord = "record";
+    private const string ModeAll = "all";
+    private const string ModeRaw = "raw";
+    private const string ModeSwap2 = "swap2";
+    private const string ModeSwap4 = "swap4";
+    private const string ModeLand = "land";
+    private const string ModeLandVhgt = "land-vhgt";
+    private const string ModeLandAtxt = "land-atxt";
+    private const string ModeLandVtxt = "land-vtxt";
+
     public static Command CreateGeomSearchCommand()
     {
         var command = new Command("geom-search", "Search Xbox 360 ESM for matching PC geometry subrecord payloads");
@@ -56,12 +66,13 @@ public static class HeuristicCommands
             parseResult.GetValue(pcArg)!,
             parseResult.GetValue(xboxArg)!,
             parseResult.GetValue(typeArg)!,
-            parseResult.GetValue(formIdArg)!,
-            parseResult.GetValue(subrecordOpt),
-            parseResult.GetValue(modeOpt)!,
-            parseResult.GetValue(maxHitsOpt),
-            parseResult.GetValue(scopeOpt)!,
-            parseResult.GetValue(locateOpt)));
+            new GeomSearchOptions(
+                parseResult.GetValue(formIdArg)!,
+                parseResult.GetValue(subrecordOpt),
+                parseResult.GetValue(modeOpt)!,
+                parseResult.GetValue(maxHitsOpt),
+                parseResult.GetValue(scopeOpt)!,
+                parseResult.GetValue(locateOpt))));
 
         return command;
     }
@@ -70,12 +81,7 @@ public static class HeuristicCommands
         string pcPath,
         string xboxPath,
         string recordType,
-        string formIdText,
-        string[]? subrecordFilters,
-        string mode,
-        int maxHits,
-        string scope,
-        bool locate)
+        GeomSearchOptions options)
     {
         if (!File.Exists(pcPath))
         {
@@ -89,9 +95,10 @@ public static class HeuristicCommands
             return 1;
         }
 
-        if (!TryParseFormId(formIdText, out var formId))
+        var formId = EsmFileLoader.ParseFormId(options.FormIdText);
+        if (formId == null)
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid FormID: {formIdText}");
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid FormID: {options.FormIdText}");
             return 1;
         }
 
@@ -107,97 +114,38 @@ public static class HeuristicCommands
         }
 
         var type = recordType.ToUpperInvariant();
-        var normalizedScope = scope.Trim().ToLowerInvariant();
-        if (normalizedScope is not ("file" or "record"))
-        {
-            AnsiConsole.MarkupLine("[red]ERROR:[/] Scope must be 'file' or 'record'.");
+        if (!TryNormalizeScope(options.Scope, out var normalizedScope))
             return 1;
-        }
 
-        var (pcRecord, pcRecordData) = FindRecord(pcData, pcHeader.IsBigEndian, type, formId);
+        var (pcRecord, pcRecordData) = FindRecord(pcData, pcHeader.IsBigEndian, type, formId.Value);
         if (pcRecord == null || pcRecordData == null)
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] PC record {type} 0x{formId:X8} not found");
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] PC record {type} 0x{formId.Value:X8} not found");
             return 1;
         }
 
-        var subrecords = EsmHelpers.ParseSubrecords(pcRecordData, pcHeader.IsBigEndian);
-        var wanted = ResolveSubrecordFilters(type, subrecordFilters);
+        var candidates = GetCandidateSubrecords(pcRecordData, pcHeader.IsBigEndian, type, options.SubrecordFilters);
+        if (candidates == null) return 0;
 
-        var candidates = subrecords
-            .Where(s => wanted.Contains(s.Signature, StringComparer.OrdinalIgnoreCase))
-            .ToList();
+        if (!TryGetHaystack(xboxData, xboxHeader.IsBigEndian, type, formId.Value, normalizedScope, out var xboxRecord,
+                out var haystack))
+            return 1;
 
-        if (candidates.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No matching subrecords found in PC record.[/]");
-            return 0;
-        }
-
-        AnalyzerRecordInfo? xboxRecord = null;
-        byte[]? xboxRecordData = null;
-        var haystack = xboxData;
-        if (normalizedScope == "record")
-        {
-            (xboxRecord, xboxRecordData) = FindRecord(xboxData, xboxHeader.IsBigEndian, type, formId);
-            if (xboxRecord == null || xboxRecordData == null)
-            {
-                AnsiConsole.MarkupLine($"[red]ERROR:[/] Xbox record {type} 0x{formId:X8} not found");
-                return 1;
-            }
-
-            haystack = xboxRecordData;
-        }
-
-        var searchModes = ResolveSearchModes(mode, type);
-        var records = normalizedScope == "file" && locate
+        var searchModes = ResolveSearchModes(options.Mode, type);
+        var records = normalizedScope == ScopeFile && options.Locate
             ? EsmHelpers.ScanAllRecords(xboxData, xboxHeader.IsBigEndian).OrderBy(r => r.Offset).ToList()
             : [];
 
         AnsiConsole.MarkupLine($"[cyan]Record:[/] {type} 0x{formId:X8}");
-        AnsiConsole.MarkupLine($"[cyan]Scope:[/] {(normalizedScope == "record" ? "record" : "file")}");
+        AnsiConsole.MarkupLine($"[cyan]Scope:[/] {(normalizedScope == ScopeRecord ? ScopeRecord : ScopeFile)}");
         AnsiConsole.MarkupLine($"[cyan]Subrecords:[/] {string.Join(", ", candidates.Select(s => s.Signature))}");
         AnsiConsole.MarkupLine($"[cyan]Modes:[/] {string.Join(", ", searchModes)}");
         AnsiConsole.WriteLine();
 
-        var table = new Table()
-            .Border(TableBorder.Rounded)
-            .AddColumn("Subrecord")
-            .AddColumn("Mode")
-            .AddColumn(new TableColumn("Size").RightAligned())
-            .AddColumn(new TableColumn("Offset").RightAligned())
-            .AddColumn("Record")
-            .AddColumn(new TableColumn("FormID").RightAligned());
-
-        foreach (var sub in candidates)
-        foreach (var searchMode in searchModes)
-        {
-            var pattern = BuildPattern(sub.Data, sub.Signature, searchMode);
-            if (pattern.Length == 0) continue;
-
-            var hits = FindAllOccurrences(haystack, pattern, maxHits);
-            if (hits.Count == 0) continue;
-
-            foreach (var hit in hits)
-            {
-                AnalyzerRecordInfo? match = null;
-                if (normalizedScope == "file" && locate)
-                    match = FindRecordAtOffset(records, (uint)hit);
-                else if (normalizedScope == "record") match = xboxRecord;
-
-                var recordLabel = match?.Signature ?? "(none)";
-                var formLabel = match != null ? $"0x{match.FormId:X8}" : "-";
-                var offsetLabel = normalizedScope == "record" ? $"rec+0x{hit:X}" : $"0x{hit:X8}";
-
-                table.AddRow(
-                    sub.Signature,
-                    searchMode,
-                    $"0x{sub.Data.Length:X}",
-                    offsetLabel,
-                    recordLabel,
-                    formLabel);
-            }
-        }
+        var table = CreateSearchResultsTable();
+        var context = new SearchContext(searchModes, haystack, options.MaxHits, normalizedScope, options.Locate,
+            xboxRecord, records);
+        AddSearchRows(table, candidates, context);
 
         AnsiConsole.Write(table);
         return 0;
@@ -215,10 +163,115 @@ public static class HeuristicCommands
             var recordData = EsmHelpers.GetRecordData(data, match, bigEndian);
             return (match, recordData);
         }
-        catch
+        catch (Exception ex)
         {
+            AnsiConsole.MarkupLine(
+                $"[yellow]WARN:[/] Failed to read {recordType} record 0x{formId:X8}: {ex.Message}");
             return (null, null);
         }
+    }
+
+    private static bool TryNormalizeScope(string scope, out string normalizedScope)
+    {
+        normalizedScope = scope.Trim().ToLowerInvariant();
+        if (normalizedScope is ScopeFile or ScopeRecord) return true;
+
+        AnsiConsole.MarkupLine("[red]ERROR:[/] Scope must be 'file' or 'record'.");
+        return false;
+    }
+
+    private static List<AnalyzerSubrecordInfo>? GetCandidateSubrecords(byte[] recordData, bool bigEndian,
+        string recordType, string[]? subrecordFilters)
+    {
+        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+        var wanted = ResolveSubrecordFilters(recordType, subrecordFilters);
+
+        var candidates = subrecords
+            .Where(s => wanted.Contains(s.Signature, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        if (candidates.Count > 0) return candidates;
+
+        AnsiConsole.MarkupLine("[yellow]No matching subrecords found in PC record.[/]");
+        return null;
+    }
+
+    private static bool TryGetHaystack(byte[] xboxData, bool bigEndian, string recordType, uint formId,
+        string normalizedScope, out AnalyzerRecordInfo? xboxRecord, out byte[] haystack)
+    {
+        xboxRecord = null;
+        haystack = xboxData;
+
+        if (normalizedScope != ScopeRecord) return true;
+
+        var recordData = FindRecord(xboxData, bigEndian, recordType, formId);
+        xboxRecord = recordData.Record;
+        if (recordData.Record == null || recordData.RecordData == null)
+        {
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Xbox record {recordType} 0x{formId:X8} not found");
+            return false;
+        }
+
+        haystack = recordData.RecordData;
+        return true;
+    }
+
+    private static Table CreateSearchResultsTable()
+    {
+        return new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("Subrecord")
+            .AddColumn("Mode")
+            .AddColumn(new TableColumn("Size").RightAligned())
+            .AddColumn(new TableColumn("Offset").RightAligned())
+            .AddColumn("Record")
+            .AddColumn(new TableColumn("FormID").RightAligned());
+    }
+
+    private static void AddSearchRows(Table table, List<AnalyzerSubrecordInfo> candidates, SearchContext context)
+    {
+        foreach (var sub in candidates)
+            AddSearchRowsForSubrecord(table, sub, context);
+    }
+
+    private static void AddSearchRowsForSubrecord(Table table, AnalyzerSubrecordInfo sub, SearchContext context)
+    {
+        foreach (var searchMode in context.SearchModes)
+            AddSearchRowsForMode(table, sub, searchMode, context);
+    }
+
+    private static void AddSearchRowsForMode(Table table, AnalyzerSubrecordInfo sub, string searchMode,
+        SearchContext context)
+    {
+        var pattern = BuildPattern(sub.Data, sub.Signature, searchMode);
+        if (pattern.Length == 0) return;
+
+        var hits = FindAllOccurrences(context.Haystack, pattern, context.MaxHits);
+        if (hits.Count == 0) return;
+
+        foreach (var hit in hits)
+        {
+            var match = ResolveMatch(context, hit);
+            var recordLabel = match?.Signature ?? "(none)";
+            var formLabel = match != null ? $"0x{match.FormId:X8}" : "-";
+            var offsetLabel = context.NormalizedScope == ScopeRecord ? $"rec+0x{hit:X}" : $"0x{hit:X8}";
+
+            table.AddRow(
+                sub.Signature,
+                searchMode,
+                $"0x{sub.Data.Length:X}",
+                offsetLabel,
+                recordLabel,
+                formLabel);
+        }
+    }
+
+    private static AnalyzerRecordInfo? ResolveMatch(SearchContext context, long hit)
+    {
+        if (context.NormalizedScope == ScopeFile && context.Locate)
+            return FindRecordAtOffset(context.Records, (uint)hit);
+
+        return context.NormalizedScope == ScopeRecord ? context.XboxRecord : null;
     }
 
     private static HashSet<string> ResolveSubrecordFilters(string recordType, string[]? subrecordFilters)
@@ -238,21 +291,21 @@ public static class HeuristicCommands
     private static List<string> ResolveSearchModes(string mode, string recordType)
     {
         var normalized = mode.ToLowerInvariant();
-        if (normalized == "all")
+        if (normalized == ModeAll)
             return recordType == "LAND"
-                ? ["raw", "swap2", "swap4", "land"]
-                : ["raw", "swap2", "swap4"];
+                ? [ModeRaw, ModeSwap2, ModeSwap4, ModeLand]
+                : [ModeRaw, ModeSwap2, ModeSwap4];
 
         return normalized switch
         {
-            "raw" => ["raw"],
-            "swap2" => ["swap2"],
-            "swap4" => ["swap4"],
-            "land" => ["land"],
-            "land-vhgt" => ["land-vhgt"],
-            "land-atxt" => ["land-atxt"],
-            "land-vtxt" => ["land-vtxt"],
-            _ => ["raw"]
+            ModeRaw => [ModeRaw],
+            ModeSwap2 => [ModeSwap2],
+            ModeSwap4 => [ModeSwap4],
+            ModeLand => [ModeLand],
+            ModeLandVhgt => [ModeLandVhgt],
+            ModeLandAtxt => [ModeLandAtxt],
+            ModeLandVtxt => [ModeLandVtxt],
+            _ => [ModeRaw]
         };
     }
 
@@ -378,11 +431,20 @@ public static class HeuristicCommands
         return null;
     }
 
-    private static bool TryParseFormId(string text, out uint formId)
-    {
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) trimmed = trimmed[2..];
+    private sealed record GeomSearchOptions(
+        string FormIdText,
+        string[]? SubrecordFilters,
+        string Mode,
+        int MaxHits,
+        string Scope,
+        bool Locate);
 
-        return uint.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out formId);
-    }
+    private sealed record SearchContext(
+        List<string> SearchModes,
+        byte[] Haystack,
+        int MaxHits,
+        string NormalizedScope,
+        bool Locate,
+        AnalyzerRecordInfo? XboxRecord,
+        List<AnalyzerRecordInfo> Records);
 }

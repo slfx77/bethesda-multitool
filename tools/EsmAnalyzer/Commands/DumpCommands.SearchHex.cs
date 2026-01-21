@@ -22,7 +22,9 @@ public static partial class DumpCommands
             .Spinner(Spinner.Known.Dots)
             .Start("Searching...", ctx =>
             {
-                for (long i = 0; i <= esm.Data.Length - patternBytes.Length && matches.Count < limit; i++)
+                for (long i = 0;
+                     i <= esm.Data.Length - patternBytes.Length && (limit <= 0 || matches.Count < limit);
+                     i++)
                     if (DumpCommandHelpers.MatchesAt(esm.Data, i, patternBytes))
                         matches.Add(i);
             });
@@ -45,7 +47,14 @@ public static partial class DumpCommands
             return 1;
         }
 
-        var offset = Convert.ToInt64(offsetStr.Replace("0x", ""), 16);
+        var parsedOffset = EsmFileLoader.ParseOffset(offsetStr);
+        if (parsedOffset == null)
+        {
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid offset format: {offsetStr}");
+            return 1;
+        }
+
+        var offset = (long)parsedOffset.Value;
 
         using var stream = File.OpenRead(filePath);
 

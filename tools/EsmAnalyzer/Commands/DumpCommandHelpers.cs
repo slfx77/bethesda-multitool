@@ -72,6 +72,111 @@ internal static class DumpCommandHelpers
         }
     }
 
+    internal static bool ValidateRecursive(byte[] data, bool bigEndian, int startOffset, int endOffset, int limit,
+        ref int recordCount, ref int subrecordCount, ref int compressedSkipped, int depth, out string? error)
+    {
+        error = null;
+        var offset = startOffset;
+
+        while (offset + EsmParser.MainRecordHeaderSize <= endOffset && (limit <= 0 || recordCount < limit))
+        {
+            var recHeader = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
+            if (recHeader == null)
+            {
+                var hexBytes = string.Join(" ", data.Skip(offset).Take(24).Select(b => b.ToString("X2")));
+                error = $"FAIL at 0x{offset:X8}: {hexBytes}";
+                return false;
+            }
+
+            var isValidSig = recHeader.Signature == "GRUP" ||
+                             recHeader.Signature == "TOFT" ||
+                             EsmRecordTypes.MainRecordTypes.ContainsKey(recHeader.Signature) ||
+                             (recHeader.Signature.Length == 4 && recHeader.Signature.All(c => c >= 'A' && c <= 'Z'));
+
+            if (!isValidSig)
+            {
+                var hexBytes = string.Join(" ", data.Skip(offset).Take(24).Select(b => b.ToString("X2")));
+                error = $"FAIL at 0x{offset:X8}: unknown signature '{recHeader.Signature}' ({hexBytes})";
+                return false;
+            }
+
+            var recordEnd = offset + (recHeader.Signature == "GRUP"
+                ? (int)recHeader.DataSize
+                : EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize);
+
+            if (recordEnd <= offset || recordEnd > data.Length)
+            {
+                error =
+                    $"FAIL at 0x{offset:X8}: invalid size {recHeader.DataSize} for {recHeader.Signature} (end=0x{recordEnd:X8})";
+                return false;
+            }
+
+            if (recHeader.Signature == "GRUP")
+            {
+                var innerOffset = offset + EsmParser.MainRecordHeaderSize;
+                if (!ValidateRecursive(data, bigEndian, innerOffset, recordEnd, limit, ref recordCount,
+                        ref subrecordCount, ref compressedSkipped, depth + 1, out error))
+                    return false;
+            }
+            else
+            {
+                var isCompressed = (recHeader.Flags & 0x00040000) != 0;
+                if (isCompressed)
+                {
+                    if (recHeader.DataSize < 4)
+                    {
+                        error =
+                            $"FAIL at 0x{offset:X8}: compressed {recHeader.Signature} has size < 4";
+                        return false;
+                    }
+
+                    compressedSkipped++;
+                }
+                else
+                {
+                    var recordInfo = new AnalyzerRecordInfo
+                    {
+                        Signature = recHeader.Signature,
+                        FormId = recHeader.FormId,
+                        Flags = recHeader.Flags,
+                        DataSize = recHeader.DataSize,
+                        Offset = (uint)offset,
+                        TotalSize = (uint)(recordEnd - offset)
+                    };
+
+                    try
+                    {
+                        var recordData = EsmHelpers.GetRecordData(data, recordInfo, bigEndian);
+                        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+                        subrecordCount += subrecords.Count;
+
+                        foreach (var sub in subrecords)
+                        {
+                            var subEnd = sub.Offset + 6 + sub.Data.Length;
+                            if (subEnd > recordData.Length)
+                            {
+                                error =
+                                    $"FAIL at 0x{offset:X8}: subrecord {sub.Signature} overruns record data";
+                                return false;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        error =
+                            $"FAIL at 0x{offset:X8}: subrecord parse error in {recHeader.Signature} (0x{recHeader.FormId:X8}) - {ex.GetType().Name}: {ex.Message}";
+                        return false;
+                    }
+                }
+            }
+
+            recordCount++;
+            offset = recordEnd;
+        }
+
+        return true;
+    }
+
     internal static bool MatchesAt(byte[] data, long offset, byte[] pattern)
     {
         for (var j = 0; j < pattern.Length; j++)

@@ -464,6 +464,16 @@ internal static partial class EsmSubrecordConverter
                 for (var i = 0; i < dataLength / 4; i++) Swap4Bytes(result, i * 4);
                 break;
 
+            // OFST - Worldspace offset table (array of uint32 offsets)
+            case "OFST" when recordType == "WRLD" && dataLength % 4 == 0:
+                for (var i = 0; i < dataLength / 4; i++) Swap4Bytes(result, i * 4);
+                break;
+
+            // ONAM - Worldspace persistent cell list (array of FormIDs)
+            case "ONAM" when recordType == "WRLD" && dataLength % 4 == 0:
+                for (var i = 0; i < dataLength / 4; i++) Swap4Bytes(result, i * 4);
+                break;
+
             // PNAM - Weather Cloud Colors (byte colors, no endian swap)
             case "PNAM" when recordType == "WTHR":
                 break;

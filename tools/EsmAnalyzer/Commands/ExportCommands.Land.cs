@@ -1,10 +1,8 @@
-using System.Globalization;
 using System.Text.Json;
 using EsmAnalyzer.Helpers;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Spectre.Console;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
@@ -13,12 +11,12 @@ public static partial class ExportCommands
 {
     private static int ExportLand(string filePath, string? formIdStr, bool exportAll, int limit, string outputDir)
     {
-        uint? targetFormId = null;
-
-        if (!string.IsNullOrEmpty(formIdStr))
-            targetFormId = formIdStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                ? Convert.ToUInt32(formIdStr, 16)
-                : uint.Parse(formIdStr, CultureInfo.InvariantCulture);
+        var targetFormId = EsmFileLoader.ParseFormId(formIdStr);
+        if (!string.IsNullOrWhiteSpace(formIdStr) && targetFormId == null)
+        {
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid FormID: {formIdStr}");
+            return 1;
+        }
 
         if (targetFormId == null && !exportAll)
         {
@@ -26,27 +24,15 @@ public static partial class ExportCommands
             return 1;
         }
 
-        if (!File.Exists(filePath))
-        {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] File not found: {filePath}");
-            return 1;
-        }
-
         // Create output directory
         Directory.CreateDirectory(outputDir);
 
-        var data = File.ReadAllBytes(filePath);
-        var header = EsmParser.ParseFileHeader(data);
-
-        if (header == null)
-        {
-            AnsiConsole.MarkupLine("[red]ERROR:[/] Failed to parse ESM header");
-            return 1;
-        }
+        var esm = EsmFileLoader.Load(filePath, false);
+        if (esm == null) return 1;
 
         AnsiConsole.MarkupLine($"[blue]Exporting LAND records from:[/] {Path.GetFileName(filePath)}");
         AnsiConsole.MarkupLine(
-            $"Endianness: {(header.IsBigEndian ? "[yellow]Big-endian (Xbox 360)[/]" : "[green]Little-endian (PC)[/]")}");
+            $"Endianness: {(esm.IsBigEndian ? "[yellow]Big-endian (Xbox 360)[/]" : "[green]Little-endian (PC)[/]")}");
         AnsiConsole.MarkupLine($"Output directory: [cyan]{outputDir}[/]");
         AnsiConsole.WriteLine();
 
@@ -56,7 +42,7 @@ public static partial class ExportCommands
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start("Scanning for LAND records...",
-                ctx => { landRecordList = EsmHelpers.ScanForRecordType(data, header.IsBigEndian, "LAND"); });
+                ctx => { landRecordList = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "LAND"); });
 
         IEnumerable<AnalyzerRecordInfo> landRecords = landRecordList;
 
@@ -86,7 +72,7 @@ public static partial class ExportCommands
                 {
                     try
                     {
-                        ExportLandRecord(data, rec, header.IsBigEndian, outputDir);
+                        ExportLandRecord(esm.Data, rec, esm.IsBigEndian, outputDir);
                         exported++;
                     }
                     catch (Exception ex)
@@ -157,7 +143,7 @@ public static partial class ExportCommands
 
                 case "VHGT":
                     var (heightmap, baseHeight) = ParseHeightmap(sub.Data, bigEndian);
-                    ExportHeightmap(heightmap, baseHeight, Path.Combine(outputDir, $"{formIdHex}_heightmap.png"));
+                    ExportHeightmap(heightmap, Path.Combine(outputDir, $"{formIdHex}_heightmap.png"));
                     landData.HasHeightmap = true;
                     landData.BaseHeight = baseHeight;
                     break;
@@ -190,16 +176,7 @@ public static partial class ExportCommands
 
     private static void ExportNormalMap(byte[] data, string path)
     {
-        using var image = new Image<Rgb24>(CellGridSize, CellGridSize);
-
-        for (var y = 0; y < CellGridSize; y++)
-        for (var x = 0; x < CellGridSize; x++)
-        {
-            var idx = (y * CellGridSize + x) * 3;
-            if (idx + 2 < data.Length) image[x, y] = new Rgb24(data[idx], data[idx + 1], data[idx + 2]);
-        }
-
-        image.SaveAsPng(path);
+        ExportRgbMap(data, path);
     }
 
     private static (float[,] heights, float baseHeight) ParseHeightmap(byte[] data, bool bigEndian, bool debug = false)
@@ -209,17 +186,8 @@ public static partial class ExportCommands
         // - 33×33 signed bytes: height gradients (multiplied by 8)
         // - 3 bytes: unused
         //
-        // Algorithm from UESP (verbatim):
-        // float offset = ReadFloat() * 8;
-        // float row_offset = 0;
-        // for (int i = 0; i < 1089; i++) {
-        //     float value = ReadSByte() * 8;
-        //     int r = i / 33;
-        //     int c = i % 33;
-        //     if (c == 0) { row_offset = 0; offset += value; }
-        //     else { row_offset += value; }
-        //     heightmap[c, r] = offset + row_offset;
-        // }
+        // The algorithm accumulates row deltas, applying the first delta to the running
+        // offset and subsequent deltas to a row offset to build the 33x33 grid.
 
         var baseHeight = bigEndian
             ? BitConverter.ToSingle([data[3], data[2], data[1], data[0]], 0)
@@ -259,7 +227,7 @@ public static partial class ExportCommands
         return (heights, baseHeight);
     }
 
-    private static void ExportHeightmap(float[,] heights, float baseHeight, string path)
+    private static void ExportHeightmap(float[,] heights, string path)
     {
         var minHeight = float.MaxValue;
         var maxHeight = float.MinValue;
@@ -290,13 +258,19 @@ public static partial class ExportCommands
 
     private static void ExportVertexColors(byte[] data, string path)
     {
+        ExportRgbMap(data, path);
+    }
+
+    private static void ExportRgbMap(byte[] data, string path)
+    {
         using var image = new Image<Rgb24>(CellGridSize, CellGridSize);
 
         for (var y = 0; y < CellGridSize; y++)
         for (var x = 0; x < CellGridSize; x++)
         {
             var idx = (y * CellGridSize + x) * 3;
-            if (idx + 2 < data.Length) image[x, y] = new Rgb24(data[idx], data[idx + 1], data[idx + 2]);
+            if (idx + 2 < data.Length)
+                image[x, y] = new Rgb24(data[idx], data[idx + 1], data[idx + 2]);
         }
 
         image.SaveAsPng(path);

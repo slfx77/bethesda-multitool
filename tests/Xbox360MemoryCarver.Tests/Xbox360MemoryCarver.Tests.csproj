@@ -58,6 +58,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Xbox360MemoryCarver\Xbox360MemoryCarver.csproj" />
+    <ProjectReference Include="..\..\tools\EsmAnalyzer\EsmAnalyzer.csproj" />
   </ItemGroup>
 
 </Project>

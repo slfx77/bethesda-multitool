@@ -1,4 +1,7 @@
+using System.Buffers.Binary;
 using System.CommandLine;
+using System.Text;
+using EsmAnalyzer.Conversion.Schema;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
@@ -17,7 +20,7 @@ public static partial class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var typeArg = new Argument<string>("type") { Description = "Record type to dump (e.g., LAND, NPC_, WEAP)" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of records to dump (0 = unlimited)", DefaultValueFactory = _ => 0 };
+            { Description = "Maximum number of records to dump (0 = unlimited)", DefaultValueFactory = _ => 0 };
         var hexOption = new Option<bool>("-x", "--hex") { Description = "Show hex dump of record data" };
 
         command.Arguments.Add(fileArg);
@@ -40,11 +43,11 @@ public static partial class DumpCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var offsetOption = new Option<string?>("-o", "--offset")
-        { Description = "Starting offset in hex (e.g., 0x1000)" };
+            { Description = "Starting offset in hex (e.g., 0x1000)" };
         var stopOption = new Option<string?>("-s", "--stop") { Description = "Stop offset in hex" };
         var depthOption = new Option<int?>("-d", "--depth") { Description = "Filter to specific nesting depth" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of records to trace (0 = unlimited)", DefaultValueFactory = _ => 0 };
+            { Description = "Maximum number of records to trace (0 = unlimited)", DefaultValueFactory = _ => 0 };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(offsetOption);
@@ -69,9 +72,9 @@ public static partial class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var patternArg = new Argument<string>("pattern") { Description = "ASCII string to search for" };
         var limitOption = new Option<int>("-l", "--limit")
-        { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
+            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
         var contextOption = new Option<int>("-c", "--context")
-        { Description = "Bytes of context to show around matches", DefaultValueFactory = _ => 32 };
+            { Description = "Bytes of context to show around matches", DefaultValueFactory = _ => 32 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(patternArg);
@@ -94,7 +97,7 @@ public static partial class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var offsetArg = new Argument<string>("offset") { Description = "Starting offset in hex (e.g., 0x1000)" };
         var lengthOption = new Option<int>("-l", "--length")
-        { Description = "Number of bytes to dump", DefaultValueFactory = _ => 256 };
+            { Description = "Number of bytes to dump", DefaultValueFactory = _ => 256 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(offsetArg);
@@ -145,6 +148,61 @@ public static partial class DumpCommands
         return command;
     }
 
+    public static Command CreateValidateDeepCommand()
+    {
+        var command = new Command("validate-deep",
+            "Deep-validate record/GRUP structure and subrecord layout (reports first failure)");
+
+        var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
+        var startOption = new Option<string?>("-o", "--offset") { Description = "Start offset in hex (optional)" };
+        var stopOption = new Option<string?>("-s", "--stop") { Description = "Stop offset in hex (optional)" };
+        var limitOption = new Option<int>("-l", "--limit")
+            { Description = "Maximum number of records to validate (0 = unlimited)", DefaultValueFactory = _ => 0 };
+
+        command.Arguments.Add(fileArg);
+        command.Options.Add(startOption);
+        command.Options.Add(stopOption);
+        command.Options.Add(limitOption);
+
+        command.SetAction(parseResult => ValidateDeep(
+            parseResult.GetValue(fileArg)!,
+            parseResult.GetValue(startOption),
+            parseResult.GetValue(stopOption),
+            parseResult.GetValue(limitOption)));
+
+        return command;
+    }
+
+    public static Command CreateValidateRefsCommand()
+    {
+        var command = new Command("validate-refs",
+            "Validate FormID references against existing records (skips compressed records)");
+
+        var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
+        var typeOption = new Option<string?>("-t", "--type")
+            { Description = "Filter by record type (e.g., NPC_, INFO, LAND)" };
+        var limitOption = new Option<int>("-l", "--limit")
+        {
+            Description = "Maximum number of missing references to show (0 = unlimited)",
+            DefaultValueFactory = _ => 0
+        };
+        var outputOption = new Option<string?>("-o", "--output")
+            { Description = "Write missing references to a TSV file" };
+
+        command.Arguments.Add(fileArg);
+        command.Options.Add(typeOption);
+        command.Options.Add(limitOption);
+        command.Options.Add(outputOption);
+
+        command.SetAction(parseResult => ValidateRefs(
+            parseResult.GetValue(fileArg)!,
+            parseResult.GetValue(typeOption),
+            parseResult.GetValue(limitOption),
+            parseResult.GetValue(outputOption)));
+
+        return command;
+    }
+
     public static Command CreateFindFormIdCommand()
     {
         var command = new Command("find-formid", "Find all records with a specific FormID and show their structure");
@@ -153,7 +211,8 @@ public static partial class DumpCommands
         var formidArg = new Argument<string>("formid") { Description = "FormID to search for (hex, e.g., 0x000A471E)" };
         var typeOption = new Option<string?>("-t", "--type") { Description = "Filter by record type (e.g., INFO)" };
         var hexOption = new Option<bool>("-x", "--hex") { Description = "Show hex dump of record data" };
-        var compareOption = new Option<string?>("-c", "--compare") { Description = "Compare with record from another ESM file" };
+        var compareOption = new Option<string?>("-c", "--compare")
+            { Description = "Compare with record from another ESM file" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(formidArg);
@@ -167,6 +226,51 @@ public static partial class DumpCommands
             parseResult.GetValue(typeOption),
             parseResult.GetValue(hexOption),
             parseResult.GetValue(compareOption)));
+
+        return command;
+    }
+
+    public static Command CreateFindCellCommand()
+    {
+        var command = new Command("find-cell", "Find CELL records by EDID or FULL name");
+
+        var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
+        var patternArg = new Argument<string>("pattern") { Description = "Search term (case-insensitive)" };
+        var limitOption = new Option<int>("-l", "--limit")
+            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
+
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(patternArg);
+        command.Options.Add(limitOption);
+
+        command.SetAction(parseResult => FindCells(
+            parseResult.GetValue(fileArg)!,
+            parseResult.GetValue(patternArg)!,
+            parseResult.GetValue(limitOption)));
+
+        return command;
+    }
+
+    public static Command CreateFindCellGridCommand()
+    {
+        var command = new Command("find-cell-grid", "Find CELL records by grid coordinates (XCLC)");
+
+        var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
+        var xArg = new Argument<int>("x") { Description = "Grid X coordinate (e.g., -32)" };
+        var yArg = new Argument<int>("y") { Description = "Grid Y coordinate (e.g., -32)" };
+        var limitOption = new Option<int>("-l", "--limit")
+            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
+
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(xArg);
+        command.Arguments.Add(yArg);
+        command.Options.Add(limitOption);
+
+        command.SetAction(parseResult => FindCellsByGrid(
+            parseResult.GetValue(fileArg)!,
+            parseResult.GetValue(xArg),
+            parseResult.GetValue(yArg),
+            parseResult.GetValue(limitOption)));
 
         return command;
     }
@@ -198,7 +302,173 @@ public static partial class DumpCommands
         return 0;
     }
 
-    private static int FindFormId(string filePath, string formIdStr, string? filterType, bool showHex, string? comparePath)
+    private static int FindCells(string filePath, string pattern, int limit)
+    {
+        var esm = EsmFileLoader.Load(filePath);
+        if (esm == null) return 1;
+
+        var term = pattern.Trim();
+        if (term.Length == 0)
+        {
+            AnsiConsole.MarkupLine("[red]ERROR:[/] Pattern must not be empty");
+            return 1;
+        }
+
+        var matches = 0;
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("FormID")
+            .AddColumn("Offset")
+            .AddColumn("EDID")
+            .AddColumn("FULL")
+            .AddColumn("Grid");
+
+        List<AnalyzerRecordInfo> cells = [];
+
+        AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .Start("Scanning CELL records...",
+                _ => { cells = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "CELL"); });
+
+        foreach (var cell in cells)
+        {
+            var recordData = EsmHelpers.GetRecordData(esm.Data, cell, esm.IsBigEndian);
+            var subs = EsmHelpers.ParseSubrecords(recordData, esm.IsBigEndian);
+
+            var edid = GetStringSubrecord(subs, "EDID");
+            var full = GetStringSubrecord(subs, "FULL");
+
+            if (!ContainsIgnoreCase(edid, term) && !ContainsIgnoreCase(full, term))
+                continue;
+
+            var gridText = GetCellGridText(subs, esm.IsBigEndian);
+
+            table.AddRow(
+                $"0x{cell.FormId:X8}",
+                $"0x{cell.Offset:X8}",
+                edid ?? string.Empty,
+                full ?? string.Empty,
+                gridText);
+
+            matches++;
+            if (limit > 0 && matches >= limit)
+                break;
+        }
+
+        AnsiConsole.MarkupLine(
+            $"Found [cyan]{matches}[/] CELL matches for '{Markup.Escape(term)}' in {Path.GetFileName(filePath)}");
+        if (matches > 0)
+            AnsiConsole.Write(table);
+
+        return 0;
+    }
+
+    private static int FindCellsByGrid(string filePath, int targetX, int targetY, int limit)
+    {
+        var esm = EsmFileLoader.Load(filePath);
+        if (esm == null) return 1;
+
+        var matches = 0;
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("FormID")
+            .AddColumn("Offset")
+            .AddColumn("EDID")
+            .AddColumn("FULL")
+            .AddColumn("Grid");
+
+        List<AnalyzerRecordInfo> cells = [];
+
+        AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .Start("Scanning CELL records...",
+                _ => { cells = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "CELL"); });
+
+        foreach (var cell in cells)
+        {
+            var recordData = EsmHelpers.GetRecordData(esm.Data, cell, esm.IsBigEndian);
+            var subs = EsmHelpers.ParseSubrecords(recordData, esm.IsBigEndian);
+
+            var gridText = GetCellGridText(subs, esm.IsBigEndian);
+            if (string.IsNullOrEmpty(gridText))
+                continue;
+
+            if (!TryParseGrid(gridText, out var gridX, out var gridY))
+                continue;
+
+            if (gridX != targetX || gridY != targetY)
+                continue;
+
+            var edid = GetStringSubrecord(subs, "EDID");
+            var full = GetStringSubrecord(subs, "FULL");
+
+            table.AddRow(
+                $"0x{cell.FormId:X8}",
+                $"0x{cell.Offset:X8}",
+                edid ?? string.Empty,
+                full ?? string.Empty,
+                gridText);
+
+            matches++;
+            if (limit > 0 && matches >= limit)
+                break;
+        }
+
+        AnsiConsole.MarkupLine(
+            $"Found [cyan]{matches}[/] CELL records at {targetX},{targetY} in {Path.GetFileName(filePath)}");
+        if (matches > 0)
+            AnsiConsole.Write(table);
+
+        return 0;
+    }
+
+    private static string? GetStringSubrecord(List<AnalyzerSubrecordInfo> subrecords, string signature)
+    {
+        var sub = subrecords.FirstOrDefault(s => s.Signature == signature);
+        if (sub == null || sub.Data.Length == 0) return null;
+
+        var text = Encoding.ASCII.GetString(sub.Data);
+        var nullIndex = text.IndexOf('\0');
+        return nullIndex >= 0 ? text[..nullIndex] : text;
+    }
+
+    private static string GetCellGridText(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
+    {
+        var sub = subrecords.FirstOrDefault(s => s.Signature == "XCLC");
+        if (sub == null || sub.Data.Length < 8) return "";
+
+        var x = ReadInt32(sub.Data, 0, bigEndian);
+        var y = ReadInt32(sub.Data, 4, bigEndian);
+        return $"{x},{y}";
+    }
+
+    private static bool TryParseGrid(string gridText, out int x, out int y)
+    {
+        x = 0;
+        y = 0;
+
+        var parts = gridText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2) return false;
+
+        return int.TryParse(parts[0], out x) && int.TryParse(parts[1], out y);
+    }
+
+    private static int ReadInt32(byte[] data, int offset, bool bigEndian)
+    {
+        if (offset + 4 > data.Length) return 0;
+        return bigEndian
+            ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4))
+            : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4));
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string term)
+    {
+        return !string.IsNullOrEmpty(value) &&
+               value.Contains(term, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int FindFormId(string filePath, string formIdStr, string? filterType, bool showHex,
+        string? comparePath)
     {
         var targetFormId = EsmFileLoader.ParseFormId(formIdStr);
         if (!targetFormId.HasValue)
@@ -236,25 +506,25 @@ public static partial class DumpCommands
                     matches = ScanForFormId(esm.Data, esm.IsBigEndian, esm.FirstGrupOffset, targetFormId.Value,
                         filterType);
                     if (compareEsm != null)
-                        compareMatches = ScanForFormId(compareEsm.Data, compareEsm.IsBigEndian, compareEsm.FirstGrupOffset,
+                        compareMatches = ScanForFormId(compareEsm.Data, compareEsm.IsBigEndian,
+                            compareEsm.FirstGrupOffset,
                             targetFormId.Value, filterType);
                 });
 
-        AnsiConsole.MarkupLine($"Found [cyan]{matches.Count}[/] records with FormID 0x{targetFormId.Value:X8} in primary file");
+        AnsiConsole.MarkupLine(
+            $"Found [cyan]{matches.Count}[/] records with FormID 0x{targetFormId.Value:X8} in primary file");
         if (compareEsm != null)
-            AnsiConsole.MarkupLine($"Found [cyan]{compareMatches.Count}[/] records with FormID 0x{targetFormId.Value:X8} in comparison file");
+            AnsiConsole.MarkupLine(
+                $"Found [cyan]{compareMatches.Count}[/] records with FormID 0x{targetFormId.Value:X8} in comparison file");
         AnsiConsole.WriteLine();
 
         if (compareEsm != null)
-        {
             // Show comparison view
             DisplayRecordComparison(matches, esm, compareMatches, compareEsm, filePath, comparePath!, showHex);
-        }
         else
-        {
             // Standard view
-            foreach (var rec in matches) EsmDisplayHelpers.DisplayRecord(rec, esm.Data, esm.IsBigEndian, showHex, true);
-        }
+            foreach (var rec in matches)
+                EsmDisplayHelpers.DisplayRecord(rec, esm.Data, esm.IsBigEndian, showHex, true);
 
         return 0;
     }
@@ -297,7 +567,6 @@ public static partial class DumpCommands
         List<AnalyzerSubrecordInfo> compareSubs = [];
 
         if (primary != null)
-        {
             try
             {
                 var data = EsmHelpers.GetRecordData(primaryEsm.Data, primary, primaryEsm.IsBigEndian);
@@ -307,10 +576,8 @@ public static partial class DumpCommands
             {
                 AnsiConsole.MarkupLine($"[red]Failed to parse primary record:[/] {ex.Message}");
             }
-        }
 
         if (compare != null)
-        {
             try
             {
                 var data = EsmHelpers.GetRecordData(compareEsm.Data, compare, compareEsm.IsBigEndian);
@@ -320,7 +587,6 @@ public static partial class DumpCommands
             {
                 AnsiConsole.MarkupLine($"[red]Failed to parse compare record:[/] {ex.Message}");
             }
-        }
 
         // Display header comparison
         var headerTable = new Table()
@@ -405,27 +671,20 @@ public static partial class DumpCommands
             var fullMatch = contentMatch;
 
             if (!sigMatch || !sizeMatch)
-            {
                 mismatchCount++;
-            }
-            else if (!contentMatch)
-            {
-                contentMismatchCount++;
-            }
+            else if (!contentMatch) contentMismatchCount++;
 
             var matchIcon = fullMatch ? "[green]✓[/]" :
-                            sigMatch && sizeMatch ? "[yellow]≈[/]" : "[red]✗[/]";
+                sigMatch && sizeMatch ? "[yellow]≈[/]" : "[red]✗[/]";
 
             var diffDisplay = "-";
             string? diffSummary = null;
+            string? previewRow = null;
             if (sigMatch && sizeMatch && pSub != null && cSub != null && !contentMatch)
             {
-                var diff = FindFirstDiff(pSub.Data, cSub.Data);
-                if (diff != null)
-                {
-                    diffSummary = $"0x{diff.Value.Offset:X} {diff.Value.Left:X2}->{diff.Value.Right:X2}";
-                    diffDisplay = $"[yellow]0x{diff.Value.Offset:X}[/] [dim]{diff.Value.Left:X2}→{diff.Value.Right:X2}[/]";
-                }
+                diffDisplay = BuildDiffDisplay(pSub.Signature, primary?.Signature ?? compare?.Signature ?? string.Empty,
+                    pSub.Data, cSub.Data, primaryEsm.IsBigEndian, compareEsm.IsBigEndian, out diffSummary);
+                previewRow = BuildPreviewRowText(pSub.Data, cSub.Data, 16);
 
                 var hasPrimaryDetails = EsmDisplayHelpers.TryFormatSubrecordDetails(pSub.Signature, pSub.Data,
                     primaryEsm.IsBigEndian, out var primaryDetails);
@@ -433,7 +692,6 @@ public static partial class DumpCommands
                     compareEsm.IsBigEndian, out var compareDetails);
 
                 if (hasPrimaryDetails || hasCompareDetails)
-                {
                     detailMismatches.Add((
                         i + 1,
                         pSub.Signature,
@@ -441,7 +699,6 @@ public static partial class DumpCommands
                         hasPrimaryDetails ? primaryDetails : "(unparsed)",
                         hasCompareDetails ? compareDetails : "(unparsed)",
                         diffSummary));
-                }
             }
 
             // Color code the signatures
@@ -463,6 +720,17 @@ public static partial class DumpCommands
                 cSub != null ? cSub.Data.Length.ToString() : "-",
                 diffDisplay,
                 matchIcon);
+
+            if (previewRow != null)
+                subTable.AddRow(
+                    "",
+                    "",
+                    "[dim]preview[/]",
+                    "",
+                    "",
+                    "",
+                    previewRow,
+                    "");
         }
 
         AnsiConsole.Write(subTable);
@@ -472,7 +740,8 @@ public static partial class DumpCommands
         if (mismatchCount == 0 && contentMismatchCount == 0)
             AnsiConsole.MarkupLine($"[green]✓ All {maxCount} subrecords match in sequence, size, and content[/]");
         else
-            AnsiConsole.MarkupLine($"[yellow]⚠ {mismatchCount} position mismatches, {contentMismatchCount} content mismatches[/]");
+            AnsiConsole.MarkupLine(
+                $"[yellow]⚠ {mismatchCount} position mismatches, {contentMismatchCount} content mismatches[/]");
 
         // Show unique subrecords in each file
         var primarySigCounts = primarySubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.Count());
@@ -501,9 +770,7 @@ public static partial class DumpCommands
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[yellow]Count differences for shared subrecord types:[/]");
             foreach (var sig in countDiffs)
-            {
                 AnsiConsole.MarkupLine($"  [cyan]{sig}[/]: {primarySigCounts[sig]} vs {compareSigCounts[sig]}");
-            }
         }
 
         if (detailMismatches.Count > 0)
@@ -514,7 +781,8 @@ public static partial class DumpCommands
             foreach (var mismatch in detailMismatches)
             {
                 var diffText = mismatch.DiffSummary != null ? $" (diff {mismatch.DiffSummary})" : string.Empty;
-                AnsiConsole.MarkupLine($"[cyan]#{mismatch.Index} {mismatch.Signature}[/] ({mismatch.Size} bytes){diffText}");
+                AnsiConsole.MarkupLine(
+                    $"[cyan]#{mismatch.Index} {mismatch.Signature}[/] ({mismatch.Size} bytes){diffText}");
                 AnsiConsole.MarkupLine($"  {primaryName}: {EscapeMarkup(mismatch.PrimaryDetails)}");
                 AnsiConsole.MarkupLine($"  {compareName}: {EscapeMarkup(mismatch.CompareDetails)}");
             }
@@ -579,8 +847,8 @@ public static partial class DumpCommands
     }
 
     /// <summary>
-    /// Determines the grouping/context of a subrecord for display purposes.
-    /// Tracks script blocks, response groups, etc.
+    ///     Determines the grouping/context of a subrecord for display purposes.
+    ///     Tracks script blocks, response groups, etc.
     /// </summary>
     private static string? GetSubrecordGroup(string? signature, ref int blockNum, ref int scriptDepth)
     {
@@ -614,30 +882,126 @@ public static partial class DumpCommands
         return $"{name}";
     }
 
-    private readonly record struct FirstDiff(int Offset, byte Left, byte Right);
-
     private static FirstDiff? FindFirstDiff(byte[] left, byte[] right)
     {
         var len = Math.Min(left.Length, right.Length);
         for (var i = 0; i < len; i++)
-        {
             if (left[i] != right[i])
-            {
                 return new FirstDiff(i, left[i], right[i]);
-            }
-        }
 
         if (left.Length != right.Length)
-        {
             return new FirstDiff(len, len < left.Length ? left[len] : (byte)0,
                 len < right.Length ? right[len] : (byte)0);
-        }
 
         return null;
+    }
+
+    private static string BuildDiffDisplay(string subSignature, string recordType, byte[] left, byte[] right,
+        bool leftBigEndian, bool rightBigEndian, out string? diffSummary)
+    {
+        diffSummary = null;
+
+        var first = FindFirstDiff(left, right);
+        if (first == null)
+            return "-";
+
+        var diffCount = CountDiffBytes(left, right);
+
+        var previewDisplay = BuildPreviewDisplay(left, right);
+        var schema = SubrecordSchemaRegistry.FindSchema(subSignature, recordType, left.Length);
+        var isFormId = schema?.IsFormId == true || schema?.IsFormIdArray == true;
+
+        if (left.Length == 4 && right.Length == 4)
+        {
+            var leftValue = ReadUInt32Value(left, 0, leftBigEndian);
+            var rightValue = ReadUInt32Value(right, 0, rightBigEndian);
+            diffSummary = isFormId
+                ? $"fid 0x{leftValue:X8}->0x{rightValue:X8}"
+                : $"u32 {leftValue:X8}->{rightValue:X8}";
+            return
+                $"[yellow]{(isFormId ? "FormID" : "UInt32")}[/] [dim]first {(isFormId ? "0x" : string.Empty)}{leftValue:X8}, second {(isFormId ? "0x" : string.Empty)}{rightValue:X8}[/] [dim](delta {diffCount})[/]";
+        }
+
+        diffSummary =
+            $"offset 0x{first.Value.Offset:X}, first {first.Value.Left:X2}, second {first.Value.Right:X2} (delta {diffCount})";
+        return
+            $"[yellow]offset 0x{first.Value.Offset:X}[/] [dim]first {first.Value.Left:X2}, second {first.Value.Right:X2}[/] [dim](delta {diffCount})[/]";
+    }
+
+    private static int CountDiffBytes(byte[] left, byte[] right)
+    {
+        var len = Math.Min(left.Length, right.Length);
+        var count = 0;
+        for (var i = 0; i < len; i++)
+            if (left[i] != right[i])
+                count++;
+
+        count += Math.Abs(left.Length - right.Length);
+        return count;
+    }
+
+    private static uint ReadUInt32Value(byte[] data, int offset, bool bigEndian)
+    {
+        if (offset + 4 > data.Length) return 0;
+        return bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4))
+            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
+    }
+
+    private static string BuildPreviewDisplay(byte[] left, byte[] right)
+    {
+        var leftPreview = FormatHexBytes(left, 4);
+        var rightPreview = FormatHexBytes(right, 4);
+        return $"[dim]b4 p:{leftPreview} c:{rightPreview}[/]";
+    }
+
+    private static string BuildPreviewRowText(byte[] left, byte[] right, int byteCount)
+    {
+        var first = FindFirstDiff(left, right);
+        var leftPreview = FormatHexBytesWithHighlight(left, byteCount, first?.Offset, true);
+        var rightPreview = FormatHexBytesWithHighlight(right, byteCount, first?.Offset, false);
+        return $"[dim]first {byteCount} bytes[/]  first: {leftPreview}   second: {rightPreview}";
+    }
+
+    private static string FormatHexBytes(byte[] data, int count)
+    {
+        if (data.Length == 0) return "-";
+
+        var max = Math.Min(count, data.Length);
+        var builder = new StringBuilder(max * 3 - 1);
+        for (var i = 0; i < max; i++)
+        {
+            if (i > 0) builder.Append(' ');
+            builder.Append(data[i].ToString("X2"));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string FormatHexBytesWithHighlight(byte[] data, int count, int? diffOffset, bool isPrimary)
+    {
+        if (data.Length == 0) return "-";
+
+        var max = Math.Min(count, data.Length);
+        var builder = new StringBuilder(max * 3 - 1);
+        for (var i = 0; i < max; i++)
+        {
+            if (i > 0) builder.Append(' ');
+
+            var hex = data[i].ToString("X2");
+            if (diffOffset.HasValue && i == diffOffset.Value)
+                builder.Append(isPrimary ? "[yellow]" : "[red]").Append(hex).Append("[/]");
+            else
+                builder.Append(hex);
+        }
+
+        return builder.ToString();
     }
 
     private static string EscapeMarkup(string value)
     {
         return Markup.Escape(value);
     }
+
+    private readonly record struct FirstDiff(int Offset, byte Left, byte Right);
 }

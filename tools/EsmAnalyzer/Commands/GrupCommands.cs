@@ -106,8 +106,10 @@ public static class GrupCommands
             while (grupStack.Count > 0 && offset >= grupStack.Peek().end) grupStack.Pop();
 
             var sig = Encoding.ASCII.GetString(data, offset, 4);
+            // Big-endian files have "PURG" (reversed "GRUP")
+            var isGrup = sig == "GRUP" || (header.IsBigEndian && sig == "PURG");
 
-            if (sig == "GRUP")
+            if (isGrup)
             {
                 var grupSize = header.IsBigEndian
                     ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset + 4))

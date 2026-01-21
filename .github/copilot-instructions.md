@@ -69,6 +69,26 @@ Located in `Fallout New Vegas (July 21, 2010)/FalloutNV/`:
 - PDB symbol files for debug, release beta, and memory debug builds
 - Corresponding executables (both .exe and .xex formats)
 
+### Extracted PDB Symbols (in `tools/`)
+
+Pre-extracted symbol data from the debug PDB for quick reference:
+
+| File                 | Description                                   | Use Case                                         |
+| -------------------- | --------------------------------------------- | ------------------------------------------------ |
+| `pdb_types_full.txt` | Complete type definitions (~730K lines)       | Struct layouts, class hierarchies, field offsets |
+| `pdb_globals.txt`    | Global symbols, functions, constants (~14 MB) | Function names, static variables, enum values    |
+| `pdb_publics.txt`    | Public symbols                                | Exported functions                               |
+| `opcode_table.csv`   | Script opcodes (829 commands)                 | Script disassembly                               |
+
+**Key constants found in PDB:**
+
+- `LANDSIZE = 33` - Land grid dimension
+- `LANDAREA = 1089` - Land grid total (33×33)
+- `VHGT_ID = 0x54484756` - VHGT subrecord signature
+- `BLOCKSPERLAND = 4` - Texture blocks per land cell
+
+**To regenerate globals:** `cvdump.exe -g Fallout.pdb > pdb_globals.txt`
+
 ## GUI Features (WinUI 3, Windows only)
 
 - **Hex Viewer**: Virtual-scrolling hex editor supporting 200MB+ files

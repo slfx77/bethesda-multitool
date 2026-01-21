@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Linq;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using static EsmAnalyzer.Conversion.EsmEndianHelpers;
 
 namespace EsmAnalyzer.Conversion;
@@ -10,6 +12,7 @@ namespace EsmAnalyzer.Conversion;
 /// </summary>
 public sealed class EsmConverter : IDisposable
 {
+    private sealed record CellGrid(uint FormId, int GridX, int GridY);
     private readonly EsmGrupWriter _grupWriter;
     private readonly byte[] _input;
     private readonly MemoryStream _output;
@@ -58,6 +61,8 @@ public sealed class EsmConverter : IDisposable
             var totalChildRecords = index.CellChildGroups.Sum(kvp => kvp.Value.Sum(g => g.Size));
             AnsiConsole.MarkupLine(
                 $"[grey]Index: worlds={index.Worlds.Count}, interiorCells={index.InteriorCells.Count}, exteriorCells={exteriorCells}, exteriorWorlds={index.ExteriorCellsByWorld.Count}[/]");
+            foreach (var kvp in index.ExteriorCellsByWorld)
+                Console.WriteLine($"  World 0x{kvp.Key:X8}: {kvp.Value.Count} exterior cells");
             AnsiConsole.MarkupLine(
                 $"[grey]CellChildGroups: persistent={persistentGroups}, temporary={temporaryGroups}, totalSize={totalChildRecords:N0} bytes[/]");
         }
@@ -106,7 +111,9 @@ public sealed class EsmConverter : IDisposable
             _grupWriter.FinalizeGrup(_writer, headerPos);
         }
 
-        return _output.ToArray();
+        var outputBytes = _output.ToArray();
+        RebuildOfstTables(outputBytes, index);
+        return outputBytes;
     }
 
     /// <summary>
@@ -173,6 +180,301 @@ public sealed class EsmConverter : IDisposable
     }
 
     #endregion
+
+    private void RebuildOfstTables(byte[] output, ConversionIndex index)
+    {
+        var outputHeader = EsmParser.ParseFileHeader(output);
+        if (outputHeader == null || outputHeader.IsBigEndian)
+            return;
+
+        var outputRecords = EsmHelpers.ScanAllRecords(output, outputHeader.IsBigEndian);
+        var outputWrlds = outputRecords
+            .Where(r => r.Signature == "WRLD")
+            .ToList();
+
+        var cellRecordOffsets = outputRecords
+            .Where(r => r.Signature == "CELL")
+            .GroupBy(r => r.FormId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(r => r.Offset).First().Offset);
+
+        var outputExteriorCellsByWorld = BuildExteriorCellsByWorldFromOutput(output, outputHeader.IsBigEndian);
+        var fallbackExteriorCells = BuildExteriorCellsFromAllCells(outputRecords, output, outputHeader.IsBigEndian);
+
+        if (_verbose)
+        {
+            AnsiConsole.MarkupLine($"[grey]OFST Rebuild: {outputWrlds.Count} WRLD records, {cellRecordOffsets.Count} CELL records[/]");
+            AnsiConsole.MarkupLine($"[grey]  outputExteriorCellsByWorld entries: {outputExteriorCellsByWorld.Count}[/]");
+            foreach (var kvp in outputExteriorCellsByWorld.Take(3))
+                AnsiConsole.MarkupLine($"[grey]    World 0x{kvp.Key:X8}: {kvp.Value.Count} cells[/]");
+            AnsiConsole.MarkupLine($"[grey]  fallbackExteriorCells: {fallbackExteriorCells.Count}[/]");
+        }
+
+        foreach (var wrld in outputWrlds)
+        {
+            if (!outputExteriorCellsByWorld.TryGetValue(wrld.FormId, out var exteriorCells))
+                exteriorCells = [];
+
+            if (fallbackExteriorCells.Count == 0 && exteriorCells.Count == 0)
+                continue;
+
+            if (fallbackExteriorCells.Count > 0)
+            {
+                var merged = new Dictionary<uint, CellGrid>();
+                foreach (var cell in exteriorCells)
+                    merged[cell.FormId] = cell;
+                foreach (var cell in fallbackExteriorCells)
+                    merged.TryAdd(cell.FormId, cell);
+                exteriorCells = merged.Values.ToList();
+            }
+
+            if ((wrld.Flags & 0x00040000) != 0)
+                continue; // Skip compressed WRLD records
+
+            var wrldData = EsmHelpers.GetRecordData(output, wrld, outputHeader.IsBigEndian);
+            var subs = EsmHelpers.ParseSubrecords(wrldData, outputHeader.IsBigEndian);
+            var ofst = subs.FirstOrDefault(s => s.Signature == "OFST");
+            if (ofst == null || ofst.Data.Length == 0)
+                continue;
+
+            if (!TryGetWorldBounds(subs, outputHeader.IsBigEndian, out var minX, out var maxX, out var minY,
+                    out var maxY))
+            {
+                if (_verbose)
+                    AnsiConsole.MarkupLine($"[yellow]  WRLD 0x{wrld.FormId:X8}: failed to get bounds[/]");
+                continue;
+            }
+
+            var columns = maxX - minX + 1;
+            var rows = maxY - minY + 1;
+
+            if (columns <= 0 || rows <= 0)
+                continue;
+
+            var count = ofst.Data.Length / 4;
+            if (count <= 0)
+                continue;
+
+            var expected = columns * rows;
+            if (expected != count)
+            {
+                if (columns > 0 && count % columns == 0)
+                    rows = count / columns;
+                else if (rows > 0 && count % rows == 0)
+                    columns = count / rows;
+                else
+                    continue;
+            }
+
+            var offsets = new uint[count];
+            var cellsMatched = 0;
+            var cellsOutOfBounds = 0;
+            var cellsNotFound = 0;
+            var cellsNegativeRel = 0;
+
+            foreach (var cell in exteriorCells)
+            {
+                var col = cell.GridX - minX;
+                var row = cell.GridY - minY;
+                if (col < 0 || col >= columns || row < 0 || row >= rows)
+                {
+                    cellsOutOfBounds++;
+                    continue;
+                }
+
+                var ofstIndex = row * columns + col;
+                if (ofstIndex < 0 || ofstIndex >= count)
+                    continue;
+
+                if (!cellRecordOffsets.TryGetValue(cell.FormId, out var cellOffset))
+                {
+                    cellsNotFound++;
+                    continue;
+                }
+
+                var rel = (long)cellOffset - (long)wrld.Offset;
+                if (rel <= 0 || rel > uint.MaxValue)
+                {
+                    cellsNegativeRel++;
+                    continue;
+                }
+
+                offsets[ofstIndex] = (uint)rel;
+                cellsMatched++;
+            }
+
+            var ofstDataOffsetLocal = (long)wrld.Offset + EsmParser.MainRecordHeaderSize + ofst.Offset + 6;
+            if (ofstDataOffsetLocal < 0 || ofstDataOffsetLocal + (long)count * 4 > output.Length)
+                continue;
+
+            for (var i = 0; i < offsets.Length; i++)
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(
+                    output.AsSpan((int)ofstDataOffsetLocal + i * 4, 4),
+                    offsets[i]);
+            }
+        }
+    }
+
+
+    private static bool TryGetWorldBounds(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian,
+        out int minX, out int maxX, out int minY, out int maxY)
+    {
+        minX = 0;
+        maxX = 0;
+        minY = 0;
+        maxY = 0;
+
+        var nam0 = subrecords.FirstOrDefault(s => s.Signature == "NAM0");
+        var nam9 = subrecords.FirstOrDefault(s => s.Signature == "NAM9");
+        if (nam0 == null || nam9 == null || nam0.Data.Length < 8 || nam9.Data.Length < 8)
+            return false;
+
+        var minXf = ReadFloat(nam0.Data, 0, bigEndian);
+        var minYf = ReadFloat(nam0.Data, 4, bigEndian);
+        var maxXf = ReadFloat(nam9.Data, 0, bigEndian);
+        var maxYf = ReadFloat(nam9.Data, 4, bigEndian);
+
+        if (IsUnsetFloat(minXf)) minXf = 0;
+        if (IsUnsetFloat(minYf)) minYf = 0;
+        if (IsUnsetFloat(maxXf)) maxXf = 0;
+        if (IsUnsetFloat(maxYf)) maxYf = 0;
+
+        const float cellScale = 4096f;
+        minX = (int)Math.Round(minXf / cellScale);
+        minY = (int)Math.Round(minYf / cellScale);
+        maxX = (int)Math.Round(maxXf / cellScale);
+        maxY = (int)Math.Round(maxYf / cellScale);
+
+        return true;
+    }
+
+    private static float ReadFloat(byte[] data, int offset, bool bigEndian)
+    {
+        if (offset + 4 > data.Length) return 0;
+        var value = bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4))
+            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
+        return BitConverter.Int32BitsToSingle((int)value);
+    }
+
+    private static bool IsUnsetFloat(float value)
+    {
+        const float unsetFloatThreshold = 1e20f;
+        return float.IsNaN(value) || value <= -unsetFloatThreshold || value >= unsetFloatThreshold;
+    }
+
+    private static Dictionary<uint, List<CellGrid>> BuildExteriorCellsByWorldFromOutput(byte[] data, bool bigEndian)
+    {
+        var map = new Dictionary<uint, List<CellGrid>>();
+        var header = EsmParser.ParseFileHeader(data);
+        if (header == null) return map;
+
+        var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
+        if (tes4Header == null) return map;
+
+        var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
+        var stack = new Stack<(int end, int type, uint label)>();
+
+        while (offset + EsmParser.MainRecordHeaderSize <= data.Length)
+        {
+            while (stack.Count > 0 && offset >= stack.Peek().end)
+                stack.Pop();
+
+            var groupHeader = EsmParser.ParseGroupHeader(data.AsSpan(offset), bigEndian);
+            if (groupHeader != null)
+            {
+                var groupEnd = offset + (int)groupHeader.GroupSize;
+                if (groupEnd <= offset || groupEnd > data.Length)
+                    break;
+
+                var labelValue = BinaryPrimitives.ReadUInt32LittleEndian(groupHeader.Label);
+                stack.Push((groupEnd, groupHeader.GroupType, labelValue));
+                offset += EsmParser.MainRecordHeaderSize;
+                continue;
+            }
+
+            var recordHeader = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
+            if (recordHeader == null)
+                break;
+
+            if (recordHeader.Signature == "CELL")
+            {
+                var worldId = GetCurrentWorldId(stack);
+                if (worldId.HasValue)
+                {
+                    var recInfo = new AnalyzerRecordInfo
+                    {
+                        Signature = recordHeader.Signature,
+                        FormId = recordHeader.FormId,
+                        Flags = recordHeader.Flags,
+                        DataSize = recordHeader.DataSize,
+                        Offset = (uint)offset,
+                        TotalSize = (uint)(EsmParser.MainRecordHeaderSize + recordHeader.DataSize)
+                    };
+
+                    var recordData = EsmHelpers.GetRecordData(data, recInfo, bigEndian);
+                    var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+                    var xclc = subrecords.FirstOrDefault(s => s.Signature == "XCLC");
+
+                    if (xclc != null && xclc.Data.Length >= 8)
+                    {
+                        var gridX = BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(0, 4));
+                        var gridY = BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(4, 4));
+
+                        if (!map.TryGetValue(worldId.Value, out var list))
+                        {
+                            list = [];
+                            map[worldId.Value] = list;
+                        }
+
+                        list.Add(new CellGrid(recordHeader.FormId, gridX, gridY));
+                    }
+                }
+            }
+
+            offset += EsmParser.MainRecordHeaderSize + (int)recordHeader.DataSize;
+        }
+
+        return map;
+    }
+
+    private static List<CellGrid> BuildExteriorCellsFromAllCells(
+        List<AnalyzerRecordInfo> records,
+        byte[] data,
+        bool bigEndian)
+    {
+        var list = new List<CellGrid>();
+
+        foreach (var record in records)
+        {
+            if (record.Signature != "CELL")
+                continue;
+
+            var recordData = EsmHelpers.GetRecordData(data, record, bigEndian);
+            var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+            var xclc = subrecords.FirstOrDefault(s => s.Signature == "XCLC");
+            if (xclc == null || xclc.Data.Length < 8)
+                continue;
+
+            var gridX = BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(0, 4));
+            var gridY = BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(4, 4));
+
+            list.Add(new CellGrid(record.FormId, gridX, gridY));
+        }
+
+        return list;
+    }
+
+    private static uint? GetCurrentWorldId(Stack<(int end, int type, uint label)> stack)
+    {
+        foreach (var entry in stack.Reverse())
+        {
+            if (entry.type == 1)
+                return entry.label;
+        }
+
+        return null;
+    }
 
     #region Main Conversion Loop Helpers
 

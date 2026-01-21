@@ -1,49 +1,38 @@
 using System.Globalization;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
 
 public static partial class LandCommands
 {
     private static int SummarizeLand(string filePath, string formIdText, int vhgtSamples, int vhgtHist,
-        string? vhgtComparePath, int vhgtCompareSamples)
+        string? vhgtComparePath, int vhgtCompareSamples, bool vhgtCompareDiff)
     {
-        if (!File.Exists(filePath))
-        {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] File not found: {filePath}");
-            return 1;
-        }
-
-        if (!TryParseFormId(formIdText, out var formId))
+        var formId = EsmFileLoader.ParseFormId(formIdText);
+        if (formId == null)
         {
             AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid FormID: {formIdText}");
             return 1;
         }
 
-        var data = File.ReadAllBytes(filePath);
-        var header = EsmParser.ParseFileHeader(data);
-        if (header == null)
-        {
-            AnsiConsole.MarkupLine("[red]ERROR:[/] Failed to parse ESM header");
-            return 1;
-        }
+        var esm = EsmFileLoader.Load(filePath, false);
+        if (esm == null) return 1;
 
-        var landRecords = EsmHelpers.ScanForRecordType(data, header.IsBigEndian, "LAND");
-        var record = landRecords.FirstOrDefault(r => r.FormId == formId);
+        var landRecords = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "LAND");
+        var record = landRecords.FirstOrDefault(r => r.FormId == formId.Value);
         if (record == null)
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] LAND record 0x{formId:X8} not found");
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] LAND record 0x{formId.Value:X8} not found");
             return 1;
         }
 
-        var recordData = EsmHelpers.GetRecordData(data, record, header.IsBigEndian);
-        var subrecords = EsmHelpers.ParseSubrecords(recordData, header.IsBigEndian);
+        var recordData = EsmHelpers.GetRecordData(esm.Data, record, esm.IsBigEndian);
+        var subrecords = EsmHelpers.ParseSubrecords(recordData, esm.IsBigEndian);
 
         AnsiConsole.MarkupLine(
-            $"[cyan]File:[/] {Path.GetFileName(filePath)} ({(header.IsBigEndian ? "Big-endian" : "Little-endian")})");
-        AnsiConsole.MarkupLine($"[cyan]LAND FormID:[/] 0x{formId:X8}");
+            $"[cyan]File:[/] {Path.GetFileName(filePath)} ({(esm.IsBigEndian ? "Big-endian" : "Little-endian")})");
+        AnsiConsole.MarkupLine($"[cyan]LAND FormID:[/] 0x{formId.Value:X8}");
         AnsiConsole.WriteLine();
 
         var table = new Table()
@@ -57,7 +46,7 @@ public static partial class LandCommands
         {
             var list = group.ToList();
             var totalSize = list.Sum(s => s.Data.Length);
-            var summary = BuildSummary(group.Key, list, header.IsBigEndian);
+            var summary = BuildSummary(group.Key, list, esm.IsBigEndian);
 
             table.AddRow(
                 Markup.Escape(group.Key),
@@ -67,9 +56,9 @@ public static partial class LandCommands
         }
 
         AnsiConsole.Write(table);
-        PrintVhgtDetails(subrecords, header.IsBigEndian, vhgtSamples, vhgtHist);
+        PrintVhgtDetails(subrecords, esm.IsBigEndian, vhgtSamples, vhgtHist);
         if (!string.IsNullOrWhiteSpace(vhgtComparePath))
-            CompareVhgt(filePath, vhgtComparePath, formId, vhgtCompareSamples);
+            CompareVhgt(filePath, vhgtComparePath, formId.Value, vhgtCompareSamples, vhgtCompareDiff);
         return 0;
     }
 
@@ -92,7 +81,7 @@ public static partial class LandCommands
         var data = subrecords[0].Data;
         if (data.Length < 4) return $"size={data.Length} (too small)";
 
-        var value = ReadUInt32(data, 0, bigEndian);
+        var value = EsmBinary.ReadUInt32(data, 0, bigEndian);
         return $"value=0x{value:X8} ({value})";
     }
 
@@ -116,7 +105,7 @@ public static partial class LandCommands
         var data = subrecords[0].Data;
         if (data.Length < 4) return "size<4";
 
-        var baseHeight = ReadSingle(data, 0, bigEndian);
+        var baseHeight = EsmBinary.ReadSingle(data, 0, bigEndian);
         var minDelta = sbyte.MaxValue;
         var maxDelta = sbyte.MinValue;
         for (var i = 4; i < data.Length; i++)
@@ -138,7 +127,7 @@ public static partial class LandCommands
         if (vhgt == null || vhgt.Data.Length < 5) return;
 
         var data = vhgt.Data;
-        var baseHeight = ReadSingle(data, 0, bigEndian);
+        var baseHeight = EsmBinary.ReadSingle(data, 0, bigEndian);
         var deltas = new sbyte[data.Length - 4];
         for (var i = 4; i < data.Length; i++) deltas[i - 4] = unchecked((sbyte)data[i]);
 

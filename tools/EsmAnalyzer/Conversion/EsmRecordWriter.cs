@@ -210,13 +210,9 @@ public sealed class EsmRecordWriter
             return recordEndOffset;
         }
 
-        // Strip OFST subrecords from WRLD records
-        if (signature == "OFST" && recordType == "WRLD")
-        {
-            _stats.OfstStripped++;
-            _stats.OfstBytesStripped += 6 + dataSize;
-            return dataOffset + dataSize;
-        }
+        // Keep OFST subrecords - they're needed for GECK to find exterior cells
+        // The offsets will be wrong but GECK handles that better than missing OFST
+        // Conversion happens in EsmSubrecordConverter via UInt32Array handling
 
         _stats.IncrementSubrecordType(recordType, signature);
 
