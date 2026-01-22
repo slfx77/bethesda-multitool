@@ -211,6 +211,14 @@ public sealed class EsmConverter : IDisposable
 
         var outputExteriorCellsByWorld = BuildExteriorCellsByWorldFromOutput(output, outputHeader.IsBigEndian);
         var fallbackExteriorCells = BuildExteriorCellsFromAllCells(outputRecords, output, outputHeader.IsBigEndian);
+        var indexExteriorCellsByWorld = index.ExteriorCellsByWorld
+            .Where(kvp => kvp.Value.Count > 0)
+            .ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value
+                    .Where(c => c.GridX.HasValue && c.GridY.HasValue)
+                    .Select(c => new CellGrid(c.FormId, c.GridX!.Value, c.GridY!.Value))
+                    .ToList());
 
         if (_verbose)
         {
@@ -223,8 +231,11 @@ public sealed class EsmConverter : IDisposable
 
         foreach (var wrld in outputWrlds)
         {
-            if (!outputExteriorCellsByWorld.TryGetValue(wrld.FormId, out var exteriorCells))
-                exteriorCells = [];
+            if (!indexExteriorCellsByWorld.TryGetValue(wrld.FormId, out var exteriorCells))
+            {
+                if (!outputExteriorCellsByWorld.TryGetValue(wrld.FormId, out exteriorCells))
+                    exteriorCells = [];
+            }
 
             if (fallbackExteriorCells.Count == 0 && exteriorCells.Count == 0)
                 continue;
@@ -278,6 +289,7 @@ public sealed class EsmConverter : IDisposable
             }
 
             var offsets = new uint[count];
+            var bestByIndex = new Dictionary<int, uint>();
             var cellsMatched = 0;
             var cellsOutOfBounds = 0;
             var cellsNotFound = 0;
@@ -310,7 +322,20 @@ public sealed class EsmConverter : IDisposable
                     continue;
                 }
 
-                offsets[ofstIndex] = (uint)rel;
+                var relValue = (uint)rel;
+                if (bestByIndex.TryGetValue(ofstIndex, out var existing))
+                {
+                    if (relValue < existing)
+                    {
+                        bestByIndex[ofstIndex] = relValue;
+                        offsets[ofstIndex] = relValue;
+                    }
+                }
+                else
+                {
+                    bestByIndex[ofstIndex] = relValue;
+                    offsets[ofstIndex] = relValue;
+                }
                 cellsMatched++;
             }
 
@@ -544,7 +569,7 @@ public sealed class EsmConverter : IDisposable
         if (inputOffset + recordHeaderSize > _input.Length) return true;
 
         var dataSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 4));
-        
+
         // Use long to avoid overflow when dataSize > int.MaxValue
         var recordEnd = (long)inputOffset + recordHeaderSize + dataSize;
 

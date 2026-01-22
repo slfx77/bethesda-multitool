@@ -2,27 +2,20 @@ namespace EsmAnalyzer.Conversion;
 
 /// <summary>
 ///     Generates the PC-compatible cell ordering for WRLD OFST tables.
-///     PC uses an 8×8 block-based serpentine pattern:
-///     - Blocks are processed column-by-column (all Y blocks before next X)
-///     - Within each block: start at (7,7), sweep left 7 times, SE jump to next row
-///     - Rows 7→2: left-sweep serpentine with SE(7,-1) jumps
-///     - Rows 1→0: diagonal zigzag (S then NW alternating)
+///     PC uses a center-outward spiral pattern for 8×8 blocks:
+///     - Blocks spiral outward from the center of the world
+///     - Within each block: reverse serpentine from (7,7) to (0,0)
 /// </summary>
 public static class PcCellOrderGenerator
 {
     /// <summary>
     ///     Generates the PC-compatible ordering for cells within a given bounds.
+    ///     Uses center-outward spiral for blocks, reverse serpentine within blocks.
     /// </summary>
-    /// <param name="minX">Minimum grid X coordinate</param>
-    /// <param name="maxX">Maximum grid X coordinate</param>
-    /// <param name="minY">Minimum grid Y coordinate</param>
-    /// <param name="maxY">Maximum grid Y coordinate</param>
-    /// <returns>Ordered list of (gridX, gridY) tuples in PC OFST order</returns>
     public static List<(int gridX, int gridY)> GeneratePcOrder(int minX, int maxX, int minY, int maxY)
     {
         var result = new List<(int gridX, int gridY)>();
 
-        // Calculate bounds dimensions
         var width = maxX - minX + 1;
         var height = maxY - minY + 1;
 
@@ -33,11 +26,12 @@ public static class PcCellOrderGenerator
         var blocksX = (width + 7) / 8;
         var blocksY = (height + 7) / 8;
 
-        // Process blocks column-by-column (column-major order)
-        for (var blockX = 0; blockX < blocksX; blockX++)
-        for (var blockY = 0; blockY < blocksY; blockY++)
+        // Generate center-spiral block order
+        var blockOrder = GenerateCenterSpiralBlockOrder(blocksX, blocksY);
+
+        foreach (var (blockX, blockY) in blockOrder)
         {
-            // Generate cells for this block in serpentine order
+            // Generate cells for this block in reverse serpentine order
             var blockCells = GenerateBlockOrder(
                 minX + blockX * 8,
                 minY + blockY * 8,
@@ -50,7 +44,64 @@ public static class PcCellOrderGenerator
     }
 
     /// <summary>
+    ///     Generates center-outward spiral order for blocks.
+    ///     Starts at center block(s) and spirals outward.
+    /// </summary>
+    private static List<(int blockX, int blockY)> GenerateCenterSpiralBlockOrder(int blocksX, int blocksY)
+    {
+        var result = new List<(int blockX, int blockY)>();
+        var visited = new HashSet<(int, int)>();
+
+        // Find center block(s)
+        // If even number of blocks, center is between two blocks - use the one closer to origin
+        var centerX = (blocksX - 1) / 2;
+        var centerY = (blocksY - 1) / 2;
+
+        // Use a spiral that starts from center and expands outward
+        // Direction order: right, up, left, down (clockwise spiral)
+        // But PC seems to prefer: up, left (toward negative coords first)
+
+        var queue = new Queue<(int x, int y, int dist)>();
+        queue.Enqueue((centerX, centerY, 0));
+
+        // BFS from center - this gives us concentric "rings"
+        while (queue.Count > 0)
+        {
+            var (x, y, dist) = queue.Dequeue();
+
+            if (x < 0 || x >= blocksX || y < 0 || y >= blocksY)
+                continue;
+
+            if (!visited.Add((x, y)))
+                continue;
+
+            result.Add((x, y));
+
+            // Enqueue neighbors in priority order that matches PC pattern
+            // PC pattern seems to prioritize: same-column (Y varies), then X
+            // And within that, center-ward first
+
+            // For the next ring, we want to expand in a way that keeps blocks
+            // close to center first. Use Manhattan distance ordering.
+            var nextDist = dist + 1;
+
+            // Prioritize vertical movement (same X column) then horizontal
+            // Up (toward higher Y)
+            queue.Enqueue((x, y + 1, nextDist));
+            // Down (toward lower Y)  
+            queue.Enqueue((x, y - 1, nextDist));
+            // Right (toward higher X)
+            queue.Enqueue((x + 1, y, nextDist));
+            // Left (toward lower X)
+            queue.Enqueue((x - 1, y, nextDist));
+        }
+
+        return result;
+    }
+
+    /// <summary>
     ///     Generates the ordering for a single 8×8 block.
+    ///     Uses reverse serpentine: start at (7,7), sweep left to (0,7), down to row 6, etc.
     /// </summary>
     private static List<(int gridX, int gridY)> GenerateBlockOrder(
         int blockBaseX, int blockBaseY,

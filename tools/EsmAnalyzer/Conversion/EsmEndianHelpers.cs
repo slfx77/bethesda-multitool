@@ -215,7 +215,8 @@ internal static class EsmEndianHelpers
     {
         unchecked
         {
-            return (ushort)x | ((uint)(ushort)y << 16);
+            // PC uses swapped order: Y in low 16 bits, X in high 16 bits.
+            return (ushort)y | ((uint)(ushort)x << 16);
         }
     }
 }

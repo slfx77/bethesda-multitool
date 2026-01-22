@@ -3,6 +3,8 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using EsmAnalyzer.Helpers;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
@@ -292,6 +294,32 @@ public static class OfstCommands
         return command;
     }
 
+    public static Command CreateOfstImageCommand()
+    {
+        var command = new Command("ofst-image",
+            "Visualize WRLD OFST offset table as an image (shows zero vs non-zero entries)");
+
+        var fileArg = new Argument<string>("file") { Description = FilePathDescription };
+        var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
+        var outputOption = new Option<string>("-o", "--output")
+            { Description = "Output PNG file path", DefaultValueFactory = _ => "ofst_map.png" };
+        var scaleOption = new Option<int>("-s", "--scale")
+            { Description = "Scale factor (pixels per cell)", DefaultValueFactory = _ => 4 };
+
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(worldArg);
+        command.Options.Add(outputOption);
+        command.Options.Add(scaleOption);
+
+        command.SetAction(parseResult => GenerateOfstImage(
+            parseResult.GetValue(fileArg)!,
+            parseResult.GetValue(worldArg)!,
+            parseResult.GetValue(outputOption)!,
+            parseResult.GetValue(scaleOption)));
+
+        return command;
+    }
+
     private static int ExtractOfst(string filePath, string formIdText, int limit, bool nonZeroOnly, bool summaryOnly)
     {
         if (!TryLoadWorldRecord(filePath, formIdText, out var esm, out _, out var recordData, out var formId))
@@ -336,6 +364,364 @@ public static class OfstCommands
         AnsiConsole.Write(table);
 
         return 0;
+    }
+
+    private static int GenerateOfstImage(string filePath, string worldFormIdText, string outputPath, int scale)
+    {
+        if (!TryParseFormId(worldFormIdText, out var worldFormId))
+        {
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid WRLD FormID: {worldFormIdText}");
+            return 1;
+        }
+
+        var esm = EsmFileLoader.Load(filePath, false);
+        if (esm == null) return 1;
+
+        if (!TryGetWorldContext(esm.Data, esm.IsBigEndian, worldFormId, out var context))
+            return 1;
+
+        var columns = context.Columns;
+        var rows = context.Rows;
+        var offsets = context.Offsets;
+
+        AnsiConsole.MarkupLine($"[blue]Generating OFST visualization for:[/] WRLD 0x{worldFormId:X8}");
+        AnsiConsole.MarkupLine($"Grid: {columns}×{rows} cells, {offsets.Count:N0} OFST entries");
+
+        // Find min/max non-zero offsets for color gradient
+        var nonZeroOffsets = offsets.Where(o => o != 0).ToList();
+        var minOffset = nonZeroOffsets.Count > 0 ? nonZeroOffsets.Min() : 0u;
+        var maxOffset = nonZeroOffsets.Count > 0 ? nonZeroOffsets.Max() : 1u;
+        var offsetRange = maxOffset - minOffset;
+        if (offsetRange == 0) offsetRange = 1;
+
+        var nonZeroCount = nonZeroOffsets.Count;
+        var zeroCount = offsets.Count - nonZeroCount;
+        AnsiConsole.MarkupLine($"Non-zero entries: [green]{nonZeroCount:N0}[/]  Zero entries: [red]{zeroCount:N0}[/]");
+        AnsiConsole.MarkupLine($"Offset range: 0x{minOffset:X8} - 0x{maxOffset:X8}");
+
+        // Create image
+        var imageWidth = columns * scale;
+        var imageHeight = rows * scale;
+        using var image = new Image<Rgba32>(imageWidth, imageHeight);
+
+        // Fill background with dark gray (for cells outside the grid if any)
+        for (var y = 0; y < imageHeight; y++)
+        for (var x = 0; x < imageWidth; x++)
+            image[x, y] = new Rgba32(40, 40, 40, 255);
+
+        // Draw cells based on OFST values
+        for (var row = 0; row < rows && row * columns < offsets.Count; row++)
+        for (var col = 0; col < columns; col++)
+        {
+            var index = row * columns + col;
+            if (index >= offsets.Count) continue;
+
+            var offset = offsets[index];
+            Rgba32 color;
+
+            if (offset == 0)
+            {
+                // Zero entry - red (missing/broken)
+                color = new Rgba32(200, 40, 40, 255);
+            }
+            else
+            {
+                // Non-zero entry - color by offset value (blue to green gradient)
+                var normalized = (float)(offset - minOffset) / offsetRange;
+                color = OffsetToColor(normalized);
+            }
+
+            // Draw the cell (row 0 = top of image = minY in game coords, so we flip)
+            var pixelY = row * scale;
+            var pixelX = col * scale;
+
+            for (var sy = 0; sy < scale; sy++)
+            for (var sx = 0; sx < scale; sx++)
+                image[pixelX + sx, pixelY + sy] = color;
+        }
+
+        // Ensure output directory exists
+        var dir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        image.SaveAsPng(outputPath);
+        AnsiConsole.MarkupLine($"[green]Saved:[/] {outputPath} ({imageWidth}×{imageHeight} px)");
+        AnsiConsole.MarkupLine("[grey]Legend: Red = zero/missing, Blue→Green→Yellow→White = low→high file offset[/]");
+
+        return 0;
+    }
+
+    public static Command CreateOfstQuadtreeCommand()
+    {
+        var command = new Command("ofst-quadtree",
+            "Analyze OFST ordering using custom quadtree pattern (BR→TR→BL→TL at top, TL→BL→TR→BR at mid)");
+
+        var fileArg = new Argument<string>("file") { Description = FilePathDescription };
+        var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
+        var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
+            { Description = "Max entries to show", DefaultValueFactory = _ => 100 };
+
+        command.Arguments.Add(fileArg);
+        command.Arguments.Add(worldArg);
+        command.Options.Add(limitOption);
+
+        command.SetAction(parseResult => AnalyzeOfstQuadtree(
+            parseResult.GetValue(fileArg)!,
+            parseResult.GetValue(worldArg)!,
+            parseResult.GetValue(limitOption)));
+
+        return command;
+    }
+
+    private static int AnalyzeOfstQuadtree(string filePath, string worldFormIdText, int limit)
+    {
+        if (!TryParseFormId(worldFormIdText, out var worldFormId))
+        {
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid WRLD FormID: {worldFormIdText}");
+            return 1;
+        }
+
+        var esm = EsmFileLoader.Load(filePath, false);
+        if (esm == null) return 1;
+
+        if (!TryGetWorldContext(esm.Data, esm.IsBigEndian, worldFormId, out var context))
+            return 1;
+
+        var entries = BuildOfstEntries(context, esm.Data, esm.IsBigEndian);
+        var ordered = entries.OrderBy(e => e.RecordOffset).ToList();
+
+        if (ordered.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[red]ERROR:[/] No CELL records resolved from OFST table");
+            return 1;
+        }
+
+        var columns = context.Columns;
+        var rows = context.Rows;
+
+        AnsiConsole.MarkupLine(
+            $"[cyan]WRLD:[/] 0x{worldFormId:X8}  [cyan]Cells:[/] {ordered.Count:N0}  [cyan]Grid:[/] {columns}×{rows}");
+        AnsiConsole.MarkupLine($"[cyan]Bounds:[/] {Markup.Escape(context.BoundsText)}");
+
+        // Test different quadtree orderings
+        var quadtreePatterns = new List<(string Name, int[] TopOrder, int[] MidOrder, bool ColMajorInner)>
+        {
+            // Your described pattern: top=BR→TR→BL→TL, mid=TL→BL→TR→BR, inner=column-major
+            ("quadtree-br-tr-bl-tl/tl-bl-tr-br/col", new[] { 3, 1, 2, 0 }, new[] { 0, 2, 1, 3 }, true),
+            // Variation: inner=row-major
+            ("quadtree-br-tr-bl-tl/tl-bl-tr-br/row", new[] { 3, 1, 2, 0 }, new[] { 0, 2, 1, 3 }, false),
+            // Standard Z-order at all levels for comparison
+            ("quadtree-standard-z", new[] { 0, 1, 2, 3 }, new[] { 0, 1, 2, 3 }, false),
+            // All inverted
+            ("quadtree-all-inverted", new[] { 3, 2, 1, 0 }, new[] { 3, 2, 1, 0 }, true),
+        };
+
+        var results = new List<(string Name, double Correlation, double AbsCorrelation)>();
+
+        foreach (var (name, topOrder, midOrder, colMajor) in quadtreePatterns)
+        {
+            var correlation = PearsonQuadtree(ordered, columns, rows, topOrder, midOrder, colMajor);
+            results.Add((name, correlation, Math.Abs(correlation)));
+        }
+
+        // Sort by absolute correlation descending
+        results = results.OrderByDescending(r => r.AbsCorrelation).ToList();
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("Quadtree Pattern")
+            .AddColumn(new TableColumn("Correlation").RightAligned())
+            .AddColumn(new TableColumn("|Corr|").RightAligned());
+
+        foreach (var (name, corr, absCorr) in results)
+        {
+            var color = absCorr > 0.8 ? "green" : absCorr > 0.5 ? "yellow" : "grey";
+            table.AddRow(
+                Markup.Escape(name),
+                $"[{color}]{corr:F6}[/]",
+                $"[{color}]{absCorr:F6}[/]");
+        }
+
+        AnsiConsole.Write(table);
+
+        // Also show first N cells in file order with their quadtree indices
+        AnsiConsole.MarkupLine($"\n[cyan]First {Math.Min(limit, ordered.Count)} cells by file order:[/]");
+
+        var detailTable = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("Order")
+            .AddColumn("GridX")
+            .AddColumn("GridY")
+            .AddColumn("Col")
+            .AddColumn("Row")
+            .AddColumn("Offset")
+            .AddColumn("ExpectedQT");
+
+        // Use best pattern for expected
+        var bestPattern = quadtreePatterns[0];
+        for (var i = 0; i < Math.Min(limit, ordered.Count); i++)
+        {
+            var e = ordered[i];
+            var expected = ComputeQuadtreeIndex(e.Col, e.Row, columns, rows,
+                bestPattern.TopOrder, bestPattern.MidOrder, bestPattern.ColMajorInner);
+            detailTable.AddRow(
+                i.ToString(),
+                e.GridX.ToString(),
+                e.GridY.ToString(),
+                e.Col.ToString(),
+                e.Row.ToString(),
+                $"0x{e.RecordOffset:X8}",
+                expected.ToString());
+        }
+
+        AnsiConsole.Write(detailTable);
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Compute Pearson correlation for custom quadtree ordering
+    /// </summary>
+    private static double PearsonQuadtree(List<OfstLayoutEntry> ordered, int columns, int rows,
+        int[] topOrder, int[] midOrder, bool colMajorInner)
+    {
+        if (ordered.Count < 2) return 0;
+
+        var expectedIndices = ordered
+            .Select(e => (double)ComputeQuadtreeIndex(e.Col, e.Row, columns, rows, topOrder, midOrder, colMajorInner))
+            .ToArray();
+        var actualIndices = Enumerable.Range(0, ordered.Count).Select(i => (double)i).ToArray();
+
+        return Pearson(actualIndices, expectedIndices);
+    }
+
+    /// <summary>
+    /// Compute quadtree index with custom quadrant orderings at each level
+    /// </summary>
+    private static long ComputeQuadtreeIndex(int col, int row, int columns, int rows,
+        int[] topOrder, int[] midOrder, bool colMajorInner)
+    {
+        // Level 1: 128x128 cell blocks (approx 2x2 at top level for typical worldspace)
+        // Level 2: 32x32 cell blocks within those
+        // Level 3: 8x8 cell blocks (column-major or row-major)
+        // Level 4: individual cells
+
+        const int L3Size = 8;   // 8x8 cells per L3 block
+        const int L2Size = 32;  // 32x32 cells per L2 block (4x4 L3 blocks)
+        const int L1Size = 128; // 128x128 cells per L1 block (4x4 L2 blocks)
+
+        // Determine which L1 quadrant (2x2)
+        var l1Col = col / L1Size;
+        var l1Row = row / L1Size;
+        var l1Quad = (l1Row * 2 + l1Col) % 4;
+        var l1Index = topOrder[l1Quad];
+
+        // Within L1, determine L2 quadrant (4x4 = 16 blocks)
+        var inL1Col = col % L1Size;
+        var inL1Row = row % L1Size;
+        var l2Col = inL1Col / L2Size;
+        var l2Row = inL1Row / L2Size;
+        var l2Quad = (l2Row * 4 + l2Col) % 16;
+
+        // For L2, we use midOrder for 2x2 sub-quadrants, then expand
+        var l2SubRow = l2Row / 2;
+        var l2SubCol = l2Col / 2;
+        var l2SubQuad = (l2SubRow * 2 + l2SubCol) % 4;
+        var l2SubIndex = midOrder[l2SubQuad];
+        var l2InnerRow = l2Row % 2;
+        var l2InnerCol = l2Col % 2;
+        var l2Index = l2SubIndex * 4 + (l2InnerRow * 2 + l2InnerCol);
+
+        // Within L2, determine L3 block and inner position
+        var inL2Col = inL1Col % L2Size;
+        var inL2Row = inL1Row % L2Size;
+        var l3Col = inL2Col / L3Size;
+        var l3Row = inL2Row / L3Size;
+        int l3Index;
+        if (colMajorInner)
+            l3Index = l3Col * 4 + l3Row; // column-major
+        else
+            l3Index = l3Row * 4 + l3Col; // row-major
+
+        // Within L3, individual cell
+        var cellCol = inL2Col % L3Size;
+        var cellRow = inL2Row % L3Size;
+        int cellIndex;
+        if (colMajorInner)
+            cellIndex = cellCol * L3Size + cellRow;
+        else
+            cellIndex = cellRow * L3Size + cellCol;
+
+        // Combine all levels
+        // L1 has 4 quadrants, L2 has 16 blocks per L1, L3 has 16 blocks per L2, cells = 64 per L3
+        var l2BlocksPerL1 = 16;
+        var l3BlocksPerL2 = 16;
+        var cellsPerL3 = 64;
+
+        return (long)l1Index * l2BlocksPerL1 * l3BlocksPerL2 * cellsPerL3 +
+               (long)l2Index * l3BlocksPerL2 * cellsPerL3 +
+               (long)l3Index * cellsPerL3 +
+               cellIndex;
+    }
+
+    private static double Pearson(double[] x, double[] y)
+    {
+        if (x.Length != y.Length || x.Length < 2) return 0;
+
+        var n = x.Length;
+        var sumX = 0.0;
+        var sumY = 0.0;
+        var sumX2 = 0.0;
+        var sumY2 = 0.0;
+        var sumXy = 0.0;
+
+        for (var i = 0; i < n; i++)
+        {
+            sumX += x[i];
+            sumY += y[i];
+            sumX2 += x[i] * x[i];
+            sumY2 += y[i] * y[i];
+            sumXy += x[i] * y[i];
+        }
+
+        var denom = Math.Sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+        if (denom < ZeroEpsilon) return 0;
+
+        return (n * sumXy - sumX * sumY) / denom;
+    }
+
+    /// <summary>
+    /// Convert normalized offset (0-1) to color using full HSV rainbow spectrum
+    /// Red → Orange → Yellow → Green → Cyan → Blue → Magenta → Red
+    /// </summary>
+    private static Rgba32 OffsetToColor(float t)
+    {
+        t = Math.Clamp(t, 0f, 1f);
+
+        // Full HSV rainbow: hue from 0 to 300 degrees (red to magenta, avoiding wrap-back to red)
+        var hue = t * 300f; // 0=red, 60=yellow, 120=green, 180=cyan, 240=blue, 300=magenta
+        var saturation = 1.0f;
+        var value = 1.0f;
+
+        // HSV to RGB conversion
+        var c = value * saturation;
+        var x = c * (1 - Math.Abs((hue / 60f) % 2 - 1));
+        var m = value - c;
+
+        float r1, g1, b1;
+        if (hue < 60) { r1 = c; g1 = x; b1 = 0; }
+        else if (hue < 120) { r1 = x; g1 = c; b1 = 0; }
+        else if (hue < 180) { r1 = 0; g1 = c; b1 = x; }
+        else if (hue < 240) { r1 = 0; g1 = x; b1 = c; }
+        else if (hue < 300) { r1 = x; g1 = 0; b1 = c; }
+        else { r1 = c; g1 = 0; b1 = x; }
+
+        var r = (byte)((r1 + m) * 255);
+        var g = (byte)((g1 + m) * 255);
+        var b = (byte)((b1 + m) * 255);
+
+        return new Rgba32(r, g, b, 255);
     }
 
     private static int AnalyzeOfstPattern(string filePath, string worldFormIdText, int limit, string? csvPath)

@@ -47,6 +47,8 @@ internal sealed class Program
         rootCommand.Subcommands.Add(OfstCommands.CreateOfstTileOrderCommand());
         rootCommand.Subcommands.Add(OfstCommands.CreateOfstDeltasCommand());
         rootCommand.Subcommands.Add(OfstCommands.CreateOfstValidateCommand());
+        rootCommand.Subcommands.Add(OfstCommands.CreateOfstImageCommand());
+        rootCommand.Subcommands.Add(OfstCommands.CreateOfstQuadtreeCommand());
         rootCommand.Subcommands.Add(ToftCommands.CreateToftCommand());
         rootCommand.Subcommands.Add(HeuristicCommands.CreateGeomSearchCommand());
         rootCommand.Subcommands.Add(LandCommands.CreateLandSummaryCommand());

@@ -295,22 +295,22 @@ public static partial class ExportCommands
 
                 foreach (var (_, heights) in heightmaps)
                     for (var y = 0; y < CellGridSize; y++)
-                    for (var x = 0; x < CellGridSize; x++)
-                    {
-                        globalMin = Math.Min(globalMin, heights[x, y]);
-                        globalMax = Math.Max(globalMax, heights[x, y]);
-                    }
+                        for (var x = 0; x < CellGridSize; x++)
+                        {
+                            globalMin = Math.Min(globalMin, heights[x, y]);
+                            globalMax = Math.Max(globalMax, heights[x, y]);
+                        }
 
                 var range = globalMax - globalMin;
                 if (range < 0.001f) range = 1f;
 
-                // Create stitched image
-                using var image = new Image<L8>(imageWidth, imageHeight);
+                // Create stitched image with color gradient
+                using var image = new Image<Rgba32>(imageWidth, imageHeight);
 
                 // Fill with middle gray for missing cells
                 for (var y = 0; y < imageHeight; y++)
-                for (var x = 0; x < imageWidth; x++)
-                    image[x, y] = new L8(128);
+                    for (var x = 0; x < imageWidth; x++)
+                        image[x, y] = new Rgba32(128, 128, 128, 255);
 
                 foreach (var ((cellX, cellY), heights) in heightmaps)
                 {
@@ -321,28 +321,29 @@ public static partial class ExportCommands
                     var basePixelY = (maxY - cellY) * CellGridSize * scale;
 
                     for (var localY = 0; localY < CellGridSize; localY++)
-                    for (var localX = 0; localX < CellGridSize; localX++)
-                    {
-                        var intensity = (byte)((heights[localX, localY] - globalMin) / range * 255);
-
-                        // VHGT data layout: localY=0 is SOUTH edge, localY=32 is NORTH edge
-                        // Image layout: lower Y is NORTH, higher Y is SOUTH
-                        // So we need to flip localY within the cell:
-                        // - localY=0 (south) should go to bottom of cell (basePixelY + 32)
-                        // - localY=32 (north) should go to top of cell (basePixelY + 0)
-                        var flippedLocalY = CellGridSize - 1 - localY;
-
-                        // Apply to scaled pixels
-                        for (var sy = 0; sy < scale; sy++)
-                        for (var sx = 0; sx < scale; sx++)
+                        for (var localX = 0; localX < CellGridSize; localX++)
                         {
-                            var px = basePixelX + localX * scale + sx;
-                            var py = basePixelY + flippedLocalY * scale + sy;
+                            var normalizedHeight = (heights[localX, localY] - globalMin) / range;
+                            var color = HeightToColor((float)normalizedHeight);
 
-                            if (px >= 0 && px < imageWidth && py >= 0 && py < imageHeight)
-                                image[px, py] = new L8(intensity);
+                            // VHGT data layout: localY=0 is SOUTH edge, localY=32 is NORTH edge
+                            // Image layout: lower Y is NORTH, higher Y is SOUTH
+                            // So we need to flip localY within the cell:
+                            // - localY=0 (south) should go to bottom of cell (basePixelY + 32)
+                            // - localY=32 (north) should go to top of cell (basePixelY + 0)
+                            var flippedLocalY = CellGridSize - 1 - localY;
+
+                            // Apply to scaled pixels
+                            for (var sy = 0; sy < scale; sy++)
+                                for (var sx = 0; sx < scale; sx++)
+                                {
+                                    var px = basePixelX + localX * scale + sx;
+                                    var py = basePixelY + flippedLocalY * scale + sy;
+
+                                    if (px >= 0 && px < imageWidth && py >= 0 && py < imageHeight)
+                                        image[px, py] = color;
+                                }
                         }
-                    }
                 }
 
                 var outputPath = Path.Combine(outputDir, $"{worldspaceName}_heightmap.png");
@@ -465,6 +466,51 @@ public static partial class ExportCommands
                 offset = recordEnd;
             }
         }
+    }
+
+    /// <summary>
+    ///     Converts a normalized height value (0-1) to a color using a gradient:
+    ///     blue → green → yellow → orange → red → pink → white
+    /// </summary>
+    private static Rgba32 HeightToColor(float normalizedHeight)
+    {
+        // Clamp to 0-1 range
+        normalizedHeight = Math.Clamp(normalizedHeight, 0f, 1f);
+
+        // Define gradient stops (position, R, G, B)
+        // blue → green → yellow → orange → red → pink → white
+        ReadOnlySpan<(float pos, byte r, byte g, byte b)> stops =
+        [
+            (0.00f, 0, 0, 180),      // Deep blue (lowest)
+            (0.15f, 0, 100, 255),    // Light blue
+            (0.30f, 0, 180, 80),     // Green
+            (0.45f, 200, 220, 0),    // Yellow
+            (0.60f, 255, 140, 0),    // Orange
+            (0.75f, 255, 40, 40),    // Red
+            (0.88f, 255, 100, 180),  // Pink
+            (1.00f, 255, 255, 255)   // White (highest)
+        ];
+
+        // Find the two stops we're between
+        int i;
+        for (i = 0; i < stops.Length - 1; i++)
+        {
+            if (normalizedHeight <= stops[i + 1].pos)
+                break;
+        }
+
+        // Interpolate between stops[i] and stops[i+1]
+        var (pos0, r0, g0, b0) = stops[i];
+        var (pos1, r1, g1, b1) = stops[Math.Min(i + 1, stops.Length - 1)];
+
+        var range = pos1 - pos0;
+        var t = range > 0.001f ? (normalizedHeight - pos0) / range : 0f;
+
+        var r = (byte)(r0 + (r1 - r0) * t);
+        var g = (byte)(g0 + (g1 - g0) * t);
+        var b = (byte)(b0 + (b1 - b0) * t);
+
+        return new Rgba32(r, g, b, 255);
     }
 
     private sealed class CellInfo
