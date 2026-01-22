@@ -41,7 +41,16 @@ internal static partial class EsmSubrecordConverter
                 break;
 
             case "MGEF" when data.Length == 72:
+                // Offsets 0-19: Flags, BaseCost, AssocItem, MagicSchool, ResistanceValue (5 x uint32)
                 for (var i = 0; i < 5; i++) Swap4Bytes(data, i * 4);
+                // Offset 20: UInt16 Unknown
+                Swap2Bytes(data, 20);
+                // Offset 22: Padding (2 bytes) - no swap
+                // Offset 24: FormId Light
+                Swap4Bytes(data, 24);
+                // Offsets 28-71: ProjectileSpeed, EffectShader, EnchantEffect, CastingSound,
+                //                BoltSound, HitSound, AreaSound, ConstEffEnchFactor,
+                //                ConstEffBarterFactor, Archtype, ActorValue (11 x uint32)
                 for (var i = 0; i < 11; i++) Swap4Bytes(data, 28 + i * 4);
                 break;
 
@@ -61,7 +70,7 @@ internal static partial class EsmSubrecordConverter
                 break;
 
             case "CELL" when data.Length == 1:
-            case "PERK" when data.Length <= 5:
+            case "PERK":  // PERK DATA is bytes/flags at any size - no swap
                 // Single byte or small flag bytes - no swap
                 break;
 
@@ -279,7 +288,7 @@ internal static partial class EsmSubrecordConverter
     /// <summary>
     ///     Converts NVMI (Navmesh Info) subrecord - variable length with optional island data.
     /// </summary>
-    private static void ConvertNvmi(byte[] data)
+    internal static void ConvertNvmi(byte[] data)
     {
         // Base structure (32 bytes minimum):
         // 0-3: Flags (uint32)
@@ -346,7 +355,7 @@ internal static partial class EsmSubrecordConverter
     /// <summary>
     ///     Converts NVCI (Navmesh Connection Info) subrecord - variable length arrays of FormIDs.
     /// </summary>
-    private static void ConvertNvci(byte[] data)
+    internal static void ConvertNvci(byte[] data)
     {
         // Structure: FormID Navmesh + 3 variable-length arrays of FormIDs
         // Each array is: uint32 count + FormID[] items
@@ -406,7 +415,7 @@ internal static partial class EsmSubrecordConverter
     /// <summary>
     ///     Converts NVGD (Navmesh Grid) subrecord - variable length with cells array.
     /// </summary>
-    private static void ConvertNvgd(byte[] data)
+    internal static void ConvertNvgd(byte[] data)
     {
         // Base structure:
         // 0-3: Divisor (uint32)

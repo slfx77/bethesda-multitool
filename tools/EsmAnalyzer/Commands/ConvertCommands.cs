@@ -46,7 +46,6 @@ public static class ConvertCommands
             var skipTypes = parseResult.GetValue(skipTypeOpt) ?? Array.Empty<string>();
 
             if (string.IsNullOrEmpty(output)) output = Environment.GetEnvironmentVariable("ESM_OUTPUT_PATH");
-
             if (string.IsNullOrEmpty(output)) output = Path.ChangeExtension(input, ".pc.esm");
 
             Convert(input, output, verbose, skipLandIds, skipTypes);
@@ -71,6 +70,7 @@ public static class ConvertCommands
 
         AnsiConsole.MarkupLine($"[cyan]Converting:[/] {Path.GetFileName(inputPath)}");
         AnsiConsole.MarkupLine($"[cyan]Output:[/] {outputPath}");
+        AnsiConsole.MarkupLine("[yellow]Using schema-driven conversion[/]");
         AnsiConsole.WriteLine();
 
         try
