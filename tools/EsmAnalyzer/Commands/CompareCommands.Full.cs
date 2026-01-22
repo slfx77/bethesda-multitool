@@ -196,31 +196,6 @@ public static partial class CompareCommands
         AnsiConsole.MarkupLine("[bold]Record diff stats[/]");
         AnsiConsole.Write(diffTable);
 
-        // Reference validation
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold]Validating references...[/]");
-        var refsA = EsmRefValidation.Validate(fileA.Data, fileA.IsBigEndian);
-        var refsB = EsmRefValidation.Validate(fileB.Data, fileB.IsBigEndian);
-
-        AnsiConsole.MarkupLine(
-            $"  File A: {refsA.Stats.Missing:N0} missing refs (checked {refsA.Stats.CheckedRefs:N0}, skipped {refsA.Stats.CompressedSkipped:N0} compressed)");
-        AnsiConsole.MarkupLine(
-            $"  File B: {refsB.Stats.Missing:N0} missing refs (checked {refsB.Stats.CheckedRefs:N0}, skipped {refsB.Stats.CompressedSkipped:N0} compressed)");
-
-        if (refsA.Stats.Missing > 0)
-        {
-            AnsiConsole.MarkupLine("[bold]Missing refs in A by record type:[/]");
-            foreach (var kvp in refsA.MissingByRecordType.OrderByDescending(k => k.Value).Take(10))
-                AnsiConsole.MarkupLine($"    {kvp.Key}: {kvp.Value:N0}");
-        }
-
-        if (refsB.Stats.Missing > 0)
-        {
-            AnsiConsole.MarkupLine("[bold]Missing refs in B by record type:[/]");
-            foreach (var kvp in refsB.MissingByRecordType.OrderByDescending(k => k.Value).Take(10))
-                AnsiConsole.MarkupLine($"    {kvp.Key}: {kvp.Value:N0}");
-        }
-
         // Write output files
         if (!string.IsNullOrWhiteSpace(outputDir))
         {
@@ -230,8 +205,6 @@ public static partial class CompareCommands
             WriteTypeCounts(Path.Combine(fullOutputDir, "record_counts.tsv"), allTypes, countsA, countsB);
             WriteDiffStats(Path.Combine(fullOutputDir, "record_diffs.tsv"), diffRows);
             WriteSubrecordDiffs(Path.Combine(fullOutputDir, "subrecord_diffs.tsv"), subrecordDiffRows);
-            WriteMissingRefs(Path.Combine(fullOutputDir, "missing_refs_a.tsv"), refsA.Findings);
-            WriteMissingRefs(Path.Combine(fullOutputDir, "missing_refs_b.tsv"), refsB.Findings);
 
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"[green]Saved reports to[/] {fullOutputDir}");
@@ -267,23 +240,5 @@ public static partial class CompareCommands
         writer.WriteLine("RecordType\tFormId\tSubrecord\tDiffType\tSizeA\tSizeB");
         foreach (var row in diffRows)
             writer.WriteLine(row);
-    }
-
-    private static void WriteMissingRefs(string path, List<RefValidationFinding> findings)
-    {
-        using var writer = new StreamWriter(path, false);
-        writer.WriteLine("RecordType\tRecordFormId\tSubrecord\tTargetFormId\tIssue");
-        foreach (var finding in findings)
-        {
-            writer.Write(finding.RecordType);
-            writer.Write('\t');
-            writer.Write($"0x{finding.RecordFormId:X8}");
-            writer.Write('\t');
-            writer.Write(finding.Subrecord);
-            writer.Write('\t');
-            writer.Write($"0x{finding.TargetFormId:X8}");
-            writer.Write('\t');
-            writer.WriteLine(finding.Issue);
-        }
     }
 }

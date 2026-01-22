@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Text;
-using EsmAnalyzer.Conversion.Schema;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
@@ -169,36 +168,6 @@ public static partial class DumpCommands
             parseResult.GetValue(startOption),
             parseResult.GetValue(stopOption),
             parseResult.GetValue(limitOption)));
-
-        return command;
-    }
-
-    public static Command CreateValidateRefsCommand()
-    {
-        var command = new Command("validate-refs",
-            "Validate FormID references against existing records (skips compressed records)");
-
-        var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
-        var typeOption = new Option<string?>("-t", "--type")
-            { Description = "Filter by record type (e.g., NPC_, INFO, LAND)" };
-        var limitOption = new Option<int>("-l", "--limit")
-        {
-            Description = "Maximum number of missing references to show (0 = unlimited)",
-            DefaultValueFactory = _ => 0
-        };
-        var outputOption = new Option<string?>("-o", "--output")
-            { Description = "Write missing references to a TSV file" };
-
-        command.Arguments.Add(fileArg);
-        command.Options.Add(typeOption);
-        command.Options.Add(limitOption);
-        command.Options.Add(outputOption);
-
-        command.SetAction(parseResult => ValidateRefs(
-            parseResult.GetValue(fileArg)!,
-            parseResult.GetValue(typeOption),
-            parseResult.GetValue(limitOption),
-            parseResult.GetValue(outputOption)));
 
         return command;
     }
@@ -908,8 +877,8 @@ public static partial class DumpCommands
         var diffCount = CountDiffBytes(left, right);
 
         var previewDisplay = BuildPreviewDisplay(left, right);
-        var schema = SubrecordSchemaRegistry.FindSchema(subSignature, recordType, left.Length);
-        var isFormId = schema?.IsFormId == true || schema?.IsFormIdArray == true;
+        // Simple heuristic: common FormID subrecord names
+        var isFormId = IsLikelyFormIdSubrecord(subSignature);
 
         if (left.Length == 4 && right.Length == 4)
         {
@@ -1001,6 +970,17 @@ public static partial class DumpCommands
     private static string EscapeMarkup(string value)
     {
         return Markup.Escape(value);
+    }
+
+    /// <summary>
+    ///     Simple heuristic to detect common FormID subrecord signatures.
+    /// </summary>
+    private static bool IsLikelyFormIdSubrecord(string signature)
+    {
+        return signature is "NAME" or "INAM" or "TPLT" or "VTCK" or "LNAM" or "LTMP" or "REPL" or "ZNAM"
+            or "XOWN" or "XEZN" or "XCAS" or "XCIM" or "XCMO" or "XCWT" or "PKID" or "ENAM" or "HNAM"
+            or "NAM6" or "NAM7" or "NAM8" or "NAM9" or "SCRI" or "GNAM" or "BNAM" or "SNAM" or "KNAM"
+            or "PNAM" or "CNAM" or "DNAM" or "ONAM" or "XLKR" or "XCLP" or "XLCN" or "XMRK" or "XPOD";
     }
 
     private readonly record struct FirstDiff(int Offset, byte Left, byte Right);

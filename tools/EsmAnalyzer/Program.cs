@@ -27,7 +27,6 @@ internal sealed class Program
         rootCommand.Subcommands.Add(DumpCommands.CreateLocateCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateValidateCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateValidateDeepCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateValidateRefsCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateFindFormIdCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateFindCellCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateFindCellGridCommand());
