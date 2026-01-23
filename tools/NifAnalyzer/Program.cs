@@ -7,8 +7,10 @@ namespace NifAnalyzer;
 ///     NIF Analyzer - Standalone tool for analyzing NIF files.
 ///     Useful for debugging Xbox 360 to PC NIF conversion.
 /// </summary>
-internal class Program
+internal sealed class Program
 {
+    private Program() { }
+
     private static int Main(string[] args)
     {
         var rootCommand = new RootCommand("NIF Analyzer - Xbox 360 NIF debugging tool");

@@ -14,21 +14,6 @@ public static partial class ExportCommands
     // Cached JSON options to avoid repeated allocations
     private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
 
-    // Known worldspace FormIDs for Fallout: New Vegas
-    private static readonly Dictionary<string, uint> KnownWorldspaces = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["WastelandNV"] = 0x000DA726,
-        ["Wasteland"] = 0x000DA726, // Alias
-        ["FreesideWorld"] = 0x00108E2D,
-        ["Freeside"] = 0x00108E2D, // Alias
-        ["Strip01"] = 0x00108E2E,
-        ["Strip02"] = 0x00108E2F,
-        ["DeadMoneyWorld"] = 0x01000DA3,
-        ["HonestHeartsWorld"] = 0x02000800,
-        ["OWBWorld"] = 0x03000DED,
-        ["LonesomeRoadWorld"] = 0x04000A1E
-    };
-
     public static Command CreateWorldmapCommand()
     {
         var command = new Command("worldmap",
@@ -36,29 +21,37 @@ public static partial class ExportCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var worldspaceOption = new Option<string?>("-w", "--worldspace")
-            { Description = "Worldspace name or FormID (default: WastelandNV)" };
+        { Description = "Worldspace name or FormID (default: WastelandNV)" };
         var outputOption = new Option<string>("-o", "--output")
-            { Description = "Output directory", DefaultValueFactory = _ => "worldmap_export" };
+        { Description = "Output directory", DefaultValueFactory = _ => "worldmap_export" };
         var scaleOption = new Option<int>("-s", "--scale")
         {
             Description = "Scale factor for output images (1=native 33px/cell, 2=66px/cell, etc.)",
             DefaultValueFactory = _ => 1
         };
         var rawOption = new Option<bool>("-r", "--raw")
-            { Description = "Output raw 16-bit heightmap (for terrain editing tools)" };
+        { Description = "Output raw 16-bit heightmap (for terrain editing tools)" };
+        var exportAllOption = new Option<bool>("-a", "--export-all")
+        { Description = "Export all worldspaces" };
+        var analyzeOnlyOption = new Option<bool>("--analyze-only")
+        { Description = "Only analyze, don't export images" };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(worldspaceOption);
         command.Options.Add(outputOption);
         command.Options.Add(scaleOption);
         command.Options.Add(rawOption);
+        command.Options.Add(exportAllOption);
+        command.Options.Add(analyzeOnlyOption);
 
         command.SetAction(parseResult => GenerateWorldmap(
             parseResult.GetValue(fileArg)!,
             parseResult.GetValue(worldspaceOption),
             parseResult.GetValue(outputOption)!,
             parseResult.GetValue(scaleOption),
-            parseResult.GetValue(rawOption)));
+            parseResult.GetValue(rawOption),
+            parseResult.GetValue(exportAllOption),
+            parseResult.GetValue(analyzeOnlyOption)));
 
         return command;
     }
@@ -69,13 +62,13 @@ public static partial class ExportCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var formIdOption = new Option<string?>("-f", "--formid")
-            { Description = "Specific FormID to export (hex, e.g., 0x00123456)" };
+        { Description = "Specific FormID to export (hex, e.g., 0x00123456)" };
         var allOption = new Option<bool>("-a", "--all")
-            { Description = "Export all LAND records (use --limit to control count)" };
+        { Description = "Export all LAND records (use --limit to control count)" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of LAND records to export", DefaultValueFactory = _ => 100 };
+        { Description = "Maximum number of LAND records to export", DefaultValueFactory = _ => 100 };
         var outputOption = new Option<string>("-o", "--output")
-            { Description = "Output directory", DefaultValueFactory = _ => "land_export" };
+        { Description = "Output directory", DefaultValueFactory = _ => "land_export" };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(formIdOption);

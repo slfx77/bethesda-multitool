@@ -5,185 +5,6 @@ namespace EsmAnalyzer.Conversion;
 internal static partial class EsmSubrecordConverter
 {
     /// <summary>
-    ///     Converts DATA subrecord based on parent record type.
-    /// </summary>
-    private static void ConvertDataSubrecord(byte[] data, string recordType)
-    {
-        switch (recordType)
-        {
-            case "NPC_" when data.Length == 11:
-                Swap4Bytes(data, 0);
-                break;
-
-            case "WEAP" when data.Length == 15:
-                Swap4Bytes(data, 0);
-                Swap4Bytes(data, 4);
-                Swap4Bytes(data, 8);
-                Swap2Bytes(data, 12);
-                break;
-
-            case "AMMO" when data.Length == 13:
-                Swap4Bytes(data, 0);
-                Swap4Bytes(data, 8);
-                break;
-
-            case "QUST" when data.Length == 8:
-                Swap4Bytes(data, 4);
-                break;
-
-            case "REFR" or "ACHR" or "ACRE" when data.Length == 24:
-                for (var i = 0; i < 6; i++) Swap4Bytes(data, i * 4);
-                break;
-
-            case "CREA" when data.Length == 17:
-                Swap4Bytes(data, 4);
-                Swap2Bytes(data, 8);
-                break;
-
-            case "MGEF" when data.Length == 72:
-                // Offsets 0-19: Flags, BaseCost, AssocItem, MagicSchool, ResistanceValue (5 x uint32)
-                for (var i = 0; i < 5; i++) Swap4Bytes(data, i * 4);
-                // Offset 20: UInt16 Unknown
-                Swap2Bytes(data, 20);
-                // Offset 22: Padding (2 bytes) - no swap
-                // Offset 24: FormId Light
-                Swap4Bytes(data, 24);
-                // Offsets 28-71: ProjectileSpeed, EffectShader, EnchantEffect, CastingSound,
-                //                BoltSound, HitSound, AreaSound, ConstEffEnchFactor,
-                //                ConstEffBarterFactor, Archtype, ActorValue (11 x uint32)
-                for (var i = 0; i < 11; i++) Swap4Bytes(data, 28 + i * 4);
-                break;
-
-            case "RACE" when data.Length == 36:
-                for (var i = 0; i < 5; i++) Swap4Bytes(data, 16 + i * 4);
-                break;
-
-            case "ARMO" when data.Length == 12:
-                Swap4Bytes(data, 0);
-                Swap4Bytes(data, 4);
-                Swap4Bytes(data, 8);
-                break;
-
-            case "ALCH" when data.Length == 4:
-            case "LAND" when data.Length == 4:
-                Swap4Bytes(data, 0);
-                break;
-
-            case "CELL" when data.Length == 1:
-            case "PERK":  // PERK DATA is bytes/flags at any size - no swap
-                // Single byte or small flag bytes - no swap
-                break;
-
-            case "GMST":
-                // String GMSTs are longer than 4 bytes, float/int are 4 bytes
-                if (data.Length == 4) Swap4Bytes(data, 0);
-                break;
-
-            default:
-                // For unknown DATA, try to determine if it's all uint32s
-                if (data.Length % 4 == 0 && data.Length <= 64)
-                    for (var i = 0; i < data.Length / 4; i++)
-                        Swap4Bytes(data, i * 4);
-
-                break;
-        }
-    }
-
-    /// <summary>
-    ///     Converts ACBS (Actor Base Stats) - 24 bytes.
-    /// </summary>
-    private static void ConvertAcbs(byte[] data)
-    {
-        Swap4Bytes(data, 0); // Flags
-        for (var i = 0; i < 6; i++) Swap2Bytes(data, 4 + i * 2); // Stats: bytes 4-15
-        Swap4Bytes(data, 16); // Template flags: bytes 16-19
-        Swap2Bytes(data, 20); // Final stat 1: bytes 20-21
-        Swap2Bytes(data, 22); // Final stat 2: bytes 22-23
-    }
-
-    /// <summary>
-    ///     Converts AIDT (AI Data) - 20 bytes.
-    ///     Xbox has extra data in bytes 5-7 that should be zeroed.
-    /// </summary>
-    private static void ConvertAidt(byte[] data)
-    {
-        // Bytes 0-4: identical
-        // Bytes 5-7: Xbox-specific data - zero it
-        data[5] = 0;
-        data[6] = 0;
-        data[7] = 0;
-        // Bytes 8-19: identical
-    }
-
-    /// <summary>
-    ///     Converts SNAM based on record type.
-    /// </summary>
-    private static void ConvertSnam(byte[] data, string recordType)
-    {
-        switch (recordType)
-        {
-            case "NPC_" when data.Length == 8:
-            case "CREA" when data.Length == 8:
-                Swap4Bytes(data, 0);
-                break;
-
-            case "RACE" when data.Length == 2:
-                Swap2Bytes(data, 0);
-                break;
-
-            default:
-                if (data.Length == 4)
-                    Swap4Bytes(data, 0);
-                else if (data.Length == 8) Swap4Bytes(data, 0);
-                break;
-        }
-    }
-
-    /// <summary>
-    ///     Converts CTDA (Condition Data) - 28 bytes.
-    /// </summary>
-    private static void ConvertCtda(byte[] data)
-    {
-        var firstFourZero = data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 0;
-
-        if (!firstFourZero) Swap4Bytes(data, 0);
-
-        Swap4Bytes(data, 4); // Comparison value (float)
-        Swap2Bytes(data, 8); // Comparison type
-        Swap2Bytes(data, 10); // Function index
-        Swap4Bytes(data, 12); // Parameter 1 / FormID
-        Swap4Bytes(data, 16); // Parameter 2
-        Swap4Bytes(data, 20); // Run-on
-        Swap4Bytes(data, 24); // Reference
-    }
-
-    /// <summary>
-    ///     Converts DNAM based on record type.
-    /// </summary>
-    private static void ConvertDnam(byte[] data, string recordType)
-    {
-        switch (recordType)
-        {
-            case "NPC_":
-                // NPC_ DNAM is byte-level data (skill values), no conversion needed
-                break;
-
-            case "WEAP" when data.Length == 204:
-            case "RACE" when data.Length == 8:
-            case "ARMO" when data.Length == 12:
-                for (var i = 0; i < data.Length / 4; i++) Swap4Bytes(data, i * 4);
-                break;
-
-            default:
-                if (data.Length % 4 == 0)
-                    for (var i = 0; i < data.Length / 4; i++)
-                        Swap4Bytes(data, i * 4);
-
-                break;
-        }
-    }
-
-    /// <summary>
     ///     Converts ENIT based on record type.
     /// </summary>
     private static void ConvertEnit(byte[] data, string recordType)
@@ -300,15 +121,15 @@ internal static partial class EsmSubrecordConverter
         // Then island data (variable) if flag bit 5 set
         // Last 4 bytes: Preferred % (float)
 
-        Swap4Bytes(data, 0);   // Flags
+        Swap4Bytes(data, 0); // Flags
         var flags = BitConverter.ToUInt32(data, 0);
-        Swap4Bytes(data, 4);   // Navmesh FormID
-        Swap4Bytes(data, 8);   // Location FormID
-        Swap2Bytes(data, 12);  // Grid Y
-        Swap2Bytes(data, 14);  // Grid X
-        Swap4Bytes(data, 16);  // Approx X
-        Swap4Bytes(data, 20);  // Approx Y
-        Swap4Bytes(data, 24);  // Approx Z
+        Swap4Bytes(data, 4); // Navmesh FormID
+        Swap4Bytes(data, 8); // Location FormID
+        Swap2Bytes(data, 12); // Grid Y
+        Swap2Bytes(data, 14); // Grid X
+        Swap4Bytes(data, 16); // Approx X
+        Swap4Bytes(data, 20); // Approx Y
+        Swap4Bytes(data, 24); // Approx Z
 
         var offset = 28;
         var isIsland = (flags & 0x20) != 0; // Bit 5 = Is Island
@@ -317,13 +138,19 @@ internal static partial class EsmSubrecordConverter
         {
             // Island data:
             // NavmeshBounds Min Vec3 (12)
-            Swap4Bytes(data, offset); offset += 4;
-            Swap4Bytes(data, offset); offset += 4;
-            Swap4Bytes(data, offset); offset += 4;
+            Swap4Bytes(data, offset);
+            offset += 4;
+            Swap4Bytes(data, offset);
+            offset += 4;
+            Swap4Bytes(data, offset);
+            offset += 4;
             // NavmeshBounds Max Vec3 (12)
-            Swap4Bytes(data, offset); offset += 4;
-            Swap4Bytes(data, offset); offset += 4;
-            Swap4Bytes(data, offset); offset += 4;
+            Swap4Bytes(data, offset);
+            offset += 4;
+            Swap4Bytes(data, offset);
+            offset += 4;
+            Swap4Bytes(data, offset);
+            offset += 4;
             // Vertex Count (uint16)
             Swap2Bytes(data, offset);
             var vertexCount = BitConverter.ToUInt16(data, offset);
@@ -335,16 +162,23 @@ internal static partial class EsmSubrecordConverter
             // Vertices (Vec3 each = 12 bytes)
             for (var i = 0; i < vertexCount; i++)
             {
-                Swap4Bytes(data, offset); offset += 4;
-                Swap4Bytes(data, offset); offset += 4;
-                Swap4Bytes(data, offset); offset += 4;
+                Swap4Bytes(data, offset);
+                offset += 4;
+                Swap4Bytes(data, offset);
+                offset += 4;
+                Swap4Bytes(data, offset);
+                offset += 4;
             }
+
             // Triangles (3 x uint16 each = 6 bytes)
             for (var i = 0; i < triangleCount; i++)
             {
-                Swap2Bytes(data, offset); offset += 2;
-                Swap2Bytes(data, offset); offset += 2;
-                Swap2Bytes(data, offset); offset += 2;
+                Swap2Bytes(data, offset);
+                offset += 2;
+                Swap2Bytes(data, offset);
+                offset += 2;
+                Swap2Bytes(data, offset);
+                offset += 2;
             }
         }
 
@@ -425,9 +259,9 @@ internal static partial class EsmSubrecordConverter
         // 24-35: Bounds Max (Vec3)
         // 36+: Variable cells array (each cell is -2 terminated uint16 array)
 
-        Swap4Bytes(data, 0);   // Divisor
-        Swap4Bytes(data, 4);   // Max X Distance
-        Swap4Bytes(data, 8);   // Max Y Distance
+        Swap4Bytes(data, 0); // Divisor
+        Swap4Bytes(data, 4); // Max X Distance
+        Swap4Bytes(data, 8); // Max Y Distance
         // Bounds Min
         Swap4Bytes(data, 12);
         Swap4Bytes(data, 16);

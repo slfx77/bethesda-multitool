@@ -501,8 +501,8 @@ public static class ToftCommands
         if (!string.IsNullOrWhiteSpace(context.CompareFormIdText))
             targetFormId = EsmFileLoader.ParseFormId(context.CompareFormIdText!);
 
-        if (targetFormId == null)
-            targetFormId = mismatches.FirstOrDefault()?.FormId;
+        if (targetFormId == null && mismatches.Count > 0)
+            targetFormId = mismatches[0].FormId;
 
         if (targetFormId.HasValue)
             ShowInfoDiff(context.Entries, context.Data, context.PreToftInfoByFormId, targetFormId.Value,

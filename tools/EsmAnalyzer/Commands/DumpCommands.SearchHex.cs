@@ -25,7 +25,7 @@ public static partial class DumpCommands
                 for (long i = 0;
                      i <= esm.Data.Length - patternBytes.Length && (limit <= 0 || matches.Count < limit);
                      i++)
-                    if (DumpCommandHelpers.MatchesAt(esm.Data, i, patternBytes))
+                    if (MatchesAt(esm.Data, i, patternBytes))
                         matches.Add(i);
             });
 
@@ -34,7 +34,7 @@ public static partial class DumpCommands
         AnsiConsole.WriteLine();
 
         foreach (var offset in matches)
-            DumpCommandHelpers.DisplaySearchMatch(esm.Data, offset, patternBytes.Length, contextBytes);
+            DisplaySearchMatch(esm.Data, offset, patternBytes.Length, contextBytes);
 
         return 0;
     }

@@ -19,7 +19,7 @@ public static partial class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var typeArg = new Argument<string>("type") { Description = "Record type to dump (e.g., LAND, NPC_, WEAP)" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of records to dump (0 = unlimited)", DefaultValueFactory = _ => 0 };
+        { Description = "Maximum number of records to dump (0 = unlimited)", DefaultValueFactory = _ => 0 };
         var hexOption = new Option<bool>("-x", "--hex") { Description = "Show hex dump of record data" };
 
         command.Arguments.Add(fileArg);
@@ -42,11 +42,11 @@ public static partial class DumpCommands
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var offsetOption = new Option<string?>("-o", "--offset")
-            { Description = "Starting offset in hex (e.g., 0x1000)" };
+        { Description = "Starting offset in hex (e.g., 0x1000)" };
         var stopOption = new Option<string?>("-s", "--stop") { Description = "Stop offset in hex" };
         var depthOption = new Option<int?>("-d", "--depth") { Description = "Filter to specific nesting depth" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of records to trace (0 = unlimited)", DefaultValueFactory = _ => 0 };
+        { Description = "Maximum number of records to trace (0 = unlimited)", DefaultValueFactory = _ => 0 };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(offsetOption);
@@ -71,9 +71,9 @@ public static partial class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var patternArg = new Argument<string>("pattern") { Description = "ASCII string to search for" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
+        { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
         var contextOption = new Option<int>("-c", "--context")
-            { Description = "Bytes of context to show around matches", DefaultValueFactory = _ => 32 };
+        { Description = "Bytes of context to show around matches", DefaultValueFactory = _ => 32 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(patternArg);
@@ -96,7 +96,7 @@ public static partial class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var offsetArg = new Argument<string>("offset") { Description = "Starting offset in hex (e.g., 0x1000)" };
         var lengthOption = new Option<int>("-l", "--length")
-            { Description = "Number of bytes to dump", DefaultValueFactory = _ => 256 };
+        { Description = "Number of bytes to dump", DefaultValueFactory = _ => 256 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(offsetArg);
@@ -156,7 +156,7 @@ public static partial class DumpCommands
         var startOption = new Option<string?>("-o", "--offset") { Description = "Start offset in hex (optional)" };
         var stopOption = new Option<string?>("-s", "--stop") { Description = "Stop offset in hex (optional)" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of records to validate (0 = unlimited)", DefaultValueFactory = _ => 0 };
+        { Description = "Maximum number of records to validate (0 = unlimited)", DefaultValueFactory = _ => 0 };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(startOption);
@@ -181,7 +181,7 @@ public static partial class DumpCommands
         var typeOption = new Option<string?>("-t", "--type") { Description = "Filter by record type (e.g., INFO)" };
         var hexOption = new Option<bool>("-x", "--hex") { Description = "Show hex dump of record data" };
         var compareOption = new Option<string?>("-c", "--compare")
-            { Description = "Compare with record from another ESM file" };
+        { Description = "Compare with record from another ESM file" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(formidArg);
@@ -206,7 +206,7 @@ public static partial class DumpCommands
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var patternArg = new Argument<string>("pattern") { Description = "Search term (case-insensitive)" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
+        { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(patternArg);
@@ -228,7 +228,7 @@ public static partial class DumpCommands
         var xArg = new Argument<int>("x") { Description = "Grid X coordinate (e.g., -32)" };
         var yArg = new Argument<int>("y") { Description = "Grid Y coordinate (e.g., -32)" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
+        { Description = "Maximum number of matches to show (0 = unlimited)", DefaultValueFactory = _ => 20 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(xArg);
@@ -643,15 +643,14 @@ public static partial class DumpCommands
                 mismatchCount++;
             else if (!contentMatch) contentMismatchCount++;
 
-            var matchIcon = fullMatch ? "[green]✓[/]" :
-                sigMatch && sizeMatch ? "[yellow]≈[/]" : "[red]✗[/]";
+            var matchIcon = fullMatch ? "[green]✓[/]" : GetPartialMatchIcon(sigMatch, sizeMatch);
 
             var diffDisplay = "-";
             string? diffSummary = null;
             string? previewRow = null;
             if (sigMatch && sizeMatch && pSub != null && cSub != null && !contentMatch)
             {
-                diffDisplay = BuildDiffDisplay(pSub.Signature, primary?.Signature ?? compare?.Signature ?? string.Empty,
+                diffDisplay = BuildDiffDisplay(pSub.Signature,
                     pSub.Data, cSub.Data, primaryEsm.IsBigEndian, compareEsm.IsBigEndian, out diffSummary);
                 previewRow = BuildPreviewRowText(pSub.Data, cSub.Data, 16);
 
@@ -865,7 +864,7 @@ public static partial class DumpCommands
         return null;
     }
 
-    private static string BuildDiffDisplay(string subSignature, string recordType, byte[] left, byte[] right,
+    private static string BuildDiffDisplay(string subSignature, byte[] left, byte[] right,
         bool leftBigEndian, bool rightBigEndian, out string? diffSummary)
     {
         diffSummary = null;
@@ -876,7 +875,6 @@ public static partial class DumpCommands
 
         var diffCount = CountDiffBytes(left, right);
 
-        var previewDisplay = BuildPreviewDisplay(left, right);
         // Simple heuristic: common FormID subrecord names
         var isFormId = IsLikelyFormIdSubrecord(subSignature);
 
@@ -917,11 +915,9 @@ public static partial class DumpCommands
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
     }
 
-    private static string BuildPreviewDisplay(byte[] left, byte[] right)
+    private static string GetPartialMatchIcon(bool sigMatch, bool sizeMatch)
     {
-        var leftPreview = FormatHexBytes(left, 4);
-        var rightPreview = FormatHexBytes(right, 4);
-        return $"[dim]b4 p:{leftPreview} c:{rightPreview}[/]";
+        return sigMatch && sizeMatch ? "[yellow]≈[/]" : "[red]✗[/]";
     }
 
     private static string BuildPreviewRowText(byte[] left, byte[] right, int byteCount)
@@ -930,21 +926,6 @@ public static partial class DumpCommands
         var leftPreview = FormatHexBytesWithHighlight(left, byteCount, first?.Offset, true);
         var rightPreview = FormatHexBytesWithHighlight(right, byteCount, first?.Offset, false);
         return $"[dim]first {byteCount} bytes[/]  first: {leftPreview}   second: {rightPreview}";
-    }
-
-    private static string FormatHexBytes(byte[] data, int count)
-    {
-        if (data.Length == 0) return "-";
-
-        var max = Math.Min(count, data.Length);
-        var builder = new StringBuilder(max * 3 - 1);
-        for (var i = 0; i < max; i++)
-        {
-            if (i > 0) builder.Append(' ');
-            builder.Append(data[i].ToString("X2"));
-        }
-
-        return builder.ToString();
     }
 
     private static string FormatHexBytesWithHighlight(byte[] data, int count, int? diffOffset, bool isPrimary)

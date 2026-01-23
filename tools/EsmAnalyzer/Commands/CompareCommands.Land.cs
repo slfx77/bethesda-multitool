@@ -269,7 +269,9 @@ public static partial class CompareCommands
 
                 var landTransformed = ApplyLandTransform(sig, xboxSub.Data);
                 if (landTransformed == null ||
-                    (isVhgt ? !VhgtEquals(landTransformed, pcSub.Data) : !landTransformed.AsSpan().SequenceEqual(pcSub.Data)))
+                    (isVhgt
+                        ? !VhgtEquals(landTransformed, pcSub.Data)
+                        : !landTransformed.AsSpan().SequenceEqual(pcSub.Data)))
                     allLandTransformed = false;
 
                 if (!IsEndianSwapped4(xboxSub.Data, pcSub.Data))

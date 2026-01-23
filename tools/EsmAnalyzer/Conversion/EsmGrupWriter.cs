@@ -1,7 +1,4 @@
 using System.Buffers.Binary;
-using System;
-using System.IO;
-using System.Linq;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using static EsmAnalyzer.Conversion.EsmEndianHelpers;
 
@@ -102,16 +99,13 @@ public sealed class EsmGrupWriter
 
             var wastelandOrder = TryGetWastelandOrderMap(worldFormId);
             if (wastelandOrder != null)
-            {
                 blockGroups = GetExteriorBlockGroupsByRank(cells, wastelandOrder).ToList();
-            }
             else
-            {
                 blockGroups = GetExteriorBlockGroupsPcOrder(cells, worldFormId).ToList();
-            }
 
             foreach (var blockGroup in blockGroups)
-                WriteExteriorBlockGroup(blockGroup.Key.BlockX, blockGroup.Key.BlockY, blockGroup, index, writer, wastelandOrder);
+                WriteExteriorBlockGroup(blockGroup.Key.BlockX, blockGroup.Key.BlockY, blockGroup, index, writer,
+                    wastelandOrder);
         });
     }
 
@@ -142,41 +136,44 @@ public sealed class EsmGrupWriter
         var blockOrder = GenerateCenterSpiralOrder(
             minBlockX, maxBlockX, minBlockY, maxBlockY,
             originBlockX, originBlockY);
-        
+
         // DEBUG: Print for WastelandNV specifically
         if (worldFormId == 0xDA726)
         {
-            Console.Error.WriteLine($"[DEBUG WastelandNV] Block bounds: X[{minBlockX},{maxBlockX}] Y[{minBlockY},{maxBlockY}]");
-            Console.Error.WriteLine($"[DEBUG WastelandNV] Block spiral order (first 10): {string.Join(", ", blockOrder.Take(10).Select(b => $"({b.x},{b.y})"))}");
-            Console.Error.WriteLine($"[DEBUG WastelandNV] Existing blocks (first 10): {string.Join(", ", groups.Keys.OrderBy(k => k.BlockX).ThenBy(k => k.BlockY).Take(10).Select(k => $"({k.BlockX},{k.BlockY})"))}");
+            Console.Error.WriteLine(
+                $"[DEBUG WastelandNV] Block bounds: X[{minBlockX},{maxBlockX}] Y[{minBlockY},{maxBlockY}]");
+            Console.Error.WriteLine(
+                $"[DEBUG WastelandNV] Block spiral order (first 10): {string.Join(", ", blockOrder.Take(10).Select(b => $"({b.x},{b.y})"))}");
+            Console.Error.WriteLine(
+                $"[DEBUG WastelandNV] Existing blocks (first 10): {string.Join(", ", groups.Keys.OrderBy(k => k.BlockX).ThenBy(k => k.BlockY).Take(10).Select(k => $"({k.BlockX},{k.BlockY})"))}");
         }
 
         var yieldedCount = 0;
         foreach (var (blockX, blockY) in blockOrder)
-        {
             if (groups.TryGetValue((blockX, blockY), out var group))
             {
                 if (worldFormId == 0xDA726 && yieldedCount < 10)
                 {
-                    Console.Error.WriteLine($"[DEBUG WastelandNV] Yielding block ({blockX},{blockY}) with {group.Count()} cells");
+                    Console.Error.WriteLine(
+                        $"[DEBUG WastelandNV] Yielding block ({blockX},{blockY}) with {group.Count()} cells");
                     yieldedCount++;
                 }
+
                 yield return group;
             }
-        }
     }
 
     /// <summary>
-    /// Generates block ordering matching PC's pattern:
-    /// For both X and Y: start at origin, go positive to max, then go from min toward origin
-    /// Pattern: [origin, origin+1, ..., max, min, min+1, ..., origin-1]
+    ///     Generates block ordering matching PC's pattern:
+    ///     For both X and Y: start at origin, go positive to max, then go from min toward origin
+    ///     Pattern: [origin, origin+1, ..., max, min, min+1, ..., origin-1]
     /// </summary>
     private static List<(int x, int y)> GenerateCenterSpiralOrder(
         int minX, int maxX, int minY, int maxY,
         int originX, int originY)
     {
         var result = new List<(int x, int y)>();
-        
+
         // Clamp origin to actual bounds
         var startX = Math.Clamp(originX, minX, maxX);
         var startY = Math.Clamp(originY, minY, maxY);
@@ -188,42 +185,28 @@ public sealed class EsmGrupWriter
 
         // Combine: for each X in order, iterate Y in order
         foreach (var x in xOrder)
-        {
             foreach (var y in yOrder)
-            {
                 result.Add((x, y));
-            }
-        }
-        
+
         return result;
     }
 
     /// <summary>
-    /// Generate axis order: [origin, origin+1, ..., max, min, min+1, ..., origin-1]
+    ///     Generate axis order: [origin, origin+1, ..., max, min, min+1, ..., origin-1]
     /// </summary>
     private static List<int> GenerateAxisOrder(int min, int max, int origin)
     {
         var result = new List<int>();
-        
-        // First: origin and positive direction (origin to max)
-        for (int v = origin; v <= max; v++)
-            result.Add(v);
-        
-        // Second: negative direction from far to near (min to origin-1)
-        for (int v = min; v < origin; v++)
-            result.Add(v);
-        
-        return result;
-    }
 
-    private static IEnumerable<IGrouping<(int BlockX, int BlockY), CellEntry>> GetExteriorBlockGroups(
-        IEnumerable<CellEntry> cells)
-    {
-        return cells
-            .Where(c => c.GridX.HasValue && c.GridY.HasValue)
-            .GroupBy(c => (BlockX: FloorDiv(c.GridX!.Value, 32), BlockY: FloorDiv(c.GridY!.Value, 32)))
-            .OrderBy(g => g.Key.BlockY)
-            .ThenBy(g => g.Key.BlockX);
+        // First: origin and positive direction (origin to max)
+        for (var v = origin; v <= max; v++)
+            result.Add(v);
+
+        // Second: negative direction from far to near (min to origin-1)
+        for (var v = min; v < origin; v++)
+            result.Add(v);
+
+        return result;
     }
 
     private void WriteExteriorBlockGroup(int blockX, int blockY, IEnumerable<CellEntry> cells, ConversionIndex index,
@@ -241,31 +224,25 @@ public sealed class EsmGrupWriter
 
             IEnumerable<(int SubX, int SubY)> subBlockOrder;
             if (orderMap != null)
-            {
                 subBlockOrder = subBlockGroups
                     .Select(g => (g.Key.SubX, g.Key.SubY, Rank: GetMinRank(g.Value, orderMap)))
                     .OrderBy(g => g.Rank)
                     .ThenBy(g => g.SubY)
                     .ThenBy(g => g.SubX)
                     .Select(g => (g.SubX, g.SubY));
-            }
             else
-            {
                 subBlockOrder = GetSubBlockQuadrantOrder(subBlockGroups.Keys);
-            }
 
             // Order subblocks using either rank map or quadrant-based pattern
             foreach (var (subX, subY) in subBlockOrder)
-            {
                 if (subBlockGroups.TryGetValue((subX, subY), out var subBlockCells))
                     WriteExteriorSubBlockGroup(subX, subY, subBlockCells, index, writer, orderMap);
-            }
         });
     }
 
     /// <summary>
-    /// Orders subblocks within a block using simple column-major order.
-    /// PC pattern: X=0 column (Y=0,1,2,3), then X=1 column, etc.
+    ///     Orders subblocks within a block using simple column-major order.
+    ///     PC pattern: X=0 column (Y=0,1,2,3), then X=1 column, etc.
     /// </summary>
     private static IEnumerable<(int SubX, int SubY)> GetSubBlockQuadrantOrder(
         IEnumerable<(int SubX, int SubY)> subBlocks)
@@ -281,25 +258,12 @@ public sealed class EsmGrupWriter
         var maxSubY = subBlockList.Max(s => s.SubY);
 
         var subBlockSet = subBlockList.ToHashSet();
-        
+
         // Simple column-major order: X=0 first (all Y), then X=1, etc.
-        for (int x = minSubX; x <= maxSubX; x++)
-        {
-            for (int y = minSubY; y <= maxSubY; y++)
-            {
+        for (var x = minSubX; x <= maxSubX; x++)
+            for (var y = minSubY; y <= maxSubY; y++)
                 if (subBlockSet.Contains((x, y)))
                     yield return (x, y);
-            }
-        }
-    }
-
-    private static IEnumerable<IGrouping<(int SubX, int SubY), CellEntry>> GetExteriorSubBlockGroups(
-        IEnumerable<CellEntry> cells)
-    {
-        return cells
-            .GroupBy(c => (SubX: FloorDiv(c.GridX!.Value, 8), SubY: FloorDiv(c.GridY!.Value, 8)))
-            .OrderBy(g => g.Key.SubY)
-            .ThenBy(g => g.Key.SubX);
     }
 
     private void WriteExteriorSubBlockGroup(int subX, int subY, IEnumerable<CellEntry> cells, ConversionIndex index,
@@ -377,9 +341,12 @@ public sealed class EsmGrupWriter
                 return null;
 
             var headers = lines[0].Split(',');
-            var orderIndex = Array.FindIndex(headers, h => string.Equals(h.Trim(), "order", StringComparison.OrdinalIgnoreCase));
-            var gridXIndex = Array.FindIndex(headers, h => string.Equals(h.Trim(), "grid_x", StringComparison.OrdinalIgnoreCase));
-            var gridYIndex = Array.FindIndex(headers, h => string.Equals(h.Trim(), "grid_y", StringComparison.OrdinalIgnoreCase));
+            var orderIndex = Array.FindIndex(headers,
+                h => string.Equals(h.Trim(), "order", StringComparison.OrdinalIgnoreCase));
+            var gridXIndex = Array.FindIndex(headers,
+                h => string.Equals(h.Trim(), "grid_x", StringComparison.OrdinalIgnoreCase));
+            var gridYIndex = Array.FindIndex(headers,
+                h => string.Equals(h.Trim(), "grid_y", StringComparison.OrdinalIgnoreCase));
 
             if (orderIndex < 0 || gridXIndex < 0 || gridYIndex < 0)
                 return null;
@@ -448,9 +415,7 @@ public sealed class EsmGrupWriter
 
                          return (1, -lx, -ly, c.FormId);
                      }))
-        {
             yield return cell;
-        }
     }
 
     private static int LocalCoord(int value, int size)
@@ -491,7 +456,7 @@ public sealed class EsmGrupWriter
                 var end = group.Offset + group.Size;
                 if (start >= end || end > _input.Length) continue;
 
-                var buffer = ConvertRangeToBuffer(start, end, writer);
+                var buffer = ConvertRangeToBuffer(start, end);
                 writer.Write(buffer);
             }
         });
@@ -563,7 +528,7 @@ public sealed class EsmGrupWriter
     /// <summary>
     ///     Finalizes a GRUP header by writing the actual size.
     /// </summary>
-    public void FinalizeGrup(BinaryWriter writer, long headerPosition)
+    public static void FinalizeGrup(BinaryWriter writer, long headerPosition)
     {
         FinalizeGrupHeader(writer, headerPosition);
     }
@@ -572,7 +537,7 @@ public sealed class EsmGrupWriter
 
     #region Range Conversion
 
-    private byte[] ConvertRangeToBuffer(int startOffset, int endOffset, BinaryWriter targetWriter)
+    private byte[] ConvertRangeToBuffer(int startOffset, int endOffset)
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);

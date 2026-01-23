@@ -6,7 +6,7 @@ using Xbox360MemoryCarver.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
 
-internal static class DiffCommandHelpers
+public static partial class DiffCommands
 {
     internal static void AddFlagRow(Table table, int bit, uint mask, string name, uint xboxFlags, uint pcFlags)
     {
@@ -182,11 +182,8 @@ internal static class DiffCommandHelpers
 
             if (sig == "GRUP")
             {
-                // Skip GRUP header
-                var grupSize = bigEndian
-                    ? BinaryUtils.ReadUInt32BE(data.AsSpan(offset + 4))
-                    : BinaryUtils.ReadUInt32LE(data.AsSpan(offset + 4));
-                offset += 24; // GRUP header size, then continue inside
+                // Skip GRUP header and continue inside
+                offset += 24; // GRUP header size
                 continue;
             }
 

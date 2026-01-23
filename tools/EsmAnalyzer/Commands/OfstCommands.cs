@@ -2,9 +2,8 @@ using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
+using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
@@ -26,6 +25,12 @@ public static class OfstCommands
     private const float UnsetFloatThreshold = 1e20f;
     private const double ZeroEpsilon = 1e-9;
 
+    // Quadtree ordering patterns - static readonly to avoid repeated allocations
+    private static readonly int[] QuadOrderBrTrBlTl = [3, 1, 2, 0];
+    private static readonly int[] QuadOrderTlBlTrBr = [0, 2, 1, 3];
+    private static readonly int[] QuadOrderStandard = [0, 1, 2, 3];
+    private static readonly int[] QuadOrderInverted = [3, 2, 1, 0];
+
     public static Command CreateOfstCommand()
     {
         var command = new Command("ofst", "Extract WRLD OFST offset table for a worldspace");
@@ -33,7 +38,7 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-            { Description = "Maximum number of offsets to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+        { Description = "Maximum number of offsets to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
         var nonZeroOption = new Option<bool>("--nonzero") { Description = "Only show non-zero offsets" };
         var summaryOption = new Option<bool>("--summary") { Description = "Only print summary statistics" };
 
@@ -61,7 +66,7 @@ public static class OfstCommands
         var pcArg = new Argument<string>("pc") { Description = "Path to the PC ESM file" };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-            { Description = "Maximum mismatches to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+        { Description = "Maximum mismatches to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
 
         command.Arguments.Add(xboxArg);
         command.Arguments.Add(pcArg);
@@ -84,12 +89,12 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-            { Description = "Maximum number of results to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+        { Description = "Maximum number of results to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
         var nonZeroOption = new Option<bool>("--nonzero") { Description = "Only show non-zero offsets" };
         var startOption = new Option<int>("--start")
-            { Description = "Start index in the OFST table", DefaultValueFactory = _ => 0 };
+        { Description = "Start index in the OFST table", DefaultValueFactory = _ => 0 };
         var baseOption = new Option<string>("--base")
-            { Description = "Base offset mode: file|wrld|grup|world", DefaultValueFactory = _ => "wrld" };
+        { Description = "Base offset mode: file|wrld|grup|world", DefaultValueFactory = _ => "wrld" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -136,7 +141,7 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-            { Description = "Maximum number of entries to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+        { Description = "Maximum number of entries to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
         var csvOption = new Option<string?>("--csv") { Description = "Write full order to CSV" };
 
         command.Arguments.Add(fileArg);
@@ -160,7 +165,7 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-            { Description = "Maximum number of patterns to display", DefaultValueFactory = _ => 20 };
+        { Description = "Maximum number of patterns to display", DefaultValueFactory = _ => 20 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -181,11 +186,11 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var tileOption = new Option<int>("-t", "--tile")
-            { Description = "Tile size (cells per side)", DefaultValueFactory = _ => 16 };
+        { Description = "Tile size (cells per side)", DefaultValueFactory = _ => 16 };
         var tileLimitOption = new Option<int>("--tile-limit")
-            { Description = "Number of tiles to show", DefaultValueFactory = _ => 8 };
+        { Description = "Number of tiles to show", DefaultValueFactory = _ => 8 };
         var innerLimitOption = new Option<int>("--inner-limit")
-            { Description = "Number of inner positions to show per tile", DefaultValueFactory = _ => 32 };
+        { Description = "Number of inner positions to show per tile", DefaultValueFactory = _ => 32 };
         var csvOption = new Option<string?>("--csv") { Description = "Write full order to CSV" };
 
         command.Arguments.Add(fileArg);
@@ -213,13 +218,13 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var tileOption = new Option<int>("-t", "--tile")
-            { Description = "Tile size (cells per side)", DefaultValueFactory = _ => 16 };
+        { Description = "Tile size (cells per side)", DefaultValueFactory = _ => 16 };
         var tileXOption = new Option<int>("--tile-x")
-            { Description = "Tile X index", DefaultValueFactory = _ => -1 };
+        { Description = "Tile X index", DefaultValueFactory = _ => -1 };
         var tileYOption = new Option<int>("--tile-y")
-            { Description = "Tile Y index", DefaultValueFactory = _ => -1 };
+        { Description = "Tile Y index", DefaultValueFactory = _ => -1 };
         var maxOption = new Option<int>("--max")
-            { Description = "Max entries to show in list view", DefaultValueFactory = _ => 256 };
+        { Description = "Max entries to show in list view", DefaultValueFactory = _ => 256 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -246,13 +251,13 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-            { Description = "Maximum consecutive entries to analyze", DefaultValueFactory = _ => 500 };
+        { Description = "Maximum consecutive entries to analyze", DefaultValueFactory = _ => 500 };
         var histogramOption = new Option<bool>("--histogram")
-            { Description = "Show delta histogram instead of raw deltas" };
+        { Description = "Show delta histogram instead of raw deltas" };
         var runsOption = new Option<bool>("--runs")
-            { Description = "Show run-length encoded movement patterns" };
+        { Description = "Show run-length encoded movement patterns" };
         var csvOption = new Option<string?>("--csv")
-            { Description = "Export deltas to CSV file" };
+        { Description = "Export deltas to CSV file" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -280,7 +285,7 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-            { Description = "Maximum mismatches to show (0 = unlimited)", DefaultValueFactory = _ => 50 };
+        { Description = "Maximum mismatches to show (0 = unlimited)", DefaultValueFactory = _ => 50 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -302,9 +307,9 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var outputOption = new Option<string>("-o", "--output")
-            { Description = "Output PNG file path", DefaultValueFactory = _ => "ofst_map.png" };
+        { Description = "Output PNG file path", DefaultValueFactory = _ => "ofst_map.png" };
         var scaleOption = new Option<int>("-s", "--scale")
-            { Description = "Scale factor (pixels per cell)", DefaultValueFactory = _ => 4 };
+        { Description = "Scale factor (pixels per cell)", DefaultValueFactory = _ => 4 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -402,50 +407,60 @@ public static class OfstCommands
         // Create image
         var imageWidth = columns * scale;
         var imageHeight = rows * scale;
-        using var image = new Image<Rgba32>(imageWidth, imageHeight);
+        var pixels = new byte[imageWidth * imageHeight * 4];
 
         // Fill background with dark gray (for cells outside the grid if any)
-        for (var y = 0; y < imageHeight; y++)
-        for (var x = 0; x < imageWidth; x++)
-            image[x, y] = new Rgba32(40, 40, 40, 255);
+        for (var i = 0; i < imageWidth * imageHeight; i++)
+        {
+            pixels[i * 4 + 0] = 40;  // R
+            pixels[i * 4 + 1] = 40;  // G
+            pixels[i * 4 + 2] = 40;  // B
+            pixels[i * 4 + 3] = 255; // A
+        }
 
         // Draw cells based on OFST values
         for (var row = 0; row < rows && row * columns < offsets.Count; row++)
-        for (var col = 0; col < columns; col++)
-        {
-            var index = row * columns + col;
-            if (index >= offsets.Count) continue;
-
-            var offset = offsets[index];
-            Rgba32 color;
-
-            if (offset == 0)
+            for (var col = 0; col < columns; col++)
             {
-                // Zero entry - red (missing/broken)
-                color = new Rgba32(200, 40, 40, 255);
-            }
-            else
-            {
-                // Non-zero entry - color by offset value (blue to green gradient)
-                var normalized = (float)(offset - minOffset) / offsetRange;
-                color = OffsetToColor(normalized);
-            }
+                var index = row * columns + col;
+                if (index >= offsets.Count) continue;
 
-            // Draw the cell (row 0 = top of image = minY in game coords, so we flip)
-            var pixelY = row * scale;
-            var pixelX = col * scale;
+                var offset = offsets[index];
+                Rgba32 color;
 
-            for (var sy = 0; sy < scale; sy++)
-            for (var sx = 0; sx < scale; sx++)
-                image[pixelX + sx, pixelY + sy] = color;
-        }
+                if (offset == 0)
+                {
+                    // Zero entry - red (missing/broken)
+                    color = new Rgba32(200, 40, 40, 255);
+                }
+                else
+                {
+                    // Non-zero entry - color by offset value (blue to green gradient)
+                    var normalized = (float)(offset - minOffset) / offsetRange;
+                    color = OffsetToColor(normalized);
+                }
+
+                // Draw the cell (row 0 = top of image = minY in game coords, so we flip)
+                var pixelY = row * scale;
+                var pixelX = col * scale;
+
+                for (var sy = 0; sy < scale; sy++)
+                    for (var sx = 0; sx < scale; sx++)
+                    {
+                        var idx = ((pixelY + sy) * imageWidth + (pixelX + sx)) * 4;
+                        pixels[idx + 0] = color.R;
+                        pixels[idx + 1] = color.G;
+                        pixels[idx + 2] = color.B;
+                        pixels[idx + 3] = color.A;
+                    }
+            }
 
         // Ensure output directory exists
         var dir = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        image.SaveAsPng(outputPath);
+        PngWriter.SaveRgba(pixels, imageWidth, imageHeight, outputPath);
         AnsiConsole.MarkupLine($"[green]Saved:[/] {outputPath} ({imageWidth}×{imageHeight} px)");
         AnsiConsole.MarkupLine("[grey]Legend: Red = zero/missing, Blue→Green→Yellow→White = low→high file offset[/]");
 
@@ -460,7 +475,7 @@ public static class OfstCommands
         var fileArg = new Argument<string>("file") { Description = FilePathDescription };
         var worldArg = new Argument<string>(WorldArgumentName) { Description = WorldFormIdDescription };
         var limitOption = new Option<int>(LimitOptionShort, LimitOptionLong)
-            { Description = "Max entries to show", DefaultValueFactory = _ => 100 };
+        { Description = "Max entries to show", DefaultValueFactory = _ => 100 };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(worldArg);
@@ -508,13 +523,13 @@ public static class OfstCommands
         var quadtreePatterns = new List<(string Name, int[] TopOrder, int[] MidOrder, bool ColMajorInner)>
         {
             // Your described pattern: top=BR→TR→BL→TL, mid=TL→BL→TR→BR, inner=column-major
-            ("quadtree-br-tr-bl-tl/tl-bl-tr-br/col", new[] { 3, 1, 2, 0 }, new[] { 0, 2, 1, 3 }, true),
+            ("quadtree-br-tr-bl-tl/tl-bl-tr-br/col", QuadOrderBrTrBlTl, QuadOrderTlBlTrBr, true),
             // Variation: inner=row-major
-            ("quadtree-br-tr-bl-tl/tl-bl-tr-br/row", new[] { 3, 1, 2, 0 }, new[] { 0, 2, 1, 3 }, false),
+            ("quadtree-br-tr-bl-tl/tl-bl-tr-br/row", QuadOrderBrTrBlTl, QuadOrderTlBlTrBr, false),
             // Standard Z-order at all levels for comparison
-            ("quadtree-standard-z", new[] { 0, 1, 2, 3 }, new[] { 0, 1, 2, 3 }, false),
+            ("quadtree-standard-z", QuadOrderStandard, QuadOrderStandard, false),
             // All inverted
-            ("quadtree-all-inverted", new[] { 3, 2, 1, 0 }, new[] { 3, 2, 1, 0 }, true),
+            ("quadtree-all-inverted", QuadOrderInverted, QuadOrderInverted, true)
         };
 
         var results = new List<(string Name, double Correlation, double AbsCorrelation)>();
@@ -536,7 +551,7 @@ public static class OfstCommands
 
         foreach (var (name, corr, absCorr) in results)
         {
-            var color = absCorr > 0.8 ? "green" : absCorr > 0.5 ? "yellow" : "grey";
+            var color = GetCorrelationColor(absCorr);
             table.AddRow(
                 Markup.Escape(name),
                 $"[{color}]{corr:F6}[/]",
@@ -563,7 +578,7 @@ public static class OfstCommands
         for (var i = 0; i < Math.Min(limit, ordered.Count); i++)
         {
             var e = ordered[i];
-            var expected = ComputeQuadtreeIndex(e.Col, e.Row, columns, rows,
+            var expected = ComputeQuadtreeIndex(e.Col, e.Row,
                 bestPattern.TopOrder, bestPattern.MidOrder, bestPattern.ColMajorInner);
             detailTable.AddRow(
                 i.ToString(),
@@ -581,7 +596,7 @@ public static class OfstCommands
     }
 
     /// <summary>
-    /// Compute Pearson correlation for custom quadtree ordering
+    ///     Compute Pearson correlation for custom quadtree ordering
     /// </summary>
     private static double PearsonQuadtree(List<OfstLayoutEntry> ordered, int columns, int rows,
         int[] topOrder, int[] midOrder, bool colMajorInner)
@@ -589,7 +604,7 @@ public static class OfstCommands
         if (ordered.Count < 2) return 0;
 
         var expectedIndices = ordered
-            .Select(e => (double)ComputeQuadtreeIndex(e.Col, e.Row, columns, rows, topOrder, midOrder, colMajorInner))
+            .Select(e => (double)ComputeQuadtreeIndex(e.Col, e.Row, topOrder, midOrder, colMajorInner))
             .ToArray();
         var actualIndices = Enumerable.Range(0, ordered.Count).Select(i => (double)i).ToArray();
 
@@ -597,9 +612,9 @@ public static class OfstCommands
     }
 
     /// <summary>
-    /// Compute quadtree index with custom quadrant orderings at each level
+    ///     Compute quadtree index with custom quadrant orderings at each level
     /// </summary>
-    private static long ComputeQuadtreeIndex(int col, int row, int columns, int rows,
+    private static long ComputeQuadtreeIndex(int col, int row,
         int[] topOrder, int[] midOrder, bool colMajorInner)
     {
         // Level 1: 128x128 cell blocks (approx 2x2 at top level for typical worldspace)
@@ -607,8 +622,8 @@ public static class OfstCommands
         // Level 3: 8x8 cell blocks (column-major or row-major)
         // Level 4: individual cells
 
-        const int L3Size = 8;   // 8x8 cells per L3 block
-        const int L2Size = 32;  // 32x32 cells per L2 block (4x4 L3 blocks)
+        const int L3Size = 8; // 8x8 cells per L3 block
+        const int L2Size = 32; // 32x32 cells per L2 block (4x4 L3 blocks)
         const int L1Size = 128; // 128x128 cells per L1 block (4x4 L2 blocks)
 
         // Determine which L1 quadrant (2x2)
@@ -622,7 +637,6 @@ public static class OfstCommands
         var inL1Row = row % L1Size;
         var l2Col = inL1Col / L2Size;
         var l2Row = inL1Row / L2Size;
-        var l2Quad = (l2Row * 4 + l2Col) % 16;
 
         // For L2, we use midOrder for 2x2 sub-quadrants, then expand
         var l2SubRow = l2Row / 2;
@@ -631,7 +645,7 @@ public static class OfstCommands
         var l2SubIndex = midOrder[l2SubQuad];
         var l2InnerRow = l2Row % 2;
         var l2InnerCol = l2Col % 2;
-        var l2Index = l2SubIndex * 4 + (l2InnerRow * 2 + l2InnerCol);
+        var l2Index = l2SubIndex * 4 + l2InnerRow * 2 + l2InnerCol;
 
         // Within L2, determine L3 block and inner position
         var inL2Col = inL1Col % L2Size;
@@ -665,6 +679,13 @@ public static class OfstCommands
                cellIndex;
     }
 
+    private static string GetCorrelationColor(double absCorr)
+    {
+        if (absCorr > 0.8) return "green";
+        if (absCorr > 0.5) return "yellow";
+        return "grey";
+    }
+
     private static double Pearson(double[] x, double[] y)
     {
         if (x.Length != y.Length || x.Length < 2) return 0;
@@ -692,8 +713,8 @@ public static class OfstCommands
     }
 
     /// <summary>
-    /// Convert normalized offset (0-1) to color using full HSV rainbow spectrum
-    /// Red → Orange → Yellow → Green → Cyan → Blue → Magenta → Red
+    ///     Convert normalized offset (0-1) to color using full HSV rainbow spectrum
+    ///     Red → Orange → Yellow → Green → Cyan → Blue → Magenta → Red
     /// </summary>
     private static Rgba32 OffsetToColor(float t)
     {
@@ -706,16 +727,46 @@ public static class OfstCommands
 
         // HSV to RGB conversion
         var c = value * saturation;
-        var x = c * (1 - Math.Abs((hue / 60f) % 2 - 1));
+        var x = c * (1 - Math.Abs(hue / 60f % 2 - 1));
         var m = value - c;
 
         float r1, g1, b1;
-        if (hue < 60) { r1 = c; g1 = x; b1 = 0; }
-        else if (hue < 120) { r1 = x; g1 = c; b1 = 0; }
-        else if (hue < 180) { r1 = 0; g1 = c; b1 = x; }
-        else if (hue < 240) { r1 = 0; g1 = x; b1 = c; }
-        else if (hue < 300) { r1 = x; g1 = 0; b1 = c; }
-        else { r1 = c; g1 = 0; b1 = x; }
+        if (hue < 60)
+        {
+            r1 = c;
+            g1 = x;
+            b1 = 0;
+        }
+        else if (hue < 120)
+        {
+            r1 = x;
+            g1 = c;
+            b1 = 0;
+        }
+        else if (hue < 180)
+        {
+            r1 = 0;
+            g1 = c;
+            b1 = x;
+        }
+        else if (hue < 240)
+        {
+            r1 = 0;
+            g1 = x;
+            b1 = c;
+        }
+        else if (hue < 300)
+        {
+            r1 = x;
+            g1 = 0;
+            b1 = c;
+        }
+        else
+        {
+            r1 = c;
+            g1 = 0;
+            b1 = x;
+        }
 
         var r = (byte)((r1 + m) * 255);
         var g = (byte)((g1 + m) * 255);
@@ -987,8 +1038,8 @@ public static class OfstCommands
     {
         var matrix = new int[tileSize, tileSize];
         for (var y = 0; y < tileSize; y++)
-        for (var x = 0; x < tileSize; x++)
-            matrix[y, x] = -1;
+            for (var x = 0; x < tileSize; x++)
+                matrix[y, x] = -1;
 
         for (var i = 0; i < tileEntries.Count; i++)
         {
@@ -1937,7 +1988,7 @@ public static class OfstCommands
         var histogram = deltas
             .GroupBy(d => (d.DeltaX, d.DeltaY))
             .Select(g => new
-                { Delta = g.Key, Count = g.Count(), Direction = GetDirectionName(g.Key.DeltaX, g.Key.DeltaY) })
+            { Delta = g.Key, Count = g.Count(), Direction = GetDirectionName(g.Key.DeltaX, g.Key.DeltaY) })
             .OrderByDescending(x => x.Count)
             .ThenBy(x => x.Delta.DeltaX)
             .ThenBy(x => x.Delta.DeltaY)

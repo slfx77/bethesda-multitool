@@ -47,6 +47,8 @@ public sealed class WorldmapMetadata
     public int Scale { get; set; }
     public HeightRange HeightRange { get; set; } = new();
     public bool IsBigEndian { get; set; }
+    public string SourceType { get; set; } = "";
+    public bool IsRaw16Bit { get; set; }
 }
 
 public sealed class GridBounds

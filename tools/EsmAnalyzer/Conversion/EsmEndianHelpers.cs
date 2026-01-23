@@ -153,7 +153,8 @@ internal static class EsmEndianHelpers
 
         return signature switch
         {
-            "EDID" or "FULL" or "MODL" or "DMDL" or "ICON" or "MICO" or "ICO2" or "MIC2" or "DESC" or "BMCT" or "NNAM" or "KFFZ" or
+            "EDID" or "FULL" or "MODL" or "DMDL" or "ICON" or "MICO" or "ICO2" or "MIC2" or "DESC" or "BMCT" or "NNAM"
+                or "KFFZ" or
                 "TX00" or "TX01" or "TX02" or "TX03" or "TX04" or "TX05" or "TX06" or "TX07" or
                 "MWD1" or "MWD2" or "MWD3" or "MWD4" or "MWD5" or "MWD6" or "MWD7" or
                 "VANM" or "MOD2" or "MOD3" or "MOD4" or "NIFZ" or "SCVR" or "XATO" or "ITXT" or

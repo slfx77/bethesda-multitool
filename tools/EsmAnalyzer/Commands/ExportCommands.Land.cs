@@ -1,7 +1,6 @@
 using System.Text.Json;
+using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Utils;
 
@@ -233,27 +232,27 @@ public static partial class ExportCommands
         var maxHeight = float.MinValue;
 
         for (var y = 0; y < CellGridSize; y++)
-        for (var x = 0; x < CellGridSize; x++)
-        {
-            minHeight = Math.Min(minHeight, heights[x, y]);
-            maxHeight = Math.Max(maxHeight, heights[x, y]);
-        }
+            for (var x = 0; x < CellGridSize; x++)
+            {
+                minHeight = Math.Min(minHeight, heights[x, y]);
+                maxHeight = Math.Max(maxHeight, heights[x, y]);
+            }
 
-        using var image = new Image<L8>(CellGridSize, CellGridSize);
+        var pixels = new byte[CellGridSize * CellGridSize];
         var range = maxHeight - minHeight;
 
         for (var y = 0; y < CellGridSize; y++)
-        for (var x = 0; x < CellGridSize; x++)
-        {
-            byte intensity;
-            if (range > 0.001f)
-                intensity = (byte)((heights[x, y] - minHeight) / range * 255);
-            else
-                intensity = 128;
-            image[x, y] = new L8(intensity);
-        }
+            for (var x = 0; x < CellGridSize; x++)
+            {
+                byte intensity;
+                if (range > 0.001f)
+                    intensity = (byte)((heights[x, y] - minHeight) / range * 255);
+                else
+                    intensity = 128;
+                pixels[y * CellGridSize + x] = intensity;
+            }
 
-        image.SaveAsPng(path);
+        PngWriter.SaveGrayscale(pixels, CellGridSize, CellGridSize, path);
     }
 
     private static void ExportVertexColors(byte[] data, string path)
@@ -263,17 +262,22 @@ public static partial class ExportCommands
 
     private static void ExportRgbMap(byte[] data, string path)
     {
-        using var image = new Image<Rgb24>(CellGridSize, CellGridSize);
+        var pixels = new byte[CellGridSize * CellGridSize * 3];
 
         for (var y = 0; y < CellGridSize; y++)
-        for (var x = 0; x < CellGridSize; x++)
-        {
-            var idx = (y * CellGridSize + x) * 3;
-            if (idx + 2 < data.Length)
-                image[x, y] = new Rgb24(data[idx], data[idx + 1], data[idx + 2]);
-        }
+            for (var x = 0; x < CellGridSize; x++)
+            {
+                var srcIdx = (y * CellGridSize + x) * 3;
+                var dstIdx = (y * CellGridSize + x) * 3;
+                if (srcIdx + 2 < data.Length)
+                {
+                    pixels[dstIdx + 0] = data[srcIdx + 0];
+                    pixels[dstIdx + 1] = data[srcIdx + 1];
+                    pixels[dstIdx + 2] = data[srcIdx + 2];
+                }
+            }
 
-        image.SaveAsPng(path);
+        PngWriter.SaveRgb(pixels, CellGridSize, CellGridSize, path);
     }
 
     private static TextureLayerInfo ParseTextureLayer(byte[] data, bool bigEndian)

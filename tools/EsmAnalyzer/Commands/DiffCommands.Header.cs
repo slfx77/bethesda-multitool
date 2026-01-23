@@ -55,8 +55,8 @@ public static partial class DiffCommands
         var xboxSigReversed = new string(xboxSig.Reverse().ToArray());
         table.AddRow(
             "0x00", "Signature", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, 0, 4), $"'{xboxSig}' → '{xboxSigReversed}'",
-            DiffCommandHelpers.FormatBytes(pcData, 0, 4), $"'{pcSig}'",
+            FormatBytes(xboxData, 0, 4), $"'{xboxSig}' → '{xboxSigReversed}'",
+            FormatBytes(pcData, 0, 4), $"'{pcSig}'",
             xboxSigReversed == pcSig ? "[green]MATCH[/]" : "[red]DIFFER[/]"
         );
 
@@ -65,8 +65,8 @@ public static partial class DiffCommands
         var pcSize = BinaryUtils.ReadUInt32LE(pcData.AsSpan(4));
         table.AddRow(
             "0x04", "DataSize", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, 4, 4), xboxSize.ToString("N0"),
-            DiffCommandHelpers.FormatBytes(pcData, 4, 4), pcSize.ToString("N0"),
+            FormatBytes(xboxData, 4, 4), xboxSize.ToString("N0"),
+            FormatBytes(pcData, 4, 4), pcSize.ToString("N0"),
             xboxSize == pcSize ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -75,8 +75,8 @@ public static partial class DiffCommands
         var pcFlags = BinaryUtils.ReadUInt32LE(pcData.AsSpan(8));
         table.AddRow(
             "0x08", "Flags", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, 8, 4), $"0x{xboxFlags:X8}",
-            DiffCommandHelpers.FormatBytes(pcData, 8, 4), $"0x{pcFlags:X8}",
+            FormatBytes(xboxData, 8, 4), $"0x{xboxFlags:X8}",
+            FormatBytes(pcData, 8, 4), $"0x{pcFlags:X8}",
             xboxFlags == pcFlags ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -85,8 +85,8 @@ public static partial class DiffCommands
         var pcFormId = BinaryUtils.ReadUInt32LE(pcData.AsSpan(12));
         table.AddRow(
             "0x0C", "FormID", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, 12, 4), $"0x{xboxFormId:X8}",
-            DiffCommandHelpers.FormatBytes(pcData, 12, 4), $"0x{pcFormId:X8}",
+            FormatBytes(xboxData, 12, 4), $"0x{xboxFormId:X8}",
+            FormatBytes(pcData, 12, 4), $"0x{pcFormId:X8}",
             xboxFormId == pcFormId ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -95,8 +95,8 @@ public static partial class DiffCommands
         var pcRev = BinaryUtils.ReadUInt32LE(pcData.AsSpan(16));
         table.AddRow(
             "0x10", "Revision", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, 16, 4), $"0x{xboxRev:X8}",
-            DiffCommandHelpers.FormatBytes(pcData, 16, 4), $"0x{pcRev:X8}",
+            FormatBytes(xboxData, 16, 4), $"0x{xboxRev:X8}",
+            FormatBytes(pcData, 16, 4), $"0x{pcRev:X8}",
             xboxRev == pcRev ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -105,8 +105,8 @@ public static partial class DiffCommands
         var pcVer = BinaryUtils.ReadUInt16LE(pcData.AsSpan(20));
         table.AddRow(
             "0x14", "Version", "2",
-            DiffCommandHelpers.FormatBytes(xboxData, 20, 2), xboxVer.ToString(),
-            DiffCommandHelpers.FormatBytes(pcData, 20, 2), pcVer.ToString(),
+            FormatBytes(xboxData, 20, 2), xboxVer.ToString(),
+            FormatBytes(pcData, 20, 2), pcVer.ToString(),
             xboxVer == pcVer ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -115,8 +115,8 @@ public static partial class DiffCommands
         var pcUnk = BinaryUtils.ReadUInt16LE(pcData.AsSpan(22));
         table.AddRow(
             "0x16", "Unknown", "2",
-            DiffCommandHelpers.FormatBytes(xboxData, 22, 2), xboxUnk.ToString(),
-            DiffCommandHelpers.FormatBytes(pcData, 22, 2), pcUnk.ToString(),
+            FormatBytes(xboxData, 22, 2), xboxUnk.ToString(),
+            FormatBytes(pcData, 22, 2), pcUnk.ToString(),
             xboxUnk == pcUnk ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -135,10 +135,10 @@ public static partial class DiffCommands
             .AddColumn("[bold]Xbox 360[/]")
             .AddColumn("[bold]PC[/]");
 
-        DiffCommandHelpers.AddFlagRow(flagTable, 0, 0x00000001, "ESM (Master)", xboxFlags, pcFlags);
-        DiffCommandHelpers.AddFlagRow(flagTable, 4, 0x00000010, "Xbox-specific?", xboxFlags, pcFlags);
-        DiffCommandHelpers.AddFlagRow(flagTable, 7, 0x00000080, "Localized", xboxFlags, pcFlags);
-        DiffCommandHelpers.AddFlagRow(flagTable, 18, 0x00040000, "Compressed", xboxFlags, pcFlags);
+        AddFlagRow(flagTable, 0, 0x00000001, "ESM (Master)", xboxFlags, pcFlags);
+        AddFlagRow(flagTable, 4, 0x00000010, "Xbox-specific?", xboxFlags, pcFlags);
+        AddFlagRow(flagTable, 7, 0x00000080, "Localized", xboxFlags, pcFlags);
+        AddFlagRow(flagTable, 18, 0x00040000, "Compressed", xboxFlags, pcFlags);
 
         AnsiConsole.Write(flagTable);
         AnsiConsole.WriteLine();
@@ -166,8 +166,8 @@ public static partial class DiffCommands
         var xboxHedrSigRev = new string(xboxHedrSig.Reverse().ToArray());
         hedrTable.AddRow(
             "0x18", "Signature", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, hedrOffset, 4), $"'{xboxHedrSig}' → '{xboxHedrSigRev}'",
-            DiffCommandHelpers.FormatBytes(pcData, hedrOffset, 4), $"'{pcHedrSig}'",
+            FormatBytes(xboxData, hedrOffset, 4), $"'{xboxHedrSig}' → '{xboxHedrSigRev}'",
+            FormatBytes(pcData, hedrOffset, 4), $"'{pcHedrSig}'",
             xboxHedrSigRev == pcHedrSig ? "[green]MATCH[/]" : "[red]DIFFER[/]"
         );
 
@@ -176,8 +176,8 @@ public static partial class DiffCommands
         var pcHedrSize = BinaryUtils.ReadUInt16LE(pcData.AsSpan(hedrOffset + 4));
         hedrTable.AddRow(
             "0x1C", "Size", "2",
-            DiffCommandHelpers.FormatBytes(xboxData, hedrOffset + 4, 2), xboxHedrSize.ToString(),
-            DiffCommandHelpers.FormatBytes(pcData, hedrOffset + 4, 2), pcHedrSize.ToString(),
+            FormatBytes(xboxData, hedrOffset + 4, 2), xboxHedrSize.ToString(),
+            FormatBytes(pcData, hedrOffset + 4, 2), pcHedrSize.ToString(),
             xboxHedrSize == pcHedrSize ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -190,8 +190,8 @@ public static partial class DiffCommands
         var pcVersion = BitConverter.ToSingle(pcData, hedrDataOffset);
         hedrTable.AddRow(
             "0x1E", "Version", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, hedrDataOffset, 4), xboxVersion.ToString("F2"),
-            DiffCommandHelpers.FormatBytes(pcData, hedrDataOffset, 4), pcVersion.ToString("F2"),
+            FormatBytes(xboxData, hedrDataOffset, 4), xboxVersion.ToString("F2"),
+            FormatBytes(pcData, hedrDataOffset, 4), pcVersion.ToString("F2"),
             Math.Abs(xboxVersion - pcVersion) < 0.01f ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -200,8 +200,8 @@ public static partial class DiffCommands
         var pcNumRec = BinaryUtils.ReadUInt32LE(pcData.AsSpan(hedrDataOffset + 4));
         hedrTable.AddRow(
             "0x22", "NumRecords", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, hedrDataOffset + 4, 4), xboxNumRec.ToString("N0"),
-            DiffCommandHelpers.FormatBytes(pcData, hedrDataOffset + 4, 4), pcNumRec.ToString("N0"),
+            FormatBytes(xboxData, hedrDataOffset + 4, 4), xboxNumRec.ToString("N0"),
+            FormatBytes(pcData, hedrDataOffset + 4, 4), pcNumRec.ToString("N0"),
             xboxNumRec == pcNumRec ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
@@ -210,8 +210,8 @@ public static partial class DiffCommands
         var pcNextId = BinaryUtils.ReadUInt32LE(pcData.AsSpan(hedrDataOffset + 8));
         hedrTable.AddRow(
             "0x26", "NextObjectId", "4",
-            DiffCommandHelpers.FormatBytes(xboxData, hedrDataOffset + 8, 4), $"0x{xboxNextId:X8}",
-            DiffCommandHelpers.FormatBytes(pcData, hedrDataOffset + 8, 4), $"0x{pcNextId:X8}",
+            FormatBytes(xboxData, hedrDataOffset + 8, 4), $"0x{xboxNextId:X8}",
+            FormatBytes(pcData, hedrDataOffset + 8, 4), $"0x{pcNextId:X8}",
             xboxNextId == pcNextId ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 

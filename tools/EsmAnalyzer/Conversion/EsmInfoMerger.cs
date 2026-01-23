@@ -63,10 +63,10 @@ internal sealed class EsmInfoMerger
     ///     Strips orphaned NAM3 subrecords that don't follow response data.
     /// </summary>
     /// <param name="data">Already converted (little-endian) subrecord data</param>
-    public byte[]? ReorderInfoSubrecords(byte[] data)
+    public static byte[]? ReorderInfoSubrecords(byte[] data)
     {
         // Parse as little-endian since data is already converted
-        var subs = EsmHelpers.ParseSubrecords(data, bigEndian: false);
+        var subs = EsmHelpers.ParseSubrecords(data, false);
         if (subs.Count == 0) return null;
 
         // Check if this record has response data (TRDT)
@@ -77,10 +77,7 @@ internal sealed class EsmInfoMerger
         var filtered = subs;
 
         // If no response data, strip NAM3 subrecords (they're orphaned)
-        if (!hasTrdt)
-        {
-            filtered = filtered.Where(s => s.Signature != "NAM3").ToList();
-        }
+        if (!hasTrdt) filtered = filtered.Where(s => s.Signature != "NAM3").ToList();
 
         if (!hasSchr && !hasScda)
         {
@@ -200,17 +197,11 @@ internal sealed class EsmInfoMerger
     {
         var records = new List<AnalyzerRecordInfo>();
         var header = EsmParser.ParseFileHeader(_input);
-        if (header == null)
-        {
-            return records;
-        }
+        if (header == null) return records;
 
         var bigEndian = header.IsBigEndian;
         var tes4Header = EsmParser.ParseRecordHeader(_input.AsSpan(), bigEndian);
-        if (tes4Header == null)
-        {
-            return records;
-        }
+        if (tes4Header == null) return records;
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
         var iterations = 0;
@@ -219,10 +210,7 @@ internal sealed class EsmInfoMerger
         while (offset + EsmParser.MainRecordHeaderSize <= _input.Length && iterations++ < maxIterations)
         {
             var recHeader = EsmParser.ParseRecordHeader(_input.AsSpan(offset), bigEndian);
-            if (recHeader == null)
-            {
-                break;
-            }
+            if (recHeader == null) break;
 
             if (recHeader.Signature == "GRUP")
             {
@@ -231,13 +219,9 @@ internal sealed class EsmInfoMerger
             }
 
             var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize;
-            if (recordEnd <= offset || recordEnd > _input.Length)
-            {
-                break;
-            }
+            if (recordEnd <= offset || recordEnd > _input.Length) break;
 
             if (recHeader.Signature == "INFO")
-            {
                 records.Add(new AnalyzerRecordInfo
                 {
                     Signature = recHeader.Signature,
@@ -247,7 +231,6 @@ internal sealed class EsmInfoMerger
                     Offset = (uint)offset,
                     TotalSize = (uint)(recordEnd - offset)
                 });
-            }
 
             offset = recordEnd;
         }
@@ -300,7 +283,8 @@ internal sealed class EsmInfoMerger
         var baseKnam = baseOther.Where(s => s.Signature == "KNAM").ToList();
         var baseDnam = baseOther.Where(s => s.Signature == "DNAM").ToList();
         var baseOtherTail = baseOther
-            .Where(s => s.Signature is not "NAME" and not "TCFU" and not "RNAM" and not "ANAM" and not "KNAM" and not "DNAM")
+            .Where(s => s.Signature is not "NAME" and not "TCFU" and not "RNAM" and not "ANAM" and not "KNAM"
+                and not "DNAM")
             .ToList();
 
         var responseGroups = new List<List<AnalyzerSubrecordInfo>>();
@@ -354,16 +338,14 @@ internal sealed class EsmInfoMerger
                     WriteSubrecord(writer, baseNam3[nam3Index]);
                     nam3Index++;
                 }
+
                 continue;
             }
 
             WriteSubrecord(writer, item.Subrecord);
         }
 
-        for (; nam3Index < baseNam3.Count; nam3Index++)
-        {
-            WriteSubrecord(writer, baseNam3[nam3Index]);
-        }
+        for (; nam3Index < baseNam3.Count; nam3Index++) WriteSubrecord(writer, baseNam3[nam3Index]);
 
         WriteSubrecords(writer, baseConditions);
         WriteSubrecords(writer, baseChoices);
@@ -409,7 +391,6 @@ internal sealed class EsmInfoMerger
         var seenSchr = false;
 
         foreach (var sub in responseScripts)
-        {
             switch (sub.Signature)
             {
                 case "SCHR":
@@ -430,6 +411,7 @@ internal sealed class EsmInfoMerger
                     {
                         // NEXT before any SCHR - we'll handle this below
                     }
+
                     break;
                 case "SCDA":
                     currentBlock?.Bytecode.Add(sub);
@@ -441,7 +423,6 @@ internal sealed class EsmInfoMerger
                     currentBlock?.OtherSubrecords.Add(sub);
                     break;
             }
-        }
 
         // Handle edge case: NEXT before first SCHR means we need a synthetic Begin block
         if (hasNextBeforeFirstSchr && blocks.Count > 0)
@@ -456,10 +437,7 @@ internal sealed class EsmInfoMerger
         }
 
         // Handle edge case: trailing NEXT without a following SCHR
-        if (blocks.Count > 0 && blocks[^1].HasNextAfter)
-        {
-            blocks.Add(new ScriptBlock { Header = CreateSyntheticSchr() });
-        }
+        if (blocks.Count > 0 && blocks[^1].HasNextAfter) blocks.Add(new ScriptBlock { Header = CreateSyntheticSchr() });
 
         // Handle edge case: No blocks but we have SCTX or response has NEXT
         if (blocks.Count == 0 && (baseSctx.Count > 0 || hasAnyNext))
@@ -496,23 +474,20 @@ internal sealed class EsmInfoMerger
 
             // First, assign to blocks with bytecode
             for (var i = 0; i < blocks.Count && sctxQueue.Count > 0; i++)
-            {
                 if (blocks[i].Bytecode.Count > 0)
                 {
                     sctxForBlock[i] = sctxQueue.Dequeue();
                     assignedCount++;
                 }
-            }
 
             // Then assign remaining to other blocks in order
             for (var i = 0; i < blocks.Count && sctxQueue.Count > 0; i++)
-            {
                 if (sctxForBlock[i] == null)
                 {
                     sctxForBlock[i] = sctxQueue.Dequeue();
                     assignedCount++;
                 }
-            }
+
             baseSctxIndex = assignedCount;
         }
 
@@ -550,15 +525,6 @@ internal sealed class EsmInfoMerger
             WriteSubrecord(writer, baseSctx[baseSctxIndex++]);
     }
 
-    private sealed class ScriptBlock
-    {
-        public required AnalyzerSubrecordInfo Header { get; set; }
-        public List<AnalyzerSubrecordInfo> Bytecode { get; } = [];
-        public List<AnalyzerSubrecordInfo> References { get; } = [];
-        public List<AnalyzerSubrecordInfo> OtherSubrecords { get; } = [];
-        public bool HasNextAfter { get; set; }
-    }
-
     private void WriteSubrecords(BinaryWriter writer, List<AnalyzerSubrecordInfo> subrecords)
     {
         foreach (var sub in subrecords) WriteSubrecord(writer, sub);
@@ -580,13 +546,14 @@ internal sealed class EsmInfoMerger
             _stats.SubrecordsConverted++;
             _stats.IncrementSubrecordType("INFO", sub.Signature);
         }
+
         return stream.ToArray();
     }
 
     /// <summary>
     ///     Writes already-converted (little-endian) subrecords without further conversion.
     /// </summary>
-    private byte[] WriteSubrecordsToBufferLittleEndian(List<AnalyzerSubrecordInfo> subrecords)
+    private static byte[] WriteSubrecordsToBufferLittleEndian(List<AnalyzerSubrecordInfo> subrecords)
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
@@ -600,6 +567,7 @@ internal sealed class EsmInfoMerger
             writer.Write((ushort)sub.Data.Length);
             writer.Write(sub.Data);
         }
+
         return stream.ToArray();
     }
 
@@ -615,14 +583,6 @@ internal sealed class EsmInfoMerger
         writer.Write((ushort)convertedData.Length);
         writer.Write(convertedData);
         _stats.SubrecordsConverted++;
-    }
-
-    private readonly record struct InfoMergeEntry(int BaseOffset, int ResponseOffset, bool Skip);
-
-    private readonly record struct ResponseItem(bool IsGroup, int GroupIndex, AnalyzerSubrecordInfo Subrecord)
-    {
-        public static ResponseItem Group(int groupIndex) => new(true, groupIndex, default);
-        public static ResponseItem FromSubrecord(AnalyzerSubrecordInfo subrecord) => new(false, -1, subrecord);
     }
 
     private static AnalyzerSubrecordInfo CreateSyntheticSchr()
@@ -645,6 +605,30 @@ internal sealed class EsmInfoMerger
             Data = [],
             Offset = 0
         };
+    }
+
+    private sealed class ScriptBlock
+    {
+        public required AnalyzerSubrecordInfo Header { get; set; }
+        public List<AnalyzerSubrecordInfo> Bytecode { get; } = [];
+        public List<AnalyzerSubrecordInfo> References { get; } = [];
+        public List<AnalyzerSubrecordInfo> OtherSubrecords { get; } = [];
+        public bool HasNextAfter { get; set; }
+    }
+
+    private readonly record struct InfoMergeEntry(int BaseOffset, int ResponseOffset, bool Skip);
+
+    private readonly record struct ResponseItem(bool IsGroup, int GroupIndex, AnalyzerSubrecordInfo Subrecord)
+    {
+        public static ResponseItem Group(int groupIndex)
+        {
+            return new ResponseItem(true, groupIndex, default);
+        }
+
+        public static ResponseItem FromSubrecord(AnalyzerSubrecordInfo subrecord)
+        {
+            return new ResponseItem(false, -1, subrecord);
+        }
     }
 
     private enum InfoRecordRole

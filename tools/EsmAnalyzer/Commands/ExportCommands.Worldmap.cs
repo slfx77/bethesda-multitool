@@ -22,7 +22,8 @@ public static partial class ExportCommands
         var sourceType = bigEndian ? "Xbox 360" : "PC";
 
         AnsiConsole.MarkupLine($"Source file: [cyan]{Path.GetFileName(filePath)}[/]");
-        AnsiConsole.MarkupLine($"Endianness: {(bigEndian ? "[yellow]Big-endian (Xbox 360)[/]" : "[green]Little-endian (PC)[/]")}");
+        AnsiConsole.MarkupLine(
+            $"Endianness: {(bigEndian ? "[yellow]Big-endian (Xbox 360)[/]" : "[green]Little-endian (PC)[/]")}");
 
         var outputMode = rawOutput ? "[cyan]16-bit grayscale PNG[/]" : "[green]Color gradient PNG[/]";
         AnsiConsole.MarkupLine($"Output mode: {outputMode}");
@@ -38,8 +39,9 @@ public static partial class ExportCommands
             var successCount = 0;
             foreach (var (wrldName, wrldFormId) in worldspaces)
             {
-                AnsiConsole.MarkupLine($"[blue]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]");
-                var result = GenerateSingleWorldmap(esm.Data, bigEndian, wrldName, wrldFormId, outputDir, scale, rawOutput, sourceType, analyzeOnly);
+                AnsiConsole.MarkupLine("[blue]----------------------------------------[/]");
+                var result = GenerateSingleWorldmap(esm.Data, bigEndian, wrldName, wrldFormId, outputDir, scale,
+                    rawOutput, sourceType, analyzeOnly);
                 if (result == 0) successCount++;
                 AnsiConsole.WriteLine();
             }
@@ -47,36 +49,35 @@ public static partial class ExportCommands
             AnsiConsole.MarkupLine($"[green]Exported {successCount}/{worldspaces.Count} worldspaces[/]");
             return successCount > 0 ? 0 : 1;
         }
+
+        // Single worldspace mode
+        uint targetWorldspaceFormId;
+        if (string.IsNullOrEmpty(worldspaceName))
+        {
+            targetWorldspaceFormId = FalloutWorldspaces.KnownWorldspaces["WastelandNV"];
+            worldspaceName = "WastelandNV";
+        }
+        else if (FalloutWorldspaces.KnownWorldspaces.TryGetValue(worldspaceName, out var knownId))
+        {
+            targetWorldspaceFormId = knownId;
+        }
         else
         {
-            // Single worldspace mode
-            uint targetWorldspaceFormId;
-            if (string.IsNullOrEmpty(worldspaceName))
+            var parsed = EsmFileLoader.ParseFormId(worldspaceName);
+            if (parsed == null)
             {
-                targetWorldspaceFormId = KnownWorldspaces["WastelandNV"];
-                worldspaceName = "WastelandNV";
-            }
-            else if (KnownWorldspaces.TryGetValue(worldspaceName, out var knownId))
-            {
-                targetWorldspaceFormId = knownId;
-            }
-            else
-            {
-                var parsed = EsmFileLoader.ParseFormId(worldspaceName);
-                if (parsed == null)
-                {
-                    AnsiConsole.MarkupLine($"[red]ERROR:[/] Unknown worldspace '{worldspaceName}'");
-                    AnsiConsole.MarkupLine("[yellow]Known worldspaces:[/]");
-                    foreach (var (name, formId) in KnownWorldspaces.DistinctBy(kvp => kvp.Value))
-                        AnsiConsole.MarkupLine($"  {name}: 0x{formId:X8}");
-                    return 1;
-                }
-
-                targetWorldspaceFormId = parsed.Value;
+                AnsiConsole.MarkupLine($"[red]ERROR:[/] Unknown worldspace '{worldspaceName}'");
+                AnsiConsole.MarkupLine("[yellow]Known worldspaces:[/]");
+                foreach (var (name, formId) in FalloutWorldspaces.KnownWorldspaces.DistinctBy(kvp => kvp.Value))
+                    AnsiConsole.MarkupLine($"  {name}: 0x{formId:X8}");
+                return 1;
             }
 
-            return GenerateSingleWorldmap(esm.Data, bigEndian, worldspaceName, targetWorldspaceFormId, outputDir, scale, rawOutput, sourceType, analyzeOnly);
+            targetWorldspaceFormId = parsed.Value;
         }
+
+        return GenerateSingleWorldmap(esm.Data, bigEndian, worldspaceName, targetWorldspaceFormId, outputDir, scale,
+            rawOutput, sourceType, analyzeOnly);
     }
 
     /// <summary>
@@ -101,7 +102,8 @@ public static partial class ExportCommands
         {
             var headerData = data.AsSpan(offset, 24);
             var sig = bigEndian
-                ? new string(new[] { (char)headerData[3], (char)headerData[2], (char)headerData[1], (char)headerData[0] })
+                ? new string(new[]
+                    { (char)headerData[3], (char)headerData[2], (char)headerData[1], (char)headerData[0] })
                 : Encoding.ASCII.GetString(data, offset, 4);
 
             if (sig == "GRUP")
@@ -117,18 +119,27 @@ public static partial class ExportCommands
                 if (grupType == 0)
                 {
                     var label = Encoding.ASCII.GetString(data, offset + 8, 4);
-                    var labelBE = new string(new[] { (char)data[offset + 11], (char)data[offset + 10], (char)data[offset + 9], (char)data[offset + 8] });
+                    var labelBE = new string(new[]
+                    {
+                        (char)data[offset + 11], (char)data[offset + 10], (char)data[offset + 9], (char)data[offset + 8]
+                    });
 
                     if (label == "WRLD" || labelBE == "WRLD")
                     {
                         // Scan inside this GRUP for WRLD records
                         var grupEnd = offset + (int)grupSize;
-                        var innerOffset = offset + EsmParser.MainRecordHeaderSize; // GRUP header is same size as main record header (24 bytes)
+                        var innerOffset =
+                            offset + EsmParser
+                                .MainRecordHeaderSize; // GRUP header is same size as main record header (24 bytes)
 
                         while (innerOffset + 24 <= grupEnd)
                         {
                             var innerSig = bigEndian
-                                ? new string(new[] { (char)data[innerOffset + 3], (char)data[innerOffset + 2], (char)data[innerOffset + 1], (char)data[innerOffset] })
+                                ? new string(new[]
+                                {
+                                    (char)data[innerOffset + 3], (char)data[innerOffset + 2],
+                                    (char)data[innerOffset + 1], (char)data[innerOffset]
+                                })
                                 : Encoding.ASCII.GetString(data, innerOffset, 4);
 
                             if (innerSig == "WRLD")
@@ -194,7 +205,8 @@ public static partial class ExportCommands
         while (offset + 6 <= dataEnd)
         {
             var subSig = bigEndian
-                ? new string(new[] { (char)data[offset + 3], (char)data[offset + 2], (char)data[offset + 1], (char)data[offset] })
+                ? new string(new[]
+                    { (char)data[offset + 3], (char)data[offset + 2], (char)data[offset + 1], (char)data[offset] })
                 : Encoding.ASCII.GetString(data, offset, 4);
             var subSize = bigEndian
                 ? BinaryUtils.ReadUInt16BE(data.AsSpan(), offset + 4)
@@ -217,7 +229,8 @@ public static partial class ExportCommands
     /// <summary>
     ///     Generate heightmap for a single worldspace.
     /// </summary>
-    private static int GenerateSingleWorldmap(byte[] data, bool bigEndian, string worldspaceName, uint targetWorldspaceFormId,
+    private static int GenerateSingleWorldmap(byte[] data, bool bigEndian, string worldspaceName,
+        uint targetWorldspaceFormId,
         string outputDir, int scale, bool rawOutput, string sourceType, bool analyzeOnly)
     {
         AnsiConsole.MarkupLine($"[blue]Generating worldmap for:[/] {worldspaceName} (0x{targetWorldspaceFormId:X8})");
@@ -286,7 +299,8 @@ public static partial class ExportCommands
                     }
             });
 
-        AnsiConsole.MarkupLine($"Found [cyan]{cellMap.Count}[/] exterior cells with grid positions in {worldspaceName}");
+        AnsiConsole.MarkupLine(
+            $"Found [cyan]{cellMap.Count}[/] exterior cells with grid positions in {worldspaceName}");
         if (cellParseErrors > 0)
             AnsiConsole.MarkupLine($"[yellow]WARN:[/] {cellParseErrors} CELL records failed to parse.");
 
@@ -295,9 +309,6 @@ public static partial class ExportCommands
             AnsiConsole.MarkupLine("[red]ERROR:[/] No exterior cells found");
             return 1;
         }
-
-        // Build FormID -> LAND record map
-        var landByFormId = landRecords.ToDictionary(r => r.FormId, r => r);
 
         // Build cell position -> heightmap data
         Dictionary<(int x, int y), float[,]> heightmaps = [];
@@ -558,7 +569,7 @@ public static partial class ExportCommands
                             for (var localX = 0; localX < CellGridSize; localX++)
                             {
                                 var normalizedHeight = (heights[localX, localY] - globalMin) / range;
-                                var (r, g, b) = HeightToColor((float)normalizedHeight);
+                                var (r, g, b) = HeightToColor(normalizedHeight);
                                 var flippedLocalY = CellGridSize - 1 - localY;
 
                                 for (var sy = 0; sy < scale; sy++)
@@ -681,14 +692,16 @@ public static partial class ExportCommands
             if (grupHeader.GroupType == 0)
             {
                 var labelSig = bigEndian
-                    ? new string([(char)grupHeader.Label[3], (char)grupHeader.Label[2], (char)grupHeader.Label[1], (char)grupHeader.Label[0]])
+                    ? new string([
+                        (char)grupHeader.Label[3], (char)grupHeader.Label[2], (char)grupHeader.Label[1],
+                        (char)grupHeader.Label[0]
+                    ])
                     : Encoding.ASCII.GetString(grupHeader.Label);
 
                 if (labelSig == "WRLD")
-                {
                     // Scan inside WRLD GRUP for our target worldspace
-                    ScanWrldGrup(data, bigEndian, offset + EsmParser.MainRecordHeaderSize, grupEnd, worldFormId, cells, lands);
-                }
+                    ScanWrldGrup(data, bigEndian, offset + EsmParser.MainRecordHeaderSize, grupEnd, worldFormId, cells,
+                        lands);
             }
 
             offset = grupEnd;
@@ -704,8 +717,6 @@ public static partial class ExportCommands
         uint targetWorldFormId, List<AnalyzerRecordInfo> cells, List<AnalyzerRecordInfo> lands)
     {
         var offset = startOffset;
-        var foundTargetWorld = false;
-        var targetWorldEnd = endOffset;
 
         while (offset + EsmParser.MainRecordHeaderSize <= endOffset)
         {
@@ -730,10 +741,9 @@ public static partial class ExportCommands
                         : BinaryUtils.ReadUInt32LE(grupHeader.Label);
 
                     if (parentWorldId == targetWorldFormId)
-                    {
                         // This is our target worldspace's children - scan for cells and lands
-                        ScanWorldChildren(data, bigEndian, offset + EsmParser.MainRecordHeaderSize, grupEnd, cells, lands);
-                    }
+                        ScanWorldChildren(data, bigEndian, offset + EsmParser.MainRecordHeaderSize, grupEnd, cells,
+                            lands);
                 }
 
                 offset = grupEnd;
@@ -749,7 +759,9 @@ public static partial class ExportCommands
                     : BinaryUtils.ReadUInt32LE(headerData, 12);
 
                 if (formId == targetWorldFormId)
-                    foundTargetWorld = true;
+                {
+                    // Found our target worldspace record
+                }
 
                 offset += EsmParser.MainRecordHeaderSize + (int)dataSize;
             }
@@ -795,7 +807,6 @@ public static partial class ExportCommands
             {
                 var recordHeader = EsmParser.ParseRecordHeader(headerData, bigEndian);
                 if (recordHeader != null)
-                {
                     cells.Add(new AnalyzerRecordInfo
                     {
                         Signature = "CELL",
@@ -805,7 +816,6 @@ public static partial class ExportCommands
                         FormId = recordHeader.FormId,
                         TotalSize = EsmParser.MainRecordHeaderSize + recordHeader.DataSize
                     });
-                }
 
                 var dataSize = bigEndian
                     ? BinaryUtils.ReadUInt32BE(headerData, 4)
@@ -816,7 +826,6 @@ public static partial class ExportCommands
             {
                 var recordHeader = EsmParser.ParseRecordHeader(headerData, bigEndian);
                 if (recordHeader != null)
-                {
                     lands.Add(new AnalyzerRecordInfo
                     {
                         Signature = "LAND",
@@ -826,7 +835,6 @@ public static partial class ExportCommands
                         FormId = recordHeader.FormId,
                         TotalSize = EsmParser.MainRecordHeaderSize + recordHeader.DataSize
                     });
-                }
 
                 var dataSize = bigEndian
                     ? BinaryUtils.ReadUInt32BE(headerData, 4)
@@ -842,28 +850,6 @@ public static partial class ExportCommands
                 offset += EsmParser.MainRecordHeaderSize + (int)dataSize;
             }
         }
-    }
-
-    /// <summary>
-    ///     Scans the ESM file GRUP structure to build a map of LAND FormID -> parent CELL FormID.
-    ///     LAND records are stored in GRUP type 9 (Cell Temporary Children) which has the parent CELL FormID as its label.
-    /// </summary>
-    private static Dictionary<uint, uint> BuildLandToCellMap(byte[] data, bool bigEndian)
-    {
-        var result = new Dictionary<uint, uint>();
-        var header = EsmParser.ParseFileHeader(data);
-
-        if (header == null) return result;
-
-        // Skip TES4 header
-        var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
-        if (tes4Header == null) return result;
-
-        var startOffset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
-
-        ScanForLandRecords(data, bigEndian, startOffset, data.Length, 0, result);
-
-        return result;
     }
 
     /// <summary>
@@ -930,10 +916,10 @@ public static partial class ExportCommands
     ///     Uses HIGH SATURATION like test1 for best detail, rushes through greens.
     ///     Mountains: Brown → Red → Pink → White (traditional topo map style).
     ///     User color mappings applied:
-    ///       #813F08 → #C46616 (orange-brown brighter)
-    ///       #9A241E → #6E2D0D (red darker, more brown-toned)
-    ///       #C33457 → #BD2210 (pink-red → pure red)
-    ///       #C92282 → #E03071 (magenta → pink, brighter)
+    ///     #813F08 → #C46616 (orange-brown brighter)
+    ///     #9A241E → #6E2D0D (red darker, more brown-toned)
+    ///     #C33457 → #BD2210 (pink-red → pure red)
+    ///     #C92282 → #E03071 (magenta → pink, brighter)
     /// </summary>
     private static (byte r, byte g, byte b) HeightToColor(float normalizedHeight)
     {
@@ -1149,6 +1135,7 @@ public static partial class ExportCommands
             var pct = 100.0 * binCounts[i] / totalPoints;
             AnsiConsole.MarkupLine($"[grey]{binStart:F2}-{binEnd:F2}[/] [green]{bar,-50}[/] {pct:F1}%");
         }
+
         AnsiConsole.WriteLine();
 
         // Sample specific regions of the map
@@ -1159,12 +1146,12 @@ public static partial class ExportCommands
 
         var regions = new (string name, int x1, int y1, int x2, int y2)[]
         {
-            ("North Center (flat?)", centerX - quarterW/2, centerY + quarterH, centerX + quarterW/2, maxY),
-            ("South Center (mountains?)", centerX - quarterW/2, minY, centerX + quarterW/2, centerY - quarterH),
-            ("West (mountains?)", minX, centerY - quarterH/2, centerX - quarterW, centerY + quarterH/2),
-            ("East (lake?)", centerX + quarterW, centerY - quarterH/2, maxX, centerY + quarterH/2),
+            ("North Center (flat?)", centerX - quarterW / 2, centerY + quarterH, centerX + quarterW / 2, maxY),
+            ("South Center (mountains?)", centerX - quarterW / 2, minY, centerX + quarterW / 2, centerY - quarterH),
+            ("West (mountains?)", minX, centerY - quarterH / 2, centerX - quarterW, centerY + quarterH / 2),
+            ("East (lake?)", centerX + quarterW, centerY - quarterH / 2, maxX, centerY + quarterH / 2),
             ("Southeast (river?)", centerX, minY, maxX, centerY - quarterH),
-            ("Center", centerX - quarterW/2, centerY - quarterH/2, centerX + quarterW/2, centerY + quarterH/2),
+            ("Center", centerX - quarterW / 2, centerY - quarterH / 2, centerX + quarterW / 2, centerY + quarterH / 2)
         };
 
         var regionTable = new Table()
@@ -1185,7 +1172,6 @@ public static partial class ExportCommands
             var cellCount = 0;
 
             foreach (var ((cx, cy), heights) in heightmaps)
-            {
                 if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2)
                 {
                     cellCount++;
@@ -1193,7 +1179,6 @@ public static partial class ExportCommands
                         for (var x = 0; x < CellGridSize; x++)
                             regionHeights.Add(heights[x, y]);
                 }
-            }
 
             if (regionHeights.Count > 0)
             {
@@ -1222,7 +1207,8 @@ public static partial class ExportCommands
 
         // Suggest gradient transition points
         AnsiConsole.MarkupLine("[bold]Suggested Gradient Transition Points:[/]");
-        AnsiConsole.MarkupLine("[grey]Based on height distribution, place major color transitions at these normalized values:[/]");
+        AnsiConsole.MarkupLine(
+            "[grey]Based on height distribution, place major color transitions at these normalized values:[/]");
         AnsiConsole.WriteLine();
 
         // Find where most of the data lies and suggest transition points
@@ -1242,7 +1228,8 @@ public static partial class ExportCommands
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[bold yellow]Key insight:[/] Most terrain is between the 10th and 90th percentile.");
-        AnsiConsole.MarkupLine($"  That's the normalized range [cyan]{(p10 - globalMin) / range:F3}[/] to [cyan]{(p90 - globalMin) / range:F3}[/].");
+        AnsiConsole.MarkupLine(
+            $"  That's the normalized range [cyan]{(p10 - globalMin) / range:F3}[/] to [cyan]{(p90 - globalMin) / range:F3}[/].");
         AnsiConsole.MarkupLine("  Your gradient should have the most color variation in this range.");
 
         // Save analysis to JSON

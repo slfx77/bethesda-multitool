@@ -10,6 +10,8 @@ namespace EsmAnalyzer;
 
 internal sealed class Program
 {
+    private Program() { }
+
     private static int Main(string[] args)
     {
         var rootCommand = new RootCommand("ESM Analyzer - Analyze and compare Xbox 360 and PC ESM files");
@@ -20,6 +22,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(CompareCommands.CreateCompareLandCommand());
         rootCommand.Subcommands.Add(CompareCommands.CreateCompareCellsCommand());
         rootCommand.Subcommands.Add(CompareCommands.CreateCompareFullCommand());
+        rootCommand.Subcommands.Add(CompareCommands.CreateCompareHeightmapsCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateDumpCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateTraceCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateSearchCommand());

@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Linq;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
@@ -12,7 +11,6 @@ namespace EsmAnalyzer.Conversion;
 /// </summary>
 public sealed class EsmConverter : IDisposable
 {
-    private sealed record CellGrid(uint FormId, int GridX, int GridY);
     private readonly EsmGrupWriter _grupWriter;
     private readonly byte[] _input;
     private readonly MemoryStream _output;
@@ -92,7 +90,8 @@ public sealed class EsmConverter : IDisposable
                     continue;
 
                 if (_verbose)
-                    Console.WriteLine($"  [0x{inputOffset:X8}] Invalid top-level signature '{signature}', stopping conversion.");
+                    Console.WriteLine(
+                        $"  [0x{inputOffset:X8}] Invalid top-level signature '{signature}', stopping conversion.");
 
                 break;
             }
@@ -106,7 +105,8 @@ public sealed class EsmConverter : IDisposable
                     continue;
 
                 if (_verbose)
-                    Console.WriteLine($"  [0x{inputOffset:X8}] Cannot resync after '{signature}', stopping conversion.");
+                    Console.WriteLine(
+                        $"  [0x{inputOffset:X8}] Cannot resync after '{signature}', stopping conversion.");
 
                 break;
             }
@@ -120,7 +120,7 @@ public sealed class EsmConverter : IDisposable
         while (grupStack.Count > 0)
         {
             var (headerPos, _) = grupStack.Pop();
-            _grupWriter.FinalizeGrup(_writer, headerPos);
+            EsmGrupWriter.FinalizeGrup(_writer, headerPos);
         }
 
         var outputBytes = _output.ToArray();
@@ -147,48 +147,6 @@ public sealed class EsmConverter : IDisposable
             AnsiConsole.MarkupLine($"[grey]  Converted {_stats.RecordsConverted:N0} records...[/]");
 
         return recordEnd;
-    }
-
-    #endregion
-
-    #region Helpers
-
-    private string ReadSignature(int offset)
-    {
-        var sigBytes = _input.AsSpan(offset, 4);
-        return $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
-    }
-
-    private static bool IsValidRecordSignature(string signature)
-    {
-        if (signature.Length != 4) return false;
-
-        foreach (var ch in signature)
-        {
-            if (ch is < 'A' or > 'Z' && ch is < '0' or > '9')
-                return false;
-        }
-
-        return true;
-    }
-
-    private bool TryResyncToNextGrup(ref int inputOffset)
-    {
-        const int headerSize = 24;
-
-        for (var i = inputOffset + 1; i <= _input.Length - headerSize; i++)
-        {
-            if (_input[i] != 0x50 || _input[i + 1] != 0x55 || _input[i + 2] != 0x52 || _input[i + 3] != 0x47)
-                continue;
-
-            if (_verbose)
-                Console.WriteLine($"  [0x{inputOffset:X8}] Resyncing to GRUP at 0x{i:X8}");
-
-            inputOffset = i;
-            return true;
-        }
-
-        return false;
     }
 
     #endregion
@@ -222,8 +180,10 @@ public sealed class EsmConverter : IDisposable
 
         if (_verbose)
         {
-            AnsiConsole.MarkupLine($"[grey]OFST Rebuild: {outputWrlds.Count} WRLD records, {cellRecordOffsets.Count} CELL records[/]");
-            AnsiConsole.MarkupLine($"[grey]  outputExteriorCellsByWorld entries: {outputExteriorCellsByWorld.Count}[/]");
+            AnsiConsole.MarkupLine(
+                $"[grey]OFST Rebuild: {outputWrlds.Count} WRLD records, {cellRecordOffsets.Count} CELL records[/]");
+            AnsiConsole.MarkupLine(
+                $"[grey]  outputExteriorCellsByWorld entries: {outputExteriorCellsByWorld.Count}[/]");
             foreach (var kvp in outputExteriorCellsByWorld.Take(3))
                 AnsiConsole.MarkupLine($"[grey]    World 0x{kvp.Key:X8}: {kvp.Value.Count} cells[/]");
             AnsiConsole.MarkupLine($"[grey]  fallbackExteriorCells: {fallbackExteriorCells.Count}[/]");
@@ -232,10 +192,8 @@ public sealed class EsmConverter : IDisposable
         foreach (var wrld in outputWrlds)
         {
             if (!indexExteriorCellsByWorld.TryGetValue(wrld.FormId, out var exteriorCells))
-            {
                 if (!outputExteriorCellsByWorld.TryGetValue(wrld.FormId, out exteriorCells))
                     exteriorCells = [];
-            }
 
             if (fallbackExteriorCells.Count == 0 && exteriorCells.Count == 0)
                 continue;
@@ -315,7 +273,7 @@ public sealed class EsmConverter : IDisposable
                     continue;
                 }
 
-                var rel = (long)cellOffset - (long)wrld.Offset;
+                var rel = cellOffset - (long)wrld.Offset;
                 if (rel <= 0 || rel > uint.MaxValue)
                 {
                     cellsNegativeRel++;
@@ -336,6 +294,7 @@ public sealed class EsmConverter : IDisposable
                     bestByIndex[ofstIndex] = relValue;
                     offsets[ofstIndex] = relValue;
                 }
+
                 cellsMatched++;
             }
 
@@ -344,11 +303,9 @@ public sealed class EsmConverter : IDisposable
                 continue;
 
             for (var i = 0; i < offsets.Length; i++)
-            {
                 BinaryPrimitives.WriteUInt32LittleEndian(
                     output.AsSpan((int)ofstDataOffsetLocal + i * 4, 4),
                     offsets[i]);
-            }
         }
     }
 
@@ -446,7 +403,7 @@ public sealed class EsmConverter : IDisposable
                         Flags = recordHeader.Flags,
                         DataSize = recordHeader.DataSize,
                         Offset = (uint)offset,
-                        TotalSize = (uint)(EsmParser.MainRecordHeaderSize + recordHeader.DataSize)
+                        TotalSize = EsmParser.MainRecordHeaderSize + recordHeader.DataSize
                     };
 
                     var recordData = EsmHelpers.GetRecordData(data, recInfo, bigEndian);
@@ -505,13 +462,53 @@ public sealed class EsmConverter : IDisposable
     private static uint? GetCurrentWorldId(Stack<(int end, int type, uint label)> stack)
     {
         foreach (var entry in stack.Reverse())
-        {
             if (entry.type == 1)
                 return entry.label;
-        }
 
         return null;
     }
+
+    private sealed record CellGrid(uint FormId, int GridX, int GridY);
+
+    #region Helpers
+
+    private string ReadSignature(int offset)
+    {
+        var sigBytes = _input.AsSpan(offset, 4);
+        return $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
+    }
+
+    private static bool IsValidRecordSignature(string signature)
+    {
+        if (signature.Length != 4) return false;
+
+        foreach (var ch in signature)
+            if (ch is < 'A' or > 'Z' && ch is < '0' or > '9')
+                return false;
+
+        return true;
+    }
+
+    private bool TryResyncToNextGrup(ref int inputOffset)
+    {
+        const int headerSize = 24;
+
+        for (var i = inputOffset + 1; i <= _input.Length - headerSize; i++)
+        {
+            if (_input[i] != 0x50 || _input[i + 1] != 0x55 || _input[i + 2] != 0x52 || _input[i + 3] != 0x47)
+                continue;
+
+            if (_verbose)
+                Console.WriteLine($"  [0x{inputOffset:X8}] Resyncing to GRUP at 0x{i:X8}");
+
+            inputOffset = i;
+            return true;
+        }
+
+        return false;
+    }
+
+    #endregion
 
     #region Main Conversion Loop Helpers
 
@@ -521,7 +518,7 @@ public sealed class EsmConverter : IDisposable
         while (grupStack.Count > 0 && inputOffset >= grupStack.Peek().inputGrupEnd)
         {
             var (headerPos, _) = grupStack.Pop();
-            _grupWriter.FinalizeGrup(_writer, headerPos);
+            EsmGrupWriter.FinalizeGrup(_writer, headerPos);
         }
     }
 
@@ -577,7 +574,8 @@ public sealed class EsmConverter : IDisposable
         if (recordEnd > _input.Length)
         {
             if (_verbose)
-                Console.WriteLine($"  [0x{inputOffset:X8}] Record {signature} size {dataSize:N0} exceeds file, resyncing...");
+                Console.WriteLine(
+                    $"  [0x{inputOffset:X8}] Record {signature} size {dataSize:N0} exceeds file, resyncing...");
 
             return TryResyncToNextGrup(ref inputOffset);
         }
@@ -655,7 +653,7 @@ public sealed class EsmConverter : IDisposable
         _stats.GrupsConverted++;
 
         writeContents();
-        _grupWriter.FinalizeGrup(_writer, grupHeaderPosition);
+        EsmGrupWriter.FinalizeGrup(_writer, grupHeaderPosition);
     }
 
     private void SkipTopLevelGrup(int grupType, uint labelValue, uint grupSize, ref int inputOffset)

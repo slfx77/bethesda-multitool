@@ -2,7 +2,7 @@ using System.Globalization;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
-using static EsmAnalyzer.Helpers.EsmBinary;
+using static EsmAnalyzer.Core.EsmBinary;
 
 namespace EsmAnalyzer.Commands;
 
@@ -139,7 +139,7 @@ public static partial class LandCommands
 
         var n = (double)count;
         var denom = n * sumXX - sumX * sumX;
-        var scale = denom == 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
+        var scale = Math.Abs(denom) < 1e-9 ? 0 : (n * sumXY - sumX * sumY) / denom;
         var bias = (sumY - scale * sumX) / n;
 
         double mae = 0;

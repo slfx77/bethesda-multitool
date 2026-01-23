@@ -48,7 +48,7 @@ public static class ConvertCommands
             if (string.IsNullOrEmpty(output)) output = Environment.GetEnvironmentVariable("ESM_OUTPUT_PATH");
             if (string.IsNullOrEmpty(output)) output = Path.ChangeExtension(input, ".pc.esm");
 
-            Convert(input, output, verbose, skipLandIds, skipTypes);
+            Convert(input, output, verbose);
         });
 
         return command;
@@ -57,9 +57,7 @@ public static class ConvertCommands
     /// <summary>
     ///     Main conversion method.
     /// </summary>
-    private static void Convert(string inputPath, string outputPath, bool verbose,
-        IReadOnlyCollection<string> skipLandIds,
-        IReadOnlyCollection<string> skipTypes)
+    private static void Convert(string inputPath, string outputPath, bool verbose)
     {
         if (!File.Exists(inputPath))
         {
@@ -90,9 +88,6 @@ public static class ConvertCommands
                 return;
             }
 
-            // Note: Original working converter doesn't support skip-land/skip-type options
-            // var skipLandFormIds = ParseFormIds(skipLandIds, "--skip-land");
-            // var skipRecordTypes = ParseRecordTypes(skipTypes, "--skip-type");
             using var converter = new EsmConverter(inputData, verbose);
             var outputData = converter.ConvertToLittleEndian();
 
@@ -116,56 +111,5 @@ public static class ConvertCommands
             if (verbose) AnsiConsole.WriteException(ex);
             Environment.Exit(1);
         }
-    }
-
-    private static IReadOnlyCollection<uint> ParseFormIds(IReadOnlyCollection<string> formIdStrings, string optionName)
-    {
-        if (formIdStrings.Count == 0)
-            return Array.Empty<uint>();
-
-        var result = new List<uint>();
-        foreach (var raw in formIdStrings)
-        {
-            var formId = EsmFileLoader.ParseFormId(raw);
-            if (!formId.HasValue)
-            {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Invalid FormID '{raw}' in {optionName}");
-                Environment.Exit(1);
-            }
-
-            result.Add(formId.Value);
-        }
-
-        return result;
-    }
-
-    private static IReadOnlyCollection<string> ParseRecordTypes(IReadOnlyCollection<string> recordTypes,
-        string optionName)
-    {
-        if (recordTypes.Count == 0)
-            return Array.Empty<string>();
-
-        var result = new List<string>();
-        foreach (var raw in recordTypes)
-        {
-            var trimmed = raw.Trim();
-            if (trimmed.Length != 4)
-            {
-                AnsiConsole.MarkupLine(
-                    $"[red]Error:[/] Invalid record type '{raw}' in {optionName}. Expected 4-character signature.");
-                Environment.Exit(1);
-            }
-
-            var signature = trimmed.ToUpperInvariant();
-            if (signature == "TES4")
-            {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Cannot skip TES4 in {optionName}.");
-                Environment.Exit(1);
-            }
-
-            result.Add(signature);
-        }
-
-        return result;
     }
 }

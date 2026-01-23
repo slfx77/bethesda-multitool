@@ -9,14 +9,6 @@ namespace EsmAnalyzer.Conversion.Schema;
 public static class SubrecordSchemaRegistry
 {
     /// <summary>
-    ///     Schema key for lookup - combines signature, optional record type, and optional data length.
-    /// </summary>
-    /// <param name="Signature">4-character subrecord signature.</param>
-    /// <param name="RecordType">Parent record type (null for any).</param>
-    /// <param name="DataLength">Data length constraint (null for any, or expected size).</param>
-    public readonly record struct SchemaKey(string Signature, string? RecordType = null, int? DataLength = null);
-
-    /// <summary>
     ///     All registered schemas indexed by key.
     /// </summary>
     private static readonly Dictionary<SchemaKey, SubrecordSchema> s_schemas = BuildSchemaRegistry();
@@ -24,7 +16,8 @@ public static class SubrecordSchemaRegistry
     /// <summary>
     ///     String subrecords by (signature, recordType) for quick lookup.
     /// </summary>
-    private static readonly HashSet<(string Signature, string? RecordType)> s_stringSubrecords = BuildStringSubrecords();
+    private static readonly HashSet<(string Signature, string? RecordType)>
+        s_stringSubrecords = BuildStringSubrecords();
 
     /// <summary>
     ///     Gets the schema for a subrecord, or null if no explicit schema exists.
@@ -74,7 +67,8 @@ public static class SubrecordSchemaRegistry
         }
 
         // WTHR uses keyed *IAD subrecords (e.g., \x00IAD, @IAD, AIAD) for float pairs
-        if (recordType == "WTHR" && signature.Length == 4 && signature[1] == 'I' && signature[2] == 'A' && signature[3] == 'D')
+        if (recordType == "WTHR" && signature.Length == 4 && signature[1] == 'I' && signature[2] == 'A' &&
+            signature[3] == 'D')
             return SubrecordSchema.FloatArray;
 
         return null;
@@ -93,15 +87,11 @@ public static class SubrecordSchemaRegistry
         // Known float array subrecords in IMAD
         if (signature is "DNAM" or "BNAM" or "VNAM" or "TNAM" or "NAM3" or "RNAM" or "SNAM"
             or "UNAM" or "NAM1" or "NAM2" or "WNAM" or "XNAM" or "YNAM" or "NAM4")
-        {
             return SubrecordSchema.FloatArray;
-        }
 
         // Keyed *IAD subrecords (e.g., @IAD, AIAD, BIAD, etc.) - time/value float pairs
         if (signature.Length == 4 && signature[1] == 'I' && signature[2] == 'A' && signature[3] == 'D')
-        {
             return SubrecordSchema.FloatArray;
-        }
 
         // Unknown IMAD subrecord - treat as float array if divisible by 4
         return SubrecordSchema.FloatArray;
@@ -169,60 +159,60 @@ public static class SubrecordSchemaRegistry
 
         // Additional 4-byte FormID/uint32 subrecords (from fallback analysis)
         RegisterSimple4Byte(schemas, "ANAM", "Acoustic Space FormID"); // ASPC, DOOR (TERM is 1 byte handled separately)
-        RegisterSimple4Byte(schemas, "CARD", "Card FormID");           // CDCK
-        RegisterSimple4Byte(schemas, "CSDI", "Sound FormID");          // CREA
-        RegisterSimple4Byte(schemas, "CSDT", "Sound Type");            // CREA
-        RegisterSimple4Byte(schemas, "FLTV", "Float Value");           // GLOB
-        RegisterSimple4Byte(schemas, "GNAM", "Grass FormID");          // LTEX, MSET, ALOC
-        RegisterSimple4Byte(schemas, "IDLT", "Idle Time");             // IDLM, PACK
-        RegisterSimple4Byte(schemas, "INFC", "Info Count");            // DIAL
-        RegisterSimple4Byte(schemas, "INFX", "Info Index");            // DIAL
-        RegisterSimple4Byte(schemas, "INTV", "Interval Value");        // CCRD
-        RegisterSimple4Byte(schemas, "JNAM", "Jump Target FormID");    // MSET
-        RegisterSimple4Byte(schemas, "KNAM", "Keyword FormID");        // INFO, MSET
-        RegisterSimple4Byte(schemas, "LVLG", "Global FormID");         // LVLI
-        RegisterSimple4Byte(schemas, "MNAM", "Male/Map FormID");       // FURN, REFR (RACE is 0 bytes handled separately)
-        RegisterSimple4Byte(schemas, "NAM3", "FormID reference 3");    // WRLD, ALOC
-        RegisterSimple4Byte(schemas, "NAM4", "FormID reference 4");    // NPC_, CREA, WRLD
-        RegisterSimple4Byte(schemas, "NVER", "NavMesh Version");       // NAVI, NAVM, RGDL
-        RegisterSimple4Byte(schemas, "PKE2", "Package Entry 2");       // PACK
-        RegisterSimple4Byte(schemas, "PKFD", "Package Float Data");    // PACK
-        RegisterSimple4Byte(schemas, "QNAM", "Quest FormID");          // CONT
-        RegisterSimple4Byte(schemas, "QOBJ", "Quest Objective");       // QUST
-        RegisterSimple4Byte(schemas, "RAGA", "Ragdoll FormID");        // BPTD
-        RegisterSimple4Byte(schemas, "RCIL", "Recipe Item List");      // AMMO, RCPE
-        RegisterSimple4Byte(schemas, "RCLR", "Region Color");          // REGN
-        RegisterSimple4Byte(schemas, "RCOD", "Recipe Output Data");    // RCPE
-        RegisterSimple4Byte(schemas, "RCQY", "Recipe Quantity");       // RCPE
-        RegisterSimple4Byte(schemas, "RDAT", "Region Data");           // ASPC
-        RegisterSimple4Byte(schemas, "RDSB", "Region Sound FormID");   // REGN
-        RegisterSimple4Byte(schemas, "RDSI", "Region Sound Index");    // REGN
-        RegisterSimple4Byte(schemas, "SCRO", "Script Object Ref");     // SCPT, TERM, REFR
-        RegisterSimple4Byte(schemas, "SCRV", "Script Variable");       // SCPT, TERM, REFR
-        RegisterSimple4Byte(schemas, "TCFU", "Topic Count FormID Upper");  // INFO
-        RegisterSimple4Byte(schemas, "TCLF", "Topic Count FormID Lower");  // INFO
-        RegisterSimple4Byte(schemas, "WNM1", "Weapon Name 1");         // WEAP
-        RegisterSimple4Byte(schemas, "WNM2", "Weapon Name 2");         // WEAP
-        RegisterSimple4Byte(schemas, "WNM3", "Weapon Name 3");         // WEAP
-        RegisterSimple4Byte(schemas, "WNM4", "Weapon Name 4");         // WEAP
-        RegisterSimple4Byte(schemas, "WNM5", "Weapon Name 5");         // WEAP
-        RegisterSimple4Byte(schemas, "WNM6", "Weapon Name 6");         // WEAP
-        RegisterSimple4Byte(schemas, "WNM7", "Weapon Name 7");         // WEAP
+        RegisterSimple4Byte(schemas, "CARD", "Card FormID"); // CDCK
+        RegisterSimple4Byte(schemas, "CSDI", "Sound FormID"); // CREA
+        RegisterSimple4Byte(schemas, "CSDT", "Sound Type"); // CREA
+        RegisterSimple4Byte(schemas, "FLTV", "Float Value"); // GLOB
+        RegisterSimple4Byte(schemas, "GNAM", "Grass FormID"); // LTEX, MSET, ALOC
+        RegisterSimple4Byte(schemas, "IDLT", "Idle Time"); // IDLM, PACK
+        RegisterSimple4Byte(schemas, "INFC", "Info Count"); // DIAL
+        RegisterSimple4Byte(schemas, "INFX", "Info Index"); // DIAL
+        RegisterSimple4Byte(schemas, "INTV", "Interval Value"); // CCRD
+        RegisterSimple4Byte(schemas, "JNAM", "Jump Target FormID"); // MSET
+        RegisterSimple4Byte(schemas, "KNAM", "Keyword FormID"); // INFO, MSET
+        RegisterSimple4Byte(schemas, "LVLG", "Global FormID"); // LVLI
+        RegisterSimple4Byte(schemas, "MNAM", "Male/Map FormID"); // FURN, REFR (RACE is 0 bytes handled separately)
+        RegisterSimple4Byte(schemas, "NAM3", "FormID reference 3"); // WRLD, ALOC
+        RegisterSimple4Byte(schemas, "NAM4", "FormID reference 4"); // NPC_, CREA, WRLD
+        RegisterSimple4Byte(schemas, "NVER", "NavMesh Version"); // NAVI, NAVM, RGDL
+        RegisterSimple4Byte(schemas, "PKE2", "Package Entry 2"); // PACK
+        RegisterSimple4Byte(schemas, "PKFD", "Package Float Data"); // PACK
+        RegisterSimple4Byte(schemas, "QNAM", "Quest FormID"); // CONT
+        RegisterSimple4Byte(schemas, "QOBJ", "Quest Objective"); // QUST
+        RegisterSimple4Byte(schemas, "RAGA", "Ragdoll FormID"); // BPTD
+        RegisterSimple4Byte(schemas, "RCIL", "Recipe Item List"); // AMMO, RCPE
+        RegisterSimple4Byte(schemas, "RCLR", "Region Color"); // REGN
+        RegisterSimple4Byte(schemas, "RCOD", "Recipe Output Data"); // RCPE
+        RegisterSimple4Byte(schemas, "RCQY", "Recipe Quantity"); // RCPE
+        RegisterSimple4Byte(schemas, "RDAT", "Region Data"); // ASPC
+        RegisterSimple4Byte(schemas, "RDSB", "Region Sound FormID"); // REGN
+        RegisterSimple4Byte(schemas, "RDSI", "Region Sound Index"); // REGN
+        RegisterSimple4Byte(schemas, "SCRO", "Script Object Ref"); // SCPT, TERM, REFR
+        RegisterSimple4Byte(schemas, "SCRV", "Script Variable"); // SCPT, TERM, REFR
+        RegisterSimple4Byte(schemas, "TCFU", "Topic Count FormID Upper"); // INFO
+        RegisterSimple4Byte(schemas, "TCLF", "Topic Count FormID Lower"); // INFO
+        RegisterSimple4Byte(schemas, "WNM1", "Weapon Name 1"); // WEAP
+        RegisterSimple4Byte(schemas, "WNM2", "Weapon Name 2"); // WEAP
+        RegisterSimple4Byte(schemas, "WNM3", "Weapon Name 3"); // WEAP
+        RegisterSimple4Byte(schemas, "WNM4", "Weapon Name 4"); // WEAP
+        RegisterSimple4Byte(schemas, "WNM5", "Weapon Name 5"); // WEAP
+        RegisterSimple4Byte(schemas, "WNM6", "Weapon Name 6"); // WEAP
+        RegisterSimple4Byte(schemas, "WNM7", "Weapon Name 7"); // WEAP
         RegisterSimple4Byte(schemas, "XACT", "Activate Parent Flags"); // REFR
-        RegisterSimple4Byte(schemas, "XAMC", "Ammo Count");            // REFR
-        RegisterSimple4Byte(schemas, "XAMT", "Ammo Type FormID");      // REFR
-        RegisterSimple4Byte(schemas, "XEMI", "Emittance FormID");      // REFR
-        RegisterSimple4Byte(schemas, "XHLP", "Health Percent");        // REFR
-        RegisterSimple4Byte(schemas, "XLCM", "Level Modifier");        // ACRE, ACHR
-        RegisterSimple4Byte(schemas, "XLKR", "Linked Reference");      // REFR, ACRE, ACHR
-        RegisterSimple4Byte(schemas, "XMRC", "Merchant Container");    // ACHR, ACRE
-        RegisterSimple4Byte(schemas, "XPRD", "Patrol Data");           // REFR
-        RegisterSimple4Byte(schemas, "XRAD", "Radiation Level");       // REFR
-        RegisterSimple4Byte(schemas, "XRNK", "Faction Rank");          // REFR
-        RegisterSimple4Byte(schemas, "XSRD", "Sound Reference");       // REFR
+        RegisterSimple4Byte(schemas, "XAMC", "Ammo Count"); // REFR
+        RegisterSimple4Byte(schemas, "XAMT", "Ammo Type FormID"); // REFR
+        RegisterSimple4Byte(schemas, "XEMI", "Emittance FormID"); // REFR
+        RegisterSimple4Byte(schemas, "XHLP", "Health Percent"); // REFR
+        RegisterSimple4Byte(schemas, "XLCM", "Level Modifier"); // ACRE, ACHR
+        RegisterSimple4Byte(schemas, "XLKR", "Linked Reference"); // REFR, ACRE, ACHR
+        RegisterSimple4Byte(schemas, "XMRC", "Merchant Container"); // ACHR, ACRE
+        RegisterSimple4Byte(schemas, "XPRD", "Patrol Data"); // REFR
+        RegisterSimple4Byte(schemas, "XRAD", "Radiation Level"); // REFR
+        RegisterSimple4Byte(schemas, "XRNK", "Faction Rank"); // REFR
+        RegisterSimple4Byte(schemas, "XSRD", "Sound Reference"); // REFR
         RegisterSimple4Byte(schemas, "XSRF", "Sound Reference Flags"); // REFR
-        RegisterSimple4Byte(schemas, "XTRG", "Target FormID");         // REFR
-        RegisterSimple4Byte(schemas, "XXXX", "Size Prefix");           // WRLD
+        RegisterSimple4Byte(schemas, "XTRG", "Target FormID"); // REFR
+        RegisterSimple4Byte(schemas, "XXXX", "Size Prefix"); // WRLD
 
         // RNAM - depends on record type
         // RNAM in INFO/CHAL/CREA/REGN is string or special, others are FormID
@@ -234,42 +224,42 @@ public static class SubrecordSchemaRegistry
         // ========================================================================
         // CONDITIONAL 4-BYTE SWAPS (depend on data length)
         // ========================================================================
-        schemas[new SchemaKey("HNAM", null, 4)] = SubrecordSchema.Simple4Byte("Value");
-        schemas[new SchemaKey("ENAM", null, 4)] = SubrecordSchema.Simple4Byte("Value");
-        schemas[new SchemaKey("PNAM", null, 4)] = SubrecordSchema.Simple4Byte("Value");
-        schemas[new SchemaKey("NAM0", null, 4)] = SubrecordSchema.Simple4Byte("Value");
-        schemas[new SchemaKey("VNAM", null, 4)] = SubrecordSchema.Simple4Byte("Value");
-        schemas[new SchemaKey("BNAM", null, 4)] = SubrecordSchema.Simple4Byte("Value");
-        schemas[new SchemaKey("EPFD", null, 4)] = SubrecordSchema.Simple4Byte("Value");
+        schemas[new SchemaKey("HNAM", null, 4)] = SubrecordSchema.Simple4Byte();
+        schemas[new SchemaKey("ENAM", null, 4)] = SubrecordSchema.Simple4Byte();
+        schemas[new SchemaKey("PNAM", null, 4)] = SubrecordSchema.Simple4Byte();
+        schemas[new SchemaKey("NAM0", null, 4)] = SubrecordSchema.Simple4Byte();
+        schemas[new SchemaKey("VNAM", null, 4)] = SubrecordSchema.Simple4Byte();
+        schemas[new SchemaKey("BNAM", null, 4)] = SubrecordSchema.Simple4Byte();
+        schemas[new SchemaKey("EPFD", null, 4)] = SubrecordSchema.Simple4Byte();
         schemas[new SchemaKey("XSCL", null, 4)] = SubrecordSchema.Simple4Byte("Scale");
         schemas[new SchemaKey("XCNT", null, 4)] = SubrecordSchema.Simple4Byte("Count");
         schemas[new SchemaKey("XRDS", null, 4)] = SubrecordSchema.Simple4Byte("Radius");
         schemas[new SchemaKey("INDX", null, 4)] = SubrecordSchema.Simple4Byte("Index");
 
         // Record-specific 4-byte swaps
-        schemas[new SchemaKey("UNAM")] = SubrecordSchema.Simple4Byte("Value"); // Not IMAD
-        schemas[new SchemaKey("WNAM")] = SubrecordSchema.Simple4Byte("Value"); // Not IMAD
-        schemas[new SchemaKey("YNAM")] = SubrecordSchema.Simple4Byte("Value"); // Not IMAD
+        schemas[new SchemaKey("UNAM")] = SubrecordSchema.Simple4Byte(); // Not IMAD
+        schemas[new SchemaKey("WNAM")] = SubrecordSchema.Simple4Byte(); // Not IMAD
+        schemas[new SchemaKey("YNAM")] = SubrecordSchema.Simple4Byte(); // Not IMAD
         schemas[new SchemaKey("SNAM", "WEAP", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
-        schemas[new SchemaKey("TNAM", null, 4)] = SubrecordSchema.Simple4Byte("Value"); // Not IMAD
-        schemas[new SchemaKey("XNAM", null, 4)] = SubrecordSchema.Simple4Byte("Value"); // Not IMAD
+        schemas[new SchemaKey("TNAM", null, 4)] = SubrecordSchema.Simple4Byte(); // Not IMAD
+        schemas[new SchemaKey("XNAM", null, 4)] = SubrecordSchema.Simple4Byte(); // Not IMAD
 
         // ========================================================================
         // SIMPLE 2-BYTE SWAPS
         // ========================================================================
-        schemas[new SchemaKey("NAM5", null, 2)] = SubrecordSchema.Simple2Byte("Value");
+        schemas[new SchemaKey("NAM5", null, 2)] = SubrecordSchema.Simple2Byte();
         schemas[new SchemaKey("EAMT")] = SubrecordSchema.Simple2Byte("Enchantment Amount");
         schemas[new SchemaKey("DNAM", "TXST", 2)] = SubrecordSchema.Simple2Byte("Texture Set Flags");
-        schemas[new SchemaKey("SNAM", "RACE", 2)] = SubrecordSchema.Simple2Byte("Value");
+        schemas[new SchemaKey("SNAM", "RACE", 2)] = SubrecordSchema.Simple2Byte();
 
         // Additional 2-byte swaps (from fallback analysis)
-        schemas[new SchemaKey("ATTR", "RACE", 2)] = SubrecordSchema.Simple2Byte("Attribute");    // RACE attributes
-        schemas[new SchemaKey("CNAM", "RACE", 2)] = SubrecordSchema.Simple2Byte("Color Index");  // RACE
-        schemas[new SchemaKey("EPF3", "PERK", 2)] = SubrecordSchema.Simple2Byte("Perk Entry");   // PERK
-        schemas[new SchemaKey("INDX", "QUST", 2)] = SubrecordSchema.Simple2Byte("Quest Index");  // QUST
-        schemas[new SchemaKey("PKPT", "PACK", 2)] = SubrecordSchema.Simple2Byte("Package PT");   // PACK
+        schemas[new SchemaKey("ATTR", "RACE", 2)] = SubrecordSchema.Simple2Byte("Attribute"); // RACE attributes
+        schemas[new SchemaKey("CNAM", "RACE", 2)] = SubrecordSchema.Simple2Byte("Color Index"); // RACE
+        schemas[new SchemaKey("EPF3", "PERK", 2)] = SubrecordSchema.Simple2Byte("Perk Entry"); // PERK
+        schemas[new SchemaKey("INDX", "QUST", 2)] = SubrecordSchema.Simple2Byte("Quest Index"); // QUST
+        schemas[new SchemaKey("PKPT", "PACK", 2)] = SubrecordSchema.Simple2Byte("Package PT"); // PACK
         schemas[new SchemaKey("PNAM", "WRLD", 2)] = SubrecordSchema.Simple2Byte("Parent World"); // WRLD
-        schemas[new SchemaKey("TNAM", "REFR", 2)] = SubrecordSchema.Simple2Byte("Talk Distance");// REFR
+        schemas[new SchemaKey("TNAM", "REFR", 2)] = SubrecordSchema.Simple2Byte("Talk Distance"); // REFR
 
         // ========================================================================
         // RECORD-SPECIFIC 4-BYTE FORMIDS
@@ -280,7 +270,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("CNAM", "WRLD", 4)] = SubrecordSchema.Simple4Byte("Climate FormID");
         schemas[new SchemaKey("CNAM", "PACK", 4)] = SubrecordSchema.Simple4Byte("Combat Style FormID");
         schemas[new SchemaKey("CNAM", "MSET", 4)] = SubrecordSchema.Simple4Byte("Music Set FormID");
-        schemas[new SchemaKey("DNAM", "TERM", 4)] = SubrecordSchema.Simple4Byte("Value");
+        schemas[new SchemaKey("DNAM", "TERM", 4)] = SubrecordSchema.Simple4Byte();
         schemas[new SchemaKey("FNAM", "LIGH", 4)] = SubrecordSchema.Simple4Byte("Light Flags");
         schemas[new SchemaKey("FNAM", "MSET", 4)] = SubrecordSchema.Simple4Byte("Music Set Flags");
         schemas[new SchemaKey("FNAM", "ALOC", 4)] = SubrecordSchema.Simple4Byte("Flags");
@@ -293,57 +283,62 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("SNAM", "TACT", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SchemaKey("SNAM", "TERM", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SchemaKey("SNAM", "CONT", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
-        schemas[new SchemaKey("IAD", "WTHR", 4)] = SubrecordSchema.Simple4Byte("Image Adapter Float");  // Weather float array
+        schemas[new SchemaKey("IAD", "WTHR", 4)] =
+            SubrecordSchema.Simple4Byte("Image Adapter Float"); // Weather float array
 
         // Record-specific DNAM (multi-float)
-        schemas[new SchemaKey("DNAM", "RACE", 8)] = new(F.Float("Height Male"), F.Float("Height Female"))
-        {
-            Description = "RACE Height Data"
-        };
-        schemas[new SchemaKey("DNAM", "ARMO", 12)] = new(F.Float("AR"), F.Float("Weight"), F.Float("Health"))
-        {
-            Description = "ARMO Data"
-        };
-        schemas[new SchemaKey("DNAM", "PWAT", 8)] = new(F.Float("Value1"), F.Float("Value2"))
+        schemas[new SchemaKey("DNAM", "RACE", 8)] =
+            new SubrecordSchema(F.Float("Height Male"), F.Float("Height Female"))
+            {
+                Description = "RACE Height Data"
+            };
+        schemas[new SchemaKey("DNAM", "ARMO", 12)] =
+            new SubrecordSchema(F.Float("AR"), F.Float("Weight"), F.Float("Health"))
+            {
+                Description = "ARMO Data"
+            };
+        schemas[new SchemaKey("DNAM", "PWAT", 8)] = new SubrecordSchema(F.Float("Value1"), F.Float("Value2"))
         {
             Description = "Placeable Water Data"
         };
-        schemas[new SchemaKey("DNAM", "WRLD", 8)] = new(F.Float("Value1"), F.Float("Value2"))
+        schemas[new SchemaKey("DNAM", "WRLD", 8)] = new SubrecordSchema(F.Float("Value1"), F.Float("Value2"))
         {
             Description = "World Default Land Height/Water Height"
         };
         schemas[new SchemaKey("DNAM", "INFO", 4)] = SubrecordSchema.Simple4Byte("Response Type");
-        schemas[new SchemaKey("DNAM", "WATR")] = SubrecordSchema.FloatArray;     // WATR 196 bytes = floats
-        schemas[new SchemaKey("DNAM", "NPC_", 28)] = SubrecordSchema.ByteArray;  // NPC skill values - no conversion
-        schemas[new SchemaKey("DNAM", "WEAP")] = SubrecordSchema.FloatArray;     // WEAP 204 bytes = 51 floats/uint32s
-        schemas[new SchemaKey("DNAM", "IMGS")] = SubrecordSchema.FloatArray;     // IMGS 152 bytes = floats
+        schemas[new SchemaKey("DNAM", "WATR")] = SubrecordSchema.FloatArray; // WATR 196 bytes = floats
+        schemas[new SchemaKey("DNAM", "NPC_", 28)] = SubrecordSchema.ByteArray; // NPC skill values - no conversion
+        schemas[new SchemaKey("DNAM", "WEAP")] = SubrecordSchema.FloatArray; // WEAP 204 bytes = 51 floats/uint32s
+        schemas[new SchemaKey("DNAM", "IMGS")] = SubrecordSchema.FloatArray; // IMGS 152 bytes = floats
         schemas[new SchemaKey("DNAM", "ADDN", 4)] = SubrecordSchema.Simple4Byte("Addon Flags");
-        schemas[new SchemaKey("DNAM", "VTYP", 1)] = SubrecordSchema.ByteArray;   // Voice type - single byte
+        schemas[new SchemaKey("DNAM", "VTYP", 1)] = SubrecordSchema.ByteArray; // Voice type - single byte
         schemas[new SchemaKey("DNAM", "IPCT", 4)] = SubrecordSchema.Simple4Byte("Impact Data");
         schemas[new SchemaKey("DNAM", "ARMA", 12)] = SubrecordSchema.FloatArray; // ARMA 12 bytes = 3 floats
         schemas[new SchemaKey("DNAM", "MESG", 4)] = SubrecordSchema.Simple4Byte("Message Flags");
         schemas[new SchemaKey("DNAM", "MSET", 4)] = SubrecordSchema.Simple4Byte("Media Set Data");
 
         // Record-specific SNAM
-        schemas[new SchemaKey("SNAM", "ARMO", 12)] = SubrecordSchema.ByteArray;  // ARMO SNAM: 12 bytes, no swap
+        schemas[new SchemaKey("SNAM", "ARMO", 12)] = SubrecordSchema.ByteArray; // ARMO SNAM: 12 bytes, no swap
         schemas[new SchemaKey("SNAM", "DOOR", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SchemaKey("SNAM", "LIGH", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SchemaKey("SNAM", "MSTT", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SchemaKey("SNAM", "TREE", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
-        schemas[new SchemaKey("SNAM", "TREE", 20)] = SubrecordSchema.ByteArray;  // TREE 20 bytes - no swap
-        schemas[new SchemaKey("SNAM", "CREA", 8)] = new(F.FormId("Faction"), F.UInt8("Rank"), F.Bytes("Unused", 3))
-        {
-            Description = "Creature Faction Membership"
-        };
+        schemas[new SchemaKey("SNAM", "TREE", 20)] = SubrecordSchema.ByteArray; // TREE 20 bytes - no swap
+        schemas[new SchemaKey("SNAM", "CREA", 8)] =
+            new SubrecordSchema(F.FormId("Faction"), F.UInt8("Rank"), F.Bytes("Unused", 3))
+            {
+                Description = "Creature Faction Membership"
+            };
         schemas[new SchemaKey("SNAM", "NOTE", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
-        schemas[new SchemaKey("SNAM", "WTHR", 8)] = new(F.FormId("Sound"), F.UInt32("Type"))
+        schemas[new SchemaKey("SNAM", "WTHR", 8)] = new SubrecordSchema(F.FormId("Sound"), F.UInt32("Type"))
         {
             Description = "Weather Sound"
         };
-        schemas[new SchemaKey("SNAM", "NPC_", 8)] = new(F.FormId("Faction"), F.UInt8("Rank"), F.Bytes("Unused", 3))
-        {
-            Description = "NPC Faction Membership"
-        };
+        schemas[new SchemaKey("SNAM", "NPC_", 8)] =
+            new SubrecordSchema(F.FormId("Faction"), F.UInt8("Rank"), F.Bytes("Unused", 3))
+            {
+                Description = "NPC Faction Membership"
+            };
         schemas[new SchemaKey("SNAM", "INFO", 4)] = SubrecordSchema.Simple4Byte("Speaker FormID");
         schemas[new SchemaKey("SNAM", "WATR", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
         schemas[new SchemaKey("SNAM", "ADDN", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
@@ -352,23 +347,23 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("SNAM", "CHAL", 4)] = SubrecordSchema.Simple4Byte("Challenge Sound");
 
         // Record-specific ENIT (enchantment/ingredient info)
-        schemas[new SchemaKey("ENIT", "ENCH", 16)] = new(
-            F.UInt32("Type"),
-            F.UInt32("ChargeAmount"),
-            F.UInt32("EnchantCost"),
-            F.Bytes("Flags", 4))  // 4 bytes of flags (not swapped)
-        {
-            Description = "Enchantment Data"
-        };
-        schemas[new SchemaKey("ENIT", "INGR", 8)] = new(
+        schemas[new SchemaKey("ENIT", "ENCH", 16)] = new SubrecordSchema(
+                F.UInt32("Type"),
+                F.UInt32("ChargeAmount"),
+                F.UInt32("EnchantCost"),
+                F.Bytes("Flags", 4)) // 4 bytes of flags (not swapped)
+            {
+                Description = "Enchantment Data"
+            };
+        schemas[new SchemaKey("ENIT", "INGR", 8)] = new SubrecordSchema(
             F.UInt32("Value"),
             F.UInt32("Flags"))
         {
             Description = "Ingredient Data"
         };
-        schemas[new SchemaKey("ENIT", "ALCH", 20)] = new(
+        schemas[new SchemaKey("ENIT", "ALCH", 20)] = new SubrecordSchema(
             F.UInt32("Value"),
-            F.Bytes("Flags", 12),  // 12 bytes (middle section not swapped based on switch code)
+            F.Bytes("Flags", 12), // 12 bytes (middle section not swapped based on switch code)
             F.UInt32("WithdrawalEffect"))
         {
             Description = "Alchemy/Potion Data"
@@ -377,31 +372,32 @@ public static class SubrecordSchemaRegistry
         // ========================================================================
         // SINGLE BYTE (FLAGS) - NO CONVERSION NEEDED
         // ========================================================================
-        schemas[new SchemaKey("FNAM", "REFR", 1)] = SubrecordSchema.ByteArray;  // REFR flags
-        schemas[new SchemaKey("FNAM", "WATR", 1)] = SubrecordSchema.ByteArray;  // Water flags
-        schemas[new SchemaKey("ANAM", "TERM", 1)] = SubrecordSchema.ByteArray;  // Terminal type
-        schemas[new SchemaKey("BRUS", "STAT", 1)] = SubrecordSchema.ByteArray;  // Brush flags
-        schemas[new SchemaKey("CSDC", "CREA", 1)] = SubrecordSchema.ByteArray;  // Sound chance
-        schemas[new SchemaKey("EPFT", "PERK", 1)] = SubrecordSchema.ByteArray;  // Perk entry type
-        schemas[new SchemaKey("FNAM", "GLOB", 1)] = SubrecordSchema.ByteArray;  // Global type
-        schemas[new SchemaKey("FNAM", "DOOR", 1)] = SubrecordSchema.ByteArray;  // Door flags
-        schemas[new SchemaKey("IDLC", null, 1)] = SubrecordSchema.ByteArray;    // Idle count (IDLM, PACK)
-        schemas[new SchemaKey("IDLF", null, 1)] = SubrecordSchema.ByteArray;    // Idle flags (IDLM, PACK)
-        schemas[new SchemaKey("LVLD", null, 1)] = SubrecordSchema.ByteArray;    // Level data (LVLC, LVLN, LVLI)
-        schemas[new SchemaKey("LVLF", null, 1)] = SubrecordSchema.ByteArray;    // Level flags (LVLC, LVLN, LVLI)
-        schemas[new SchemaKey("MODD", null, 1)] = SubrecordSchema.ByteArray;    // Model data flags (RACE, ARMO, WEAP)
-        schemas[new SchemaKey("MOSD", null, 1)] = SubrecordSchema.ByteArray;    // Model SD flags (ARMO, ARMA)
-        schemas[new SchemaKey("PNAM", "MSET", 1)] = SubrecordSchema.ByteArray;  // Music set priority
-        schemas[new SchemaKey("PRKC", "PERK", 1)] = SubrecordSchema.ByteArray;  // Perk condition
-        schemas[new SchemaKey("QSDT", "QUST", 1)] = SubrecordSchema.ByteArray;  // Quest stage data
-        schemas[new SchemaKey("SNAM", "LTEX", 1)] = SubrecordSchema.ByteArray;  // Specular
-        schemas[new SchemaKey("XAPD", null, 1)] = SubrecordSchema.ByteArray;    // Activate parent delay (REFR, ACHR, ACRE)
-        schemas[new SchemaKey("XSED", "REFR", 1)] = SubrecordSchema.ByteArray;  // Speed tree seed
+        schemas[new SchemaKey("FNAM", "REFR", 1)] = SubrecordSchema.ByteArray; // REFR flags
+        schemas[new SchemaKey("FNAM", "WATR", 1)] = SubrecordSchema.ByteArray; // Water flags
+        schemas[new SchemaKey("ANAM", "TERM", 1)] = SubrecordSchema.ByteArray; // Terminal type
+        schemas[new SchemaKey("BRUS", "STAT", 1)] = SubrecordSchema.ByteArray; // Brush flags
+        schemas[new SchemaKey("CSDC", "CREA", 1)] = SubrecordSchema.ByteArray; // Sound chance
+        schemas[new SchemaKey("EPFT", "PERK", 1)] = SubrecordSchema.ByteArray; // Perk entry type
+        schemas[new SchemaKey("FNAM", "GLOB", 1)] = SubrecordSchema.ByteArray; // Global type
+        schemas[new SchemaKey("FNAM", "DOOR", 1)] = SubrecordSchema.ByteArray; // Door flags
+        schemas[new SchemaKey("IDLC", null, 1)] = SubrecordSchema.ByteArray; // Idle count (IDLM, PACK)
+        schemas[new SchemaKey("IDLF", null, 1)] = SubrecordSchema.ByteArray; // Idle flags (IDLM, PACK)
+        schemas[new SchemaKey("LVLD", null, 1)] = SubrecordSchema.ByteArray; // Level data (LVLC, LVLN, LVLI)
+        schemas[new SchemaKey("LVLF", null, 1)] = SubrecordSchema.ByteArray; // Level flags (LVLC, LVLN, LVLI)
+        schemas[new SchemaKey("MODD", null, 1)] = SubrecordSchema.ByteArray; // Model data flags (RACE, ARMO, WEAP)
+        schemas[new SchemaKey("MOSD", null, 1)] = SubrecordSchema.ByteArray; // Model SD flags (ARMO, ARMA)
+        schemas[new SchemaKey("PNAM", "MSET", 1)] = SubrecordSchema.ByteArray; // Music set priority
+        schemas[new SchemaKey("PRKC", "PERK", 1)] = SubrecordSchema.ByteArray; // Perk condition
+        schemas[new SchemaKey("QSDT", "QUST", 1)] = SubrecordSchema.ByteArray; // Quest stage data
+        schemas[new SchemaKey("SNAM", "LTEX", 1)] = SubrecordSchema.ByteArray; // Specular
+        schemas[new SchemaKey("XAPD", null, 1)] = SubrecordSchema.ByteArray; // Activate parent delay (REFR, ACHR, ACRE)
+        schemas[new SchemaKey("XSED", "REFR", 1)] = SubrecordSchema.ByteArray; // Speed tree seed
 
         // ========================================================================
         // ZERO-BYTE MARKERS - NO DATA
         // ========================================================================
-        schemas[new SchemaKey("DSTF", null, 0)] = SubrecordSchema.ByteArray;   // Destruction stage flag (ACTI, CONT, MSTT)
+        schemas[new SchemaKey("DSTF", null, 0)] =
+            SubrecordSchema.ByteArray; // Destruction stage flag (ACTI, CONT, MSTT)
         schemas[new SchemaKey("FNAM", "RACE", 0)] = SubrecordSchema.ByteArray; // Race flag marker
         schemas[new SchemaKey("MMRK", "REFR", 0)] = SubrecordSchema.ByteArray; // Map marker
         schemas[new SchemaKey("NAM0", "RACE", 0)] = SubrecordSchema.ByteArray; // Race name marker
@@ -414,7 +410,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("POEA", "PACK", 0)] = SubrecordSchema.ByteArray; // Package oe a marker
         schemas[new SchemaKey("PRKF", "PERK", 0)] = SubrecordSchema.ByteArray; // Perk flag marker
         schemas[new SchemaKey("PUID", "PACK", 0)] = SubrecordSchema.ByteArray; // Package uid marker
-        schemas[new SchemaKey("XIBS", null, 0)] = SubrecordSchema.ByteArray;   // Ignored by sandbox (REFR, ACHR)
+        schemas[new SchemaKey("XIBS", null, 0)] = SubrecordSchema.ByteArray; // Ignored by sandbox (REFR, ACHR)
         schemas[new SchemaKey("XMRK", "REFR", 0)] = SubrecordSchema.ByteArray; // Map marker data
         schemas[new SchemaKey("XPPA", "REFR", 0)] = SubrecordSchema.ByteArray; // Patrol point
 
@@ -436,7 +432,7 @@ public static class SubrecordSchemaRegistry
 
         // VTXT - Vertex Texture Blend (repeating 8-byte entries for LAND)
         // Each entry: uint16 Position + uint16 Unused + float Opacity
-        schemas[new SchemaKey("VTXT", "LAND")] = new(
+        schemas[new SchemaKey("VTXT", "LAND")] = new SubrecordSchema(
             F.UInt16("Position"),
             F.Bytes("Unused", 2),
             F.Float("Opacity"))
@@ -450,7 +446,7 @@ public static class SubrecordSchemaRegistry
         // ========================================================================
 
         // OBND - Object Bounds (12 bytes = 6 × int16)
-        schemas[new SchemaKey("OBND", null, 12)] = new(
+        schemas[new SchemaKey("OBND", null, 12)] = new SubrecordSchema(
             F.Int16("X1"), F.Int16("Y1"), F.Int16("Z1"),
             F.Int16("X2"), F.Int16("Y2"), F.Int16("Z2"))
         {
@@ -458,7 +454,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // SLSD - Script Local Variable Data (24 bytes)
-        schemas[new SchemaKey("SLSD", null, 24)] = new(
+        schemas[new SchemaKey("SLSD", null, 24)] = new SubrecordSchema(
             F.UInt32("Index"),
             F.Bytes("Unused", 12),
             F.UInt8("Type"),
@@ -468,7 +464,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XNAM - FACT Relation (12 bytes)
-        schemas[new SchemaKey("XNAM", "FACT", 12)] = new(
+        schemas[new SchemaKey("XNAM", "FACT", 12)] = new SubrecordSchema(
             F.FormId("Faction"),
             F.Int32("Modifier"),
             F.UInt32("CombatReaction"))
@@ -477,7 +473,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // CNTO - Container Item (8 bytes)
-        schemas[new SchemaKey("CNTO", null, 8)] = new(
+        schemas[new SchemaKey("CNTO", null, 8)] = new SubrecordSchema(
             F.FormId("Item"),
             F.Int32("Count"))
         {
@@ -485,7 +481,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // CTDA - Condition (28 bytes)
-        schemas[new SchemaKey("CTDA", null, 28)] = new(
+        schemas[new SchemaKey("CTDA", null, 28)] = new SubrecordSchema(
             F.UInt32("TypeAndFlags"),
             F.Float("ComparisonValue"),
             F.UInt16("ComparisonType"),
@@ -499,7 +495,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XCLL - Cell Lighting (40 bytes = 10 × uint32)
-        schemas[new SchemaKey("XCLL", null, 40)] = new(
+        schemas[new SchemaKey("XCLL", null, 40)] = new SubrecordSchema(
             F.UInt32("AmbientColor"), F.UInt32("DirectionalColor"),
             F.UInt32("FogColor"), F.Float("FogNear"), F.Float("FogFar"),
             F.Int32("DirectionalRotationXY"), F.Int32("DirectionalRotationZ"),
@@ -509,7 +505,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XNDP - Navigation Door Portal (8 bytes)
-        schemas[new SchemaKey("XNDP", null, 8)] = new(
+        schemas[new SchemaKey("XNDP", null, 8)] = new SubrecordSchema(
             F.FormId("Navmesh"),
             F.UInt16("TriangleIndex"),
             F.Padding(2))
@@ -518,7 +514,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XESP - Enable Parent (8 bytes)
-        schemas[new SchemaKey("XESP", null, 8)] = new(
+        schemas[new SchemaKey("XESP", null, 8)] = new SubrecordSchema(
             F.FormId("ParentRef"),
             F.UInt32("Flags"))
         {
@@ -526,7 +522,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XTEL - Door Teleport (32 bytes = 8 × uint32/float)
-        schemas[new SchemaKey("XTEL", null, 32)] = new(
+        schemas[new SchemaKey("XTEL", null, 32)] = new SubrecordSchema(
             F.FormId("DestinationDoor"),
             F.Float("PosX"), F.Float("PosY"), F.Float("PosZ"),
             F.Float("RotX"), F.Float("RotY"), F.Float("RotZ"),
@@ -536,7 +532,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XLKR - Linked Reference (8 bytes)
-        schemas[new SchemaKey("XLKR", null, 8)] = new(
+        schemas[new SchemaKey("XLKR", null, 8)] = new SubrecordSchema(
             F.FormId("Keyword"),
             F.FormId("Reference"))
         {
@@ -544,7 +540,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XAPR - Activation Parent (8 bytes)
-        schemas[new SchemaKey("XAPR", null, 8)] = new(
+        schemas[new SchemaKey("XAPR", null, 8)] = new SubrecordSchema(
             F.FormId("Reference"),
             F.Float("Delay"))
         {
@@ -552,7 +548,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XLOC - Lock Information (20 bytes for FNV)
-        schemas[new SchemaKey("XLOC", null, 20)] = new(
+        schemas[new SchemaKey("XLOC", null, 20)] = new SubrecordSchema(
             F.UInt8("Level"),
             F.Padding(3),
             F.FormId("Key"),
@@ -563,13 +559,13 @@ public static class SubrecordSchemaRegistry
         };
 
         // XLOD - LOD Data (12 bytes = 3 floats)
-        schemas[new SchemaKey("XLOD", null, 12)] = new(F.Vec3("LOD"))
+        schemas[new SchemaKey("XLOD", null, 12)] = new SubrecordSchema(F.Vec3("LOD"))
         {
             Description = "LOD Data"
         };
 
         // EFIT - Effect Item (20 bytes = 5 × uint32)
-        schemas[new SchemaKey("EFIT", null, 20)] = new(
+        schemas[new SchemaKey("EFIT", null, 20)] = new SubrecordSchema(
             F.UInt32("Magnitude"), F.UInt32("Area"), F.UInt32("Duration"),
             F.UInt32("Type"), F.UInt32("ActorValue"))
         {
@@ -577,7 +573,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // PKDT - Package Data (12 bytes)
-        schemas[new SchemaKey("PKDT", null, 12)] = new(
+        schemas[new SchemaKey("PKDT", null, 12)] = new SubrecordSchema(
             F.UInt32("GeneralFlags"),
             F.UInt8("Type"),
             F.UInt8("Unused"),
@@ -589,7 +585,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // PSDT - Package Schedule Data (8 bytes)
-        schemas[new SchemaKey("PSDT", null, 8)] = new(
+        schemas[new SchemaKey("PSDT", null, 8)] = new SubrecordSchema(
             F.UInt8("Month"),
             F.UInt8("DayOfWeek"),
             F.UInt8("Date"),
@@ -600,7 +596,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // CRDT - Critical Data (16 bytes)
-        schemas[new SchemaKey("CRDT", null, 16)] = new(
+        schemas[new SchemaKey("CRDT", null, 16)] = new SubrecordSchema(
             F.UInt16("Damage"),
             F.UInt16("Unknown"),
             F.Float("Multiplier"),
@@ -610,7 +606,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // SNDD - Sound Data (36 bytes)
-        schemas[new SchemaKey("SNDD", "SOUN", 36)] = new(
+        schemas[new SchemaKey("SNDD", "SOUN", 36)] = new SubrecordSchema(
             F.UInt8("MinAttenuationDistance"),
             F.UInt8("MaxAttenuationDistance"),
             F.Int8("FreqAdjustment"),
@@ -630,7 +626,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DODT - Decal Data (36 bytes)
-        schemas[new SchemaKey("DODT", null, 36)] = new(
+        schemas[new SchemaKey("DODT", null, 36)] = new SubrecordSchema(
             F.Float("MinWidth"), F.Float("MaxWidth"),
             F.Float("MinHeight"), F.Float("MaxHeight"),
             F.Float("Depth"), F.Float("Shininess"), F.Float("ParallaxScale"),
@@ -641,7 +637,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DAT2 - AMMO Secondary Data (20 bytes)
-        schemas[new SchemaKey("DAT2", null, 20)] = new(
+        schemas[new SchemaKey("DAT2", null, 20)] = new SubrecordSchema(
             F.Padding(8),
             F.UInt32("Value1"),
             F.Padding(4),
@@ -651,7 +647,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // VATS - VATS Data (20 bytes = 5 × uint32)
-        schemas[new SchemaKey("VATS", null, 20)] = new(
+        schemas[new SchemaKey("VATS", null, 20)] = new SubrecordSchema(
             F.Float("PlayerAP"),
             F.Float("AttackChance"),
             F.FormId("SilentChanceMod"),
@@ -663,7 +659,7 @@ public static class SubrecordSchemaRegistry
 
         // ATXT/BTXT - Texture Alpha (8 bytes)
         // Note: byte 5 needs platform conversion (see special handler)
-        schemas[new SchemaKey("ATXT", null, 8)] = new(
+        schemas[new SchemaKey("ATXT", null, 8)] = new SubrecordSchema(
             F.FormId("Texture"),
             F.UInt8("Quadrant"),
             F.UInt8("PlatformFlag"),
@@ -671,7 +667,7 @@ public static class SubrecordSchemaRegistry
         {
             Description = "Alpha Texture"
         };
-        schemas[new SchemaKey("BTXT", null, 8)] = new(
+        schemas[new SchemaKey("BTXT", null, 8)] = new SubrecordSchema(
             F.FormId("Texture"),
             F.UInt8("Quadrant"),
             F.UInt8("PlatformFlag"),
@@ -681,7 +677,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // VHGT - Height Data (1096 bytes)
-        schemas[new SchemaKey("VHGT", null, 1096)] = new(
+        schemas[new SchemaKey("VHGT", null, 1096)] = new SubrecordSchema(
             F.Float("HeightOffset"),
             F.Bytes("HeightData", 1089),
             F.Padding(3))
@@ -706,7 +702,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("FGGA", null, 120)] = SubrecordSchema.FloatArray;
 
         // BMDT - Biped Model Data (8 bytes)
-        schemas[new SchemaKey("BMDT", null, 8)] = new(
+        schemas[new SchemaKey("BMDT", null, 8)] = new SubrecordSchema(
             F.UInt32("BipedFlags"),
             F.Padding(4))
         {
@@ -724,24 +720,24 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("NAM2", "PROJ")] = SubrecordSchema.TextureHashes;
 
         // MO*S - Model Shader Data (variable, starts with uint32 count)
-        schemas[new SchemaKey("MO2S")] = new(F.UInt32("Count"))
+        schemas[new SchemaKey("MO2S")] = new SubrecordSchema(F.UInt32("Count"))
         {
             ExpectedSize = 0, // Variable
             Description = "Model Shader Data"
         };
-        schemas[new SchemaKey("MO3S")] = new(F.UInt32("Count")) { ExpectedSize = 0 };
-        schemas[new SchemaKey("MO4S")] = new(F.UInt32("Count")) { ExpectedSize = 0 };
-        schemas[new SchemaKey("MODS")] = new(F.UInt32("Count")) { ExpectedSize = 0 };
+        schemas[new SchemaKey("MO3S")] = new SubrecordSchema(F.UInt32("Count")) { ExpectedSize = 0 };
+        schemas[new SchemaKey("MO4S")] = new SubrecordSchema(F.UInt32("Count")) { ExpectedSize = 0 };
+        schemas[new SchemaKey("MODS")] = new SubrecordSchema(F.UInt32("Count")) { ExpectedSize = 0 };
 
         // NIFT - NIF Data
-        schemas[new SchemaKey("NIFT")] = new(F.UInt32("Count"))
+        schemas[new SchemaKey("NIFT")] = new SubrecordSchema(F.UInt32("Count"))
         {
             ExpectedSize = 0,
             Description = "NIF Data"
         };
 
         // HEDR - File Header (12 bytes)
-        schemas[new SchemaKey("HEDR", null, 12)] = new(
+        schemas[new SchemaKey("HEDR", null, 12)] = new SubrecordSchema(
             F.Float("Version"),
             F.UInt32("NumRecords"),
             F.UInt32("NextObjectId"))
@@ -750,7 +746,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // SPIT - Spell Data (16 bytes)
-        schemas[new SchemaKey("SPIT", "SPEL", 16)] = new(
+        schemas[new SchemaKey("SPIT", "SPEL", 16)] = new SubrecordSchema(
             F.UInt32("Type"),
             F.UInt32("Cost"),
             F.UInt32("Level"),
@@ -761,7 +757,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DEST - Destructible Header (8 bytes)
-        schemas[new SchemaKey("DEST", null, 8)] = new(
+        schemas[new SchemaKey("DEST", null, 8)] = new SubrecordSchema(
             F.Int32("Health"),
             F.UInt8("Count"),
             F.UInt8("Flags"),
@@ -771,7 +767,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DSTD - Destruction Stage Data (20 bytes)
-        schemas[new SchemaKey("DSTD", null, 20)] = new(
+        schemas[new SchemaKey("DSTD", null, 20)] = new SubrecordSchema(
             F.UInt8("HealthPercent"),
             F.UInt8("Index"),
             F.UInt8("DamageStage"),
@@ -785,7 +781,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // COED - Extra Data (12 bytes)
-        schemas[new SchemaKey("COED", null, 12)] = new(
+        schemas[new SchemaKey("COED", null, 12)] = new SubrecordSchema(
             F.FormId("Owner"),
             F.UInt32("GlobalOrRank"),
             F.Float("ItemCondition"))
@@ -794,7 +790,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // CNAM - Tree Data (32 bytes)
-        schemas[new SchemaKey("CNAM", "TREE", 32)] = new(
+        schemas[new SchemaKey("CNAM", "TREE", 32)] = new SubrecordSchema(
             F.Float("LeafCurvature"), F.Float("MinLeafAngle"), F.Float("MaxLeafAngle"),
             F.Float("BranchDimmingValue"), F.Float("LeafDimmingValue"),
             F.Float("ShadowRadius"), F.Float("RockSpeed"),
@@ -804,7 +800,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // BNAM - Tree Billboard (8 bytes)
-        schemas[new SchemaKey("BNAM", "TREE", 8)] = new(
+        schemas[new SchemaKey("BNAM", "TREE", 8)] = new SubrecordSchema(
             F.Float("Width"),
             F.Float("Height"))
         {
@@ -812,7 +808,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // LVLO - Leveled List Entry (12 bytes)
-        schemas[new SchemaKey("LVLO", null, 12)] = new(
+        schemas[new SchemaKey("LVLO", null, 12)] = new SubrecordSchema(
             F.UInt16("Level"),
             F.Padding(2),
             F.FormId("Entry"),
@@ -835,7 +831,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("FNAM", "WTHR", 24)] = SubrecordSchema.FloatArray;
 
         // WLST - Weather Types (12 bytes per entry)
-        schemas[new SchemaKey("WLST")] = new(
+        schemas[new SchemaKey("WLST")] = new SubrecordSchema(
             F.FormId("Weather"),
             F.Int32("Chance"),
             F.FormId("Global"))
@@ -845,7 +841,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // RDAT - Region Data Header (8 bytes)
-        schemas[new SchemaKey("RDAT", null, 8)] = new(
+        schemas[new SchemaKey("RDAT", null, 8)] = new SubrecordSchema(
             F.UInt32("Type"),
             F.UInt8("Override"),
             F.UInt8("Priority"),
@@ -855,7 +851,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // RDSD - Region Sounds (12 bytes per entry)
-        schemas[new SchemaKey("RDSD")] = new(
+        schemas[new SchemaKey("RDSD")] = new SubrecordSchema(
             F.FormId("Sound"),
             F.UInt32("Flags"),
             F.UInt32("Chance"))
@@ -868,7 +864,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("RDID")] = SubrecordSchema.FormIdArray;
 
         // RDWT - Region Weather Types (12 bytes per entry)
-        schemas[new SchemaKey("RDWT")] = new(
+        schemas[new SchemaKey("RDWT")] = new SubrecordSchema(
             F.FormId("Weather"),
             F.UInt32("Chance"),
             F.FormId("Global"))
@@ -881,7 +877,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("RPLD")] = SubrecordSchema.FloatArray;
 
         // RDOT - Region Objects (52 bytes per entry)
-        schemas[new SchemaKey("RDOT")] = new(
+        schemas[new SchemaKey("RDOT")] = new SubrecordSchema(
             F.FormId("Object"),
             F.UInt16("ParentIndex"),
             F.Padding(2),
@@ -923,7 +919,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("NVVX")] = SubrecordSchema.FloatArray;
 
         // NVTR - Navmesh Triangles (16 bytes each)
-        schemas[new SchemaKey("NVTR")] = new(
+        schemas[new SchemaKey("NVTR")] = new SubrecordSchema(
             F.UInt16("Vertex0"), F.UInt16("Vertex1"), F.UInt16("Vertex2"),
             F.Int16("Edge01"), F.Int16("Edge12"), F.Int16("Edge20"),
             F.UInt16("Flags"), F.UInt16("CoverFlags"))
@@ -933,14 +929,14 @@ public static class SubrecordSchemaRegistry
         };
 
         // NVCA - Cover Triangles (array of uint16)
-        schemas[new SchemaKey("NVCA")] = new(F.UInt16("Triangle"))
+        schemas[new SchemaKey("NVCA")] = new SubrecordSchema(F.UInt16("Triangle"))
         {
             ExpectedSize = -1, // Repeating array
             Description = "Navmesh Cover Triangles"
         };
 
         // NVDP - Navmesh Door Links (8 bytes each)
-        schemas[new SchemaKey("NVDP")] = new(
+        schemas[new SchemaKey("NVDP")] = new SubrecordSchema(
             F.FormId("DoorRef"),
             F.UInt16("Triangle"),
             F.Padding(2))
@@ -950,7 +946,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // NVEX - Navmesh Edge Links (10 bytes each)
-        schemas[new SchemaKey("NVEX")] = new(
+        schemas[new SchemaKey("NVEX")] = new SubrecordSchema(
             F.UInt32("Type"),
             F.FormId("Navmesh"),
             F.UInt16("Triangle"))
@@ -966,7 +962,7 @@ public static class SubrecordSchemaRegistry
     private static void RegisterMiscSchemas(Dictionary<SchemaKey, SubrecordSchema> schemas)
     {
         // XRGD - Ragdoll Bone Data (28 bytes per bone)
-        schemas[new SchemaKey("XRGD")] = new(
+        schemas[new SchemaKey("XRGD")] = new SubrecordSchema(
             F.UInt8("BoneId"),
             F.Padding(3),
             F.Vec3("Position"),
@@ -977,7 +973,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XPWR - Water Reflection (8 bytes)
-        schemas[new SchemaKey("XPWR")] = new(
+        schemas[new SchemaKey("XPWR")] = new SubrecordSchema(
             F.FormId("Reference"),
             F.UInt32("Type"))
         {
@@ -985,13 +981,13 @@ public static class SubrecordSchemaRegistry
         };
 
         // XMBO - Bound Half Extents (12 bytes)
-        schemas[new SchemaKey("XMBO")] = new(F.Vec3("Bounds"))
+        schemas[new SchemaKey("XMBO")] = new SubrecordSchema(F.Vec3("Bounds"))
         {
             Description = "Bound Half Extents"
         };
 
         // XPRM - Primitive (32 bytes)
-        schemas[new SchemaKey("XPRM", null, 32)] = new(
+        schemas[new SchemaKey("XPRM", null, 32)] = new SubrecordSchema(
             F.Vec3("Bounds"),
             F.Vec3("Colors"),
             F.UInt32("Unknown"),
@@ -1001,7 +997,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // XPOD - Portal Data (8 bytes)
-        schemas[new SchemaKey("XPOD", null, 8)] = new(
+        schemas[new SchemaKey("XPOD", null, 8)] = new SubrecordSchema(
             F.FormId("Origin"),
             F.FormId("Destination"))
         {
@@ -1009,13 +1005,13 @@ public static class SubrecordSchemaRegistry
         };
 
         // XRGB - Biped Rotation (12 bytes)
-        schemas[new SchemaKey("XRGB")] = new(F.Vec3("Rotation"))
+        schemas[new SchemaKey("XRGB")] = new SubrecordSchema(F.Vec3("Rotation"))
         {
             Description = "Biped Rotation"
         };
 
         // XRDO - Radio Data (16 bytes)
-        schemas[new SchemaKey("XRDO", null, 16)] = new(
+        schemas[new SchemaKey("XRDO", null, 16)] = new SubrecordSchema(
             F.Float("Range"),
             F.UInt32("Type"),
             F.Float("StaticPercentage"),
@@ -1028,7 +1024,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("XOCP", null, 36)] = SubrecordSchema.FloatArray;
 
         // XORD - Linked Occlusion Planes (16 bytes = 4 FormIDs)
-        schemas[new SchemaKey("XORD", null, 16)] = new(
+        schemas[new SchemaKey("XORD", null, 16)] = new SubrecordSchema(
             F.FormId("Right"),
             F.FormId("Left"),
             F.FormId("Bottom"),
@@ -1038,7 +1034,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // MNAM - World Map Data (16 bytes)
-        schemas[new SchemaKey("MNAM", "WRLD", 16)] = new(
+        schemas[new SchemaKey("MNAM", "WRLD", 16)] = new SubrecordSchema(
             F.Int32("UsableX"),
             F.Int32("UsableY"),
             F.Int16("NWCellX"),
@@ -1050,17 +1046,17 @@ public static class SubrecordSchemaRegistry
         };
 
         // NAM0/NAM9 - Worldspace Bounds (8 bytes = 2 floats)
-        schemas[new SchemaKey("NAM0", "WRLD", 8)] = new(F.Float("X"), F.Float("Y"))
+        schemas[new SchemaKey("NAM0", "WRLD", 8)] = new SubrecordSchema(F.Float("X"), F.Float("Y"))
         {
             Description = "Worldspace Bounds Min"
         };
-        schemas[new SchemaKey("NAM9", "WRLD", 8)] = new(F.Float("X"), F.Float("Y"))
+        schemas[new SchemaKey("NAM9", "WRLD", 8)] = new SubrecordSchema(F.Float("X"), F.Float("Y"))
         {
             Description = "Worldspace Bounds Max"
         };
 
         // XCLC - Cell Grid (12 bytes)
-        schemas[new SchemaKey("XCLC", null, 12)] = new(
+        schemas[new SchemaKey("XCLC", null, 12)] = new SubrecordSchema(
             F.Int32("X"),
             F.Int32("Y"),
             F.UInt8("LandFlags"),
@@ -1073,7 +1069,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("XCLR")] = SubrecordSchema.FormIdArray;
 
         // TRDT - INFO Response Data (24 bytes)
-        schemas[new SchemaKey("TRDT", null, 24)] = new(
+        schemas[new SchemaKey("TRDT", null, 24)] = new SubrecordSchema(
             F.UInt32("EmotionType"),
             F.Int32("EmotionValue"),
             F.Padding(4),
@@ -1087,7 +1083,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // QSTA - Quest Target (8 bytes)
-        schemas[new SchemaKey("QSTA", null, 8)] = new(
+        schemas[new SchemaKey("QSTA", null, 8)] = new SubrecordSchema(
             F.FormId("Target"),
             F.UInt8("Flags"),
             F.Padding(3))
@@ -1096,13 +1092,13 @@ public static class SubrecordSchemaRegistry
         };
 
         // ANAM - IDLE/CPTH Animations (8 bytes)
-        schemas[new SchemaKey("ANAM", "IDLE", 8)] = new(
+        schemas[new SchemaKey("ANAM", "IDLE", 8)] = new SubrecordSchema(
             F.FormId("Parent"),
             F.FormId("Previous"))
         {
             Description = "Idle Animation Parents"
         };
-        schemas[new SchemaKey("ANAM", "CPTH", 8)] = new(
+        schemas[new SchemaKey("ANAM", "CPTH", 8)] = new SubrecordSchema(
             F.FormId("Parent"),
             F.FormId("Previous"))
         {
@@ -1110,7 +1106,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // PTDT/PTD2 - Package Target (16 bytes)
-        schemas[new SchemaKey("PTDT", null, 16)] = new(
+        schemas[new SchemaKey("PTDT", null, 16)] = new SubrecordSchema(
             F.Int32("Type"),
             F.UInt32("Union"),
             F.Int32("CountDistance"),
@@ -1118,7 +1114,7 @@ public static class SubrecordSchemaRegistry
         {
             Description = "Package Target"
         };
-        schemas[new SchemaKey("PTD2", null, 16)] = new(
+        schemas[new SchemaKey("PTD2", null, 16)] = new SubrecordSchema(
             F.Int32("Type"),
             F.UInt32("Union"),
             F.Int32("CountDistance"),
@@ -1128,7 +1124,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // PKDD - Package Dialogue Data (24 bytes)
-        schemas[new SchemaKey("PKDD", null, 24)] = new(
+        schemas[new SchemaKey("PKDD", null, 24)] = new SubrecordSchema(
             F.Float("FOV"),
             F.FormId("Topic"),
             F.UInt32("Flags"),
@@ -1140,14 +1136,14 @@ public static class SubrecordSchemaRegistry
         };
 
         // PLDT/PLD2 - Package Location (12 bytes)
-        schemas[new SchemaKey("PLDT", null, 12)] = new(
+        schemas[new SchemaKey("PLDT", null, 12)] = new SubrecordSchema(
             F.Int32("Type"),
             F.UInt32("Union"),
             F.Int32("Radius"))
         {
             Description = "Package Location"
         };
-        schemas[new SchemaKey("PLD2", null, 12)] = new(
+        schemas[new SchemaKey("PLD2", null, 12)] = new SubrecordSchema(
             F.Int32("Type"),
             F.UInt32("Union"),
             F.Int32("Radius"))
@@ -1156,7 +1152,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // PKW3 - Package Use Weapon Data (24 bytes)
-        schemas[new SchemaKey("PKW3", null, 24)] = new(
+        schemas[new SchemaKey("PKW3", null, 24)] = new SubrecordSchema(
             F.UInt32("Flags"),
             F.UInt8("FireRate"),
             F.UInt8("FireCount"),
@@ -1171,7 +1167,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // CSTD - Combat Style Standard (92 bytes)
-        schemas[new SchemaKey("CSTD", null, 92)] = new(
+        schemas[new SchemaKey("CSTD", null, 92)] = new SubrecordSchema(
             F.UInt8("DodgeChance"),
             F.UInt8("LRChance"),
             F.Padding(2),
@@ -1218,7 +1214,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("CSSD", null, 64)] = SubrecordSchema.FloatArray;
 
         // GNAM - WATR Related Waters (12 bytes)
-        schemas[new SchemaKey("GNAM", "WATR", 12)] = new(
+        schemas[new SchemaKey("GNAM", "WATR", 12)] = new SubrecordSchema(
             F.FormId("Daytime"),
             F.FormId("Nighttime"),
             F.FormId("Underwater"))
@@ -1227,7 +1223,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // BPND - Body Part Node Data (84 bytes)
-        schemas[new SchemaKey("BPND", null, 84)] = new(
+        schemas[new SchemaKey("BPND", null, 84)] = new SubrecordSchema(
             F.Float("DamageMult"),
             F.UInt8("Flags"),
             F.UInt8("PartType"),
@@ -1256,7 +1252,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // NAM5 - Model Info in BPTD
-        schemas[new SchemaKey("NAM5", "BPTD")] = new(F.UInt32("TextureCount"))
+        schemas[new SchemaKey("NAM5", "BPTD")] = new SubrecordSchema(F.UInt32("TextureCount"))
         {
             ExpectedSize = 0,
             Description = "BPTD Model Info"
@@ -1266,7 +1262,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("RAFD", null, 60)] = SubrecordSchema.FloatArray;
 
         // RAPS - Ragdoll Pose Matching (24 bytes)
-        schemas[new SchemaKey("RAPS", null, 24)] = new(
+        schemas[new SchemaKey("RAPS", null, 24)] = new SubrecordSchema(
             F.UInt16("Bone0"),
             F.UInt16("Bone1"),
             F.UInt16("Bone2"),
@@ -1281,14 +1277,14 @@ public static class SubrecordSchemaRegistry
         };
 
         // RAFB - Ragdoll Feedback Dynamic Bones (array of uint16)
-        schemas[new SchemaKey("RAFB")] = new(F.UInt16("Bone"))
+        schemas[new SchemaKey("RAFB")] = new SubrecordSchema(F.UInt16("Bone"))
         {
             ExpectedSize = -1, // Repeating array
             Description = "Ragdoll Dynamic Bones"
         };
 
         // SCHR - Script Header (20 bytes)
-        schemas[new SchemaKey("SCHR", null, 20)] = new(
+        schemas[new SchemaKey("SCHR", null, 20)] = new SubrecordSchema(
             F.Padding(4),
             F.UInt32("RefCount"),
             F.UInt32("CompiledSize"),
@@ -1300,7 +1296,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // ACBS - Actor Base Stats (24 bytes)
-        schemas[new SchemaKey("ACBS", null, 24)] = new(
+        schemas[new SchemaKey("ACBS", null, 24)] = new SubrecordSchema(
             F.UInt32("Flags"),
             F.UInt16("Fatigue"),
             F.UInt16("BarterGold"),
@@ -1316,7 +1312,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // AIDT - AI Data (20 bytes)
-        schemas[new SchemaKey("AIDT", null, 20)] = new(
+        schemas[new SchemaKey("AIDT", null, 20)] = new SubrecordSchema(
             F.UInt8("Aggression"),
             F.UInt8("Confidence"),
             F.UInt8("Energy"),
@@ -1335,7 +1331,7 @@ public static class SubrecordSchemaRegistry
     private static void RegisterDataSubrecordSchemas(Dictionary<SchemaKey, SubrecordSchema> schemas)
     {
         // DATA - NPC_ (11 bytes)
-        schemas[new SchemaKey("DATA", "NPC_", 11)] = new(
+        schemas[new SchemaKey("DATA", "NPC_", 11)] = new SubrecordSchema(
             F.Int32("BaseHealth"),
             F.UInt8("Strength"),
             F.UInt8("Perception"),
@@ -1349,7 +1345,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DATA - WEAP (15 bytes)
-        schemas[new SchemaKey("DATA", "WEAP", 15)] = new(
+        schemas[new SchemaKey("DATA", "WEAP", 15)] = new SubrecordSchema(
             F.Int32("Value"),
             F.Int32("Health"),
             F.Float("Weight"),
@@ -1360,7 +1356,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DATA - AMMO (13 bytes)
-        schemas[new SchemaKey("DATA", "AMMO", 13)] = new(
+        schemas[new SchemaKey("DATA", "AMMO", 13)] = new SubrecordSchema(
             F.Float("Speed"),
             F.UInt8("Flags"),
             F.Padding(3),
@@ -1371,7 +1367,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DATA - QUST (8 bytes)
-        schemas[new SchemaKey("DATA", "QUST", 8)] = new(
+        schemas[new SchemaKey("DATA", "QUST", 8)] = new SubrecordSchema(
             F.UInt8("Flags"),
             F.UInt8("Priority"),
             F.Padding(2),
@@ -1381,13 +1377,13 @@ public static class SubrecordSchemaRegistry
         };
 
         // DATA - REFR/ACHR/ACRE (24 bytes = PosRot)
-        schemas[new SchemaKey("DATA", "REFR", 24)] = new(F.PosRot("PosRot"));
-        schemas[new SchemaKey("DATA", "ACHR", 24)] = new(F.PosRot("PosRot"));
-        schemas[new SchemaKey("DATA", "ACRE", 24)] = new(F.PosRot("PosRot"));
+        schemas[new SchemaKey("DATA", "REFR", 24)] = new SubrecordSchema(F.PosRot("PosRot"));
+        schemas[new SchemaKey("DATA", "ACHR", 24)] = new SubrecordSchema(F.PosRot("PosRot"));
+        schemas[new SchemaKey("DATA", "ACRE", 24)] = new SubrecordSchema(F.PosRot("PosRot"));
 
         // DATA - CREA (17 bytes)
         // Bytes 0-3: single bytes (no swap), Bytes 4-7: int32 (swap), Bytes 8-9: int16 (swap), Bytes 10-16: remaining
-        schemas[new SchemaKey("DATA", "CREA", 17)] = new(
+        schemas[new SchemaKey("DATA", "CREA", 17)] = new SubrecordSchema(
             F.UInt8("CreatureType"),
             F.UInt8("CombatSkill"),
             F.UInt8("MagicSkill"),
@@ -1400,7 +1396,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DATA - MGEF (72 bytes)
-        schemas[new SchemaKey("DATA", "MGEF", 72)] = new(
+        schemas[new SchemaKey("DATA", "MGEF", 72)] = new SubrecordSchema(
             F.UInt32("Flags"),
             F.Float("BaseCost"),
             F.FormId("AssocItem"),
@@ -1425,7 +1421,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DATA - RACE (36 bytes)
-        schemas[new SchemaKey("DATA", "RACE", 36)] = new(
+        schemas[new SchemaKey("DATA", "RACE", 36)] = new SubrecordSchema(
             F.Bytes("SkillBoosts", 14),
             F.Padding(2),
             F.Float("MaleHeight"),
@@ -1438,7 +1434,7 @@ public static class SubrecordSchemaRegistry
         };
 
         // DATA - ARMO (12 bytes)
-        schemas[new SchemaKey("DATA", "ARMO", 12)] = new(
+        schemas[new SchemaKey("DATA", "ARMO", 12)] = new SubrecordSchema(
             F.Int32("Value"),
             F.Int32("Health"),
             F.Float("Weight"))
@@ -1447,10 +1443,10 @@ public static class SubrecordSchemaRegistry
         };
 
         // DATA - ALCH (4 bytes)
-        schemas[new SchemaKey("DATA", "ALCH", 4)] = new(F.Float("Weight"));
+        schemas[new SchemaKey("DATA", "ALCH", 4)] = new SubrecordSchema(F.Float("Weight"));
 
         // DATA - LAND (4 bytes)
-        schemas[new SchemaKey("DATA", "LAND", 4)] = new(F.UInt32("Flags"));
+        schemas[new SchemaKey("DATA", "LAND", 4)] = new SubrecordSchema(F.UInt32("Flags"));
 
         // DATA - CELL (1 byte)
         schemas[new SchemaKey("DATA", "CELL", 1)] = SubrecordSchema.ByteArray;
@@ -1459,14 +1455,15 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("DATA", "PERK")] = SubrecordSchema.ByteArray;
 
         // DATA - GMST (4 bytes = int or float)
-        schemas[new SchemaKey("DATA", "GMST", 4)] = SubrecordSchema.Simple4Byte("Value");
+        schemas[new SchemaKey("DATA", "GMST", 4)] = SubrecordSchema.Simple4Byte();
         schemas[new SchemaKey("DATA", "GMST")] = SubrecordSchema.ByteArray; // String GMSTs or variable-length data
     }
 
     /// <summary>
     ///     Register a simple 4-byte schema.
     /// </summary>
-    private static void RegisterSimple4Byte(Dictionary<SchemaKey, SubrecordSchema> schemas, string signature, string description)
+    private static void RegisterSimple4Byte(Dictionary<SchemaKey, SubrecordSchema> schemas, string signature,
+        string description)
     {
         schemas[new SchemaKey(signature)] = new SubrecordSchema(F.UInt32(description))
         {
@@ -1588,9 +1585,17 @@ public static class SubrecordSchemaRegistry
             ("NAM4", "MSET"),
             ("NAM5", "MSET"),
             ("NAM6", "MSET"),
-            ("NAM7", "MSET"),
+            ("NAM7", "MSET")
         };
 
         return strings;
     }
+
+    /// <summary>
+    ///     Schema key for lookup - combines signature, optional record type, and optional data length.
+    /// </summary>
+    /// <param name="Signature">4-character subrecord signature.</param>
+    /// <param name="RecordType">Parent record type (null for any).</param>
+    /// <param name="DataLength">Data length constraint (null for any, or expected size).</param>
+    public readonly record struct SchemaKey(string Signature, string? RecordType = null, int? DataLength = null);
 }

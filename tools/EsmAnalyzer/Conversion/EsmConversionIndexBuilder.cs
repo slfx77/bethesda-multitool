@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Linq;
 using EsmAnalyzer.Helpers;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Utils;
@@ -152,7 +151,6 @@ internal sealed class EsmConversionIndexBuilder
                 // Not a GRUP - try to skip forward and find the next GRUP
                 var found = false;
                 for (var scan = offset + 1; scan <= _input.Length - 4 && scan < offset + 1024; scan++)
-                {
                     if (_input[scan] == 0x50 && _input[scan + 1] == 0x55 &&
                         _input[scan + 2] == 0x52 && _input[scan + 3] == 0x47) // "PURG"
                     {
@@ -160,7 +158,7 @@ internal sealed class EsmConversionIndexBuilder
                         found = true;
                         break;
                     }
-                }
+
                 if (!found)
                     break; // End of flat GRUPs
                 continue;
@@ -231,9 +229,7 @@ internal sealed class EsmConversionIndexBuilder
 
                 // Only add if not already indexed at this offset (avoid duplicates)
                 if (!list.Any(g => g.Offset == offset))
-                {
                     list.Add(new GrupEntry(grupType, labelValue, offset, (int)grupSize));
-                }
             }
         }
     }
@@ -314,7 +310,6 @@ internal sealed class EsmConversionIndexBuilder
                 offset += EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize;
             }
         }
-
     }
 
     /// <summary>

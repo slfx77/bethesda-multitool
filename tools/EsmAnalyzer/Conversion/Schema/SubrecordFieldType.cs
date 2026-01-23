@@ -58,5 +58,5 @@ public enum SubrecordFieldType
     PosRot,
 
     /// <summary>Unused/padding bytes - no conversion needed.</summary>
-    Padding,
+    Padding
 }

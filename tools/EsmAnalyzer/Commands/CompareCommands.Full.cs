@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Text;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 
@@ -7,23 +6,16 @@ namespace EsmAnalyzer.Commands;
 
 public static partial class CompareCommands
 {
-    private sealed class TypeDiffStats
-    {
-        public required string Type { get; init; }
-        public int Total { get; set; }
-        public int Identical { get; set; }
-        public int SizeDiff { get; set; }
-        public int ContentDiff { get; set; }
-    }
-
     public static Command CreateCompareFullCommand()
     {
-        var command = new Command("compare-full", "Comprehensive comparison of two ESM files with reference validation");
+        var command = new Command("compare-full",
+            "Comprehensive comparison of two ESM files with reference validation");
 
         var fileAArg = new Argument<string>("fileA") { Description = "First ESM file (e.g., converted output)" };
         var fileBArg = new Argument<string>("fileB") { Description = "Second ESM file (e.g., PC reference)" };
         var outputOption = new Option<string?>("-o", "--output") { Description = "Output directory for TSV reports" };
-        var limitOption = new Option<int>("-l", "--limit") { Description = "Max differences to report per category (0 = unlimited)", DefaultValueFactory = _ => 100 };
+        var limitOption = new Option<int>("-l", "--limit")
+            { Description = "Max differences to report per category (0 = unlimited)", DefaultValueFactory = _ => 100 };
 
         command.Arguments.Add(fileAArg);
         command.Arguments.Add(fileBArg);
@@ -41,18 +33,20 @@ public static partial class CompareCommands
 
     private static int RunCompareFull(string fileAPath, string fileBPath, string? outputDir, int diffLimit)
     {
-        AnsiConsole.MarkupLine($"[bold]Loading files...[/]");
+        AnsiConsole.MarkupLine("[bold]Loading files...[/]");
         var fileA = EsmFileLoader.Load(fileAPath);
         var fileB = EsmFileLoader.Load(fileBPath);
 
         if (fileA == null || fileB == null)
             return 1;
 
-        AnsiConsole.MarkupLine($"  File A: {Path.GetFileName(fileAPath)} ({fileA.Data.Length:N0} bytes, {(fileA.IsBigEndian ? "BE" : "LE")})");
-        AnsiConsole.MarkupLine($"  File B: {Path.GetFileName(fileBPath)} ({fileB.Data.Length:N0} bytes, {(fileB.IsBigEndian ? "BE" : "LE")})");
+        AnsiConsole.MarkupLine(
+            $"  File A: {Path.GetFileName(fileAPath)} ({fileA.Data.Length:N0} bytes, {(fileA.IsBigEndian ? "BE" : "LE")})");
+        AnsiConsole.MarkupLine(
+            $"  File B: {Path.GetFileName(fileBPath)} ({fileB.Data.Length:N0} bytes, {(fileB.IsBigEndian ? "BE" : "LE")})");
 
         // Scan all records
-        AnsiConsole.MarkupLine($"[bold]Scanning records...[/]");
+        AnsiConsole.MarkupLine("[bold]Scanning records...[/]");
         var recordsA = EsmHelpers.ScanAllRecords(fileA.Data, fileA.IsBigEndian)
             .Where(r => r.Signature != "GRUP")
             .ToList();
@@ -88,7 +82,7 @@ public static partial class CompareCommands
             countsA.TryGetValue(type, out var aCount);
             countsB.TryGetValue(type, out var bCount);
             var delta = aCount - bCount;
-            var deltaStr = delta == 0 ? "0" : (delta > 0 ? $"[yellow]+{delta:N0}[/]" : $"[red]{delta:N0}[/]");
+            var deltaStr = delta == 0 ? "0" : delta > 0 ? $"[yellow]+{delta:N0}[/]" : $"[red]{delta:N0}[/]";
             countTable.AddRow($"[cyan]{type}[/]", aCount.ToString("N0"), bCount.ToString("N0"), deltaStr);
         }
 
@@ -170,7 +164,8 @@ public static partial class CompareCommands
                         break;
 
                     var diffType = subDiff.DiffType ?? "Diff";
-                    subrecordDiffRows.Add($"{type}\t0x{formId:X8}\t{subDiff.Signature}\t{diffType}\t{subDiff.Xbox360Size}\t{subDiff.PcSize}");
+                    subrecordDiffRows.Add(
+                        $"{type}\t0x{formId:X8}\t{subDiff.Signature}\t{diffType}\t{subDiff.Xbox360Size}\t{subDiff.PcSize}");
                 }
             }
         }
@@ -184,14 +179,12 @@ public static partial class CompareCommands
             .AddColumn(new TableColumn("Content Diff").RightAligned());
 
         foreach (var stat in diffStatsByType.Values.OrderByDescending(s => s.Total))
-        {
             diffTable.AddRow(
                 $"[cyan]{stat.Type}[/]",
                 stat.Total.ToString("N0"),
                 stat.Identical > 0 ? $"[green]{stat.Identical:N0}[/]" : "0",
                 stat.SizeDiff > 0 ? $"[yellow]{stat.SizeDiff:N0}[/]" : "0",
                 stat.ContentDiff > 0 ? $"[red]{stat.ContentDiff:N0}[/]" : "0");
-        }
 
         AnsiConsole.MarkupLine("[bold]Record diff stats[/]");
         AnsiConsole.Write(diffTable);
@@ -240,5 +233,14 @@ public static partial class CompareCommands
         writer.WriteLine("RecordType\tFormId\tSubrecord\tDiffType\tSizeA\tSizeB");
         foreach (var row in diffRows)
             writer.WriteLine(row);
+    }
+
+    private sealed class TypeDiffStats
+    {
+        public required string Type { get; init; }
+        public int Total { get; set; }
+        public int Identical { get; set; }
+        public int SizeDiff { get; set; }
+        public int ContentDiff { get; set; }
     }
 }

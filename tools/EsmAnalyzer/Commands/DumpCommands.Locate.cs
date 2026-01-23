@@ -37,7 +37,7 @@ public static partial class DumpCommands
 
         var path = new List<string>();
 
-        if (!DumpCommandHelpers.TryLocateInRange(esm.Data, esm.IsBigEndian, esm.FirstGrupOffset, esm.Data.Length,
+        if (!TryLocateInRange(esm.Data, esm.IsBigEndian, esm.FirstGrupOffset, esm.Data.Length,
                 targetOffset.Value, path, out var record, out var subrecord))
         {
             AnsiConsole.MarkupLine("[red]Failed to locate record at the given offset.[/]");

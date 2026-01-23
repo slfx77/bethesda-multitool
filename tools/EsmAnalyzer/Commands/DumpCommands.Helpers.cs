@@ -6,7 +6,7 @@ using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
 
-internal static class DumpCommandHelpers
+public static partial class DumpCommands
 {
     internal static void TraceRecursive(byte[] data, bool bigEndian, int startOffset, int endOffset,
         int? filterDepth, ref int recordCount, int limit, int depth, Table table)

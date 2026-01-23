@@ -1,7 +1,7 @@
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
-namespace EsmAnalyzer.Helpers;
+namespace EsmAnalyzer.Core;
 
 /// <summary>
 ///     Result of loading and validating an ESM file.

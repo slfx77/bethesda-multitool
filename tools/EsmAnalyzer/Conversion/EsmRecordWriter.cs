@@ -108,7 +108,7 @@ public sealed class EsmRecordWriter
         // For non-merged INFO records, reorder subrecords to strip orphaned NAM3
         if (signature == "INFO" && convertedData != null)
         {
-            var reordered = _infoMerger.ReorderInfoSubrecords(convertedData);
+            var reordered = EsmInfoMerger.ReorderInfoSubrecords(convertedData);
             if (reordered != null) convertedData = reordered;
         }
 

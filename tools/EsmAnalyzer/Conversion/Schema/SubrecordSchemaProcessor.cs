@@ -1,7 +1,5 @@
 using static EsmAnalyzer.Conversion.EsmEndianHelpers;
 
-using EsmAnalyzer.Conversion;
-
 namespace EsmAnalyzer.Conversion.Schema;
 
 /// <summary>
@@ -53,9 +51,7 @@ public static class SubrecordSchemaProcessor
         // Handle special schema types
         if (ReferenceEquals(schema, SubrecordSchema.String) ||
             ReferenceEquals(schema, SubrecordSchema.ByteArray))
-        {
             return result; // No conversion needed
-        }
 
         if (ReferenceEquals(schema, SubrecordSchema.FormIdArray))
         {
@@ -97,10 +93,7 @@ public static class SubrecordSchemaProcessor
             if (elementSize > 0 && data.Length % elementSize == 0)
             {
                 var elementCount = data.Length / elementSize;
-                for (var i = 0; i < elementCount; i++)
-                {
-                    ConvertFieldsAtOffset(result, i * elementSize, schema.Fields);
-                }
+                for (var i = 0; i < elementCount; i++) ConvertFieldsAtOffset(result, i * elementSize, schema.Fields);
             }
             else if (schema.Fields.Length == 1)
             {
@@ -133,7 +126,7 @@ public static class SubrecordSchemaProcessor
             if (offset + size > data.Length)
                 break;
 
-            ConvertField(data, offset, field.Type, size);
+            ConvertField(data, offset, field.Type);
             offset += size;
         }
     }
@@ -141,7 +134,7 @@ public static class SubrecordSchemaProcessor
     /// <summary>
     ///     Converts a single field at the given offset.
     /// </summary>
-    private static void ConvertField(byte[] data, int offset, SubrecordFieldType type, int size)
+    private static void ConvertField(byte[] data, int offset, SubrecordFieldType type)
     {
         switch (type)
         {
@@ -203,10 +196,7 @@ public static class SubrecordSchemaProcessor
             return;
 
         var count = data.Length / size;
-        for (var i = 0; i < count; i++)
-        {
-            ConvertField(data, i * size, field.Type, size);
-        }
+        for (var i = 0; i < count; i++) ConvertField(data, i * size, field.Type);
     }
 
     /// <summary>
@@ -241,9 +231,9 @@ public static class SubrecordSchemaProcessor
     /// </summary>
     private static void ConvertAtxtBtxt(byte[] data)
     {
-        Swap4Bytes(data, 0);  // FormID
-        data[5] = 0x88;       // Platform flag - set to PC value
-        Swap2Bytes(data, 6);  // Layer
+        Swap4Bytes(data, 0); // FormID
+        data[5] = 0x88; // Platform flag - set to PC value
+        Swap2Bytes(data, 6); // Layer
     }
 
     /// <summary>

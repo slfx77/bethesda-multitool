@@ -43,18 +43,6 @@ public sealed class SubrecordSchema
     public string? Description { get; init; }
 
     /// <summary>
-    ///     Creates a schema that matches any data length (repeating element).
-    /// </summary>
-    public static SubrecordSchema Repeating(int elementSize, SubrecordField[] elementFields, string? description = null)
-    {
-        return new SubrecordSchema(elementFields)
-        {
-            ExpectedSize = 0, // Variable
-            Description = description
-        };
-    }
-
-    /// <summary>
     ///     Marker for string subrecords - no conversion needed.
     /// </summary>
     public static SubrecordSchema String { get; } = new()
@@ -71,16 +59,6 @@ public sealed class SubrecordSchema
         ExpectedSize = 0,
         Description = "Byte array - no conversion"
     };
-
-    /// <summary>
-    ///     Creates a simple 4-byte swap schema (FormID, uint32, float).
-    /// </summary>
-    public static SubrecordSchema Simple4Byte(string name = "Value") => new(SubrecordField.UInt32(name));
-
-    /// <summary>
-    ///     Creates a simple 2-byte swap schema (uint16, int16).
-    /// </summary>
-    public static SubrecordSchema Simple2Byte(string name = "Value") => new(SubrecordField.UInt16(name));
 
     /// <summary>
     ///     Creates a schema for an array of FormIDs (variable length, 4 bytes each).
@@ -108,4 +86,32 @@ public sealed class SubrecordSchema
         ExpectedSize = -1, // Repeating array
         Description = "Texture hash array (8 bytes per hash)"
     };
+
+    /// <summary>
+    ///     Creates a schema that matches any data length (repeating element).
+    /// </summary>
+    public static SubrecordSchema Repeating(int elementSize, SubrecordField[] elementFields, string? description = null)
+    {
+        return new SubrecordSchema(elementFields)
+        {
+            ExpectedSize = 0, // Variable
+            Description = description
+        };
+    }
+
+    /// <summary>
+    ///     Creates a simple 4-byte swap schema (FormID, uint32, float).
+    /// </summary>
+    public static SubrecordSchema Simple4Byte(string name = "Value")
+    {
+        return new SubrecordSchema(SubrecordField.UInt32(name));
+    }
+
+    /// <summary>
+    ///     Creates a simple 2-byte swap schema (uint16, int16).
+    /// </summary>
+    public static SubrecordSchema Simple2Byte(string name = "Value")
+    {
+        return new SubrecordSchema(SubrecordField.UInt16(name));
+    }
 }

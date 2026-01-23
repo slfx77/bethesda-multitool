@@ -60,8 +60,8 @@ public static partial class DiffCommands
         uint formId, int maxBytes)
     {
         // Find record in Xbox file
-        var xboxRecord = DiffCommandHelpers.FindRecordByFormId(xboxData, xboxBigEndian, formId);
-        var pcRecord = DiffCommandHelpers.FindRecordByFormId(pcData, pcBigEndian, formId);
+        var xboxRecord = FindRecordByFormId(xboxData, xboxBigEndian, formId);
+        var pcRecord = FindRecordByFormId(pcData, pcBigEndian, formId);
 
         if (xboxRecord == null)
         {
@@ -210,11 +210,11 @@ public static partial class DiffCommands
         if (!isIdentical && sizeMatch)
         {
             // Check if it's just endian-swapped
-            isEndianSwapped = DiffCommandHelpers.CheckEndianSwapped(xbox.Data, pc.Data);
+            isEndianSwapped = CheckEndianSwapped(xbox.Data, pc.Data);
 
             // If not simple endian swap, try to detect structured pattern
             if (!isEndianSwapped)
-                structuredPattern = DiffCommandHelpers.AnalyzeStructuredDifference(xbox.Data, pc.Data);
+                structuredPattern = AnalyzeStructuredDifference(xbox.Data, pc.Data);
         }
 
         string status;
@@ -236,12 +236,12 @@ public static partial class DiffCommands
         {
             var showLen = Math.Min(maxBytes, Math.Max(xbox.Data.Length, pc.Data.Length));
             AnsiConsole.MarkupLine(
-                $"    Xbox: {Markup.Escape(DiffCommandHelpers.FormatBytes(xbox.Data, 0, Math.Min(showLen, xbox.Data.Length)))}");
+                $"    Xbox: {Markup.Escape(FormatBytes(xbox.Data, 0, Math.Min(showLen, xbox.Data.Length)))}");
             AnsiConsole.MarkupLine(
-                $"    PC:   {Markup.Escape(DiffCommandHelpers.FormatBytes(pc.Data, 0, Math.Min(showLen, pc.Data.Length)))}");
+                $"    PC:   {Markup.Escape(FormatBytes(pc.Data, 0, Math.Min(showLen, pc.Data.Length)))}");
 
             // Try to interpret the data
-            DiffCommandHelpers.TryInterpretDifference(sig, xbox.Data, pc.Data, xboxBE, pcBE);
+            TryInterpretDifference(sig, xbox.Data, pc.Data, xboxBE, pcBE);
         }
     }
 }

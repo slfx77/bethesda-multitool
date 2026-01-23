@@ -37,7 +37,7 @@ public static partial class DumpCommands
             .AddColumn(new TableColumn("[bold]Depth[/]").RightAligned());
 
         var recordCount = 0;
-        DumpCommandHelpers.TraceRecursive(esm.Data, esm.IsBigEndian, startOffset, stopOffset, filterDepth,
+        TraceRecursive(esm.Data, esm.IsBigEndian, startOffset, stopOffset, filterDepth,
             ref recordCount, limit, 0, table);
 
         AnsiConsole.Write(table);
@@ -124,7 +124,7 @@ public static partial class DumpCommands
         var subrecordCount = 0;
         var compressedSkipped = 0;
 
-        if (!DumpCommandHelpers.ValidateRecursive(esm.Data, esm.IsBigEndian, startOffset, stopOffset, limit,
+        if (!ValidateRecursive(esm.Data, esm.IsBigEndian, startOffset, stopOffset, limit,
                 ref recordCount, ref subrecordCount, ref compressedSkipped, 0, out var error))
         {
             AnsiConsole.MarkupLine($"[red]{error}[/]");
