@@ -1,8 +1,8 @@
+using Spectre.Console;
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
-using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
@@ -38,9 +38,9 @@ public static class GrupCommands
         var typeOption = new Option<int[]?>("-t", "--type") { Description = "Filter to specific GRUP type(s) (0-10)" };
         var topLevelOption = new Option<bool>("--top-level") { Description = "Show only top-level GRUPs (depth 0)" };
         var duplicatesOption = new Option<bool>("--duplicates")
-            { Description = "Find duplicate GRUP labels (same type + label at different depths)" };
+        { Description = "Find duplicate GRUP labels (same type + label at different depths)" };
         var limitOption = new Option<int>("-l", "--limit")
-            { Description = "Maximum number of GRUPs to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
+        { Description = "Maximum number of GRUPs to show (0 = unlimited)", DefaultValueFactory = _ => 0 };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(typeOption);
@@ -103,7 +103,10 @@ public static class GrupCommands
         while (offset < data.Length - 24)
         {
             // Pop completed GRUPs
-            while (grupStack.Count > 0 && offset >= grupStack.Peek().end) grupStack.Pop();
+            while (grupStack.Count > 0 && offset >= grupStack.Peek().end)
+            {
+                _ = grupStack.Pop();
+            }
 
             var sig = Encoding.ASCII.GetString(data, offset, 4);
             // Big-endian files have "PURG" (reversed "GRUP")
@@ -142,7 +145,11 @@ public static class GrupCommands
                 };
 
                 // Count by type
-                if (!grupTypeCounts.TryGetValue((int)grupType, out var count)) count = 0;
+                if (!grupTypeCounts.TryGetValue((int)grupType, out var count))
+                {
+                    count = 0;
+                }
+
                 grupTypeCounts[(int)grupType] = count + 1;
 
                 // Track for duplicate detection
@@ -156,7 +163,10 @@ public static class GrupCommands
                 list.Add(info);
 
                 // Track top-level
-                if (depth == 0) topLevelGrups.Add(info);
+                if (depth == 0)
+                {
+                    topLevelGrups.Add(info);
+                }
 
                 allGrups.Add(info);
 
@@ -199,8 +209,10 @@ public static class GrupCommands
     {
         // For type 0 GRUPs, label is a record type signature
         if (isBigEndian)
+        {
             // Big-endian: reverse the bytes
             return $"{(char)data[offset + 3]}{(char)data[offset + 2]}{(char)data[offset + 1]}{(char)data[offset]}";
+        }
 
         return Encoding.ASCII.GetString(data, offset, 4);
     }
@@ -221,7 +233,7 @@ public static class GrupCommands
         foreach (var kvp in grupTypeCounts.OrderBy(x => x.Key))
         {
             var typeName = kvp.Key < GrupTypeNames.Length ? GrupTypeNames[kvp.Key] : "Unknown";
-            table.AddRow(
+            _ = table.AddRow(
                 kvp.Key.ToString(CultureInfo.InvariantCulture),
                 typeName,
                 kvp.Value.ToString("N0", CultureInfo.InvariantCulture));
@@ -257,7 +269,7 @@ public static class GrupCommands
         foreach (var g in filtered)
         {
             var typeName = g.Type < GrupTypeNames.Length ? GrupTypeNames[g.Type] : "Unknown";
-            table.AddRow(
+            _ = table.AddRow(
                 $"0x{g.Offset:X8}",
                 g.Size.ToString("N0", CultureInfo.InvariantCulture),
                 g.Type.ToString(CultureInfo.InvariantCulture),
@@ -311,8 +323,10 @@ public static class GrupCommands
                 .AddColumn("Depth");
 
             foreach (var g in grups)
-                table.AddRow($"0x{g.Offset:X8}", g.Size.ToString("N0", CultureInfo.InvariantCulture),
+            {
+                _ = table.AddRow($"0x{g.Offset:X8}", g.Size.ToString("N0", CultureInfo.InvariantCulture),
                     g.Depth.ToString(CultureInfo.InvariantCulture));
+            }
 
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();

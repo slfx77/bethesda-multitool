@@ -12,7 +12,9 @@ public static class CellUtils
     public static List<CellGroup> GroupAdjacentCells(List<CellHeightDifference> differences)
     {
         if (differences.Count == 0)
+        {
             return [];
+        }
 
         var groups = new List<CellGroup>();
         var cellLookup = differences.ToDictionary(d => (d.CellX, d.CellY));
@@ -22,13 +24,15 @@ public static class CellUtils
         {
             var key = (diff.CellX, diff.CellY);
             if (visited.Contains(key))
+            {
                 continue;
+            }
 
             // Start a new group with flood-fill
             var group = new CellGroup();
             var queue = new Queue<(int x, int y)>();
             queue.Enqueue(key);
-            visited.Add(key);
+            _ = visited.Add(key);
 
             while (queue.Count > 0)
             {
@@ -48,7 +52,7 @@ public static class CellUtils
                 {
                     if (!visited.Contains(neighbor) && cellLookup.ContainsKey(neighbor))
                     {
-                        visited.Add(neighbor);
+                        _ = visited.Add(neighbor);
                         queue.Enqueue(neighbor);
                     }
                 }
@@ -70,10 +74,10 @@ public static class CellUtils
     /// <returns>World coordinates (X, Y).</returns>
     public static (int worldX, int worldY) CellToWorldCoordinates(int cellX, int cellY, int localX = 0, int localY = 0)
     {
-        var worldX = cellX * EsmConstants.CellWorldUnits +
-                     localX * EsmConstants.CellWorldUnits / EsmConstants.LandGridSize;
-        var worldY = cellY * EsmConstants.CellWorldUnits +
-                     localY * EsmConstants.CellWorldUnits / EsmConstants.LandGridSize;
+        var worldX = (cellX * EsmConstants.CellWorldUnits) +
+                     (localX * EsmConstants.CellWorldUnits / EsmConstants.LandGridSize);
+        var worldY = (cellY * EsmConstants.CellWorldUnits) +
+                     (localY * EsmConstants.CellWorldUnits / EsmConstants.LandGridSize);
         return (worldX, worldY);
     }
 

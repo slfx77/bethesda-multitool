@@ -1,39 +1,43 @@
+using Spectre.Console;
 using System.Buffers.Binary;
 using System.Text;
-using EsmAnalyzer.Helpers;
-using Spectre.Console;
+using EsmAnalyzer.Core;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
-namespace EsmAnalyzer.Commands;
+namespace EsmAnalyzer.Helpers;
 
-public static partial class DumpCommands
+/// <summary>
+///     Utilities for traversing, validating, and locating records/subrecords in ESM files.
+/// </summary>
+public static class RecordTraversalHelpers
 {
-    internal static void TraceRecursive(byte[] data, bool bigEndian, int startOffset, int endOffset,
+    /// <summary>
+    ///     Recursively traces records and groups, adding rows to a Spectre table.
+    /// </summary>
+    public static void TraceRecursive(byte[] data, bool bigEndian, int startOffset, int endOffset,
         int? filterDepth, ref int recordCount, int limit, int depth, Table table)
     {
         var offset = startOffset;
 
-        // limit <= 0 means unlimited
         while (offset + EsmParser.MainRecordHeaderSize <= endOffset && (limit <= 0 || recordCount < limit))
         {
             var recHeader = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
             if (recHeader == null)
             {
                 var hexBytes = string.Join(" ", data.Skip(offset).Take(24).Select(b => b.ToString("X2")));
-                table.AddRow($"[red]0x{offset:X8}[/]", "[red]FAIL[/]", "-", "-", $"Raw: {hexBytes}", "-");
+                _ = table.AddRow($"[red]0x{offset:X8}[/]", "[red]FAIL[/]", "-", "-", $"Raw: {hexBytes}", "-");
                 break;
             }
 
-            // Allow GRUP and any 4-letter ASCII signature (valid record types)
             var isValidSig = recHeader.Signature == "GRUP" ||
                              recHeader.Signature == "TOFT" ||
                              EsmRecordTypes.MainRecordTypes.ContainsKey(recHeader.Signature) ||
-                             (recHeader.Signature.Length == 4 && recHeader.Signature.All(c => c >= 'A' && c <= 'Z'));
+                             (recHeader.Signature.Length == 4 && recHeader.Signature.All(c => c is >= 'A' and <= 'Z'));
 
             if (!isValidSig)
             {
                 var hexBytes = string.Join(" ", data.Skip(offset).Take(24).Select(b => b.ToString("X2")));
-                table.AddRow($"[red]0x{offset:X8}[/]", $"[red]{recHeader.Signature}[/]", "-", "-",
+                _ = table.AddRow($"[red]0x{offset:X8}[/]", $"[red]{recHeader.Signature}[/]", "-", "-",
                     $"Unknown: {hexBytes}", "-");
                 break;
             }
@@ -52,7 +56,7 @@ public static partial class DumpCommands
                     : $"FormID 0x{recHeader.FormId:X8}";
                 var sigColor = recHeader.Signature == "GRUP" ? "yellow" : "cyan";
 
-                table.AddRow(
+                _ = table.AddRow(
                     $"0x{offset:X8}",
                     $"[{sigColor}]{recHeader.Signature}[/]",
                     $"{recHeader.DataSize:N0}",
@@ -72,8 +76,12 @@ public static partial class DumpCommands
         }
     }
 
-    internal static bool ValidateRecursive(byte[] data, bool bigEndian, int startOffset, int endOffset, int limit,
-        ref int recordCount, ref int subrecordCount, ref int compressedSkipped, int depth, out string? error)
+    /// <summary>
+    ///     Recursively validates records and groups, returning false on first error.
+    /// </summary>
+    public static bool ValidateRecursive(byte[] data, bool bigEndian, int startOffset, int endOffset, int limit,
+        ref int recordCount, ref int subrecordCount, ref int compressedDecompressed, ref int toftSkipped, int depth,
+        out string? error)
     {
         error = null;
         var offset = startOffset;
@@ -91,7 +99,7 @@ public static partial class DumpCommands
             var isValidSig = recHeader.Signature == "GRUP" ||
                              recHeader.Signature == "TOFT" ||
                              EsmRecordTypes.MainRecordTypes.ContainsKey(recHeader.Signature) ||
-                             (recHeader.Signature.Length == 4 && recHeader.Signature.All(c => c >= 'A' && c <= 'Z'));
+                             (recHeader.Signature.Length == 4 && recHeader.Signature.All(c => c is >= 'A' and <= 'Z'));
 
             if (!isValidSig)
             {
@@ -115,22 +123,16 @@ public static partial class DumpCommands
             {
                 var innerOffset = offset + EsmParser.MainRecordHeaderSize;
                 if (!ValidateRecursive(data, bigEndian, innerOffset, recordEnd, limit, ref recordCount,
-                        ref subrecordCount, ref compressedSkipped, depth + 1, out error))
+                        ref subrecordCount, ref compressedDecompressed, ref toftSkipped, depth + 1, out error))
+                {
                     return false;
+                }
             }
             else
             {
-                var isCompressed = (recHeader.Flags & 0x00040000) != 0;
-                if (isCompressed)
+                if (recHeader.Signature == "TOFT")
                 {
-                    if (recHeader.DataSize < 4)
-                    {
-                        error =
-                            $"FAIL at 0x{offset:X8}: compressed {recHeader.Signature} has size < 4";
-                        return false;
-                    }
-
-                    compressedSkipped++;
+                    toftSkipped++;
                 }
                 else
                 {
@@ -146,6 +148,11 @@ public static partial class DumpCommands
 
                     try
                     {
+                        if ((recHeader.Flags & 0x00040000) != 0)
+                        {
+                            compressedDecompressed++;
+                        }
+
                         var recordData = EsmHelpers.GetRecordData(data, recordInfo, bigEndian);
                         var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
                         subrecordCount += subrecords.Count;
@@ -177,18 +184,29 @@ public static partial class DumpCommands
         return true;
     }
 
-    internal static bool MatchesAt(byte[] data, long offset, byte[] pattern)
+    /// <summary>
+    ///     Checks if the pattern matches at the given offset.
+    /// </summary>
+    public static bool MatchesAt(byte[] data, long offset, byte[] pattern)
     {
         for (var j = 0; j < pattern.Length; j++)
+        {
             if (data[offset + j] != pattern[j])
+            {
                 return false;
+            }
+        }
+
         return true;
     }
 
-    internal static void DisplaySearchMatch(byte[] data, long offset, int patternLength, int contextBytes)
+    /// <summary>
+    ///     Displays a search match with context hex dump.
+    /// </summary>
+    public static void DisplaySearchMatch(byte[] data, long offset, int patternLength, int contextBytes)
     {
         var rule = new Rule($"[cyan]Offset: 0x{offset:X8}[/]");
-        rule.LeftJustified();
+        _ = rule.LeftJustified();
         AnsiConsole.Write(rule);
 
         var contextStart = Math.Max(0, offset - contextBytes);
@@ -200,7 +218,10 @@ public static partial class DumpCommands
         AnsiConsole.WriteLine();
     }
 
-    internal static bool TryLocateInRange(byte[] data, bool bigEndian, int startOffset, int endOffset, int targetOffset,
+    /// <summary>
+    ///     Attempts to locate a record/subrecord containing the target offset.
+    /// </summary>
+    public static bool TryLocateInRange(byte[] data, bool bigEndian, int startOffset, int endOffset, int targetOffset,
         List<string> path, out LocatedRecord record, out LocatedSubrecord? subrecord)
     {
         record = null!;
@@ -210,13 +231,19 @@ public static partial class DumpCommands
         while (offset + EsmParser.MainRecordHeaderSize <= endOffset)
         {
             var recHeader = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
-            if (recHeader == null) return false;
+            if (recHeader == null)
+            {
+                return false;
+            }
 
             var recordEnd = offset + (recHeader.Signature == "GRUP"
                 ? (int)recHeader.DataSize
                 : EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize);
 
-            if (targetOffset < offset) return false;
+            if (targetOffset < offset)
+            {
+                return false;
+            }
 
             if (targetOffset >= offset && targetOffset < recordEnd)
             {
@@ -227,7 +254,10 @@ public static partial class DumpCommands
 
                     var innerStart = offset + EsmParser.MainRecordHeaderSize;
                     if (TryLocateInRange(data, bigEndian, innerStart, recordEnd, targetOffset, path, out record,
-                            out subrecord)) return true;
+                            out subrecord))
+                    {
+                        return true;
+                    }
 
                     record = new LocatedRecord("GRUP", 0, 0, offset, recordEnd, recHeader.DataSize, true, label, false);
                     return true;
@@ -238,7 +268,9 @@ public static partial class DumpCommands
                     recHeader.DataSize, false, string.Empty, isCompressed);
 
                 if (!isCompressed)
+                {
                     subrecord = LocateSubrecordInRecord(data, bigEndian, offset, recHeader.DataSize, targetOffset);
+                }
 
                 return true;
             }
@@ -270,18 +302,28 @@ public static partial class DumpCommands
 
             var dataOffset = offset + 6;
             if (signature == "XXXX" && dataSizeHeader == 4 && dataOffset + 4 <= recordEnd)
+            {
                 pendingExtendedSize = bigEndian
                     ? (int)BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(dataOffset, 4))
                     : (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(dataOffset, 4));
+            }
 
             var actualSize = dataSizeHeader == 0 && pendingExtendedSize > 0 ? pendingExtendedSize : dataSizeHeader;
-            if (dataSizeHeader == 0 && pendingExtendedSize > 0) pendingExtendedSize = 0;
+            if (dataSizeHeader == 0 && pendingExtendedSize > 0)
+            {
+                pendingExtendedSize = 0;
+            }
 
             var dataEnd = dataOffset + actualSize;
-            if (dataEnd > recordEnd) break;
+            if (dataEnd > recordEnd)
+            {
+                break;
+            }
 
             if (targetOffset >= offset && targetOffset < dataEnd)
+            {
                 return new LocatedSubrecord(signature, offset, dataOffset, dataEnd, actualSize);
+            }
 
             offset = dataEnd;
         }
@@ -289,7 +331,10 @@ public static partial class DumpCommands
         return null;
     }
 
-    internal sealed record LocatedRecord(
+    /// <summary>
+    ///     Represents a located record in the file.
+    /// </summary>
+    public sealed record LocatedRecord(
         string Signature,
         uint FormId,
         uint Flags,
@@ -300,7 +345,10 @@ public static partial class DumpCommands
         string Label,
         bool IsCompressed);
 
-    internal sealed record LocatedSubrecord(
+    /// <summary>
+    ///     Represents a located subrecord within a record.
+    /// </summary>
+    public sealed record LocatedSubrecord(
         string Signature,
         int HeaderStart,
         int DataStart,

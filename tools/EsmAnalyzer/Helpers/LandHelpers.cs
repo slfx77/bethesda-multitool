@@ -1,8 +1,16 @@
-namespace EsmAnalyzer.Commands;
+using EsmAnalyzer.Core;
 
-public static partial class LandCommands
+namespace EsmAnalyzer.Helpers;
+
+/// <summary>
+///     Utilities for analyzing and summarizing LAND record subrecords.
+/// </summary>
+public static class LandHelpers
 {
-    private static string SummarizeAtxt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
+    /// <summary>
+    ///     Summarizes ATXT (texture layer) subrecords.
+    /// </summary>
+    public static string SummarizeAtxt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
     {
         var entries = 0;
         var uniqueFormIds = new HashSet<uint>();
@@ -11,6 +19,7 @@ public static partial class LandCommands
         var quadrantCounts = new int[4];
 
         foreach (var data in subrecords.Select(sub => sub.Data))
+        {
             for (var i = 0; i + 7 < data.Length; i += 8)
             {
                 var formId = EsmBinary.ReadUInt32(data, i, bigEndian);
@@ -18,17 +27,24 @@ public static partial class LandCommands
                 var layer = EsmBinary.ReadUInt16(data, i + 6, bigEndian);
 
                 entries++;
-                uniqueFormIds.Add(formId);
+                _ = uniqueFormIds.Add(formId);
                 UpdateUShortRange(ref minLayer, ref maxLayer, layer);
-                if (quadrant < quadrantCounts.Length) quadrantCounts[quadrant]++;
+                if (quadrant < quadrantCounts.Length)
+                {
+                    quadrantCounts[quadrant]++;
+                }
             }
+        }
 
         var quadSummary = string.Join(", ", quadrantCounts.Select((c, i) => $"Q{i}:{c}"));
         return
             $"entries={entries:N0}, uniqueFormIds={uniqueFormIds.Count:N0}, layer=[{minLayer},{maxLayer}], {quadSummary}";
     }
 
-    private static string SummarizeVtxt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
+    /// <summary>
+    ///     Summarizes VTXT (texture opacity) subrecords.
+    /// </summary>
+    public static string SummarizeVtxt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
     {
         var entries = 0;
         var minPos = ushort.MaxValue;
@@ -39,6 +55,7 @@ public static partial class LandCommands
         var maxFlags = ushort.MinValue;
 
         foreach (var data in subrecords.Select(sub => sub.Data))
+        {
             for (var i = 0; i + 7 < data.Length; i += 8)
             {
                 var pos = EsmBinary.ReadUInt16(data, i, bigEndian);
@@ -50,20 +67,41 @@ public static partial class LandCommands
                 UpdateUShortRange(ref minFlags, ref maxFlags, flags);
                 UpdateFloatRange(ref minOpacity, ref maxOpacity, opacity);
             }
+        }
 
         return
             $"entries={entries:N0}, pos=[{minPos},{maxPos}], flags=[{minFlags},{maxFlags}], opacity=[{minOpacity:F3},{maxOpacity:F3}]";
     }
 
-    private static void UpdateUShortRange(ref ushort min, ref ushort max, ushort value)
+    /// <summary>
+    ///     Updates a ushort range with a new value.
+    /// </summary>
+    public static void UpdateUShortRange(ref ushort min, ref ushort max, ushort value)
     {
-        if (value < min) min = value;
-        if (value > max) max = value;
+        if (value < min)
+        {
+            min = value;
+        }
+
+        if (value > max)
+        {
+            max = value;
+        }
     }
 
-    private static void UpdateFloatRange(ref float min, ref float max, float value)
+    /// <summary>
+    ///     Updates a float range with a new value.
+    /// </summary>
+    public static void UpdateFloatRange(ref float min, ref float max, float value)
     {
-        if (value < min) min = value;
-        if (value > max) max = value;
+        if (value < min)
+        {
+            min = value;
+        }
+
+        if (value > max)
+        {
+            max = value;
+        }
     }
 }

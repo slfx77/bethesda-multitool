@@ -27,6 +27,28 @@ public enum SubrecordFieldType
     /// <summary>4-byte FormID reference - requires byte swap.</summary>
     FormId,
 
+    /// <summary>
+    ///     4-byte FormID reference that is already little-endian on Xbox 360.
+    ///     Used for specific fields (like WEAP DNAM Projectile) where Xbox
+    ///     stores the FormID in native little-endian format.
+    /// </summary>
+    FormIdLittleEndian,
+
+    /// <summary>
+    ///     2-byte unsigned integer that is already little-endian on Xbox 360.
+    ///     Used for specific fields (like QUST INDX quest stage index) where Xbox
+    ///     stores the value in native little-endian format.
+    /// </summary>
+    UInt16LittleEndian,
+
+    /// <summary>
+    ///     4-byte unsigned integer stored in word-swapped (middle-endian) format on Xbox 360.
+    ///     Xbox stores as two big-endian uint16 words in little-endian order: [HI_BE][LO_BE]
+    ///     Example: value 21 stored as 00 15 00 00 on Xbox -> 15 00 00 00 on PC
+    ///     Used for RGDL DATA DynamicBoneCount which follows NIF packed data conventions.
+    /// </summary>
+    UInt32WordSwapped,
+
     /// <summary>4-byte IEEE 754 float - requires byte swap.</summary>
     Float,
 
@@ -53,6 +75,9 @@ public enum SubrecordFieldType
 
     /// <summary>RGBA color (4 bytes) - no conversion needed.</summary>
     ColorRgba,
+
+    /// <summary>ARGB color (4 bytes) - converts Xbox ARGB to PC RGBA.</summary>
+    ColorArgb,
 
     /// <summary>Position and rotation (6 floats, 24 bytes) - requires 6 float swaps.</summary>
     PosRot,

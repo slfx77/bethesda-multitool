@@ -1,9 +1,9 @@
+using EsmAnalyzer.Helpers;
+using Spectre.Console;
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
-using EsmAnalyzer.Helpers;
-using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
@@ -76,7 +76,10 @@ public static class CellCommands
         }
 
         var esm = EsmFileLoader.Load(filePath, false);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         var groups = FindCellChildrenGroups(esm.Data, cellFormId);
         if (groups.Count == 0)
@@ -113,11 +116,16 @@ public static class CellCommands
                 .AddColumn(new TableColumn("Count").RightAligned());
 
             foreach (var entry in counts)
-                summaryTable.AddRow(entry.Key, entry.Count().ToString("N0", CultureInfo.InvariantCulture));
+            {
+                _ = summaryTable.AddRow(entry.Key, entry.Count().ToString("N0", CultureInfo.InvariantCulture));
+            }
 
             AnsiConsole.Write(summaryTable);
 
-            if (summaryOnly) continue;
+            if (summaryOnly)
+            {
+                continue;
+            }
 
             var listLimit = limit <= 0 ? groupRecords.Count : Math.Min(limit, groupRecords.Count);
             var listTable = new Table()
@@ -130,7 +138,7 @@ public static class CellCommands
             for (var i = 0; i < listLimit; i++)
             {
                 var record = groupRecords[i];
-                listTable.AddRow(
+                _ = listTable.AddRow(
                     i.ToString(CultureInfo.InvariantCulture),
                     record.Signature,
                     $"0x{record.FormId:X8}",
@@ -153,7 +161,10 @@ public static class CellCommands
 
         var left = EsmFileLoader.Load(leftPath, false);
         var right = EsmFileLoader.Load(rightPath, false);
-        if (left == null || right == null) return 1;
+        if (left == null || right == null)
+        {
+            return 1;
+        }
 
         var leftCounts = BuildCellChildrenCounts(left.Data, left.IsBigEndian, cellFormId);
         var rightCounts = BuildCellChildrenCounts(right.Data, right.IsBigEndian, cellFormId);
@@ -178,13 +189,19 @@ public static class CellCommands
             var rightCount = rightCounts.TryGetValue(type, out var r) ? r : 0;
             var status = leftCount == rightCount ? "MATCH" : "DIFF";
 
-            if (leftCount == rightCount && limit > 0) continue;
+            if (leftCount == rightCount && limit > 0)
+            {
+                continue;
+            }
 
-            table.AddRow(type, leftCount.ToString("N0", CultureInfo.InvariantCulture),
+            _ = table.AddRow(type, leftCount.ToString("N0", CultureInfo.InvariantCulture),
                 rightCount.ToString("N0", CultureInfo.InvariantCulture), status);
 
             shown++;
-            if (limit > 0 && shown >= limit) break;
+            if (limit > 0 && shown >= limit)
+            {
+                break;
+            }
         }
 
         AnsiConsole.Write(table);
@@ -194,7 +211,10 @@ public static class CellCommands
     private static Dictionary<string, int> BuildCellChildrenCounts(byte[] data, bool bigEndian, uint cellFormId)
     {
         var groups = FindCellChildrenGroups(data, cellFormId);
-        if (groups.Count == 0) return new Dictionary<string, int>(StringComparer.Ordinal);
+        if (groups.Count == 0)
+        {
+            return new Dictionary<string, int>(StringComparer.Ordinal);
+        }
 
         var records = EsmHelpers.ScanAllRecords(data, bigEndian)
             .OrderBy(r => r.Offset)
@@ -207,8 +227,16 @@ public static class CellCommands
             var groupEnd = group.Offset + group.Size;
             foreach (var record in records)
             {
-                if (record.Offset < groupStart || record.Offset >= groupEnd) continue;
-                if (!counts.TryGetValue(record.Signature, out var count)) count = 0;
+                if (record.Offset < groupStart || record.Offset >= groupEnd)
+                {
+                    continue;
+                }
+
+                if (!counts.TryGetValue(record.Signature, out var count))
+                {
+                    count = 0;
+                }
+
                 counts[record.Signature] = count + 1;
             }
         }
@@ -219,10 +247,16 @@ public static class CellCommands
     private static List<CellGroup> FindCellChildrenGroups(byte[] data, uint cellFormId)
     {
         var header = EsmParser.ParseFileHeader(data);
-        if (header == null) return [];
+        if (header == null)
+        {
+            return [];
+        }
 
         var tes4Header = EsmParser.ParseRecordHeader(data, header.IsBigEndian);
-        if (tes4Header == null) return [];
+        if (tes4Header == null)
+        {
+            return [];
+        }
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
         var stack = new Stack<int>();
@@ -230,7 +264,10 @@ public static class CellCommands
 
         while (offset < data.Length - EsmParser.MainRecordHeaderSize)
         {
-            while (stack.Count > 0 && offset >= stack.Peek()) stack.Pop();
+            while (stack.Count > 0 && offset >= stack.Peek())
+            {
+                _ = stack.Pop();
+            }
 
             var sig = Encoding.ASCII.GetString(data, offset, 4);
             var isGrup = sig == "GRUP" || (header.IsBigEndian && sig == "PURG");
@@ -238,10 +275,16 @@ public static class CellCommands
             if (isGrup)
             {
                 var groupHeader = EsmParser.ParseGroupHeader(data.AsSpan(offset), header.IsBigEndian);
-                if (groupHeader == null) break;
+                if (groupHeader == null)
+                {
+                    break;
+                }
 
                 var groupSize = (int)groupHeader.GroupSize;
-                if (groupSize <= 0) break;
+                if (groupSize <= 0)
+                {
+                    break;
+                }
 
                 var labelRaw = header.IsBigEndian
                     ? BinaryPrimitives.ReadUInt32BigEndian(groupHeader.Label)
@@ -252,7 +295,10 @@ public static class CellCommands
                     : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset + 12));
 
                 var depth = stack.Count;
-                if (groupType == 6 && labelRaw == cellFormId) groups.Add(new CellGroup(offset, groupSize, depth));
+                if (groupType == 6 && labelRaw == cellFormId)
+                {
+                    groups.Add(new CellGroup(offset, groupSize, depth));
+                }
 
                 var groupEnd = offset + groupSize;
                 stack.Push(groupEnd);
@@ -273,11 +319,16 @@ public static class CellCommands
     private static bool TryParseFormId(string text, out uint formId)
     {
         formId = 0;
-        if (string.IsNullOrWhiteSpace(text)) return false;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
 
         text = text.Trim();
         if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
             text = text[2..];
+        }
 
         return uint.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out formId);
     }

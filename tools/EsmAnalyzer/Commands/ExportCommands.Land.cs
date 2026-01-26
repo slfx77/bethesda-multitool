@@ -1,7 +1,7 @@
-using System.Text.Json;
 using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.Text.Json;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
@@ -24,10 +24,13 @@ public static partial class ExportCommands
         }
 
         // Create output directory
-        Directory.CreateDirectory(outputDir);
+        _ = Directory.CreateDirectory(outputDir);
 
         var esm = EsmFileLoader.Load(filePath, false);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         AnsiConsole.MarkupLine($"[blue]Exporting LAND records from:[/] {Path.GetFileName(filePath)}");
         AnsiConsole.MarkupLine(
@@ -45,10 +48,7 @@ public static partial class ExportCommands
 
         IEnumerable<AnalyzerRecordInfo> landRecords = landRecordList;
 
-        if (targetFormId.HasValue)
-            landRecords = landRecords.Where(r => r.FormId == targetFormId.Value);
-        else
-            landRecords = landRecords.Take(limit);
+        landRecords = targetFormId.HasValue ? landRecords.Where(r => r.FormId == targetFormId.Value) : landRecords.Take(limit);
 
         var landList = landRecords.ToList();
         AnsiConsole.MarkupLine($"Found [cyan]{landList.Count}[/] LAND record(s) to export");
@@ -92,9 +92,13 @@ public static partial class ExportCommands
             .AddColumn("[bold]Metric[/]")
             .AddColumn("[bold]Value[/]");
 
-        summaryTable.AddRow("Exported", $"[green]{exported}[/]");
-        if (failed > 0) summaryTable.AddRow("Failed", $"[red]{failed}[/]");
-        summaryTable.AddRow("Output Directory", outputDir);
+        _ = summaryTable.AddRow("Exported", $"[green]{exported}[/]");
+        if (failed > 0)
+        {
+            _ = summaryTable.AddRow("Failed", $"[red]{failed}[/]");
+        }
+
+        _ = summaryTable.AddRow("Output Directory", outputDir);
 
         AnsiConsole.Write(summaryTable);
 
@@ -200,7 +204,10 @@ public static partial class ExportCommands
         for (var i = 0; i < 1089; i++)
         {
             var idx = 4 + i;
-            if (idx >= data.Length) continue;
+            if (idx >= data.Length)
+            {
+                continue;
+            }
 
             var value = (sbyte)data[idx] * 8f;
             var r = i / CellGridSize;
@@ -219,8 +226,10 @@ public static partial class ExportCommands
             heights[c, r] = offset + rowOffset;
 
             if (debug && r < 2 && c < 5)
+            {
                 Console.WriteLine(
                     $"  [{c},{r}] i={i} grad={(sbyte)data[idx]} offset={offset:F1} rowOffset={rowOffset:F1} height={heights[c, r]:F1}");
+            }
         }
 
         return (heights, baseHeight);
@@ -232,25 +241,25 @@ public static partial class ExportCommands
         var maxHeight = float.MinValue;
 
         for (var y = 0; y < CellGridSize; y++)
+        {
             for (var x = 0; x < CellGridSize; x++)
             {
                 minHeight = Math.Min(minHeight, heights[x, y]);
                 maxHeight = Math.Max(maxHeight, heights[x, y]);
             }
+        }
 
         var pixels = new byte[CellGridSize * CellGridSize];
         var range = maxHeight - minHeight;
 
         for (var y = 0; y < CellGridSize; y++)
+        {
             for (var x = 0; x < CellGridSize; x++)
             {
-                byte intensity;
-                if (range > 0.001f)
-                    intensity = (byte)((heights[x, y] - minHeight) / range * 255);
-                else
-                    intensity = 128;
-                pixels[y * CellGridSize + x] = intensity;
+                byte intensity = range > 0.001f ? (byte)((heights[x, y] - minHeight) / range * 255) : (byte)128;
+                pixels[(y * CellGridSize) + x] = intensity;
             }
+        }
 
         PngWriter.SaveGrayscale(pixels, CellGridSize, CellGridSize, path);
     }
@@ -265,10 +274,11 @@ public static partial class ExportCommands
         var pixels = new byte[CellGridSize * CellGridSize * 3];
 
         for (var y = 0; y < CellGridSize; y++)
+        {
             for (var x = 0; x < CellGridSize; x++)
             {
-                var srcIdx = (y * CellGridSize + x) * 3;
-                var dstIdx = (y * CellGridSize + x) * 3;
+                var srcIdx = ((y * CellGridSize) + x) * 3;
+                var dstIdx = ((y * CellGridSize) + x) * 3;
                 if (srcIdx + 2 < data.Length)
                 {
                     pixels[dstIdx + 0] = data[srcIdx + 0];
@@ -276,6 +286,7 @@ public static partial class ExportCommands
                     pixels[dstIdx + 2] = data[srcIdx + 2];
                 }
             }
+        }
 
         PngWriter.SaveRgb(pixels, CellGridSize, CellGridSize, path);
     }

@@ -148,4 +148,56 @@ public static class EsmBinary
     {
         return ReadDouble(data.AsSpan(), offset, bigEndian);
     }
+
+    #region Span-First Overloads (read from start of span)
+
+    /// <summary>
+    ///     Reads a 16-bit unsigned integer from the start of the span.
+    /// </summary>
+    public static ushort ReadUInt16(ReadOnlySpan<byte> data, bool bigEndian) =>
+        ReadUInt16(data, 0, bigEndian);
+
+    /// <summary>
+    ///     Reads a 16-bit signed integer from the start of the span.
+    /// </summary>
+    public static short ReadInt16(ReadOnlySpan<byte> data, bool bigEndian) =>
+        ReadInt16(data, 0, bigEndian);
+
+    /// <summary>
+    ///     Reads a 32-bit unsigned integer from the start of the span.
+    /// </summary>
+    public static uint ReadUInt32(ReadOnlySpan<byte> data, bool bigEndian) =>
+        ReadUInt32(data, 0, bigEndian);
+
+    /// <summary>
+    ///     Reads a 32-bit signed integer from the start of the span.
+    /// </summary>
+    public static int ReadInt32(ReadOnlySpan<byte> data, bool bigEndian) =>
+        ReadInt32(data, 0, bigEndian);
+
+    /// <summary>
+    ///     Reads a 32-bit floating point value from the start of the span.
+    /// </summary>
+    public static float ReadSingle(ReadOnlySpan<byte> data, bool bigEndian) =>
+        ReadSingle(data, 0, bigEndian);
+
+    /// <summary>
+    ///     Reads a 64-bit unsigned integer from the start of the span.
+    /// </summary>
+    public static ulong ReadUInt64(ReadOnlySpan<byte> data, bool bigEndian) =>
+        ReadUInt64(data, 0, bigEndian);
+
+    /// <summary>
+    ///     Reads a 64-bit signed integer from the start of the span.
+    /// </summary>
+    public static long ReadInt64(ReadOnlySpan<byte> data, bool bigEndian) =>
+        ReadInt64(data, 0, bigEndian);
+
+    /// <summary>
+    ///     Reads a 64-bit double precision value from the start of the span.
+    /// </summary>
+    public static double ReadDouble(ReadOnlySpan<byte> data, bool bigEndian) =>
+        ReadDouble(data, 0, bigEndian);
+
+    #endregion
 }

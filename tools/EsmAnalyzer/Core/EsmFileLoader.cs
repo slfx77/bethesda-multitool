@@ -4,19 +4,6 @@ using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 namespace EsmAnalyzer.Core;
 
 /// <summary>
-///     Result of loading and validating an ESM file.
-/// </summary>
-public sealed class EsmFileLoadResult
-{
-    public required byte[] Data { get; init; }
-    public required EsmFileHeader Header { get; init; }
-    public required MainRecordHeader Tes4Header { get; init; }
-    public required int FirstGrupOffset { get; init; }
-    public required string FilePath { get; init; }
-    public bool IsBigEndian => Header.IsBigEndian;
-}
-
-/// <summary>
 ///     Shared file loading and validation logic for ESM commands.
 /// </summary>
 public static class EsmFileLoader
@@ -52,8 +39,10 @@ public static class EsmFileLoader
         var firstGrupOffset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
 
         if (printStatus)
+        {
             AnsiConsole.MarkupLine(
                 $"Endianness: {(header.IsBigEndian ? "[yellow]Big-endian (Xbox 360)[/]" : "[green]Little-endian (PC)[/]")}");
+        }
 
         return new EsmFileLoadResult
         {
@@ -102,7 +91,10 @@ public static class EsmFileLoader
     /// </summary>
     public static int? ParseOffset(string? offsetStr)
     {
-        if (string.IsNullOrWhiteSpace(offsetStr)) return null;
+        if (string.IsNullOrWhiteSpace(offsetStr))
+        {
+            return null;
+        }
 
         try
         {
@@ -120,7 +112,10 @@ public static class EsmFileLoader
     /// </summary>
     public static uint? ParseFormId(string? formIdStr)
     {
-        if (string.IsNullOrWhiteSpace(formIdStr)) return null;
+        if (string.IsNullOrWhiteSpace(formIdStr))
+        {
+            return null;
+        }
 
         try
         {

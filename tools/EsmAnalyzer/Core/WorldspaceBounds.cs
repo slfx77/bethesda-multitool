@@ -43,13 +43,17 @@ public sealed class WorldspaceBounds
     /// <summary>
     ///     Checks if a cell coordinate is within the playable bounds.
     /// </summary>
-    public bool IsInBounds(int cellX, int cellY) =>
-        cellX >= MinCellX && cellX <= MaxCellX &&
-        cellY >= MinCellY && cellY <= MaxCellY;
+    public bool IsInBounds(int cellX, int cellY)
+    {
+        return cellX >= MinCellX && cellX <= MaxCellX &&
+               cellY >= MinCellY && cellY <= MaxCellY;
+    }
 
     /// <summary>
     ///     Returns a formatted string representation of the bounds.
     /// </summary>
-    public override string ToString() =>
-        $"X=[{MinCellX} to {MaxCellX}], Y=[{MinCellY} to {MaxCellY}]";
+    public override string ToString()
+    {
+        return $"X=[{MinCellX} to {MaxCellX}], Y=[{MinCellY} to {MaxCellY}]";
+    }
 }

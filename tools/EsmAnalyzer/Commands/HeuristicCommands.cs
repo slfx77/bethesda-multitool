@@ -1,6 +1,6 @@
-using System.CommandLine;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.CommandLine;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
@@ -115,7 +115,9 @@ public static class HeuristicCommands
 
         var type = recordType.ToUpperInvariant();
         if (!TryNormalizeScope(options.Scope, out var normalizedScope))
+        {
             return 1;
+        }
 
         var (pcRecord, pcRecordData) = FindRecord(pcData, pcHeader.IsBigEndian, type, formId.Value);
         if (pcRecord == null || pcRecordData == null)
@@ -125,11 +127,16 @@ public static class HeuristicCommands
         }
 
         var candidates = GetCandidateSubrecords(pcRecordData, pcHeader.IsBigEndian, type, options.SubrecordFilters);
-        if (candidates == null) return 0;
+        if (candidates == null)
+        {
+            return 0;
+        }
 
         if (!TryGetHaystack(xboxData, xboxHeader.IsBigEndian, type, formId.Value, normalizedScope, out var xboxRecord,
                 out var haystack))
+        {
             return 1;
+        }
 
         var searchModes = ResolveSearchModes(options.Mode, type);
         var records = normalizedScope == ScopeFile && options.Locate
@@ -156,7 +163,10 @@ public static class HeuristicCommands
     {
         var records = EsmHelpers.ScanForRecordType(data, bigEndian, recordType);
         var match = records.FirstOrDefault(r => r.FormId == formId);
-        if (match == null) return (null, null);
+        if (match == null)
+        {
+            return (null, null);
+        }
 
         try
         {
@@ -174,7 +184,10 @@ public static class HeuristicCommands
     private static bool TryNormalizeScope(string scope, out string normalizedScope)
     {
         normalizedScope = scope.Trim().ToLowerInvariant();
-        if (normalizedScope is ScopeFile or ScopeRecord) return true;
+        if (normalizedScope is ScopeFile or ScopeRecord)
+        {
+            return true;
+        }
 
         AnsiConsole.MarkupLine("[red]ERROR:[/] Scope must be 'file' or 'record'.");
         return false;
@@ -190,7 +203,10 @@ public static class HeuristicCommands
             .Where(s => wanted.Contains(s.Signature, StringComparer.OrdinalIgnoreCase))
             .ToList();
 
-        if (candidates.Count > 0) return candidates;
+        if (candidates.Count > 0)
+        {
+            return candidates;
+        }
 
         AnsiConsole.MarkupLine("[yellow]No matching subrecords found in PC record.[/]");
         return null;
@@ -202,17 +218,20 @@ public static class HeuristicCommands
         xboxRecord = null;
         haystack = xboxData;
 
-        if (normalizedScope != ScopeRecord) return true;
+        if (normalizedScope != ScopeRecord)
+        {
+            return true;
+        }
 
-        var recordData = FindRecord(xboxData, bigEndian, recordType, formId);
-        xboxRecord = recordData.Record;
-        if (recordData.Record == null || recordData.RecordData == null)
+        var (Record, RecordData) = FindRecord(xboxData, bigEndian, recordType, formId);
+        xboxRecord = Record;
+        if (Record == null || RecordData == null)
         {
             AnsiConsole.MarkupLine($"[red]ERROR:[/] Xbox record {recordType} 0x{formId:X8} not found");
             return false;
         }
 
-        haystack = recordData.RecordData;
+        haystack = RecordData;
         return true;
     }
 
@@ -231,23 +250,33 @@ public static class HeuristicCommands
     private static void AddSearchRows(Table table, List<AnalyzerSubrecordInfo> candidates, SearchContext context)
     {
         foreach (var sub in candidates)
+        {
             AddSearchRowsForSubrecord(table, sub, context);
+        }
     }
 
     private static void AddSearchRowsForSubrecord(Table table, AnalyzerSubrecordInfo sub, SearchContext context)
     {
         foreach (var searchMode in context.SearchModes)
+        {
             AddSearchRowsForMode(table, sub, searchMode, context);
+        }
     }
 
     private static void AddSearchRowsForMode(Table table, AnalyzerSubrecordInfo sub, string searchMode,
         SearchContext context)
     {
         var pattern = BuildPattern(sub.Data, sub.Signature, searchMode);
-        if (pattern.Length == 0) return;
+        if (pattern.Length == 0)
+        {
+            return;
+        }
 
         var hits = FindAllOccurrences(context.Haystack, pattern, context.MaxHits);
-        if (hits.Count == 0) return;
+        if (hits.Count == 0)
+        {
+            return;
+        }
 
         foreach (var hit in hits)
         {
@@ -256,7 +285,7 @@ public static class HeuristicCommands
             var formLabel = match != null ? $"0x{match.FormId:X8}" : "-";
             var offsetLabel = context.NormalizedScope == ScopeRecord ? $"rec+0x{hit:X}" : $"0x{hit:X8}";
 
-            table.AddRow(
+            _ = table.AddRow(
                 sub.Signature,
                 searchMode,
                 $"0x{sub.Data.Length:X}",
@@ -268,45 +297,42 @@ public static class HeuristicCommands
 
     private static AnalyzerRecordInfo? ResolveMatch(SearchContext context, long hit)
     {
-        if (context.NormalizedScope == ScopeFile && context.Locate)
-            return FindRecordAtOffset(context.Records, (uint)hit);
-
-        return context.NormalizedScope == ScopeRecord ? context.XboxRecord : null;
+        return context.NormalizedScope == ScopeFile && context.Locate
+            ? FindRecordAtOffset(context.Records, (uint)hit)
+            : context.NormalizedScope == ScopeRecord ? context.XboxRecord : null;
     }
 
     private static HashSet<string> ResolveSubrecordFilters(string recordType, string[]? subrecordFilters)
     {
-        if (subrecordFilters is { Length: > 0 })
-            return new HashSet<string>(subrecordFilters.Select(s => s.ToUpperInvariant()));
-
-        return recordType switch
-        {
-            "LAND" => new HashSet<string>(["VNML", "VHGT", "VCLR", "VTXT"]),
-            "NAVM" => new HashSet<string>(["NVVX", "NVTR", "NVGD"]),
-            "WRLD" => new HashSet<string>(["OFST"]),
-            _ => new HashSet<string>()
-        };
+        return subrecordFilters is { Length: > 0 }
+            ? [.. subrecordFilters.Select(s => s.ToUpperInvariant())]
+            : recordType switch
+            {
+                "LAND" => new HashSet<string>(["VNML", "VHGT", "VCLR", "VTXT"]),
+                "NAVM" => new HashSet<string>(["NVVX", "NVTR", "NVGD"]),
+                "WRLD" => new HashSet<string>(["OFST"]),
+                _ => []
+            };
     }
 
     private static List<string> ResolveSearchModes(string mode, string recordType)
     {
         var normalized = mode.ToLowerInvariant();
-        if (normalized == ModeAll)
-            return recordType == "LAND"
+        return normalized == ModeAll
+            ? recordType == "LAND"
                 ? [ModeRaw, ModeSwap2, ModeSwap4, ModeLand]
-                : [ModeRaw, ModeSwap2, ModeSwap4];
-
-        return normalized switch
-        {
-            ModeRaw => [ModeRaw],
-            ModeSwap2 => [ModeSwap2],
-            ModeSwap4 => [ModeSwap4],
-            ModeLand => [ModeLand],
-            ModeLandVhgt => [ModeLandVhgt],
-            ModeLandAtxt => [ModeLandAtxt],
-            ModeLandVtxt => [ModeLandVtxt],
-            _ => [ModeRaw]
-        };
+                : [ModeRaw, ModeSwap2, ModeSwap4]
+            : normalized switch
+            {
+                ModeRaw => [ModeRaw],
+                ModeSwap2 => [ModeSwap2],
+                ModeSwap4 => [ModeSwap4],
+                ModeLand => [ModeLand],
+                ModeLandVhgt => [ModeLandVhgt],
+                ModeLandAtxt => [ModeLandAtxt],
+                ModeLandVtxt => [ModeLandVtxt],
+                _ => [ModeRaw]
+            };
     }
 
     private static byte[] BuildPattern(byte[] data, string signature, string mode)
@@ -337,7 +363,10 @@ public static class HeuristicCommands
 
     private static byte[] ApplyLandVhgt(byte[] data)
     {
-        if (data.Length < 4) return Array.Empty<byte>();
+        if (data.Length < 4)
+        {
+            return Array.Empty<byte>();
+        }
 
         var copy = (byte[])data.Clone();
         (copy[0], copy[3]) = (copy[3], copy[0]);
@@ -347,7 +376,10 @@ public static class HeuristicCommands
 
     private static byte[] ApplyLandAtxt(byte[] data)
     {
-        if (data.Length < 8) return Array.Empty<byte>();
+        if (data.Length < 8)
+        {
+            return Array.Empty<byte>();
+        }
 
         var copy = (byte[])data.Clone();
         // Swap FormID (bytes 0-3)
@@ -363,7 +395,10 @@ public static class HeuristicCommands
 
     private static byte[] ApplyLandVtxt(byte[] data)
     {
-        if (data.Length < 8) return Array.Empty<byte>();
+        if (data.Length < 8)
+        {
+            return Array.Empty<byte>();
+        }
 
         var copy = (byte[])data.Clone();
         for (var i = 0; i + 7 < copy.Length; i += 8)
@@ -381,7 +416,10 @@ public static class HeuristicCommands
     private static List<int> FindAllOccurrences(byte[] haystack, byte[] needle, int maxHits)
     {
         var results = new List<int>();
-        if (needle.Length == 0 || haystack.Length < needle.Length || maxHits <= 0) return results;
+        if (needle.Length == 0 || haystack.Length < needle.Length || maxHits <= 0)
+        {
+            return results;
+        }
 
         var span = haystack.AsSpan();
         var pattern = needle.AsSpan();
@@ -390,7 +428,10 @@ public static class HeuristicCommands
         while (start <= span.Length - pattern.Length && results.Count < maxHits)
         {
             var found = span[start..].IndexOf(pattern);
-            if (found < 0) break;
+            if (found < 0)
+            {
+                break;
+            }
 
             var offset = start + found;
             results.Add(offset);
@@ -403,7 +444,11 @@ public static class HeuristicCommands
     private static byte[] SwapEvery2(byte[] data)
     {
         var copy = (byte[])data.Clone();
-        for (var i = 0; i + 1 < copy.Length; i += 2) (copy[i], copy[i + 1]) = (copy[i + 1], copy[i]);
+        for (var i = 0; i + 1 < copy.Length; i += 2)
+        {
+            (copy[i], copy[i + 1]) = (copy[i + 1], copy[i]);
+        }
+
         return copy;
     }
 
@@ -425,7 +470,10 @@ public static class HeuristicCommands
         {
             var start = record.Offset;
             var end = record.Offset + record.TotalSize;
-            if (offset >= start && offset < end) return record;
+            if (offset >= start && offset < end)
+            {
+                return record;
+            }
         }
 
         return null;

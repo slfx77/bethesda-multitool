@@ -1,8 +1,7 @@
-using System.Buffers.Binary;
-using System.Text;
-using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.Buffers.Binary;
+using System.Text;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Utils;
 
@@ -13,7 +12,6 @@ namespace EsmAnalyzer.Commands;
 /// </summary>
 public static partial class CompareCommands
 {
-
     /// <summary>
     ///     Compares heightmaps between two ESM files and generates console commands for teleportation.
     /// </summary>
@@ -28,7 +26,10 @@ public static partial class CompareCommands
         // Load both ESM files
         var esm1 = EsmFileLoader.Load(file1Path, false);
         var esm2 = EsmFileLoader.Load(file2Path, false);
-        if (esm1 == null || esm2 == null) return 1;
+        if (esm1 == null || esm2 == null)
+        {
+            return 1;
+        }
 
         // Determine target worldspace
         uint targetFormId;
@@ -75,7 +76,9 @@ public static partial class CompareCommands
         // Merge cell names from both files (prefer file 2 / final)
         var cellNames = new Dictionary<(int, int), string>(cellNames1);
         foreach (var kvp in cellNames2)
+        {
             cellNames[kvp.Key] = kvp.Value;
+        }
 
         if (heightmaps1.Count == 0 || heightmaps2.Count == 0)
         {
@@ -157,7 +160,9 @@ public static partial class CompareCommands
 
         // Show statistics if requested
         if (showStats)
+        {
             ShowComparisonStats(heightmaps1, heightmaps2, differences, allGroups, inBoundsGroups, outOfBoundsGroups);
+        }
 
         // Generate output file with detailed information and console commands
         GenerateHeightmapComparisonOutput(outputPath, worldspaceName, file1Path, file2Path, inBoundsGroups,
@@ -173,13 +178,13 @@ public static partial class CompareCommands
     private static void DisplayGroupTable(List<CellGroup> groups, string worldspaceName)
     {
         var table = new Table();
-        table.AddColumn("Rank");
-        table.AddColumn("Region");
-        table.AddColumn("Size");
-        table.AddColumn("Max Diff");
-        table.AddColumn("Avg Diff");
-        table.AddColumn("Points Changed");
-        table.AddColumn("Console Command");
+        _ = table.AddColumn("Rank");
+        _ = table.AddColumn("Region");
+        _ = table.AddColumn("Size");
+        _ = table.AddColumn("Max Diff");
+        _ = table.AddColumn("Avg Diff");
+        _ = table.AddColumn("Points Changed");
+        _ = table.AddColumn("Console Command");
 
         var rank = 1;
         foreach (var group in groups)
@@ -200,7 +205,7 @@ public static partial class CompareCommands
                 locationName = $"{namedPart}({group.MinX},{group.MinY}) to ({group.MaxX},{group.MaxY})";
             }
 
-            table.AddRow(
+            _ = table.AddRow(
                 rank.ToString(),
                 locationName,
                 group.SizeDescription,
@@ -235,6 +240,7 @@ public static partial class CompareCommands
                 // Build cell map with grid coordinates
                 var cellMap = new Dictionary<(int x, int y), HeightmapCellInfo>();
                 foreach (var cell in cellRecords)
+                {
                     try
                     {
                         var recordData = EsmHelpers.GetRecordData(data, cell, bigEndian);
@@ -273,13 +279,16 @@ public static partial class CompareCommands
 
                             // Store editor ID if present
                             if (!string.IsNullOrEmpty(editorId))
+                            {
                                 cellNames[(gridX, gridY)] = editorId;
+                            }
                         }
                     }
                     catch
                     {
                         // Skip cells that fail to parse
                     }
+                }
 
                 // Get all cell offsets for boundary checking
                 var allCellOffsets = cellRecords.Select(c => c.Offset).OrderBy(o => o).ToList();
@@ -298,7 +307,9 @@ public static partial class CompareCommands
                         // Check if this LAND belongs to a later cell
                         var nextCellOffset = allCellOffsets.FirstOrDefault(o => o > cell.CellRecord.Offset);
                         if (nextCellOffset != default && land.Offset > nextCellOffset)
+                        {
                             break;
+                        }
 
                         try
                         {
@@ -310,15 +321,17 @@ public static partial class CompareCommands
                             {
                                 var heights = ParseHeightmapData(vhgt.Data, bigEndian);
                                 if (!heightmaps.ContainsKey((cell.GridX, cell.GridY)))
+                                {
                                     heightmaps[(cell.GridX, cell.GridY)] = heights;
+                                }
                             }
 
-                            sortedLands.Remove(land);
+                            _ = sortedLands.Remove(land);
                             break;
                         }
                         catch
                         {
-                            sortedLands.Remove(land);
+                            _ = sortedLands.Remove(land);
                         }
                     }
                 }
@@ -338,11 +351,17 @@ public static partial class CompareCommands
         var lands = new List<AnalyzerRecordInfo>();
 
         var header = EsmParser.ParseFileHeader(data);
-        if (header == null) return (cells, lands);
+        if (header == null)
+        {
+            return (cells, lands);
+        }
 
         // Skip TES4 header
         var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
-        if (tes4Header == null) return (cells, lands);
+        if (tes4Header == null)
+        {
+            return (cells, lands);
+        }
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
 
@@ -393,6 +412,7 @@ public static partial class CompareCommands
                 if (inTargetWorldspace)
                 {
                     if (sig == "CELL")
+                    {
                         cells.Add(new AnalyzerRecordInfo
                         {
                             Signature = sig,
@@ -402,7 +422,9 @@ public static partial class CompareCommands
                             FormId = formId,
                             Flags = flags
                         });
+                    }
                     else if (sig == "LAND")
+                    {
                         lands.Add(new AnalyzerRecordInfo
                         {
                             Signature = sig,
@@ -412,12 +434,16 @@ public static partial class CompareCommands
                             FormId = formId,
                             Flags = flags
                         });
+                    }
                 }
 
                 offset += EsmParser.MainRecordHeaderSize + (int)recSize;
 
                 // Check if we've exited the target worldspace GRUP
-                if (inTargetWorldspace && offset >= grupEndOffset) inTargetWorldspace = false;
+                if (inTargetWorldspace && offset >= grupEndOffset)
+                {
+                    inTargetWorldspace = false;
+                }
             }
         }
 
@@ -440,7 +466,10 @@ public static partial class CompareCommands
         for (var i = 0; i < EsmConstants.LandGridArea; i++)
         {
             var idx = 4 + i;
-            if (idx >= data.Length) continue;
+            if (idx >= data.Length)
+            {
+                continue;
+            }
 
             var value = (sbyte)data[idx] * 8f;
             var r = i / EsmConstants.LandGridSize;
@@ -489,6 +518,7 @@ public static partial class CompareCommands
             var significantPoints = new List<(int x, int y, float diff)>();
 
             for (var y = 0; y < EsmConstants.LandGridSize; y++)
+            {
                 for (var x = 0; x < EsmConstants.LandGridSize; x++)
                 {
                     var diff = Math.Abs(h1[x, y] - h2[x, y]);
@@ -499,10 +529,15 @@ public static partial class CompareCommands
                     {
                         diffCount++;
                         totalDiff += diff;
-                        if (diff > maxDiff) maxDiff = diff;
+                        if (diff > maxDiff)
+                        {
+                            maxDiff = diff;
+                        }
+
                         significantPoints.Add((x, y, diff));
                     }
                 }
+            }
 
             if (maxDiff >= threshold)
             {
@@ -511,9 +546,9 @@ public static partial class CompareCommands
                 var avgDiff = diffCount > 0 ? totalDiff / diffCount : 0;
 
                 // Find the point with maximum difference for more precise teleport
-                var maxPoint = significantPoints.OrderByDescending(p => p.diff).FirstOrDefault();
+                var (x, y, diff) = significantPoints.OrderByDescending(p => p.diff).FirstOrDefault();
 
-                cellNames.TryGetValue(cell, out var editorId);
+                _ = cellNames.TryGetValue(cell, out var editorId);
                 differences.Add(new CellHeightDifference
                 {
                     CellX = cell.x,
@@ -524,8 +559,8 @@ public static partial class CompareCommands
                     DiffPointCount = diffCount,
                     AvgHeight1 = avgHeight1,
                     AvgHeight2 = avgHeight2,
-                    MaxDiffLocalX = maxPoint.x,
-                    MaxDiffLocalY = maxPoint.y
+                    MaxDiffLocalX = x,
+                    MaxDiffLocalY = y
                 });
             }
         }
@@ -534,8 +569,15 @@ public static partial class CompareCommands
         var onlyIn1 = heightmaps1.Keys.Except(heightmaps2.Keys).ToList();
         var onlyIn2 = heightmaps2.Keys.Except(heightmaps1.Keys).ToList();
 
-        if (onlyIn1.Count > 0) AnsiConsole.MarkupLine($"[yellow]Cells only in File 1: {onlyIn1.Count}[/]");
-        if (onlyIn2.Count > 0) AnsiConsole.MarkupLine($"[yellow]Cells only in File 2: {onlyIn2.Count}[/]");
+        if (onlyIn1.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Cells only in File 1: {onlyIn1.Count}[/]");
+        }
+
+        if (onlyIn2.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Cells only in File 2: {onlyIn2.Count}[/]");
+        }
 
         return differences;
     }
@@ -582,8 +624,10 @@ public static partial class CompareCommands
         {
             var largestGroup = allGroups.OrderByDescending(g => g.Cells.Count).First();
             if (largestGroup.Cells.Count > 1)
+            {
                 AnsiConsole.MarkupLine(
                     $"  Largest region: {largestGroup.SizeDescription} at ({largestGroup.MinX},{largestGroup.MinY}) to ({largestGroup.MaxX},{largestGroup.MaxY})");
+            }
         }
 
         AnsiConsole.WriteLine();
@@ -595,10 +639,16 @@ public static partial class CompareCommands
     private static WorldspaceBounds? ExtractWorldspaceBounds(byte[] data, bool bigEndian, uint worldspaceFormId)
     {
         var header = EsmParser.ParseFileHeader(data);
-        if (header == null) return null;
+        if (header == null)
+        {
+            return null;
+        }
 
         var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
-        if (tes4Header == null) return null;
+        if (tes4Header == null)
+        {
+            return null;
+        }
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
 
@@ -637,8 +687,8 @@ public static partial class CompareCommands
                         ])
                         : Encoding.ASCII.GetString(recordData.Slice(subOffset, 4));
                     var subSize = bigEndian
-                        ? BinaryPrimitives.ReadUInt16BigEndian(recordData.Slice(subOffset + 4))
-                        : BinaryPrimitives.ReadUInt16LittleEndian(recordData.Slice(subOffset + 4));
+                        ? BinaryPrimitives.ReadUInt16BigEndian(recordData[(subOffset + 4)..])
+                        : BinaryPrimitives.ReadUInt16LittleEndian(recordData[(subOffset + 4)..]);
 
                     if (subSig == "MNAM" && subSize >= 16)
                     {
@@ -647,17 +697,17 @@ public static partial class CompareCommands
                         // int32 usableWidth, int32 usableHeight
                         // int16 nwCellX, int16 nwCellY, int16 seCellX, int16 seCellY
                         var nwCellX = bigEndian
-                            ? BinaryPrimitives.ReadInt16BigEndian(mnamData.Slice(8))
-                            : BinaryPrimitives.ReadInt16LittleEndian(mnamData.Slice(8));
+                            ? BinaryPrimitives.ReadInt16BigEndian(mnamData[8..])
+                            : BinaryPrimitives.ReadInt16LittleEndian(mnamData[8..]);
                         var nwCellY = bigEndian
-                            ? BinaryPrimitives.ReadInt16BigEndian(mnamData.Slice(10))
-                            : BinaryPrimitives.ReadInt16LittleEndian(mnamData.Slice(10));
+                            ? BinaryPrimitives.ReadInt16BigEndian(mnamData[10..])
+                            : BinaryPrimitives.ReadInt16LittleEndian(mnamData[10..]);
                         var seCellX = bigEndian
-                            ? BinaryPrimitives.ReadInt16BigEndian(mnamData.Slice(12))
-                            : BinaryPrimitives.ReadInt16LittleEndian(mnamData.Slice(12));
+                            ? BinaryPrimitives.ReadInt16BigEndian(mnamData[12..])
+                            : BinaryPrimitives.ReadInt16LittleEndian(mnamData[12..]);
                         var seCellY = bigEndian
-                            ? BinaryPrimitives.ReadInt16BigEndian(mnamData.Slice(14))
-                            : BinaryPrimitives.ReadInt16LittleEndian(mnamData.Slice(14));
+                            ? BinaryPrimitives.ReadInt16BigEndian(mnamData[14..])
+                            : BinaryPrimitives.ReadInt16LittleEndian(mnamData[14..]);
 
                         // NW is top-left (higher Y), SE is bottom-right (lower Y)
                         return new WorldspaceBounds
@@ -691,71 +741,82 @@ public static partial class CompareCommands
         var sb = new StringBuilder();
         var totalCells = inBoundsGroups.Sum(g => g.Cells.Count) + outOfBoundsGroups.Sum(g => g.Cells.Count);
 
-        sb.AppendLine("================================================================================");
-        sb.AppendLine("FALLOUT: NEW VEGAS - TERRAIN DIFFERENCE ANALYSIS");
-        sb.AppendLine("================================================================================");
-        sb.AppendLine();
-        sb.AppendLine($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"File 1 (Proto): {Path.GetFileName(file1Path)}");
-        sb.AppendLine($"File 2 (Final): {Path.GetFileName(file2Path)}");
-        sb.AppendLine($"Worldspace: {worldspaceName}");
+        _ = sb.AppendLine("================================================================================");
+        _ = sb.AppendLine("FALLOUT: NEW VEGAS - TERRAIN DIFFERENCE ANALYSIS");
+        _ = sb.AppendLine("================================================================================");
+        _ = sb.AppendLine();
+        _ = sb.AppendLine($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        _ = sb.AppendLine($"File 1 (Proto): {Path.GetFileName(file1Path)}");
+        _ = sb.AppendLine($"File 2 (Final): {Path.GetFileName(file2Path)}");
+        _ = sb.AppendLine($"Worldspace: {worldspaceName}");
         if (bounds != null)
-            sb.AppendLine(
+        {
+            _ = sb.AppendLine(
                 $"Playable Area: X=[{bounds.MinCellX} to {bounds.MaxCellX}], Y=[{bounds.MinCellY} to {bounds.MaxCellY}]");
-        sb.AppendLine();
-        sb.AppendLine(
+        }
+
+        _ = sb.AppendLine();
+        _ = sb.AppendLine(
             $"Total differences: {totalCells} cells in {inBoundsGroups.Count + outOfBoundsGroups.Count} contiguous regions");
-        sb.AppendLine(
+        _ = sb.AppendLine(
             $"  In playable area: {inBoundsGroups.Count} regions ({inBoundsGroups.Sum(g => g.Cells.Count)} cells)");
-        sb.AppendLine(
+        _ = sb.AppendLine(
             $"  Out of bounds: {outOfBoundsGroups.Count} regions ({outOfBoundsGroups.Sum(g => g.Cells.Count)} cells)");
-        sb.AppendLine();
-        sb.AppendLine("================================================================================");
-        sb.AppendLine("HOW TO USE THESE COMMANDS");
-        sb.AppendLine("================================================================================");
-        sb.AppendLine();
-        sb.AppendLine("1. Open the game console with the ~ (tilde) key");
-        sb.AppendLine("2. Copy and paste the command (or type it manually)");
-        sb.AppendLine("3. Press Enter to teleport");
-        sb.AppendLine();
-        sb.AppendLine("Commands:");
-        sb.AppendLine("  cow <worldspace> <x> <y>  - Center on World (teleport to cell)");
-        sb.AppendLine("  player.setpos x <val>    - Fine-tune X position");
-        sb.AppendLine("  player.setpos y <val>    - Fine-tune Y position");
-        sb.AppendLine("  player.setpos z <val>    - Adjust height (if stuck underground)");
-        sb.AppendLine("  tcl                      - Toggle collision (if stuck)");
-        sb.AppendLine();
-        sb.AppendLine("================================================================================");
-        sb.AppendLine("IN-BOUNDS TERRAIN REGIONS (playable area)");
-        sb.AppendLine("================================================================================");
-        sb.AppendLine();
+        _ = sb.AppendLine();
+        _ = sb.AppendLine("================================================================================");
+        _ = sb.AppendLine("HOW TO USE THESE COMMANDS");
+        _ = sb.AppendLine("================================================================================");
+        _ = sb.AppendLine();
+        _ = sb.AppendLine("1. Open the game console with the ~ (tilde) key");
+        _ = sb.AppendLine("2. Copy and paste the command (or type it manually)");
+        _ = sb.AppendLine("3. Press Enter to teleport");
+        _ = sb.AppendLine();
+        _ = sb.AppendLine("Commands:");
+        _ = sb.AppendLine("  cow <worldspace> <x> <y>  - Center on World (teleport to cell)");
+        _ = sb.AppendLine("  player.setpos x <val>    - Fine-tune X position");
+        _ = sb.AppendLine("  player.setpos y <val>    - Fine-tune Y position");
+        _ = sb.AppendLine("  player.setpos z <val>    - Adjust height (if stuck underground)");
+        _ = sb.AppendLine("  tcl                      - Toggle collision (if stuck)");
+        _ = sb.AppendLine();
+        _ = sb.AppendLine("================================================================================");
+        _ = sb.AppendLine("IN-BOUNDS TERRAIN REGIONS (playable area)");
+        _ = sb.AppendLine("================================================================================");
+        _ = sb.AppendLine();
 
         if (inBoundsGroups.Count == 0)
         {
-            sb.AppendLine("No terrain differences found within the playable area.");
-            sb.AppendLine();
+            _ = sb.AppendLine("No terrain differences found within the playable area.");
+            _ = sb.AppendLine();
         }
         else
         {
             var rank = 1;
-            foreach (var group in inBoundsGroups) AppendGroupEntry(sb, group, worldspaceName, rank++);
+            foreach (var group in inBoundsGroups)
+            {
+                AppendGroupEntry(sb, group, worldspaceName, rank++);
+            }
         }
 
         if (outOfBoundsGroups.Count > 0)
         {
-            sb.AppendLine("================================================================================");
-            sb.AppendLine("OUT-OF-BOUNDS TERRAIN REGIONS (outside playable area)");
-            sb.AppendLine("================================================================================");
-            sb.AppendLine();
+            _ = sb.AppendLine("================================================================================");
+            _ = sb.AppendLine("OUT-OF-BOUNDS TERRAIN REGIONS (outside playable area)");
+            _ = sb.AppendLine("================================================================================");
+            _ = sb.AppendLine();
 
             var rank = 1;
-            foreach (var group in outOfBoundsGroups) AppendGroupEntry(sb, group, worldspaceName, rank++);
+            foreach (var group in outOfBoundsGroups)
+            {
+                AppendGroupEntry(sb, group, worldspaceName, rank++);
+            }
         }
 
         // Ensure output directory exists
         var outputDir = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(outputDir))
-            Directory.CreateDirectory(outputDir);
+        {
+            _ = Directory.CreateDirectory(outputDir);
+        }
 
         File.WriteAllText(outputPath, sb.ToString());
     }
@@ -778,27 +839,27 @@ public static partial class CompareCommands
             header = $"--- #{rank}: {namedPart}Region ({group.MinX},{group.MinY}) to ({group.MaxX},{group.MaxY}) ---";
         }
 
-        sb.AppendLine(header);
-        sb.AppendLine($"Region Size: {group.SizeDescription}");
-        sb.AppendLine(
+        _ = sb.AppendLine(header);
+        _ = sb.AppendLine($"Region Size: {group.SizeDescription}");
+        _ = sb.AppendLine(
             $"Max Height Difference: {group.MaxDifference:F0} units (at cell {maxDiffCell.CellX}, {maxDiffCell.CellY})");
-        sb.AppendLine($"Avg Height Difference: {group.AvgDifference:F0} units");
-        sb.AppendLine($"Affected Points: {group.TotalDiffPointCount} / {group.TotalPoints}");
-        sb.AppendLine();
+        _ = sb.AppendLine($"Avg Height Difference: {group.AvgDifference:F0} units");
+        _ = sb.AppendLine($"Affected Points: {group.TotalDiffPointCount} / {group.TotalPoints}");
+        _ = sb.AppendLine();
 
         // List cells if more than one
         if (group.Cells.Count > 1)
         {
-            sb.AppendLine("Cells in this region:");
+            _ = sb.AppendLine("Cells in this region:");
             foreach (var cell in group.Cells.OrderByDescending(c => c.MaxDifference))
             {
                 var cellName = string.IsNullOrEmpty(cell.EditorId)
                     ? $"({cell.CellX}, {cell.CellY})"
                     : $"{cell.EditorId} ({cell.CellX}, {cell.CellY})";
-                sb.AppendLine($"  {cellName}: max diff {cell.MaxDifference:F0}, {cell.DiffPointCount} points");
+                _ = sb.AppendLine($"  {cellName}: max diff {cell.MaxDifference:F0}, {cell.DiffPointCount} points");
             }
 
-            sb.AppendLine();
+            _ = sb.AppendLine();
         }
 
         // Calculate world coordinates for the max diff location
@@ -807,14 +868,14 @@ public static partial class CompareCommands
             maxDiffCell.MaxDiffLocalX, maxDiffCell.MaxDiffLocalY);
         var estimatedZ = (int)Math.Max(maxDiffCell.AvgHeight1, maxDiffCell.AvgHeight2) + 500;
 
-        sb.AppendLine("Console Commands:");
-        sb.AppendLine($"  cow {worldspaceName} {maxDiffCell.CellX} {maxDiffCell.CellY}");
-        sb.AppendLine();
-        sb.AppendLine("For precise location of max difference:");
-        sb.AppendLine($"  player.setpos x {worldX}");
-        sb.AppendLine($"  player.setpos y {worldY}");
-        sb.AppendLine($"  player.setpos z {estimatedZ}");
-        sb.AppendLine();
+        _ = sb.AppendLine("Console Commands:");
+        _ = sb.AppendLine($"  cow {worldspaceName} {maxDiffCell.CellX} {maxDiffCell.CellY}");
+        _ = sb.AppendLine();
+        _ = sb.AppendLine("For precise location of max difference:");
+        _ = sb.AppendLine($"  player.setpos x {worldX}");
+        _ = sb.AppendLine($"  player.setpos y {worldY}");
+        _ = sb.AppendLine($"  player.setpos z {estimatedZ}");
+        _ = sb.AppendLine();
     }
 
     private sealed class HeightmapCellInfo

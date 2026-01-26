@@ -62,8 +62,10 @@ public static class EsmRecordCompression
         var subOffset = 0;
         var pendingExtendedSize = 0;
         while (subOffset < decompressed.Length)
+        {
             subOffset = ConvertSubrecordFromDecompressed(decompressed, subOffset, recordType, convertedWriter,
                 ref pendingExtendedSize, stats);
+        }
 
         var convertedData = convertedStream.ToArray();
 
@@ -89,7 +91,11 @@ public static class EsmRecordCompression
     {
         if (offset + 6 > data.Length)
         {
-            if (offset < data.Length) writer.Write(data.AsSpan(offset, data.Length - offset));
+            if (offset < data.Length)
+            {
+                writer.Write(data.AsSpan(offset, data.Length - offset));
+            }
+
             return data.Length;
         }
 
@@ -102,7 +108,9 @@ public static class EsmRecordCompression
 
         // Handle XXXX extended size marker
         if (signature == "XXXX" && dataSizeHeader == 4 && dataOffset + 4 <= data.Length)
+        {
             pendingExtendedSize = (int)BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(dataOffset, 4));
+        }
 
         if (dataSizeHeader == 0 && pendingExtendedSize > 0)
         {
@@ -119,19 +127,35 @@ public static class EsmRecordCompression
             return skipEnd > data.Length ? data.Length : skipEnd;
         }
 
-        // Write subrecord header
-        writer.Write((byte)signature[0]);
-        writer.Write((byte)signature[1]);
-        writer.Write((byte)signature[2]);
-        writer.Write((byte)signature[3]);
-        writer.Write(dataSizeHeader);
-
         // Clamp data size if necessary
-        if (dataOffset + dataSize > data.Length) dataSize = (ushort)(data.Length - dataOffset);
+        if (dataOffset + dataSize > data.Length)
+        {
+            dataSize = (ushort)(data.Length - dataOffset);
+        }
 
         // Convert and write subrecord data
         var subData = data.AsSpan(dataOffset, dataSize);
         var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, subData, recordType);
+
+        // Write subrecord header (little-endian). If this subrecord used XXXX extended sizing, preserve the 0 size header.
+        var outputSizeHeader = dataSizeHeader;
+        if (dataSizeHeader != 0)
+        {
+            if (convertedData.Length > ushort.MaxValue)
+            {
+                throw new InvalidOperationException(
+                    $"Converted subrecord {recordType}:{signature} exceeds 64KB without XXXX marker ({convertedData.Length} bytes)."
+                );
+            }
+
+            outputSizeHeader = (ushort)convertedData.Length;
+        }
+
+        writer.Write((byte)signature[0]);
+        writer.Write((byte)signature[1]);
+        writer.Write((byte)signature[2]);
+        writer.Write((byte)signature[3]);
+        writer.Write(outputSizeHeader);
         writer.Write(convertedData);
 
         stats.SubrecordsConverted++;

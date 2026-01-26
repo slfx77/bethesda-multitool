@@ -1,6 +1,7 @@
-using System.Globalization;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.Globalization;
+using static EsmAnalyzer.Helpers.LandHelpers;
 
 namespace EsmAnalyzer.Commands;
 
@@ -17,7 +18,10 @@ public static partial class LandCommands
         }
 
         var esm = EsmFileLoader.Load(filePath, false);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         var landRecords = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "LAND");
         var record = landRecords.FirstOrDefault(r => r.FormId == formId.Value);
@@ -48,7 +52,7 @@ public static partial class LandCommands
             var totalSize = list.Sum(s => s.Data.Length);
             var summary = BuildSummary(group.Key, list, esm.IsBigEndian);
 
-            table.AddRow(
+            _ = table.AddRow(
                 Markup.Escape(group.Key),
                 Markup.Escape(list.Count.ToString("N0")),
                 Markup.Escape(totalSize.ToString("N0")),
@@ -58,7 +62,10 @@ public static partial class LandCommands
         AnsiConsole.Write(table);
         PrintVhgtDetails(subrecords, esm.IsBigEndian, vhgtSamples, vhgtHist);
         if (!string.IsNullOrWhiteSpace(vhgtComparePath))
+        {
             CompareVhgt(filePath, vhgtComparePath, formId.Value, vhgtCompareSamples, vhgtCompareDiff);
+        }
+
         return 0;
     }
 
@@ -79,7 +86,10 @@ public static partial class LandCommands
     private static string SummarizeData(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
     {
         var data = subrecords[0].Data;
-        if (data.Length < 4) return $"size={data.Length} (too small)";
+        if (data.Length < 4)
+        {
+            return $"size={data.Length} (too small)";
+        }
 
         var value = EsmBinary.ReadUInt32(data, 0, bigEndian);
         return $"value=0x{value:X8} ({value})";
@@ -92,8 +102,15 @@ public static partial class LandCommands
         var max = byte.MinValue;
         foreach (var b in data)
         {
-            if (b < min) min = b;
-            if (b > max) max = b;
+            if (b < min)
+            {
+                min = b;
+            }
+
+            if (b > max)
+            {
+                max = b;
+            }
         }
 
         var verts = data.Length / 3;
@@ -103,7 +120,10 @@ public static partial class LandCommands
     private static string SummarizeVhgt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
     {
         var data = subrecords[0].Data;
-        if (data.Length < 4) return "size<4";
+        if (data.Length < 4)
+        {
+            return "size<4";
+        }
 
         var baseHeight = EsmBinary.ReadSingle(data, 0, bigEndian);
         var minDelta = sbyte.MaxValue;
@@ -111,8 +131,15 @@ public static partial class LandCommands
         for (var i = 4; i < data.Length; i++)
         {
             var v = unchecked((sbyte)data[i]);
-            if (v < minDelta) minDelta = v;
-            if (v > maxDelta) maxDelta = v;
+            if (v < minDelta)
+            {
+                minDelta = v;
+            }
+
+            if (v > maxDelta)
+            {
+                maxDelta = v;
+            }
         }
 
         return $"base={baseHeight:F3}, delta=[{minDelta},{maxDelta}]";
@@ -121,15 +148,24 @@ public static partial class LandCommands
     private static void PrintVhgtDetails(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian, int samples,
         int histTop)
     {
-        if (samples <= 0 && histTop <= 0) return;
+        if (samples <= 0 && histTop <= 0)
+        {
+            return;
+        }
 
         var vhgt = subrecords.FirstOrDefault(s => s.Signature.Equals("VHGT", StringComparison.OrdinalIgnoreCase));
-        if (vhgt == null || vhgt.Data.Length < 5) return;
+        if (vhgt == null || vhgt.Data.Length < 5)
+        {
+            return;
+        }
 
         var data = vhgt.Data;
         var baseHeight = EsmBinary.ReadSingle(data, 0, bigEndian);
         var deltas = new sbyte[data.Length - 4];
-        for (var i = 4; i < data.Length; i++) deltas[i - 4] = unchecked((sbyte)data[i]);
+        for (var i = 4; i < data.Length; i++)
+        {
+            deltas[i - 4] = unchecked((sbyte)data[i]);
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[cyan]VHGT Details:[/] base={baseHeight:F3}, samples={deltas.Length:N0}");
@@ -143,7 +179,9 @@ public static partial class LandCommands
                 .AddColumn(new TableColumn("Delta").RightAligned());
 
             for (var i = 0; i < count; i++)
-                sampleTable.AddRow(i.ToString("N0"), deltas[i].ToString(CultureInfo.InvariantCulture));
+            {
+                _ = sampleTable.AddRow(i.ToString("N0"), deltas[i].ToString(CultureInfo.InvariantCulture));
+            }
 
             AnsiConsole.Write(sampleTable);
         }
@@ -153,7 +191,7 @@ public static partial class LandCommands
             var histogram = new Dictionary<sbyte, int>();
             foreach (var value in deltas)
             {
-                histogram.TryGetValue(value, out var current);
+                _ = histogram.TryGetValue(value, out var current);
                 histogram[value] = current + 1;
             }
 
@@ -169,9 +207,11 @@ public static partial class LandCommands
                 .AddColumn(new TableColumn("Count").RightAligned());
 
             foreach (var entry in top)
-                histTable.AddRow(
+            {
+                _ = histTable.AddRow(
                     entry.Key.ToString(CultureInfo.InvariantCulture),
                     entry.Value.ToString("N0", CultureInfo.InvariantCulture));
+            }
 
             AnsiConsole.Write(histTable);
         }

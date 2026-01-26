@@ -15,10 +15,7 @@ internal static partial class EsmSubrecordConverter
     public static byte[] ConvertSubrecordData(string signature, ReadOnlySpan<byte> data, string recordType)
     {
         var schemaResult = SubrecordSchemaProcessor.ConvertWithSchema(signature, data, recordType);
-        if (schemaResult != null)
-            return schemaResult;
-
-        throw new NotSupportedException(
+        return schemaResult ?? throw new NotSupportedException(
             $"No schema for subrecord '{signature}' ({data.Length} bytes) in record type '{recordType}'.");
     }
 }

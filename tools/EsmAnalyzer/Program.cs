@@ -1,6 +1,6 @@
-using System.CommandLine;
 using EsmAnalyzer.Commands;
 using Spectre.Console;
+using System.CommandLine;
 
 namespace EsmAnalyzer;
 
@@ -10,50 +10,84 @@ namespace EsmAnalyzer;
 
 internal sealed class Program
 {
-    private Program() { }
+    private Program()
+    {
+    }
 
     private static int Main(string[] args)
     {
         var rootCommand = new RootCommand("ESM Analyzer - Analyze and compare Xbox 360 and PC ESM files");
 
-        // Add commands
+        // ===== Top-level commands =====
         rootCommand.Subcommands.Add(StatsCommands.CreateStatsCommand());
-        rootCommand.Subcommands.Add(CompareCommands.CreateCompareCommand());
-        rootCommand.Subcommands.Add(CompareCommands.CreateCompareLandCommand());
-        rootCommand.Subcommands.Add(CompareCommands.CreateCompareCellsCommand());
-        rootCommand.Subcommands.Add(CompareCommands.CreateCompareFullCommand());
-        rootCommand.Subcommands.Add(CompareCommands.CreateCompareHeightmapsCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateDumpCommand());
         rootCommand.Subcommands.Add(DumpCommands.CreateTraceCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateSearchCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateHexCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateLocateCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateValidateCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateValidateDeepCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateFindFormIdCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateFindCellCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateFindCellGridCommand());
-        rootCommand.Subcommands.Add(ExportCommands.CreateExportLandCommand());
-        rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
-        rootCommand.Subcommands.Add(DiffCommands.CreateDiffCommand());
-        rootCommand.Subcommands.Add(DiffCommands.CreateDiffHeaderCommand());
         rootCommand.Subcommands.Add(ConvertCommands.CreateConvertCommand());
         rootCommand.Subcommands.Add(GrupCommands.CreateGrupsCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstCompareCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstLocateCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstCellCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstPatternCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstOrderCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstBlocksCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstTileOrderCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstDeltasCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstValidateCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstImageCommand());
-        rootCommand.Subcommands.Add(OfstCommands.CreateOfstQuadtreeCommand());
         rootCommand.Subcommands.Add(ToftCommands.CreateToftCommand());
-        rootCommand.Subcommands.Add(HeuristicCommands.CreateGeomSearchCommand());
         rootCommand.Subcommands.Add(LandCommands.CreateLandSummaryCommand());
+        rootCommand.Subcommands.Add(ExportCommands.CreateExportLandCommand());
+        rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
+
+        // ===== Backward compatibility aliases =====
+        // Keep old command names for scripts that use them
+        // Note: Avoid adding commands whose names conflict with command groups (diff, search, validate)
+        rootCommand.Subcommands.Add(DiffCommands.CreateDiff3Command());  // "diff3" at root (shortcut for "diff three")
+        rootCommand.Subcommands.Add(SemanticDiffCommands.CreateSemanticDiffCommand());  // "semdiff" at root
+        rootCommand.Subcommands.Add(CompareCommands.CreateCompareLandCommand());  // "compare-land" at root
+        rootCommand.Subcommands.Add(CompareCommands.CreateCompareCellsCommand()); // "compare-cells" at root
+        rootCommand.Subcommands.Add(DumpCommands.CreateHexCommand());    // "hex" at root
+        rootCommand.Subcommands.Add(DumpCommands.CreateLocateCommand()); // "locate" at root
+        rootCommand.Subcommands.Add(DumpCommands.CreateValidateDeepCommand()); // "validate-deep" at root
+        rootCommand.Subcommands.Add(OfstCommands.CreateOfstCommand());   // "ofst" at root
+        rootCommand.Subcommands.Add(OfstCommands.CreateOfstCompareCommand()); // "ofst-compare" at root
+        rootCommand.Subcommands.Add(OfstCommands.CreateOfstImageCommand()); // "ofst-image" at root
+
+        // ===== compare subcommands =====
+        var compareCommand = new Command("compare", "Compare ESM files (land, cells, heightmaps)");
+        compareCommand.Subcommands.Add(CompareCommands.CreateLandCommand());       // "land" instead of "compare-land"
+        compareCommand.Subcommands.Add(CompareCommands.CreateCellsCommand());      // "cells" instead of "compare-cells"
+        compareCommand.Subcommands.Add(CompareCommands.CreateHeightmapsCommand()); // "heightmaps" instead of "compare-heightmaps"
+        rootCommand.Subcommands.Add(compareCommand);
+
+        // ===== search subcommands =====
+        var searchCommand = new Command("search", "Search and locate data within ESM files");
+        searchCommand.Subcommands.Add(DumpCommands.CreateTextSearchCommand());  // "text" instead of "search"
+        searchCommand.Subcommands.Add(DumpCommands.CreateHexCommand());
+        searchCommand.Subcommands.Add(DumpCommands.CreateLocateCommand());
+        searchCommand.Subcommands.Add(DumpCommands.CreateLocateFormIdCommand());
+        searchCommand.Subcommands.Add(DumpCommands.CreateFindFormIdCommand());
+        searchCommand.Subcommands.Add(DumpCommands.CreateFindCellCommand());
+        searchCommand.Subcommands.Add(DumpCommands.CreateFindCellGridCommand());
+        searchCommand.Subcommands.Add(HeuristicCommands.CreateGeomSearchCommand());
+        rootCommand.Subcommands.Add(searchCommand);
+
+        // ===== validate subcommands =====
+        var validateCommand = new Command("validate", "Validate ESM file structure and integrity");
+        validateCommand.Subcommands.Add(DumpCommands.CreateStructureValidateCommand());  // "structure" instead of "validate"
+        validateCommand.Subcommands.Add(DumpCommands.CreateDeepValidateCommand());       // "deep" instead of "validate-deep"
+        rootCommand.Subcommands.Add(validateCommand);
+
+        // ===== diff subcommands =====
+        // Unified 'diff' command: use --xbox, --converted, --pc (at least 2 required)
+        rootCommand.Subcommands.Add(DiffCommands.CreateUnifiedDiffCommand());
+        // Note: diff3 alias already added above for backward compatibility
+
+        // ===== wrld subcommands (WRLD OFST streaming data) =====
+        var wrldCommand = new Command("wrld", "Analyze WRLD worldspace data (OFST offset tables, streaming)");
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstCompareCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstLocateCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstCellCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstPatternCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstOrderCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstBlocksCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstTileOrderCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstDeltasCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstValidateCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstImageCommand());
+        wrldCommand.Subcommands.Add(OfstCommands.CreateOfstQuadtreeCommand());
+        rootCommand.Subcommands.Add(wrldCommand);
 
         // Default action: show help
         rootCommand.SetAction(parseResult =>
@@ -70,45 +104,55 @@ internal sealed class Program
                 .AddColumn("[bold]Command[/]")
                 .AddColumn("[bold]Description[/]");
 
-            table.AddRow("[cyan]stats[/]", "Display record type statistics for an ESM file");
-            table.AddRow("[cyan]compare[/]", "Compare two ESM files (Xbox 360 vs PC)");
-            table.AddRow("[cyan]compare-cells[/]", "Compare CELL FormIDs using flat scan");
-            table.AddRow("[cyan]compare-land[/]", "Compare LAND records between Xbox 360 and PC");
-            table.AddRow("[cyan]dump[/]", "Dump records of a specific type");
-            table.AddRow("[cyan]trace[/]", "Trace record/GRUP structure at a specific offset");
-            table.AddRow("[cyan]search[/]", "Search for ASCII string patterns in file");
-            table.AddRow("[cyan]hex[/]", "Hex dump of raw bytes at a specific offset");
-            table.AddRow("[cyan]locate[/]", "Locate which record/GRUP contains a file offset");
-            table.AddRow("[cyan]validate[/]", "Validate record/GRUP structure and report first failure");
-            table.AddRow("[cyan]validate-deep[/]", "Deep-validate records and subrecords");
-            table.AddRow("[cyan]validate-refs[/]",
-                "Validate FormID references against existing records (optional TSV output)");
-            table.AddRow("[cyan]find-formid[/]", "Find all records with a specific FormID");
-            table.AddRow("[cyan]find-cell[/]", "Find CELL records by EDID or FULL name");
-            table.AddRow("[cyan]find-cell-grid[/]", "Find CELL records by grid coordinates (XCLC)");
-            table.AddRow("[cyan]export-land[/]", "Export LAND records as images and JSON");
-            table.AddRow("[cyan]worldmap[/]", "Generate worldspace heightmap by stitching LAND records");
-            table.AddRow("[cyan]diff[/]", "Show byte-level differences between Xbox 360 and PC records");
-            table.AddRow("[cyan]diff-header[/]", "Show byte-level differences in ESM file headers");
-            table.AddRow("[cyan]convert[/]", "Convert Xbox 360 ESM to PC little-endian format");
-            table.AddRow("[cyan]grups[/]", "Analyze GRUP structure, nesting, and find duplicates");
-            table.AddRow("[cyan]ofst[/]", "Extract WRLD OFST offset table for a worldspace");
-            table.AddRow("[cyan]ofst-compare[/]", "Compare WRLD OFST offset tables between Xbox 360 and PC");
-            table.AddRow("[cyan]ofst-locate[/]", "Locate records referenced by WRLD OFST offsets");
-            table.AddRow("[cyan]ofst-cell[/]", "Resolve a CELL FormID to its WRLD OFST entry");
-            table.AddRow("[cyan]ofst-pattern[/]", "Analyze WRLD OFST layout ordering");
-            table.AddRow("[cyan]ofst-order[/]", "Score WRLD OFST layout ordering patterns");
-            table.AddRow("[cyan]ofst-blocks[/]", "Summarize WRLD OFST block visitation and inner order");
-            table.AddRow("[cyan]ofst-tile[/]", "Dump per-tile inner order matrix from WRLD OFST");
-            table.AddRow("[cyan]ofst-validate[/]", "Validate OFST offsets vs CELL grid data");
-            table.AddRow("[cyan]toft[/]", "Analyze the Xbox 360 TOFT streaming cache region");
-            table.AddRow("[cyan]geom-search[/]", "Heuristic search for PC geometry data inside Xbox ESM");
-            table.AddRow("[cyan]land-summary[/]", "Summarize LAND subrecords with human-readable interpretation");
+            _ = table.AddRow("[cyan]stats[/]", "Display record type statistics for an ESM file");
+            _ = table.AddRow("[cyan]dump[/]", "Dump records of a specific type");
+            _ = table.AddRow("[cyan]trace[/]", "Trace record/GRUP structure at a specific offset");
+            _ = table.AddRow("[cyan]convert[/]", "Convert Xbox 360 ESM to PC little-endian format");
+            _ = table.AddRow("[cyan]grups[/]", "Analyze GRUP structure, nesting, and find duplicates");
+            _ = table.AddRow("[cyan]toft[/]", "Analyze the Xbox 360 TOFT streaming cache region");
+            _ = table.AddRow("[cyan]land-summary[/]", "Summarize LAND subrecords with human-readable interpretation");
+            _ = table.AddRow("[cyan]export-land[/]", "Export LAND records as images and JSON");
+            _ = table.AddRow("[cyan]worldmap[/]", "Generate worldspace heightmap by stitching LAND records");
+            _ = table.AddRow("", "");
+            _ = table.AddRow("[bold yellow]compare[/]", "[bold]Compare ESM files[/]");
+            _ = table.AddRow("  [cyan]compare land[/]", "Compare LAND records between Xbox 360 and PC");
+            _ = table.AddRow("  [cyan]compare cells[/]", "Compare CELL FormIDs using flat scan");
+            _ = table.AddRow("  [cyan]compare heightmaps[/]", "Compare terrain heightmaps between two ESM files");
+            _ = table.AddRow("", "");
+            _ = table.AddRow("[bold yellow]search[/]", "[bold]Search and locate data[/]");
+            _ = table.AddRow("  [cyan]search text[/]", "Search for ASCII string patterns in file");
+            _ = table.AddRow("  [cyan]search hex[/]", "Hex dump of raw bytes at a specific offset");
+            _ = table.AddRow("  [cyan]search locate[/]", "Locate which record/GRUP contains a file offset");
+            _ = table.AddRow("  [cyan]search find-formid[/]", "Find all records with a specific FormID");
+            _ = table.AddRow("  [cyan]search locate-formid[/]", "Show GRUP ancestry for a FormID");
+            _ = table.AddRow("  [cyan]search find-cell[/]", "Find CELL records by EDID or FULL name");
+            _ = table.AddRow("  [cyan]search find-cell-grid[/]", "Find CELL records by grid coordinates");
+            _ = table.AddRow("  [cyan]search geom-search[/]", "Heuristic search for PC geometry data inside Xbox ESM");
+            _ = table.AddRow("", "");
+            _ = table.AddRow("[bold yellow]validate[/]", "[bold]Validate ESM structure[/]");
+            _ = table.AddRow("  [cyan]validate structure[/]", "Validate record/GRUP structure (first failure)");
+            _ = table.AddRow("  [cyan]validate deep[/]", "Deep-validate records and subrecords");
+            _ = table.AddRow("", "");
+            _ = table.AddRow("[bold yellow]diff[/]", "[bold]Compare and diff ESM files[/]");
+            _ = table.AddRow("  [cyan]diff two[/]", "Compare two ESM files (stats, byte-level, headers)");
+            _ = table.AddRow("  [cyan]diff three[/]", "Three-way diff: Xbox 360 → Converted → PC reference");
+            _ = table.AddRow("  [cyan]diff semdiff[/]", "Semantic diff - human-readable field differences");
+            _ = table.AddRow("", "");
+            _ = table.AddRow("[bold yellow]wrld[/]", "[bold]WRLD worldspace analysis (OFST streaming)[/]");
+            _ = table.AddRow("  [cyan]wrld ofst[/]", "Extract WRLD OFST offset table for a worldspace");
+            _ = table.AddRow("  [cyan]wrld ofst-compare[/]", "Compare WRLD OFST offset tables (Xbox vs PC)");
+            _ = table.AddRow("  [cyan]wrld ofst-locate[/]", "Locate records referenced by WRLD OFST offsets");
+            _ = table.AddRow("  [cyan]wrld ofst-cell[/]", "Resolve a CELL FormID to its WRLD OFST entry");
+            _ = table.AddRow("  [cyan]wrld ofst-validate[/]", "Validate OFST offsets vs CELL grid data");
+            _ = table.AddRow("  [cyan]wrld ofst-image[/]", "Visualize WRLD OFST as an image");
 
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("Use [cyan]--help[/] with any command for more information.");
             AnsiConsole.MarkupLine("Example: [grey]dotnet run -- stats FalloutNV.esm[/]");
+            AnsiConsole.MarkupLine("Example: [grey]dotnet run -- diff three --xbox x.esm --converted c.esm --pc p.esm[/]");
+            AnsiConsole.MarkupLine("");
+            AnsiConsole.MarkupLine("[dim]Backward compat aliases: diff3, semdiff, compare-land, compare-cells, hex, locate, validate-deep, ofst, ofst-compare, ofst-image[/]");
         });
 
         return rootCommand.Parse(args).Invoke();

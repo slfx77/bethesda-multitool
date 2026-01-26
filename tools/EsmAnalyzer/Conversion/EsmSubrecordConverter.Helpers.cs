@@ -18,12 +18,20 @@ internal static partial class EsmSubrecordConverter
                 break;
 
             case "ALCH" when data.Length == 20:
+                // ALCH ENIT is 5 dwords: value, flags, addiction FormID, addictionChance float, useSound/withdrawal effect FormID
                 Swap4Bytes(data, 0);
+                Swap4Bytes(data, 4);
+                Swap4Bytes(data, 8);
+                Swap4Bytes(data, 12);
                 Swap4Bytes(data, 16);
                 break;
 
             default:
-                for (var i = 0; i < data.Length / 4; i++) Swap4Bytes(data, i * 4);
+                for (var i = 0; i < data.Length / 4; i++)
+                {
+                    Swap4Bytes(data, i * 4);
+                }
+
                 break;
         }
     }
@@ -34,7 +42,10 @@ internal static partial class EsmSubrecordConverter
     private static byte[] ConvertImadSubrecord(string signature, byte[] data)
     {
         // EDID is a string - no conversion needed
-        if (signature == "EDID") return data;
+        if (signature == "EDID")
+        {
+            return data;
+        }
 
         // Float array subrecords in IMAD
         if (signature is "DNAM" or "BNAM" or "VNAM" or "TNAM" or "NAM3" or "RNAM" or "SNAM" or "UNAM"
@@ -52,7 +63,10 @@ internal static partial class EsmSubrecordConverter
         }
 
         // Unknown IMAD subrecord - try float array conversion
-        if (data.Length >= 4 && data.Length % 4 == 0) SwapAllFloats(data);
+        if (data.Length >= 4 && data.Length % 4 == 0)
+        {
+            SwapAllFloats(data);
+        }
 
         return data;
     }
@@ -81,10 +95,16 @@ internal static partial class EsmSubrecordConverter
     private static void ConvertUnknownSubrecord(byte[] data, string signature, string recordType)
     {
         // Empty marker subrecords - no conversion needed
-        if (data.Length == 0) return;
+        if (data.Length == 0)
+        {
+            return;
+        }
 
         // Single byte - no conversion needed
-        if (data.Length == 1) return;
+        if (data.Length == 1)
+        {
+            return;
+        }
 
         // Exactly 2 bytes - likely uint16
         if (data.Length == 2)
@@ -273,7 +293,9 @@ internal static partial class EsmSubrecordConverter
 
         // Cells array - all remaining data is uint16 values
         for (var i = 36; i + 2 <= data.Length; i += 2)
+        {
             Swap2Bytes(data, i);
+        }
     }
 
     /// <summary>
@@ -282,6 +304,9 @@ internal static partial class EsmSubrecordConverter
     private static void SwapAllFloats(byte[] data)
     {
         var floatCount = data.Length / 4;
-        for (var i = 0; i < floatCount; i++) Swap4Bytes(data, i * 4);
+        for (var i = 0; i < floatCount; i++)
+        {
+            Swap4Bytes(data, i * 4);
+        }
     }
 }

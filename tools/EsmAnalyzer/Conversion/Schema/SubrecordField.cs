@@ -24,6 +24,7 @@ public readonly record struct SubrecordField(string Name, SubrecordFieldType Typ
             SubrecordFieldType.Int32 => 4,
             SubrecordFieldType.FormId => 4,
             SubrecordFieldType.Float => 4,
+            SubrecordFieldType.UInt32WordSwapped => 4,
             SubrecordFieldType.UInt64 => 8,
             SubrecordFieldType.Int64 => 8,
             SubrecordFieldType.Double => 8,
@@ -76,6 +77,33 @@ public readonly record struct SubrecordField(string Name, SubrecordFieldType Typ
         return new SubrecordField(name, SubrecordFieldType.FormId, 4);
     }
 
+    /// <summary>
+    ///     Creates a FormId field that is already little-endian on Xbox 360.
+    ///     Used for specific cases where Xbox stores the FormID in native format.
+    /// </summary>
+    public static SubrecordField FormIdLittleEndian(string name)
+    {
+        return new SubrecordField(name, SubrecordFieldType.FormIdLittleEndian, 4);
+    }
+
+    /// <summary>
+    ///     Creates a UInt16 field that is already little-endian on Xbox 360.
+    ///     Used for specific fields like QUST INDX quest stage index.
+    /// </summary>
+    public static SubrecordField UInt16LittleEndian(string name)
+    {
+        return new SubrecordField(name, SubrecordFieldType.UInt16LittleEndian, 2);
+    }
+
+    /// <summary>
+    ///     Creates a UInt32 field that uses word-swapped (middle-endian) format on Xbox 360.
+    ///     Xbox stores two big-endian uint16 words in LE order: [HI_BE][LO_BE] -> [LO_LE][HI_LE]
+    /// </summary>
+    public static SubrecordField UInt32WordSwapped(string name)
+    {
+        return new SubrecordField(name, SubrecordFieldType.UInt32WordSwapped, 4);
+    }
+
     /// <summary>Creates a Float field.</summary>
     public static SubrecordField Float(string name)
     {
@@ -112,10 +140,16 @@ public readonly record struct SubrecordField(string Name, SubrecordFieldType Typ
         return new SubrecordField(name, SubrecordFieldType.Quaternion, 16);
     }
 
-    /// <summary>Creates an RGBA color field (4 bytes).</summary>
+    /// <summary>Creates an RGBA color field (4 bytes) - no conversion needed.</summary>
     public static SubrecordField ColorRgba(string name)
     {
         return new SubrecordField(name, SubrecordFieldType.ColorRgba, 4);
+    }
+
+    /// <summary>Creates an ARGB color field (4 bytes) - converts Xbox ARGB to PC RGBA.</summary>
+    public static SubrecordField ColorArgb(string name)
+    {
+        return new SubrecordField(name, SubrecordFieldType.ColorArgb, 4);
     }
 
     /// <summary>Creates a PosRot field (6 floats for position + rotation).</summary>

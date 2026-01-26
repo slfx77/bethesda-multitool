@@ -1,8 +1,9 @@
-using System.Text;
-using System.Text.Json;
+using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
 using ImageMagick;
 using Spectre.Console;
+using System.Text;
+using System.Text.Json;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Utils;
 
@@ -13,10 +14,13 @@ public static partial class ExportCommands
     private static int GenerateWorldmap(string filePath, string? worldspaceName, string outputDir, int scale,
         bool rawOutput, bool exportAll, bool analyzeOnly)
     {
-        Directory.CreateDirectory(outputDir);
+        _ = Directory.CreateDirectory(outputDir);
 
         var esm = EsmFileLoader.Load(filePath, false);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         var bigEndian = esm.IsBigEndian;
         var sourceType = bigEndian ? "Xbox 360" : "PC";
@@ -42,7 +46,11 @@ public static partial class ExportCommands
                 AnsiConsole.MarkupLine("[blue]----------------------------------------[/]");
                 var result = GenerateSingleWorldmap(esm.Data, bigEndian, wrldName, wrldFormId, outputDir, scale,
                     rawOutput, sourceType, analyzeOnly);
-                if (result == 0) successCount++;
+                if (result == 0)
+                {
+                    successCount++;
+                }
+
                 AnsiConsole.WriteLine();
             }
 
@@ -69,7 +77,10 @@ public static partial class ExportCommands
                 AnsiConsole.MarkupLine($"[red]ERROR:[/] Unknown worldspace '{worldspaceName}'");
                 AnsiConsole.MarkupLine("[yellow]Known worldspaces:[/]");
                 foreach (var (name, formId) in FalloutWorldspaces.KnownWorldspaces.DistinctBy(kvp => kvp.Value))
+                {
                     AnsiConsole.MarkupLine($"  {name}: 0x{formId:X8}");
+                }
+
                 return 1;
             }
 
@@ -86,17 +97,23 @@ public static partial class ExportCommands
     private static List<(string name, uint formId)> FindAllWorldspaces(byte[] data, bool bigEndian)
     {
         var worldspaces = new List<(string name, uint formId)>();
-        var offset = 0;
 
         // Skip TES4 header
-        if (data.Length < 24) return worldspaces;
+        if (data.Length < 24)
+        {
+            return worldspaces;
+        }
+
         var headerSig = Encoding.ASCII.GetString(data, 0, 4);
-        if (headerSig != "TES4" && headerSig != "4SET") return worldspaces;
+        if (headerSig is not "TES4" and not "4SET")
+        {
+            return worldspaces;
+        }
 
         var headerSize = bigEndian
             ? BinaryUtils.ReadUInt32BE(data.AsSpan(), 4)
             : BinaryUtils.ReadUInt32LE(data.AsSpan(), 4);
-        offset = EsmParser.MainRecordHeaderSize + (int)headerSize;
+        int offset = EsmParser.MainRecordHeaderSize + (int)headerSize;
 
         while (offset + 24 <= data.Length)
         {
@@ -217,7 +234,9 @@ public static partial class ExportCommands
                 // EDID is null-terminated string
                 var edidLength = subSize - 1; // exclude null terminator
                 if (edidLength > 0)
+                {
                     return Encoding.ASCII.GetString(data, offset + 6, edidLength);
+                }
             }
 
             offset += 6 + subSize;
@@ -243,7 +262,7 @@ public static partial class ExportCommands
             .Spinner(Spinner.Known.Dots)
             .Start("Scanning for CELL and LAND records in target worldspace...", ctx =>
             {
-                ctx.Status("Finding WRLD record and scanning child GRUPs...");
+                _ = ctx.Status("Finding WRLD record and scanning child GRUPs...");
                 // Find cells and lands that belong to the target worldspace by scanning GRUP hierarchy
                 var (worldCells, worldLands) = ScanWorldspaceCellsAndLands(data, bigEndian, targetWorldspaceFormId);
                 cellRecords = worldCells;
@@ -261,6 +280,7 @@ public static partial class ExportCommands
             .Start("Extracting cell grid positions...", ctx =>
             {
                 foreach (var cell in cellRecords)
+                {
                     try
                     {
                         var recordData = EsmHelpers.GetRecordData(data, cell, bigEndian);
@@ -278,8 +298,15 @@ public static partial class ExportCommands
                                 : (int)BinaryUtils.ReadUInt32LE(xclc.Data.AsSpan(), 4);
 
                             // Handle signed 32-bit values
-                            if (gridX > 0x7FFFFFFF) gridX = (int)(gridX - 0x100000000);
-                            if (gridY > 0x7FFFFFFF) gridY = (int)(gridY - 0x100000000);
+                            if (gridX > 0x7FFFFFFF)
+                            {
+                                gridX = (int)(gridX - 0x100000000);
+                            }
+
+                            if (gridY > 0x7FFFFFFF)
+                            {
+                                gridY = (int)(gridY - 0x100000000);
+                            }
 
                             cellMap[(gridX, gridY)] = new CellInfo
                             {
@@ -294,15 +321,20 @@ public static partial class ExportCommands
                     {
                         cellParseErrors++;
                         if (cellParseErrors <= 5)
+                        {
                             AnsiConsole.MarkupLine(
                                 $"[yellow]WARN:[/] Failed to parse CELL 0x{cell.FormId:X8}: {ex.Message}");
+                        }
                     }
+                }
             });
 
         AnsiConsole.MarkupLine(
             $"Found [cyan]{cellMap.Count}[/] exterior cells with grid positions in {worldspaceName}");
         if (cellParseErrors > 0)
+        {
             AnsiConsole.MarkupLine($"[yellow]WARN:[/] {cellParseErrors} CELL records failed to parse.");
+        }
 
         if (cellMap.Count == 0)
         {
@@ -376,7 +408,7 @@ public static partial class ExportCommands
                             var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
 
                             var vhgt = subrecords.FirstOrDefault(s => s.Signature == "VHGT");
-                            if (vhgt != null && vhgt.Data.Length >= 4 + CellGridSize * CellGridSize)
+                            if (vhgt != null && vhgt.Data.Length >= 4 + (CellGridSize * CellGridSize))
                             {
                                 var (heights, _) = ParseHeightmap(vhgt.Data, bigEndian);
                                 if (!heightmaps.ContainsKey((cell.GridX, cell.GridY)))
@@ -391,27 +423,32 @@ public static partial class ExportCommands
                             }
 
                             // Mark this LAND as used so we don't match it again
-                            sortedLands.Remove(landAfterCell);
+                            _ = sortedLands.Remove(landAfterCell);
                             foundLand = true;
                         }
                         catch (InvalidDataException ex) when (ex.Message.Contains("Decompression"))
                         {
                             // Wrong LAND match - the decompressed size doesn't match
                             // This LAND probably belongs to an interior cell, skip it and try next
-                            sortedLands.Remove(landAfterCell);
+                            _ = sortedLands.Remove(landAfterCell);
                             decompressionErrors++;
                             if (decompressionErrors <= 5)
+                            {
                                 AnsiConsole.MarkupLine(
                                     $"[yellow]WARN:[/] Decompression failed for LAND 0x{landAfterCell.FormId:X8}: {ex.Message}");
+                            }
                             // Don't break - loop will try the next LAND
                         }
                         catch (Exception ex)
                         {
                             parseErrors++;
                             if (parseErrors <= 5)
+                            {
                                 AnsiConsole.MarkupLine(
                                     $"[red]Error parsing cell ({cell.GridX},{cell.GridY}): {ex.Message}[/]");
-                            sortedLands.Remove(landAfterCell);
+                            }
+
+                            _ = sortedLands.Remove(landAfterCell);
                             break;
                         }
                     }
@@ -482,15 +519,22 @@ public static partial class ExportCommands
                 var globalMax = float.MinValue;
 
                 foreach (var (_, heights) in heightmaps)
+                {
                     for (var y = 0; y < CellGridSize; y++)
+                    {
                         for (var x = 0; x < CellGridSize; x++)
                         {
                             globalMin = Math.Min(globalMin, heights[x, y]);
                             globalMax = Math.Max(globalMax, heights[x, y]);
                         }
+                    }
+                }
 
                 var range = globalMax - globalMin;
-                if (range < 0.001f) range = 1f;
+                if (range < 0.001f)
+                {
+                    range = 1f;
+                }
 
                 savedGlobalMin = globalMin;
                 savedGlobalMax = globalMax;
@@ -509,6 +553,7 @@ public static partial class ExportCommands
                         var basePixelY = (maxY - cellY) * CellGridSize * scale;
 
                         for (var localY = 0; localY < CellGridSize; localY++)
+                        {
                             for (var localX = 0; localX < CellGridSize; localX++)
                             {
                                 var normalizedHeight = (heights[localX, localY] - globalMin) / range;
@@ -516,15 +561,20 @@ public static partial class ExportCommands
                                 var flippedLocalY = CellGridSize - 1 - localY;
 
                                 for (var sy = 0; sy < scale; sy++)
+                                {
                                     for (var sx = 0; sx < scale; sx++)
                                     {
-                                        var px = basePixelX + localX * scale + sx;
-                                        var py = basePixelY + flippedLocalY * scale + sy;
+                                        var px = basePixelX + (localX * scale) + sx;
+                                        var py = basePixelY + (flippedLocalY * scale) + sy;
 
                                         if (px >= 0 && px < imageWidth && py >= 0 && py < imageHeight)
-                                            gray16Pixels[py * imageWidth + px] = gray16;
+                                        {
+                                            gray16Pixels[(py * imageWidth) + px] = gray16;
+                                        }
                                     }
+                                }
                             }
+                        }
                     }
 
                     // Create 16-bit grayscale PNG using Magick.NET
@@ -554,10 +604,10 @@ public static partial class ExportCommands
                     // Fill with middle gray for missing cells
                     for (var i = 0; i < imageWidth * imageHeight; i++)
                     {
-                        rgbaPixels[i * 4 + 0] = 128; // R
-                        rgbaPixels[i * 4 + 1] = 128; // G
-                        rgbaPixels[i * 4 + 2] = 128; // B
-                        rgbaPixels[i * 4 + 3] = 255; // A
+                        rgbaPixels[(i * 4) + 0] = 128; // R
+                        rgbaPixels[(i * 4) + 1] = 128; // G
+                        rgbaPixels[(i * 4) + 2] = 128; // B
+                        rgbaPixels[(i * 4) + 3] = 255; // A
                     }
 
                     foreach (var ((cellX, cellY), heights) in heightmaps)
@@ -566,6 +616,7 @@ public static partial class ExportCommands
                         var basePixelY = (maxY - cellY) * CellGridSize * scale;
 
                         for (var localY = 0; localY < CellGridSize; localY++)
+                        {
                             for (var localX = 0; localX < CellGridSize; localX++)
                             {
                                 var normalizedHeight = (heights[localX, localY] - globalMin) / range;
@@ -573,21 +624,24 @@ public static partial class ExportCommands
                                 var flippedLocalY = CellGridSize - 1 - localY;
 
                                 for (var sy = 0; sy < scale; sy++)
+                                {
                                     for (var sx = 0; sx < scale; sx++)
                                     {
-                                        var px = basePixelX + localX * scale + sx;
-                                        var py = basePixelY + flippedLocalY * scale + sy;
+                                        var px = basePixelX + (localX * scale) + sx;
+                                        var py = basePixelY + (flippedLocalY * scale) + sy;
 
                                         if (px >= 0 && px < imageWidth && py >= 0 && py < imageHeight)
                                         {
-                                            var idx = (py * imageWidth + px) * 4;
+                                            var idx = ((py * imageWidth) + px) * 4;
                                             rgbaPixels[idx + 0] = r;
                                             rgbaPixels[idx + 1] = g;
                                             rgbaPixels[idx + 2] = b;
                                             rgbaPixels[idx + 3] = 255;
                                         }
                                     }
+                                }
                             }
+                        }
                     }
 
                     // Create RGBA PNG using Magick.NET
@@ -635,11 +689,11 @@ public static partial class ExportCommands
             .AddColumn("[bold]Metric[/]")
             .AddColumn("[bold]Value[/]");
 
-        summaryTable.AddRow("Worldspace", worldspaceName);
-        summaryTable.AddRow("Cells Extracted", $"[green]{heightmaps.Count}[/]");
-        summaryTable.AddRow("Image Size", $"{imageWidth}×{imageHeight} px");
-        summaryTable.AddRow("Grid Range", $"X=[[{minX}, {maxX}]], Y=[[{minY}, {maxY}]]");
-        summaryTable.AddRow("Output Directory", outputDir);
+        _ = summaryTable.AddRow("Worldspace", worldspaceName);
+        _ = summaryTable.AddRow("Cells Extracted", $"[green]{heightmaps.Count}[/]");
+        _ = summaryTable.AddRow("Image Size", $"{imageWidth}×{imageHeight} px");
+        _ = summaryTable.AddRow("Grid Range", $"X=[[{minX}, {maxX}]], Y=[[{minY}, {maxY}]]");
+        _ = summaryTable.AddRow("Output Directory", outputDir);
 
         AnsiConsole.Write(summaryTable);
 
@@ -657,11 +711,17 @@ public static partial class ExportCommands
         var lands = new List<AnalyzerRecordInfo>();
 
         var header = EsmParser.ParseFileHeader(data);
-        if (header == null) return (cells, lands);
+        if (header == null)
+        {
+            return (cells, lands);
+        }
 
         // Skip TES4 header
         var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
-        if (tes4Header == null) return (cells, lands);
+        if (tes4Header == null)
+        {
+            return (cells, lands);
+        }
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
 
@@ -671,7 +731,7 @@ public static partial class ExportCommands
             var headerData = data.AsSpan(offset);
             var sig = bigEndian
                 ? new string([(char)headerData[3], (char)headerData[2], (char)headerData[1], (char)headerData[0]])
-                : Encoding.ASCII.GetString(headerData.Slice(0, 4));
+                : Encoding.ASCII.GetString(headerData[..4]);
 
             if (sig != "GRUP")
             {
@@ -684,7 +744,10 @@ public static partial class ExportCommands
             }
 
             var grupHeader = EsmParser.ParseGroupHeader(headerData, bigEndian);
-            if (grupHeader == null) break;
+            if (grupHeader == null)
+            {
+                break;
+            }
 
             var grupEnd = offset + (int)grupHeader.GroupSize;
 
@@ -699,9 +762,11 @@ public static partial class ExportCommands
                     : Encoding.ASCII.GetString(grupHeader.Label);
 
                 if (labelSig == "WRLD")
+                {
                     // Scan inside WRLD GRUP for our target worldspace
                     ScanWrldGrup(data, bigEndian, offset + EsmParser.MainRecordHeaderSize, grupEnd, worldFormId, cells,
                         lands);
+                }
             }
 
             offset = grupEnd;
@@ -723,12 +788,15 @@ public static partial class ExportCommands
             var headerData = data.AsSpan(offset);
             var sig = bigEndian
                 ? new string([(char)headerData[3], (char)headerData[2], (char)headerData[1], (char)headerData[0]])
-                : Encoding.ASCII.GetString(headerData.Slice(0, 4));
+                : Encoding.ASCII.GetString(headerData[..4]);
 
             if (sig == "GRUP")
             {
                 var grupHeader = EsmParser.ParseGroupHeader(headerData, bigEndian);
-                if (grupHeader == null) break;
+                if (grupHeader == null)
+                {
+                    break;
+                }
 
                 var grupEnd = offset + (int)grupHeader.GroupSize;
 
@@ -741,9 +809,11 @@ public static partial class ExportCommands
                         : BinaryUtils.ReadUInt32LE(grupHeader.Label);
 
                     if (parentWorldId == targetWorldFormId)
+                    {
                         // This is our target worldspace's children - scan for cells and lands
                         ScanWorldChildren(data, bigEndian, offset + EsmParser.MainRecordHeaderSize, grupEnd, cells,
                             lands);
+                    }
                 }
 
                 offset = grupEnd;
@@ -789,12 +859,15 @@ public static partial class ExportCommands
             var headerData = data.AsSpan(offset);
             var sig = bigEndian
                 ? new string([(char)headerData[3], (char)headerData[2], (char)headerData[1], (char)headerData[0]])
-                : Encoding.ASCII.GetString(headerData.Slice(0, 4));
+                : Encoding.ASCII.GetString(headerData[..4]);
 
             if (sig == "GRUP")
             {
                 var grupHeader = EsmParser.ParseGroupHeader(headerData, bigEndian);
-                if (grupHeader == null) break;
+                if (grupHeader == null)
+                {
+                    break;
+                }
 
                 var grupEnd = offset + (int)grupHeader.GroupSize;
 
@@ -807,6 +880,7 @@ public static partial class ExportCommands
             {
                 var recordHeader = EsmParser.ParseRecordHeader(headerData, bigEndian);
                 if (recordHeader != null)
+                {
                     cells.Add(new AnalyzerRecordInfo
                     {
                         Signature = "CELL",
@@ -816,6 +890,7 @@ public static partial class ExportCommands
                         FormId = recordHeader.FormId,
                         TotalSize = EsmParser.MainRecordHeaderSize + recordHeader.DataSize
                     });
+                }
 
                 var dataSize = bigEndian
                     ? BinaryUtils.ReadUInt32BE(headerData, 4)
@@ -826,6 +901,7 @@ public static partial class ExportCommands
             {
                 var recordHeader = EsmParser.ParseRecordHeader(headerData, bigEndian);
                 if (recordHeader != null)
+                {
                     lands.Add(new AnalyzerRecordInfo
                     {
                         Signature = "LAND",
@@ -835,6 +911,7 @@ public static partial class ExportCommands
                         FormId = recordHeader.FormId,
                         TotalSize = EsmParser.MainRecordHeaderSize + recordHeader.DataSize
                     });
+                }
 
                 var dataSize = bigEndian
                     ? BinaryUtils.ReadUInt32BE(headerData, 4)
@@ -867,12 +944,15 @@ public static partial class ExportCommands
             var headerData = data.AsSpan(offset);
             var sig = bigEndian
                 ? new string([(char)headerData[3], (char)headerData[2], (char)headerData[1], (char)headerData[0]])
-                : Encoding.ASCII.GetString(headerData.Slice(0, 4));
+                : Encoding.ASCII.GetString(headerData[..4]);
 
             if (sig == "GRUP")
             {
                 var grupHeader = EsmParser.ParseGroupHeader(headerData, bigEndian);
-                if (grupHeader == null) break;
+                if (grupHeader == null)
+                {
+                    break;
+                }
 
                 var grupEnd = offset + (int)grupHeader.GroupSize;
                 var innerStart = offset + EsmParser.MainRecordHeaderSize;
@@ -881,13 +961,17 @@ public static partial class ExportCommands
                 // The label is the parent CELL FormID
                 var parentCellFormId = currentCellFormId;
                 if (grupHeader.GroupType == 9)
+                {
                     // Label contains parent CELL FormID
                     parentCellFormId = bigEndian
                         ? BinaryUtils.ReadUInt32BE(grupHeader.Label)
                         : BinaryUtils.ReadUInt32LE(grupHeader.Label);
+                }
 
                 if (grupEnd > innerStart && grupEnd <= data.Length)
+                {
                     ScanForLandRecords(data, bigEndian, innerStart, grupEnd, parentCellFormId, landToCellMap);
+                }
 
                 offset = grupEnd;
             }
@@ -903,7 +987,10 @@ public static partial class ExportCommands
 
                 var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)dataSize;
 
-                if (sig == "LAND" && currentCellFormId != 0) landToCellMap[formId] = currentCellFormId;
+                if (sig == "LAND" && currentCellFormId != 0)
+                {
+                    landToCellMap[formId] = currentCellFormId;
+                }
 
                 offset = recordEnd;
             }
@@ -934,80 +1021,84 @@ public static partial class ExportCommands
             var t = normalizedHeight / 0.10f;
             h = 220f;
             s = 0.90f;
-            l = 0.25f + t * 0.10f; // 0.25 → 0.35
+            l = 0.25f + (t * 0.10f); // 0.25 → 0.35
         }
         else if (normalizedHeight < 0.21f)
         {
             // Low areas: Blue → Cyan (bright)
             var t = (normalizedHeight - 0.10f) / 0.11f;
-            h = 220f - t * 40f; // 220 → 180
+            h = 220f - (t * 40f); // 220 → 180
             s = 0.90f;
-            l = 0.35f + t * 0.13f; // 0.35 → 0.48
+            l = 0.35f + (t * 0.13f); // 0.35 → 0.48
         }
         else if (normalizedHeight < 0.27f)
         {
             // Cyan → Lime: DARKER lime (#28d211 → #157009: L 44% → 24%)
             var t = (normalizedHeight - 0.21f) / 0.06f;
-            h = 180f - t * 67f; // 180 → 113 (cyan → lime-green)
+            h = 180f - (t * 67f); // 180 → 113 (cyan → lime-green)
             s = 0.85f;
-            l = 0.48f - t * 0.24f; // 0.48 → 0.24 (dark lime)
+            l = 0.48f - (t * 0.24f); // 0.48 → 0.24 (dark lime)
         }
         else if (normalizedHeight < 0.34f)
         {
             // Lime → Yellow: BRIGHTEN (#86840b → #c4c110: L 28% → 42%)
             var t = (normalizedHeight - 0.27f) / 0.07f;
-            h = 113f - t * 54f; // 113 → 59 (lime → yellow)
+            h = 113f - (t * 54f); // 113 → 59 (lime → yellow)
             s = 0.85f;
-            l = 0.24f + t * 0.18f; // 0.24 → 0.42 (brighten to yellow)
+            l = 0.24f + (t * 0.18f); // 0.24 → 0.42 (brighten to yellow)
         }
         else if (normalizedHeight < 0.45f)
         {
             // Yellow → Orange: BRIGHTEN (#7d3f0e → #d75d0e: L 27% → 45%)
             var t = (normalizedHeight - 0.34f) / 0.11f;
-            h = 59f - t * 35f; // 59 → 24
-            s = 0.85f - t * 0.03f; // 0.85 → 0.82
-            l = 0.42f + t * 0.03f; // 0.42 → 0.45 (brighter orange)
+            h = 59f - (t * 35f); // 59 → 24
+            s = 0.85f - (t * 0.03f); // 0.85 → 0.82
+            l = 0.42f + (t * 0.03f); // 0.42 → 0.45 (brighter orange)
         }
         else if (normalizedHeight < 0.54f)
         {
             // Orange → Brown-red: darken
             var t = (normalizedHeight - 0.45f) / 0.09f;
-            h = 24f - t * 8f; // 24 → 16
-            s = 0.82f - t * 0.02f; // 0.82 → 0.80
-            l = 0.45f - t * 0.15f; // 0.45 → 0.30
+            h = 24f - (t * 8f); // 24 → 16
+            s = 0.82f - (t * 0.02f); // 0.82 → 0.80
+            l = 0.45f - (t * 0.15f); // 0.45 → 0.30
         }
         else if (normalizedHeight < 0.65f)
         {
             // Brown-red → Red: DARKEN (#c71415 → #8a310f: L 43% → 30%)
             var t = (normalizedHeight - 0.54f) / 0.11f;
-            h = 16f - t * 11f; // 16 → 5 (toward red)
-            s = 0.80f + t * 0.05f; // 0.80 → 0.85
-            l = 0.30f + t * 0.14f; // 0.30 → 0.44 (builds up to red zone)
+            h = 16f - (t * 11f); // 16 → 5 (toward red)
+            s = 0.80f + (t * 0.05f); // 0.80 → 0.85
+            l = 0.30f + (t * 0.14f); // 0.30 → 0.44 (builds up to red zone)
         }
         else if (normalizedHeight < 0.78f)
         {
             // Red → Pink: stay more red (#e02258 → #cf1f10: H 345 → 5)
             var t = (normalizedHeight - 0.65f) / 0.13f;
-            h = 5f - t * 1f; // 5 → 4 (stay red, slight shift)
-            s = 0.85f - t * 0.08f; // 0.85 → 0.77
-            l = 0.44f + t * 0.11f; // 0.44 → 0.55
+            h = 5f - (t * 1f); // 5 → 4 (stay red, slight shift)
+            s = 0.85f - (t * 0.08f); // 0.85 → 0.77
+            l = 0.44f + (t * 0.11f); // 0.44 → 0.55
         }
         else if (normalizedHeight < 0.90f)
         {
             // Pink → Light pink: go SHORT way (4 → 324 via 360, subtract 40)
             var t = (normalizedHeight - 0.78f) / 0.12f;
-            h = 4f - t * 40f; // 4 → -36 (wraps to 324)
-            if (h < 0f) h += 360f;
-            s = 0.77f - t * 0.17f; // 0.77 → 0.60
-            l = 0.55f + t * 0.10f; // 0.55 → 0.65
+            h = 4f - (t * 40f); // 4 → -36 (wraps to 324)
+            if (h < 0f)
+            {
+                h += 360f;
+            }
+
+            s = 0.77f - (t * 0.17f); // 0.77 → 0.60
+            l = 0.55f + (t * 0.10f); // 0.55 → 0.65
         }
         else
         {
             // Peaks: Light pink → White (continuous from previous zone)
             var t = (normalizedHeight - 0.90f) / 0.10f;
-            h = 324f - t * 4f; // 324 → 320 (continue pink hue)
-            s = 0.60f - t * 0.55f; // 0.60 → 0.05 (fade to white)
-            l = 0.65f + t * 0.30f; // 0.65 → 0.95 (brighten to white)
+            h = 324f - (t * 4f); // 324 → 320 (continue pink hue)
+            s = 0.60f - (t * 0.55f); // 0.60 → 0.05 (fade to white)
+            l = 0.65f + (t * 0.30f); // 0.65 → 0.95 (brighten to white)
         }
 
         return HslToRgb(h, s, l);
@@ -1030,24 +1121,29 @@ public static partial class ExportCommands
 
         h /= 360f; // Normalize hue to 0-1
 
-        var q = l < 0.5f ? l * (1 + s) : l + s - l * s;
-        var p = 2 * l - q;
+        var q = l < 0.5f ? l * (1 + s) : l + s - (l * s);
+        var p = (2 * l) - q;
 
-        var r = HueToRgb(p, q, h + 1f / 3f);
+        var r = HueToRgb(p, q, h + (1f / 3f));
         var g = HueToRgb(p, q, h);
-        var b = HueToRgb(p, q, h - 1f / 3f);
+        var b = HueToRgb(p, q, h - (1f / 3f));
 
         return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
     }
 
     private static float HueToRgb(float p, float q, float t)
     {
-        if (t < 0) t += 1;
-        if (t > 1) t -= 1;
-        if (t < 1f / 6f) return p + (q - p) * 6 * t;
-        if (t < 1f / 2f) return q;
-        if (t < 2f / 3f) return p + (q - p) * (2f / 3f - t) * 6;
-        return p;
+        if (t < 0)
+        {
+            t += 1;
+        }
+
+        if (t > 1)
+        {
+            t -= 1;
+        }
+
+        return t < 1f / 6f ? p + ((q - p) * 6 * t) : t < 1f / 2f ? q : t < 2f / 3f ? p + ((q - p) * ((2f / 3f) - t) * 6) : p;
     }
 
     /// <summary>
@@ -1068,9 +1164,15 @@ public static partial class ExportCommands
         // Collect all height values
         var allHeights = new List<float>();
         foreach (var (_, heights) in heightmaps)
+        {
             for (var y = 0; y < CellGridSize; y++)
+            {
                 for (var x = 0; x < CellGridSize; x++)
+                {
                     allHeights.Add(heights[x, y]);
+                }
+            }
+        }
 
         allHeights.Sort();
         var totalPoints = allHeights.Count;
@@ -1098,17 +1200,17 @@ public static partial class ExportCommands
             .AddColumn("[bold]Raw Height[/]")
             .AddColumn("[bold]Normalized (0-1)[/]");
 
-        statsTable.AddRow("Minimum", $"{globalMin:F2}", "0.00");
-        statsTable.AddRow("10th %ile", $"{p10:F2}", $"{(p10 - globalMin) / range:F3}");
-        statsTable.AddRow("25th %ile", $"{p25:F2}", $"{(p25 - globalMin) / range:F3}");
-        statsTable.AddRow("Median (50th)", $"{p50:F2}", $"{(p50 - globalMin) / range:F3}");
-        statsTable.AddRow("Mean", $"{mean:F2}", $"{(mean - globalMin) / range:F3}");
-        statsTable.AddRow("75th %ile", $"{p75:F2}", $"{(p75 - globalMin) / range:F3}");
-        statsTable.AddRow("90th %ile", $"{p90:F2}", $"{(p90 - globalMin) / range:F3}");
-        statsTable.AddRow("95th %ile", $"{p95:F2}", $"{(p95 - globalMin) / range:F3}");
-        statsTable.AddRow("99th %ile", $"{p99:F2}", $"{(p99 - globalMin) / range:F3}");
-        statsTable.AddRow("Maximum", $"{globalMax:F2}", "1.00");
-        statsTable.AddRow("[grey]Range[/]", $"[grey]{range:F2}[/]", "[grey]—[/]");
+        _ = statsTable.AddRow("Minimum", $"{globalMin:F2}", "0.00");
+        _ = statsTable.AddRow("10th %ile", $"{p10:F2}", $"{(p10 - globalMin) / range:F3}");
+        _ = statsTable.AddRow("25th %ile", $"{p25:F2}", $"{(p25 - globalMin) / range:F3}");
+        _ = statsTable.AddRow("Median (50th)", $"{p50:F2}", $"{(p50 - globalMin) / range:F3}");
+        _ = statsTable.AddRow("Mean", $"{mean:F2}", $"{(mean - globalMin) / range:F3}");
+        _ = statsTable.AddRow("75th %ile", $"{p75:F2}", $"{(p75 - globalMin) / range:F3}");
+        _ = statsTable.AddRow("90th %ile", $"{p90:F2}", $"{(p90 - globalMin) / range:F3}");
+        _ = statsTable.AddRow("95th %ile", $"{p95:F2}", $"{(p95 - globalMin) / range:F3}");
+        _ = statsTable.AddRow("99th %ile", $"{p99:F2}", $"{(p99 - globalMin) / range:F3}");
+        _ = statsTable.AddRow("Maximum", $"{globalMax:F2}", "1.00");
+        _ = statsTable.AddRow("[grey]Range[/]", $"[grey]{range:F2}[/]", "[grey]—[/]");
 
         AnsiConsole.Write(statsTable);
         AnsiConsole.WriteLine();
@@ -1146,12 +1248,12 @@ public static partial class ExportCommands
 
         var regions = new (string name, int x1, int y1, int x2, int y2)[]
         {
-            ("North Center (flat?)", centerX - quarterW / 2, centerY + quarterH, centerX + quarterW / 2, maxY),
-            ("South Center (mountains?)", centerX - quarterW / 2, minY, centerX + quarterW / 2, centerY - quarterH),
-            ("West (mountains?)", minX, centerY - quarterH / 2, centerX - quarterW, centerY + quarterH / 2),
-            ("East (lake?)", centerX + quarterW, centerY - quarterH / 2, maxX, centerY + quarterH / 2),
+            ("North Center (flat?)", centerX - (quarterW / 2), centerY + quarterH, centerX + (quarterW / 2), maxY),
+            ("South Center (mountains?)", centerX - (quarterW / 2), minY, centerX + (quarterW / 2), centerY - quarterH),
+            ("West (mountains?)", minX, centerY - (quarterH / 2), centerX - quarterW, centerY + (quarterH / 2)),
+            ("East (lake?)", centerX + quarterW, centerY - (quarterH / 2), maxX, centerY + (quarterH / 2)),
             ("Southeast (river?)", centerX, minY, maxX, centerY - quarterH),
-            ("Center", centerX - quarterW / 2, centerY - quarterH / 2, centerX + quarterW / 2, centerY + quarterH / 2)
+            ("Center", centerX - (quarterW / 2), centerY - (quarterH / 2), centerX + (quarterW / 2), centerY + (quarterH / 2))
         };
 
         var regionTable = new Table()
@@ -1172,13 +1274,19 @@ public static partial class ExportCommands
             var cellCount = 0;
 
             foreach (var ((cx, cy), heights) in heightmaps)
+            {
                 if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2)
                 {
                     cellCount++;
                     for (var y = 0; y < CellGridSize; y++)
+                    {
                         for (var x = 0; x < CellGridSize; x++)
+                        {
                             regionHeights.Add(heights[x, y]);
+                        }
+                    }
                 }
+            }
 
             if (regionHeights.Count > 0)
             {
@@ -1189,7 +1297,7 @@ public static partial class ExportCommands
                 var nMax = (rMax - globalMin) / range;
                 var nMean = (rMean - globalMin) / range;
 
-                regionTable.AddRow(
+                _ = regionTable.AddRow(
                     name,
                     $"{cellCount}",
                     $"{rMin:F1}",
@@ -1224,7 +1332,9 @@ public static partial class ExportCommands
         };
 
         foreach (var (norm, desc) in transitionPoints)
+        {
             AnsiConsole.MarkupLine($"  [cyan]{norm:F3}[/] - {desc}");
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[bold yellow]Key insight:[/] Most terrain is between the 10th and 90th percentile.");

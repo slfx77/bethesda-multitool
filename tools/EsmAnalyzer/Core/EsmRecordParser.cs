@@ -4,34 +4,6 @@ using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 namespace EsmAnalyzer.Core;
 
 /// <summary>
-///     Extended record info with additional fields for analysis.
-/// </summary>
-public sealed record AnalyzerRecordInfo
-{
-    public required string Signature { get; init; }
-    public required uint FormId { get; init; }
-    public required uint Flags { get; init; }
-    public required uint DataSize { get; init; }
-    public required uint Offset { get; init; }
-    public required uint TotalSize { get; init; }
-
-    /// <summary>
-    ///     Checks if the record is compressed.
-    /// </summary>
-    public bool IsCompressed => (Flags & EsmConstants.CompressedFlag) != 0;
-}
-
-/// <summary>
-///     Subrecord information for analysis.
-/// </summary>
-public sealed record AnalyzerSubrecordInfo
-{
-    public required string Signature { get; init; }
-    public required byte[] Data { get; init; }
-    public required int Offset { get; init; }
-}
-
-/// <summary>
 ///     Core record parsing utilities for ESM files.
 /// </summary>
 public static class EsmRecordParser
@@ -44,11 +16,17 @@ public static class EsmRecordParser
         var records = new List<AnalyzerRecordInfo>();
         var header = EsmParser.ParseFileHeader(data);
 
-        if (header == null) return records;
+        if (header == null)
+        {
+            return records;
+        }
 
         // Skip TES4 header
         var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
-        if (tes4Header == null) return records;
+        if (tes4Header == null)
+        {
+            return records;
+        }
 
         var startOffset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
 
@@ -72,7 +50,10 @@ public static class EsmRecordParser
         while (offset + EsmParser.MainRecordHeaderSize <= endOffset && iterations++ < maxIterations)
         {
             var header = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
-            if (header == null) break;
+            if (header == null)
+            {
+                break;
+            }
 
             if (header.Signature == "GRUP")
             {
@@ -82,7 +63,9 @@ public static class EsmRecordParser
                 // Recursively scan GRUP contents
                 var innerStart = offset + EsmParser.MainRecordHeaderSize;
                 if (grupEnd > innerStart && grupEnd <= data.Length)
+                {
                     ScanAllGrupsFlat(data, bigEndian, innerStart, grupEnd, records);
+                }
 
                 offset = grupEnd;
             }
@@ -92,6 +75,7 @@ public static class EsmRecordParser
                 var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)header.DataSize;
 
                 if (recordEnd <= data.Length)
+                {
                     records.Add(new AnalyzerRecordInfo
                     {
                         Signature = header.Signature,
@@ -101,6 +85,7 @@ public static class EsmRecordParser
                         Offset = (uint)offset,
                         TotalSize = (uint)(recordEnd - offset)
                     });
+                }
 
                 offset = recordEnd;
             }
@@ -114,14 +99,15 @@ public static class EsmRecordParser
     {
         var records = new List<AnalyzerRecordInfo>();
 
-        if (recordType.Length != 4) return records;
+        if (recordType.Length != 4)
+        {
+            return records;
+        }
 
         // Build the signature bytes - reversed for big-endian
-        byte[] sigBytes;
-        if (bigEndian)
-            sigBytes = [(byte)recordType[3], (byte)recordType[2], (byte)recordType[1], (byte)recordType[0]];
-        else
-            sigBytes = [(byte)recordType[0], (byte)recordType[1], (byte)recordType[2], (byte)recordType[3]];
+        byte[] sigBytes = bigEndian
+            ? [(byte)recordType[3], (byte)recordType[2], (byte)recordType[1], (byte)recordType[0]]
+            : [(byte)recordType[0], (byte)recordType[1], (byte)recordType[2], (byte)recordType[3]];
 
         // Scan the entire file for this signature
         var offset = 0;
@@ -132,14 +118,19 @@ public static class EsmRecordParser
             // Search for signature
             var found = -1;
             for (var i = offset; i <= data.Length - 4; i++)
+            {
                 if (data[i] == sigBytes[0] && data[i + 1] == sigBytes[1] &&
                     data[i + 2] == sigBytes[2] && data[i + 3] == sigBytes[3])
                 {
                     found = i;
                     break;
                 }
+            }
 
-            if (found < 0) break;
+            if (found < 0)
+            {
+                break;
+            }
 
             // Try to parse as record header
             if (found + EsmParser.MainRecordHeaderSize <= data.Length)
@@ -188,17 +179,14 @@ public static class EsmRecordParser
         while (offset + EsmConstants.SubrecordHeaderSize <= recordData.Length)
         {
             // Read signature - for big-endian files, signatures are byte-reversed
-            string sig;
-            if (bigEndian)
-                sig = new string([
+            string sig = bigEndian
+                ? new string([
                     (char)recordData[offset + 3],
                     (char)recordData[offset + 2],
                     (char)recordData[offset + 1],
                     (char)recordData[offset + 0]
-                ]);
-            else
-                sig = Encoding.ASCII.GetString(recordData, offset, 4);
-
+                ])
+                : Encoding.ASCII.GetString(recordData, offset, 4);
             var size = EsmBinary.ReadUInt16(recordData, offset + 4, bigEndian);
 
             // Handle Bethesda extended-size subrecords (XXXX)
@@ -215,7 +203,9 @@ public static class EsmRecordParser
 
             var dataStart = offset + EsmConstants.SubrecordHeaderSize;
             if (dataStart + actualSize > recordData.Length)
+            {
                 break;
+            }
 
             var data = new byte[actualSize];
             Array.Copy(recordData, dataStart, data, 0, (int)actualSize);
@@ -238,7 +228,10 @@ public static class EsmRecordParser
     /// </summary>
     public static string? GetSubrecordString(AnalyzerSubrecordInfo subrecord)
     {
-        if (subrecord.Data.Length == 0) return null;
+        if (subrecord.Data.Length == 0)
+        {
+            return null;
+        }
 
         var nullIdx = Array.IndexOf(subrecord.Data, (byte)0);
         var len = nullIdx >= 0 ? nullIdx : subrecord.Data.Length;

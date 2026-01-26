@@ -1,37 +1,38 @@
-using System.Text;
 using Spectre.Console;
+using System.Text;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Utils;
+using static EsmAnalyzer.Helpers.DiffHelpers;
 
 namespace EsmAnalyzer.Commands;
 
 public static partial class DiffCommands
 {
-    private static int DiffHeader(string xboxPath, string pcPath)
+    private static int DiffHeader(string fileAPath, string fileBPath, string labelA = "Xbox 360", string labelB = "PC")
     {
-        if (!File.Exists(xboxPath))
+        if (!File.Exists(fileAPath))
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] Xbox 360 file not found: {xboxPath}");
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] {labelA} file not found: {fileAPath}");
             return 1;
         }
 
-        if (!File.Exists(pcPath))
+        if (!File.Exists(fileBPath))
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] PC file not found: {pcPath}");
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] {labelB} file not found: {fileBPath}");
             return 1;
         }
 
-        var xboxData = File.ReadAllBytes(xboxPath);
-        var pcData = File.ReadAllBytes(pcPath);
+        var dataA = File.ReadAllBytes(fileAPath);
+        var dataB = File.ReadAllBytes(fileBPath);
 
-        var xboxBigEndian = EsmParser.IsBigEndian(xboxData);
-        var pcBigEndian = EsmParser.IsBigEndian(pcData);
+        var bigEndianA = EsmParser.IsBigEndian(dataA);
+        var bigEndianB = EsmParser.IsBigEndian(dataB);
 
         AnsiConsole.MarkupLine("[bold cyan]ESM Header Comparison[/]");
         AnsiConsole.MarkupLine(
-            $"Xbox 360: {Path.GetFileName(xboxPath)} ({(xboxBigEndian ? "Big-endian" : "Little-endian")})");
+            $"{labelA}: {Path.GetFileName(fileAPath)} ({(bigEndianA ? "Big-endian" : "Little-endian")})");
         AnsiConsole.MarkupLine(
-            $"PC:       {Path.GetFileName(pcPath)} ({(pcBigEndian ? "Big-endian" : "Little-endian")})");
+            $"{labelB}: {Path.GetFileName(fileBPath)} ({(bigEndianB ? "Big-endian" : "Little-endian")})");
         AnsiConsole.WriteLine();
 
         // === Main Record Header (24 bytes) ===
@@ -43,81 +44,81 @@ public static partial class DiffCommands
             .AddColumn("[bold]Offset[/]")
             .AddColumn("[bold]Field[/]")
             .AddColumn("[bold]Size[/]")
-            .AddColumn("[bold]Xbox 360 (raw)[/]")
-            .AddColumn("[bold]Xbox 360 (value)[/]")
-            .AddColumn("[bold]PC (raw)[/]")
-            .AddColumn("[bold]PC (value)[/]")
+            .AddColumn($"[bold]{labelA} (raw)[/]")
+            .AddColumn($"[bold]{labelA} (value)[/]")
+            .AddColumn($"[bold]{labelB} (raw)[/]")
+            .AddColumn($"[bold]{labelB} (value)[/]")
             .AddColumn("[bold]Status[/]");
 
         // Signature (4 bytes) - reversed on Xbox
-        var xboxSig = Encoding.ASCII.GetString(xboxData, 0, 4);
-        var pcSig = Encoding.ASCII.GetString(pcData, 0, 4);
-        var xboxSigReversed = new string(xboxSig.Reverse().ToArray());
+        var sigA = Encoding.ASCII.GetString(dataA, 0, 4);
+        var sigB = Encoding.ASCII.GetString(dataB, 0, 4);
+        var sigAReversed = bigEndianA ? new string(sigA.Reverse().ToArray()) : sigA;
         table.AddRow(
             "0x00", "Signature", "4",
-            FormatBytes(xboxData, 0, 4), $"'{xboxSig}' → '{xboxSigReversed}'",
-            FormatBytes(pcData, 0, 4), $"'{pcSig}'",
-            xboxSigReversed == pcSig ? "[green]MATCH[/]" : "[red]DIFFER[/]"
+            FormatBytes(dataA, 0, 4), bigEndianA ? $"'{sigA}' → '{sigAReversed}'" : $"'{sigA}'",
+            FormatBytes(dataB, 0, 4), $"'{sigB}'",
+            sigAReversed == sigB ? "[green]MATCH[/]" : "[red]DIFFER[/]"
         );
 
         // Data Size (4 bytes)
-        var xboxSize = BinaryUtils.ReadUInt32BE(xboxData.AsSpan(4));
-        var pcSize = BinaryUtils.ReadUInt32LE(pcData.AsSpan(4));
+        var sizeA = bigEndianA ? BinaryUtils.ReadUInt32BE(dataA.AsSpan(4)) : BinaryUtils.ReadUInt32LE(dataA.AsSpan(4));
+        var sizeB = bigEndianB ? BinaryUtils.ReadUInt32BE(dataB.AsSpan(4)) : BinaryUtils.ReadUInt32LE(dataB.AsSpan(4));
         table.AddRow(
             "0x04", "DataSize", "4",
-            FormatBytes(xboxData, 4, 4), xboxSize.ToString("N0"),
-            FormatBytes(pcData, 4, 4), pcSize.ToString("N0"),
-            xboxSize == pcSize ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, 4, 4), sizeA.ToString("N0"),
+            FormatBytes(dataB, 4, 4), sizeB.ToString("N0"),
+            sizeA == sizeB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         // Flags (4 bytes)
-        var xboxFlags = BinaryUtils.ReadUInt32BE(xboxData.AsSpan(8));
-        var pcFlags = BinaryUtils.ReadUInt32LE(pcData.AsSpan(8));
+        var flagsA = bigEndianA ? BinaryUtils.ReadUInt32BE(dataA.AsSpan(8)) : BinaryUtils.ReadUInt32LE(dataA.AsSpan(8));
+        var flagsB = bigEndianB ? BinaryUtils.ReadUInt32BE(dataB.AsSpan(8)) : BinaryUtils.ReadUInt32LE(dataB.AsSpan(8));
         table.AddRow(
             "0x08", "Flags", "4",
-            FormatBytes(xboxData, 8, 4), $"0x{xboxFlags:X8}",
-            FormatBytes(pcData, 8, 4), $"0x{pcFlags:X8}",
-            xboxFlags == pcFlags ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, 8, 4), $"0x{flagsA:X8}",
+            FormatBytes(dataB, 8, 4), $"0x{flagsB:X8}",
+            flagsA == flagsB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         // FormID (4 bytes)
-        var xboxFormId = BinaryUtils.ReadUInt32BE(xboxData.AsSpan(12));
-        var pcFormId = BinaryUtils.ReadUInt32LE(pcData.AsSpan(12));
+        var formIdA = bigEndianA ? BinaryUtils.ReadUInt32BE(dataA.AsSpan(12)) : BinaryUtils.ReadUInt32LE(dataA.AsSpan(12));
+        var formIdB = bigEndianB ? BinaryUtils.ReadUInt32BE(dataB.AsSpan(12)) : BinaryUtils.ReadUInt32LE(dataB.AsSpan(12));
         table.AddRow(
             "0x0C", "FormID", "4",
-            FormatBytes(xboxData, 12, 4), $"0x{xboxFormId:X8}",
-            FormatBytes(pcData, 12, 4), $"0x{pcFormId:X8}",
-            xboxFormId == pcFormId ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, 12, 4), $"0x{formIdA:X8}",
+            FormatBytes(dataB, 12, 4), $"0x{formIdB:X8}",
+            formIdA == formIdB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         // Revision (4 bytes)
-        var xboxRev = BinaryUtils.ReadUInt32BE(xboxData.AsSpan(16));
-        var pcRev = BinaryUtils.ReadUInt32LE(pcData.AsSpan(16));
+        var revA = bigEndianA ? BinaryUtils.ReadUInt32BE(dataA.AsSpan(16)) : BinaryUtils.ReadUInt32LE(dataA.AsSpan(16));
+        var revB = bigEndianB ? BinaryUtils.ReadUInt32BE(dataB.AsSpan(16)) : BinaryUtils.ReadUInt32LE(dataB.AsSpan(16));
         table.AddRow(
             "0x10", "Revision", "4",
-            FormatBytes(xboxData, 16, 4), $"0x{xboxRev:X8}",
-            FormatBytes(pcData, 16, 4), $"0x{pcRev:X8}",
-            xboxRev == pcRev ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, 16, 4), $"0x{revA:X8}",
+            FormatBytes(dataB, 16, 4), $"0x{revB:X8}",
+            revA == revB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         // Version (2 bytes)
-        var xboxVer = BinaryUtils.ReadUInt16BE(xboxData.AsSpan(20));
-        var pcVer = BinaryUtils.ReadUInt16LE(pcData.AsSpan(20));
+        var verA = bigEndianA ? BinaryUtils.ReadUInt16BE(dataA.AsSpan(20)) : BinaryUtils.ReadUInt16LE(dataA.AsSpan(20));
+        var verB = bigEndianB ? BinaryUtils.ReadUInt16BE(dataB.AsSpan(20)) : BinaryUtils.ReadUInt16LE(dataB.AsSpan(20));
         table.AddRow(
             "0x14", "Version", "2",
-            FormatBytes(xboxData, 20, 2), xboxVer.ToString(),
-            FormatBytes(pcData, 20, 2), pcVer.ToString(),
-            xboxVer == pcVer ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, 20, 2), verA.ToString(),
+            FormatBytes(dataB, 20, 2), verB.ToString(),
+            verA == verB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         // Unknown (2 bytes)
-        var xboxUnk = BinaryUtils.ReadUInt16BE(xboxData.AsSpan(22));
-        var pcUnk = BinaryUtils.ReadUInt16LE(pcData.AsSpan(22));
+        var unkA = bigEndianA ? BinaryUtils.ReadUInt16BE(dataA.AsSpan(22)) : BinaryUtils.ReadUInt16LE(dataA.AsSpan(22));
+        var unkB = bigEndianB ? BinaryUtils.ReadUInt16BE(dataB.AsSpan(22)) : BinaryUtils.ReadUInt16LE(dataB.AsSpan(22));
         table.AddRow(
             "0x16", "Unknown", "2",
-            FormatBytes(xboxData, 22, 2), xboxUnk.ToString(),
-            FormatBytes(pcData, 22, 2), pcUnk.ToString(),
-            xboxUnk == pcUnk ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, 22, 2), unkA.ToString(),
+            FormatBytes(dataB, 22, 2), unkB.ToString(),
+            unkA == unkB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         AnsiConsole.Write(table);
@@ -132,13 +133,13 @@ public static partial class DiffCommands
             .AddColumn("[bold]Bit[/]")
             .AddColumn("[bold]Mask[/]")
             .AddColumn("[bold]Name[/]")
-            .AddColumn("[bold]Xbox 360[/]")
-            .AddColumn("[bold]PC[/]");
+            .AddColumn($"[bold]{labelA}[/]")
+            .AddColumn($"[bold]{labelB}[/]");
 
-        AddFlagRow(flagTable, 0, 0x00000001, "ESM (Master)", xboxFlags, pcFlags);
-        AddFlagRow(flagTable, 4, 0x00000010, "Xbox-specific?", xboxFlags, pcFlags);
-        AddFlagRow(flagTable, 7, 0x00000080, "Localized", xboxFlags, pcFlags);
-        AddFlagRow(flagTable, 18, 0x00040000, "Compressed", xboxFlags, pcFlags);
+        AddFlagRow(flagTable, 0, 0x00000001, "ESM (Master)", flagsA, flagsB);
+        AddFlagRow(flagTable, 4, 0x00000010, "Xbox-specific?", flagsA, flagsB);
+        AddFlagRow(flagTable, 7, 0x00000080, "Localized", flagsA, flagsB);
+        AddFlagRow(flagTable, 18, 0x00040000, "Compressed", flagsA, flagsB);
 
         AnsiConsole.Write(flagTable);
         AnsiConsole.WriteLine();
@@ -152,67 +153,70 @@ public static partial class DiffCommands
             .AddColumn("[bold]Offset[/]")
             .AddColumn("[bold]Field[/]")
             .AddColumn("[bold]Size[/]")
-            .AddColumn("[bold]Xbox 360 (raw)[/]")
-            .AddColumn("[bold]Xbox 360 (value)[/]")
-            .AddColumn("[bold]PC (raw)[/]")
-            .AddColumn("[bold]PC (value)[/]")
+            .AddColumn($"[bold]{labelA} (raw)[/]")
+            .AddColumn($"[bold]{labelA} (value)[/]")
+            .AddColumn($"[bold]{labelB} (raw)[/]")
+            .AddColumn($"[bold]{labelB} (value)[/]")
             .AddColumn("[bold]Status[/]");
 
         const int hedrOffset = 24; // After record header
 
         // Subrecord signature (4 bytes)
-        var xboxHedrSig = Encoding.ASCII.GetString(xboxData, hedrOffset, 4);
-        var pcHedrSig = Encoding.ASCII.GetString(pcData, hedrOffset, 4);
-        var xboxHedrSigRev = new string(xboxHedrSig.Reverse().ToArray());
+        var hedrSigA = Encoding.ASCII.GetString(dataA, hedrOffset, 4);
+        var hedrSigB = Encoding.ASCII.GetString(dataB, hedrOffset, 4);
+        var hedrSigAProcessed = bigEndianA ? new string(hedrSigA.Reverse().ToArray()) : hedrSigA;
         hedrTable.AddRow(
             "0x18", "Signature", "4",
-            FormatBytes(xboxData, hedrOffset, 4), $"'{xboxHedrSig}' → '{xboxHedrSigRev}'",
-            FormatBytes(pcData, hedrOffset, 4), $"'{pcHedrSig}'",
-            xboxHedrSigRev == pcHedrSig ? "[green]MATCH[/]" : "[red]DIFFER[/]"
+            FormatBytes(dataA, hedrOffset, 4), bigEndianA ? $"'{hedrSigA}' → '{hedrSigAProcessed}'" : $"'{hedrSigA}'",
+            FormatBytes(dataB, hedrOffset, 4), $"'{hedrSigB}'",
+            hedrSigAProcessed == hedrSigB ? "[green]MATCH[/]" : "[red]DIFFER[/]"
         );
 
         // Subrecord size (2 bytes)
-        var xboxHedrSize = BinaryUtils.ReadUInt16BE(xboxData.AsSpan(hedrOffset + 4));
-        var pcHedrSize = BinaryUtils.ReadUInt16LE(pcData.AsSpan(hedrOffset + 4));
+        var hedrSizeA = bigEndianA ? BinaryUtils.ReadUInt16BE(dataA.AsSpan(hedrOffset + 4)) : BinaryUtils.ReadUInt16LE(dataA.AsSpan(hedrOffset + 4));
+        var hedrSizeB = bigEndianB ? BinaryUtils.ReadUInt16BE(dataB.AsSpan(hedrOffset + 4)) : BinaryUtils.ReadUInt16LE(dataB.AsSpan(hedrOffset + 4));
         hedrTable.AddRow(
             "0x1C", "Size", "2",
-            FormatBytes(xboxData, hedrOffset + 4, 2), xboxHedrSize.ToString(),
-            FormatBytes(pcData, hedrOffset + 4, 2), pcHedrSize.ToString(),
-            xboxHedrSize == pcHedrSize ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, hedrOffset + 4, 2), hedrSizeA.ToString(),
+            FormatBytes(dataB, hedrOffset + 4, 2), hedrSizeB.ToString(),
+            hedrSizeA == hedrSizeB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         // HEDR data starts at offset 30
         const int hedrDataOffset = hedrOffset + 6;
 
         // Version (float, 4 bytes)
-        var xboxVersion =
-            BitConverter.ToSingle(BitConverter.GetBytes(BinaryUtils.ReadUInt32BE(xboxData.AsSpan(hedrDataOffset))), 0);
-        var pcVersion = BitConverter.ToSingle(pcData, hedrDataOffset);
+        var versionFloatA = bigEndianA
+            ? BitConverter.ToSingle(BitConverter.GetBytes(BinaryUtils.ReadUInt32BE(dataA.AsSpan(hedrDataOffset))), 0)
+            : BitConverter.ToSingle(dataA, hedrDataOffset);
+        var versionFloatB = bigEndianB
+            ? BitConverter.ToSingle(BitConverter.GetBytes(BinaryUtils.ReadUInt32BE(dataB.AsSpan(hedrDataOffset))), 0)
+            : BitConverter.ToSingle(dataB, hedrDataOffset);
         hedrTable.AddRow(
             "0x1E", "Version", "4",
-            FormatBytes(xboxData, hedrDataOffset, 4), xboxVersion.ToString("F2"),
-            FormatBytes(pcData, hedrDataOffset, 4), pcVersion.ToString("F2"),
-            Math.Abs(xboxVersion - pcVersion) < 0.01f ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, hedrDataOffset, 4), versionFloatA.ToString("F2"),
+            FormatBytes(dataB, hedrDataOffset, 4), versionFloatB.ToString("F2"),
+            Math.Abs(versionFloatA - versionFloatB) < 0.01f ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         // NumRecords (int32, 4 bytes)
-        var xboxNumRec = BinaryUtils.ReadUInt32BE(xboxData.AsSpan(hedrDataOffset + 4));
-        var pcNumRec = BinaryUtils.ReadUInt32LE(pcData.AsSpan(hedrDataOffset + 4));
+        var numRecA = bigEndianA ? BinaryUtils.ReadUInt32BE(dataA.AsSpan(hedrDataOffset + 4)) : BinaryUtils.ReadUInt32LE(dataA.AsSpan(hedrDataOffset + 4));
+        var numRecB = bigEndianB ? BinaryUtils.ReadUInt32BE(dataB.AsSpan(hedrDataOffset + 4)) : BinaryUtils.ReadUInt32LE(dataB.AsSpan(hedrDataOffset + 4));
         hedrTable.AddRow(
             "0x22", "NumRecords", "4",
-            FormatBytes(xboxData, hedrDataOffset + 4, 4), xboxNumRec.ToString("N0"),
-            FormatBytes(pcData, hedrDataOffset + 4, 4), pcNumRec.ToString("N0"),
-            xboxNumRec == pcNumRec ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, hedrDataOffset + 4, 4), numRecA.ToString("N0"),
+            FormatBytes(dataB, hedrDataOffset + 4, 4), numRecB.ToString("N0"),
+            numRecA == numRecB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         // NextObjectId (uint32, 4 bytes)
-        var xboxNextId = BinaryUtils.ReadUInt32BE(xboxData.AsSpan(hedrDataOffset + 8));
-        var pcNextId = BinaryUtils.ReadUInt32LE(pcData.AsSpan(hedrDataOffset + 8));
+        var nextIdA = bigEndianA ? BinaryUtils.ReadUInt32BE(dataA.AsSpan(hedrDataOffset + 8)) : BinaryUtils.ReadUInt32LE(dataA.AsSpan(hedrDataOffset + 8));
+        var nextIdB = bigEndianB ? BinaryUtils.ReadUInt32BE(dataB.AsSpan(hedrDataOffset + 8)) : BinaryUtils.ReadUInt32LE(dataB.AsSpan(hedrDataOffset + 8));
         hedrTable.AddRow(
             "0x26", "NextObjectId", "4",
-            FormatBytes(xboxData, hedrDataOffset + 8, 4), $"0x{xboxNextId:X8}",
-            FormatBytes(pcData, hedrDataOffset + 8, 4), $"0x{pcNextId:X8}",
-            xboxNextId == pcNextId ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
+            FormatBytes(dataA, hedrDataOffset + 8, 4), $"0x{nextIdA:X8}",
+            FormatBytes(dataB, hedrDataOffset + 8, 4), $"0x{nextIdB:X8}",
+            nextIdA == nextIdB ? "[green]MATCH[/]" : "[yellow]DIFFER[/]"
         );
 
         AnsiConsole.Write(hedrTable);

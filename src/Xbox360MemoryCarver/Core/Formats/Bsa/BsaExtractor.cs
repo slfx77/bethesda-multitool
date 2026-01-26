@@ -476,60 +476,6 @@ public sealed class BsaExtractor : IDisposable
     }
 
     /// <summary>
-    ///     Extract a single file to disk (synchronous, no conversion).
-    /// </summary>
-    [Obsolete("Use ExtractFileToDiskAsync for Xbox 360 to PC conversion support (DDX, XMA, NIF)")]
-    public BsaExtractResult ExtractFileToDisk(BsaFileRecord file, string outputDir, bool overwrite = false)
-    {
-        var outputPath = Path.Combine(outputDir, file.FullPath);
-        var outputDirectory = Path.GetDirectoryName(outputPath)!;
-
-        if (!overwrite && File.Exists(outputPath))
-        {
-            return new BsaExtractResult
-            {
-                SourcePath = file.FullPath,
-                OutputPath = outputPath,
-                Success = true,
-                OriginalSize = file.Size,
-                ExtractedSize = new FileInfo(outputPath).Length,
-                WasCompressed = _defaultCompressed != file.CompressionToggle,
-                Error = "File already exists (skipped)"
-            };
-        }
-
-        try
-        {
-            Directory.CreateDirectory(outputDirectory);
-            var data = ExtractFile(file);
-            File.WriteAllBytes(outputPath, data);
-
-            return new BsaExtractResult
-            {
-                SourcePath = file.FullPath,
-                OutputPath = outputPath,
-                Success = true,
-                OriginalSize = file.Size,
-                ExtractedSize = data.Length,
-                WasCompressed = _defaultCompressed != file.CompressionToggle
-            };
-        }
-        catch (Exception ex)
-        {
-            return new BsaExtractResult
-            {
-                SourcePath = file.FullPath,
-                OutputPath = outputPath,
-                Success = false,
-                OriginalSize = file.Size,
-                ExtractedSize = 0,
-                WasCompressed = _defaultCompressed != file.CompressionToggle,
-                Error = ex.Message
-            };
-        }
-    }
-
-    /// <summary>
     ///     Extract all files to a directory.
     /// </summary>
     public async Task<List<BsaExtractResult>> ExtractAllAsync(

@@ -1,6 +1,6 @@
-using System.Globalization;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.Globalization;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using static EsmAnalyzer.Core.EsmBinary;
 
@@ -56,10 +56,12 @@ public static partial class LandCommands
             for (var i = 0; i < count && displayed < sampleCount; i++)
             {
                 if (leftDeltas[i] == rightDeltas[i])
+                {
                     continue;
+                }
 
                 var diff = leftDeltas[i] - rightDeltas[i];
-                sampleTable.AddRow(
+                _ = sampleTable.AddRow(
                     i.ToString("N0"),
                     leftDeltas[i].ToString(CultureInfo.InvariantCulture),
                     rightDeltas[i].ToString(CultureInfo.InvariantCulture),
@@ -68,9 +70,13 @@ public static partial class LandCommands
             }
 
             if (sampleTable.Rows.Count == 0)
+            {
                 AnsiConsole.MarkupLine("[green]VHGT deltas are identical.[/]");
+            }
             else
+            {
                 AnsiConsole.Write(sampleTable);
+            }
         }
         else
         {
@@ -78,7 +84,7 @@ public static partial class LandCommands
             for (var i = 0; i < rows; i++)
             {
                 var diff = leftDeltas[i] - rightDeltas[i];
-                sampleTable.AddRow(
+                _ = sampleTable.AddRow(
                     i.ToString("N0"),
                     leftDeltas[i].ToString(CultureInfo.InvariantCulture),
                     rightDeltas[i].ToString(CultureInfo.InvariantCulture),
@@ -88,9 +94,9 @@ public static partial class LandCommands
             AnsiConsole.Write(sampleTable);
         }
 
-        var stats = ComputeLinearFit(leftDeltas, rightDeltas, count);
+        var (Scale, Bias, Mae) = ComputeLinearFit(leftDeltas, rightDeltas, count);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[cyan]Fit:[/] right ≈ left * {stats.Scale:F4} + {stats.Bias:F4} (MAE={stats.Mae:F4})");
+        AnsiConsole.MarkupLine($"[cyan]Fit:[/] right ≈ left * {Scale:F4} + {Bias:F4} (MAE={Mae:F4})");
     }
 
     private static bool TryLoadVhgt(string filePath, uint formId, out EsmFileHeader header, out float baseHeight,
@@ -102,20 +108,32 @@ public static partial class LandCommands
 
         var data = File.ReadAllBytes(filePath);
         var parsedHeader = EsmParser.ParseFileHeader(data);
-        if (parsedHeader == null) return false;
+        if (parsedHeader == null)
+        {
+            return false;
+        }
 
         var landRecords = EsmHelpers.ScanForRecordType(data, parsedHeader.IsBigEndian, "LAND");
         var record = landRecords.FirstOrDefault(r => r.FormId == formId);
-        if (record == null) return false;
+        if (record == null)
+        {
+            return false;
+        }
 
         var recordData = EsmHelpers.GetRecordData(data, record, parsedHeader.IsBigEndian);
         var subrecords = EsmHelpers.ParseSubrecords(recordData, parsedHeader.IsBigEndian);
         var vhgt = subrecords.FirstOrDefault(s => s.Signature.Equals("VHGT", StringComparison.OrdinalIgnoreCase));
-        if (vhgt == null || vhgt.Data.Length < 5) return false;
+        if (vhgt == null || vhgt.Data.Length < 5)
+        {
+            return false;
+        }
 
         baseHeight = ReadSingle(vhgt.Data, 0, parsedHeader.IsBigEndian);
         deltas = new sbyte[vhgt.Data.Length - 4];
-        for (var i = 4; i < vhgt.Data.Length; i++) deltas[i - 4] = unchecked((sbyte)vhgt.Data[i]);
+        for (var i = 4; i < vhgt.Data.Length; i++)
+        {
+            deltas[i - 4] = unchecked((sbyte)vhgt.Data[i]);
+        }
 
         header = parsedHeader;
         return true;
@@ -138,14 +156,14 @@ public static partial class LandCommands
         }
 
         var n = (double)count;
-        var denom = n * sumXX - sumX * sumX;
-        var scale = Math.Abs(denom) < 1e-9 ? 0 : (n * sumXY - sumX * sumY) / denom;
-        var bias = (sumY - scale * sumX) / n;
+        var denom = (n * sumXX) - (sumX * sumX);
+        var scale = Math.Abs(denom) < 1e-9 ? 0 : ((n * sumXY) - (sumX * sumY)) / denom;
+        var bias = (sumY - (scale * sumX)) / n;
 
         double mae = 0;
         for (var i = 0; i < count; i++)
         {
-            var predicted = scale * left[i] + bias;
+            var predicted = (scale * left[i]) + bias;
             mae += Math.Abs(predicted - right[i]);
         }
 

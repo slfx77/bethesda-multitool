@@ -1,7 +1,7 @@
+using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
 using System.Security.Cryptography;
-using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
 
@@ -133,7 +133,11 @@ public static class HashCommands
             _ => null
         };
 
-        if (hasher == null) return null;
+        if (hasher == null)
+        {
+            return null;
+        }
+
         using (hasher)
         {
             return hasher.ComputeHash(stream);

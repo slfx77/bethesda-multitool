@@ -1,5 +1,5 @@
-using System.Globalization;
 using Spectre.Console;
+using System.Globalization;
 using static EsmAnalyzer.Conversion.EsmEndianHelpers;
 
 namespace EsmAnalyzer.Conversion;
@@ -28,7 +28,11 @@ public sealed class EsmConversionStats
     /// </summary>
     public void IncrementRecordType(string signature)
     {
-        if (!RecordTypeCounts.TryGetValue(signature, out var count)) count = 0;
+        if (!RecordTypeCounts.TryGetValue(signature, out var count))
+        {
+            count = 0;
+        }
+
         RecordTypeCounts[signature] = count + 1;
     }
 
@@ -38,7 +42,11 @@ public sealed class EsmConversionStats
     public void IncrementSubrecordType(string recordType, string signature)
     {
         var key = $"{recordType}.{signature}";
-        if (!SubrecordTypeCounts.TryGetValue(key, out var count)) count = 0;
+        if (!SubrecordTypeCounts.TryGetValue(key, out var count))
+        {
+            count = 0;
+        }
+
         SubrecordTypeCounts[key] = count + 1;
     }
 
@@ -47,7 +55,11 @@ public sealed class EsmConversionStats
     /// </summary>
     public void IncrementSkippedRecordType(string signature)
     {
-        if (!SkippedRecordTypeCounts.TryGetValue(signature, out var count)) count = 0;
+        if (!SkippedRecordTypeCounts.TryGetValue(signature, out var count))
+        {
+            count = 0;
+        }
+
         SkippedRecordTypeCounts[signature] = count + 1;
     }
 
@@ -56,7 +68,11 @@ public sealed class EsmConversionStats
     /// </summary>
     public void IncrementSkippedGrupType(int grupType)
     {
-        if (!SkippedGrupTypeCounts.TryGetValue(grupType, out var count)) count = 0;
+        if (!SkippedGrupTypeCounts.TryGetValue(grupType, out var count))
+        {
+            count = 0;
+        }
+
         SkippedGrupTypeCounts[grupType] = count + 1;
     }
 
@@ -75,23 +91,32 @@ public sealed class EsmConversionStats
         PrintOfstStats();
         PrintSkippedStats();
 
-        if (verbose) PrintRecordTypeStats();
+        if (verbose)
+        {
+            PrintRecordTypeStats();
+        }
     }
 
     private void PrintToftStats()
     {
-        if (ToftTrailingBytesSkipped <= 0) return;
+        if (ToftTrailingBytesSkipped <= 0)
+        {
+            return;
+        }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold yellow]Xbox 360 streaming TOC skipped:[/]");
+        AnsiConsole.MarkupLine("[bold yellow]Xbox 360 streaming cache region skipped:[/]");
         AnsiConsole.MarkupLine(
             $"  TOFT trailing data: {ToftTrailingBytesSkipped:N0} bytes ({ToftTrailingBytesSkipped / 1024.0 / 1024.0:F2} MB)");
-        AnsiConsole.MarkupLine("  (TOFT + duplicate INFO/CELL records used for Xbox streaming)");
+        AnsiConsole.MarkupLine("  (TOFT + cached records used by the Xbox 360 streaming system)");
     }
 
     private void PrintOfstStats()
     {
-        if (OfstStripped <= 0) return;
+        if (OfstStripped <= 0)
+        {
+            return;
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[bold yellow]OFST subrecords stripped:[/]");
@@ -102,10 +127,13 @@ public sealed class EsmConversionStats
 
     private void PrintSkippedStats()
     {
-        if (TopLevelRecordsSkipped <= 0 && TopLevelGrupsSkipped <= 0) return;
+        if (TopLevelRecordsSkipped <= 0 && TopLevelGrupsSkipped <= 0)
+        {
+            return;
+        }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold yellow]Skipped (Xbox 360 flat structure duplicates):[/]");
+        AnsiConsole.MarkupLine("[bold yellow]Skipped (Xbox 360 streaming layout artifacts):[/]");
 
         if (TopLevelGrupsSkipped > 0)
         {
@@ -119,15 +147,19 @@ public sealed class EsmConversionStats
                     .AddColumn(new TableColumn("Count").RightAligned());
 
                 foreach (var kvp in SkippedGrupTypeCounts.OrderByDescending(x => x.Value))
-                    grupSkipTable.AddRow(GetGrupTypeName(kvp.Key),
+                {
+                    _ = grupSkipTable.AddRow(GetGrupTypeName(kvp.Key),
                         kvp.Value.ToString("N0", CultureInfo.InvariantCulture));
+                }
 
                 AnsiConsole.Write(grupSkipTable);
             }
         }
 
         if (TopLevelRecordsSkipped > 0)
+        {
             AnsiConsole.MarkupLine($"  Top-level records skipped: {TopLevelRecordsSkipped:N0}");
+        }
 
         if (SkippedRecordTypeCounts.Count > 0)
         {
@@ -137,7 +169,9 @@ public sealed class EsmConversionStats
                 .AddColumn(new TableColumn("Skipped").RightAligned());
 
             foreach (var kvp in SkippedRecordTypeCounts.OrderByDescending(x => x.Value))
-                skipTable.AddRow(kvp.Key, kvp.Value.ToString("N0", CultureInfo.InvariantCulture));
+            {
+                _ = skipTable.AddRow(kvp.Key, kvp.Value.ToString("N0", CultureInfo.InvariantCulture));
+            }
 
             AnsiConsole.Write(skipTable);
         }
@@ -154,7 +188,9 @@ public sealed class EsmConversionStats
             .AddColumn(new TableColumn("Count").RightAligned());
 
         foreach (var kvp in RecordTypeCounts.OrderByDescending(x => x.Value).Take(20))
-            table.AddRow(kvp.Key, kvp.Value.ToString("N0"));
+        {
+            _ = table.AddRow(kvp.Key, kvp.Value.ToString("N0"));
+        }
 
         AnsiConsole.Write(table);
     }

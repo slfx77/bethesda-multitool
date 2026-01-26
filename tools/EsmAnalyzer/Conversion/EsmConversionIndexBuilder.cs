@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+using EsmAnalyzer.Conversion.Schema;
 using EsmAnalyzer.Helpers;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using Xbox360MemoryCarver.Core.Utils;
@@ -25,7 +25,10 @@ internal sealed class EsmConversionIndexBuilder
     public ConversionIndex Build()
     {
         var index = new ConversionIndex();
-        if (!TryGetTes4StartOffset(out var offset)) return index;
+        if (!TryGetTes4StartOffset(out var offset))
+        {
+            return index;
+        }
 
         var grupStack = new Stack<(int end, int type, uint label)>();
 
@@ -35,10 +38,16 @@ internal sealed class EsmConversionIndexBuilder
         {
             PopCompletedGroups(grupStack, offset);
 
-            if (TryHandleIndexGroup(index, grupStack, ref offset)) continue;
+            if (TryHandleIndexGroup(index, grupStack, ref offset))
+            {
+                continue;
+            }
 
             var recHeader = EsmParser.ParseRecordHeader(_input.AsSpan(offset), true);
-            if (recHeader == null) break;
+            if (recHeader == null)
+            {
+                break;
+            }
 
             // Skip TOFT records (Size=0, appear inside Cell Children GRUPs)
             if (recHeader.Signature == "TOFT")
@@ -47,7 +56,10 @@ internal sealed class EsmConversionIndexBuilder
                 continue;
             }
 
-            if (!TryHandleIndexRecord(index, grupStack, ref offset)) break;
+            if (!TryHandleIndexRecord(index, grupStack, ref offset))
+            {
+                break;
+            }
         }
 
         // Fallback: if no worlds were indexed, locate WRLD records directly
@@ -57,7 +69,9 @@ internal sealed class EsmConversionIndexBuilder
                 .OrderBy(r => r.Offset);
 
             foreach (var world in worlds)
+            {
                 index.Worlds.Add(new WorldEntry(world.FormId, (int)world.Offset));
+            }
         }
 
         // If Phase 1 stopped early, ensure we start flat scanning at the real TOFT record
@@ -66,7 +80,9 @@ internal sealed class EsmConversionIndexBuilder
             .FirstOrDefault();
 
         if (toftRecord != null && offset < toftRecord.Offset)
+        {
             offset = (int)toftRecord.Offset;
+        }
 
         // Phase 2: Scan flat Cell Temporary groups after TOFT region
         ScanFlatCellGroups(index, offset);
@@ -85,13 +101,21 @@ internal sealed class EsmConversionIndexBuilder
             foreach (var cell in cells)
             {
                 if (index.CellsById.ContainsKey(cell.FormId))
+                {
                     continue;
+                }
 
                 var recHeader = EsmParser.ParseRecordHeader(_input.AsSpan((int)cell.Offset), true);
-                if (recHeader == null) continue;
+                if (recHeader == null)
+                {
+                    continue;
+                }
 
                 var recordEnd = (int)cell.Offset + EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize;
-                if (recordEnd > _input.Length) continue;
+                if (recordEnd > _input.Length)
+                {
+                    continue;
+                }
 
                 var cellEntry = BuildCellEntryFromRecord(recHeader, (int)cell.Offset, recordEnd, defaultWorldId);
                 index.CellsById[recHeader.FormId] = cellEntry;
@@ -126,18 +150,20 @@ internal sealed class EsmConversionIndexBuilder
         var offset = startOffset;
         var worldChildrenFound = 0;
 
-        // Skip past TOFT records and duplicate INFO records
+        // Skip past TOFT records and any non-GRUP streaming cache records
         while (offset + EsmParser.MainRecordHeaderSize <= _input.Length)
         {
             var sigBytes = _input.AsSpan(offset, 4);
             var signature = $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
 
-            if (signature == "GRUP" || signature == "PURG")
+            if (signature is "GRUP" or "PURG")
+            {
                 break; // Found start of flat GRUPs (PURG is big-endian GRUP)
+            }
 
-            // Skip non-GRUP records (TOFT, duplicate INFO)
-            var dataSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
-            offset += EsmParser.MainRecordHeaderSize + (int)dataSize;
+            // Skip non-GRUP records (TOFT and streamed cache entries)
+            var header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(offset));
+            offset += EsmParser.MainRecordHeaderSize + (int)header.DataSize;
         }
 
         // Now scan flat GRUPs - Xbox 360 may have orphaned data between GRUPs
@@ -146,11 +172,12 @@ internal sealed class EsmConversionIndexBuilder
             var sigBytes = _input.AsSpan(offset, 4);
             var signature = $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
 
-            if (signature != "GRUP" && signature != "PURG")
+            if (signature is not "GRUP" and not "PURG")
             {
                 // Not a GRUP - try to skip forward and find the next GRUP
                 var found = false;
                 for (var scan = offset + 1; scan <= _input.Length - 4 && scan < offset + 1024; scan++)
+                {
                     if (_input[scan] == 0x50 && _input[scan + 1] == 0x55 &&
                         _input[scan + 2] == 0x52 && _input[scan + 3] == 0x47) // "PURG"
                     {
@@ -158,38 +185,40 @@ internal sealed class EsmConversionIndexBuilder
                         found = true;
                         break;
                     }
+                }
 
                 if (!found)
+                {
                     break; // End of flat GRUPs
+                }
+
                 continue;
             }
 
-            var grupSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
-            var labelValue = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 8));
-            var grupType = (int)BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 12));
+            var grupHeader = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(offset));
 
             // Index Cell Temporary (9) groups - these contain REFR/ACHR/ACRE
-            if (grupType == 9)
+            if (grupHeader.Type == 9)
             {
-                var key = (labelValue, grupType);
+                var key = (grupHeader.Label, (int)grupHeader.Type);
                 if (!index.CellChildGroups.TryGetValue(key, out var list))
                 {
                     list = [];
                     index.CellChildGroups[key] = list;
                 }
 
-                list.Add(new GrupEntry(grupType, labelValue, offset, (int)grupSize));
+                list.Add(new GrupEntry((int)grupHeader.Type, grupHeader.Label, offset, (int)grupHeader.Size));
             }
 
             // Scan World Children (type 1) groups for exterior cells
-            if (grupType == 1)
+            if (grupHeader.Type == 1)
             {
-                var worldId = labelValue;
-                ScanFlatWorldChildrenGroup(index, offset, (int)grupSize, worldId);
+                var worldId = grupHeader.Label;
+                ScanFlatWorldChildrenGroup(index, offset, (int)grupHeader.Size, worldId);
                 worldChildrenFound++;
             }
 
-            offset += (int)grupSize;
+            offset += (int)grupHeader.Size;
         }
     }
 
@@ -205,31 +234,34 @@ internal sealed class EsmConversionIndexBuilder
             // Quick check for PURG signature
             if (_input[offset] != 0x50 || _input[offset + 1] != 0x55 ||
                 _input[offset + 2] != 0x52 || _input[offset + 3] != 0x47)
+            {
                 continue;
+            }
 
             // Read GRUP header
-            var grupSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
+            var grupHeader = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(offset));
 
             // Validate GRUP size (must be at least header size, not larger than remaining file)
-            if (grupSize < 24 || grupSize > (uint)(_input.Length - offset))
+            if (grupHeader.Size < 24 || grupHeader.Size > (uint)(_input.Length - offset))
+            {
                 continue;
-
-            var labelValue = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 8));
-            var grupType = (int)BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 12));
+            }
 
             // Index Cell Child groups (8=Persistent, 9=Temporary, 10=VWD)
-            if (grupType is 8 or 9 or 10)
+            if (grupHeader.Type is 8 or 9 or 10)
             {
-                var key = (labelValue, grupType);
+                var key = (grupHeader.Label, (int)grupHeader.Type);
                 if (!index.CellChildGroups.TryGetValue(key, out var list))
                 {
                     list = [];
                     index.CellChildGroups[key] = list;
                 }
 
-                // Only add if not already indexed at this offset (avoid duplicates)
+                // Only add if not already indexed at this offset (avoid re-adding the same group)
                 if (!list.Any(g => g.Offset == offset))
-                    list.Add(new GrupEntry(grupType, labelValue, offset, (int)grupSize));
+                {
+                    list.Add(new GrupEntry((int)grupHeader.Type, grupHeader.Label, offset, (int)grupHeader.Size));
+                }
             }
         }
     }
@@ -248,40 +280,48 @@ internal sealed class EsmConversionIndexBuilder
         while (offset < grupEnd && offset + 4 <= _input.Length)
         {
             // Pop completed groups
-            while (grupStack.Count > 0 && offset >= grupStack.Peek().end) grupStack.Pop();
+            while (grupStack.Count > 0 && offset >= grupStack.Peek().end)
+            {
+                _ = grupStack.Pop();
+            }
 
             var sigBytes = _input.AsSpan(offset, 4);
             var signature = $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
 
             if (signature == "GRUP")
             {
-                var childGrupSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
-                var childLabelValue = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 8));
-                var childGrupType = (int)BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 12));
+                var childGrupHeader = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(offset));
 
                 // Track cell child groups (Persistent/Temporary/VWD)
-                if (childGrupType is 8 or 9 or 10)
+                if (childGrupHeader.Type is 8 or 9 or 10)
                 {
-                    var key = (childLabelValue, childGrupType);
+                    var key = (childGrupHeader.Label, (int)childGrupHeader.Type);
                     if (!index.CellChildGroups.TryGetValue(key, out var list))
                     {
                         list = [];
                         index.CellChildGroups[key] = list;
                     }
 
-                    list.Add(new GrupEntry(childGrupType, childLabelValue, offset, (int)childGrupSize));
+                    list.Add(new GrupEntry((int)childGrupHeader.Type, childGrupHeader.Label, offset,
+                        (int)childGrupHeader.Size));
                 }
 
-                grupStack.Push((offset + (int)childGrupSize, childGrupType, childLabelValue));
+                grupStack.Push((offset + (int)childGrupHeader.Size, (int)childGrupHeader.Type, childGrupHeader.Label));
                 offset += EsmParser.MainRecordHeaderSize;
             }
             else if (signature == "CELL")
             {
                 var recHeader = EsmParser.ParseRecordHeader(_input.AsSpan(offset), true);
-                if (recHeader == null) break;
+                if (recHeader == null)
+                {
+                    break;
+                }
 
                 var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize;
-                if (recordEnd > _input.Length) break;
+                if (recordEnd > _input.Length)
+                {
+                    break;
+                }
 
                 // Build cell entry with the worldId from the World Children label
                 var cellEntry = BuildCellEntryWithWorld(recHeader, offset, recordEnd, worldId);
@@ -305,7 +345,10 @@ internal sealed class EsmConversionIndexBuilder
             {
                 // Skip other records (REFR, ACHR, etc.)
                 var recHeader = EsmParser.ParseRecordHeader(_input.AsSpan(offset), true);
-                if (recHeader == null) break;
+                if (recHeader == null)
+                {
+                    break;
+                }
 
                 offset += EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize;
             }
@@ -341,8 +384,15 @@ internal sealed class EsmConversionIndexBuilder
             gridX = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan());
             gridY = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan(), 4);
 
-            if (gridX > 0x7FFFFFFF) gridX = (int)(gridX - 0x100000000);
-            if (gridY > 0x7FFFFFFF) gridY = (int)(gridY - 0x100000000);
+            if (gridX > 0x7FFFFFFF)
+            {
+                gridX = (int)(gridX - 0x100000000);
+            }
+
+            if (gridY > 0x7FFFFFFF)
+            {
+                gridY = (int)(gridY - 0x100000000);
+            }
         }
 
         return new CellEntry(recHeader.FormId, offset, recHeader.Flags, recHeader.DataSize, isExterior, gridX, gridY,
@@ -378,8 +428,15 @@ internal sealed class EsmConversionIndexBuilder
             gridX = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan());
             gridY = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan(), 4);
 
-            if (gridX > 0x7FFFFFFF) gridX = (int)(gridX - 0x100000000);
-            if (gridY > 0x7FFFFFFF) gridY = (int)(gridY - 0x100000000);
+            if (gridX > 0x7FFFFFFF)
+            {
+                gridX = (int)(gridX - 0x100000000);
+            }
+
+            if (gridY > 0x7FFFFFFF)
+            {
+                gridY = (int)(gridY - 0x100000000);
+            }
         }
 
         return new CellEntry(recHeader.FormId, offset, recHeader.Flags, recHeader.DataSize, isExterior, gridX, gridY,
@@ -390,10 +447,16 @@ internal sealed class EsmConversionIndexBuilder
     {
         offset = 0;
         var header = EsmParser.ParseFileHeader(_input);
-        if (header == null || !header.IsBigEndian) return false;
+        if (header == null || !header.IsBigEndian)
+        {
+            return false;
+        }
 
         var tes4Header = EsmParser.ParseRecordHeader(_input, true);
-        if (tes4Header == null) return false;
+        if (tes4Header == null)
+        {
+            return false;
+        }
 
         offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
         return true;
@@ -401,7 +464,10 @@ internal sealed class EsmConversionIndexBuilder
 
     private static void PopCompletedGroups(Stack<(int end, int type, uint label)> grupStack, int offset)
     {
-        while (grupStack.Count > 0 && offset >= grupStack.Peek().end) grupStack.Pop();
+        while (grupStack.Count > 0 && offset >= grupStack.Peek().end)
+        {
+            _ = grupStack.Pop();
+        }
     }
 
     private bool TryHandleIndexGroup(ConversionIndex index, Stack<(int end, int type, uint label)> grupStack,
@@ -410,27 +476,28 @@ internal sealed class EsmConversionIndexBuilder
         var sigBytes = _input.AsSpan(offset, 4);
         var signature = $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
 
-        if (signature != "GRUP") return false;
+        if (signature != "GRUP")
+        {
+            return false;
+        }
 
-        var grupSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
-        var labelValue = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 8));
-        var grupType = (int)BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 12));
-        var grupEnd = offset + (int)grupSize;
+        var grupHeader = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(offset));
+        var grupEnd = offset + (int)grupHeader.Size;
 
         // Track cell child groups (Persistent/Temporary/VWD)
-        if (grupType is 8 or 9 or 10)
+        if (grupHeader.Type is 8 or 9 or 10)
         {
-            var key = (labelValue, grupType);
+            var key = (grupHeader.Label, (int)grupHeader.Type);
             if (!index.CellChildGroups.TryGetValue(key, out var list))
             {
                 list = [];
                 index.CellChildGroups[key] = list;
             }
 
-            list.Add(new GrupEntry(grupType, labelValue, offset, (int)grupSize));
+            list.Add(new GrupEntry((int)grupHeader.Type, grupHeader.Label, offset, (int)grupHeader.Size));
         }
 
-        grupStack.Push((grupEnd, grupType, labelValue));
+        grupStack.Push((grupEnd, (int)grupHeader.Type, grupHeader.Label));
         offset += EsmParser.MainRecordHeaderSize;
         return true;
     }
@@ -439,19 +506,39 @@ internal sealed class EsmConversionIndexBuilder
         ref int offset)
     {
         var recHeader = EsmParser.ParseRecordHeader(_input.AsSpan(offset), true);
-        if (recHeader == null) return false;
+        if (recHeader == null)
+        {
+            return false;
+        }
 
         var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize;
-        if (recordEnd > _input.Length) return false;
+        if (recordEnd > _input.Length)
+        {
+            return false;
+        }
 
-        if (recHeader.Signature == "WRLD") index.Worlds.Add(new WorldEntry(recHeader.FormId, offset));
+        if (recHeader.Signature == "WRLD")
+        {
+            index.Worlds.Add(new WorldEntry(recHeader.FormId, offset));
+        }
 
         if (recHeader.Signature == "CELL")
         {
             var cellEntry = BuildCellEntry(recHeader, offset, recordEnd, grupStack);
             index.CellsById[recHeader.FormId] = cellEntry;
 
-            if (cellEntry.IsExterior && cellEntry.WorldId.HasValue)
+            // Worldspace persistent cell: a CELL that lives directly under a WRLD's World Children GRUP,
+            // not nested under exterior block/sub-block groups.
+            if (cellEntry.WorldId.HasValue && !IsInsideExteriorBlockOrSubBlock(grupStack))
+            {
+                var worldId = cellEntry.WorldId.Value;
+                if (!index.WorldPersistentCellsByWorld.ContainsKey(worldId))
+                {
+                    index.WorldPersistentCellsByWorld[worldId] = cellEntry;
+                }
+            }
+
+            if (cellEntry.IsExterior && cellEntry.WorldId.HasValue && IsInsideExteriorBlockOrSubBlock(grupStack))
             {
                 if (!index.ExteriorCellsByWorld.TryGetValue(cellEntry.WorldId.Value, out var list))
                 {
@@ -470,6 +557,19 @@ internal sealed class EsmConversionIndexBuilder
 
         offset = recordEnd;
         return true;
+    }
+
+    private static bool IsInsideExteriorBlockOrSubBlock(Stack<(int end, int type, uint label)> grupStack)
+    {
+        foreach (var (_, type, _) in grupStack)
+        {
+            if (type is 4 or 5)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private CellEntry BuildCellEntry(MainRecordHeader recHeader, int offset, int recordEnd,
@@ -500,8 +600,15 @@ internal sealed class EsmConversionIndexBuilder
             gridX = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan());
             gridY = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan(), 4);
 
-            if (gridX > 0x7FFFFFFF) gridX = (int)(gridX - 0x100000000);
-            if (gridY > 0x7FFFFFFF) gridY = (int)(gridY - 0x100000000);
+            if (gridX > 0x7FFFFFFF)
+            {
+                gridX = (int)(gridX - 0x100000000);
+            }
+
+            if (gridY > 0x7FFFFFFF)
+            {
+                gridY = (int)(gridY - 0x100000000);
+            }
         }
 
         return new CellEntry(recHeader.FormId, offset, recHeader.Flags, recHeader.DataSize, isExterior, gridX, gridY,
@@ -510,9 +617,13 @@ internal sealed class EsmConversionIndexBuilder
 
     private static uint? GetWorldIdFromStack(Stack<(int end, int type, uint label)> grupStack)
     {
-        foreach (var entry in grupStack)
-            if (entry.type == 1)
-                return entry.label;
+        foreach (var (_, type, label) in grupStack)
+        {
+            if (type == 1)
+            {
+                return label;
+            }
+        }
 
         return null;
     }

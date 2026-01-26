@@ -1,3 +1,4 @@
+using EsmAnalyzer.Conversion.Schema;
 using System.Buffers.Binary;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using static EsmAnalyzer.Conversion.EsmEndianHelpers;
@@ -25,7 +26,10 @@ public sealed class EsmGrupWriter
     /// </summary>
     public void WriteWorldGroupContents(ConversionIndex index, BinaryWriter writer)
     {
-        if (index.Worlds.Count == 0) return;
+        if (index.Worlds.Count == 0)
+        {
+            return;
+        }
 
         foreach (var world in index.Worlds)
         {
@@ -39,10 +43,15 @@ public sealed class EsmGrupWriter
     /// </summary>
     public void WriteCellGroupContents(ConversionIndex index, BinaryWriter writer)
     {
-        if (index.InteriorCells.Count == 0) return;
+        if (index.InteriorCells.Count == 0)
+        {
+            return;
+        }
 
         foreach (var blockGroup in GetInteriorBlockGroups(index.InteriorCells))
+        {
             WriteInteriorBlockGroup(blockGroup.Key, blockGroup, index, writer);
+        }
     }
 
     #region Interior Cell Writing
@@ -60,7 +69,9 @@ public sealed class EsmGrupWriter
         WriteGrupWithContents(writer, 2, (uint)blockId, 0, 0, () =>
         {
             foreach (var subBlockGroup in GetInteriorSubBlockGroups(cells))
+            {
                 WriteInteriorSubBlockGroup(subBlockGroup.Key, subBlockGroup, index, writer);
+            }
         });
     }
 
@@ -90,22 +101,46 @@ public sealed class EsmGrupWriter
 
     private void WriteWorldChildrenGroup(uint worldFormId, ConversionIndex index, BinaryWriter writer)
     {
-        if (!index.ExteriorCellsByWorld.TryGetValue(worldFormId, out var cells) || cells.Count == 0) return;
+        if (!index.ExteriorCellsByWorld.TryGetValue(worldFormId, out var cells) || cells.Count == 0)
+        {
+            // World Children may still contain the worldspace persistent cell even when there are no exterior cells.
+            if (!index.WorldPersistentCellsByWorld.TryGetValue(worldFormId, out var persistentCell))
+            {
+                return;
+            }
+
+            WriteGrupWithContents(writer, 1, worldFormId, 0, 0, () =>
+            {
+                _recordWriter.WriteRecordToWriter(persistentCell.Offset, writer);
+                WriteCellChildren(persistentCell.FormId, index, writer);
+            });
+
+            return;
+        }
 
         WriteGrupWithContents(writer, 1, worldFormId, 0, 0, () =>
         {
+            // PC writes a worldspace persistent CELL (and its children) directly under World Children,
+            // before any exterior cell block/sub-block groups.
+            if (index.WorldPersistentCellsByWorld.TryGetValue(worldFormId, out var persistentCell))
+            {
+                _recordWriter.WriteRecordToWriter(persistentCell.Offset, writer);
+                WriteCellChildren(persistentCell.FormId, index, writer);
+            }
+
             // Use PC-compatible ordering for exterior block groups
             IReadOnlyList<IGrouping<(int BlockX, int BlockY), CellEntry>> blockGroups;
 
             var wastelandOrder = TryGetWastelandOrderMap(worldFormId);
-            if (wastelandOrder != null)
-                blockGroups = GetExteriorBlockGroupsByRank(cells, wastelandOrder).ToList();
-            else
-                blockGroups = GetExteriorBlockGroupsPcOrder(cells, worldFormId).ToList();
+            blockGroups = wastelandOrder != null
+                ? GetExteriorBlockGroupsByRank(cells, wastelandOrder).ToList()
+                : GetExteriorBlockGroupsPcOrder(cells, worldFormId).ToList();
 
             foreach (var blockGroup in blockGroups)
+            {
                 WriteExteriorBlockGroup(blockGroup.Key.BlockX, blockGroup.Key.BlockY, blockGroup, index, writer,
                     wastelandOrder);
+            }
         });
     }
 
@@ -119,7 +154,9 @@ public sealed class EsmGrupWriter
             .ToDictionary(g => g.Key, g => g);
 
         if (groups.Count == 0)
+        {
             yield break;
+        }
 
         // Find block bounds
         var minBlockX = groups.Keys.Min(k => k.BlockX);
@@ -150,6 +187,7 @@ public sealed class EsmGrupWriter
 
         var yieldedCount = 0;
         foreach (var (blockX, blockY) in blockOrder)
+        {
             if (groups.TryGetValue((blockX, blockY), out var group))
             {
                 if (worldFormId == 0xDA726 && yieldedCount < 10)
@@ -161,6 +199,7 @@ public sealed class EsmGrupWriter
 
                 yield return group;
             }
+        }
     }
 
     /// <summary>
@@ -185,8 +224,12 @@ public sealed class EsmGrupWriter
 
         // Combine: for each X in order, iterate Y in order
         foreach (var x in xOrder)
+        {
             foreach (var y in yOrder)
+            {
                 result.Add((x, y));
+            }
+        }
 
         return result;
     }
@@ -200,11 +243,15 @@ public sealed class EsmGrupWriter
 
         // First: origin and positive direction (origin to max)
         for (var v = origin; v <= max; v++)
+        {
             result.Add(v);
+        }
 
         // Second: negative direction from far to near (min to origin-1)
         for (var v = min; v < origin; v++)
+        {
             result.Add(v);
+        }
 
         return result;
     }
@@ -222,21 +269,23 @@ public sealed class EsmGrupWriter
                 .GroupBy(c => (SubX: FloorDiv(c.GridX!.Value, 8), SubY: FloorDiv(c.GridY!.Value, 8)))
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            IEnumerable<(int SubX, int SubY)> subBlockOrder;
-            if (orderMap != null)
-                subBlockOrder = subBlockGroups
+            IEnumerable<(int SubX, int SubY)> subBlockOrder = orderMap != null
+                ? subBlockGroups
                     .Select(g => (g.Key.SubX, g.Key.SubY, Rank: GetMinRank(g.Value, orderMap)))
                     .OrderBy(g => g.Rank)
                     .ThenBy(g => g.SubY)
                     .ThenBy(g => g.SubX)
-                    .Select(g => (g.SubX, g.SubY));
-            else
-                subBlockOrder = GetSubBlockQuadrantOrder(subBlockGroups.Keys);
+                    .Select(g => (g.SubX, g.SubY))
+                : GetSubBlockQuadrantOrder(subBlockGroups.Keys);
 
             // Order subblocks using either rank map or quadrant-based pattern
             foreach (var (subX, subY) in subBlockOrder)
+            {
                 if (subBlockGroups.TryGetValue((subX, subY), out var subBlockCells))
+                {
                     WriteExteriorSubBlockGroup(subX, subY, subBlockCells, index, writer, orderMap);
+                }
+            }
         });
     }
 
@@ -249,7 +298,9 @@ public sealed class EsmGrupWriter
     {
         var subBlockList = subBlocks.ToList();
         if (subBlockList.Count == 0)
+        {
             yield break;
+        }
 
         // Find bounds
         var minSubX = subBlockList.Min(s => s.SubX);
@@ -261,9 +312,15 @@ public sealed class EsmGrupWriter
 
         // Simple column-major order: X=0 first (all Y), then X=1, etc.
         for (var x = minSubX; x <= maxSubX; x++)
+        {
             for (var y = minSubY; y <= maxSubY; y++)
+            {
                 if (subBlockSet.Contains((x, y)))
+                {
                     yield return (x, y);
+                }
+            }
+        }
     }
 
     private void WriteExteriorSubBlockGroup(int subX, int subY, IEnumerable<CellEntry> cells, ConversionIndex index,
@@ -306,9 +363,16 @@ public sealed class EsmGrupWriter
         var min = int.MaxValue;
         foreach (var cell in cells)
         {
-            if (!cell.GridX.HasValue || !cell.GridY.HasValue) continue;
+            if (!cell.GridX.HasValue || !cell.GridY.HasValue)
+            {
+                continue;
+            }
+
             var rank = GetRank(cell, orderMap);
-            if (rank < min) min = rank;
+            if (rank < min)
+            {
+                min = rank;
+            }
         }
 
         return min;
@@ -316,8 +380,9 @@ public sealed class EsmGrupWriter
 
     private static int GetRank(CellEntry cell, Dictionary<(int x, int y), int> orderMap)
     {
-        if (!cell.GridX.HasValue || !cell.GridY.HasValue) return int.MaxValue;
-        return orderMap.TryGetValue((cell.GridX.Value, cell.GridY.Value), out var rank)
+        return !cell.GridX.HasValue || !cell.GridY.HasValue
+            ? int.MaxValue
+            : orderMap.TryGetValue((cell.GridX.Value, cell.GridY.Value), out var rank)
             ? rank
             : int.MaxValue;
     }
@@ -325,20 +390,28 @@ public sealed class EsmGrupWriter
     private static Dictionary<(int x, int y), int>? TryGetWastelandOrderMap(uint worldFormId)
     {
         if (worldFormId != 0xDA726)
+        {
             return null;
+        }
 
         if (_wastelandOrderMap != null)
+        {
             return _wastelandOrderMap;
+        }
 
         var csvPath = Path.Combine(Environment.CurrentDirectory, "TestOutput", "ofst_blocks_pc_wasteland.csv");
         if (!File.Exists(csvPath))
+        {
             return null;
+        }
 
         try
         {
             var lines = File.ReadAllLines(csvPath);
             if (lines.Length < 2)
+            {
                 return null;
+            }
 
             var headers = lines[0].Split(',');
             var orderIndex = Array.FindIndex(headers,
@@ -349,21 +422,33 @@ public sealed class EsmGrupWriter
                 h => string.Equals(h.Trim(), "grid_y", StringComparison.OrdinalIgnoreCase));
 
             if (orderIndex < 0 || gridXIndex < 0 || gridYIndex < 0)
+            {
                 return null;
+            }
 
             var map = new Dictionary<(int x, int y), int>();
             for (var i = 1; i < lines.Length; i++)
             {
                 var parts = lines[i].Split(',');
                 if (parts.Length <= Math.Max(orderIndex, Math.Max(gridXIndex, gridYIndex)))
+                {
                     continue;
+                }
 
                 if (!int.TryParse(parts[orderIndex], out var order))
+                {
                     continue;
+                }
+
                 if (!int.TryParse(parts[gridXIndex], out var gx))
+                {
                     continue;
+                }
+
                 if (!int.TryParse(parts[gridYIndex], out var gy))
+                {
                     continue;
+                }
 
                 map[(gx, gy)] = order;
             }
@@ -388,7 +473,9 @@ public sealed class EsmGrupWriter
         // Group cells by their local position within the 8x8 subblock
         var cellList = cells.Where(c => c.GridX.HasValue && c.GridY.HasValue).ToList();
         if (cellList.Count == 0)
+        {
             yield break;
+        }
 
         // PC pattern within an 8x8 subblock:
         // - Rows y=7..2: row-major descending Y, descending X
@@ -408,19 +495,25 @@ public sealed class EsmGrupWriter
                          //   - rows 1..0: column-paired (x desc, y desc)
                          //   - exception: subblockX == 0 and x < 2 -> row-major for rows 1..0
                          if (subBlockY > 0 || ly >= 2)
+                         {
                              return (0, -ly, -lx, c.FormId);
+                         }
 
                          if (subBlockX == 0 && lx < 2)
+                         {
                              return (2, -ly, -lx, c.FormId);
+                         }
 
                          return (1, -lx, -ly, c.FormId);
                      }))
+        {
             yield return cell;
+        }
     }
 
     private static int LocalCoord(int value, int size)
     {
-        return value - FloorDiv(value, size) * size;
+        return value - (FloorDiv(value, size) * size);
     }
 
     #endregion
@@ -433,16 +526,27 @@ public sealed class EsmGrupWriter
         var hasTemporary = index.CellChildGroups.TryGetValue((cellFormId, 9), out var temporaryGroups);
         var hasVwd = index.CellChildGroups.TryGetValue((cellFormId, 10), out var vwdGroups);
 
-        if (!hasPersistent && !hasTemporary && !hasVwd) return;
+        if (!hasPersistent && !hasTemporary && !hasVwd)
+        {
+            return;
+        }
 
         WriteGrupWithContents(writer, 6, cellFormId, 0, 0, () =>
         {
             if (hasPersistent && persistentGroups != null)
+            {
                 WriteMergedChildGroup(cellFormId, 8, persistentGroups, writer);
+            }
 
-            if (hasTemporary && temporaryGroups != null) WriteMergedChildGroup(cellFormId, 9, temporaryGroups, writer);
+            if (hasTemporary && temporaryGroups != null)
+            {
+                WriteMergedChildGroup(cellFormId, 9, temporaryGroups, writer);
+            }
 
-            if (hasVwd && vwdGroups != null) WriteMergedChildGroup(cellFormId, 10, vwdGroups, writer);
+            if (hasVwd && vwdGroups != null)
+            {
+                WriteMergedChildGroup(cellFormId, 10, vwdGroups, writer);
+            }
         });
     }
 
@@ -454,7 +558,10 @@ public sealed class EsmGrupWriter
             {
                 var start = group.Offset + EsmParser.MainRecordHeaderSize;
                 var end = group.Offset + group.Size;
-                if (start >= end || end > _input.Length) continue;
+                if (start >= end || end > _input.Length)
+                {
+                    continue;
+                }
 
                 var buffer = ConvertRangeToBuffer(start, end);
                 writer.Write(buffer);
@@ -485,12 +592,7 @@ public sealed class EsmGrupWriter
 
     private static void FinalizeGrupHeader(BinaryWriter writer, long headerPosition)
     {
-        var currentPosition = writer.BaseStream.Position;
-        var actualGrupSize = (uint)(currentPosition - headerPosition);
-
-        writer.BaseStream.Position = headerPosition + 4;
-        writer.Write(actualGrupSize);
-        writer.BaseStream.Position = currentPosition;
+        RecordHeaderProcessor.FinalizeGrupSize(writer.BaseStream, headerPosition);
     }
 
     /// <summary>
@@ -499,27 +601,12 @@ public sealed class EsmGrupWriter
     public long WriteGrupHeader(BinaryWriter writer, int grupType, byte[] labelBytes, uint stamp, uint unknown)
     {
         var headerPos = writer.BaseStream.Position;
-        writer.Write("GRUP"u8);
-        writer.Write(0u); // Placeholder for size
 
-        if (grupType == 0)
-        {
-            // Top-level group: reverse signature bytes
-            writer.Write(labelBytes[3]);
-            writer.Write(labelBytes[2]);
-            writer.Write(labelBytes[1]);
-            writer.Write(labelBytes[0]);
-        }
-        else
-        {
-            // Other groups: label is a value (FormID or grid coords)
-            var labelValue = BinaryPrimitives.ReadUInt32BigEndian(labelBytes);
-            writer.Write(labelValue);
-        }
-
-        writer.Write((uint)grupType);
-        writer.Write(stamp);
-        writer.Write(unknown);
+        // GRUP labels are stored big-endian in Xbox data.
+        // Writing the uint32 little-endian for PC output will flip the byte order automatically.
+        uint labelValue = BinaryPrimitives.ReadUInt32BigEndian(labelBytes);
+        var header = new ParsedGrupHeader(0u, labelValue, (uint)grupType, stamp, unknown);
+        _ = RecordHeaderProcessor.WriteGrupHeader(writer.BaseStream, header);
         _stats.GrupsConverted++;
 
         return headerPos;
@@ -559,7 +646,9 @@ public sealed class EsmGrupWriter
 
             if (!TryWriteGroupInRange(writer, grupStack, ref offset, endOffset, grupHeaderSize) &&
                 !TryWriteRecordInRange(writer, ref offset, endOffset))
+            {
                 break;
+            }
         }
 
         while (grupStack.Count > 0)
@@ -582,22 +671,28 @@ public sealed class EsmGrupWriter
     private bool TryWriteGroupInRange(BinaryWriter writer, Stack<(long headerPos, int end)> grupStack, ref int offset,
         int endOffset, int grupHeaderSize)
     {
-        if (offset + 4 > endOffset || offset + 4 > _input.Length) return false;
+        if (offset + 4 > endOffset || offset + 4 > _input.Length)
+        {
+            return false;
+        }
 
         var sigBytes = _input.AsSpan(offset, 4);
         var signature = $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
-        if (signature != "GRUP") return false;
+        if (signature != "GRUP")
+        {
+            return false;
+        }
 
-        if (offset + grupHeaderSize > endOffset || offset + grupHeaderSize > _input.Length) return false;
+        if (offset + grupHeaderSize > endOffset || offset + grupHeaderSize > _input.Length)
+        {
+            return false;
+        }
 
-        var grupSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
-        var labelBytes = _input.AsSpan(offset + 8, 4).ToArray();
-        var grupType = (int)BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 12));
-        var stamp = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 16));
-        var unknown = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 20));
-        var grupEnd = offset + (int)grupSize;
+        var header = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(offset));
+        var grupEnd = offset + (int)header.Size;
 
-        var headerPos = WriteGrupHeader(writer, grupType, labelBytes, stamp, unknown);
+        var headerPos = WriteGrupHeader(writer, (int)header.Type, _input.AsSpan(offset + 8, 4).ToArray(), header.Stamp,
+            header.Unknown);
         grupStack.Push((headerPos, grupEnd));
         offset += grupHeaderSize;
         return true;
@@ -606,9 +701,15 @@ public sealed class EsmGrupWriter
     private bool TryWriteRecordInRange(BinaryWriter writer, ref int offset, int endOffset)
     {
         var buffer = _recordWriter.ConvertRecordToBuffer(offset, out var recordEnd, out _);
-        if (buffer != null) writer.Write(buffer);
+        if (buffer != null)
+        {
+            writer.Write(buffer);
+        }
 
-        if (recordEnd <= offset) return false;
+        if (recordEnd <= offset)
+        {
+            return false;
+        }
 
         offset = Math.Min(recordEnd, endOffset);
         return true;

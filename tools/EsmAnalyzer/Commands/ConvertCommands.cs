@@ -1,7 +1,6 @@
-using System.CommandLine;
 using EsmAnalyzer.Conversion;
-using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.CommandLine;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
@@ -45,8 +44,15 @@ public static class ConvertCommands
             var skipLandIds = parseResult.GetValue(skipLandOpt) ?? Array.Empty<string>();
             var skipTypes = parseResult.GetValue(skipTypeOpt) ?? Array.Empty<string>();
 
-            if (string.IsNullOrEmpty(output)) output = Environment.GetEnvironmentVariable("ESM_OUTPUT_PATH");
-            if (string.IsNullOrEmpty(output)) output = Path.ChangeExtension(input, ".pc.esm");
+            if (string.IsNullOrEmpty(output))
+            {
+                output = Environment.GetEnvironmentVariable("ESM_OUTPUT_PATH");
+            }
+
+            if (string.IsNullOrEmpty(output))
+            {
+                output = Path.ChangeExtension(input, ".pc.esm");
+            }
 
             Convert(input, output, verbose);
         });
@@ -75,7 +81,10 @@ public static class ConvertCommands
         {
             // Ensure output directory exists
             var outputDir = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
+            if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
+            {
+                _ = Directory.CreateDirectory(outputDir);
+            }
 
             var inputData = File.ReadAllBytes(inputPath);
 
@@ -108,7 +117,11 @@ public static class ConvertCommands
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"[red]✗ Conversion failed:[/] {ex.Message}");
-            if (verbose) AnsiConsole.WriteException(ex);
+            if (verbose)
+            {
+                AnsiConsole.WriteException(ex);
+            }
+
             Environment.Exit(1);
         }
     }

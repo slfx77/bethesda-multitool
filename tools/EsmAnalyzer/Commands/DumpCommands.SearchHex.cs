@@ -1,15 +1,20 @@
-using System.Text;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.Text;
+using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using static EsmAnalyzer.Helpers.RecordTraversalHelpers;
 
 namespace EsmAnalyzer.Commands;
 
 public static partial class DumpCommands
 {
-    private static int Search(string filePath, string pattern, int limit, int contextBytes)
+    private static int Search(string filePath, string pattern, int limit, int contextBytes, bool locate)
     {
         var esm = EsmFileLoader.Load(filePath, false);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         AnsiConsole.MarkupLine($"[blue]Searching:[/] {Path.GetFileName(filePath)}");
         AnsiConsole.MarkupLine($"Pattern: [cyan]{Markup.Escape(pattern)}[/]");
@@ -25,8 +30,12 @@ public static partial class DumpCommands
                 for (long i = 0;
                      i <= esm.Data.Length - patternBytes.Length && (limit <= 0 || matches.Count < limit);
                      i++)
+                {
                     if (MatchesAt(esm.Data, i, patternBytes))
+                    {
                         matches.Add(i);
+                    }
+                }
             });
 
         var limitedSuffix = limit > 0 && matches.Count >= limit ? $" (limited to {limit})" : string.Empty;
@@ -34,7 +43,47 @@ public static partial class DumpCommands
         AnsiConsole.WriteLine();
 
         foreach (var offset in matches)
+        {
             DisplaySearchMatch(esm.Data, offset, patternBytes.Length, contextBytes);
+
+            if (!locate)
+            {
+                continue;
+            }
+
+            var tes4End = EsmParser.MainRecordHeaderSize + (int)esm.Tes4Header.DataSize;
+            if (offset < tes4End)
+            {
+                AnsiConsole.MarkupLine("  [dim]Located:[/] TES4 header");
+                AnsiConsole.WriteLine();
+                continue;
+            }
+
+            var path = new List<string>();
+            if (!TryLocateInRange(esm.Data, esm.IsBigEndian, esm.FirstGrupOffset, esm.Data.Length, (int)offset, path,
+                    out var record, out var subrecord))
+            {
+                AnsiConsole.MarkupLine("  [yellow]Located:[/] (failed to locate record)");
+                AnsiConsole.WriteLine();
+                continue;
+            }
+
+            var recordSummary = record.IsGroup
+                ? $"GRUP {record.Label}"
+                : $"{record.Signature} FormID 0x{record.FormId:X8}";
+
+            AnsiConsole.MarkupLine(
+                $"  [dim]Located:[/] {recordSummary} @0x{record.Start:X8}-0x{record.End:X8}" +
+                (subrecord != null ? $"  [dim]Sub:[/] {subrecord.Signature}" : string.Empty));
+
+            if (path.Count > 0)
+            {
+                var compact = string.Join(" > ", path.TakeLast(4));
+                AnsiConsole.MarkupLine($"  [dim]Path:[/] {Markup.Escape(compact)}");
+            }
+
+            AnsiConsole.WriteLine();
+        }
 
         return 0;
     }
@@ -66,7 +115,7 @@ public static partial class DumpCommands
 
         var actualLength = (int)Math.Min(length, stream.Length - offset);
         var data = new byte[actualLength];
-        stream.Seek(offset, SeekOrigin.Begin);
+        _ = stream.Seek(offset, SeekOrigin.Begin);
         _ = stream.Read(data, 0, actualLength);
 
         AnsiConsole.MarkupLine($"[blue]Hex dump:[/] {Path.GetFileName(filePath)}");

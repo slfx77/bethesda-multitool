@@ -1,6 +1,7 @@
-using System.Buffers.Binary;
+using EsmAnalyzer.Conversion.Schema;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.Buffers.Binary;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 using static EsmAnalyzer.Conversion.EsmEndianHelpers;
 
@@ -51,6 +52,17 @@ public sealed class EsmConverter : IDisposable
         var indexBuilder = new EsmConversionIndexBuilder(_input);
         var index = indexBuilder.Build();
 
+        var toftInfoOffsetsByFormId = BuildToftInfoIndex();
+        if (toftInfoOffsetsByFormId.Count > 0)
+        {
+            _recordWriter.SetToftInfoIndex(toftInfoOffsetsByFormId);
+            if (_verbose)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[grey]TOFT: indexed {toftInfoOffsetsByFormId.Count:N0} INFO records from streaming cache[/]");
+            }
+        }
+
         if (_verbose)
         {
             var exteriorCells = index.ExteriorCellsByWorld.Sum(kvp => kvp.Value.Count);
@@ -60,7 +72,10 @@ public sealed class EsmConverter : IDisposable
             AnsiConsole.MarkupLine(
                 $"[grey]Index: worlds={index.Worlds.Count}, interiorCells={index.InteriorCells.Count}, exteriorCells={exteriorCells}, exteriorWorlds={index.ExteriorCellsByWorld.Count}[/]");
             foreach (var kvp in index.ExteriorCellsByWorld)
+            {
                 Console.WriteLine($"  World 0x{kvp.Key:X8}: {kvp.Value.Count} exterior cells");
+            }
+
             AnsiConsole.MarkupLine(
                 $"[grey]CellChildGroups: persistent={persistentGroups}, temporary={temporaryGroups}, totalSize={totalChildRecords:N0} bytes[/]");
         }
@@ -78,40 +93,60 @@ public sealed class EsmConverter : IDisposable
         {
             FinalizeCompletedOutputGroups(grupStack, inputOffset);
 
-            if (inputOffset + 4 > _input.Length) break;
+            if (inputOffset + 4 > _input.Length)
+            {
+                break;
+            }
 
             var signature = ReadSignature(inputOffset);
 
-            if (TrySkipToftRegion(signature, grupStack, ref inputOffset)) continue;
+            if (TrySkipToftRegion(signature, grupStack, ref inputOffset))
+            {
+                continue;
+            }
 
             if (grupStack.Count == 0 && !IsValidRecordSignature(signature))
             {
                 if (TryResyncToNextGrup(ref inputOffset))
+                {
                     continue;
+                }
 
                 if (_verbose)
+                {
                     Console.WriteLine(
-                        $"  [0x{inputOffset:X8}] Invalid top-level signature '{signature}', stopping conversion.");
+                        $"  [0x{inputOffset:X8}] Non-record data '{signature}' encountered; stopping conversion.");
+                }
 
                 break;
             }
 
-            if (TrySkipTopLevelRecord(signature, grupStack, ref inputOffset)) continue;
+            if (TrySkipTopLevelRecord(signature, grupStack, ref inputOffset))
+            {
+                continue;
+            }
 
             // If at top level and not a GRUP, try resyncing (likely orphaned data)
             if (grupStack.Count == 0 && signature != "GRUP")
             {
                 if (TryResyncToNextGrup(ref inputOffset))
+                {
                     continue;
+                }
 
                 if (_verbose)
+                {
                     Console.WriteLine(
                         $"  [0x{inputOffset:X8}] Cannot resync after '{signature}', stopping conversion.");
+                }
 
                 break;
             }
 
-            if (TryHandleGrup(signature, grupHeaderSize, index, grupStack, ref inputOffset)) continue;
+            if (TryHandleGrup(signature, grupHeaderSize, index, grupStack, ref inputOffset))
+            {
+                continue;
+            }
 
             inputOffset = ConvertRecord(inputOffset);
         }
@@ -128,6 +163,163 @@ public sealed class EsmConverter : IDisposable
         return outputBytes;
     }
 
+    private Dictionary<uint, int> BuildToftInfoIndex()
+    {
+        const int recordHeaderSize = 24;
+        const int grupHeaderSize = 24;
+
+        var map = new Dictionary<uint, int>();
+        var grupEndStack = new Stack<int>();
+
+        if (_input.Length < recordHeaderSize)
+        {
+            return map;
+        }
+
+        // Skip TES4 header record
+        var tes4Header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(0));
+        var offset = recordHeaderSize + (int)tes4Header.DataSize;
+        if (offset < 0 || offset > _input.Length)
+        {
+            return map;
+        }
+
+        while (offset + 4 <= _input.Length)
+        {
+            while (grupEndStack.Count > 0 && offset >= grupEndStack.Peek())
+            {
+                grupEndStack.Pop();
+            }
+
+            var signature = ReadSignature(offset);
+
+            // Enter group
+            if (signature == "GRUP")
+            {
+                if (offset + grupHeaderSize > _input.Length)
+                {
+                    break;
+                }
+
+                var header = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(offset));
+                var end = offset + (int)header.Size;
+                if (end <= offset || end > _input.Length)
+                {
+                    break;
+                }
+
+                grupEndStack.Push(end);
+                offset += grupHeaderSize;
+                continue;
+            }
+
+            // Collect TOFT region (top-level only)
+            // TOFT records are container markers - the INFO records are INSIDE the TOFT data block.
+            // Each TOFT has: [24-byte header][DataSize bytes of nested INFO records]
+            // We need to scan INSIDE each TOFT block for INFO records, not skip past them.
+            if (grupEndStack.Count == 0 && signature == "TOFT")
+            {
+                var cur = offset;
+                var toftInfoCount = 0;
+                while (cur + 4 <= _input.Length)
+                {
+                    var sig = ReadSignature(cur);
+                    if (sig == "GRUP")
+                    {
+                        break;
+                    }
+
+                    if (cur + recordHeaderSize > _input.Length)
+                    {
+                        break;
+                    }
+
+                    var header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(cur));
+
+                    // TOFT records are containers - scan inside them for INFO records
+                    // Structure: TOFT sentinel (FormID=0xFFFFFFFE, DataSize=N) contains INFO records inside
+                    //            TOFT end marker (FormID=0xFFFFFFFF, DataSize=0) marks end of TOFT section
+                    if (sig == "TOFT")
+                    {
+                        // Skip the TOFT header and scan inside its data block
+                        var toftDataStart = cur + recordHeaderSize;
+                        var toftDataEnd = toftDataStart + (int)header.DataSize;
+
+                        // Validate bounds - DataSize=0 means end marker, just skip header
+                        if (toftDataEnd > _input.Length || toftDataEnd <= toftDataStart)
+                        {
+                            cur += recordHeaderSize;
+                            continue;
+                        }
+
+                        // Scan INFO records inside this TOFT block
+                        var inner = toftDataStart;
+                        while (inner + recordHeaderSize <= toftDataEnd)
+                        {
+                            var innerSig = ReadSignature(inner);
+                            if (innerSig == "GRUP")
+                            {
+                                break;
+                            }
+
+                            var innerHeader = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(inner));
+                            if (innerSig == "INFO")
+                            {
+                                _ = map.TryAdd(innerHeader.FormId, inner);
+                                toftInfoCount++;
+                            }
+
+                            var innerNext = inner + recordHeaderSize + (int)innerHeader.DataSize;
+                            if (innerNext <= inner || innerNext > toftDataEnd)
+                            {
+                                break;
+                            }
+
+                            inner = innerNext;
+                        }
+
+                        // Move past this entire TOFT block
+                        cur = toftDataEnd;
+                        continue;
+                    }
+
+                    // Non-TOFT record (INFO, etc.) directly in the TOFT region
+                    if (sig == "INFO")
+                    {
+                        _ = map.TryAdd(header.FormId, cur);
+                        toftInfoCount++;
+                    }
+
+                    var next = cur + recordHeaderSize + (int)header.DataSize;
+                    if (next <= cur || next > _input.Length)
+                    {
+                        break;
+                    }
+
+                    cur = next;
+                }
+
+                break;
+            }
+
+            if (offset + recordHeaderSize > _input.Length)
+            {
+                break;
+            }
+
+            var rec = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(offset));
+            var recordEnd = offset + recordHeaderSize + (int)rec.DataSize;
+            if (recordEnd <= offset || recordEnd > _input.Length)
+            {
+                break;
+            }
+
+            offset = recordEnd;
+        }
+
+        return map;
+    }
+
     /// <summary>
     ///     Prints conversion statistics.
     /// </summary>
@@ -141,10 +333,15 @@ public sealed class EsmConverter : IDisposable
     private int ConvertRecord(int offset)
     {
         var buffer = _recordWriter.ConvertRecordToBuffer(offset, out var recordEnd, out _);
-        if (buffer != null) _writer.Write(buffer);
+        if (buffer != null)
+        {
+            _writer.Write(buffer);
+        }
 
         if (_verbose && _stats.RecordsConverted % 10000 == 0)
+        {
             AnsiConsole.MarkupLine($"[grey]  Converted {_stats.RecordsConverted:N0} records...[/]");
+        }
 
         return recordEnd;
     }
@@ -155,7 +352,9 @@ public sealed class EsmConverter : IDisposable
     {
         var outputHeader = EsmParser.ParseFileHeader(output);
         if (outputHeader == null || outputHeader.IsBigEndian)
+        {
             return;
+        }
 
         var outputRecords = EsmHelpers.ScanAllRecords(output, outputHeader.IsBigEndian);
         var outputWrlds = outputRecords
@@ -185,43 +384,65 @@ public sealed class EsmConverter : IDisposable
             AnsiConsole.MarkupLine(
                 $"[grey]  outputExteriorCellsByWorld entries: {outputExteriorCellsByWorld.Count}[/]");
             foreach (var kvp in outputExteriorCellsByWorld.Take(3))
+            {
                 AnsiConsole.MarkupLine($"[grey]    World 0x{kvp.Key:X8}: {kvp.Value.Count} cells[/]");
+            }
+
             AnsiConsole.MarkupLine($"[grey]  fallbackExteriorCells: {fallbackExteriorCells.Count}[/]");
         }
 
         foreach (var wrld in outputWrlds)
         {
             if (!indexExteriorCellsByWorld.TryGetValue(wrld.FormId, out var exteriorCells))
+            {
                 if (!outputExteriorCellsByWorld.TryGetValue(wrld.FormId, out exteriorCells))
+                {
                     exteriorCells = [];
+                }
+            }
 
             if (fallbackExteriorCells.Count == 0 && exteriorCells.Count == 0)
+            {
                 continue;
+            }
 
             if (fallbackExteriorCells.Count > 0)
             {
                 var merged = new Dictionary<uint, CellGrid>();
                 foreach (var cell in exteriorCells)
+                {
                     merged[cell.FormId] = cell;
+                }
+
                 foreach (var cell in fallbackExteriorCells)
-                    merged.TryAdd(cell.FormId, cell);
+                {
+                    _ = merged.TryAdd(cell.FormId, cell);
+                }
+
                 exteriorCells = merged.Values.ToList();
             }
 
             if ((wrld.Flags & 0x00040000) != 0)
+            {
                 continue; // Skip compressed WRLD records
+            }
 
             var wrldData = EsmHelpers.GetRecordData(output, wrld, outputHeader.IsBigEndian);
             var subs = EsmHelpers.ParseSubrecords(wrldData, outputHeader.IsBigEndian);
             var ofst = subs.FirstOrDefault(s => s.Signature == "OFST");
             if (ofst == null || ofst.Data.Length == 0)
+            {
                 continue;
+            }
 
             if (!TryGetWorldBounds(subs, outputHeader.IsBigEndian, out var minX, out var maxX, out var minY,
                     out var maxY))
             {
                 if (_verbose)
+                {
                     AnsiConsole.MarkupLine($"[yellow]  WRLD 0x{wrld.FormId:X8}: failed to get bounds[/]");
+                }
+
                 continue;
             }
 
@@ -229,21 +450,31 @@ public sealed class EsmConverter : IDisposable
             var rows = maxY - minY + 1;
 
             if (columns <= 0 || rows <= 0)
+            {
                 continue;
+            }
 
             var count = ofst.Data.Length / 4;
             if (count <= 0)
+            {
                 continue;
+            }
 
             var expected = columns * rows;
             if (expected != count)
             {
                 if (columns > 0 && count % columns == 0)
+                {
                     rows = count / columns;
+                }
                 else if (rows > 0 && count % rows == 0)
+                {
                     columns = count / rows;
+                }
                 else
+                {
                     continue;
+                }
             }
 
             var offsets = new uint[count];
@@ -263,9 +494,11 @@ public sealed class EsmConverter : IDisposable
                     continue;
                 }
 
-                var ofstIndex = row * columns + col;
+                var ofstIndex = (row * columns) + col;
                 if (ofstIndex < 0 || ofstIndex >= count)
+                {
                     continue;
+                }
 
                 if (!cellRecordOffsets.TryGetValue(cell.FormId, out var cellOffset))
                 {
@@ -274,7 +507,7 @@ public sealed class EsmConverter : IDisposable
                 }
 
                 var rel = cellOffset - (long)wrld.Offset;
-                if (rel <= 0 || rel > uint.MaxValue)
+                if (rel is <= 0 or > uint.MaxValue)
                 {
                     cellsNegativeRel++;
                     continue;
@@ -299,13 +532,17 @@ public sealed class EsmConverter : IDisposable
             }
 
             var ofstDataOffsetLocal = (long)wrld.Offset + EsmParser.MainRecordHeaderSize + ofst.Offset + 6;
-            if (ofstDataOffsetLocal < 0 || ofstDataOffsetLocal + (long)count * 4 > output.Length)
+            if (ofstDataOffsetLocal < 0 || ofstDataOffsetLocal + ((long)count * 4) > output.Length)
+            {
                 continue;
+            }
 
             for (var i = 0; i < offsets.Length; i++)
+            {
                 BinaryPrimitives.WriteUInt32LittleEndian(
-                    output.AsSpan((int)ofstDataOffsetLocal + i * 4, 4),
+                    output.AsSpan((int)ofstDataOffsetLocal + (i * 4), 4),
                     offsets[i]);
+            }
         }
     }
 
@@ -321,17 +558,34 @@ public sealed class EsmConverter : IDisposable
         var nam0 = subrecords.FirstOrDefault(s => s.Signature == "NAM0");
         var nam9 = subrecords.FirstOrDefault(s => s.Signature == "NAM9");
         if (nam0 == null || nam9 == null || nam0.Data.Length < 8 || nam9.Data.Length < 8)
+        {
             return false;
+        }
 
         var minXf = ReadFloat(nam0.Data, 0, bigEndian);
         var minYf = ReadFloat(nam0.Data, 4, bigEndian);
         var maxXf = ReadFloat(nam9.Data, 0, bigEndian);
         var maxYf = ReadFloat(nam9.Data, 4, bigEndian);
 
-        if (IsUnsetFloat(minXf)) minXf = 0;
-        if (IsUnsetFloat(minYf)) minYf = 0;
-        if (IsUnsetFloat(maxXf)) maxXf = 0;
-        if (IsUnsetFloat(maxYf)) maxYf = 0;
+        if (IsUnsetFloat(minXf))
+        {
+            minXf = 0;
+        }
+
+        if (IsUnsetFloat(minYf))
+        {
+            minYf = 0;
+        }
+
+        if (IsUnsetFloat(maxXf))
+        {
+            maxXf = 0;
+        }
+
+        if (IsUnsetFloat(maxYf))
+        {
+            maxYf = 0;
+        }
 
         const float cellScale = 4096f;
         minX = (int)Math.Round(minXf / cellScale);
@@ -344,7 +598,11 @@ public sealed class EsmConverter : IDisposable
 
     private static float ReadFloat(byte[] data, int offset, bool bigEndian)
     {
-        if (offset + 4 > data.Length) return 0;
+        if (offset + 4 > data.Length)
+        {
+            return 0;
+        }
+
         var value = bigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
@@ -361,10 +619,16 @@ public sealed class EsmConverter : IDisposable
     {
         var map = new Dictionary<uint, List<CellGrid>>();
         var header = EsmParser.ParseFileHeader(data);
-        if (header == null) return map;
+        if (header == null)
+        {
+            return map;
+        }
 
         var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
-        if (tes4Header == null) return map;
+        if (tes4Header == null)
+        {
+            return map;
+        }
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
         var stack = new Stack<(int end, int type, uint label)>();
@@ -372,14 +636,18 @@ public sealed class EsmConverter : IDisposable
         while (offset + EsmParser.MainRecordHeaderSize <= data.Length)
         {
             while (stack.Count > 0 && offset >= stack.Peek().end)
-                stack.Pop();
+            {
+                _ = stack.Pop();
+            }
 
             var groupHeader = EsmParser.ParseGroupHeader(data.AsSpan(offset), bigEndian);
             if (groupHeader != null)
             {
                 var groupEnd = offset + (int)groupHeader.GroupSize;
                 if (groupEnd <= offset || groupEnd > data.Length)
+                {
                     break;
+                }
 
                 var labelValue = BinaryPrimitives.ReadUInt32LittleEndian(groupHeader.Label);
                 stack.Push((groupEnd, groupHeader.GroupType, labelValue));
@@ -389,7 +657,9 @@ public sealed class EsmConverter : IDisposable
 
             var recordHeader = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
             if (recordHeader == null)
+            {
                 break;
+            }
 
             if (recordHeader.Signature == "CELL")
             {
@@ -442,13 +712,17 @@ public sealed class EsmConverter : IDisposable
         foreach (var record in records)
         {
             if (record.Signature != "CELL")
+            {
                 continue;
+            }
 
             var recordData = EsmHelpers.GetRecordData(data, record, bigEndian);
             var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
             var xclc = subrecords.FirstOrDefault(s => s.Signature == "XCLC");
             if (xclc == null || xclc.Data.Length < 8)
+            {
                 continue;
+            }
 
             var gridX = BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(0, 4));
             var gridY = BinaryPrimitives.ReadInt32LittleEndian(xclc.Data.AsSpan(4, 4));
@@ -461,9 +735,13 @@ public sealed class EsmConverter : IDisposable
 
     private static uint? GetCurrentWorldId(Stack<(int end, int type, uint label)> stack)
     {
-        foreach (var entry in stack.Reverse())
-            if (entry.type == 1)
-                return entry.label;
+        foreach (var (_, type, label) in stack.Reverse())
+        {
+            if (type == 1)
+            {
+                return label;
+            }
+        }
 
         return null;
     }
@@ -480,11 +758,18 @@ public sealed class EsmConverter : IDisposable
 
     private static bool IsValidRecordSignature(string signature)
     {
-        if (signature.Length != 4) return false;
+        if (signature.Length != 4)
+        {
+            return false;
+        }
 
         foreach (var ch in signature)
-            if (ch is < 'A' or > 'Z' && ch is < '0' or > '9')
+        {
+            if (ch is (< 'A' or > 'Z') and (< '0' or > '9'))
+            {
                 return false;
+            }
+        }
 
         return true;
     }
@@ -496,10 +781,14 @@ public sealed class EsmConverter : IDisposable
         for (var i = inputOffset + 1; i <= _input.Length - headerSize; i++)
         {
             if (_input[i] != 0x50 || _input[i + 1] != 0x55 || _input[i + 2] != 0x52 || _input[i + 3] != 0x47)
+            {
                 continue;
+            }
 
             if (_verbose)
+            {
                 Console.WriteLine($"  [0x{inputOffset:X8}] Resyncing to GRUP at 0x{i:X8}");
+            }
 
             inputOffset = i;
             return true;
@@ -525,7 +814,10 @@ public sealed class EsmConverter : IDisposable
     private bool TrySkipToftRegion(string signature, Stack<(long outputHeaderPos, int inputGrupEnd)> grupStack,
         ref int inputOffset)
     {
-        if (signature != "TOFT" || grupStack.Count != 0) return false;
+        if (signature != "TOFT" || grupStack.Count != 0)
+        {
+            return false;
+        }
 
         var toftStartOffset = inputOffset;
 
@@ -533,24 +825,32 @@ public sealed class EsmConverter : IDisposable
         {
             var checkSignature = ReadSignature(inputOffset);
 
-            if (checkSignature == "GRUP") break;
+            if (checkSignature == "GRUP")
+            {
+                break;
+            }
 
-            if (inputOffset + 24 > _input.Length) break;
+            if (inputOffset + 24 > _input.Length)
+            {
+                break;
+            }
 
-            var skipSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 4));
+            var header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(inputOffset));
             _stats.IncrementSkippedRecordType(checkSignature);
 
-            inputOffset += 24 + (int)skipSize;
+            inputOffset += 24 + (int)header.DataSize;
         }
 
         _stats.ToftTrailingBytesSkipped = inputOffset - toftStartOffset;
 
         if (_verbose)
         {
-            Console.WriteLine($"  [0x{toftStartOffset:X8}] Skipping Xbox TOFT region (streaming cache)");
-            Console.WriteLine($"  Skipped {_stats.ToftTrailingBytesSkipped:N0} bytes, resuming at 0x{inputOffset:X8}");
+            Console.WriteLine($"  [0x{toftStartOffset:X8}] Consuming Xbox TOFT region (streaming cache) for INFO merge");
+            Console.WriteLine($"  Skipped writing {_stats.ToftTrailingBytesSkipped:N0} bytes, resuming at 0x{inputOffset:X8}");
             foreach (var (type, cnt) in _stats.SkippedRecordTypeCounts.OrderByDescending(x => x.Value).Take(5))
-                Console.WriteLine($"    Skipped {cnt:N0} {type} records");
+            {
+                Console.WriteLine($"    Skipped writing {cnt:N0} {type} records");
+            }
         }
 
         return true;
@@ -559,23 +859,35 @@ public sealed class EsmConverter : IDisposable
     private bool TrySkipTopLevelRecord(string signature, Stack<(long outputHeaderPos, int inputGrupEnd)> grupStack,
         ref int inputOffset)
     {
-        if (grupStack.Count != 0 || signature == "GRUP") return false;
-        if (!IsValidRecordSignature(signature)) return false;
+        if (grupStack.Count != 0 || signature == "GRUP")
+        {
+            return false;
+        }
+
+        if (!IsValidRecordSignature(signature))
+        {
+            return false;
+        }
 
         const int recordHeaderSize = 24;
-        if (inputOffset + recordHeaderSize > _input.Length) return true;
+        if (inputOffset + recordHeaderSize > _input.Length)
+        {
+            return true;
+        }
 
-        var dataSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 4));
+        var header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(inputOffset));
 
         // Use long to avoid overflow when dataSize > int.MaxValue
-        var recordEnd = (long)inputOffset + recordHeaderSize + dataSize;
+        var recordEnd = (long)inputOffset + recordHeaderSize + header.DataSize;
 
         // Sanity check: if record extends past file end, it's orphan data - try to resync
         if (recordEnd > _input.Length)
         {
             if (_verbose)
+            {
                 Console.WriteLine(
-                    $"  [0x{inputOffset:X8}] Record {signature} size {dataSize:N0} exceeds file, resyncing...");
+                    $"  [0x{inputOffset:X8}] Record {signature} size {header.DataSize:N0} exceeds file, resyncing...");
+            }
 
             return TryResyncToNextGrup(ref inputOffset);
         }
@@ -584,7 +896,10 @@ public sealed class EsmConverter : IDisposable
         _stats.TopLevelRecordsSkipped++;
 
         if (_verbose)
-            Console.WriteLine($"  [0x{inputOffset:X8}] Skipping top-level record {signature} (size={dataSize:N0})");
+        {
+            Console.WriteLine(
+                $"  [0x{inputOffset:X8}] Skipping top-level record {signature} (size={header.DataSize:N0})");
+        }
 
         inputOffset = (int)recordEnd;
         return true;
@@ -593,43 +908,48 @@ public sealed class EsmConverter : IDisposable
     private bool TryHandleGrup(string signature, int grupHeaderSize, ConversionIndex index,
         Stack<(long outputHeaderPos, int inputGrupEnd)> grupStack, ref int inputOffset)
     {
-        if (signature != "GRUP") return false;
+        if (signature != "GRUP")
+        {
+            return false;
+        }
 
-        if (inputOffset + grupHeaderSize > _input.Length) return true;
+        if (inputOffset + grupHeaderSize > _input.Length)
+        {
+            return true;
+        }
 
-        var grupSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 4));
-        var grupType = (int)BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 12));
+        var header = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(inputOffset));
         var labelBytesForWrite = _input.AsSpan(inputOffset + 8, 4).ToArray();
         var labelSignature =
             $"{(char)labelBytesForWrite[3]}{(char)labelBytesForWrite[2]}{(char)labelBytesForWrite[1]}{(char)labelBytesForWrite[0]}";
 
         // Handle WRLD top-level group with reconstruction
-        if (grupType == 0 && labelSignature == "WRLD")
+        if (header.Type == 0 && labelSignature == "WRLD")
         {
-            WriteTopLevelGrupWithReconstruction(inputOffset, grupSize, labelBytesForWrite, grupType,
+            WriteTopLevelGrupWithReconstruction(inputOffset, header.Size, labelBytesForWrite, (int)header.Type,
                 () => _grupWriter.WriteWorldGroupContents(index, _writer));
-            inputOffset += (int)grupSize;
+            inputOffset += (int)header.Size;
             return true;
         }
 
         // Handle CELL top-level group with reconstruction
-        if (grupType == 0 && labelSignature == "CELL")
+        if (header.Type == 0 && labelSignature == "CELL")
         {
-            WriteTopLevelGrupWithReconstruction(inputOffset, grupSize, labelBytesForWrite, grupType,
+            WriteTopLevelGrupWithReconstruction(inputOffset, header.Size, labelBytesForWrite, (int)header.Type,
                 () => _grupWriter.WriteCellGroupContents(index, _writer));
-            inputOffset += (int)grupSize;
+            inputOffset += (int)header.Size;
             return true;
         }
 
         // Skip nested-only groups at top level
-        if (grupStack.Count == 0 && IsNestedOnlyGrupType(grupType))
+        if (grupStack.Count == 0 && IsNestedOnlyGrupType((int)header.Type))
         {
             var labelValue = BinaryPrimitives.ReadUInt32BigEndian(labelBytesForWrite);
-            SkipTopLevelGrup(grupType, labelValue, grupSize, ref inputOffset);
+            SkipTopLevelGrup((int)header.Type, labelValue, header.Size, ref inputOffset);
             return true;
         }
 
-        WriteGrupHeaderAndPush(grupStack, grupType, grupSize, labelBytesForWrite, inputOffset);
+        WriteGrupHeaderAndPush(grupStack, (int)header.Type, header.Size, labelBytesForWrite, inputOffset);
         inputOffset += grupHeaderSize;
         return true;
     }
@@ -637,19 +957,14 @@ public sealed class EsmConverter : IDisposable
     private void WriteTopLevelGrupWithReconstruction(int inputOffset, uint grupSize, byte[] labelBytesForWrite,
         int grupType, Action writeContents)
     {
-        var stampValue = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 16));
-        var unknownValue = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 20));
+        var header = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(inputOffset));
         var grupHeaderPosition = _writer.BaseStream.Position;
 
-        _writer.Write("GRUP"u8);
-        _writer.Write(grupSize);
-        _writer.Write(labelBytesForWrite[3]);
-        _writer.Write(labelBytesForWrite[2]);
-        _writer.Write(labelBytesForWrite[1]);
-        _writer.Write(labelBytesForWrite[0]);
-        _writer.Write((uint)grupType);
-        _writer.Write(stampValue);
-        _writer.Write(unknownValue);
+        // The GRUP label field is a 4-byte value stored big-endian in Xbox data.
+        // We write it little-endian for PC output, which naturally flips the byte order.
+        var labelValue = BinaryPrimitives.ReadUInt32BigEndian(labelBytesForWrite);
+        var outputHeader = new ParsedGrupHeader(grupSize, labelValue, (uint)grupType, header.Stamp, header.Unknown);
+        _ = RecordHeaderProcessor.WriteGrupHeader(_writer.BaseStream, outputHeader);
         _stats.GrupsConverted++;
 
         writeContents();
@@ -661,8 +976,10 @@ public sealed class EsmConverter : IDisposable
         var skipGrupEnd = inputOffset + (int)grupSize;
 
         if (_verbose)
+        {
             Console.WriteLine(
                 $"  [0x{inputOffset:X8}] Skipping top-level {GetGrupTypeName(grupType)} GRUP (label=0x{labelValue:X8}, size={grupSize:N0})");
+        }
 
         _stats.IncrementSkippedGrupType(grupType);
         _stats.TopLevelGrupsSkipped++;
@@ -673,10 +990,10 @@ public sealed class EsmConverter : IDisposable
     private void WriteGrupHeaderAndPush(Stack<(long outputHeaderPos, int inputGrupEnd)> grupStack, int grupType,
         uint grupSize, byte[] labelBytesForWrite, int inputOffset)
     {
-        var stamp = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 16));
-        var unknown = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(inputOffset + 20));
+        var header = RecordHeaderProcessor.ReadGrupHeader(_input.AsSpan(inputOffset));
 
-        var grupHeaderPosition = _grupWriter.WriteGrupHeader(_writer, grupType, labelBytesForWrite, stamp, unknown);
+        var grupHeaderPosition =
+            _grupWriter.WriteGrupHeader(_writer, grupType, labelBytesForWrite, header.Stamp, header.Unknown);
 
         var grupEnd = inputOffset + (int)grupSize;
         grupStack.Push((grupHeaderPosition, grupEnd));

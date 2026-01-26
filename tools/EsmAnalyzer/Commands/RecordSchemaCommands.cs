@@ -1,8 +1,8 @@
-using System.CommandLine;
-using System.Globalization;
 using EsmAnalyzer.Conversion.Schema;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.CommandLine;
+using System.Globalization;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
@@ -44,7 +44,10 @@ public static class RecordSchemaCommands
     private static int ValidateSubrecords(string filePath, string? typesCsv, int limit)
     {
         var esm = EsmFileLoader.Load(filePath);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         var filter = ParseTypes(typesCsv);
         var records = EsmHelpers.ScanAllRecords(esm.Data, esm.IsBigEndian);
@@ -61,8 +64,15 @@ public static class RecordSchemaCommands
 
         foreach (var record in records)
         {
-            if (record.Signature == "GRUP") continue;
-            if (filter != null && !filter.Contains(record.Signature)) continue;
+            if (record.Signature == "GRUP")
+            {
+                continue;
+            }
+
+            if (filter != null && !filter.Contains(record.Signature))
+            {
+                continue;
+            }
 
             var recordData = EsmHelpers.GetRecordData(esm.Data, record, esm.IsBigEndian);
             var subrecords = EsmHelpers.ParseSubrecords(recordData, esm.IsBigEndian);
@@ -72,16 +82,20 @@ public static class RecordSchemaCommands
                 totalChecked++;
 
                 if (IsKnownSubrecord(record.Signature, sub.Signature, sub.Data.Length))
+                {
                     continue;
+                }
 
                 totalUnknown++;
                 if (limit == 0 || totalUnknown <= limit)
-                    table.AddRow(
+                {
+                    _ = table.AddRow(
                         record.Signature,
                         $"0x{record.FormId:X8}",
                         sub.Signature,
                         sub.Data.Length.ToString(CultureInfo.InvariantCulture),
                         $"0x{record.Offset + EsmParser.MainRecordHeaderSize + sub.Offset:X8}");
+                }
             }
         }
 
@@ -89,22 +103,24 @@ public static class RecordSchemaCommands
         AnsiConsole.MarkupLine($"Checked: {totalChecked:N0}  Unknown: {totalUnknown:N0}");
 
         if (totalUnknown > 0)
+        {
             AnsiConsole.Write(table);
+        }
 
         return totalUnknown == 0 ? 0 : 1;
     }
 
     private static bool IsKnownSubrecord(string recordType, string signature, int dataLength)
     {
-        if (SubrecordSchemaRegistry.IsStringSubrecord(signature, recordType))
-            return true;
-
-        return SubrecordSchemaRegistry.GetSchema(signature, recordType, dataLength) != null;
+        return SubrecordSchemaRegistry.IsStringSubrecord(signature, recordType) || SubrecordSchemaRegistry.GetSchema(signature, recordType, dataLength) != null;
     }
 
     private static HashSet<string>? ParseTypes(string? typesCsv)
     {
-        if (string.IsNullOrWhiteSpace(typesCsv)) return null;
+        if (string.IsNullOrWhiteSpace(typesCsv))
+        {
+            return null;
+        }
 
         var entries = typesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return new HashSet<string>(entries, StringComparer.OrdinalIgnoreCase);

@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Globalization;
 
 namespace EsmAnalyzer.Core;
 
@@ -8,26 +9,6 @@ namespace EsmAnalyzer.Core;
 public static class FalloutWorldspaces
 {
     /// <summary>
-    ///     Known worldspace names mapped to their FormIDs.
-    /// </summary>
-    public static readonly FrozenDictionary<string, uint> KnownWorldspaces = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)
-    {
-        // Main game worldspaces
-        ["WastelandNV"] = 0x000DA726,
-        ["Wasteland"] = 0x000DA726, // Alias
-        ["FreesideWorld"] = 0x00108E2D,
-        ["Freeside"] = 0x00108E2D, // Alias
-        ["Strip01"] = 0x00108E2E,
-        ["Strip02"] = 0x00108E2F,
-
-        // DLC worldspaces
-        ["DeadMoneyWorld"] = 0x01000DA3,
-        ["HonestHeartsWorld"] = 0x02000800,
-        ["OWBWorld"] = 0x03000DED,
-        ["LonesomeRoadWorld"] = 0x04000A1E
-    }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
     ///     Default worldspace for Fallout: New Vegas (WastelandNV).
     /// </summary>
     public const string DefaultWorldspace = "WastelandNV";
@@ -36,6 +17,27 @@ public static class FalloutWorldspaces
     ///     FormID of the default worldspace (WastelandNV).
     /// </summary>
     public const uint DefaultWorldspaceFormId = 0x000DA726;
+
+    /// <summary>
+    ///     Known worldspace names mapped to their FormIDs.
+    /// </summary>
+    public static readonly FrozenDictionary<string, uint> KnownWorldspaces =
+        new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Main game worldspaces
+            ["WastelandNV"] = 0x000DA726,
+            ["Wasteland"] = 0x000DA726, // Alias
+            ["FreesideWorld"] = 0x00108E2D,
+            ["Freeside"] = 0x00108E2D, // Alias
+            ["Strip01"] = 0x00108E2E,
+            ["Strip02"] = 0x00108E2F,
+
+            // DLC worldspaces
+            ["DeadMoneyWorld"] = 0x01000DA3,
+            ["HonestHeartsWorld"] = 0x02000800,
+            ["OWBWorld"] = 0x03000DED,
+            ["LonesomeRoadWorld"] = 0x04000A1E
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     ///     Attempts to resolve a worldspace name or FormID string to a FormID.
@@ -53,15 +55,19 @@ public static class FalloutWorldspaces
 
         // Try known worldspace names first
         if (KnownWorldspaces.TryGetValue(nameOrFormId, out formId))
+        {
             return true;
+        }
 
         // Try parsing as hex FormID
         if (nameOrFormId.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
-            if (uint.TryParse(nameOrFormId.AsSpan(2), System.Globalization.NumberStyles.HexNumber, null, out formId))
+            if (uint.TryParse(nameOrFormId.AsSpan(2), NumberStyles.HexNumber, null, out formId))
+            {
                 return true;
+            }
         }
-        else if (uint.TryParse(nameOrFormId, System.Globalization.NumberStyles.HexNumber, null, out formId))
+        else if (uint.TryParse(nameOrFormId, NumberStyles.HexNumber, null, out formId))
         {
             return true;
         }

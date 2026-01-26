@@ -1,9 +1,9 @@
+using EsmAnalyzer.Core;
+using Spectre.Console;
 using System.Buffers.Binary;
 using System.Text;
-using EsmAnalyzer.Helpers;
-using Spectre.Console;
 
-namespace EsmAnalyzer.Commands;
+namespace EsmAnalyzer.Helpers;
 
 /// <summary>
 ///     Shared display and formatting helpers for ESM analysis commands.
@@ -19,7 +19,9 @@ public static class EsmDisplayHelpers
         int? highlightLength = null)
     {
         for (var i = 0; i < data.Length; i += 16)
+        {
             RenderHexDumpLine(data, baseOffset, i, highlightStart, highlightLength);
+        }
     }
 
     private static void RenderHexDumpLine(byte[] data, long baseOffset, int lineStart, int? highlightStart,
@@ -43,7 +45,7 @@ public static class EsmDisplayHelpers
         if (hexParts.Count < 16)
         {
             // Pad to align ASCII column (need to account for ANSI codes if highlighting)
-            var rawLen = hexParts.Count * 3 - 1;
+            var rawLen = (hexParts.Count * 3) - 1;
             hexStr += new string(' ', 47 - rawLen);
         }
 
@@ -92,7 +94,7 @@ public static class EsmDisplayHelpers
             : $"[cyan]{signature}[/] FormID: [yellow]0x{formId:X8}[/]";
 
         var rule = new Rule(text);
-        rule.LeftJustified();
+        _ = rule.LeftJustified();
         AnsiConsole.Write(rule);
     }
 
@@ -107,10 +109,10 @@ public static class EsmDisplayHelpers
             .AddColumn("Key")
             .AddColumn("Value");
 
-        table.AddRow("Offset", $"0x{offset:X8}");
-        table.AddRow("Data Size", $"{dataSize:N0} bytes");
-        table.AddRow("Flags", $"0x{flags:X8}");
-        table.AddRow("Compressed", (flags & 0x00040000) != 0 ? "[yellow]Yes[/]" : "No");
+        _ = table.AddRow("Offset", $"0x{offset:X8}");
+        _ = table.AddRow("Data Size", $"{dataSize:N0} bytes");
+        _ = table.AddRow("Flags", $"0x{flags:X8}");
+        _ = table.AddRow("Compressed", (flags & 0x00040000) != 0 ? "[yellow]Yes[/]" : "No");
 
         return table;
     }
@@ -126,7 +128,10 @@ public static class EsmDisplayHelpers
             .AddColumn(new TableColumn("[bold]Size[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Offset[/]").RightAligned());
 
-        if (includePreview) table.AddColumn("[bold]Preview[/]");
+        if (includePreview)
+        {
+            _ = table.AddColumn("[bold]Preview[/]");
+        }
 
         return table;
     }
@@ -136,35 +141,35 @@ public static class EsmDisplayHelpers
     /// </summary>
     public static string GenerateSubrecordPreview(string signature, byte[] data, bool bigEndian)
     {
-        if (data.Length == 0) return "(empty)";
-
-        return signature switch
-        {
-            "EDID" or "FULL" or "NAME" or "ICON" or "MICO" or "TX00" or "TX01" or "TX02" or "TX03" or "TX04"
-                or "TX05" =>
-                TryGetString(data),
-            "NAM1" or "NAM2" or "SCTX" or "RNAM" =>
-                TryGetString(data),
-            "DATA" when data.Length == 4 =>
-                bigEndian
-                    ? $"uint32: {BinaryPrimitives.ReadUInt32BigEndian(data)}"
-                    : $"uint32: {BinaryPrimitives.ReadUInt32LittleEndian(data)}",
-            "QSTI" or "PNAM" or "TCLT" or "SCRO" when data.Length == 4 =>
-                bigEndian
-                    ? $"FormID: 0x{BinaryPrimitives.ReadUInt32BigEndian(data):X8}"
-                    : $"FormID: 0x{BinaryPrimitives.ReadUInt32LittleEndian(data):X8}",
-            "NAM3" when data.Length == 1 =>
-                $"byte: {data[0]}",
-            "TRDT" when data.Length >= 8 =>
-                $"ResponseData ({data.Length} bytes)",
-            "CTDA" when data.Length >= 24 =>
-                $"Condition ({data.Length} bytes)",
-            "SCHR" when data.Length >= 16 =>
-                $"ScriptHeader ({data.Length} bytes)",
-            "SCDA" when data.Length >= 4 =>
-                $"CompiledScript ({data.Length} bytes)",
-            _ => FormatBinaryPreview(data)
-        };
+        return data.Length == 0
+            ? "(empty)"
+            : signature switch
+            {
+                "EDID" or "FULL" or "NAME" or "ICON" or "MICO" or "TX00" or "TX01" or "TX02" or "TX03" or "TX04"
+                    or "TX05" =>
+                    TryGetString(data),
+                "NAM1" or "NAM2" or "SCTX" or "RNAM" =>
+                    TryGetString(data),
+                "DATA" when data.Length == 4 =>
+                    bigEndian
+                        ? $"uint32: {BinaryPrimitives.ReadUInt32BigEndian(data)}"
+                        : $"uint32: {BinaryPrimitives.ReadUInt32LittleEndian(data)}",
+                "QSTI" or "PNAM" or "TCLT" or "SCRO" when data.Length == 4 =>
+                    bigEndian
+                        ? $"FormID: 0x{BinaryPrimitives.ReadUInt32BigEndian(data):X8}"
+                        : $"FormID: 0x{BinaryPrimitives.ReadUInt32LittleEndian(data):X8}",
+                "NAM3" when data.Length == 1 =>
+                    $"byte: {data[0]}",
+                "TRDT" when data.Length >= 8 =>
+                    $"ResponseData ({data.Length} bytes)",
+                "CTDA" when data.Length >= 24 =>
+                    $"Condition ({data.Length} bytes)",
+                "SCHR" when data.Length >= 16 =>
+                    $"ScriptHeader ({data.Length} bytes)",
+                "SCDA" when data.Length >= 4 =>
+                    $"CompiledScript ({data.Length} bytes)",
+                _ => FormatBinaryPreview(data)
+            };
     }
 
     /// <summary>
@@ -172,7 +177,10 @@ public static class EsmDisplayHelpers
     /// </summary>
     public static string FormatBinaryPreview(byte[] data, int maxBytes = 12)
     {
-        if (data.Length <= 16) return BitConverter.ToString(data).Replace("-", " ");
+        if (data.Length <= 16)
+        {
+            return BitConverter.ToString(data).Replace("-", " ");
+        }
 
         var preview = BitConverter.ToString(data.Take(maxBytes).ToArray()).Replace("-", " ");
         return $"{preview}... ({data.Length} bytes)";
@@ -298,10 +306,9 @@ public static class EsmDisplayHelpers
 
         var str = Encoding.UTF8.GetString(data, 0, len);
 
-        if (str.All(c => !char.IsControl(c) || c == '\n' || c == '\r' || c == '\t'))
-            return str.Length < data.Length - 1 ? $"\"{str}\"..." : $"\"{str}\"";
-
-        return FormatBinaryPreview(data);
+        return str.All(c => !char.IsControl(c) || c == '\n' || c == '\r' || c == '\t')
+            ? str.Length < data.Length - 1 ? $"\"{str}\"..." : $"\"{str}\""
+            : FormatBinaryPreview(data);
     }
 
     private static string FormatStringValue(byte[] data)
@@ -329,11 +336,30 @@ public static class EsmDisplayHelpers
         };
 
         var flags = new List<string>();
-        if ((type & 0x01) != 0) flags.Add("Or");
-        if ((type & 0x02) != 0) flags.Add("UseAliases");
-        if ((type & 0x04) != 0) flags.Add("UseGlobal");
-        if ((type & 0x08) != 0) flags.Add("UsePackData");
-        if ((type & 0x10) != 0) flags.Add("SwapSubjectTarget");
+        if ((type & 0x01) != 0)
+        {
+            flags.Add("Or");
+        }
+
+        if ((type & 0x02) != 0)
+        {
+            flags.Add("UseAliases");
+        }
+
+        if ((type & 0x04) != 0)
+        {
+            flags.Add("UseGlobal");
+        }
+
+        if ((type & 0x08) != 0)
+        {
+            flags.Add("UsePackData");
+        }
+
+        if ((type & 0x10) != 0)
+        {
+            flags.Add("SwapSubjectTarget");
+        }
 
         var flagText = flags.Count == 0 ? "None" : string.Join("|", flags);
         return $"Type=0x{type:X2} ({compare}; {flagText})";
@@ -447,10 +473,11 @@ public static class EsmDisplayHelpers
 
         var subTable = CreateSubrecordTable(showPreview);
         foreach (var sub in subrecords)
+        {
             if (showPreview)
             {
                 var preview = GenerateSubrecordPreview(sub.Signature, sub.Data, bigEndian);
-                subTable.AddRow(
+                _ = subTable.AddRow(
                     $"[cyan]{sub.Signature}[/]",
                     sub.Data.Length.ToString("N0"),
                     $"0x{sub.Offset:X4}",
@@ -458,11 +485,12 @@ public static class EsmDisplayHelpers
             }
             else
             {
-                subTable.AddRow(
+                _ = subTable.AddRow(
                     $"[cyan]{sub.Signature}[/]",
                     sub.Data.Length.ToString("N0"),
                     $"0x{sub.Offset:X4}");
             }
+        }
 
         AnsiConsole.Write(subTable);
 

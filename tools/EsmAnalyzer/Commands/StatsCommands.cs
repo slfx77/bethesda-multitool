@@ -1,6 +1,6 @@
-using System.CommandLine;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.CommandLine;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
@@ -51,16 +51,19 @@ public static class StatsCommands
             .AddColumn("[bold]Property[/]")
             .AddColumn("[bold]Value[/]");
 
-        infoTable.AddRow("File", Path.GetFileName(filePath));
-        infoTable.AddRow("Size", $"{data.Length:N0} bytes");
-        infoTable.AddRow("Endianness",
+        _ = infoTable.AddRow("File", Path.GetFileName(filePath));
+        _ = infoTable.AddRow("Size", $"{data.Length:N0} bytes");
+        _ = infoTable.AddRow("Endianness",
             header.IsBigEndian ? "[yellow]Big-endian (Xbox 360)[/]" : "[green]Little-endian (PC)[/]");
-        infoTable.AddRow("Version", $"{header.Version:F1}");
-        infoTable.AddRow("Next Object ID", $"0x{header.NextObjectId:X8}");
-        infoTable.AddRow("Author", string.IsNullOrEmpty(header.Author) ? "(none)" : header.Author);
-        infoTable.AddRow("Description", string.IsNullOrEmpty(header.Description) ? "(none)" : header.Description);
+        _ = infoTable.AddRow("Version", $"{header.Version:F1}");
+        _ = infoTable.AddRow("Next Object ID", $"0x{header.NextObjectId:X8}");
+        _ = infoTable.AddRow("Author", string.IsNullOrEmpty(header.Author) ? "(none)" : header.Author);
+        _ = infoTable.AddRow("Description", string.IsNullOrEmpty(header.Description) ? "(none)" : header.Description);
 
-        if (header.Masters.Count > 0) infoTable.AddRow("Masters", string.Join(", ", header.Masters));
+        if (header.Masters.Count > 0)
+        {
+            _ = infoTable.AddRow("Masters", string.Join(", ", header.Masters));
+        }
 
         AnsiConsole.Write(infoTable);
         AnsiConsole.WriteLine();
@@ -100,7 +103,7 @@ public static class StatsCommands
         foreach (var stat in stats)
         {
             var avgSize = stat.Count > 0 ? stat.TotalSize / stat.Count : 0;
-            statsTable.AddRow(
+            _ = statsTable.AddRow(
                 $"[cyan]{stat.Type}[/]",
                 stat.Count.ToString("N0"),
                 FormatSize(stat.TotalSize),
@@ -128,9 +131,7 @@ public static class StatsCommands
 
     private static string FormatSize(long bytes)
     {
-        if (bytes < 1024) return $"{bytes} B";
-        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
-        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return bytes < 1024 ? $"{bytes} B" : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F1} KB" : $"{bytes / (1024.0 * 1024.0):F1} MB";
     }
 
     private static void WriteMarkdownReport(string outputPath, string filePath, EsmFileHeader header,

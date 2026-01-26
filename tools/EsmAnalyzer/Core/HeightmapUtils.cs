@@ -1,6 +1,6 @@
+using System.IO.Compression;
 using System.Text;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
-using Xbox360MemoryCarver.Core.Utils;
 
 namespace EsmAnalyzer.Core;
 
@@ -18,7 +18,9 @@ public static class HeightmapUtils
     public static float[,] ParseVhgtData(byte[] data, bool bigEndian)
     {
         if (data.Length < EsmConstants.VhgtBaseHeightSize + EsmConstants.LandGridArea)
+        {
             throw new ArgumentException($"VHGT data too small: {data.Length} bytes");
+        }
 
         var baseHeight = bigEndian
             ? BitConverter.ToSingle([data[3], data[2], data[1], data[0]], 0)
@@ -31,7 +33,10 @@ public static class HeightmapUtils
         for (var i = 0; i < EsmConstants.LandGridArea; i++)
         {
             var idx = EsmConstants.VhgtBaseHeightSize + i;
-            if (idx >= data.Length) continue;
+            if (idx >= data.Length)
+            {
+                continue;
+            }
 
             var value = (sbyte)data[idx] * 8f;
             var row = i / EsmConstants.LandGridSize;
@@ -100,7 +105,9 @@ public static class HeightmapUtils
 
                     // Store editor ID if present
                     if (!string.IsNullOrEmpty(editorId))
+                    {
                         cellNames[(gridX, gridY)] = editorId;
+                    }
                 }
             }
             catch
@@ -126,7 +133,9 @@ public static class HeightmapUtils
                 // Check if this LAND belongs to a later cell
                 var nextCellOffset = allCellOffsets.FirstOrDefault(o => o > cell.Offset);
                 if (nextCellOffset != default && land.Offset > nextCellOffset)
+                {
                     break;
+                }
 
                 try
                 {
@@ -138,15 +147,17 @@ public static class HeightmapUtils
                     {
                         var heights = ParseVhgtData(vhgt.Data, bigEndian);
                         if (!heightmaps.ContainsKey((cell.GridX, cell.GridY)))
+                        {
                             heightmaps[(cell.GridX, cell.GridY)] = heights;
+                        }
                     }
 
-                    sortedLands.Remove(land);
+                    _ = sortedLands.Remove(land);
                     break;
                 }
                 catch
                 {
-                    sortedLands.Remove(land);
+                    _ = sortedLands.Remove(land);
                 }
             }
         }
@@ -164,11 +175,17 @@ public static class HeightmapUtils
         var lands = new List<AnalyzerRecordInfo>();
 
         var header = EsmParser.ParseFileHeader(data);
-        if (header == null) return (cells, lands);
+        if (header == null)
+        {
+            return (cells, lands);
+        }
 
         // Skip TES4 header
         var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
-        if (tes4Header == null) return (cells, lands);
+        if (tes4Header == null)
+        {
+            return (cells, lands);
+        }
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
 
@@ -207,6 +224,7 @@ public static class HeightmapUtils
                 if (inTargetWorldspace)
                 {
                     if (sig == "CELL")
+                    {
                         cells.Add(new AnalyzerRecordInfo
                         {
                             Signature = sig,
@@ -216,7 +234,9 @@ public static class HeightmapUtils
                             FormId = formId,
                             Flags = flags
                         });
+                    }
                     else if (sig == "LAND")
+                    {
                         lands.Add(new AnalyzerRecordInfo
                         {
                             Signature = sig,
@@ -226,13 +246,16 @@ public static class HeightmapUtils
                             FormId = formId,
                             Flags = flags
                         });
+                    }
                 }
 
                 offset += EsmParser.MainRecordHeaderSize + (int)recSize;
 
                 // Check if we've exited the target worldspace GRUP
                 if (inTargetWorldspace && offset >= grupEndOffset)
+                {
                     inTargetWorldspace = false;
+                }
             }
         }
 
@@ -248,7 +271,10 @@ public static class HeightmapUtils
         var recordDataEnd = recordDataStart + (int)record.DataSize;
 
         if (recordDataEnd > data.Length)
-            throw new InvalidOperationException($"Record data extends beyond file: {record.Signature} at 0x{record.Offset:X8}");
+        {
+            throw new InvalidOperationException(
+                $"Record data extends beyond file: {record.Signature} at 0x{record.Offset:X8}");
+        }
 
         var recordData = data.AsSpan(recordDataStart, (int)record.DataSize).ToArray();
 
@@ -268,7 +294,7 @@ public static class HeightmapUtils
     private static byte[] DecompressZlib(byte[] compressedData, int expectedSize)
     {
         using var inputStream = new MemoryStream(compressedData);
-        using var zlibStream = new System.IO.Compression.ZLibStream(inputStream, System.IO.Compression.CompressionMode.Decompress);
+        using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
         using var outputStream = new MemoryStream(expectedSize);
 
         zlibStream.CopyTo(outputStream);

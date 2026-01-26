@@ -1,3 +1,4 @@
+using EsmAnalyzer.Conversion.Schema;
 using System.Buffers.Binary;
 
 namespace EsmAnalyzer.Conversion;
@@ -18,13 +19,21 @@ public sealed class EsmRecordWriter
         _infoMerger = new EsmInfoMerger(input, stats);
     }
 
+    public void SetToftInfoIndex(IReadOnlyDictionary<uint, int> toftInfoOffsetsByFormId)
+    {
+        _infoMerger.SetToftInfoIndex(toftInfoOffsetsByFormId);
+    }
+
     /// <summary>
     ///     Converts a single record at the specified offset and writes it to the writer.
     /// </summary>
     public void WriteRecordToWriter(int offset, BinaryWriter writer)
     {
         var buffer = ConvertRecordToBuffer(offset, out _, out _);
-        if (buffer != null) writer.Write(buffer);
+        if (buffer != null)
+        {
+            writer.Write(buffer);
+        }
     }
 
     /// <summary>
@@ -36,23 +45,24 @@ public sealed class EsmRecordWriter
         signature = string.Empty;
         recordEnd = _input.Length;
 
-        if (offset + recordHeaderSize > _input.Length) return null;
+        if (offset + recordHeaderSize > _input.Length)
+        {
+            return null;
+        }
 
-        var sigBytes = _input.AsSpan(offset, 4);
-        signature = $"{(char)sigBytes[3]}{(char)sigBytes[2]}{(char)sigBytes[1]}{(char)sigBytes[0]}";
-        var dataSize = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 4));
-        var flags = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 8));
-        var formId = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 12));
-        var timestamp = BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(offset + 16));
-        var vcsInfo = BinaryPrimitives.ReadUInt16BigEndian(_input.AsSpan(offset + 20));
-        var version = BinaryPrimitives.ReadUInt16BigEndian(_input.AsSpan(offset + 22));
+        var header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(offset));
+        signature = header.Signature;
+        var flags = header.Flags;
 
         _stats.IncrementRecordType(signature);
 
         var dataOffset = offset + recordHeaderSize;
-        recordEnd = dataOffset + (int)dataSize;
+        recordEnd = dataOffset + (int)header.DataSize;
 
-        if (recordEnd > _input.Length) recordEnd = _input.Length;
+        if (recordEnd > _input.Length)
+        {
+            recordEnd = _input.Length;
+        }
 
         // Skip TOFT (Xbox 360 streaming cache marker)
         if (signature == "TOFT")
@@ -62,7 +72,10 @@ public sealed class EsmRecordWriter
         }
 
         // Clear Xbox 360 flag in TES4 header
-        if (signature == "TES4") flags &= ~0x10u;
+        if (signature == "TES4")
+        {
+            flags &= ~0x10u;
+        }
 
         if (signature == "INFO" &&
             _infoMerger.TryMergeInfoRecord(offset, flags, out var mergedData, out var mergedFlags, out var skip))
@@ -76,60 +89,53 @@ public sealed class EsmRecordWriter
             flags = mergedFlags;
             var mergedSize = mergedData?.Length ?? 0;
             using var mergedStream = new MemoryStream(mergedSize + recordHeaderSize);
-            using var mergedWriter = new BinaryWriter(mergedStream);
 
-            mergedWriter.Write((byte)signature[0]);
-            mergedWriter.Write((byte)signature[1]);
-            mergedWriter.Write((byte)signature[2]);
-            mergedWriter.Write((byte)signature[3]);
-            mergedWriter.Write((uint)mergedSize);
-            mergedWriter.Write(flags);
-            mergedWriter.Write(formId);
-            mergedWriter.Write(timestamp);
-            mergedWriter.Write(vcsInfo);
-            mergedWriter.Write(version);
+            var mergedHeader = header with { DataSize = (uint)mergedSize, Flags = flags };
+            RecordHeaderProcessor.WriteRecordHeader(mergedStream, mergedHeader);
 
-            if (mergedData != null && mergedData.Length > 0) mergedWriter.Write(mergedData);
+            if (mergedData != null && mergedData.Length > 0)
+            {
+                mergedStream.Write(mergedData);
+            }
 
             _stats.RecordsConverted++;
             return mergedStream.ToArray();
         }
 
-        var isCompressed = (flags & 0x00040000) != 0;
+        var isCompressed = header.IsCompressed;
         byte[]? convertedData;
-        var newDataSize = dataSize;
+        var newDataSize = header.DataSize;
 
-        if (isCompressed)
-            convertedData =
-                EsmRecordCompression.ConvertCompressedRecordData(_input, dataOffset, (int)dataSize, signature, _stats);
-        else
-            convertedData = ConvertSubrecordsToBuffer(dataOffset, (int)dataSize, signature);
+        convertedData = isCompressed
+            ? EsmRecordCompression.ConvertCompressedRecordData(_input, dataOffset, (int)header.DataSize, signature,
+                    _stats)
+            : ConvertSubrecordsToBuffer(dataOffset, (int)header.DataSize, signature);
 
         // For non-merged INFO records, reorder subrecords to strip orphaned NAM3
         if (signature == "INFO" && convertedData != null)
         {
             var reordered = EsmInfoMerger.ReorderInfoSubrecords(convertedData);
-            if (reordered != null) convertedData = reordered;
+            if (reordered != null)
+            {
+                convertedData = reordered;
+            }
         }
 
-        if (convertedData != null) newDataSize = (uint)convertedData.Length;
+        if (convertedData != null)
+        {
+            newDataSize = (uint)convertedData.Length;
+        }
 
         using var stream = new MemoryStream((int)newDataSize + recordHeaderSize);
-        using var writer = new BinaryWriter(stream);
 
-        // Write header in little-endian
-        writer.Write((byte)signature[0]);
-        writer.Write((byte)signature[1]);
-        writer.Write((byte)signature[2]);
-        writer.Write((byte)signature[3]);
-        writer.Write(newDataSize);
-        writer.Write(flags);
-        writer.Write(formId);
-        writer.Write(timestamp);
-        writer.Write(vcsInfo);
-        writer.Write(version);
+        // Write header in little-endian using schema
+        var outputHeader = header with { DataSize = newDataSize, Flags = flags };
+        RecordHeaderProcessor.WriteRecordHeader(stream, outputHeader);
 
-        if (convertedData != null) writer.Write(convertedData);
+        if (convertedData != null)
+        {
+            stream.Write(convertedData);
+        }
 
         _stats.RecordsConverted++;
 
@@ -159,22 +165,34 @@ public sealed class EsmRecordWriter
         var pendingExtendedSize = 0;
 
         while (currentOffset + 6 <= endOffset)
+        {
             currentOffset =
                 ConvertSubrecordToWriter(currentOffset, endOffset, recordType, writer, ref pendingExtendedSize);
+        }
 
         // Write any remaining bytes
-        if (currentOffset < endOffset) writer.Write(_input.AsSpan(currentOffset, endOffset - currentOffset));
+        if (currentOffset < endOffset)
+        {
+            writer.Write(_input.AsSpan(currentOffset, endOffset - currentOffset));
+        }
     }
 
     private int ConvertSubrecordToWriter(int offset, int recordEndOffset, string recordType, BinaryWriter writer,
         ref int pendingExtendedSize)
     {
-        if (offset < 0 || offset >= _input.Length || recordEndOffset < offset) return recordEndOffset;
+        if (offset < 0 || offset >= _input.Length || recordEndOffset < offset)
+        {
+            return recordEndOffset;
+        }
 
         if (offset + 6 > recordEndOffset || offset + 6 > _input.Length)
         {
             var remaining = Math.Max(0, Math.Min(recordEndOffset - offset, _input.Length - offset));
-            if (remaining > 0) writer.Write(_input.AsSpan(offset, remaining));
+            if (remaining > 0)
+            {
+                writer.Write(_input.AsSpan(offset, remaining));
+            }
+
             return recordEndOffset;
         }
 
@@ -186,7 +204,11 @@ public sealed class EsmRecordWriter
         if (!EsmEndianHelpers.IsValidSubrecordSignature(signature))
         {
             var remaining = Math.Max(0, Math.Min(recordEndOffset - offset, _input.Length - offset));
-            if (remaining > 0) writer.Write(_input.AsSpan(offset, remaining));
+            if (remaining > 0)
+            {
+                writer.Write(_input.AsSpan(offset, remaining));
+            }
+
             return recordEndOffset;
         }
 
@@ -195,7 +217,9 @@ public sealed class EsmRecordWriter
         // Handle XXXX extended size marker
         if (signature == "XXXX" && dataSizeHeader == 4 && dataOffset + 4 <= recordEndOffset &&
             dataOffset + 4 <= _input.Length)
+        {
             pendingExtendedSize = (int)BinaryPrimitives.ReadUInt32BigEndian(_input.AsSpan(dataOffset, 4));
+        }
 
         if (dataSizeHeader == 0 && pendingExtendedSize > 0)
         {
@@ -206,7 +230,11 @@ public sealed class EsmRecordWriter
         if (dataOffset + dataSize > recordEndOffset || dataOffset + dataSize > _input.Length)
         {
             var remaining = Math.Max(0, Math.Min(recordEndOffset - offset, _input.Length - offset));
-            if (remaining > 0) writer.Write(_input.AsSpan(offset, remaining));
+            if (remaining > 0)
+            {
+                writer.Write(_input.AsSpan(offset, remaining));
+            }
+
             return recordEndOffset;
         }
 
@@ -216,16 +244,31 @@ public sealed class EsmRecordWriter
 
         _stats.IncrementSubrecordType(recordType, signature);
 
-        // Write subrecord header in little-endian
+        // Convert data first so we can write an accurate size header.
+        var data = _input.AsSpan(dataOffset, dataSize);
+        var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, data, recordType);
+
+        // Write subrecord header in little-endian.
+        // If this subrecord used XXXX extended sizing (dataSizeHeader == 0), preserve the 0 header.
+        var outputSizeHeader = dataSizeHeader;
+        if (dataSizeHeader != 0)
+        {
+            if (convertedData.Length > ushort.MaxValue)
+            {
+                throw new InvalidOperationException(
+                    $"Converted subrecord {recordType}:{signature} exceeds 64KB without XXXX marker ({convertedData.Length} bytes)."
+                );
+            }
+
+            outputSizeHeader = (ushort)convertedData.Length;
+        }
+
         writer.Write((byte)signature[0]);
         writer.Write((byte)signature[1]);
         writer.Write((byte)signature[2]);
         writer.Write((byte)signature[3]);
-        writer.Write(dataSizeHeader);
+        writer.Write(outputSizeHeader);
 
-        // Convert and write data
-        var data = _input.AsSpan(dataOffset, dataSize);
-        var convertedData = EsmSubrecordConverter.ConvertSubrecordData(signature, data, recordType);
         writer.Write(convertedData);
 
         _stats.SubrecordsConverted++;

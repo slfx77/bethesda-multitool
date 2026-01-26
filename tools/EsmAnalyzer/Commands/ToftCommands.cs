@@ -1,10 +1,10 @@
+using EsmAnalyzer.Conversion;
+using EsmAnalyzer.Helpers;
+using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using EsmAnalyzer.Conversion;
-using EsmAnalyzer.Helpers;
-using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
@@ -92,7 +92,10 @@ public static class ToftCommands
     private static int AnalyzeToftRegion(string filePath, ToftOptions options)
     {
         var esm = EsmFileLoader.Load(filePath, false);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         var data = esm.Data;
         var bigEndian = esm.IsBigEndian;
@@ -111,22 +114,29 @@ public static class ToftCommands
             .Where(r => r.Offset < toftRecord.Offset)
             .ToList();
 
-        var preToftData = BuildPreToftData(preToftRecords, data, options.CompareDuplicates);
+        var preToftData = BuildPreToftData(preToftRecords, data, options.ComparePrimary);
         var scanResult = ScanToftEntries(data, bigEndian, toftRecord, preToftData.ByType);
 
         PrintToftSummary(toftRecord.Offset, scanResult.EndOffset, scanResult.ToftBytes, scanResult.Entries.Count);
-        WriteTypeTable(scanResult.TypeCounts, scanResult.TypeDuplicates, options.TypeLimit);
+        WriteTypeTable(scanResult.TypeCounts, scanResult.TypeWithPrimary, options.TypeLimit);
 
-        if (options.CompareDuplicates)
+        if (options.ComparePrimary)
+        {
             WriteCompareResults(new ToftCompareContext(scanResult.Entries, data, preToftData.InfoHashes,
                 preToftData.InfoByFormId, bigEndian, options.CompareLimit, options.CompareDetail,
                 options.CompareFormIdText));
+        }
 
         if (options.CompareStrings)
+        {
             WriteStringCompare(new ToftStringCompareContext(scanResult.Entries, data, preToftData.InfoByFormId,
                 bigEndian, options.CompareStringsLimit));
+        }
 
-        if (options.Limit <= 0) return 0;
+        if (options.Limit <= 0)
+        {
+            return 0;
+        }
 
         WriteEntryTable(scanResult.Entries, options.Limit);
 
@@ -192,11 +202,13 @@ public static class ToftCommands
 
         foreach (var sig in primaryCounts.Keys.Union(toftCounts.Keys).OrderBy(s => s))
         {
-            primaryCounts.TryGetValue(sig, out var pc);
-            toftCounts.TryGetValue(sig, out var tc);
+            _ = primaryCounts.TryGetValue(sig, out var pc);
+            _ = toftCounts.TryGetValue(sig, out var tc);
             if (pc != tc)
-                diffTable.AddRow(sig, pc.ToString("N0", CultureInfo.InvariantCulture),
+            {
+                _ = diffTable.AddRow(sig, pc.ToString("N0", CultureInfo.InvariantCulture),
                     tc.ToString("N0", CultureInfo.InvariantCulture));
+            }
         }
 
         if (diffTable.Rows.Count > 0)
@@ -222,7 +234,7 @@ public static class ToftCommands
         var index = 0;
         foreach (var sub in subs)
         {
-            table.AddRow(
+            _ = table.AddRow(
                 index.ToString(CultureInfo.InvariantCulture),
                 sub.Signature,
                 sub.Data.Length.ToString("N0", CultureInfo.InvariantCulture));
@@ -257,10 +269,10 @@ public static class ToftCommands
                      .OrderBy(k => k.Signature)
                      .ThenBy(k => k.Index))
         {
-            primaryStrings.TryGetValue(key, out var primaryText);
-            toftStrings.TryGetValue(key, out var toftText);
+            _ = primaryStrings.TryGetValue(key, out var primaryText);
+            _ = toftStrings.TryGetValue(key, out var toftText);
 
-            table.AddRow(
+            _ = table.AddRow(
                 key.Signature,
                 key.Index.ToString(CultureInfo.InvariantCulture),
                 primaryText ?? "—",
@@ -291,12 +303,18 @@ public static class ToftCommands
             .GroupBy(r => r.Signature)
             .ToDictionary(g => g.Key, g => g.Select(r => r.FormId).ToHashSet());
 
-        if (!includeHashes) return new PreToftData(infoHashes, infoByFormId, byType);
+        if (!includeHashes)
+        {
+            return new PreToftData(infoHashes, infoByFormId, byType);
+        }
 
         foreach (var record in preToftRecords.Where(r => r.Signature == "INFO"))
         {
             var size = (int)record.TotalSize;
-            if (size <= 0 || record.Offset + size > data.Length) continue;
+            if (size <= 0 || record.Offset + size > data.Length)
+            {
+                continue;
+            }
 
             var hash = SHA256.HashData(data.AsSpan((int)record.Offset, size));
             infoHashes[record.FormId] = (size, hash);
@@ -309,7 +327,7 @@ public static class ToftCommands
         Dictionary<string, HashSet<uint>> preToftByType)
     {
         var typeCounts = new Dictionary<string, int>();
-        var typeDuplicates = new Dictionary<string, int>();
+        var typeWithPrimary = new Dictionary<string, int>();
         var entries = new List<ToftEntry>();
 
         var offset = (int)toftRecord.Offset;
@@ -326,28 +344,36 @@ public static class ToftCommands
 
             var recordHeader = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
             if (recordHeader == null)
+            {
                 break;
+            }
 
             var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)recordHeader.DataSize;
             if (recordEnd > data.Length)
+            {
                 break;
+            }
 
             var signature = recordHeader.Signature;
-            var isDuplicate = preToftByType.TryGetValue(signature, out var formIds) &&
-                              formIds.Contains(recordHeader.FormId);
+            var hasPrimary = preToftByType.TryGetValue(signature, out var formIds) &&
+                             formIds.Contains(recordHeader.FormId);
 
-            entries.Add(new ToftEntry(offset, signature, recordHeader.FormId, recordHeader.DataSize, isDuplicate));
+            entries.Add(new ToftEntry(offset, signature, recordHeader.FormId, recordHeader.DataSize, hasPrimary));
 
             typeCounts[signature] = typeCounts.TryGetValue(signature, out var count) ? count + 1 : 1;
-            if (isDuplicate)
-                typeDuplicates[signature] = typeDuplicates.TryGetValue(signature, out var dupCount) ? dupCount + 1 : 1;
+            if (hasPrimary)
+            {
+                typeWithPrimary[signature] = typeWithPrimary.TryGetValue(signature, out var primaryCount)
+                    ? primaryCount + 1
+                    : 1;
+            }
 
             offset = recordEnd;
             endOffset = offset;
         }
 
         var toftBytes = endOffset - (int)toftRecord.Offset;
-        return new ToftScanResult(entries, typeCounts, typeDuplicates, endOffset, toftBytes);
+        return new ToftScanResult(entries, typeCounts, typeWithPrimary, endOffset, toftBytes);
     }
 
     private static void PrintToftSummary(uint startOffset, int endOffset, int toftBytes, int entryCount)
@@ -358,22 +384,25 @@ public static class ToftCommands
         AnsiConsole.MarkupLine($"[cyan]Records:[/] {entryCount:N0}");
     }
 
-    private static void WriteTypeTable(Dictionary<string, int> typeCounts, Dictionary<string, int> typeDuplicates,
+    private static void WriteTypeTable(Dictionary<string, int> typeCounts, Dictionary<string, int> typeWithPrimary,
         int typeLimit)
     {
         var typeTable = new Table()
             .Border(TableBorder.Rounded)
             .AddColumn("Type")
             .AddColumn(new TableColumn("Count").RightAligned())
-            .AddColumn(new TableColumn("Duplicates").RightAligned());
+            .AddColumn(new TableColumn("With Primary").RightAligned());
 
         foreach (var (type, count) in typeCounts.OrderByDescending(kvp => kvp.Value))
         {
-            if (typeLimit > 0 && typeTable.Rows.Count >= typeLimit) break;
+            if (typeLimit > 0 && typeTable.Rows.Count >= typeLimit)
+            {
+                break;
+            }
 
-            var dupCount = typeDuplicates.TryGetValue(type, out var d) ? d : 0;
-            typeTable.AddRow(type, count.ToString("N0", CultureInfo.InvariantCulture),
-                dupCount.ToString("N0", CultureInfo.InvariantCulture));
+            var primaryCount = typeWithPrimary.TryGetValue(type, out var d) ? d : 0;
+            _ = typeTable.AddRow(type, count.ToString("N0", CultureInfo.InvariantCulture),
+                primaryCount.ToString("N0", CultureInfo.InvariantCulture));
         }
 
         AnsiConsole.WriteLine();
@@ -388,15 +417,17 @@ public static class ToftCommands
             .AddColumn("Type")
             .AddColumn(new TableColumn("FormID").RightAligned())
             .AddColumn(new TableColumn("Size").RightAligned())
-            .AddColumn("Duplicate");
+            .AddColumn("Has Primary");
 
         foreach (var entry in entries.Take(limit))
-            entryTable.AddRow(
+        {
+            _ = entryTable.AddRow(
                 $"0x{entry.Offset:X8}",
                 entry.Signature,
                 $"0x{entry.FormId:X8}",
                 entry.DataSize.ToString("N0", CultureInfo.InvariantCulture),
-                entry.IsDuplicate ? "yes" : "no");
+                entry.HasPrimary ? "yes" : "no");
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.Write(entryTable);
@@ -413,7 +444,11 @@ public static class ToftCommands
 
         foreach (var entry in context.Entries)
         {
-            if (entry.Signature != "INFO") continue;
+            if (entry.Signature != "INFO")
+            {
+                continue;
+            }
+
             if (!TryGetPrimary(context, entry, mismatches, out var primary))
             {
                 missingPrimary++;
@@ -421,7 +456,9 @@ public static class ToftCommands
             }
 
             if (!TryGetValidSize(context, entry, out var size))
+            {
                 continue;
+            }
 
             compared++;
 
@@ -447,7 +484,9 @@ public static class ToftCommands
         List<ToftCompareMismatch> mismatches, out (int Size, byte[] Hash) primary)
     {
         if (context.PreToftInfoHashes.TryGetValue(entry.FormId, out primary))
+        {
             return true;
+        }
 
         AddMismatch(context, mismatches, entry.FormId, "missing", 0, (int)entry.DataSize);
         return false;
@@ -462,7 +501,10 @@ public static class ToftCommands
     private static bool TryMatchSize(ToftCompareContext context, ToftEntry entry, (int Size, byte[] Hash) primary,
         int size, List<ToftCompareMismatch> mismatches)
     {
-        if (size == primary.Size) return true;
+        if (size == primary.Size)
+        {
+            return true;
+        }
 
         AddMismatch(context, mismatches, entry.FormId, "size", primary.Size, size);
         return false;
@@ -472,7 +514,10 @@ public static class ToftCommands
         int size, List<ToftCompareMismatch> mismatches)
     {
         var hash = SHA256.HashData(context.Data.AsSpan(entry.Offset, size));
-        if (hash.SequenceEqual(primary.Hash)) return true;
+        if (hash.SequenceEqual(primary.Hash))
+        {
+            return true;
+        }
 
         AddMismatch(context, mismatches, entry.FormId, "hash", primary.Size, size);
         return false;
@@ -481,7 +526,11 @@ public static class ToftCommands
     private static void AddMismatch(ToftCompareContext context, List<ToftCompareMismatch> mismatches, uint formId,
         string reason, int primarySize, int toftSize)
     {
-        if (context.CompareLimit != 0 && mismatches.Count >= context.CompareLimit) return;
+        if (context.CompareLimit != 0 && mismatches.Count >= context.CompareLimit)
+        {
+            return;
+        }
+
         mismatches.Add(new ToftCompareMismatch(formId, reason, primarySize, toftSize));
     }
 
@@ -495,25 +544,39 @@ public static class ToftCommands
     private static void ShowCompareDetailIfRequested(ToftCompareContext context,
         IReadOnlyList<ToftCompareMismatch> mismatches)
     {
-        if (!context.CompareDetail) return;
+        if (!context.CompareDetail)
+        {
+            return;
+        }
 
         uint? targetFormId = null;
         if (!string.IsNullOrWhiteSpace(context.CompareFormIdText))
+        {
             targetFormId = EsmFileLoader.ParseFormId(context.CompareFormIdText!);
+        }
 
         if (targetFormId == null && mismatches.Count > 0)
+        {
             targetFormId = mismatches[0].FormId;
+        }
 
         if (targetFormId.HasValue)
+        {
             ShowInfoDiff(context.Entries, context.Data, context.PreToftInfoByFormId, targetFormId.Value,
                 context.BigEndian);
+        }
         else
+        {
             AnsiConsole.MarkupLine("[yellow]No mismatches found to show detail.[/]");
+        }
     }
 
     private static void WriteCompareMismatchTable(IReadOnlyList<ToftCompareMismatch> mismatches)
     {
-        if (mismatches.Count == 0) return;
+        if (mismatches.Count == 0)
+        {
+            return;
+        }
 
         var table = new Table()
             .Border(TableBorder.Rounded)
@@ -523,11 +586,13 @@ public static class ToftCommands
             .AddColumn(new TableColumn("TOFT Size").RightAligned());
 
         foreach (var mismatch in mismatches)
-            table.AddRow(
+        {
+            _ = table.AddRow(
                 $"0x{mismatch.FormId:X8}",
                 mismatch.Reason,
                 mismatch.PrimarySize.ToString("N0", CultureInfo.InvariantCulture),
                 mismatch.ToftSize.ToString("N0", CultureInfo.InvariantCulture));
+        }
 
         AnsiConsole.Write(table);
     }
@@ -543,7 +608,9 @@ public static class ToftCommands
             0);
 
         foreach (var entry in context.Entries.Where(e => e.Signature == "INFO"))
+        {
             summary = AddStringCompareEntry(summary, context, entry);
+        }
 
         return summary;
     }
@@ -552,15 +619,24 @@ public static class ToftCommands
         ToftStringCompareContext context, ToftEntry entry)
     {
         if (!context.PreToftInfoByFormId.TryGetValue(entry.FormId, out var primary))
+        {
             return summary;
+        }
 
         var (primaryStrings, toftStrings) = GetInfoStringLists(context, entry, primary);
         var hasPrimary = primaryStrings.Count > 0;
         var hasToft = toftStrings.Count > 0;
 
         summary = UpdateStringCompareCounts(summary, hasPrimary, hasToft);
-        if (!hasPrimary && !hasToft) return summary;
-        if (context.Limit > 0 && summary.RowsAdded >= context.Limit) return summary;
+        if (!hasPrimary && !hasToft)
+        {
+            return summary;
+        }
+
+        if (context.Limit > 0 && summary.RowsAdded >= context.Limit)
+        {
+            return summary;
+        }
 
         AddStringCompareRow(summary.Table, entry.FormId, primaryStrings, toftStrings);
         return summary with { RowsAdded = summary.RowsAdded + 1 };
@@ -597,20 +673,19 @@ public static class ToftCommands
     private static StringCompareSummary UpdateStringCompareCounts(StringCompareSummary summary, bool hasPrimary,
         bool hasToft)
     {
-        if (hasPrimary && hasToft)
-            return summary with { WithStringsBoth = summary.WithStringsBoth + 1 };
-        if (hasPrimary)
-            return summary with { WithStringsPrimaryOnly = summary.WithStringsPrimaryOnly + 1 };
-        if (hasToft)
-            return summary with { WithStringsToftOnly = summary.WithStringsToftOnly + 1 };
-
-        return summary with { WithStringsNone = summary.WithStringsNone + 1 };
+        return hasPrimary && hasToft
+            ? (summary with { WithStringsBoth = summary.WithStringsBoth + 1 })
+            : hasPrimary
+            ? (summary with { WithStringsPrimaryOnly = summary.WithStringsPrimaryOnly + 1 })
+            : hasToft
+            ? (summary with { WithStringsToftOnly = summary.WithStringsToftOnly + 1 })
+            : (summary with { WithStringsNone = summary.WithStringsNone + 1 });
     }
 
     private static void AddStringCompareRow(Table table, uint formId, List<string> primaryStrings,
         List<string> toftStrings)
     {
-        table.AddRow(
+        _ = table.AddRow(
             $"0x{formId:X8}",
             primaryStrings.Count > 0 ? string.Join(" | ", primaryStrings) : "—",
             toftStrings.Count > 0 ? string.Join(" | ", toftStrings) : "—");
@@ -625,7 +700,10 @@ public static class ToftCommands
 
     private static void WriteStringCompareTable(StringCompareSummary summary)
     {
-        if (summary.RowsAdded <= 0) return;
+        if (summary.RowsAdded <= 0)
+        {
+            return;
+        }
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]String subrecord comparison:[/]");
@@ -642,12 +720,16 @@ public static class ToftCommands
         {
             if (!EsmEndianHelpers.IsStringSubrecord(sub.Signature, "INFO") &&
                 !InfoStringOverrides.Contains(sub.Signature))
+            {
                 continue;
+            }
 
             if (!TryDecodeString(sub.Data, out var text))
+            {
                 continue;
+            }
 
-            counts.TryGetValue(sub.Signature, out var index);
+            _ = counts.TryGetValue(sub.Signature, out var index);
             counts[sub.Signature] = index + 1;
 
             results[(sub.Signature, index)] = text;
@@ -659,17 +741,25 @@ public static class ToftCommands
     private static bool TryDecodeString(byte[] data, out string text)
     {
         text = string.Empty;
-        if (data.Length == 0) return false;
+        if (data.Length == 0)
+        {
+            return false;
+        }
 
         var nullIdx = Array.IndexOf(data, (byte)0);
         var len = nullIdx >= 0 ? nullIdx : data.Length;
-        if (len <= 0) return false;
+        if (len <= 0)
+        {
+            return false;
+        }
 
         len = Math.Min(len, 200);
         var str = Encoding.UTF8.GetString(data, 0, len);
 
         if (str.Any(c => char.IsControl(c) && c is not '\r' and not '\n' and not '\t'))
+        {
             return false;
+        }
 
         str = str.Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t");
         text = $"\"{str}\"";
@@ -677,7 +767,7 @@ public static class ToftCommands
     }
 
 
-    private sealed record ToftEntry(int Offset, string Signature, uint FormId, uint DataSize, bool IsDuplicate)
+    private sealed record ToftEntry(int Offset, string Signature, uint FormId, uint DataSize, bool HasPrimary)
     {
         public int TotalSize => (int)DataSize + EsmParser.MainRecordHeaderSize;
     }
@@ -692,7 +782,7 @@ public static class ToftCommands
     private sealed record ToftScanResult(
         List<ToftEntry> Entries,
         Dictionary<string, int> TypeCounts,
-        Dictionary<string, int> TypeDuplicates,
+        Dictionary<string, int> TypeWithPrimary,
         int EndOffset,
         int ToftBytes);
 
@@ -715,7 +805,7 @@ public static class ToftCommands
     private sealed record ToftOptions(
         int Limit,
         int TypeLimit,
-        bool CompareDuplicates,
+        bool ComparePrimary,
         int CompareLimit,
         bool CompareDetail,
         bool CompareStrings,

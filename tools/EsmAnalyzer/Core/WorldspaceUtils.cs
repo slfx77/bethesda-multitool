@@ -18,10 +18,16 @@ public static class WorldspaceUtils
     public static WorldspaceBounds? ExtractWorldspaceBounds(byte[] data, bool bigEndian, uint worldspaceFormId)
     {
         var header = EsmParser.ParseFileHeader(data);
-        if (header == null) return null;
+        if (header == null)
+        {
+            return null;
+        }
 
         var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
-        if (tes4Header == null) return null;
+        if (tes4Header == null)
+        {
+            return null;
+        }
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
 
@@ -62,7 +68,9 @@ public static class WorldspaceUtils
         var wrldRecord = records.FirstOrDefault(r => r.FormId == worldspaceFormId);
 
         if (wrldRecord == null)
+        {
             return (null, null);
+        }
 
         var recordData = HeightmapUtils.GetRecordData(data, wrldRecord, bigEndian);
         return (wrldRecord, recordData);

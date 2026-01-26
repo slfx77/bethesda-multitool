@@ -20,7 +20,9 @@ public static class PcCellOrderGenerator
         var height = maxY - minY + 1;
 
         if (width <= 0 || height <= 0)
+        {
             return result;
+        }
 
         // Calculate number of 8×8 blocks needed
         var blocksX = (width + 7) / 8;
@@ -33,8 +35,8 @@ public static class PcCellOrderGenerator
         {
             // Generate cells for this block in reverse serpentine order
             var blockCells = GenerateBlockOrder(
-                minX + blockX * 8,
-                minY + blockY * 8,
+                minX + (blockX * 8),
+                minY + (blockY * 8),
                 minX, maxX, minY, maxY);
 
             result.AddRange(blockCells);
@@ -70,10 +72,14 @@ public static class PcCellOrderGenerator
             var (x, y, dist) = queue.Dequeue();
 
             if (x < 0 || x >= blocksX || y < 0 || y >= blocksY)
+            {
                 continue;
+            }
 
             if (!visited.Add((x, y)))
+            {
                 continue;
+            }
 
             result.Add((x, y));
 
@@ -112,28 +118,36 @@ public static class PcCellOrderGenerator
         // Block-local coordinates: start at (7,7) and work through the serpentine
         // Rows 7→2: left-sweep with SE jumps
         for (var localY = 7; localY >= 2; localY--)
-            // Sweep left from x=7 to x=0
-        for (var localX = 7; localX >= 0; localX--)
         {
-            var gridX = blockBaseX + localX;
-            var gridY = blockBaseY + localY;
+            // Sweep left from x=7 to x=0
+            for (var localX = 7; localX >= 0; localX--)
+            {
+                var gridX = blockBaseX + localX;
+                var gridY = blockBaseY + localY;
 
-            // Only include if within world bounds
-            if (gridX >= minX && gridX <= maxX && gridY >= minY && gridY <= maxY)
-                result.Add((gridX, gridY));
+                // Only include if within world bounds
+                if (gridX >= minX && gridX <= maxX && gridY >= minY && gridY <= maxY)
+                {
+                    result.Add((gridX, gridY));
+                }
+            }
         }
 
         // Rows 1→0: diagonal zigzag pattern (S then NW alternating)
         // Starting at (7,1), go S to (7,0), NW to (6,1), S to (6,0), etc.
         for (var localX = 7; localX >= 0; localX--)
-            // Down move: (x, 1) → (x, 0)
-        for (var localY = 1; localY >= 0; localY--)
         {
-            var gridX = blockBaseX + localX;
-            var gridY = blockBaseY + localY;
+            // Down move: (x, 1) → (x, 0)
+            for (var localY = 1; localY >= 0; localY--)
+            {
+                var gridX = blockBaseX + localX;
+                var gridY = blockBaseY + localY;
 
-            if (gridX >= minX && gridX <= maxX && gridY >= minY && gridY <= maxY)
-                result.Add((gridX, gridY));
+                if (gridX >= minX && gridX <= maxX && gridY >= minY && gridY <= maxY)
+                {
+                    result.Add((gridX, gridY));
+                }
+            }
         }
 
         return result;
@@ -163,7 +177,10 @@ public static class PcCellOrderGenerator
         {
             var x = getGridX(cell);
             var y = getGridY(cell);
-            if (!x.HasValue || !y.HasValue) continue;
+            if (!x.HasValue || !y.HasValue)
+            {
+                continue;
+            }
 
             var key = (x.Value, y.Value);
             if (!cellLookup.TryGetValue(key, out var list))
@@ -178,9 +195,15 @@ public static class PcCellOrderGenerator
         // Generate PC order and emit cells in that sequence
         var pcOrder = GeneratePcOrder(minX, maxX, minY, maxY);
         foreach (var (gridX, gridY) in pcOrder)
+        {
             if (cellLookup.TryGetValue((gridX, gridY), out var matchingCells))
+            {
                 foreach (var cell in matchingCells)
+                {
                     yield return cell;
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -200,10 +223,14 @@ public static class PcCellOrderGenerator
         var height = maxY - minY + 1;
 
         if (width <= 0 || height <= 0)
+        {
             return -1;
+        }
 
         if (gridX < minX || gridX > maxX || gridY < minY || gridY > maxY)
+        {
             return -1;
+        }
 
         // Calculate which block this cell is in
         var relX = gridX - minX;
@@ -214,7 +241,7 @@ public static class PcCellOrderGenerator
         var localY = relY % 8;
 
         // Calculate number of blocks
-        var blocksX = (width + 7) / 8;
+        _ = (width + 7) / 8;
         var blocksY = (height + 7) / 8;
 
         // Calculate cells in previous blocks (column-major block order)
@@ -222,20 +249,26 @@ public static class PcCellOrderGenerator
 
         // Full columns of blocks before this one
         for (var bx = 0; bx < blockX; bx++)
-        for (var by = 0; by < blocksY; by++)
-            cellsBeforeThisBlock += GetBlockCellCount(
-                minX + bx * 8, minY + by * 8,
+        {
+            for (var by = 0; by < blocksY; by++)
+            {
+                cellsBeforeThisBlock += GetBlockCellCount(
+                minX + (bx * 8), minY + (by * 8),
                 minX, maxX, minY, maxY);
+            }
+        }
 
         // Blocks in the same column but before this one
         for (var by = 0; by < blockY; by++)
+        {
             cellsBeforeThisBlock += GetBlockCellCount(
-                minX + blockX * 8, minY + by * 8,
+                minX + (blockX * 8), minY + (by * 8),
                 minX, maxX, minY, maxY);
+        }
 
         // Calculate position within this block
         var posInBlock = GetPositionInBlock(localX, localY,
-            minX + blockX * 8, minY + blockY * 8,
+            minX + (blockX * 8), minY + (blockY * 8),
             minX, maxX, minY, maxY);
 
         return cellsBeforeThisBlock + posInBlock;
@@ -248,12 +281,16 @@ public static class PcCellOrderGenerator
     {
         var count = 0;
         for (var ly = 0; ly < 8; ly++)
-        for (var lx = 0; lx < 8; lx++)
         {
-            var gx = blockBaseX + lx;
-            var gy = blockBaseY + ly;
-            if (gx >= minX && gx <= maxX && gy >= minY && gy <= maxY)
-                count++;
+            for (var lx = 0; lx < 8; lx++)
+            {
+                var gx = blockBaseX + lx;
+                var gy = blockBaseY + ly;
+                if (gx >= minX && gx <= maxX && gy >= minY && gy <= maxY)
+                {
+                    count++;
+                }
+            }
         }
 
         return count;
@@ -275,7 +312,10 @@ public static class PcCellOrderGenerator
         foreach (var (gx, gy) in blockOrder)
         {
             if (gx == targetX && gy == targetY)
+            {
                 return position;
+            }
+
             position++;
         }
 

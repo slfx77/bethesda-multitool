@@ -67,17 +67,51 @@ All 4-character record and subrecord signatures are byte-reversed:
 
 ### 2. Numeric Field Endianness
 
-All multi-byte numeric fields are big-endian on Xbox 360:
+Multi-byte numeric fields have different endianness rules depending on context:
 
-| Field Type | Size    | Conversion              |
-| ---------- | ------- | ----------------------- |
-| uint16     | 2 bytes | Swap bytes              |
-| int16      | 2 bytes | Swap bytes              |
-| uint32     | 4 bytes | Swap bytes              |
-| int32      | 4 bytes | Swap bytes              |
-| FormID     | 4 bytes | Swap bytes              |
-| float      | 4 bytes | Swap bytes (IEEE 754)   |
-| double     | 8 bytes | Swap bytes (if present) |
+#### Record/GRUP Headers (BIG-endian)
+
+All fields in record and GRUP headers are big-endian on Xbox 360:
+
+| Field Type | Size    | Conversion            |
+| ---------- | ------- | --------------------- |
+| uint16     | 2 bytes | Swap bytes            |
+| int16      | 2 bytes | Swap bytes            |
+| uint32     | 4 bytes | Swap bytes            |
+| int32      | 4 bytes | Swap bytes            |
+| FormID     | 4 bytes | **Swap bytes**        |
+| float      | 4 bytes | Swap bytes (IEEE 754) |
+
+#### Subrecord Data (CONTEXT-DEPENDENT!)
+
+**IMPORTANT DISCOVERY**: Most FormIDs in subrecord data are big-endian, but a few specific fields are stored in little-endian (native PC format):
+
+| Context                                 | Storage       | Conversion Required |
+| --------------------------------------- | ------------- | ------------------- |
+| Most FormIDs in subrecords              | Big-endian    | **Swap bytes**      |
+| Specific FormIDs (see list below)       | Little-endian | **NO swap**         |
+| All other numeric types (uint32, float) | Big-endian    | **Swap bytes**      |
+
+**FormIDs that ARE big-endian** (majority - need swap):
+
+- SNAM (Faction at offset 0)
+- CNTO (Item at offset 0)
+- LVLO (Item at offset 4!)
+- NAME, CNAM, BNAM, INAM, WNAM, etc. (4-byte FormID subrecords)
+- Most other FormID fields
+
+**FormIDs that are LITTLE-endian** (exceptions - NO swap needed):
+| Subrecord | Field Offset | Field Name | Parent Record |
+| --------- | ------------ | ---------------- | ------------- |
+| DNAM | 0x24 (36) | Projectile | WEAP |
+| CRDT | 0x0C (12) | CriticalEffect | WEAP |
+| VATS | 0x00 (0) | VatSpecialEffect | WEAP |
+
+**Implementation Note**: In the schema processor:
+
+- `FormId()` field type: always swapped (big-endian on Xbox)
+- `FormIdLittleEndian()` field type: never swapped (already native PC format)
+- `Simple4Byte()` creates a UInt32 field → always swapped
 
 ### 3. String Data
 
@@ -629,7 +663,7 @@ This requires a two-pass conversion or offset tracking during the single pass.
 
 | Record Type | Xbox 360 | PC       | Ratio  | Notes                            |
 | ----------- | -------- | -------- | ------ | -------------------------------- |
-| INFO        | 46,494   | 23,247   | 2.00x  | TOFT streaming cache (see below) |
+| INFO        | 37,525   | 23,247   | 1.61x  | TOFT streaming cache (see below) |
 | TOFT        | 23,644   | 0        | N/A    | Xbox-only streaming cache        |
 | DOOR        | 320      | 1        | 320x   | Major structural difference      |
 | STAT        | 6,765    | 6,785    | 0.997x | Slight difference                |
@@ -643,9 +677,9 @@ This requires a two-pass conversion or offset tracking during the single pass.
 | CELL        | 30,497   | 30,497   | 1.00x  | Exact match                      |
 | WEAP        | 260      | 261      | 0.996x | One less on Xbox                 |
 
-### TOFT - Xbox 360 Streaming Cache Record (Xbox 360 Only)
+### TOFT - Toplic Offset (Xbox 360 Only)
 
-The Xbox 360 ESM contains a special **TOFT** record type that does not exist on PC.
+The Xbox 360 ESM contains a special **TOFT** record type that does not exist on PC. We refer to TOFT as **Toplic Offset** (streaming cache for dialogue).
 
 **PDB Evidence:**
 
@@ -656,12 +690,13 @@ The Xbox 360 ESM contains a special **TOFT** record type that does not exist on 
 
 #### Two Types of TOFT Records
 
-Analysis of FalloutNV.esm reveals **23,644 TOFT records** that fall into two categories:
+Analysis of `FalloutNV.esm` (360_final) reveals **23,644 TOFT records** that fall into two categories:
 
-| Type               | Count  | Size        | Location                                                 |
-| ------------------ | ------ | ----------- | -------------------------------------------------------- |
-| **Marker TOFT**    | 23,643 | 0 bytes     | End of Cell Persistent groups (depth > 0)                |
-| **Container TOFT** | 1      | 1,244,443 B | Top-level at `0x01AB5A3D`, followed by bare INFO records |
+| Type                | Count  | Size        | Location                                        |
+| ------------------- | ------ | ----------- | ----------------------------------------------- |
+| **Marker TOFT**     | 23,643 | 0 bytes     | End of Cell Persistent groups (depth > 0)       |
+| **Container TOFT**  | 1      | 1,244,443 B | Top-level at `0x01AB5A3D` (FormID `0xFFFFFFFE`) |
+| **Terminator TOFT** | 1      | 0 bytes     | Top-level at `0x01BE5770` (FormID `0xFFFFFFFF`) |
 
 **Marker TOFTs (size=0):**
 
@@ -673,32 +708,38 @@ Analysis of FalloutNV.esm reveals **23,644 TOFT records** that fall into two cat
 **Container TOFT (size=1.2 MB):**
 
 - Single record at offset `0x01AB5A3D` with FormID `0xFFFFFFFE`
-- Contains **pre-serialized INFO records** using standard record header format
-- Data inside: `OFNI` (INFO), subrecords like `TDRT` (TRDT), `1MAN` (NAM1 with dialogue text)
+- Contains **response-only INFO data** serialized with **reversed subrecord signatures**:
+  - `OFNI` (INFO entry marker)
+  - `TDRT` (TRDT response data)
+  - `1MAN` (NAM1 response text)
+  - `2MAN` (NAM2 actor notes)
+  - `TXEN` (NEXT separator)
+- Also contains script fragments (`SCHR`, `SCDA`, `SCRO`) for response result scripts
 - Example embedded dialogue: "Shut up and keep going.", "Hello again. Remember to stop by..."
 
 **Bare INFO Records (after Container TOFT):**
 
-- Following the Container TOFT, ~14,278 INFO records appear at depth 0 (outside any GRUP)
+- Following the Container TOFT, **14,278 INFO records** appear at depth 0 (outside any GRUP)
 - These span from `0x01BE5788` to `0x01F9AC28`
-- They are **duplicates** of INFO records already present in DIAL groups
-- This explains the 2x INFO count: 23,247 in DIAL groups + 14,278 duplicates = 37,525 total
+- They are **response-only duplicates** of INFO records in DIAL groups
+- This explains the elevated INFO count: 23,247 in DIAL groups + 14,278 response duplicates = 37,525 total
 
 **Purpose (Inferred):**
 
 - Pre-serialized streaming cache for dialogue system on Xbox 360
 - Marker TOFTs may provide random-access indices into cell dialogue
 - Container TOFT + bare INFO records allow fast sequential streaming without parsing DIAL group hierarchy
-- The name "Topic Offset File Table" was previously assumed but not confirmed by PDB
+- We now refer to TOFT as **Toplic Offset** (streaming cache for dialogue)
 
-**Conversion Handling:**
+**Conversion Handling (Current):**
 
-- **Marker TOFTs (size=0):** Skip individual records during conversion (they serve no purpose on PC)
-- **Container TOFT + bare INFO region:** When TOFT appears at top-level (`grupStack.Count == 0`):
-  - Skip all records until the next `GRUP` signature is found
-  - This skips ~5.1 MB of streaming cache data
-  - Resume normal conversion at the next GRUP (Cell Temporary groups containing LAND/NAVM data)
-- The duplicated INFO records serve no purpose on PC (streaming optimization only)
+- **Marker TOFTs (size=0):** Skip individual records during conversion (streaming markers only)
+- **Container TOFT + bare INFO region:**
+  - Parse TOFT response data and **merge into primary INFO records** by FormID
+  - Response subrecords provided by TOFT: `TRDT`, `NAM1`, `NAM2`, `SCHR`, `SCDA`, `SCRO`, `NEXT`
+  - Base INFO (from DIAL groups) provides: `DATA`, `QSTI`, `PNAM`, `CTDA`, `TCLT`, `SCTX`, etc.
+  - Output INFO records should match PC ordering after merge
+- **Terminator TOFT (0xFFFFFFFF):** Ignore
 
 ---
 

@@ -1,15 +1,20 @@
-using System.CommandLine;
-using System.Text;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.CommandLine;
+using System.Text;
 
 namespace EsmAnalyzer.Commands;
 
 public static partial class CompareCommands
 {
-    public static Command CreateCompareCellsCommand()
+    public static Command CreateCompareCellsCommand() => CreateCompareCellsCommandCore("compare-cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+
+    /// <summary>Creates a compare-cells command named "cells" for use as a subcommand.</summary>
+    public static Command CreateCellsCommand() => CreateCompareCellsCommandCore("cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+
+    private static Command CreateCompareCellsCommandCore(string name, string description)
     {
-        var command = new Command("compare-cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+        var command = new Command(name, description);
 
         var leftArg = new Argument<string>("left") { Description = "Path to the first ESM file" };
         var rightArg = new Argument<string>("right") { Description = "Path to the second ESM file" };
@@ -40,7 +45,10 @@ public static partial class CompareCommands
     private static int CompareCells(string leftPath, string rightPath, int limit, string? outputPath)
     {
         var (left, right) = EsmFileLoader.LoadPair(leftPath, rightPath, false);
-        if (left == null || right == null) return 1;
+        if (left == null || right == null)
+        {
+            return 1;
+        }
 
         var leftCells = EsmHelpers.ScanForRecordType(left.Data, left.IsBigEndian, "CELL")
             .GroupBy(r => r.FormId)
@@ -77,7 +85,10 @@ public static partial class CompareCommands
     private static void WriteMissingCellTable(string title, EsmFileLoadResult source,
         List<AnalyzerRecordInfo> missing, int limit)
     {
-        if (missing.Count == 0) return;
+        if (missing.Count == 0)
+        {
+            return;
+        }
 
         var table = new Table()
             .Border(TableBorder.Rounded)
@@ -89,7 +100,7 @@ public static partial class CompareCommands
         foreach (var record in missing.Take(limit == 0 ? int.MaxValue : limit))
         {
             var (edid, full) = TryGetCellNames(source, record);
-            table.AddRow(
+            _ = table.AddRow(
                 $"0x{record.FormId:X8}",
                 $"0x{record.Offset:X8}",
                 edid ?? "—",
@@ -120,11 +131,17 @@ public static partial class CompareCommands
 
     private static string? TryDecodeString(byte[]? data)
     {
-        if (data == null || data.Length == 0) return null;
+        if (data == null || data.Length == 0)
+        {
+            return null;
+        }
 
         var nullIdx = Array.IndexOf(data, (byte)0);
         var len = nullIdx >= 0 ? nullIdx : data.Length;
-        if (len <= 0) return null;
+        if (len <= 0)
+        {
+            return null;
+        }
 
         var str = Encoding.UTF8.GetString(data, 0, len);
         return str.All(c => !char.IsControl(c) || c is '\r' or '\n' or '\t') ? str : null;
@@ -134,7 +151,7 @@ public static partial class CompareCommands
         List<AnalyzerRecordInfo> missingInRight, List<AnalyzerRecordInfo> missingInLeft)
     {
         var fullPath = Path.GetFullPath(outputPath);
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath) ?? ".");
+        _ = Directory.CreateDirectory(Path.GetDirectoryName(fullPath) ?? ".");
 
         using var writer = new StreamWriter(fullPath, false, Encoding.UTF8);
         writer.WriteLine("Source\tFormId\tOffset\tEDID\tFULL");

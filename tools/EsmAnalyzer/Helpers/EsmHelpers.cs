@@ -7,43 +7,6 @@ using Xbox360MemoryCarver.Core.Utils;
 namespace EsmAnalyzer.Helpers;
 
 /// <summary>
-///     Result of comparing two records.
-/// </summary>
-public sealed record RecordComparison
-{
-    public bool IsIdentical { get; set; }
-    public bool OnlySizeDiffers { get; set; }
-    public List<SubrecordDiff> SubrecordDiffs { get; } = [];
-}
-
-/// <summary>
-///     Difference between subrecords.
-/// </summary>
-public sealed record SubrecordDiff
-{
-    public required string Signature { get; init; }
-    public required int Xbox360Size { get; init; }
-    public required int PcSize { get; init; }
-    public int Xbox360Offset { get; init; }
-    public int PcOffset { get; init; }
-    public byte[]? Xbox360Data { get; init; }
-    public byte[]? PcData { get; init; }
-    public string? DiffType { get; init; }
-}
-
-/// <summary>
-///     Statistics for differences per type.
-/// </summary>
-public sealed class TypeDiffStats
-{
-    public required string Type { get; init; }
-    public int Total { get; set; }
-    public int Identical { get; set; }
-    public int SizeDiff { get; set; }
-    public int ContentDiff { get; set; }
-}
-
-/// <summary>
 ///     Shared helper methods for ESM analysis operations.
 /// </summary>
 public static class EsmHelpers
@@ -52,7 +15,9 @@ public static class EsmHelpers
     ///     Scans all records in an ESM file using flat GRUP scanning for Xbox 360 format.
     /// </summary>
     public static List<AnalyzerRecordInfo> ScanAllRecords(byte[] data, bool bigEndian)
-        => EsmRecordParser.ScanAllRecords(data, bigEndian);
+    {
+        return EsmRecordParser.ScanAllRecords(data, bigEndian);
+    }
 
     /// <summary>
     ///     Flat GRUP scanner that finds all records regardless of nesting structure.
@@ -60,20 +25,26 @@ public static class EsmHelpers
     /// </summary>
     public static void ScanAllGrupsFlat(byte[] data, bool bigEndian, int startOffset, int endOffset,
         List<AnalyzerRecordInfo> records)
-        => EsmRecordParser.ScanAllGrupsFlat(data, bigEndian, startOffset, endOffset, records);
+    {
+        EsmRecordParser.ScanAllGrupsFlat(data, bigEndian, startOffset, endOffset, records);
+    }
 
     /// <summary>
     ///     Scans the entire file for a specific record type by searching for its signature.
     ///     This is a fallback method when GRUP-based scanning fails to find all records.
     /// </summary>
     public static List<AnalyzerRecordInfo> ScanForRecordType(byte[] data, bool bigEndian, string recordType)
-        => EsmRecordParser.ScanForRecordType(data, bigEndian, recordType);
+    {
+        return EsmRecordParser.ScanForRecordType(data, bigEndian, recordType);
+    }
 
     /// <summary>
     ///     Parses subrecords within a record's data section.
     /// </summary>
     public static List<AnalyzerSubrecordInfo> ParseSubrecords(byte[] recordData, bool bigEndian)
-        => EsmRecordParser.ParseSubrecords(recordData, bigEndian);
+    {
+        return EsmRecordParser.ParseSubrecords(recordData, bigEndian);
+    }
 
     /// <summary>
     ///     Decompresses zlib-compressed data.
@@ -88,15 +59,15 @@ public static class EsmHelpers
             zlibStream.CopyTo(outputStream);
             var result = outputStream.ToArray();
 
-            if (result.Length != decompressedSize)
-                throw new InvalidDataException(
-                    $"Decompression produced {result.Length} bytes, expected {decompressedSize}");
-
-            return result;
+            return result.Length != decompressedSize
+                ? throw new InvalidDataException(
+                    $"Decompression produced {result.Length} bytes, expected {decompressedSize}")
+                : result;
         }
         catch (InvalidDataException ex)
         {
             if (compressedData.Length > 6)
+            {
                 try
                 {
                     using var rawInput = new MemoryStream(compressedData, 2, compressedData.Length - 6);
@@ -106,12 +77,15 @@ public static class EsmHelpers
                     var rawResult = rawOutput.ToArray();
 
                     if (rawResult.Length == decompressedSize)
+                    {
                         return rawResult;
+                    }
                 }
                 catch (InvalidDataException)
                 {
                     // Fall through to detailed error below.
                 }
+            }
 
             var header = compressedData.Length >= 2
                 ? $"{compressedData[0]:X2} {compressedData[1]:X2}"
@@ -138,42 +112,39 @@ public static class EsmHelpers
 
         for (var i = 0; i < length; i += 16)
         {
-            sb.Append($"  {i:X4}: ");
+            _ = sb.Append($"  {i:X4}: ");
 
             // Hex bytes
             for (var j = 0; j < 16; j++)
-                if (i + j < length)
-                    sb.Append($"{data[i + j]:X2} ");
-                else
-                    sb.Append("   ");
+            {
+                _ = i + j < length ? sb.Append($"{data[i + j]:X2} ") : sb.Append("   ");
+            }
 
-            sb.Append(" ");
+            _ = sb.Append(" ");
 
             // ASCII representation (escape [ and ] for Spectre.Console markup)
             for (var j = 0; j < 16 && i + j < length; j++)
             {
                 var b = data[i + j];
-                if (b >= 32 && b < 127)
+                if (b is >= 32 and < 127)
                 {
                     // Escape [ and ] to avoid Spectre.Console markup parsing
                     // [[ produces literal [, ]] produces literal ]
-                    if (b == '[')
-                        sb.Append("[[");
-                    else if (b == ']')
-                        sb.Append("]]");
-                    else
-                        sb.Append((char)b);
+                    _ = b == '[' ? sb.Append("[[") : b == ']' ? sb.Append("]]") : sb.Append((char)b);
                 }
                 else
                 {
-                    sb.Append('.');
+                    _ = sb.Append('.');
                 }
             }
 
-            sb.AppendLine();
+            _ = sb.AppendLine();
         }
 
-        if (data.Length > maxLength) sb.AppendLine($"  ... ({data.Length - maxLength} more bytes)");
+        if (data.Length > maxLength)
+        {
+            _ = sb.AppendLine($"  ... ({data.Length - maxLength} more bytes)");
+        }
 
         return sb.ToString();
     }
@@ -188,12 +159,26 @@ public static class EsmHelpers
             ? BinaryUtils.ReadUInt32BE(data.AsSpan(offset + 12))
             : BinaryUtils.ReadUInt32LE(data.AsSpan(offset + 12));
 
-        // Label is at offset 8
+        // Label is at offset 8 - for big-endian, reverse bytes to get correct ASCII
         var labelBytes = data.AsSpan(offset + 8, 4);
+        string labelStr;
+        if (bigEndian)
+        {
+            Span<byte> reversed = stackalloc byte[4];
+            reversed[0] = labelBytes[3];
+            reversed[1] = labelBytes[2];
+            reversed[2] = labelBytes[1];
+            reversed[3] = labelBytes[0];
+            labelStr = Encoding.ASCII.GetString(reversed);
+        }
+        else
+        {
+            labelStr = Encoding.ASCII.GetString(labelBytes);
+        }
 
         return groupType switch
         {
-            0 => $"Top '{Encoding.ASCII.GetString(labelBytes)}'", // Top-level group (record type)
+            0 => $"Top '{labelStr}'", // Top-level group (record type)
             1 => "World Children", // World children
             2 => "Interior Cell Block",
             3 => "Interior Cell Sub-block",
@@ -221,7 +206,7 @@ public static class EsmHelpers
             var decompressedSize = bigEndian
                 ? BinaryUtils.ReadUInt32BE(rawData)
                 : BinaryUtils.ReadUInt32LE(rawData);
-            return DecompressZlib(rawData.Slice(4).ToArray(), (int)decompressedSize);
+            return DecompressZlib(rawData[4..].ToArray(), (int)decompressedSize);
         }
 
         return rawData.ToArray();
@@ -263,8 +248,7 @@ public static class EsmHelpers
                 if (left.Length < VhgtDataLength || right.Length < VhgtDataLength)
                 {
                     var len = Math.Min(left.Length, right.Length);
-                    if (!left.AsSpan(0, len).SequenceEqual(right.AsSpan(0, len))) return false;
-                    return left.Length == right.Length;
+                    return left.AsSpan(0, len).SequenceEqual(right.AsSpan(0, len)) && left.Length == right.Length;
                 }
 
                 return left.AsSpan(0, VhgtDataLength).SequenceEqual(right.AsSpan(0, VhgtDataLength));
@@ -302,6 +286,7 @@ public static class EsmHelpers
                         : xboxSub.Data.Length == pcSub.Data.Length && xboxSub.Data.AsSpan().SequenceEqual(pcSub.Data);
 
                     if (!isEqual)
+                    {
                         result.SubrecordDiffs.Add(new SubrecordDiff
                         {
                             Signature = sig,
@@ -313,6 +298,7 @@ public static class EsmHelpers
                             PcData = pcSub?.Data,
                             DiffType = xboxSub.Data.Length != pcSub.Data.Length ? "Size differs" : "Content differs"
                         });
+                    }
                 }
             }
 
@@ -336,5 +322,75 @@ public static class EsmHelpers
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Builds a map of FormID to EDID (Editor ID) for all records in an ESM file.
+    /// </summary>
+    public static Dictionary<uint, string> BuildFormIdToEdidMap(byte[] data, bool bigEndian)
+    {
+        var map = new Dictionary<uint, string>();
+        var records = ScanAllRecords(data, bigEndian);
+
+        foreach (var record in records)
+        {
+            try
+            {
+                // Skip GRUP records
+                if (record.Signature == "GRUP")
+                {
+                    continue;
+                }
+
+                // Get record data
+                var recordDataStart = (int)record.Offset + EsmParser.MainRecordHeaderSize;
+                var recordDataEnd = recordDataStart + (int)record.DataSize;
+
+                if (recordDataEnd > data.Length)
+                {
+                    continue;
+                }
+
+                var recordData = data.AsSpan(recordDataStart, (int)record.DataSize).ToArray();
+
+                // Handle compressed records
+                if ((record.Flags & 0x00040000) != 0 && record.DataSize >= 4)
+                {
+                    var decompressedSize = EsmBinary.ReadUInt32(recordData, 0, bigEndian);
+                    if (decompressedSize > 0 && decompressedSize < 100_000_000)
+                    {
+                        try
+                        {
+                            recordData = DecompressZlib(recordData[4..], (int)decompressedSize);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                // Parse subrecords to find EDID
+                var subrecords = ParseSubrecords(recordData, bigEndian);
+                var edidSub = subrecords.FirstOrDefault(s => s.Signature == "EDID");
+
+                if (edidSub != null && edidSub.Data.Length > 0)
+                {
+                    var nullIdx = Array.IndexOf(edidSub.Data, (byte)0);
+                    var len = nullIdx >= 0 ? nullIdx : edidSub.Data.Length;
+                    if (len > 0)
+                    {
+                        var edid = Encoding.ASCII.GetString(edidSub.Data, 0, len);
+                        map[record.FormId] = edid;
+                    }
+                }
+            }
+            catch
+            {
+                // Skip records that fail to parse
+            }
+        }
+
+        return map;
     }
 }

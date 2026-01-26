@@ -1,6 +1,6 @@
-using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using static EsmAnalyzer.Helpers.RecordTraversalHelpers;
 
 namespace EsmAnalyzer.Commands;
 
@@ -9,7 +9,10 @@ public static partial class DumpCommands
     private static int Trace(string filePath, string? offsetStr, string? stopStr, int? filterDepth, int limit)
     {
         var esm = EsmFileLoader.Load(filePath);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         AnsiConsole.MarkupLine($"[blue]Tracing:[/] {Path.GetFileName(filePath)}");
         AnsiConsole.MarkupLine($"File size: {esm.Data.Length:N0} bytes (0x{esm.Data.Length:X8})");
@@ -20,11 +23,18 @@ public static partial class DumpCommands
         var startOffset = EsmFileLoader.ParseOffset(offsetStr) ?? esm.FirstGrupOffset;
         var stopOffset = EsmFileLoader.ParseOffset(stopStr) ?? esm.Data.Length;
 
-        if (startOffset < esm.FirstGrupOffset) startOffset = esm.FirstGrupOffset;
+        if (startOffset < esm.FirstGrupOffset)
+        {
+            startOffset = esm.FirstGrupOffset;
+        }
 
         AnsiConsole.MarkupLine($"Tracing from [cyan]0x{startOffset:X8}[/] to [cyan]0x{stopOffset:X8}[/]");
         AnsiConsole.MarkupLine($"Limit: {(limit <= 0 ? "Unlimited" : limit.ToString())}");
-        if (filterDepth.HasValue) AnsiConsole.MarkupLine($"Depth filter: {filterDepth}");
+        if (filterDepth.HasValue)
+        {
+            AnsiConsole.MarkupLine($"Depth filter: {filterDepth}");
+        }
+
         AnsiConsole.WriteLine();
 
         var table = new Table()
@@ -50,11 +60,17 @@ public static partial class DumpCommands
     private static int Validate(string filePath, string? startStr, string? stopStr)
     {
         var esm = EsmFileLoader.Load(filePath);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         var startOffset = EsmFileLoader.ParseOffset(startStr) ?? esm.FirstGrupOffset;
         var stopOffset = EsmFileLoader.ParseOffset(stopStr) ?? esm.Data.Length;
-        if (stopOffset > esm.Data.Length) stopOffset = esm.Data.Length;
+        if (stopOffset > esm.Data.Length)
+        {
+            stopOffset = esm.Data.Length;
+        }
 
         AnsiConsole.MarkupLine($"[blue]Validating:[/] {Path.GetFileName(filePath)}");
         AnsiConsole.MarkupLine($"Range: 0x{startOffset:X8} - 0x{stopOffset:X8}");
@@ -74,7 +90,10 @@ public static partial class DumpCommands
                 var hexBytes = string.Join(" ", esm.Data.Skip(offset).Take(24).Select(b => b.ToString("X2")));
                 AnsiConsole.MarkupLine($"[red]FAIL[/] at 0x{offset:X8}: {hexBytes}");
                 if (lastSig != null)
+                {
                     AnsiConsole.MarkupLine($"Last record: {lastSig} at 0x{lastOffset:X8} -> 0x{lastEnd:X8}");
+                }
+
                 AnsiConsole.MarkupLine($"Records processed: {count:N0}");
                 return 1;
             }
@@ -88,7 +107,10 @@ public static partial class DumpCommands
                 AnsiConsole.MarkupLine(
                     $"[red]FAIL[/] at 0x{offset:X8}: invalid size {recHeader.DataSize} for {recHeader.Signature}");
                 if (lastSig != null)
+                {
                     AnsiConsole.MarkupLine($"Last record: {lastSig} at 0x{lastOffset:X8} -> 0x{lastEnd:X8}");
+                }
+
                 AnsiConsole.MarkupLine($"Computed end: 0x{recordEnd:X8}");
                 AnsiConsole.MarkupLine($"Records processed: {count:N0}");
                 return 1;
@@ -108,12 +130,22 @@ public static partial class DumpCommands
     private static int ValidateDeep(string filePath, string? startStr, string? stopStr, int limit)
     {
         var esm = EsmFileLoader.Load(filePath);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         var startOffset = EsmFileLoader.ParseOffset(startStr) ?? esm.FirstGrupOffset;
         var stopOffset = EsmFileLoader.ParseOffset(stopStr) ?? esm.Data.Length;
-        if (stopOffset > esm.Data.Length) stopOffset = esm.Data.Length;
-        if (startOffset < esm.FirstGrupOffset) startOffset = esm.FirstGrupOffset;
+        if (stopOffset > esm.Data.Length)
+        {
+            stopOffset = esm.Data.Length;
+        }
+
+        if (startOffset < esm.FirstGrupOffset)
+        {
+            startOffset = esm.FirstGrupOffset;
+        }
 
         AnsiConsole.MarkupLine($"[blue]Deep validating:[/] {Path.GetFileName(filePath)}");
         AnsiConsole.MarkupLine($"Range: 0x{startOffset:X8} - 0x{stopOffset:X8}");
@@ -122,20 +154,22 @@ public static partial class DumpCommands
 
         var recordCount = 0;
         var subrecordCount = 0;
-        var compressedSkipped = 0;
+        var compressedDecompressed = 0;
+        var toftSkipped = 0;
 
         if (!ValidateRecursive(esm.Data, esm.IsBigEndian, startOffset, stopOffset, limit,
-                ref recordCount, ref subrecordCount, ref compressedSkipped, 0, out var error))
+                ref recordCount, ref subrecordCount, ref compressedDecompressed, ref toftSkipped, 0, out var error))
         {
             AnsiConsole.MarkupLine($"[red]{error}[/]");
             AnsiConsole.MarkupLine($"Records processed: {recordCount:N0}");
             AnsiConsole.MarkupLine($"Subrecords parsed: {subrecordCount:N0}");
-            AnsiConsole.MarkupLine($"Compressed skipped: {compressedSkipped:N0}");
+            AnsiConsole.MarkupLine($"Compressed records validated (via zlib): {compressedDecompressed:N0}");
+            AnsiConsole.MarkupLine($"TOFT skipped: {toftSkipped:N0}");
             return 1;
         }
 
         AnsiConsole.MarkupLine(
-            $"[green]Deep validation OK[/] - records {recordCount:N0}, subrecords {subrecordCount:N0}, compressed skipped {compressedSkipped:N0}");
+            $"[green]Deep validation OK[/] - records {recordCount:N0}, subrecords {subrecordCount:N0}, compressed records validated (via zlib) {compressedDecompressed:N0}, TOFT skipped {toftSkipped:N0}");
         return 0;
     }
 }

@@ -1,6 +1,6 @@
-using System.CommandLine;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
+using System.CommandLine;
 using Xbox360MemoryCarver.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
@@ -15,7 +15,7 @@ public static class NaviCommands
         var leftArg = new Argument<string>("left") { Description = "First ESM file (e.g., converted)" };
         var rightArg = new Argument<string>("right") { Description = "Second ESM file (e.g., PC reference)" };
         var limitOpt = new Option<int>("-l", "--limit")
-            { Description = "Maximum mismatches to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
+        { Description = "Maximum mismatches to display (0 = unlimited)", DefaultValueFactory = _ => 50 };
 
         var command = new Command("compare-navi", "Compare NAVI NVMI entries by Navmesh FormID")
         {
@@ -56,10 +56,16 @@ public static class NaviCommands
     private static int CompareNavi(string leftPath, string rightPath, int limit)
     {
         var leftEsm = EsmFileLoader.Load(leftPath);
-        if (leftEsm == null) return 1;
+        if (leftEsm == null)
+        {
+            return 1;
+        }
 
         var rightEsm = EsmFileLoader.Load(rightPath);
-        if (rightEsm == null) return 1;
+        if (rightEsm == null)
+        {
+            return 1;
+        }
 
         var leftMap = ExtractNvmiMap(leftEsm.Data, leftEsm.IsBigEndian);
         var rightMap = ExtractNvmiMap(rightEsm.Data, rightEsm.IsBigEndian);
@@ -83,14 +89,17 @@ public static class NaviCommands
         var shown = 0;
         foreach (var key in allKeys)
         {
-            leftMap.TryGetValue(key, out var left);
-            rightMap.TryGetValue(key, out var right);
+            _ = leftMap.TryGetValue(key, out var left);
+            _ = rightMap.TryGetValue(key, out var right);
 
             if (left == null)
             {
                 missingLeft++;
                 if (ShouldShow(limit, ref shown))
-                    table.AddRow($"0x{key:X8}", "-", right!.Length.ToString(), "Missing in left");
+                {
+                    _ = table.AddRow($"0x{key:X8}", "-", right!.Length.ToString(), "Missing in left");
+                }
+
                 continue;
             }
 
@@ -98,7 +107,10 @@ public static class NaviCommands
             {
                 missingRight++;
                 if (ShouldShow(limit, ref shown))
-                    table.AddRow($"0x{key:X8}", left.Length.ToString(), "-", "Missing in right");
+                {
+                    _ = table.AddRow($"0x{key:X8}", left.Length.ToString(), "-", "Missing in right");
+                }
+
                 continue;
             }
 
@@ -106,7 +118,10 @@ public static class NaviCommands
             {
                 sizeDiff++;
                 if (ShouldShow(limit, ref shown))
-                    table.AddRow($"0x{key:X8}", left.Length.ToString(), right.Length.ToString(), "Size differs");
+                {
+                    _ = table.AddRow($"0x{key:X8}", left.Length.ToString(), right.Length.ToString(), "Size differs");
+                }
+
                 continue;
             }
 
@@ -114,7 +129,10 @@ public static class NaviCommands
             {
                 contentDiff++;
                 if (ShouldShow(limit, ref shown))
-                    table.AddRow($"0x{key:X8}", left.Length.ToString(), right.Length.ToString(), "Content differs");
+                {
+                    _ = table.AddRow($"0x{key:X8}", left.Length.ToString(), right.Length.ToString(), "Content differs");
+                }
+
                 continue;
             }
 
@@ -131,9 +149,13 @@ public static class NaviCommands
         AnsiConsole.WriteLine();
 
         if (shown > 0)
+        {
             AnsiConsole.Write(table);
+        }
         else
+        {
             AnsiConsole.MarkupLine("No mismatches to display.");
+        }
 
         return 0;
     }
@@ -151,13 +173,18 @@ public static class NaviCommands
             foreach (var sub in subrecords)
             {
                 if (sub.Signature != "NVMI" || sub.Data.Length < 8)
+                {
                     continue;
+                }
 
                 var navmeshId = bigEndian
                     ? BinaryUtils.ReadUInt32BE(sub.Data.AsSpan(4))
                     : BinaryUtils.ReadUInt32LE(sub.Data.AsSpan(4));
 
-                if (!map.ContainsKey(navmeshId)) map.Add(navmeshId, sub.Data);
+                if (!map.ContainsKey(navmeshId))
+                {
+                    map.Add(navmeshId, sub.Data);
+                }
             }
         }
 
@@ -178,7 +205,10 @@ public static class NaviCommands
     private static int DumpNvmi(string filePath, string formIdRaw, bool showHex)
     {
         var esm = EsmFileLoader.Load(filePath);
-        if (esm == null) return 1;
+        if (esm == null)
+        {
+            return 1;
+        }
 
         var formId = EsmFileLoader.ParseFormId(formIdRaw);
         if (!formId.HasValue)
@@ -225,13 +255,13 @@ public static class NaviCommands
             .AddColumn("Field")
             .AddColumn("Value");
 
-        table.AddRow("Flags", $"0x{flags:X8}");
-        table.AddRow("Navmesh", $"0x{navmesh:X8}");
-        table.AddRow("Location", $"0x{location:X8}");
-        table.AddRow("Grid", $"X={gridX}, Y={gridY}");
-        table.AddRow("Approx", $"({approxX:F3}, {approxY:F3}, {approxZ:F3})");
-        table.AddRow("Preferred %", $"{preferred:F3}");
-        table.AddRow("Is Island", isIsland ? "Yes" : "No");
+        _ = table.AddRow("Flags", $"0x{flags:X8}");
+        _ = table.AddRow("Navmesh", $"0x{navmesh:X8}");
+        _ = table.AddRow("Location", $"0x{location:X8}");
+        _ = table.AddRow("Grid", $"X={gridX}, Y={gridY}");
+        _ = table.AddRow("Approx", $"({approxX:F3}, {approxY:F3}, {approxZ:F3})");
+        _ = table.AddRow("Preferred %", $"{preferred:F3}");
+        _ = table.AddRow("Is Island", isIsland ? "Yes" : "No");
 
         if (isIsland && data.Length > 32)
         {
@@ -252,10 +282,10 @@ public static class NaviCommands
             offset += 2;
             var triangleCount = ReadUInt16(data, offset, esm.IsBigEndian);
 
-            table.AddRow("Bounds Min", $"({minX:F3}, {minY:F3}, {minZ:F3})");
-            table.AddRow("Bounds Max", $"({maxX:F3}, {maxY:F3}, {maxZ:F3})");
-            table.AddRow("Vertex Count", vertexCount.ToString());
-            table.AddRow("Triangle Count", triangleCount.ToString());
+            _ = table.AddRow("Bounds Min", $"({minX:F3}, {minY:F3}, {minZ:F3})");
+            _ = table.AddRow("Bounds Max", $"({maxX:F3}, {maxY:F3}, {maxZ:F3})");
+            _ = table.AddRow("Vertex Count", vertexCount.ToString());
+            _ = table.AddRow("Triangle Count", triangleCount.ToString());
         }
 
         AnsiConsole.Write(table);

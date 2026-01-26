@@ -52,6 +52,15 @@ public sealed class SubrecordSchema
     };
 
     /// <summary>
+    ///     Marker for empty/marker subrecords (0 bytes) - no conversion needed.
+    /// </summary>
+    public static SubrecordSchema Empty { get; } = new()
+    {
+        ExpectedSize = 0,
+        Description = "Empty marker subrecord - no data"
+    };
+
+    /// <summary>
     ///     Marker for byte array subrecords - no conversion needed.
     /// </summary>
     public static SubrecordSchema ByteArray { get; } = new()

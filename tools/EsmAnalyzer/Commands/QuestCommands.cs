@@ -1,9 +1,9 @@
+using EsmAnalyzer.Helpers;
+using Spectre.Console;
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
-using EsmAnalyzer.Helpers;
-using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
 
@@ -53,7 +53,10 @@ public static class QuestCommands
     {
         var left = EsmFileLoader.Load(leftPath);
         var right = EsmFileLoader.Load(rightPath);
-        if (left == null || right == null) return 1;
+        if (left == null || right == null)
+        {
+            return 1;
+        }
 
         var leftQuests = LoadQuestLinks(left);
         var rightQuests = LoadQuestLinks(right);
@@ -98,9 +101,12 @@ public static class QuestCommands
             if (!hasLeft || !hasRight)
             {
                 diffs++;
-                if (!showAll && limit > 0 && shown >= limit) continue;
+                if (!showAll && limit > 0 && shown >= limit)
+                {
+                    continue;
+                }
 
-                table.AddRow(
+                _ = table.AddRow(
                     $"0x{formId:X8}",
                     leftQuest?.Edid ?? rightQuest?.Edid ?? "—",
                     hasLeft ? leftQuest!.ScriDisplay : "—",
@@ -117,12 +123,22 @@ public static class QuestCommands
 
             var diffFields = leftQuest!.GetDiffFields(rightQuest!);
             var matches = diffFields.Count == 0;
-            if (matches && !showAll) continue;
+            if (matches && !showAll)
+            {
+                continue;
+            }
 
-            if (!matches) diffs++;
-            if (limit > 0 && shown >= limit) continue;
+            if (!matches)
+            {
+                diffs++;
+            }
 
-            table.AddRow(
+            if (limit > 0 && shown >= limit)
+            {
+                continue;
+            }
+
+            _ = table.AddRow(
                 $"0x{formId:X8}",
                 leftQuest!.Edid ?? rightQuest!.Edid ?? "—",
                 leftQuest!.ScriDisplay,
@@ -193,8 +209,15 @@ public static class QuestCommands
     private static string BuildScriDisplay(uint? scri, Dictionary<uint, AnalyzerRecordInfo> index,
         EsmFileLoadResult file)
     {
-        if (!scri.HasValue) return "—";
-        if (!index.TryGetValue(scri.Value, out var record)) return $"0x{scri.Value:X8} (missing)";
+        if (!scri.HasValue)
+        {
+            return "—";
+        }
+
+        if (!index.TryGetValue(scri.Value, out var record))
+        {
+            return $"0x{scri.Value:X8} (missing)";
+        }
 
         string? edid = null;
         try
@@ -215,8 +238,9 @@ public static class QuestCommands
 
     private static uint ReadUInt32(byte[] data, bool bigEndian)
     {
-        if (data.Length < 4) return 0;
-        return bigEndian
+        return data.Length < 4
+            ? 0
+            : bigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(0, 4))
             : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0, 4));
     }
@@ -224,22 +248,33 @@ public static class QuestCommands
     private static bool TryParseFormId(string text, out uint formId)
     {
         formId = 0;
-        if (string.IsNullOrWhiteSpace(text)) return false;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
 
         text = text.Trim();
         if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
             text = text[2..];
+        }
 
         return uint.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out formId);
     }
 
     private static string? TryDecodeString(byte[]? data)
     {
-        if (data == null || data.Length == 0) return null;
+        if (data == null || data.Length == 0)
+        {
+            return null;
+        }
 
         var nullIdx = Array.IndexOf(data, (byte)0);
         var len = nullIdx >= 0 ? nullIdx : data.Length;
-        if (len <= 0) return null;
+        if (len <= 0)
+        {
+            return null;
+        }
 
         var str = Encoding.UTF8.GetString(data, 0, len);
         return str.All(c => !char.IsControl(c) || c is '\r' or '\n' or '\t') ? str : null;
@@ -258,9 +293,21 @@ public static class QuestCommands
         public List<string> GetDiffFields(QuestLinkInfo other)
         {
             var diffs = new List<string>();
-            if (!Nullable.Equals(Scri, other.Scri)) diffs.Add("SCRI");
-            if (!Qobj.SequenceEqual(other.Qobj)) diffs.Add("QOBJ");
-            if (!QstaTargets.SequenceEqual(other.QstaTargets)) diffs.Add("QSTA");
+            if (!Nullable.Equals(Scri, other.Scri))
+            {
+                diffs.Add("SCRI");
+            }
+
+            if (!Qobj.SequenceEqual(other.Qobj))
+            {
+                diffs.Add("QOBJ");
+            }
+
+            if (!QstaTargets.SequenceEqual(other.QstaTargets))
+            {
+                diffs.Add("QSTA");
+            }
+
             return diffs;
         }
     }

@@ -53,9 +53,52 @@ The project uses multi-targeting to produce both GUI and CLI builds from a singl
 
 > **IMPORTANT**: When analyzing ESM files or searching binary files, always use EsmAnalyzer or create an appropriately named tool instead of PowerShell. PowerShell is extremely slow for binary file operations and should never be used for searching, parsing, or analyzing binary data.
 
+> **IMPORTANT**: Do NOT use 2>&1 when running CLI commands in PowerShell. Redirecting stderr to stdout breaks Spectre.Console's ANSI coloring and progress bars.
+
+## Xbox 360 ESM Conversion Notes
+
+The ESM converter handles several Xbox 360-specific differences:
+
+### Split INFO Records (CRITICAL - DO NOT RE-INVESTIGATE)
+
+**Xbox 360 has MORE INFO records than PC** (e.g., 37,525 vs 23,247). This is NOT a bug or data loss.
+
+- Xbox 360 ESM splits dialogue INFO records into multiple smaller records
+- The converter **detects and merges** these split records during conversion
+- After conversion, the INFO count matches PC exactly
+- **Do NOT investigate INFO record count differences** - this is expected and handled
+
+### Hybrid Endianness
+
+Xbox 360 ESM uses a hybrid endian format:
+
+- Record/subrecord headers: Big-endian (signatures, sizes, flags)
+- Most data content: Big-endian (FormIDs, floats, integers)
+- Some subrecord data: Already little-endian (e.g., INDX quest stage indices)
+
+The `SubrecordSchemaRegistry` defines field types that handle this correctly:
+
+- `UInt16` / `UInt32` / `Float` - Big-endian, byte-swapped during conversion
+- `UInt16LittleEndian` - Already little-endian, preserved as-is (used for INDX)
+
+### Platform-Specific Subrecords
+
+Some subrecords exist only on Xbox or PC:
+
+- **PNAM** in INFO records: Present on Xbox, stripped to match PC format
+- The converter handles these differences automatically
+
+## Operational Notes
+
+- **Source code references:**
+  - `TES5Edit/` at repo root is provided for ESM research.
+  - `nifskope/` at repo root is provided for NIF research.
+- **Game install path:** When asking for a launch test, place the converted ESM at:
+  - `E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\FalloutNV.esm`
+
 ## Research Documentation
 
-See [docs/Memory_Dump_Research.md](../docs/Memory_Dump_Research.md) for ongoing research into:
+See [docs/Memory_Dump_Research.md](../docs/Memory_Dump_Research.md) for ongoing research into: 2.
 
 - Xbox 360 memory dump structure and layout
 - PDB symbol analysis for understanding game structures

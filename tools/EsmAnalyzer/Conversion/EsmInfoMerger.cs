@@ -1,5 +1,5 @@
-using System.Buffers.Binary;
 using EsmAnalyzer.Helpers;
+using System.Buffers.Binary;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Conversion;
@@ -51,11 +51,18 @@ internal sealed class EsmInfoMerger
     private readonly byte[] _input;
     private readonly EsmConversionStats _stats;
     private Dictionary<int, InfoMergeEntry>? _mergeIndex;
+    private IReadOnlyDictionary<uint, int>? _toftInfoOffsetsByFormId;
 
     public EsmInfoMerger(byte[] input, EsmConversionStats stats)
     {
         _input = input;
         _stats = stats;
+    }
+
+    public void SetToftInfoIndex(IReadOnlyDictionary<uint, int> toftInfoOffsetsByFormId)
+    {
+        _toftInfoOffsetsByFormId = toftInfoOffsetsByFormId;
+        _mergeIndex = null;
     }
 
     /// <summary>
@@ -67,7 +74,10 @@ internal sealed class EsmInfoMerger
     {
         // Parse as little-endian since data is already converted
         var subs = EsmHelpers.ParseSubrecords(data, false);
-        if (subs.Count == 0) return null;
+        if (subs.Count == 0)
+        {
+            return null;
+        }
 
         // Check if this record has response data (TRDT)
         var hasTrdt = subs.Any(s => s.Signature == "TRDT");
@@ -77,7 +87,10 @@ internal sealed class EsmInfoMerger
         var filtered = subs;
 
         // If no response data, strip NAM3 subrecords (they're orphaned)
-        if (!hasTrdt) filtered = filtered.Where(s => s.Signature != "NAM3").ToList();
+        if (!hasTrdt)
+        {
+            filtered = filtered.Where(s => s.Signature != "NAM3").ToList();
+        }
 
         if (!hasSchr && !hasScda)
         {
@@ -98,7 +111,10 @@ internal sealed class EsmInfoMerger
 
         EnsureMergeIndex();
 
-        if (_mergeIndex == null || !_mergeIndex.TryGetValue(baseOffset, out var mergeEntry)) return false;
+        if (_mergeIndex == null || !_mergeIndex.TryGetValue(baseOffset, out var mergeEntry))
+        {
+            return false;
+        }
 
         if (mergeEntry.Skip)
         {
@@ -109,7 +125,10 @@ internal sealed class EsmInfoMerger
         var responseHeader = EsmParser.ParseRecordHeader(_input.AsSpan(mergeEntry.ResponseOffset), true);
         var baseHeader = EsmParser.ParseRecordHeader(_input.AsSpan(baseOffset), true);
 
-        if (responseHeader == null || baseHeader == null || responseHeader.Signature != "INFO") return false;
+        if (responseHeader == null || baseHeader == null || responseHeader.Signature != "INFO")
+        {
+            return false;
+        }
 
         var baseInfo = new AnalyzerRecordInfo
         {
@@ -139,7 +158,10 @@ internal sealed class EsmInfoMerger
 
         var mergedSubrecords = BuildMergedInfoSubrecords(baseSubs, responseSubs);
 
-        if (mergedSubrecords == null) return false;
+        if (mergedSubrecords == null)
+        {
+            return false;
+        }
 
         mergedFlags = baseFlags;
         var isCompressed = (baseFlags & 0x00040000) != 0;
@@ -152,7 +174,10 @@ internal sealed class EsmInfoMerger
 
     private void EnsureMergeIndex()
     {
-        if (_mergeIndex != null) return;
+        if (_mergeIndex != null)
+        {
+            return;
+        }
 
         _mergeIndex = BuildMergeIndex();
     }
@@ -162,9 +187,28 @@ internal sealed class EsmInfoMerger
         var index = new Dictionary<int, InfoMergeEntry>();
         var infoRecords = ScanInfoRecordsFlat();
 
+        var infoByOffset = infoRecords
+            .GroupBy(r => (int)r.Offset)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        // Group by FormID. A FormID may have:
+        // 1. Two or more primary records (old split-record logic)
+        // 2. One primary record + one TOFT record with response data (streaming cache)
         foreach (var group in infoRecords.GroupBy(r => r.FormId))
         {
-            if (group.Count() < 2) continue;
+            // Check if there's a TOFT record for this FormID
+            int? toftOffset = null;
+            if (_toftInfoOffsetsByFormId != null &&
+                _toftInfoOffsetsByFormId.TryGetValue(group.Key, out var offset))
+            {
+                toftOffset = offset;
+            }
+
+            // Skip if only one record AND no TOFT record
+            if (group.Count() < 2 && toftOffset == null)
+            {
+                continue;
+            }
 
             var classified = group
                 .Select(record => new
@@ -175,19 +219,50 @@ internal sealed class EsmInfoMerger
                 .OrderBy(entry => entry.Record.Offset)
                 .ToList();
 
-            var baseRecord = classified.FirstOrDefault(r => r.Role == InfoRecordRole.Base)?.Record;
-            var responseRecord = classified.FirstOrDefault(r => r.Role == InfoRecordRole.Response)?.Record;
+            // Find the base record (primary INFO with conditions/scripts but no response text)
+            var baseRecord = classified
+                .Where(r => r.Role == InfoRecordRole.Base)
+                .Where(r => toftOffset == null || r.Record.Offset != toftOffset)
+                .Select(r => (AnalyzerRecordInfo?)r.Record)
+                .FirstOrDefault();
 
-            if (baseRecord == null || responseRecord == null || baseRecord.Offset == responseRecord.Offset) continue;
+            // Find the response record - prefer TOFT record if available
+            int? responseOffset = null;
+            if (toftOffset != null)
+            {
+                // Use TOFT record for response data
+                responseOffset = toftOffset;
+            }
+            else
+            {
+                // Fall back to finding a response record in primary area
+                var responseRecord = classified
+                    .Where(r => r.Role == InfoRecordRole.Response)
+                    .Select(r => (AnalyzerRecordInfo?)r.Record)
+                    .FirstOrDefault();
+                if (responseRecord != null)
+                {
+                    responseOffset = (int)responseRecord.Offset;
+                }
+            }
 
-            var baseOffset = (int)baseRecord.Offset;
-            var responseOffset = (int)responseRecord.Offset;
+            if (baseRecord == null || responseOffset == null || baseRecord.Offset == responseOffset)
+            {
+                continue;
+            }
 
-            if (!index.ContainsKey(baseOffset))
-                index[baseOffset] = new InfoMergeEntry(baseOffset, responseOffset, false);
+            var baseOff = (int)baseRecord.Offset;
+            var respOff = responseOffset.Value;
 
-            if (!index.ContainsKey(responseOffset))
-                index[responseOffset] = new InfoMergeEntry(baseOffset, responseOffset, true);
+            if (!index.ContainsKey(baseOff))
+            {
+                index[baseOff] = new InfoMergeEntry(baseOff, respOff, false);
+            }
+
+            if (!index.ContainsKey(respOff))
+            {
+                index[respOff] = new InfoMergeEntry(baseOff, respOff, true);
+            }
         }
 
         return index;
@@ -197,11 +272,17 @@ internal sealed class EsmInfoMerger
     {
         var records = new List<AnalyzerRecordInfo>();
         var header = EsmParser.ParseFileHeader(_input);
-        if (header == null) return records;
+        if (header == null)
+        {
+            return records;
+        }
 
         var bigEndian = header.IsBigEndian;
         var tes4Header = EsmParser.ParseRecordHeader(_input.AsSpan(), bigEndian);
-        if (tes4Header == null) return records;
+        if (tes4Header == null)
+        {
+            return records;
+        }
 
         var offset = EsmParser.MainRecordHeaderSize + (int)tes4Header.DataSize;
         var iterations = 0;
@@ -210,7 +291,10 @@ internal sealed class EsmInfoMerger
         while (offset + EsmParser.MainRecordHeaderSize <= _input.Length && iterations++ < maxIterations)
         {
             var recHeader = EsmParser.ParseRecordHeader(_input.AsSpan(offset), bigEndian);
-            if (recHeader == null) break;
+            if (recHeader == null)
+            {
+                break;
+            }
 
             if (recHeader.Signature == "GRUP")
             {
@@ -219,9 +303,13 @@ internal sealed class EsmInfoMerger
             }
 
             var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)recHeader.DataSize;
-            if (recordEnd <= offset || recordEnd > _input.Length) break;
+            if (recordEnd <= offset || recordEnd > _input.Length)
+            {
+                break;
+            }
 
             if (recHeader.Signature == "INFO")
+            {
                 records.Add(new AnalyzerRecordInfo
                 {
                     Signature = recHeader.Signature,
@@ -231,6 +319,7 @@ internal sealed class EsmInfoMerger
                     Offset = (uint)offset,
                     TotalSize = (uint)(recordEnd - offset)
                 });
+            }
 
             offset = recordEnd;
         }
@@ -252,11 +341,9 @@ internal sealed class EsmInfoMerger
         var hasNam1 = subs.Any(s => s.Signature == "NAM1");
         var hasNam2 = subs.Any(s => s.Signature == "NAM2");
 
-        if (hasData || hasQsti || hasCtda || hasTclt || hasPnam) return InfoRecordRole.Base;
-
-        if (hasTrdt || hasNam1 || hasNam2) return InfoRecordRole.Response;
-
-        return InfoRecordRole.Unknown;
+        return hasData || hasQsti || hasCtda || hasTclt || hasPnam
+            ? InfoRecordRole.Base
+            : hasTrdt || hasNam1 || hasNam2 ? InfoRecordRole.Response : InfoRecordRole.Unknown;
     }
 
     private byte[]? BuildMergedInfoSubrecords(List<AnalyzerSubrecordInfo> baseSubs,
@@ -315,7 +402,10 @@ internal sealed class EsmInfoMerger
                 continue;
             }
 
-            if (sub.Signature == PnamSignature) continue;
+            if (sub.Signature == PnamSignature)
+            {
+                continue;
+            }
 
             responseItems.Add(ResponseItem.FromSubrecord(sub));
         }
@@ -345,7 +435,10 @@ internal sealed class EsmInfoMerger
             WriteSubrecord(writer, item.Subrecord);
         }
 
-        for (; nam3Index < baseNam3.Count; nam3Index++) WriteSubrecord(writer, baseNam3[nam3Index]);
+        for (; nam3Index < baseNam3.Count; nam3Index++)
+        {
+            WriteSubrecord(writer, baseNam3[nam3Index]);
+        }
 
         WriteSubrecords(writer, baseConditions);
         WriteSubrecords(writer, baseChoices);
@@ -391,6 +484,7 @@ internal sealed class EsmInfoMerger
         var seenSchr = false;
 
         foreach (var sub in responseScripts)
+        {
             switch (sub.Signature)
             {
                 case "SCHR":
@@ -399,7 +493,11 @@ internal sealed class EsmInfoMerger
                     blocks.Add(currentBlock);
                     break;
                 case "NEXT":
-                    if (!seenSchr) hasNextBeforeFirstSchr = true;
+                    if (!seenSchr)
+                    {
+                        hasNextBeforeFirstSchr = true;
+                    }
+
                     hasAnyNext = true;
                     // NEXT ends current block and marks separation
                     if (currentBlock != null)
@@ -423,6 +521,7 @@ internal sealed class EsmInfoMerger
                     currentBlock?.OtherSubrecords.Add(sub);
                     break;
             }
+        }
 
         // Handle edge case: NEXT before first SCHR means we need a synthetic Begin block
         if (hasNextBeforeFirstSchr && blocks.Count > 0)
@@ -437,7 +536,10 @@ internal sealed class EsmInfoMerger
         }
 
         // Handle edge case: trailing NEXT without a following SCHR
-        if (blocks.Count > 0 && blocks[^1].HasNextAfter) blocks.Add(new ScriptBlock { Header = CreateSyntheticSchr() });
+        if (blocks.Count > 0 && blocks[^1].HasNextAfter)
+        {
+            blocks.Add(new ScriptBlock { Header = CreateSyntheticSchr() });
+        }
 
         // Handle edge case: No blocks but we have SCTX or response has NEXT
         if (blocks.Count == 0 && (baseSctx.Count > 0 || hasAnyNext))
@@ -474,19 +576,23 @@ internal sealed class EsmInfoMerger
 
             // First, assign to blocks with bytecode
             for (var i = 0; i < blocks.Count && sctxQueue.Count > 0; i++)
+            {
                 if (blocks[i].Bytecode.Count > 0)
                 {
                     sctxForBlock[i] = sctxQueue.Dequeue();
                     assignedCount++;
                 }
+            }
 
             // Then assign remaining to other blocks in order
             for (var i = 0; i < blocks.Count && sctxQueue.Count > 0; i++)
+            {
                 if (sctxForBlock[i] == null)
                 {
                     sctxForBlock[i] = sctxQueue.Dequeue();
                     assignedCount++;
                 }
+            }
 
             baseSctxIndex = assignedCount;
         }
@@ -501,33 +607,48 @@ internal sealed class EsmInfoMerger
 
             // Write SCDA (bytecode)
             foreach (var scda in block.Bytecode)
+            {
                 WriteSubrecord(writer, scda);
+            }
 
             // Write SCTX (source from base record)
             if (sctxForBlock[i] != null)
+            {
                 WriteSubrecord(writer, sctxForBlock[i]!);
+            }
 
             // Write other subrecords (SLSD, SCVR, SCRV)
             foreach (var other in block.OtherSubrecords)
+            {
                 WriteSubrecord(writer, other);
+            }
 
             // Write SCRO (references)
             foreach (var scro in block.References)
+            {
                 WriteSubrecord(writer, scro);
+            }
 
             // Write NEXT separator (if this block has one and there's a next block)
             if (block.HasNextAfter && i < blocks.Count - 1)
+            {
                 WriteSubrecord(writer, CreateNextSubrecord());
+            }
         }
 
         // Write any remaining SCTX that didn't get matched to a block
         while (baseSctxIndex < baseSctx.Count)
+        {
             WriteSubrecord(writer, baseSctx[baseSctxIndex++]);
+        }
     }
 
     private void WriteSubrecords(BinaryWriter writer, List<AnalyzerSubrecordInfo> subrecords)
     {
-        foreach (var sub in subrecords) WriteSubrecord(writer, sub);
+        foreach (var sub in subrecords)
+        {
+            WriteSubrecord(writer, sub);
+        }
     }
 
     private byte[] WriteSubrecordsToBuffer(List<AnalyzerSubrecordInfo> subrecords)

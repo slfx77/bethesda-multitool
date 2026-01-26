@@ -23,7 +23,10 @@ public static partial class CompareCommands
         }
 
         var (xbox, pc) = EsmFileLoader.LoadPair(xboxPath, pcPath);
-        if (xbox == null || pc == null) return 1;
+        if (xbox == null || pc == null)
+        {
+            return 1;
+        }
 
         AnsiConsole.WriteLine();
 
@@ -35,10 +38,10 @@ public static partial class CompareCommands
             .Spinner(Spinner.Known.Dots)
             .Start("Scanning for LAND records...", ctx =>
             {
-                ctx.Status("Scanning Xbox 360 file...");
+                _ = ctx.Status("Scanning Xbox 360 file...");
                 xboxLands = EsmHelpers.ScanForRecordType(xbox.Data, xbox.IsBigEndian, "LAND");
 
-                ctx.Status("Scanning PC file...");
+                _ = ctx.Status("Scanning PC file...");
                 pcLands = EsmHelpers.ScanForRecordType(pc.Data, pc.IsBigEndian, "LAND");
             });
 
@@ -51,15 +54,19 @@ public static partial class CompareCommands
 
         IEnumerable<AnalyzerRecordInfo> landsToCompare;
         if (targetFormId.HasValue)
+        {
             landsToCompare = xboxLands.Where(r => r.FormId == targetFormId.Value);
+        }
         else
+        {
             // Sample 10 LAND records for --all
             landsToCompare = xboxLands.Take(10);
+        }
 
         foreach (var xboxRec in landsToCompare)
         {
             var rule = new Rule($"LAND FormID: [cyan]0x{xboxRec.FormId:X8}[/]");
-            rule.LeftJustified();
+            _ = rule.LeftJustified();
             AnsiConsole.Write(rule);
 
             if (!pcLandsByFormId.TryGetValue(xboxRec.FormId, out var pcRec))
@@ -89,7 +96,9 @@ public static partial class CompareCommands
             AnsiConsole.WriteLine();
 
             if (targetFormId.HasValue)
+            {
                 PrintLandDiffDetails(xboxSubs, pcSubs, xbox.IsBigEndian);
+            }
         }
 
         return 0;
@@ -108,8 +117,10 @@ public static partial class CompareCommands
             {
                 var diffIndex = FindFirstDiffIndexVhgt(left, pcVhgt[0].Data);
                 if (diffIndex >= 0)
+                {
                     AnsiConsole.MarkupLine(
                         $"[yellow]VHGT first diff at byte {diffIndex}[/] (Xbox={left[diffIndex]:X2} PC={pcVhgt[0].Data[diffIndex]:X2})");
+                }
             }
         }
 
@@ -120,8 +131,10 @@ public static partial class CompareCommands
             {
                 var diffIndex = FindFirstDiffIndex(left, pcAtxt[0].Data);
                 if (diffIndex >= 0)
+                {
                     AnsiConsole.MarkupLine(
                         $"[yellow]ATXT first diff at byte {diffIndex}[/] (Xbox={left[diffIndex]:X2} PC={pcAtxt[0].Data[diffIndex]:X2})");
+                }
             }
         }
     }
@@ -130,8 +143,13 @@ public static partial class CompareCommands
     {
         var length = Math.Min(left.Length, right.Length);
         for (var i = 0; i < length; i++)
+        {
             if (left[i] != right[i])
+            {
                 return i;
+            }
+        }
+
         return left.Length == right.Length ? -1 : length;
     }
 
@@ -139,11 +157,14 @@ public static partial class CompareCommands
     {
         var length = Math.Min(Math.Min(left.Length, right.Length), VhgtDataLength);
         for (var i = 0; i < length; i++)
+        {
             if (left[i] != right[i])
+            {
                 return i;
+            }
+        }
 
-        if (length == VhgtDataLength) return -1;
-        return left.Length == right.Length ? -1 : length;
+        return length == VhgtDataLength ? -1 : left.Length == right.Length ? -1 : length;
     }
 
     private static bool VhgtEquals(byte[] left, byte[] right)
@@ -151,8 +172,7 @@ public static partial class CompareCommands
         if (left.Length < VhgtDataLength || right.Length < VhgtDataLength)
         {
             var len = Math.Min(left.Length, right.Length);
-            if (!left.AsSpan(0, len).SequenceEqual(right.AsSpan(0, len))) return false;
-            return left.Length == right.Length;
+            return left.AsSpan(0, len).SequenceEqual(right.AsSpan(0, len)) && left.Length == right.Length;
         }
 
         return left.AsSpan(0, VhgtDataLength).SequenceEqual(right.AsSpan(0, VhgtDataLength));
@@ -171,7 +191,10 @@ public static partial class CompareCommands
 
     private static byte[]? ApplyLandVhgt(byte[] data)
     {
-        if (data.Length < 4) return null;
+        if (data.Length < 4)
+        {
+            return null;
+        }
 
         var copy = (byte[])data.Clone();
         (copy[0], copy[3]) = (copy[3], copy[0]);
@@ -181,7 +204,10 @@ public static partial class CompareCommands
 
     private static byte[]? ApplyLandAtxt(byte[] data)
     {
-        if (data.Length < 8) return null;
+        if (data.Length < 8)
+        {
+            return null;
+        }
 
         var copy = (byte[])data.Clone();
         // Swap FormID (bytes 0-3)
@@ -197,7 +223,10 @@ public static partial class CompareCommands
 
     private static byte[]? ApplyLandVtxt(byte[] data)
     {
-        if (data.Length < 8) return null;
+        if (data.Length < 8)
+        {
+            return null;
+        }
 
         var copy = (byte[])data.Clone();
         for (var i = 0; i + 7 < copy.Length; i += 8)
@@ -212,10 +241,11 @@ public static partial class CompareCommands
 
     private static string GetSubrecordStatus(bool allIdentical, bool allLandTransformed, bool allEndianSwapped)
     {
-        if (allIdentical) return "[green]IDENTICAL[/]";
-        if (allLandTransformed) return "[yellow]LAND-TRANSFORMED[/]";
-        if (allEndianSwapped) return "[yellow]ENDIAN-SWAPPED (4-byte)[/]";
-        return "[red]DIFFERS[/]";
+        return allIdentical
+            ? "[green]IDENTICAL[/]"
+            : allLandTransformed
+            ? "[yellow]LAND-TRANSFORMED[/]"
+            : allEndianSwapped ? "[yellow]ENDIAN-SWAPPED (4-byte)[/]" : "[red]DIFFERS[/]";
     }
 
     private static Table BuildSubrecordComparisonTable(List<AnalyzerSubrecordInfo> xboxSubs,
@@ -238,7 +268,7 @@ public static partial class CompareCommands
 
             if (xboxList.Count != pcList.Count)
             {
-                subTable.AddRow(
+                _ = subTable.AddRow(
                     sig,
                     $"Xbox={xboxList.Count}, PC={pcList.Count}",
                     "-",
@@ -260,7 +290,10 @@ public static partial class CompareCommands
                 var isVhgt = sig.Equals("VHGT", StringComparison.OrdinalIgnoreCase);
                 if (isVhgt)
                 {
-                    if (!VhgtEquals(xboxSub.Data, pcSub.Data)) allIdentical = false;
+                    if (!VhgtEquals(xboxSub.Data, pcSub.Data))
+                    {
+                        allIdentical = false;
+                    }
                 }
                 else if (!xboxSub.Data.AsSpan().SequenceEqual(pcSub.Data))
                 {
@@ -272,14 +305,18 @@ public static partial class CompareCommands
                     (isVhgt
                         ? !VhgtEquals(landTransformed, pcSub.Data)
                         : !landTransformed.AsSpan().SequenceEqual(pcSub.Data)))
+                {
                     allLandTransformed = false;
+                }
 
                 if (!IsEndianSwapped4(xboxSub.Data, pcSub.Data))
+                {
                     allEndianSwapped = false;
+                }
             }
 
             var status = GetSubrecordStatus(allIdentical, allLandTransformed, allEndianSwapped);
-            subTable.AddRow(
+            _ = subTable.AddRow(
                 sig,
                 $"{xboxList.Count}×",
                 $"{totalXboxSize:N0}",
@@ -292,7 +329,10 @@ public static partial class CompareCommands
 
     private static bool IsEndianSwapped4(byte[] xboxData, byte[] pcData)
     {
-        if (xboxData.Length != pcData.Length || xboxData.Length % 4 != 0) return false;
+        if (xboxData.Length != pcData.Length || xboxData.Length % 4 != 0)
+        {
+            return false;
+        }
 
         var swapped = new byte[xboxData.Length];
         for (var j = 0; j < xboxData.Length; j += 4)
