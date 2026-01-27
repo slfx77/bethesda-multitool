@@ -1,6 +1,6 @@
-using static EsmAnalyzer.Conversion.EsmEndianHelpers;
+using static Xbox360MemoryCarver.Core.Converters.Esm.EsmEndianHelpers;
 
-namespace EsmAnalyzer.Conversion.Schema;
+namespace Xbox360MemoryCarver.Core.Converters.Esm.Schema;
 
 /// <summary>
 ///     Processes subrecord data using schema definitions.

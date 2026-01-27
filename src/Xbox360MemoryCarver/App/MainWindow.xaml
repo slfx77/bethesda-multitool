@@ -104,6 +104,19 @@
             <FontIcon Glyph="&#xE7B8;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
+
+        <NavigationViewItemSeparator />
+
+        <NavigationViewItemHeader Content="Full Game" />
+
+        <!--  Xbox 360 Repacker  -->
+        <NavigationViewItem
+          Content="Repacker"
+          Tag="Repacker">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE777;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
       </NavigationView.MenuItems>
 
       <!--  Main content area  -->
@@ -141,6 +154,10 @@
               Visibility="Collapsed" />
             <tabs:BsaExtractorTab
               x:Name="BsaExtractorTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Collapsed" />
+            <tabs:RepackerTab
+              x:Name="RepackerTabContent"
               VerticalAlignment="Stretch"
               Visibility="Collapsed" />
           </Grid>

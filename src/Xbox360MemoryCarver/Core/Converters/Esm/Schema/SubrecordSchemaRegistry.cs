@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
-using F = EsmAnalyzer.Conversion.Schema.SubrecordField;
+using F = Xbox360MemoryCarver.Core.Converters.Esm.Schema.SubrecordField;
 
-namespace EsmAnalyzer.Conversion.Schema;
+namespace Xbox360MemoryCarver.Core.Converters.Esm.Schema;
 
 /// <summary>
 ///     Defines subrecord schemas by key (signature + optional record type + optional data length).

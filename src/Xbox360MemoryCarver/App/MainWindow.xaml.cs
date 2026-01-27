@@ -139,6 +139,7 @@ public sealed partial class MainWindow : Window
             NifConverterTabContent.Visibility = Visibility.Collapsed;
             DdxConverterTabContent.Visibility = Visibility.Collapsed;
             BsaExtractorTabContent.Visibility = Visibility.Collapsed;
+            RepackerTabContent.Visibility = Visibility.Collapsed;
 
             // Clear status bar when switching tabs
             SetStatus("");
@@ -160,6 +161,9 @@ public sealed partial class MainWindow : Window
                     break;
                 case "BsaExtractor":
                     BsaExtractorTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "Repacker":
+                    RepackerTabContent.Visibility = Visibility.Visible;
                     break;
             }
 
