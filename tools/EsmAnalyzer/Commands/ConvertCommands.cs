@@ -1,4 +1,5 @@
 using EsmAnalyzer.Conversion;
+using EsmAnalyzer.Conversion.Schema;
 using Spectre.Console;
 using System.CommandLine;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
@@ -97,8 +98,15 @@ public static class ConvertCommands
                 return;
             }
 
+            // Enable fallback logging to track schema coverage gaps
+            SubrecordSchemaRegistry.ClearFallbackLog();
+            SubrecordSchemaRegistry.EnableFallbackLogging = true;
+
             using var converter = new EsmConverter(inputData, verbose);
             var outputData = converter.ConvertToLittleEndian();
+
+            // Disable logging after conversion
+            SubrecordSchemaRegistry.EnableFallbackLogging = false;
 
             File.WriteAllBytes(outputPath, outputData);
 
@@ -108,6 +116,9 @@ public static class ConvertCommands
 
             // Show stats
             converter.PrintStats();
+
+            // Show fallback usage if any
+            PrintFallbackUsage();
         }
         catch (NotSupportedException ex)
         {
@@ -123,6 +134,57 @@ public static class ConvertCommands
             }
 
             Environment.Exit(1);
+        }
+    }
+
+    /// <summary>
+    ///     Prints fallback usage statistics after conversion.
+    /// </summary>
+    private static void PrintFallbackUsage()
+    {
+        if (!SubrecordSchemaRegistry.HasFallbackUsage)
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[green]✓ No fallback conversions - full schema coverage![/]");
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[yellow]⚠ Schema fallback usage detected:[/]");
+        AnsiConsole.MarkupLine("[dim]These subrecords used fallback conversion instead of explicit schemas.[/]");
+        AnsiConsole.WriteLine();
+
+        var table = new Table();
+        table.AddColumn("Fallback Type");
+        table.AddColumn("Record");
+        table.AddColumn("Subrecord");
+        table.AddColumn(new TableColumn("Size").RightAligned());
+        table.AddColumn(new TableColumn("Count").RightAligned());
+
+        foreach (var (fallbackType, recordType, subrecord, dataLength, count) in SubrecordSchemaRegistry.GetFallbackUsage())
+        {
+            table.AddRow(
+                $"[yellow]{fallbackType}[/]",
+                recordType,
+                subrecord,
+                dataLength.ToString(),
+                count.ToString("N0"));
+        }
+
+        AnsiConsole.Write(table);
+
+        // Summary by fallback type
+        var summary = SubrecordSchemaRegistry.GetFallbackUsage()
+            .GroupBy(x => x.FallbackType)
+            .Select(g => (Type: g.Key, TotalCount: g.Sum(x => x.Count), UniqueSubrecords: g.Count()))
+            .OrderByDescending(x => x.TotalCount)
+            .ToList();
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[dim]Summary by fallback type:[/]");
+        foreach (var (type, totalCount, uniqueSubrecords) in summary)
+        {
+            AnsiConsole.MarkupLine($"  [yellow]{type}[/]: {totalCount:N0} occurrences across {uniqueSubrecords} unique subrecord(s)");
         }
     }
 }

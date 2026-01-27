@@ -3,6 +3,7 @@ using System.CommandLine.Parsing;
 using System.Text;
 using EsmAnalyzer.Conversion.Schema;
 using EsmAnalyzer.Core;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using Xbox360MemoryCarver.Core.Formats.EsmRecord;
 
@@ -233,7 +234,7 @@ public static class SemanticDiffCommands
                     // Decompress
                     var decompSize = EsmBinary.ReadUInt32(data, offset + headerSize, bigEndian);
                     var compData = data.AsSpan(offset + headerSize + 4, (int)dataSize - 4);
-                    recordData = DecompressZlib(compData.ToArray(), (int)decompSize);
+                    recordData = EsmHelpers.DecompressZlib(compData.ToArray(), (int)decompSize);
                     subOffset = 0;
                 }
                 else
@@ -559,26 +560,6 @@ public static class SemanticDiffCommands
 
         // Otherwise show as uint
         return u32.ToString();
-    }
-
-    private static byte[] DecompressZlib(byte[] compressed, int decompressedSize)
-    {
-        using var inputStream = new MemoryStream(compressed);
-        using var zlibStream = new System.IO.Compression.ZLibStream(inputStream, System.IO.Compression.CompressionMode.Decompress);
-        var decompressed = new byte[decompressedSize];
-        var totalRead = 0;
-        while (totalRead < decompressedSize)
-        {
-            var read = zlibStream.Read(decompressed, totalRead, decompressedSize - totalRead);
-            if (read == 0)
-            {
-                break;
-            }
-
-            totalRead += read;
-        }
-
-        return decompressed;
     }
 
     // Data types

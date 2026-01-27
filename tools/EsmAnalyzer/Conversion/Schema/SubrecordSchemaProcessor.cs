@@ -169,7 +169,7 @@ public static class SubrecordSchemaProcessor
 
         if (schema == null)
         {
-            // Navmesh subrecords require custom parsing logic
+            // Navmesh subrecords require custom parsing logic - NOT fallbacks, these are properly handled
             if (signature == "NVMI" && recordType == "NAVI")
             {
                 var navmi = data.ToArray();
@@ -228,12 +228,10 @@ public static class SubrecordSchemaProcessor
             return result;
         }
 
-        // Handle AIDT special case (zero Xbox-specific bytes)
-        if (signature == "AIDT" && data.Length == 20)
-        {
-            ConvertAidt(result);
-            return result;
-        }
+        // NOTE: AIDT was previously zeroing bytes 5-7 thinking they were Xbox-specific,
+        // but Xbox and PC have the same values there (e.g., 64 D8 23). The schema handles
+        // AIDT correctly with Padding(3) preserving those bytes and proper byte-swapping
+        // for ServiceFlags, TrainSkill, and TrainLevel.
 
         // Handle repeating arrays (ExpectedSize < 0 means repeat fields)
         if (schema.ExpectedSize < 0 && schema.Fields.Length > 0)
@@ -466,17 +464,6 @@ public static class SubrecordSchemaProcessor
         Swap4Bytes(data, 0); // FormID
         data[5] = 0x88; // Platform flag - set to PC value
         Swap2Bytes(data, 6); // Layer
-    }
-
-    /// <summary>
-    ///     Converts AIDT with Xbox-specific bytes zeroed.
-    /// </summary>
-    private static void ConvertAidt(byte[] data)
-    {
-        // Zero Xbox-specific bytes 5-7
-        data[5] = 0;
-        data[6] = 0;
-        data[7] = 0;
     }
 
     /// <summary>

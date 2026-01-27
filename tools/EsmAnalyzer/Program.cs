@@ -34,6 +34,8 @@ internal sealed class Program
         // Note: Avoid adding commands whose names conflict with command groups (diff, search, validate)
         rootCommand.Subcommands.Add(DiffCommands.CreateDiff3Command());  // "diff3" at root (shortcut for "diff three")
         rootCommand.Subcommands.Add(SemanticDiffCommands.CreateSemanticDiffCommand());  // "semdiff" at root
+        rootCommand.Subcommands.Add(FormIdAuditCommands.CreateFormIdAuditCommand());  // "formid-audit" at root
+        rootCommand.Subcommands.Add(RecordDiffCommands.CreateRecordDiffCommand());  // "record-diff" at root
         rootCommand.Subcommands.Add(CompareCommands.CreateCompareLandCommand());  // "compare-land" at root
         rootCommand.Subcommands.Add(CompareCommands.CreateCompareCellsCommand()); // "compare-cells" at root
         rootCommand.Subcommands.Add(DumpCommands.CreateHexCommand());    // "hex" at root

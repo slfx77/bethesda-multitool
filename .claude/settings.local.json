@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet run:*)",
+      "Bash(Select-String -Path \"C:\\\\Users\\\\mmc99\\\\.claude\\\\projects\\\\c--Users-mmc99-source-repos-Xbox360MemoryCarver\\\\0dbbca92-ad2c-493b-958a-c607b588d8c5\\\\tool-results\\\\toolu_01Hze9vC7cfdHv22q8Gh6CsZ.txt\" -Pattern \"DIFF|CONTENT DIFFERS\")",
+      "Bash(Select-Object -First 50)",
+      "Bash(dotnet build:*)",
+      "Bash(findstr:*)",
+      "Bash($aOnly = $data)",
+      "Bash(Where-Object { $_Source -eq 'A-only' })",
+      "Bash($bOnly = $data)",
+      "Bash(powershell:*)"
+    ]
+  }
+}
