@@ -98,14 +98,35 @@ internal sealed class HexDataManager : IDisposable
     {
         _fileRegions.Clear();
 
-        // Sort by size ascending - smaller files processed first get priority
+        var occupiedRanges = new List<(long Start, long End)>();
+
+        // Add ESM record regions FIRST - they're schema-validated and more reliable
+        // than simple signature matching which can produce false positives on texture
+        // path strings embedded within ESM records
+        if (analysisResult.EsmRecords?.MainRecords != null && analysisResult.EsmRecords.MainRecords.Count > 0)
+        {
+            var esmRegions = GroupEsmRecordsIntoRegions(analysisResult.EsmRecords.MainRecords);
+            var esmColor = FileTypeColors.GetColorByCategory(FileCategory.EsmData);
+
+            foreach (var region in esmRegions)
+            {
+                _fileRegions.Add(new FileRegion
+                {
+                    Start = region.Start,
+                    End = region.End,
+                    TypeName = $"ESM Data ({region.Count} records)",
+                    Color = esmColor
+                });
+                occupiedRanges.Add((region.Start, region.End));
+            }
+        }
+
+        // Sort carved files by size ascending - smaller files processed first get priority
         // This ensures files contained within larger files are visible
         var sortedFiles = analysisResult.CarvedFiles
             .Where(f => f.Length > 0)
             .OrderBy(f => f.Length)
             .ToList();
-
-        var occupiedRanges = new List<(long Start, long End)>();
 
         foreach (var file in sortedFiles)
         {
@@ -113,6 +134,7 @@ internal sealed class HexDataManager : IDisposable
             var end = file.Offset + file.Length;
 
             // Check if this file's range is already fully covered by existing regions
+            // (including ESM regions added above)
             if (IsRangeFullyCovered(start, end, occupiedRanges)) continue;
 
             _fileRegions.Add(new FileRegion
@@ -123,27 +145,6 @@ internal sealed class HexDataManager : IDisposable
                 Color = FileTypeColors.GetColor(file)
             });
             occupiedRanges.Add((start, end));
-        }
-
-        // Add ESM record regions (grouped to reduce visual noise)
-        if (analysisResult.EsmRecords?.MainRecords != null && analysisResult.EsmRecords.MainRecords.Count > 0)
-        {
-            var esmRegions = GroupEsmRecordsIntoRegions(analysisResult.EsmRecords.MainRecords);
-            var esmColor = FileTypeColors.GetColorByCategory(FileCategory.EsmData);
-
-            foreach (var region in esmRegions)
-            {
-                if (IsRangeFullyCovered(region.Start, region.End, occupiedRanges)) continue;
-
-                _fileRegions.Add(new FileRegion
-                {
-                    Start = region.Start,
-                    End = region.End,
-                    TypeName = $"ESM Data ({region.Count} records)",
-                    Color = esmColor
-                });
-                occupiedRanges.Add((region.Start, region.End));
-            }
         }
 
         _fileRegions.Sort((a, b) => a.Start.CompareTo(b.Start));
