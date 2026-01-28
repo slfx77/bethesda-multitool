@@ -876,6 +876,390 @@ public record ReconstructedRace
 }
 
 /// <summary>
+///     Fully reconstructed Creature from memory dump.
+///     Similar to NPC but for non-human entities.
+/// </summary>
+public record ReconstructedCreature
+{
+    /// <summary>FormID of the creature record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID.</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>Display name.</summary>
+    public string? FullName { get; init; }
+
+    /// <summary>Actor base stats from ACBS subrecord.</summary>
+    public ActorBaseSubrecord? Stats { get; init; }
+
+    /// <summary>Creature type (0=Animal, 1=MutatedAnimal, 2=MutatedInsect, etc.).</summary>
+    public byte CreatureType { get; init; }
+
+    /// <summary>Combat skill level.</summary>
+    public byte CombatSkill { get; init; }
+
+    /// <summary>Magic skill level.</summary>
+    public byte MagicSkill { get; init; }
+
+    /// <summary>Stealth skill level.</summary>
+    public byte StealthSkill { get; init; }
+
+    /// <summary>Attack damage.</summary>
+    public short AttackDamage { get; init; }
+
+    /// <summary>Script FormID.</summary>
+    public uint? Script { get; init; }
+
+    /// <summary>Death item FormID.</summary>
+    public uint? DeathItem { get; init; }
+
+    /// <summary>Model path.</summary>
+    public string? ModelPath { get; init; }
+
+    /// <summary>Faction memberships.</summary>
+    public List<FactionMembership> Factions { get; init; } = [];
+
+    /// <summary>Spell/ability FormIDs.</summary>
+    public List<uint> Spells { get; init; } = [];
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+
+    /// <summary>Human-readable creature type name.</summary>
+    public string CreatureTypeName => CreatureType switch
+    {
+        0 => "Animal",
+        1 => "Mutated Animal",
+        2 => "Mutated Insect",
+        3 => "Abomination",
+        4 => "Super Mutant",
+        5 => "Feral Ghoul",
+        6 => "Robot",
+        7 => "Giant",
+        _ => $"Unknown ({CreatureType})"
+    };
+}
+
+/// <summary>
+///     Fully reconstructed Faction from memory dump.
+/// </summary>
+public record ReconstructedFaction
+{
+    /// <summary>FormID of the faction record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID.</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>Display name.</summary>
+    public string? FullName { get; init; }
+
+    /// <summary>Faction flags.</summary>
+    public uint Flags { get; init; }
+
+    /// <summary>Whether this faction is hidden from the player.</summary>
+    public bool IsHiddenFromPlayer => (Flags & 0x01) != 0;
+
+    /// <summary>Whether this faction allows evil acts.</summary>
+    public bool AllowsEvil => (Flags & 0x02) != 0;
+
+    /// <summary>Whether this faction allows special combat.</summary>
+    public bool AllowsSpecialCombat => (Flags & 0x04) != 0;
+
+    /// <summary>Faction relations (other faction FormIDs and their disposition).</summary>
+    public List<FactionRelation> Relations { get; init; } = [];
+
+    /// <summary>Faction rank names.</summary>
+    public List<string> RankNames { get; init; } = [];
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+}
+
+/// <summary>
+///     Faction relation data from XNAM subrecord.
+/// </summary>
+public record FactionRelation(uint FactionFormId, int Modifier, uint CombatFlags);
+
+/// <summary>
+///     Fully reconstructed Book from memory dump.
+///     Contains text content similar to notes.
+/// </summary>
+public record ReconstructedBook
+{
+    /// <summary>FormID of the book record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID.</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>Display name.</summary>
+    public string? FullName { get; init; }
+
+    /// <summary>Book text content (DESC subrecord).</summary>
+    public string? Text { get; init; }
+
+    /// <summary>Value in caps.</summary>
+    public int Value { get; init; }
+
+    /// <summary>Weight.</summary>
+    public float Weight { get; init; }
+
+    /// <summary>Book flags (teaches skill, etc.).</summary>
+    public byte Flags { get; init; }
+
+    /// <summary>Skill taught by this book (if any).</summary>
+    public byte SkillTaught { get; init; }
+
+    /// <summary>Model path.</summary>
+    public string? ModelPath { get; init; }
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+
+    /// <summary>Whether this book teaches a skill.</summary>
+    public bool TeachesSkill => (Flags & 0x01) != 0;
+}
+
+/// <summary>
+///     Fully reconstructed Key from memory dump.
+/// </summary>
+public record ReconstructedKey
+{
+    /// <summary>FormID of the key record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID.</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>Display name.</summary>
+    public string? FullName { get; init; }
+
+    /// <summary>Value in caps.</summary>
+    public int Value { get; init; }
+
+    /// <summary>Weight.</summary>
+    public float Weight { get; init; }
+
+    /// <summary>Model path.</summary>
+    public string? ModelPath { get; init; }
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+}
+
+/// <summary>
+///     Fully reconstructed Container from memory dump.
+/// </summary>
+public record ReconstructedContainer
+{
+    /// <summary>FormID of the container record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID.</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>Display name.</summary>
+    public string? FullName { get; init; }
+
+    /// <summary>Container flags.</summary>
+    public byte Flags { get; init; }
+
+    /// <summary>Whether this container respawns.</summary>
+    public bool Respawns => (Flags & 0x02) != 0;
+
+    /// <summary>Contents of the container.</summary>
+    public List<InventoryItem> Contents { get; init; } = [];
+
+    /// <summary>Model path.</summary>
+    public string? ModelPath { get; init; }
+
+    /// <summary>Script FormID.</summary>
+    public uint? Script { get; init; }
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+}
+
+/// <summary>
+///     Fully reconstructed Terminal from memory dump.
+/// </summary>
+public record ReconstructedTerminal
+{
+    /// <summary>FormID of the terminal record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID.</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>Display name.</summary>
+    public string? FullName { get; init; }
+
+    /// <summary>Terminal header text (DESC subrecord).</summary>
+    public string? HeaderText { get; init; }
+
+    /// <summary>Terminal difficulty (0-4).</summary>
+    public byte Difficulty { get; init; }
+
+    /// <summary>Terminal flags.</summary>
+    public byte Flags { get; init; }
+
+    /// <summary>Terminal menu items.</summary>
+    public List<TerminalMenuItem> MenuItems { get; init; } = [];
+
+    /// <summary>Password (if set).</summary>
+    public string? Password { get; init; }
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+
+    /// <summary>Human-readable difficulty name.</summary>
+    public string DifficultyName => Difficulty switch
+    {
+        0 => "Very Easy",
+        1 => "Easy",
+        2 => "Average",
+        3 => "Hard",
+        4 => "Very Hard",
+        _ => $"Unknown ({Difficulty})"
+    };
+}
+
+/// <summary>
+///     Terminal menu item from ITXT/RNAM subrecords.
+/// </summary>
+public record TerminalMenuItem
+{
+    /// <summary>Menu item text.</summary>
+    public string? Text { get; init; }
+
+    /// <summary>Result script FormID.</summary>
+    public uint? ResultScript { get; init; }
+
+    /// <summary>Sub-terminal FormID (if this links to another terminal).</summary>
+    public uint? SubTerminal { get; init; }
+}
+
+/// <summary>
+///     Fully reconstructed Dialog Topic from memory dump.
+/// </summary>
+public record ReconstructedDialogTopic
+{
+    /// <summary>FormID of the dialog topic record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID.</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>Display name.</summary>
+    public string? FullName { get; init; }
+
+    /// <summary>Parent quest FormID.</summary>
+    public uint? QuestFormId { get; init; }
+
+    /// <summary>Topic type (0=Topic, 1=Conversation, 2=Combat, etc.).</summary>
+    public byte TopicType { get; init; }
+
+    /// <summary>Topic flags.</summary>
+    public byte Flags { get; init; }
+
+    /// <summary>Number of INFO responses under this topic.</summary>
+    public int ResponseCount { get; init; }
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+
+    /// <summary>Human-readable topic type name.</summary>
+    public string TopicTypeName => TopicType switch
+    {
+        0 => "Topic",
+        1 => "Conversation",
+        2 => "Combat",
+        3 => "Persuasion",
+        4 => "Detection",
+        5 => "Service",
+        6 => "Miscellaneous",
+        7 => "Radio",
+        _ => $"Unknown ({TopicType})"
+    };
+}
+
+/// <summary>
+///     Game setting value type classification.
+/// </summary>
+public enum GameSettingType
+{
+    Float,
+    Integer,
+    String,
+    Boolean
+}
+
+/// <summary>
+///     Fully reconstructed Game Setting (GMST) from memory dump.
+///     The setting type is determined by the first letter of the Editor ID:
+///     'f' = float, 'i' = integer, 's' = string, 'b' = boolean.
+/// </summary>
+public record ReconstructedGameSetting
+{
+    /// <summary>FormID of the GMST record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID (setting name, e.g., "fActorStrengthEncumbranceMult").</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>The type of value this setting holds.</summary>
+    public GameSettingType ValueType { get; init; }
+
+    /// <summary>Float value (if ValueType is Float).</summary>
+    public float? FloatValue { get; init; }
+
+    /// <summary>Integer value (if ValueType is Integer or Boolean).</summary>
+    public int? IntValue { get; init; }
+
+    /// <summary>String value (if ValueType is String).</summary>
+    public string? StringValue { get; init; }
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+
+    /// <summary>Human-readable value representation.</summary>
+    public string DisplayValue => ValueType switch
+    {
+        GameSettingType.Float => FloatValue?.ToString("F4") ?? "null",
+        GameSettingType.Integer => IntValue?.ToString() ?? "null",
+        GameSettingType.Boolean => IntValue != 0 ? "true" : "false",
+        GameSettingType.String => StringValue ?? "null",
+        _ => "unknown"
+    };
+}
+
+/// <summary>
 ///     Aggregated semantic reconstruction result from a memory dump.
 /// </summary>
 public record SemanticReconstructionResult
@@ -884,18 +1268,33 @@ public record SemanticReconstructionResult
     /// <summary>Reconstructed NPC records.</summary>
     public List<ReconstructedNpc> Npcs { get; init; } = [];
 
+    /// <summary>Reconstructed Creature records.</summary>
+    public List<ReconstructedCreature> Creatures { get; init; } = [];
+
     /// <summary>Reconstructed Race records.</summary>
     public List<ReconstructedRace> Races { get; init; } = [];
+
+    /// <summary>Reconstructed Faction records.</summary>
+    public List<ReconstructedFaction> Factions { get; init; } = [];
 
     // Quests and Dialogue
     /// <summary>Reconstructed Quest records.</summary>
     public List<ReconstructedQuest> Quests { get; init; } = [];
+
+    /// <summary>Reconstructed Dialog Topic records.</summary>
+    public List<ReconstructedDialogTopic> DialogTopics { get; init; } = [];
 
     /// <summary>Reconstructed Dialogue (INFO) records.</summary>
     public List<ReconstructedDialogue> Dialogues { get; init; } = [];
 
     /// <summary>Reconstructed Note records.</summary>
     public List<ReconstructedNote> Notes { get; init; } = [];
+
+    /// <summary>Reconstructed Book records.</summary>
+    public List<ReconstructedBook> Books { get; init; } = [];
+
+    /// <summary>Reconstructed Terminal records.</summary>
+    public List<ReconstructedTerminal> Terminals { get; init; } = [];
 
     // Items
     /// <summary>Reconstructed Weapon records.</summary>
@@ -913,6 +1312,12 @@ public record SemanticReconstructionResult
     /// <summary>Reconstructed Misc Item records.</summary>
     public List<ReconstructedMiscItem> MiscItems { get; init; } = [];
 
+    /// <summary>Reconstructed Key records.</summary>
+    public List<ReconstructedKey> Keys { get; init; } = [];
+
+    /// <summary>Reconstructed Container records.</summary>
+    public List<ReconstructedContainer> Containers { get; init; } = [];
+
     // Abilities
     /// <summary>Reconstructed Perk records.</summary>
     public List<ReconstructedPerk> Perks { get; init; } = [];
@@ -927,6 +1332,10 @@ public record SemanticReconstructionResult
     /// <summary>Reconstructed Worldspace records.</summary>
     public List<ReconstructedWorldspace> Worldspaces { get; init; } = [];
 
+    // Game Data
+    /// <summary>Reconstructed Game Setting (GMST) records.</summary>
+    public List<ReconstructedGameSetting> GameSettings { get; init; } = [];
+
     /// <summary>FormID to Editor ID mapping built during reconstruction.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
@@ -935,7 +1344,14 @@ public record SemanticReconstructionResult
 
     /// <summary>Number of records successfully reconstructed.</summary>
     public int TotalRecordsReconstructed =>
-        Npcs.Count + Races.Count + Quests.Count + Dialogues.Count + Notes.Count +
-        Weapons.Count + Armor.Count + Ammo.Count + Consumables.Count + MiscItems.Count +
-        Perks.Count + Spells.Count + Cells.Count + Worldspaces.Count;
+        Npcs.Count + Creatures.Count + Races.Count + Factions.Count +
+        Quests.Count + DialogTopics.Count + Dialogues.Count + Notes.Count + Books.Count + Terminals.Count +
+        Weapons.Count + Armor.Count + Ammo.Count + Consumables.Count + MiscItems.Count + Keys.Count + Containers.Count +
+        Perks.Count + Spells.Count + Cells.Count + Worldspaces.Count + GameSettings.Count;
+
+    /// <summary>
+    ///     Counts of record types that were detected but not fully reconstructed.
+    ///     Used for the "Other Records" summary section in split reports.
+    /// </summary>
+    public Dictionary<string, int> UnreconstructedTypeCounts { get; init; } = [];
 }

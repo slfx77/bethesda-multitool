@@ -25,17 +25,17 @@ public record EsmRecordScanResult
     public List<ResponseDataSubrecord> ResponseData { get; init; } = [];
 
     // Text-containing subrecords
-    public List<TextSubrecord> FullNames { get; init; } = [];      // FULL - display names
-    public List<TextSubrecord> Descriptions { get; init; } = [];   // DESC - descriptions
-    public List<TextSubrecord> ModelPaths { get; init; } = [];     // MODL - model paths
-    public List<TextSubrecord> IconPaths { get; init; } = [];      // ICON/MICO - icon paths
-    public List<TextSubrecord> TexturePaths { get; init; } = [];   // TX00-TX07 - texture sets
+    public List<TextSubrecord> FullNames { get; init; } = []; // FULL - display names
+    public List<TextSubrecord> Descriptions { get; init; } = []; // DESC - descriptions
+    public List<TextSubrecord> ModelPaths { get; init; } = []; // MODL - model paths
+    public List<TextSubrecord> IconPaths { get; init; } = []; // ICON/MICO - icon paths
+    public List<TextSubrecord> TexturePaths { get; init; } = []; // TX00-TX07 - texture sets
 
     // FormID reference subrecords
-    public List<FormIdSubrecord> ScriptRefs { get; init; } = [];   // SCRI - script references
-    public List<FormIdSubrecord> EffectRefs { get; init; } = [];   // ENAM - effect references
-    public List<FormIdSubrecord> SoundRefs { get; init; } = [];    // SNAM - sound references
-    public List<FormIdSubrecord> QuestRefs { get; init; } = [];    // QNAM - quest references
+    public List<FormIdSubrecord> ScriptRefs { get; init; } = []; // SCRI - script references
+    public List<FormIdSubrecord> EffectRefs { get; init; } = []; // ENAM - effect references
+    public List<FormIdSubrecord> SoundRefs { get; init; } = []; // SNAM - sound references
+    public List<FormIdSubrecord> QuestRefs { get; init; } = []; // QNAM - quest references
 
     // Condition data (CTDA) - common in quests/dialogue
     public List<ConditionSubrecord> Conditions { get; init; } = [];
@@ -53,6 +53,12 @@ public record EsmRecordScanResult
     public List<ExtractedLandRecord> LandRecords { get; init; } = [];
     public List<ExtractedRefrRecord> RefrRecords { get; init; } = [];
 
+    // Runtime asset string pool detections
+    public List<DetectedAssetString> AssetStrings { get; init; } = [];
+
+    // Runtime Editor ID entries with FormID associations (from hash table following)
+    public List<RuntimeEditorIdEntry> RuntimeEditorIds { get; init; } = [];
+
     /// <summary>
     ///     Statistics by record type.
     /// </summary>
@@ -64,6 +70,7 @@ public record EsmRecordScanResult
     ///     Statistics by endianness.
     /// </summary>
     public int LittleEndianRecords => MainRecords.Count(r => !r.IsBigEndian);
+
     public int BigEndianRecords => MainRecords.Count(r => r.IsBigEndian);
 }
 
@@ -103,9 +110,14 @@ public record NameSubrecord(uint BaseFormId, long Offset, bool IsBigEndian);
 ///     24 bytes: 3 floats (position) + 3 floats (rotation)
 /// </summary>
 public record PositionSubrecord(
-    float X, float Y, float Z,
-    float RotX, float RotY, float RotZ,
-    long Offset, bool IsBigEndian);
+    float X,
+    float Y,
+    float Z,
+    float RotX,
+    float RotY,
+    float RotZ,
+    long Offset,
+    bool IsBigEndian);
 
 /// <summary>
 ///     ACBS subrecord - Actor Base Stats.
@@ -270,6 +282,7 @@ public record LandHeightmap
                 height += HeightDeltas[y * 33 + x] * 8; // Height scale factor
                 heights[y, x] = height;
             }
+
             // Next row starts from the first column of current row
             rowStart = heights[y, 0];
         }
@@ -349,6 +362,7 @@ public record DetectedVhgtHeightmap
                 height += HeightDeltas[y * 33 + x] * 8; // Height scale factor
                 heights[y, x] = height;
             }
+
             rowStart = heights[y, 0];
         }
 
@@ -401,4 +415,58 @@ public record DetectedSubrecord
 
     /// <summary>Parsed field values (if schema was applied).</summary>
     public Dictionary<string, object?>? Fields { get; init; }
+}
+
+/// <summary>
+///     Detected asset path string from runtime string pools.
+///     These are found in contiguous string regions (not ESM subrecords).
+/// </summary>
+public record DetectedAssetString
+{
+    /// <summary>The asset path string (e.g., "meshes\weapons\pistol10mm.nif").</summary>
+    public required string Path { get; init; }
+
+    /// <summary>Offset in the dump where string was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Category based on file extension.</summary>
+    public AssetCategory Category { get; init; }
+}
+
+/// <summary>
+///     Asset categories for classification.
+/// </summary>
+public enum AssetCategory
+{
+    Model,      // .nif files
+    Texture,    // .dds, .ddx files
+    Sound,      // .wav, .lip, .ogg files
+    Script,     // .psc, .pex files
+    Animation,  // .kf, .hkx files
+    Other       // Unclassified
+}
+
+/// <summary>
+///     Runtime Editor ID entry extracted from the game's EditorID hash table.
+///     Includes FormID association obtained by following TESForm pointers.
+/// </summary>
+public record RuntimeEditorIdEntry
+{
+    /// <summary>The Editor ID string.</summary>
+    public required string EditorId { get; init; }
+
+    /// <summary>Associated FormID from TESForm object.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Form type code (record type) from TESForm object.</summary>
+    public byte FormType { get; init; }
+
+    /// <summary>File offset where the Editor ID string was found.</summary>
+    public long StringOffset { get; init; }
+
+    /// <summary>File offset of the TESForm object (if pointer was followed).</summary>
+    public long? TesFormOffset { get; init; }
+
+    /// <summary>Virtual address of the TESForm pointer (for debugging).</summary>
+    public long? TesFormPointer { get; init; }
 }

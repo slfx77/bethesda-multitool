@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
-using Spectre.Console;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats;
+using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
 
@@ -17,7 +17,8 @@ public static class CarveCommand
         List<string>? fileTypes,
         bool convertDdx,
         bool verbose,
-        int maxFiles)
+        int maxFiles,
+        bool pcFriendly = true)
     {
         var files = new List<string>();
 
@@ -40,7 +41,7 @@ public static class CarveCommand
 
         foreach (var file in files)
         {
-            await ProcessFileAsync(file, outputDir, fileTypes, convertDdx, verbose, maxFiles);
+            await ProcessFileAsync(file, outputDir, fileTypes, convertDdx, verbose, maxFiles, pcFriendly);
         }
 
         AnsiConsole.WriteLine();
@@ -53,7 +54,8 @@ public static class CarveCommand
         List<string>? fileTypes,
         bool convertDdx,
         bool verbose,
-        int maxFiles)
+        int maxFiles,
+        bool pcFriendly)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule($"[blue]{Path.GetFileName(file)}[/]").LeftJustified());
@@ -67,6 +69,8 @@ public static class CarveCommand
             FileTypes = fileTypes,
             Verbose = verbose,
             MaxFilesPerType = maxFiles,
+            PcFriendly = pcFriendly,
+            GenerateEsmReports = true, // Run analysis first to enable ESM reports
             ExtractScripts = fileTypes == null ||
                              fileTypes.Count == 0 ||
                              fileTypes.Any(t => t.Contains("scda", StringComparison.OrdinalIgnoreCase) ||
@@ -77,7 +81,7 @@ public static class CarveCommand
 
         try
         {
-            summary = await ExtractWithProgressAsync(file, options);
+            summary = await ExtractWithProgressAsync(file, options, verbose);
         }
         catch (Exception ex)
         {
@@ -93,9 +97,10 @@ public static class CarveCommand
         PrintSummary(summary, convertDdx);
     }
 
-    private static async Task<ExtractionSummary> ExtractWithProgressAsync(string file, ExtractionOptions options)
+    private static async Task<ExtractionSummary> ExtractWithProgressAsync(string file, ExtractionOptions options, bool verbose)
     {
         ExtractionSummary? summary = null;
+        AnalysisResult? analysisResult = null;
 
         await AnsiConsole.Progress()
             .AutoClear(false)
@@ -106,17 +111,33 @@ public static class CarveCommand
                 new SpinnerColumn())
             .StartAsync(async ctx =>
             {
-                var task = ctx.AddTask("[yellow]Extracting files[/]", maxValue: 100);
-
-                var progress = new Progress<ExtractionProgress>(p =>
+                // Phase 1: Run analysis to get ESM records for report generation
+                if (options.GenerateEsmReports)
                 {
-                    task.Value = p.PercentComplete;
-                    task.Description = $"[yellow]{p.CurrentOperation}[/]";
+                    var analysisTask = ctx.AddTask("[yellow]Analyzing dump[/]", maxValue: 100);
+                    var analysisProgress = new Progress<AnalysisProgress>(p =>
+                    {
+                        analysisTask.Value = p.PercentComplete;
+                        analysisTask.Description = $"[yellow]{p.Phase}[/]";
+                    });
+
+                    var analyzer = new MemoryDumpAnalyzer();
+                    analysisResult = await analyzer.AnalyzeAsync(file, analysisProgress, includeMetadata: true, verbose: verbose);
+                    analysisTask.Value = 100;
+                    analysisTask.Description = "[green]Analysis complete[/]";
+                }
+
+                // Phase 2: Extract files
+                var extractTask = ctx.AddTask("[yellow]Extracting files[/]", maxValue: 100);
+                var extractProgress = new Progress<ExtractionProgress>(p =>
+                {
+                    extractTask.Value = p.PercentComplete;
+                    extractTask.Description = $"[yellow]{p.CurrentOperation}[/]";
                 });
 
-                summary = await MemoryDumpExtractor.Extract(file, options, progress);
-                task.Value = 100;
-                task.Description = "[green]Complete[/]";
+                summary = await MemoryDumpExtractor.Extract(file, options, extractProgress, analysisResult);
+                extractTask.Value = 100;
+                extractTask.Description = "[green]Complete[/]";
             });
 
         // Summary will always be non-null after successful completion
@@ -128,6 +149,7 @@ public static class CarveCommand
         PrintCategoryTable(summary);
         PrintConversionStats(summary, convertDdx);
         PrintScriptStats(summary);
+        PrintEsmStats(summary);
     }
 
     private static void PrintCategoryTable(ExtractionSummary summary)
@@ -237,5 +259,24 @@ public static class CarveCommand
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine(
             $"[yellow]Scripts:[/] {summary.ScriptsExtracted} records ({summary.ScriptQuestsGrouped} quests grouped)");
+    }
+
+    private static void PrintEsmStats(ExtractionSummary summary)
+    {
+        if (!summary.EsmReportGenerated && summary.HeightmapsExported == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        if (summary.EsmReportGenerated)
+        {
+            AnsiConsole.MarkupLine("[cyan]ESM:[/] Semantic report generated");
+        }
+
+        if (summary.HeightmapsExported > 0)
+        {
+            AnsiConsole.MarkupLine($"[cyan]Heightmaps:[/] {summary.HeightmapsExported} exported");
+        }
     }
 }

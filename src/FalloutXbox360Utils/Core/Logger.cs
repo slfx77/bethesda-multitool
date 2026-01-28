@@ -1,4 +1,5 @@
 using System.Globalization;
+using Spectre.Console;
 
 namespace FalloutXbox360Utils.Core;
 
@@ -28,13 +29,18 @@ public enum LogLevel
 
 /// <summary>
 ///     Simple logger with verbosity levels. Thread-safe singleton pattern.
+///     Uses Spectre.Console for output to integrate with CLI formatting.
 /// </summary>
 public sealed class Logger
 {
     private static Logger? _instance;
     private static readonly Lock SyncLock = new();
 
-    private TextWriter _output = Console.Out;
+    /// <summary>
+    ///     Whether to use Spectre.Console for output (default: true).
+    ///     When false, falls back to Console.Out.
+    /// </summary>
+    public bool UseSpectre { get; set; } = true;
 
     private Logger()
     {
@@ -73,14 +79,6 @@ public sealed class Logger
     ///     Whether to include the log level prefix in output.
     /// </summary>
     public bool IncludeLevel { get; set; } = true;
-
-    /// <summary>
-    ///     Sets the output writer (default: Console.Out).
-    /// </summary>
-    public void SetOutput(TextWriter output)
-    {
-        _output = output;
-    }
 
     /// <summary>
     ///     Configure logger from verbose flag (maps to Debug level).
@@ -188,11 +186,40 @@ public sealed class Logger
             return;
         }
 
-        var prefix = BuildPrefix(level);
-        _output.WriteLine(prefix + message);
+        // Escape any Spectre markup characters in the message
+        var escapedMessage = Markup.Escape(message);
+
+        if (UseSpectre)
+        {
+            var (color, prefix) = GetLevelStyle(level);
+            var timestamp = IncludeTimestamp
+                ? $"[grey]{DateTime.Now:HH:mm:ss.fff}[/] "
+                : "";
+            var levelPrefix = IncludeLevel ? $"[{color}]{Markup.Escape(prefix)}[/] " : "";
+
+            AnsiConsole.MarkupLine($"{timestamp}{levelPrefix}{escapedMessage}");
+        }
+        else
+        {
+            var prefix = BuildPlainPrefix(level);
+            Console.WriteLine(prefix + message);
+        }
     }
 
-    private string BuildPrefix(LogLevel level)
+    private static (string color, string prefix) GetLevelStyle(LogLevel level)
+    {
+        return level switch
+        {
+            LogLevel.Error => ("red", "[ERR]"),
+            LogLevel.Warn => ("yellow", "[WRN]"),
+            LogLevel.Info => ("blue", "[INF]"),
+            LogLevel.Debug => ("grey", "[DBG]"),
+            LogLevel.Trace => ("dim grey", "[TRC]"),
+            _ => ("white", "")
+        };
+    }
+
+    private string BuildPlainPrefix(LogLevel level)
     {
         var parts = new List<string>(2);
 
@@ -223,7 +250,7 @@ public sealed class Logger
     public void Reset()
     {
         Level = LogLevel.Info;
-        _output = Console.Out;
+        UseSpectre = true;
         IncludeTimestamp = false;
         IncludeLevel = true;
     }

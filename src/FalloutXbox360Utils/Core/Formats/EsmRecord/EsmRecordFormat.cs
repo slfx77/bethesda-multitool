@@ -86,7 +86,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         "CLMT", // Climate
         "REGN", // Region
         "IMAD", // Image Space Adapter
-        "IMGS"  // Image Space
+        "IMGS" // Image Space
     ];
 
     /// <summary>
@@ -103,16 +103,16 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     ///     All schema-defined subrecord signatures for generic detection.
     ///     Lazy initialization to avoid circular dependencies.
     /// </summary>
-    private static readonly Lazy<HashSet<string>> SchemaSignaturesLE = new(
-        () => SubrecordSchemaRegistry.GetAllSignatures().ToHashSet());
+    private static readonly Lazy<HashSet<string>> SchemaSignaturesLE =
+        new(() => SubrecordSchemaRegistry.GetAllSignatures().ToHashSet());
 
     /// <summary>
     ///     Schema signatures in big-endian (reversed) form for Xbox 360 detection.
     /// </summary>
-    private static readonly Lazy<HashSet<string>> SchemaSignaturesBE = new(
-        () => SubrecordSchemaRegistry.GetAllSignatures()
-            .Select(SubrecordSchemaRegistry.GetReversedSignature)
-            .ToHashSet());
+    private static readonly Lazy<HashSet<string>> SchemaSignaturesBE = new(() => SubrecordSchemaRegistry
+        .GetAllSignatures()
+        .Select(SubrecordSchemaRegistry.GetReversedSignature)
+        .ToHashSet());
 
     /// <summary>
     ///     Signatures already handled by specific detection (to avoid duplicates).
@@ -124,6 +124,39 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         "TX00", "TX01", "TX02", "TX03", "TX04", "TX05", "TX06", "TX07",
         "SCRI", "ENAM", "SNAM", "QNAM", "CTDA", "VHGT", "XCLC"
     ];
+
+    /// <summary>
+    ///     Patterns that indicate non-ESM data (GPU debug registers, etc.).
+    ///     These ASCII strings could be misinterpreted as valid ESM signatures.
+    ///     GPU debug register dumps from Xbox 360 memory contain these patterns.
+    /// </summary>
+    private static readonly string[] KnownFalsePositivePatterns =
+    [
+        "VGT_", // GPU Vertex Grouper/Tessellator debug (VGT_DEBUG_*)
+        "SX_D", // Shader export debug
+        "SQ_D", // Sequencer debug
+        "DB_D", // Depth buffer debug
+        "CB_D", // Color buffer debug
+        "PA_D", // Primitive Assembly debug
+        "PA_S", // Primitive Assembly state
+        "SC_D", // Scan converter debug
+        "SPI_", // Shader Processor Interpolator
+        "TA_D", // Texture Addressing debug
+        "TD_D", // Texture Data debug
+        "TCP_", // Texture Cache Pipe
+        "TCA_" // Texture Cache Address
+    ];
+
+    public override string FormatId => "esmrecord";
+    public override string DisplayName => "ESM Records";
+    public override string Extension => ".esm";
+    public override FileCategory Category => FileCategory.EsmData;
+    public override string OutputFolder => "esm_records";
+    public override int MinSize => 8;
+    public override int MaxSize => 64 * 1024;
+    public override bool ShowInFilterUI => false;
+
+    public override IReadOnlyList<FormatSignature> Signatures { get; } = [];
 
     private static HashSet<uint> BuildMagicSet(bool bigEndian)
     {
@@ -137,17 +170,6 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
 
         return set;
     }
-
-    public override string FormatId => "esmrecord";
-    public override string DisplayName => "ESM Records";
-    public override string Extension => ".esm";
-    public override FileCategory Category => FileCategory.EsmData;
-    public override string OutputFolder => "esm_records";
-    public override int MinSize => 8;
-    public override int MaxSize => 64 * 1024;
-    public override bool ShowInFilterUI => false;
-
-    public override IReadOnlyList<FormatSignature> Signatures { get; } = [];
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
@@ -268,7 +290,13 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     ///     Scan an entire memory dump for ESM records using memory-mapped access.
     ///     Processes in chunks to avoid loading the entire file into memory.
     /// </summary>
-    public static EsmRecordScanResult ScanForRecordsMemoryMapped(MemoryMappedViewAccessor accessor, long fileSize)
+    /// <param name="accessor">Memory-mapped file accessor.</param>
+    /// <param name="fileSize">Total file size in bytes.</param>
+    /// <param name="excludeRanges">Optional list of (start, end) ranges to skip (e.g., module memory).</param>
+    public static EsmRecordScanResult ScanForRecordsMemoryMapped(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        List<(long start, long end)>? excludeRanges = null)
     {
         const int chunkSize = 16 * 1024 * 1024; // 16MB chunks
         const int overlapSize = 1024; // Overlap to handle records at chunk boundaries
@@ -294,6 +322,13 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
                 // Scan this chunk
                 for (var i = 0; i <= searchLimit; i++)
                 {
+                    // Skip offsets inside excluded ranges (e.g., module memory)
+                    var globalOffset = offset + i;
+                    if (IsInExcludedRange(globalOffset, excludeRanges))
+                    {
+                        continue;
+                    }
+
                     // Check for main record headers first
                     TryAddMainRecordHeaderWithOffset(buffer, i, toRead, offset, result.MainRecords,
                         seenMainRecordOffsets);
@@ -536,7 +571,8 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
                         ? BinaryPrimitives.ReadInt16BigEndian(subData[6..])
                         : BinaryPrimitives.ReadInt16LittleEndian(subData[6..]);
 
-                    textureLayers.Add(new LandTextureLayer(textureFormId.Value, quadrant, layer, header.Offset + 24 + sub.DataOffset));
+                    textureLayers.Add(new LandTextureLayer(textureFormId.Value, quadrant, layer,
+                        header.Offset + 24 + sub.DataOffset));
                 }
             }
         }
@@ -562,7 +598,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     {
         uint baseFormId = 0;
         PositionSubrecord? position = null;
-        float scale = 1.0f;
+        var scale = 1.0f;
         uint? ownerFormId = null;
 
         // Iterate through subrecords using the standard subrecord header format
@@ -585,6 +621,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
                             pos.Value.rotX, pos.Value.rotY, pos.Value.rotZ,
                             header.Offset + 24 + sub.DataOffset, header.IsBigEndian);
                     }
+
                     break;
 
                 case "XSCL" when sub.DataLength == 4:
@@ -630,7 +667,9 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         {
             // Read subrecord signature (4 bytes)
             var sig = bigEndian
-                ? new string([(char)data[offset + 3], (char)data[offset + 2], (char)data[offset + 1], (char)data[offset]])
+                ? new string([
+                    (char)data[offset + 3], (char)data[offset + 2], (char)data[offset + 1], (char)data[offset]
+                ])
                 : Encoding.ASCII.GetString(data, offset, 4);
 
             // Read subrecord size (2 bytes)
@@ -1063,6 +1102,12 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             return;
         }
 
+        // Reject known GPU debug patterns BEFORE parsing header
+        if (IsKnownFalsePositive(data, i))
+        {
+            return;
+        }
+
         var magic = BinaryUtils.ReadUInt32LE(data, i);
 
         // Try little-endian (PC format)
@@ -1093,6 +1138,13 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     {
         var globalOffset = baseOffset + i;
         if (i + 24 > dataLength || seenOffsets.Contains(globalOffset))
+        {
+            return;
+        }
+
+        // Reject known GPU debug patterns BEFORE parsing header
+        // These ASCII patterns look like valid 4-char signatures but are GPU register names
+        if (IsKnownFalsePositive(data, i))
         {
             return;
         }
@@ -1185,10 +1237,65 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         return header with { Offset = baseOffset + i };
     }
 
+    /// <summary>
+    ///     Checks if the signature at the given offset matches a known false positive pattern.
+    ///     GPU debug register dumps contain patterns like "VGT_DEBUG" that look like valid signatures.
+    /// </summary>
+    private static bool IsKnownFalsePositive(byte[] data, int offset)
+    {
+        if (offset + 4 > data.Length)
+        {
+            return false;
+        }
+
+        // Check against known false positive patterns (both LE and BE byte orders)
+        foreach (var pattern in KnownFalsePositivePatterns)
+        {
+            // Check little-endian order (as stored in memory)
+            if (data[offset] == pattern[0] && data[offset + 1] == pattern[1] &&
+                data[offset + 2] == pattern[2] && data[offset + 3] == pattern[3])
+            {
+                return true;
+            }
+
+            // Check big-endian (reversed) order for Xbox 360
+            if (data[offset + 3] == pattern[0] && data[offset + 2] == pattern[1] &&
+                data[offset + 1] == pattern[2] && data[offset] == pattern[3])
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Checks if the given offset falls within any excluded range (e.g., module memory).
+    ///     Used to skip ESM detection inside executable module regions.
+    /// </summary>
+    private static bool IsInExcludedRange(long offset, List<(long start, long end)>? ranges)
+    {
+        if (ranges == null || ranges.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var (start, end) in ranges)
+        {
+            if (offset >= start && offset < end)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsValidMainRecordHeader(string recordType, uint dataSize, uint flags, uint formId)
     {
-        // Validate record type is one we're looking for
-        if (!RuntimeRecordTypes.Contains(recordType))
+        // Validate record type using comprehensive MainRecordTypes dictionary
+        // This provides stricter validation than just checking if it's uppercase ASCII
+        if (!IsValidRecordSignature(recordType))
         {
             return false;
         }
@@ -1215,6 +1322,14 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             return false;
         }
 
+        // False positive prevention: check if FormID bytes are all printable ASCII
+        // This indicates we're inside string data (e.g., "PrisonerSandBoxPACKAGE" triggering PACK detection)
+        // Real FormIDs have structured values like 0x00XXXXXX with plugin index as first byte
+        if (IsFormIdAllPrintableAscii(formId))
+        {
+            return false;
+        }
+
         // Plugin index validation (relaxed - allow any valid index)
         var pluginIndex = formId >> 24;
         if (pluginIndex > 0xFF)
@@ -1223,6 +1338,40 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         }
 
         return true;
+    }
+
+    /// <summary>
+    ///     Check if a FormID value consists entirely of printable ASCII characters.
+    ///     This indicates we're likely inside string data, not a real record header.
+    /// </summary>
+    private static bool IsFormIdAllPrintableAscii(uint formId)
+    {
+        var b0 = (byte)(formId & 0xFF);
+        var b1 = (byte)((formId >> 8) & 0xFF);
+        var b2 = (byte)((formId >> 16) & 0xFF);
+        var b3 = (byte)((formId >> 24) & 0xFF);
+
+        return IsPrintableAscii(b0) && IsPrintableAscii(b1) &&
+               IsPrintableAscii(b2) && IsPrintableAscii(b3);
+    }
+
+    private static bool IsPrintableAscii(byte b) => b >= 0x20 && b < 0x7F;
+
+    /// <summary>
+    ///     Validates a record signature using the comprehensive MainRecordTypes dictionary.
+    ///     This provides stricter validation than just checking if it's uppercase ASCII.
+    /// </summary>
+    private static bool IsValidRecordSignature(string signature)
+    {
+        // Primary check: known record types from comprehensive EsmRecordTypes dictionary
+        if (EsmRecordTypes.MainRecordTypes.ContainsKey(signature))
+        {
+            return true;
+        }
+
+        // Secondary: allow uppercase-only 4-char for potential unknown types
+        // (memory dumps may have record types not in the PC version dictionary)
+        return signature.Length == 4 && signature.All(c => c is >= 'A' and <= 'Z' or '_');
     }
 
     #endregion
@@ -1993,6 +2142,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             {
                 allZero = false;
             }
+
             if (j > 0 && deltas[j] != deltas[j - 1])
             {
                 hasVariation = true;
@@ -2184,12 +2334,12 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         var formIdBe = BinaryUtils.ReadUInt32BE(data, offset);
 
         // Valid FormIDs have plugin index 0x00-0x0F
-        if ((formIdLe >> 24) <= 0x0F && formIdLe != 0)
+        if (formIdLe >> 24 <= 0x0F && formIdLe != 0)
         {
             return formIdLe;
         }
 
-        if ((formIdBe >> 24) <= 0x0F && formIdBe != 0)
+        if (formIdBe >> 24 <= 0x0F && formIdBe != 0)
         {
             return formIdBe;
         }
@@ -2274,6 +2424,473 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         var param2 = GetFormId(data, offset + 16);
 
         return new ConditionSubrecord(condType, op, compValue, funcIndex, param1, param2, recordOffset);
+    }
+
+    #endregion
+
+    #region Asset String Pool Detection
+
+    /// <summary>
+    ///     Scan for runtime asset string pools in the memory dump.
+    ///     These are contiguous regions of null-terminated path strings used by the asset loader.
+    /// </summary>
+    /// <param name="accessor">Memory-mapped file accessor.</param>
+    /// <param name="fileSize">Total file size in bytes.</param>
+    /// <param name="scanResult">The scan result to add detected assets to.</param>
+    public static void ScanForAssetStrings(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        EsmRecordScanResult scanResult,
+        bool verbose = false)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        const int chunkSize = 4 * 1024 * 1024; // 4MB chunks
+        const int minStringLength = 8; // Minimum path length (e.g., "a/b.nif")
+        const int maxStringLength = 260; // MAX_PATH
+        const int maxAssetStrings = 100000; // Limit to prevent runaway
+
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+        var lastProgressMb = 0L;
+
+        var log = Logger.Instance;
+        log.Debug("AssetStrings: Starting scan of {0:N0} MB", fileSize / (1024 * 1024));
+
+        try
+        {
+            long offset = 0;
+            while (offset < fileSize && scanResult.AssetStrings.Count < maxAssetStrings)
+            {
+                var toRead = (int)Math.Min(chunkSize, fileSize - offset);
+                accessor.ReadArray(offset, buffer, 0, toRead);
+
+                // Scan for null-terminated strings that look like asset paths
+                var i = 0;
+                while (i < toRead - minStringLength && scanResult.AssetStrings.Count < maxAssetStrings)
+                {
+                    // Look for strings that start with printable ASCII
+                    if (!IsPathStartChar(buffer[i]))
+                    {
+                        i++;
+                        continue;
+                    }
+
+                    // Find the end of this potential string (null terminator)
+                    var stringEnd = FindStringEnd(buffer, i, Math.Min(i + maxStringLength, toRead));
+                    if (stringEnd < 0)
+                    {
+                        i++;
+                        continue;
+                    }
+
+                    var stringLength = stringEnd - i;
+                    if (stringLength < minStringLength)
+                    {
+                        i = stringEnd + 1;
+                        continue;
+                    }
+
+                    // Extract the string and check if it's a valid path
+                    var path = Encoding.ASCII.GetString(buffer, i, stringLength);
+                    if (IsAssetPath(path) && seenPaths.Add(path))
+                    {
+                        var category = CategorizeAssetPath(path);
+                        scanResult.AssetStrings.Add(new DetectedAssetString
+                        {
+                            Path = path,
+                            Offset = offset + i,
+                            Category = category
+                        });
+                    }
+
+                    i = stringEnd + 1;
+                }
+
+                offset += toRead;
+
+                // Progress every 100MB
+                if (offset / (100 * 1024 * 1024) > lastProgressMb)
+                {
+                    lastProgressMb = offset / (100 * 1024 * 1024);
+                    log.Debug("AssetStrings:   {0:N0} MB scanned, {1:N0} unique paths found ({2:N0} ms)",
+                        offset / (1024 * 1024), scanResult.AssetStrings.Count, sw.ElapsedMilliseconds);
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        sw.Stop();
+        log.Debug("AssetStrings: Complete: {0:N0} unique asset paths in {1:N0} ms",
+            scanResult.AssetStrings.Count, sw.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    ///     Check if a character is a valid start for a path string.
+    /// </summary>
+    private static bool IsPathStartChar(byte b)
+    {
+        // Paths typically start with: a-z, A-Z, ., \, /
+        return (b >= 'a' && b <= 'z') ||
+               (b >= 'A' && b <= 'Z') ||
+               b == '.' || b == '\\' || b == '/';
+    }
+
+    /// <summary>
+    ///     Find the end of a null-terminated string.
+    /// </summary>
+    private static int FindStringEnd(byte[] buffer, int start, int maxEnd)
+    {
+        for (var i = start; i < maxEnd; i++)
+        {
+            if (buffer[i] == 0)
+            {
+                return i;
+            }
+
+            // Stop at non-printable characters (except path separators)
+            if (buffer[i] < 0x20 || buffer[i] > 0x7E)
+            {
+                return -1;
+            }
+        }
+
+        return -1; // No null terminator found
+    }
+
+    /// <summary>
+    ///     Check if a string looks like a valid asset path.
+    /// </summary>
+    private static bool IsAssetPath(string path)
+    {
+        // Must contain a path separator or start with a known folder
+        if (!path.Contains('\\') && !path.Contains('/'))
+        {
+            return false;
+        }
+
+        // Must have a file extension
+        var lastDot = path.LastIndexOf('.');
+        if (lastDot < 0 || lastDot >= path.Length - 1)
+        {
+            return false;
+        }
+
+        var extension = path[(lastDot + 1)..].ToLowerInvariant();
+
+        // Check for known game asset extensions
+        return extension is
+            "nif" or "kf" or "hkx" or  // Models/animations
+            "dds" or "ddx" or "tga" or "bmp" or // Textures
+            "wav" or "mp3" or "ogg" or "lip" or // Sound/lipsync
+            "psc" or "pex" or // Scripts
+            "egm" or "egt" or "tri" or // FaceGen
+            "spt" or "txt" or "xml" or // Misc data
+            "esm" or "esp"; // Plugin files (references)
+    }
+
+    /// <summary>
+    ///     Categorize an asset path by its extension.
+    /// </summary>
+    private static AssetCategory CategorizeAssetPath(string path)
+    {
+        var lastDot = path.LastIndexOf('.');
+        if (lastDot < 0)
+        {
+            return AssetCategory.Other;
+        }
+
+        var extension = path[(lastDot + 1)..].ToLowerInvariant();
+
+        return extension switch
+        {
+            "nif" or "egm" or "egt" or "tri" => AssetCategory.Model,
+            "dds" or "ddx" or "tga" or "bmp" => AssetCategory.Texture,
+            "wav" or "mp3" or "ogg" or "lip" => AssetCategory.Sound,
+            "psc" or "pex" => AssetCategory.Script,
+            "kf" or "hkx" => AssetCategory.Animation,
+            _ => AssetCategory.Other
+        };
+    }
+
+    #endregion
+
+    #region Runtime EditorID Hash Table Extraction
+
+    /// <summary>
+    ///     Extract runtime Editor IDs from the game's EditorID hash table by following TESForm pointers.
+    ///     This requires MinidumpInfo to convert Xbox virtual addresses to file offsets.
+    /// </summary>
+    /// <param name="accessor">Memory-mapped file accessor.</param>
+    /// <param name="fileSize">Total file size in bytes.</param>
+    /// <param name="minidumpInfo">Minidump info with memory region mappings.</param>
+    /// <param name="scanResult">The scan result to add extracted Editor IDs to.</param>
+    public static void ExtractRuntimeEditorIds(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        Minidump.MinidumpInfo? minidumpInfo,
+        EsmRecordScanResult scanResult,
+        bool verbose = false)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var log = Logger.Instance;
+
+        log.Debug("EditorIDs: Starting extraction...");
+
+        if (minidumpInfo == null || minidumpInfo.MemoryRegions.Count == 0)
+        {
+            log.Debug("EditorIDs: No minidump info - skipping");
+            return;
+        }
+
+        const int minEditorIdLength = 4; // Minimum meaningful EditorID
+        const int maxEditorIdLength = 128;
+
+        var seenEditorIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var buffer = ArrayPool<byte>.Shared.Rent(256 * 1024); // 256KB buffer for reading
+        var tesFormBuffer = new byte[24]; // TESForm is 24 bytes
+        long totalScanned = 0;
+        int regionsProcessed = 0;
+        int pointersFollowed = 0;
+        int pointersResolved = 0;
+
+        try
+        {
+            // Scan ALL memory regions for Editor ID string patterns
+            var regionsToScan = minidumpInfo.MemoryRegions
+                .OrderByDescending(r => r.Size) // Largest first for better progress indication
+                .ToList();
+
+            log.Debug("EditorIDs: Scanning all {0} regions", regionsToScan.Count);
+
+            foreach (var region in regionsToScan)
+            {
+                regionsProcessed++;
+                var regionStartCount = scanResult.RuntimeEditorIds.Count;
+
+                // Process region in chunks
+                var regionOffset = region.FileOffset;
+                var regionEnd = region.FileOffset + region.Size;
+
+                while (regionOffset < regionEnd)
+                {
+                    var toRead = (int)Math.Min(buffer.Length, regionEnd - regionOffset);
+                    accessor.ReadArray(regionOffset, buffer, 0, toRead);
+
+                    // Scan for Editor ID patterns
+                    var i = 0;
+                    while (i < toRead - maxEditorIdLength - 8)
+                    {
+                        // Look for valid Editor ID string followed by null terminator
+                        if (!IsEditorIdStartChar(buffer[i]))
+                        {
+                            i++;
+                            continue;
+                        }
+
+                        var stringEnd = FindEditorIdEnd(buffer, i, Math.Min(i + maxEditorIdLength, toRead));
+                        if (stringEnd < 0)
+                        {
+                            i++;
+                            continue;
+                        }
+
+                        var stringLength = stringEnd - i;
+                        if (stringLength < minEditorIdLength)
+                        {
+                            i = stringEnd + 1;
+                            continue;
+                        }
+
+                        var editorId = Encoding.ASCII.GetString(buffer, i, stringLength);
+
+                        // Validate as Editor ID (alphanumeric + underscore, starts with letter)
+                        if (!IsValidEditorId(editorId) || !seenEditorIds.Add(editorId))
+                        {
+                            i = stringEnd + 1;
+                            continue;
+                        }
+
+                        // Create entry without pointer following for speed
+                        var entry = new RuntimeEditorIdEntry
+                        {
+                            EditorId = editorId,
+                            StringOffset = regionOffset + i
+                        };
+
+                        // Only try pointer following for every 10th EditorID to limit overhead
+                        if (scanResult.RuntimeEditorIds.Count % 10 == 0)
+                        {
+                            pointersFollowed++;
+                            var tesFormInfo = TryFollowNearbyTesFormPointer(
+                                buffer, i, stringEnd, toRead,
+                                regionOffset, accessor, minidumpInfo, tesFormBuffer);
+
+                            if (tesFormInfo.HasValue)
+                            {
+                                pointersResolved++;
+                                entry = entry with
+                                {
+                                    FormId = tesFormInfo.Value.formId,
+                                    FormType = tesFormInfo.Value.formType,
+                                    TesFormOffset = tesFormInfo.Value.fileOffset,
+                                    TesFormPointer = tesFormInfo.Value.pointer
+                                };
+                            }
+                        }
+
+                        scanResult.RuntimeEditorIds.Add(entry);
+                        i = stringEnd + 1;
+                    }
+
+                    totalScanned += toRead;
+                    regionOffset += toRead;
+                }
+
+                totalScanned += region.Size;
+
+                // Log progress per region if finding many IDs
+                var regionCount = scanResult.RuntimeEditorIds.Count - regionStartCount;
+                if (regionCount > 100)
+                {
+                    log.Debug("EditorIDs:   Region {0}: VA 0x{1:X8}, {2:N0} KB -> {3:N0} IDs",
+                        regionsProcessed, region.VirtualAddress, region.Size / 1024, regionCount);
+                }
+
+                // Progress report every 500 regions
+                if (regionsProcessed % 500 == 0)
+                {
+                    log.Debug("EditorIDs:   Progress: {0}/{1} regions, {2:N0} MB scanned, {3:N0} IDs found",
+                        regionsProcessed, regionsToScan.Count, totalScanned / (1024 * 1024),
+                        scanResult.RuntimeEditorIds.Count);
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        sw.Stop();
+        log.Debug("EditorIDs: Complete: {0:N0} unique EditorIDs in {1:N0} ms",
+            scanResult.RuntimeEditorIds.Count, sw.ElapsedMilliseconds);
+        log.Debug("EditorIDs:   Scanned {0:N0} MB across {1} regions",
+            totalScanned / (1024 * 1024), regionsProcessed);
+        log.Debug("EditorIDs:   Pointer following: {0} attempts, {1} resolved ({2:F1}%)",
+            pointersFollowed, pointersResolved, 100.0 * pointersResolved / Math.Max(1, pointersFollowed));
+    }
+
+    /// <summary>
+    ///     Check if a byte is a valid starting character for an Editor ID.
+    /// </summary>
+    private static bool IsEditorIdStartChar(byte b)
+    {
+        // Editor IDs start with a letter
+        return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z');
+    }
+
+    /// <summary>
+    ///     Find the end of an Editor ID string (null terminator).
+    /// </summary>
+    private static int FindEditorIdEnd(byte[] buffer, int start, int maxEnd)
+    {
+        for (var i = start; i < maxEnd; i++)
+        {
+            if (buffer[i] == 0)
+            {
+                return i;
+            }
+
+            // Editor IDs contain only alphanumeric and underscore
+            var b = buffer[i];
+            if (!((b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') ||
+                  (b >= '0' && b <= '9') || b == '_'))
+            {
+                return -1;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    ///     Try to find and follow a TESForm pointer near an Editor ID string.
+    /// </summary>
+    private static (uint formId, byte formType, long fileOffset, long pointer)? TryFollowNearbyTesFormPointer(
+        byte[] buffer,
+        int stringStart,
+        int stringEnd,
+        int bufferLength,
+        long baseOffset,
+        MemoryMappedViewAccessor accessor,
+        Minidump.MinidumpInfo minidumpInfo,
+        byte[] tesFormBuffer)
+    {
+        // Look for Xbox 360 pointers (0x40-0x7F range) within 32 bytes before/after string
+        // Xbox 360 uses big-endian, so pointers look like: XX XX XX XX where first byte is 0x40-0x7F
+
+        var searchStart = Math.Max(0, stringStart - 32);
+        var searchEnd = Math.Min(bufferLength - 4, stringEnd + 32);
+
+        for (var i = searchStart; i < searchEnd; i += 4) // Pointers are typically 4-byte aligned
+        {
+            // Read as big-endian (Xbox 360)
+            var pointer = (long)BinaryUtils.ReadUInt32BE(buffer, i);
+
+            // Check if it looks like a valid Xbox 360 pointer (0x40000000 - 0x7FFFFFFF range)
+            if (pointer < 0x40000000 || pointer > 0x7FFFFFFF)
+            {
+                continue;
+            }
+
+            // Try to convert to file offset
+            var fileOffset = minidumpInfo.VirtualAddressToFileOffset(pointer);
+            if (!fileOffset.HasValue)
+            {
+                continue;
+            }
+
+            // Read potential TESForm at this offset
+            try
+            {
+                accessor.ReadArray(fileOffset.Value, tesFormBuffer, 0, 24);
+
+                // Validate TESForm structure
+                // Offset 4: cFormType (should be < 200 for valid types)
+                // Offset 12: iFormID (read as big-endian)
+                var formType = tesFormBuffer[4];
+                if (formType > 200)
+                {
+                    continue;
+                }
+
+                var formId = BinaryUtils.ReadUInt32BE(tesFormBuffer, 12);
+
+                // Basic validation: FormID should not be 0 or 0xFFFFFFFF
+                if (formId == 0 || formId == 0xFFFFFFFF)
+                {
+                    continue;
+                }
+
+                // Plugin index validation (upper byte, typically 0x00-0xFF)
+                var pluginIndex = formId >> 24;
+                if (pluginIndex > 0xFF)
+                {
+                    continue;
+                }
+
+                return (formId, formType, fileOffset.Value, pointer);
+            }
+            catch
+            {
+                // Ignore read errors
+            }
+        }
+
+        return null;
     }
 
     #endregion

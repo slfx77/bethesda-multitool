@@ -54,6 +54,12 @@ public class CarvedFileInfo
     ///     The file category for color coding.
     /// </summary>
     public FileCategory Category { get; set; }
+
+    /// <summary>
+    ///     True if this file was detected as potentially truncated due to a memory region gap.
+    ///     Files crossing non-contiguous virtual address boundaries may be incomplete.
+    /// </summary>
+    public bool IsTruncated { get; set; }
 }
 
 /// <summary>
@@ -73,6 +79,17 @@ public record ExtractionOptions
     ///     Scripts are grouped by quest name for easier analysis.
     /// </summary>
     public bool ExtractScripts { get; init; } = true;
+
+    /// <summary>
+    ///     Enable PC-friendly normal map conversion during DDX extraction.
+    ///     This post-processes normal maps to merge specular data for PC compatibility.
+    /// </summary>
+    public bool PcFriendly { get; init; } = true;
+
+    /// <summary>
+    ///     Generate ESM semantic reports and heightmap PNGs during extraction.
+    /// </summary>
+    public bool GenerateEsmReports { get; init; } = true;
 }
 
 /// <summary>

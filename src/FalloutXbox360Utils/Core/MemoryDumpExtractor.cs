@@ -1,5 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Carving;
+using FalloutXbox360Utils.Core.Converters;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Minidump;
 
@@ -17,17 +19,29 @@ public static class MemoryDumpExtractor
     /// <summary>
     ///     Extract files from a memory dump based on prior analysis.
     /// </summary>
+    /// <param name="filePath">Path to the memory dump file.</param>
+    /// <param name="options">Extraction options.</param>
+    /// <param name="progress">Progress reporter.</param>
+    /// <param name="analysisResult">Optional analysis result for ESM report generation.</param>
     public static async Task<ExtractionSummary> Extract(
         string filePath,
         ExtractionOptions options,
-        IProgress<ExtractionProgress>? progress)
+        IProgress<ExtractionProgress>? progress,
+        AnalysisResult? analysisResult = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         Directory.CreateDirectory(options.OutputPath);
 
+        var dumpName = Path.GetFileNameWithoutExtension(filePath);
+        var sanitizedName = SanitizeFilename(dumpName);
+        var extractDir = Path.Combine(options.OutputPath, sanitizedName);
+
         // Extract modules from minidump first
         var (moduleCount, moduleOffsets) = await ExtractModulesAsync(filePath, options, progress);
+
+        // When PcFriendly is enabled, skip inline DDX conversion - we'll do batch conversion after
+        var skipDdxConversion = options.PcFriendly && options.ConvertDdx;
 
         // Create carver with options for signature-based extraction
         using var carver = new MemoryCarver(
@@ -36,13 +50,14 @@ public static class MemoryDumpExtractor
             options.ConvertDdx,
             options.FileTypes,
             options.Verbose,
-            options.SaveAtlas);
+            options.SaveAtlas,
+            skipDdxConversion);
 
         // Progress wrapper
         var carverProgress = progress != null
             ? new Progress<double>(p => progress.Report(new ExtractionProgress
             {
-                PercentComplete = p * 80, // 0-80% for carving
+                PercentComplete = p * 60, // 0-60% for carving
                 CurrentOperation = "Extracting files..."
             }))
             : null;
@@ -58,6 +73,28 @@ public static class MemoryDumpExtractor
         // Build set of failed conversion offsets
         var failedConversionOffsets = carver.FailedConversionOffsets.ToHashSet();
 
+        // Batch DDX conversion with pc-friendly when enabled
+        // Run batch conversion if there are DDX files to convert (inline conversion was skipped)
+        var ddxConverted = carver.DdxConvertedCount;
+        var ddxFailed = carver.DdxConvertFailedCount;
+        if (skipDdxConversion && options.ConvertDdx)
+        {
+            var ddxDir = Path.Combine(extractDir, "ddx");
+            var hasDdxToConvert = Directory.Exists(ddxDir) &&
+                                  Directory.EnumerateFiles(ddxDir, "*.ddx").Any();
+
+            if (hasDdxToConvert)
+            {
+                var batchResult = await BatchConvertDdxAsync(extractDir, options.PcFriendly, progress);
+                ddxConverted = batchResult.Converted;
+                ddxFailed = batchResult.Failed;
+            }
+            else if (options.Verbose)
+            {
+                Console.WriteLine("[DDX] No DDX files to convert");
+            }
+        }
+
         // Extract compiled scripts if requested
         var scriptResult = new ScdaExtractionResult();
         if (options.ExtractScripts)
@@ -65,12 +102,21 @@ public static class MemoryDumpExtractor
             scriptResult = await ExtractScriptsAsync(filePath, options, progress);
         }
 
+        // Generate ESM reports and heightmaps if requested and analysis data is available
+        var esmReportGenerated = false;
+        var heightmapsExported = 0;
+        if (options.GenerateEsmReports && analysisResult?.EsmRecords != null)
+        {
+            (esmReportGenerated, heightmapsExported) = await GenerateEsmOutputsAsync(
+                analysisResult, extractDir, progress);
+        }
+
         // Return summary
         return new ExtractionSummary
         {
             TotalExtracted = entries.Count + moduleCount + scriptResult.GroupedQuests + scriptResult.UngroupedScripts,
-            DdxConverted = carver.DdxConvertedCount,
-            DdxFailed = carver.DdxConvertFailedCount,
+            DdxConverted = ddxConverted,
+            DdxFailed = ddxFailed,
             XurConverted = carver.XurConvertedCount,
             XurFailed = carver.XurConvertFailedCount,
             TypeCounts = carver.Stats.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
@@ -79,7 +125,9 @@ public static class MemoryDumpExtractor
             ExtractedModuleOffsets = moduleOffsets,
             ModulesExtracted = moduleCount,
             ScriptsExtracted = scriptResult.TotalRecords,
-            ScriptQuestsGrouped = scriptResult.GroupedQuests
+            ScriptQuestsGrouped = scriptResult.GroupedQuests,
+            EsmReportGenerated = esmReportGenerated,
+            HeightmapsExported = heightmapsExported
         };
     }
 
@@ -236,6 +284,160 @@ public static class MemoryDumpExtractor
     }
 
     /// <summary>
+    ///     Batch convert DDX files to DDS with pc-friendly option.
+    /// </summary>
+    private static async Task<BatchConversionResult> BatchConvertDdxAsync(
+        string extractDir,
+        bool pcFriendly,
+        IProgress<ExtractionProgress>? progress)
+    {
+        // DDX files are saved to "ddx" folder during carving (DdxFormat.OutputFolder = "ddx")
+        // Convert them and output to "textures" folder
+        var ddxDir = Path.Combine(extractDir, "ddx");
+        var texturesDir = Path.Combine(extractDir, "textures");
+
+        if (!Directory.Exists(ddxDir))
+        {
+            return new BatchConversionResult();
+        }
+
+        progress?.Report(new ExtractionProgress
+        {
+            PercentComplete = 65,
+            CurrentOperation = pcFriendly
+                ? "Converting textures with PC-friendly normal maps..."
+                : "Converting textures..."
+        });
+
+        try
+        {
+            var converter = new DdxSubprocessConverter();
+            var result = await converter.ConvertBatchAsync(
+                ddxDir,
+                texturesDir,
+                null,
+                default,
+                pcFriendly);
+
+            progress?.Report(new ExtractionProgress
+            {
+                PercentComplete = 75,
+                CurrentOperation = $"Converted {result.Converted} textures ({result.Failed} failed)"
+            });
+
+            return result;
+        }
+        catch (FileNotFoundException)
+        {
+            // DDXConv not available
+            return new BatchConversionResult();
+        }
+    }
+
+    /// <summary>
+    ///     Generate ESM semantic report and heightmap images.
+    /// </summary>
+    private static async Task<(bool reportGenerated, int heightmapsExported)> GenerateEsmOutputsAsync(
+        AnalysisResult analysisResult,
+        string extractDir,
+        IProgress<ExtractionProgress>? progress)
+    {
+        var reportGenerated = false;
+        var heightmapsExported = 0;
+
+        if (analysisResult.EsmRecords == null)
+        {
+            return (reportGenerated, heightmapsExported);
+        }
+
+        progress?.Report(new ExtractionProgress
+        {
+            PercentComplete = 92,
+            CurrentOperation = "Generating ESM semantic report..."
+        });
+
+        try
+        {
+            // Generate semantic reconstruction
+            var reconstructor = new SemanticReconstructor(
+                analysisResult.EsmRecords,
+                analysisResult.FormIdMap);
+            var semanticResult = reconstructor.ReconstructAll();
+
+            // Generate split GECK-style reports (one file per record type)
+            var splitReports = GeckReportGenerator.GenerateSplit(semanticResult, analysisResult.FormIdMap);
+            var esmDir = Path.Combine(extractDir, "esm_data");
+            Directory.CreateDirectory(esmDir);
+
+            // Write all split report files
+            foreach (var (filename, content) in splitReports)
+            {
+                var reportPath = Path.Combine(esmDir, filename);
+                await File.WriteAllTextAsync(reportPath, content);
+            }
+
+            // Generate asset list report from runtime string pools
+            if (analysisResult.EsmRecords.AssetStrings.Count > 0)
+            {
+                var assetReport = GeckReportGenerator.GenerateAssetListReport(analysisResult.EsmRecords.AssetStrings);
+                await File.WriteAllTextAsync(Path.Combine(esmDir, "assets.txt"), assetReport);
+            }
+
+            // Generate runtime EditorIDs report with FormID associations
+            if (analysisResult.EsmRecords.RuntimeEditorIds.Count > 0)
+            {
+                var runtimeEdidReport =
+                    GeckReportGenerator.GenerateRuntimeEditorIdsReport(analysisResult.EsmRecords.RuntimeEditorIds);
+                await File.WriteAllTextAsync(Path.Combine(esmDir, "runtime_editorids.txt"), runtimeEdidReport);
+            }
+
+            reportGenerated = splitReports.Count > 0;
+
+            progress?.Report(new ExtractionProgress
+            {
+                PercentComplete = 95,
+                CurrentOperation = "Exporting heightmap images..."
+            });
+
+            // Export heightmaps as PNG images (grayscale - individual cells lack context for color gradients)
+            if (analysisResult.EsmRecords.Heightmaps.Count > 0)
+            {
+                var heightmapsDir = Path.Combine(esmDir, "heightmaps");
+                await HeightmapPngExporter.ExportAsync(
+                    analysisResult.EsmRecords.Heightmaps,
+                    analysisResult.EsmRecords.CellGrids,
+                    heightmapsDir,
+                    false);
+                heightmapsExported = analysisResult.EsmRecords.Heightmaps.Count;
+
+                // Also try to generate composite worldmap (grayscale for consistency)
+                if (analysisResult.EsmRecords.CellGrids.Count > 0)
+                {
+                    var worldmapPath = Path.Combine(esmDir, "worldmap_composite.png");
+                    await HeightmapPngExporter.ExportCompositeWorldmapAsync(
+                        analysisResult.EsmRecords.Heightmaps,
+                        analysisResult.EsmRecords.CellGrids,
+                        worldmapPath,
+                        false);
+                }
+            }
+
+            progress?.Report(new ExtractionProgress
+            {
+                PercentComplete = 98,
+                CurrentOperation = $"ESM report generated, {heightmapsExported} heightmaps exported"
+            });
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail extraction if ESM report generation fails
+            Console.WriteLine($"[ESM] Report generation failed: {ex.Message}");
+        }
+
+        return (reportGenerated, heightmapsExported);
+    }
+
+    /// <summary>
     ///     Sanitize a filename by removing invalid characters.
     /// </summary>
     private static string SanitizeFilename(string name)
@@ -276,4 +478,14 @@ public class ExtractionSummary
     ///     File offsets of extracted modules from minidump metadata.
     /// </summary>
     public HashSet<long> ExtractedModuleOffsets { get; init; } = [];
+
+    /// <summary>
+    ///     Whether an ESM semantic report was generated.
+    /// </summary>
+    public bool EsmReportGenerated { get; init; }
+
+    /// <summary>
+    ///     Number of heightmap PNG images exported.
+    /// </summary>
+    public int HeightmapsExported { get; init; }
 }

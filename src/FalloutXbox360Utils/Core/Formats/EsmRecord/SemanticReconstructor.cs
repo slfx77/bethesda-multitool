@@ -2,7 +2,6 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using FalloutXbox360Utils.Core.Converters.Esm.Schema;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
@@ -12,12 +11,12 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 /// </summary>
 public sealed class SemanticReconstructor
 {
-    private readonly EsmRecordScanResult _scanResult;
-    private readonly Dictionary<uint, DetectedMainRecord> _recordsByFormId;
-    private readonly Dictionary<uint, string> _formIdToEditorId;
-    private readonly Dictionary<string, uint> _editorIdToFormId;
     private readonly MemoryMappedViewAccessor? _accessor;
+    private readonly Dictionary<string, uint> _editorIdToFormId;
     private readonly long _fileSize;
+    private readonly Dictionary<uint, string> _formIdToEditorId;
+    private readonly Dictionary<uint, DetectedMainRecord> _recordsByFormId;
+    private readonly EsmRecordScanResult _scanResult;
 
     /// <summary>
     ///     Creates a new SemanticReconstructor with scan results and optional memory-mapped access.
@@ -51,40 +50,73 @@ public sealed class SemanticReconstructor
     /// <summary>
     ///     Get the Editor ID for a FormID.
     /// </summary>
-    public string? GetEditorId(uint formId) => _formIdToEditorId.GetValueOrDefault(formId);
+    public string? GetEditorId(uint formId)
+    {
+        return _formIdToEditorId.GetValueOrDefault(formId);
+    }
 
     /// <summary>
     ///     Get the FormID for an Editor ID.
     /// </summary>
-    public uint? GetFormId(string editorId) =>
-        _editorIdToFormId.TryGetValue(editorId, out var formId) ? formId : null;
+    public uint? GetFormId(string editorId)
+    {
+        return _editorIdToFormId.TryGetValue(editorId, out var formId) ? formId : null;
+    }
 
     /// <summary>
     ///     Get a main record by FormID.
     /// </summary>
-    public DetectedMainRecord? GetRecord(uint formId) => _recordsByFormId.GetValueOrDefault(formId);
+    public DetectedMainRecord? GetRecord(uint formId)
+    {
+        return _recordsByFormId.GetValueOrDefault(formId);
+    }
 
     /// <summary>
     ///     Get all main records of a specific type.
     /// </summary>
-    public IEnumerable<DetectedMainRecord> GetRecordsByType(string recordType) =>
-        _scanResult.MainRecords.Where(r => r.RecordType == recordType);
+    public IEnumerable<DetectedMainRecord> GetRecordsByType(string recordType)
+    {
+        return _scanResult.MainRecords.Where(r => r.RecordType == recordType);
+    }
 
     /// <summary>
     ///     Perform full semantic reconstruction of all supported record types.
     /// </summary>
     public SemanticReconstructionResult ReconstructAll()
     {
+        // Reconstructed record types
+        var reconstructedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "NPC_", "CREA", "RACE", "FACT",
+            "QUST", "DIAL", "INFO", "NOTE", "BOOK", "TERM",
+            "WEAP", "ARMO", "AMMO", "ALCH", "MISC", "KEYM", "CONT",
+            "PERK", "SPEL", "CELL", "WRLD", "GMST"
+        };
+
+        // Count all record types and compute unreconstructed counts
+        var allTypeCounts = _scanResult.MainRecords
+            .GroupBy(r => r.RecordType)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+        var unreconstructedCounts = allTypeCounts
+            .Where(kvp => !reconstructedTypes.Contains(kvp.Key))
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
+
         return new SemanticReconstructionResult
         {
             // Characters
             Npcs = ReconstructNpcs(),
+            Creatures = ReconstructCreatures(),
             Races = ReconstructRaces(),
+            Factions = ReconstructFactions(),
 
             // Quests and Dialogue
             Quests = ReconstructQuests(),
+            DialogTopics = ReconstructDialogTopics(),
             Dialogues = ReconstructDialogue(),
             Notes = ReconstructNotes(),
+            Books = ReconstructBooks(),
+            Terminals = ReconstructTerminals(),
 
             // Items
             Weapons = ReconstructWeapons(),
@@ -92,6 +124,8 @@ public sealed class SemanticReconstructor
             Ammo = ReconstructAmmo(),
             Consumables = ReconstructConsumables(),
             MiscItems = ReconstructMiscItems(),
+            Keys = ReconstructKeys(),
+            Containers = ReconstructContainers(),
 
             // Abilities
             Perks = ReconstructPerks(),
@@ -101,8 +135,12 @@ public sealed class SemanticReconstructor
             Cells = ReconstructCells(),
             Worldspaces = ReconstructWorldspaces(),
 
+            // Game Data
+            GameSettings = ReconstructGameSettings(),
+
             FormIdToEditorId = new Dictionary<uint, string>(_formIdToEditorId),
-            TotalRecordsProcessed = _scanResult.MainRecords.Count
+            TotalRecordsProcessed = _scanResult.MainRecords.Count,
+            UnreconstructedTypeCounts = unreconstructedCounts
         };
     }
 
@@ -723,6 +761,167 @@ public sealed class SemanticReconstructor
         return races;
     }
 
+    /// <summary>
+    ///     Reconstruct all Creature records from the scan result.
+    /// </summary>
+    public List<ReconstructedCreature> ReconstructCreatures()
+    {
+        var creatures = new List<ReconstructedCreature>();
+        var creatureRecords = GetRecordsByType("CREA").ToList();
+
+        foreach (var record in creatureRecords)
+        {
+            creatures.Add(new ReconstructedCreature
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        return creatures;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Faction records from the scan result.
+    /// </summary>
+    public List<ReconstructedFaction> ReconstructFactions()
+    {
+        var factions = new List<ReconstructedFaction>();
+        var factionRecords = GetRecordsByType("FACT").ToList();
+
+        foreach (var record in factionRecords)
+        {
+            factions.Add(new ReconstructedFaction
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        return factions;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Book records from the scan result.
+    /// </summary>
+    public List<ReconstructedBook> ReconstructBooks()
+    {
+        var books = new List<ReconstructedBook>();
+        var bookRecords = GetRecordsByType("BOOK").ToList();
+
+        foreach (var record in bookRecords)
+        {
+            books.Add(new ReconstructedBook
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        return books;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Key records from the scan result.
+    /// </summary>
+    public List<ReconstructedKey> ReconstructKeys()
+    {
+        var keys = new List<ReconstructedKey>();
+        var keyRecords = GetRecordsByType("KEYM").ToList();
+
+        foreach (var record in keyRecords)
+        {
+            keys.Add(new ReconstructedKey
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        return keys;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Container records from the scan result.
+    /// </summary>
+    public List<ReconstructedContainer> ReconstructContainers()
+    {
+        var containers = new List<ReconstructedContainer>();
+        var containerRecords = GetRecordsByType("CONT").ToList();
+
+        foreach (var record in containerRecords)
+        {
+            containers.Add(new ReconstructedContainer
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        return containers;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Terminal records from the scan result.
+    /// </summary>
+    public List<ReconstructedTerminal> ReconstructTerminals()
+    {
+        var terminals = new List<ReconstructedTerminal>();
+        var terminalRecords = GetRecordsByType("TERM").ToList();
+
+        foreach (var record in terminalRecords)
+        {
+            terminals.Add(new ReconstructedTerminal
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        return terminals;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Dialog Topic records from the scan result.
+    /// </summary>
+    public List<ReconstructedDialogTopic> ReconstructDialogTopics()
+    {
+        var topics = new List<ReconstructedDialogTopic>();
+        var topicRecords = GetRecordsByType("DIAL").ToList();
+
+        foreach (var record in topicRecords)
+        {
+            topics.Add(new ReconstructedDialogTopic
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        return topics;
+    }
+
     #region Private Reconstruction Methods
 
     private ReconstructedNpc? ReconstructNpcFromScanResult(DetectedMainRecord record)
@@ -911,6 +1110,7 @@ public sealed class SemanticReconstructor
                             Flags = currentStageFlags
                         });
                     }
+
                     // Start new stage
                     currentStageIndex = record.IsBigEndian
                         ? BinaryPrimitives.ReadInt16BigEndian(subData)
@@ -933,6 +1133,7 @@ public sealed class SemanticReconstructor
                             Index = currentObjectiveIndex.Value
                         });
                     }
+
                     currentObjectiveIndex = record.IsBigEndian
                         ? BinaryPrimitives.ReadInt32BigEndian(subData)
                         : BinaryPrimitives.ReadInt32LittleEndian(subData);
@@ -947,6 +1148,7 @@ public sealed class SemanticReconstructor
                         });
                         currentObjectiveIndex = null;
                     }
+
                     break;
             }
         }
@@ -1018,6 +1220,8 @@ public sealed class SemanticReconstructor
             return ReconstructDialogueFromScanResult(record);
         }
 
+        // Clear buffer to prevent stale subrecord data from previous records
+        Array.Clear(buffer, 0, dataSize);
         _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
 
         string? editorId = null;
@@ -1030,7 +1234,7 @@ public sealed class SemanticReconstructor
         // Track current response being built
         string? currentResponseText = null;
         uint currentEmotionType = 0;
-        int currentEmotionValue = 0;
+        var currentEmotionValue = 0;
         byte currentResponseNumber = 0;
 
         foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
@@ -1057,6 +1261,7 @@ public sealed class SemanticReconstructor
                             ResponseNumber = currentResponseNumber
                         });
                     }
+
                     currentResponseText = ReadNullTermString(subData);
                     currentEmotionType = 0;
                     currentEmotionValue = 0;
@@ -1154,6 +1359,7 @@ public sealed class SemanticReconstructor
                     {
                         text = ReadNullTermString(subData);
                     }
+
                     break;
             }
         }
@@ -1170,7 +1376,8 @@ public sealed class SemanticReconstructor
         };
     }
 
-    private ReconstructedCell? ReconstructCellFromScanResult(DetectedMainRecord record, List<ExtractedRefrRecord> refrRecords)
+    private ReconstructedCell? ReconstructCellFromScanResult(DetectedMainRecord record,
+        List<ExtractedRefrRecord> refrRecords)
     {
         // Find XCLC near this CELL record
         var cellGrid = _scanResult.CellGrids
@@ -1211,7 +1418,8 @@ public sealed class SemanticReconstructor
         };
     }
 
-    private ReconstructedCell? ReconstructCellFromAccessor(DetectedMainRecord record, List<ExtractedRefrRecord> refrRecords, byte[] buffer)
+    private ReconstructedCell? ReconstructCellFromAccessor(DetectedMainRecord record,
+        List<ExtractedRefrRecord> refrRecords, byte[] buffer)
     {
         var dataStart = record.Offset + 24;
         var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
@@ -1388,8 +1596,8 @@ public sealed class SemanticReconstructor
         string? modelPath = null;
 
         // DATA subrecord (15 bytes)
-        int value = 0;
-        int health = 0;
+        var value = 0;
+        var health = 0;
         float weight = 0;
         short damage = 0;
         byte clipSize = 0;
@@ -1397,7 +1605,7 @@ public sealed class SemanticReconstructor
         // DNAM subrecord (204 bytes)
         WeaponType weaponType = 0;
         uint animationType = 0;
-        float speed = 1.0f;
+        var speed = 1.0f;
         float reach = 0;
         byte ammoPerShot = 1;
         float minSpread = 0;
@@ -1416,7 +1624,7 @@ public sealed class SemanticReconstructor
 
         // CRDT subrecord
         short criticalDamage = 0;
-        float criticalChance = 1.0f;
+        var criticalChance = 1.0f;
         uint? criticalEffectFormId = null;
 
         foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
@@ -1482,6 +1690,7 @@ public sealed class SemanticReconstructor
                             ? BinaryPrimitives.ReadSingleBigEndian(subData[72..])
                             : BinaryPrimitives.ReadSingleLittleEndian(subData[72..]);
                     }
+
                     break;
                 case "CRDT" when sub.DataLength >= 12:
                     criticalDamage = record.IsBigEndian
@@ -1554,10 +1763,10 @@ public sealed class SemanticReconstructor
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
-        int value = 0;
-        int health = 0;
+        var value = 0;
+        var health = 0;
         float weight = 0;
-        int armorRating = 0;
+        var armorRating = 0;
 
         foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
         {
@@ -1781,7 +1990,7 @@ public sealed class SemanticReconstructor
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
-        int value = 0;
+        var value = 0;
         float weight = 0;
 
         foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
@@ -2017,8 +2226,8 @@ public sealed class SemanticReconstructor
         sbyte intelligence = 0, agility = 0, luck = 0;
 
         // Heights
-        float maleHeight = 1.0f;
-        float femaleHeight = 1.0f;
+        var maleHeight = 1.0f;
+        var femaleHeight = 1.0f;
 
         // Related FormIDs
         uint? olderRace = null;
@@ -2220,7 +2429,9 @@ public sealed class SemanticReconstructor
         {
             // Read subrecord signature (4 bytes)
             var sig = bigEndian
-                ? new string([(char)data[offset + 3], (char)data[offset + 2], (char)data[offset + 1], (char)data[offset]])
+                ? new string([
+                    (char)data[offset + 3], (char)data[offset + 2], (char)data[offset + 1], (char)data[offset]
+                ])
                 : Encoding.ASCII.GetString(data, offset, 4);
 
             // Read subrecord size (2 bytes)
@@ -2237,6 +2448,141 @@ public sealed class SemanticReconstructor
 
             offset += 6 + subSize;
         }
+    }
+
+    /// <summary>
+    ///     Reconstruct all Game Setting (GMST) records from the scan result.
+    /// </summary>
+    public List<ReconstructedGameSetting> ReconstructGameSettings()
+    {
+        var settings = new List<ReconstructedGameSetting>();
+        var gmstRecords = GetRecordsByType("GMST").ToList();
+
+        if (_accessor == null)
+        {
+            // Without accessor, just return basic info
+            foreach (var record in gmstRecords)
+            {
+                settings.Add(new ReconstructedGameSetting
+                {
+                    FormId = record.FormId,
+                    EditorId = GetEditorId(record.FormId),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+
+            return settings;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(512);
+        try
+        {
+            foreach (var record in gmstRecords)
+            {
+                var setting = ReconstructGameSettingFromAccessor(record, buffer);
+                if (setting != null)
+                {
+                    settings.Add(setting);
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return settings;
+    }
+
+    private ReconstructedGameSetting? ReconstructGameSettingFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var dataStart = record.Offset + 24;
+        var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+
+        if (dataStart + dataSize > _fileSize)
+        {
+            return new ReconstructedGameSetting
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        Array.Clear(buffer, 0, dataSize);
+        _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+        string? editorId = null;
+        byte[]? dataValue = null;
+
+        foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        _formIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "DATA":
+                    dataValue = new byte[sub.DataLength];
+                    Array.Copy(buffer, sub.DataOffset, dataValue, 0, sub.DataLength);
+                    break;
+            }
+        }
+
+        // Determine type from first letter of EditorId
+        var valueType = GameSettingType.Integer;
+        float? floatValue = null;
+        int? intValue = null;
+        string? stringValue = null;
+
+        if (!string.IsNullOrEmpty(editorId) && dataValue != null)
+        {
+            var typeChar = char.ToLowerInvariant(editorId[0]);
+            switch (typeChar)
+            {
+                case 'f' when dataValue.Length >= 4:
+                    valueType = GameSettingType.Float;
+                    floatValue = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(dataValue)
+                        : BinaryPrimitives.ReadSingleLittleEndian(dataValue);
+                    break;
+                case 'i' when dataValue.Length >= 4:
+                    valueType = GameSettingType.Integer;
+                    intValue = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(dataValue)
+                        : BinaryPrimitives.ReadInt32LittleEndian(dataValue);
+                    break;
+                case 'b' when dataValue.Length >= 4:
+                    valueType = GameSettingType.Boolean;
+                    intValue = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(dataValue)
+                        : BinaryPrimitives.ReadInt32LittleEndian(dataValue);
+                    break;
+                case 's':
+                    valueType = GameSettingType.String;
+                    stringValue = ReadNullTermString(dataValue);
+                    break;
+            }
+        }
+
+        return new ReconstructedGameSetting
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            ValueType = valueType,
+            FloatValue = floatValue,
+            IntValue = intValue,
+            StringValue = stringValue,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
     }
 
     #endregion

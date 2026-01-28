@@ -147,4 +147,154 @@ public class MinidumpInfo
         sorted.Sort((a, b) => a.VirtualAddress.CompareTo(b.VirtualAddress));
         return sorted;
     }
+
+    #region Region Grouping for Parallel Scanning
+
+    /// <summary>
+    ///     Group memory regions by contiguous virtual address ranges.
+    ///     Each group represents a continuous block of memory that can be scanned as a unit.
+    ///     Non-contiguous VA gaps indicate potential file truncation boundaries.
+    /// </summary>
+    /// <returns>List of contiguous region groups, each group is a list of adjacent regions.</returns>
+    public List<ContiguousRegionGroup> GetContiguousRegionGroups()
+    {
+        if (MemoryRegions.Count == 0)
+        {
+            return [];
+        }
+
+        var groups = new List<ContiguousRegionGroup>();
+        var sorted = MemoryRegions.OrderBy(r => r.VirtualAddress).ToList();
+
+        var currentRegions = new List<MinidumpMemoryRegion> { sorted[0] };
+        var expectedNextVa = sorted[0].VirtualAddress + sorted[0].Size;
+
+        for (var i = 1; i < sorted.Count; i++)
+        {
+            var region = sorted[i];
+
+            if (region.VirtualAddress == expectedNextVa)
+            {
+                // Contiguous - add to current group
+                currentRegions.Add(region);
+            }
+            else
+            {
+                // Gap detected - finalize current group and start new one
+                groups.Add(CreateRegionGroup(currentRegions));
+                currentRegions = [region];
+            }
+
+            expectedNextVa = region.VirtualAddress + region.Size;
+        }
+
+        // Add final group
+        groups.Add(CreateRegionGroup(currentRegions));
+
+        return groups;
+    }
+
+    private static ContiguousRegionGroup CreateRegionGroup(List<MinidumpMemoryRegion> regions)
+    {
+        var first = regions[0];
+        var last = regions[^1];
+
+        return new ContiguousRegionGroup
+        {
+            Regions = regions.ToList(),
+            StartVirtualAddress = first.VirtualAddress,
+            EndVirtualAddress = last.VirtualAddress + last.Size,
+            StartFileOffset = first.FileOffset,
+            TotalSize = regions.Sum(r => r.Size)
+        };
+    }
+
+    /// <summary>
+    ///     Find the memory region containing a given file offset.
+    /// </summary>
+    public MinidumpMemoryRegion? FindRegionByFileOffset(long fileOffset)
+    {
+        foreach (var region in MemoryRegions)
+        {
+            if (fileOffset >= region.FileOffset && fileOffset < region.FileOffset + region.Size)
+            {
+                return region;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Get the number of contiguous bytes available starting from a file offset.
+    ///     Useful for determining maximum safe read size before hitting a VA gap.
+    /// </summary>
+    /// <param name="fileOffset">Starting file offset.</param>
+    /// <returns>Number of contiguous bytes available, or 0 if offset is not in a region.</returns>
+    public long GetContiguousBytesFromFileOffset(long fileOffset)
+    {
+        var region = FindRegionByFileOffset(fileOffset);
+        if (region == null)
+        {
+            return 0;
+        }
+
+        // Start with remaining bytes in this region
+        var remaining = region.Size - (fileOffset - region.FileOffset);
+        var currentVaEnd = region.VirtualAddress + region.Size;
+
+        // Check for contiguous following regions
+        var sortedRegions = GetSortedRegionsAfter(currentVaEnd);
+        foreach (var next in sortedRegions)
+        {
+            if (next.VirtualAddress != currentVaEnd)
+            {
+                break; // VA gap - stop accumulating
+            }
+
+            remaining += next.Size;
+            currentVaEnd = next.VirtualAddress + next.Size;
+        }
+
+        return remaining;
+    }
+
+    #endregion
+}
+
+/// <summary>
+///     A group of memory regions with contiguous virtual addresses.
+///     Can be scanned as a single unit for parallel processing.
+/// </summary>
+public class ContiguousRegionGroup
+{
+    /// <summary>
+    ///     The individual memory regions in this group (sorted by VA).
+    /// </summary>
+    public required List<MinidumpMemoryRegion> Regions { get; init; }
+
+    /// <summary>
+    ///     Starting virtual address of the group.
+    /// </summary>
+    public long StartVirtualAddress { get; init; }
+
+    /// <summary>
+    ///     Ending virtual address of the group (exclusive).
+    /// </summary>
+    public long EndVirtualAddress { get; init; }
+
+    /// <summary>
+    ///     Starting file offset of the group.
+    /// </summary>
+    public long StartFileOffset { get; init; }
+
+    /// <summary>
+    ///     Total size in bytes across all regions in the group.
+    /// </summary>
+    public long TotalSize { get; init; }
+
+    /// <summary>
+    ///     Number of regions in this group.
+    /// </summary>
+    public int RegionCount => Regions.Count;
 }
