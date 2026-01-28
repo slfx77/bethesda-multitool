@@ -30,13 +30,19 @@ public static class SubrecordSchemaRegistry
     ///     Tracks fallback usage during conversion for diagnostics.
     ///     Key: (RecordType, Subrecord, DataLength, FallbackType)
     /// </summary>
-    private static readonly ConcurrentDictionary<(string RecordType, string Subrecord, int DataLength, string FallbackType), int>
+    private static readonly ConcurrentDictionary<(string RecordType, string Subrecord, int DataLength, string
+            FallbackType), int>
         s_fallbackUsage = new();
 
     /// <summary>
     ///     Whether fallback logging is enabled.
     /// </summary>
     public static bool EnableFallbackLogging { get; set; }
+
+    /// <summary>
+    ///     Gets whether any fallbacks were recorded.
+    /// </summary>
+    public static bool HasFallbackUsage => !s_fallbackUsage.IsEmpty;
 
     /// <summary>
     ///     Records a fallback usage for diagnostics.
@@ -53,30 +59,29 @@ public static class SubrecordSchemaRegistry
     /// <summary>
     ///     Clears all recorded fallback usage.
     /// </summary>
-    public static void ClearFallbackLog() => s_fallbackUsage.Clear();
+    public static void ClearFallbackLog()
+    {
+        s_fallbackUsage.Clear();
+    }
 
     /// <summary>
     ///     Gets the recorded fallback usage, grouped by type.
     /// </summary>
-    public static IEnumerable<(string FallbackType, string RecordType, string Subrecord, int DataLength, int Count)> GetFallbackUsage()
+    public static IEnumerable<(string FallbackType, string RecordType, string Subrecord, int DataLength, int Count)>
+        GetFallbackUsage()
     {
         return s_fallbackUsage
             .Select(kvp => (
-                FallbackType: kvp.Key.FallbackType,
-                RecordType: kvp.Key.RecordType,
-                Subrecord: kvp.Key.Subrecord,
-                DataLength: kvp.Key.DataLength,
+                kvp.Key.FallbackType,
+                kvp.Key.RecordType,
+                kvp.Key.Subrecord,
+                kvp.Key.DataLength,
                 Count: kvp.Value))
             .OrderBy(x => x.FallbackType)
             .ThenByDescending(x => x.Count)
             .ThenBy(x => x.RecordType)
             .ThenBy(x => x.Subrecord);
     }
-
-    /// <summary>
-    ///     Gets whether any fallbacks were recorded.
-    /// </summary>
-    public static bool HasFallbackUsage => !s_fallbackUsage.IsEmpty;
 
     /// <summary>
     ///     Gets the schema for a subrecord, or null if no explicit schema exists.
@@ -251,7 +256,8 @@ public static class SubrecordSchemaRegistry
         RegisterSimple4Byte(schemas, "RPLI", "Region Point List Index");
 
         // Additional FormID subrecords (from fallback analysis)
-        RegisterSimpleFormId(schemas, "ANAM", "Acoustic Space FormID"); // ASPC, DOOR (TERM is 1 byte handled separately)
+        RegisterSimpleFormId(schemas, "ANAM",
+            "Acoustic Space FormID"); // ASPC, DOOR (TERM is 1 byte handled separately)
         RegisterSimpleFormId(schemas, "CARD", "Card FormID"); // CDCK - FormID for resolution
         RegisterSimpleFormId(schemas, "CSDI", "Sound FormID"); // CREA
         RegisterSimpleFormId(schemas, "GNAM", "Grass FormID"); // LTEX, MSET, ALOC
@@ -329,7 +335,8 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("XSCL", null, 4)] = SubrecordSchema.Simple4Byte("Scale");
         schemas[new SchemaKey("XCNT", null, 4)] = SubrecordSchema.Simple4Byte("Count");
         schemas[new SchemaKey("XRDS", null, 4)] = SubrecordSchema.Simple4Byte("Radius");
-        schemas[new SchemaKey("XCCM", null, 4)] = SubrecordSchema.Simple4Byte("Climate"); // CELL climate override FormID
+        schemas[new SchemaKey("XCCM", null, 4)] =
+            SubrecordSchema.Simple4Byte("Climate"); // CELL climate override FormID
         schemas[new SchemaKey("XLTW", null, 4)] = SubrecordSchema.Simple4Byte("Water"); // REFR water reference FormID
         schemas[new SchemaKey("INDX", null, 4)] = SubrecordSchema.Simple4Byte("Index");
 
@@ -601,9 +608,9 @@ public static class SubrecordSchemaRegistry
                 F.UInt32("ChargeAmount"),
                 F.UInt32("EnchantCost"),
                 F.Bytes("Flags", 4)) // 4 bytes of flags (not swapped)
-        {
-            Description = "Enchantment Data"
-        };
+            {
+                Description = "Enchantment Data"
+            };
         schemas[new SchemaKey("ENIT", "INGR", 8)] = new SubrecordSchema(
             F.UInt32("Value"),
             F.UInt32("Flags"))
@@ -617,7 +624,7 @@ public static class SubrecordSchemaRegistry
         // remaining 3 bytes are uninitialized 0xCD from debug builds).
         schemas[new SchemaKey("ENIT", "ALCH", 20)] = new SubrecordSchema(
             F.UInt32("Value"),
-            F.Bytes("Flags", 4),  // Not swapped - same raw bytes on Xbox and PC
+            F.Bytes("Flags", 4), // Not swapped - same raw bytes on Xbox and PC
             F.FormId("Addiction"),
             F.Float("AddictionChance"),
             F.FormId("UseSoundOrWithdrawalEffect"))
@@ -1158,10 +1165,12 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("FNAM", "WTHR", 24)] = SubrecordSchema.FloatArray;
 
         // PNAM - Weather Cloud Colors (96 bytes = 24 × 4-byte color values)
-        schemas[new SchemaKey("PNAM", "WTHR", 96)] = SubrecordSchema.FormIdArray; // FormIdArray = 4-byte endian swap per entry
+        schemas[new SchemaKey("PNAM", "WTHR", 96)] =
+            SubrecordSchema.FormIdArray; // FormIdArray = 4-byte endian swap per entry
 
         // NAM0 - Weather Colors (240 bytes = 60 × 4-byte color values)
-        schemas[new SchemaKey("NAM0", "WTHR", 240)] = SubrecordSchema.FormIdArray; // FormIdArray = 4-byte endian swap per entry
+        schemas[new SchemaKey("NAM0", "WTHR", 240)] =
+            SubrecordSchema.FormIdArray; // FormIdArray = 4-byte endian swap per entry
 
         // INAM - Weather Image Spaces (304 bytes = 76 floats for IMGS modifiers)
         schemas[new SchemaKey("INAM", "WTHR", 304)] = SubrecordSchema.FloatArray;
@@ -1634,9 +1643,9 @@ public static class SubrecordSchemaRegistry
                 F.UInt32("CompiledSize"),
                 F.UInt32("VariableCount"),
                 F.Padding(4)) // Type + Flags don't need swapping
-        {
-            Description = "Script Header"
-        };
+            {
+                Description = "Script Header"
+            };
 
         // ACBS - Actor Base Stats (24 bytes)
         schemas[new SchemaKey("ACBS", null, 24)] = new SubrecordSchema(
@@ -1695,30 +1704,30 @@ public static class SubrecordSchemaRegistry
         // NOTE: Flags+Type stored as combined uint32 on Xbox 360 for endian swap purposes
         // NOTE: FormIDs in PROJ DATA are stored in little-endian on Xbox 360 (like WEAP DNAM)
         schemas[new SchemaKey("DATA", "PROJ", 84)] = new SubrecordSchema(
-            F.UInt32("FlagsAndType"),               // 0-3: Combined Flags (low 16) + Type (high 16), swapped as uint32
-            F.Float("Gravity"),                     // 4
-            F.Float("Speed"),                       // 8
-            F.Float("Range"),                       // 12
-            F.FormIdLittleEndian("Light"),          // 16 - already LE on Xbox
-            F.FormIdLittleEndian("MuzzleFlashLight"), // 20 - already LE on Xbox
-            F.Float("TracerChance"),                // 24
-            F.Float("ExplosionAltTriggerProximity"), // 28
-            F.Float("ExplosionAltTriggerTimer"),    // 32
-            F.FormIdLittleEndian("Explosion"),      // 36 - already LE on Xbox
-            F.FormIdLittleEndian("Sound"),          // 40 - already LE on Xbox
-            F.Float("MuzzleFlashDuration"),         // 44
-            F.Float("FadeDuration"),                // 48
-            F.Float("ImpactForce"),                 // 52
-            F.FormIdLittleEndian("SoundCountdown"), // 56 - already LE on Xbox
-            F.FormIdLittleEndian("SoundDisable"),   // 60 - already LE on Xbox
-            F.FormIdLittleEndian("DefaultWeaponSource"), // 64 - already LE on Xbox
-            F.Float("RotationX"),                   // 68
-            F.Float("RotationY"),                   // 72
-            F.Float("RotationZ"),                   // 76
-            F.Float("BouncyMult"))                  // 80
-        {
-            Description = "Projectile Data"
-        };
+                F.UInt32("FlagsAndType"), // 0-3: Combined Flags (low 16) + Type (high 16), swapped as uint32
+                F.Float("Gravity"), // 4
+                F.Float("Speed"), // 8
+                F.Float("Range"), // 12
+                F.FormIdLittleEndian("Light"), // 16 - already LE on Xbox
+                F.FormIdLittleEndian("MuzzleFlashLight"), // 20 - already LE on Xbox
+                F.Float("TracerChance"), // 24
+                F.Float("ExplosionAltTriggerProximity"), // 28
+                F.Float("ExplosionAltTriggerTimer"), // 32
+                F.FormIdLittleEndian("Explosion"), // 36 - already LE on Xbox
+                F.FormIdLittleEndian("Sound"), // 40 - already LE on Xbox
+                F.Float("MuzzleFlashDuration"), // 44
+                F.Float("FadeDuration"), // 48
+                F.Float("ImpactForce"), // 52
+                F.FormIdLittleEndian("SoundCountdown"), // 56 - already LE on Xbox
+                F.FormIdLittleEndian("SoundDisable"), // 60 - already LE on Xbox
+                F.FormIdLittleEndian("DefaultWeaponSource"), // 64 - already LE on Xbox
+                F.Float("RotationX"), // 68
+                F.Float("RotationY"), // 72
+                F.Float("RotationZ"), // 76
+                F.Float("BouncyMult")) // 80
+            {
+                Description = "Projectile Data"
+            };
 
         // DATA - WEAP (15 bytes)
         schemas[new SchemaKey("DATA", "WEAP", 15)] = new SubrecordSchema(
@@ -1836,8 +1845,7 @@ public static class SubrecordSchemaRegistry
         // - Some 5-byte blocks are uint32 + trailing byte
         // Anything else falls back to raw bytes.
         schemas[new SchemaKey("DATA", "PERK", 4)] = SubrecordSchema.Simple4Byte();
-        // Observed: many PERK:DATA(5) payloads match PC bytes already (likely little-endian + padding);
-        // treat as raw bytes to avoid corrupting the bitfield layout.
+        // 5-byte PERK DATA payloads already match PC format, use ByteArray to preserve bitfield layout
         schemas[new SchemaKey("DATA", "PERK", 5)] = SubrecordSchema.ByteArray;
         schemas[new SchemaKey("DATA", "PERK")] = SubrecordSchema.ByteArray;
 
@@ -1871,7 +1879,7 @@ public static class SubrecordSchemaRegistry
         // Xbox bytes: 00 15 00 00 -> swap each word -> 15 00 00 00 (value = 21)
         schemas[new SchemaKey("DATA", "RGDL", 14)] = new SubrecordSchema(
             F.UInt32WordSwapped("DynamicBoneCount"),
-            F.Padding(4),  // Unused
+            F.Padding(4), // Unused
             F.UInt8("Feedback"),
             F.UInt8("FootIK"),
             F.UInt8("LookIK"),
@@ -1985,7 +1993,7 @@ public static class SubrecordSchemaRegistry
             F.UInt32("MembraneSourceBlendMode"),
             F.UInt32("MembraneBlendOperation"),
             F.UInt32("MembraneZTestFunction"),
-            F.UInt32("FillColorKey1"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("FillColorKey1"), // Color stored as big-endian uint32 on Xbox
             F.Float("FillAlphaFadeInTime"),
             F.Float("FillAlphaFullTime"),
             F.Float("FillAlphaFadeOutTime"),
@@ -1995,7 +2003,7 @@ public static class SubrecordSchemaRegistry
             F.Float("FillTextureAnimSpeedU"),
             F.Float("FillTextureAnimSpeedV"),
             F.Float("EdgeEffectFallOff"),
-            F.UInt32("EdgeEffectColor"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("EdgeEffectColor"), // Color stored as big-endian uint32 on Xbox
             F.Float("EdgeEffectAlphaFadeInTime"),
             F.Float("EdgeEffectAlphaFullTime"),
             F.Float("EdgeEffectAlphaFadeOutTime"),
@@ -2038,7 +2046,7 @@ public static class SubrecordSchemaRegistry
             F.UInt32("MembraneSourceBlendMode"),
             F.UInt32("MembraneBlendOperation"),
             F.UInt32("MembraneZTestFunction"),
-            F.UInt32("FillColorKey1"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("FillColorKey1"), // Color stored as big-endian uint32 on Xbox
             F.Float("FillAlphaFadeInTime"),
             F.Float("FillAlphaFullTime"),
             F.Float("FillAlphaFadeOutTime"),
@@ -2048,7 +2056,7 @@ public static class SubrecordSchemaRegistry
             F.Float("FillTextureAnimSpeedU"),
             F.Float("FillTextureAnimSpeedV"),
             F.Float("EdgeEffectFallOff"),
-            F.UInt32("EdgeEffectColor"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("EdgeEffectColor"), // Color stored as big-endian uint32 on Xbox
             F.Float("EdgeEffectAlphaFadeInTime"),
             F.Float("EdgeEffectAlphaFullTime"),
             F.Float("EdgeEffectAlphaFadeOutTime"),
@@ -2081,8 +2089,8 @@ public static class SubrecordSchemaRegistry
             F.Float("HolesEndTime"),
             F.Float("HolesStartValue"),
             F.Float("HolesEndValue"),
-            F.UInt32("FillColorKey2"),  // Color stored as big-endian uint32 on Xbox
-            F.UInt32("FillColorKey3"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("FillColorKey2"), // Color stored as big-endian uint32 on Xbox
+            F.UInt32("FillColorKey3"), // Color stored as big-endian uint32 on Xbox
             F.Float("FillColorKey1Scale"),
             F.Float("FillColorKey2Scale"),
             F.Float("FillColorKey3Scale"),
@@ -2102,7 +2110,7 @@ public static class SubrecordSchemaRegistry
             F.UInt32("MembraneSourceBlendMode"),
             F.UInt32("MembraneBlendOperation"),
             F.UInt32("MembraneZTestFunction"),
-            F.UInt32("FillColorKey1"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("FillColorKey1"), // Color stored as big-endian uint32 on Xbox
             F.Float("FillAlphaFadeInTime"),
             F.Float("FillAlphaFullTime"),
             F.Float("FillAlphaFadeOutTime"),
@@ -2112,7 +2120,7 @@ public static class SubrecordSchemaRegistry
             F.Float("FillTextureAnimSpeedU"),
             F.Float("FillTextureAnimSpeedV"),
             F.Float("EdgeEffectFallOff"),
-            F.UInt32("EdgeEffectColor"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("EdgeEffectColor"), // Color stored as big-endian uint32 on Xbox
             F.Float("EdgeEffectAlphaFadeInTime"),
             F.Float("EdgeEffectAlphaFullTime"),
             F.Float("EdgeEffectAlphaFadeOutTime"),
@@ -2145,8 +2153,8 @@ public static class SubrecordSchemaRegistry
             F.Float("PartScaleKey2"),
             F.Float("PartScaleKey1Time"),
             F.Float("PartScaleKey2Time"),
-            F.UInt32("FillColorKey2"),  // Color stored as big-endian uint32 on Xbox
-            F.UInt32("FillColorKey3"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("FillColorKey2"), // Color stored as big-endian uint32 on Xbox
+            F.UInt32("FillColorKey3"), // Color stored as big-endian uint32 on Xbox
             F.Float("FillColorKey1Scale"),
             F.Float("FillColorKey2Scale"),
             F.Float("FillColorKey3Scale"),
@@ -2165,7 +2173,7 @@ public static class SubrecordSchemaRegistry
             F.Float("HolesStartValue"),
             F.Float("HolesEndValue"),
             F.Float("EdgeWidth"),
-            F.UInt32("EdgeColor2"),  // Color stored as big-endian uint32 on Xbox
+            F.UInt32("EdgeColor2"), // Color stored as big-endian uint32 on Xbox
             F.Float("ExplosionWindSpeed"),
             F.UInt32("TextureCountU"),
             F.UInt32("TextureCountV"),

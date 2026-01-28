@@ -316,11 +316,14 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
                 try
                 {
                     if (Directory.Exists(tempInputDir))
-                        Directory.Delete(tempInputDir, recursive: true);
+                        Directory.Delete(tempInputDir, true);
                     if (Directory.Exists(tempOutputDir))
-                        Directory.Delete(tempOutputDir, recursive: true);
+                        Directory.Delete(tempOutputDir, true);
                 }
-                catch { /* Best effort cleanup */ }
+                catch
+                {
+                    /* Best effort cleanup */
+                }
             }
         }
         else if (xmaFiles.Count > 0)
@@ -366,7 +369,7 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
                 // Run batch conversion with progress callback
                 // Enable --pc-friendly to convert Xbox 360 normal maps (2-channel BC5) to PC format (3-channel DXT5)
                 var convertedCount = 0;
-                var batchResult = await ddxConverter.ConvertBatchAsync(
+                _ = await ddxConverter.ConvertBatchAsync(
                     tempInputDir,
                     tempOutputDir,
                     (inputPath, status, _) =>
@@ -387,7 +390,7 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
                         });
                     },
                     cancellationToken,
-                    pcFriendly: true);
+                    true);
 
                 // Read back converted files
                 foreach (var (tempInputPath, (index, relativePath)) in fileMapping)
@@ -416,12 +419,12 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
                 {
                     if (Directory.Exists(tempInputDir))
                     {
-                        Directory.Delete(tempInputDir, recursive: true);
+                        Directory.Delete(tempInputDir, true);
                     }
 
                     if (Directory.Exists(tempOutputDir))
                     {
-                        Directory.Delete(tempOutputDir, recursive: true);
+                        Directory.Delete(tempOutputDir, true);
                     }
                 }
                 catch
@@ -525,7 +528,7 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
             Message = $"{bsaName}: Writing {allFiles.Count} files..."
         });
 
-        using var writer = new BsaWriter(compressFiles: true);
+        using var writer = new BsaWriter(true);
 
         var writeIndex = 0;
         foreach (var (relativePath, data) in allFiles)

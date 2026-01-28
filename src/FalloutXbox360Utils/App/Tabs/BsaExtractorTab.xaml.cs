@@ -145,7 +145,7 @@ public sealed class BsaFileEntry : INotifyPropertyChanged
 /// <summary>
 /// BSA Extractor tab for extracting files from Bethesda archives.
 /// </summary>
-public sealed partial class BsaExtractorTab : UserControl
+public sealed partial class BsaExtractorTab : UserControl, IDisposable
 {
     private readonly ObservableCollection<BsaFileEntry> _allFiles = [];
     private readonly ObservableCollection<BsaFileEntry> _filteredFiles = [];
@@ -787,6 +787,12 @@ public sealed partial class BsaExtractorTab : UserControl
         < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
         _ => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB"
     };
+
+    public void Dispose()
+    {
+        _cts?.Dispose();
+        _extractor?.Dispose();
+    }
 }
 
 #endif

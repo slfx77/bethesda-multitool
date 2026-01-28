@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats;
@@ -38,11 +39,13 @@ public sealed partial class MemoryDumpAnalyzer
     /// <param name="filePath">Path to the memory dump file.</param>
     /// <param name="progress">Optional progress callback for scan progress.</param>
     /// <param name="includeMetadata">Whether to include SCDA/ESM metadata extraction (default: true).</param>
+    /// <param name="verbose">Whether to output verbose timing/progress info.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<AnalysisResult> AnalyzeAsync(
         string filePath,
         IProgress<AnalysisProgress>? progress = null,
         bool includeMetadata = true,
+        bool verbose = false,
         CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -66,11 +69,11 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Phase 1: Signature scanning (0-50%)
         var scanProgress = CreateScanProgress(progress);
-        var matches = await Task.Run(() => FindAllMatches(accessor, result.FileSize, scanProgress), cancellationToken);
+        var matches = await Task.Run(() => FindAllMatchesParallel(accessor, result.FileSize, minidumpInfo, scanProgress), cancellationToken);
 
         // Phase 2: Parsing matches (50-70%)
         progress?.Report(new AnalysisProgress { Phase = "Parsing", FilesFound = matches.Count, PercentComplete = 50 });
-        await ParseMatchesAsync(accessor, result, matches, moduleOffsets, progress, cancellationToken);
+        await ParseMatchesAsync(accessor, result, matches, moduleOffsets, minidumpInfo, progress, cancellationToken);
 
         // Sort all results by offset
         SortCarvedFilesByOffset(result);
@@ -78,7 +81,9 @@ public sealed partial class MemoryDumpAnalyzer
         // Extract metadata (SCDA records, ESM records, FormID mapping) using memory-mapped access
         if (includeMetadata)
         {
-            await ExtractMetadataAsync(accessor, result, progress, cancellationToken);
+            // Build module ranges for ESM exclusion (modules may contain ESM-like data)
+            var moduleRanges = BuildModuleRanges(minidumpInfo);
+            await ExtractMetadataAsync(accessor, result, moduleRanges, minidumpInfo, progress, verbose, cancellationToken);
         }
 
         progress?.Report(new AnalysisProgress
@@ -130,6 +135,25 @@ public sealed partial class MemoryDumpAnalyzer
         ];
     }
 
+    /// <summary>
+    ///     Builds a list of module file offset ranges for exclusion during ESM scanning.
+    ///     Returns (start, end) tuples representing the full memory range of each module.
+    /// </summary>
+    private static List<(long start, long end)> BuildModuleRanges(MinidumpInfo minidumpInfo)
+    {
+        var ranges = new List<(long start, long end)>();
+        foreach (var module in minidumpInfo.Modules)
+        {
+            var fileRange = minidumpInfo.GetModuleFileRange(module);
+            if (fileRange.HasValue && fileRange.Value.size > 0)
+            {
+                ranges.Add((fileRange.Value.fileOffset, fileRange.Value.fileOffset + fileRange.Value.size));
+            }
+        }
+
+        return ranges;
+    }
+
     private static Progress<AnalysisProgress>? CreateScanProgress(IProgress<AnalysisProgress>? progress)
     {
         if (progress == null)
@@ -157,6 +181,7 @@ public sealed partial class MemoryDumpAnalyzer
         AnalysisResult result,
         List<(string signatureId, long offset)> matches,
         HashSet<long> moduleOffsets,
+        MinidumpInfo minidumpInfo,
         IProgress<AnalysisProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -167,7 +192,7 @@ public sealed partial class MemoryDumpAnalyzer
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (TryParseMatch(accessor, result, signatureId, offset, moduleOffsets))
+                if (TryParseMatch(accessor, result, signatureId, offset, moduleOffsets, minidumpInfo))
                 {
                     result.TypeCounts.TryGetValue(signatureId, out var count);
                     result.TypeCounts[signatureId] = count + 1;
@@ -184,7 +209,8 @@ public sealed partial class MemoryDumpAnalyzer
         AnalysisResult result,
         string signatureId,
         long offset,
-        HashSet<long> moduleOffsets)
+        HashSet<long> moduleOffsets,
+        MinidumpInfo minidumpInfo)
     {
         // Skip signatures at module offsets (modules are added from minidump metadata)
         if (moduleOffsets.Contains(offset))
@@ -211,6 +237,17 @@ public sealed partial class MemoryDumpAnalyzer
             return false;
         }
 
+        // Detect truncation: check if file extends past contiguous memory region boundary
+        var isTruncated = false;
+        if (minidumpInfo.IsValid && minidumpInfo.MemoryRegions.Count > 0)
+        {
+            var contiguousBytes = minidumpInfo.GetContiguousBytesFromFileOffset(offset);
+            if (contiguousBytes > 0 && length > contiguousBytes)
+            {
+                isTruncated = true;
+            }
+        }
+
         result.CarvedFiles.Add(new CarvedFileInfo
         {
             Offset = offset,
@@ -218,7 +255,8 @@ public sealed partial class MemoryDumpAnalyzer
             FileType = signature.Description,
             FileName = fileName,
             SignatureId = signatureId,
-            Category = format.Category
+            Category = format.Category,
+            IsTruncated = isTruncated
         });
 
         return true;
@@ -249,12 +287,19 @@ public sealed partial class MemoryDumpAnalyzer
     private static async Task ExtractMetadataAsync(
         MemoryMappedViewAccessor accessor,
         AnalysisResult result,
+        List<(long start, long end)>? moduleRanges,
+        MinidumpInfo minidumpInfo,
         IProgress<AnalysisProgress>? progress,
+        bool verbose,
         CancellationToken cancellationToken)
     {
+        var log = Logger.Instance;
+        log.Debug("Metadata: Starting extraction...");
+
         // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
             { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
+        log.Debug("Metadata: Phase 3 - SCDA scan");
         await Task.Run(() =>
         {
             var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
@@ -265,24 +310,45 @@ public sealed partial class MemoryDumpAnalyzer
 
             result.ScdaRecords = scdaScanResult.Records;
         }, cancellationToken);
+        log.Debug("Metadata: Phase 3 complete - {0} SCDA records", result.ScdaRecords?.Count ?? 0);
 
         // Phase 4: ESM scan (80-88%) - now using memory-mapped access
+        // Pass module ranges to exclude ESM detection inside module memory
         progress?.Report(new AnalysisProgress
             { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
+        log.Debug("Metadata: Phase 4 - ESM scan");
         await Task.Run(() =>
         {
-            var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
+            var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize, moduleRanges);
             result.EsmRecords = esmRecords;
+            log.Debug("Metadata:   ESM records: {0}", esmRecords.MainRecords.Count);
 
             // Extract full LAND records with heightmaps
             progress?.Report(new AnalysisProgress
                 { Phase = "LAND Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 85 });
+            log.Debug("Metadata:   Extracting LAND records...");
             EsmRecordFormat.ExtractLandRecords(accessor, result.FileSize, esmRecords);
 
             // Extract full REFR records with positions
             progress?.Report(new AnalysisProgress
-                { Phase = "REFR Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 88 });
+                { Phase = "REFR Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 86 });
+            log.Debug("Metadata:   Extracting REFR records...");
             EsmRecordFormat.ExtractRefrRecords(accessor, result.FileSize, esmRecords);
+            log.Debug("Metadata:   REFR complete: {0} records", esmRecords.RefrRecords.Count);
+
+            // Scan for runtime asset string pools
+            progress?.Report(new AnalysisProgress
+                { Phase = "Asset Strings", FilesFound = result.CarvedFiles.Count, PercentComplete = 87 });
+            log.Debug("Metadata:   Scanning for asset strings...");
+            EsmRecordFormat.ScanForAssetStrings(accessor, result.FileSize, esmRecords, verbose);
+            log.Debug("Metadata:   Asset strings complete: {0} paths", esmRecords.AssetStrings.Count);
+
+            // Extract runtime Editor IDs with FormID associations via pointer following
+            progress?.Report(new AnalysisProgress
+                { Phase = "Runtime EditorIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 88 });
+            log.Debug("Metadata:   Extracting runtime EditorIDs...");
+            EsmRecordFormat.ExtractRuntimeEditorIds(accessor, result.FileSize, minidumpInfo, esmRecords, verbose);
+            log.Debug("Metadata:   EditorIDs complete: {0} IDs", esmRecords.RuntimeEditorIds.Count);
         }, cancellationToken);
 
         // Phase 5: FormID mapping (90-100%) - now using memory-mapped access
@@ -376,6 +442,122 @@ public sealed partial class MemoryDumpAnalyzer
             .DistinctBy(m => m.Offset)
             .OrderBy(m => m.Offset)
             .ToList();
+    }
+
+    /// <summary>
+    ///     Find all signature matches using parallel region-aware scanning.
+    ///     Processes contiguous memory regions in parallel for better performance.
+    /// </summary>
+    private List<(string SignatureId, long Offset)> FindAllMatchesParallel(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        IProgress<AnalysisProgress>? progress)
+    {
+        var log = Logger.Instance;
+        var sw = Stopwatch.StartNew();
+
+        // If not a valid minidump, fall back to sequential scanning
+        if (!minidumpInfo.IsValid || minidumpInfo.MemoryRegions.Count == 0)
+        {
+            log.Debug("Not a valid minidump - using sequential scan");
+            return FindAllMatches(accessor, fileSize, progress);
+        }
+
+        var regionGroups = minidumpInfo.GetContiguousRegionGroups();
+        log.Debug("Found {0} contiguous region groups from {1} total regions",
+            regionGroups.Count, minidumpInfo.MemoryRegions.Count);
+
+        // Calculate total bytes to scan (only memory regions, not headers/gaps)
+        var totalRegionBytes = regionGroups.Sum(g => g.TotalSize);
+        log.Debug("Total scannable: {0:N0} MB (vs {1:N0} MB file size)",
+            totalRegionBytes / (1024 * 1024), fileSize / (1024 * 1024));
+
+        var allMatches = new ConcurrentBag<(string SignatureId, long Offset)>();
+        var bytesScanned = 0L;
+        var maxPatternLength = _signatureMatcher.MaxPatternLength;
+
+        // Process region groups in parallel
+        Parallel.ForEach(regionGroups,
+            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+            group =>
+            {
+                var groupMatches = ScanRegionGroup(accessor, group, maxPatternLength);
+
+                foreach (var match in groupMatches)
+                {
+                    allMatches.Add(match);
+                }
+
+                // Update progress
+                var scanned = Interlocked.Add(ref bytesScanned, group.TotalSize);
+                progress?.Report(new AnalysisProgress
+                {
+                    Phase = "Scanning",
+                    BytesProcessed = scanned,
+                    TotalBytes = totalRegionBytes,
+                    FilesFound = allMatches.Count
+                });
+            });
+
+        sw.Stop();
+        log.Debug("Parallel scan complete: {0:N0} matches in {1:N0} ms",
+            allMatches.Count, sw.ElapsedMilliseconds);
+
+        // Sort by offset and deduplicate
+        return allMatches
+            .DistinctBy(m => m.Offset)
+            .OrderBy(m => m.Offset)
+            .ToList();
+    }
+
+    /// <summary>
+    ///     Scan a contiguous region group for signature matches.
+    /// </summary>
+    private List<(string SignatureId, long Offset)> ScanRegionGroup(
+        MemoryMappedViewAccessor accessor,
+        ContiguousRegionGroup group,
+        int maxPatternLength)
+    {
+        const int chunkSize = 16 * 1024 * 1024; // 16MB chunks (smaller for better parallelism)
+        var matches = new List<(string SignatureId, long Offset)>();
+        var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + maxPatternLength);
+
+        try
+        {
+            // Scan each region in the group sequentially (they're contiguous in file)
+            foreach (var region in group.Regions)
+            {
+                var regionOffset = region.FileOffset;
+                var regionEnd = region.FileOffset + region.Size;
+
+                while (regionOffset < regionEnd)
+                {
+                    var toRead = (int)Math.Min(chunkSize + maxPatternLength, regionEnd - regionOffset);
+                    accessor.ReadArray(regionOffset, buffer, 0, toRead);
+
+                    var span = buffer.AsSpan(0, toRead);
+                    var chunkMatches = _signatureMatcher.Search(span, regionOffset);
+
+                    foreach (var (name, _, position) in chunkMatches)
+                    {
+                        // Only include matches within this region's bounds
+                        if (position >= region.FileOffset && position < regionEnd)
+                        {
+                            matches.Add((name, position));
+                        }
+                    }
+
+                    regionOffset += chunkSize;
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return matches;
     }
 
     private static (long length, string? fileName) EstimateFileSizeAndExtractName(

@@ -3,8 +3,8 @@
 
 using System.CommandLine;
 using System.Security.Cryptography;
-using Spectre.Console;
 using FalloutXbox360Utils.Core.Formats.Bsa;
+using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
 
@@ -50,7 +50,7 @@ public static class BsaCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
         var filterOption = new Option<string?>("-f", "--filter")
-        { Description = "Filter by extension (e.g., .nif, .dds)" };
+            { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
 
         command.Arguments.Add(inputArg);
@@ -80,11 +80,11 @@ public static class BsaCommand
             Required = true
         };
         var filterOption = new Option<string?>("-f", "--filter")
-        { Description = "Filter by extension (e.g., .nif, .dds)" };
+            { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
         var overwriteOption = new Option<bool>("--overwrite") { Description = "Overwrite existing files" };
         var convertOption = new Option<bool>("-c", "--convert")
-        { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->OGG, NIF endian)" };
+            { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->OGG, NIF endian)" };
         var verboseOption = new Option<bool>("-v", "--verbose") { Description = "Verbose output" };
 
         command.Arguments.Add(inputArg);
@@ -116,7 +116,7 @@ public static class BsaCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
         var keepTempOption = new Option<bool>("--keep-temp")
-        { Description = "Keep temporary files after validation" };
+            { Description = "Keep temporary files after validation" };
         var verboseOption = new Option<bool>("-v", "--verbose") { Description = "Verbose output" };
 
         command.Arguments.Add(inputArg);
@@ -201,16 +201,20 @@ public static class BsaCommand
                     val1Str = $"[yellow]{val1Str}[/]";
                     val2Str = $"[yellow]{val2Str}[/]";
                 }
+
                 table.AddRow(prop, val1Str, val2Str, matchStr);
             }
 
             AddRow("Version", archive1.Header.Version, archive2.Header.Version);
-            AddRow("ArchiveFlags", $"0x{(uint)archive1.Header.ArchiveFlags:X4}", $"0x{(uint)archive2.Header.ArchiveFlags:X4}");
+            AddRow("ArchiveFlags", $"0x{(uint)archive1.Header.ArchiveFlags:X4}",
+                $"0x{(uint)archive2.Header.ArchiveFlags:X4}");
             AddRow("FolderCount", archive1.Header.FolderCount, archive2.Header.FolderCount);
             AddRow("FileCount", archive1.Header.FileCount, archive2.Header.FileCount);
-            AddRow("TotalFolderNameLength", archive1.Header.TotalFolderNameLength, archive2.Header.TotalFolderNameLength);
+            AddRow("TotalFolderNameLength", archive1.Header.TotalFolderNameLength,
+                archive2.Header.TotalFolderNameLength);
             AddRow("TotalFileNameLength", archive1.Header.TotalFileNameLength, archive2.Header.TotalFileNameLength);
-            AddRow("FileFlags", $"0x{(ushort)archive1.Header.FileFlags:X4}", $"0x{(ushort)archive2.Header.FileFlags:X4}");
+            AddRow("FileFlags", $"0x{(ushort)archive1.Header.FileFlags:X4}",
+                $"0x{(ushort)archive2.Header.FileFlags:X4}");
             AddRow("DefaultCompressed", archive1.Header.DefaultCompressed, archive2.Header.DefaultCompressed);
             AddRow("EmbedFileNames", archive1.Header.EmbedFileNames, archive2.Header.EmbedFileNames);
 
@@ -235,6 +239,7 @@ public static class BsaCommand
             {
                 AnsiConsole.MarkupLine("  [green]Same size[/]");
             }
+
             AnsiConsole.WriteLine();
 
             // Compare folder hashes and order
@@ -264,6 +269,7 @@ public static class BsaCommand
                     }
                 }
             }
+
             AnsiConsole.WriteLine();
 
             // Compare first few bytes of raw data
@@ -684,7 +690,7 @@ public static class BsaCommand
 
                 foreach (var failure in results.Where(r => !r.Success).Take(10))
                 {
-                    AnsiConsole.MarkupLine("  [red]•[/] {0}: {1}", failure.SourcePath, failure.Error);
+                    AnsiConsole.MarkupLine("  [red]•[/] {0}: {1}", failure.SourcePath, failure.Error ?? "Unknown error");
                 }
             }
         }
@@ -769,9 +775,10 @@ public static class BsaCommand
                 AnsiConsole.MarkupLine("  [red]Failed: {0:N0} files[/]", failedCount);
                 foreach (var failed in extractResults.Where(r => !r.Success))
                 {
-                    AnsiConsole.MarkupLine("    [red]• {0}: {1}[/]", failed.SourcePath, failed.Error);
+                    AnsiConsole.MarkupLine("    [red]• {0}: {1}[/]", failed.SourcePath, failed.Error ?? "Unknown error");
                 }
             }
+
             AnsiConsole.WriteLine();
 
             // Step 3: Build content hashes of extracted files
@@ -793,8 +800,8 @@ public static class BsaCommand
             AnsiConsole.MarkupLine("[yellow]Step 4:[/] Repacking BSA...");
 
             using var writer = new BsaWriter(
-                compressFiles: originalArchive.Header.DefaultCompressed,
-                fileFlags: originalArchive.Header.FileFlags);
+                originalArchive.Header.DefaultCompressed,
+                originalArchive.Header.FileFlags);
 
             await AnsiConsole.Progress()
                 .AutoClear(false)
@@ -837,7 +844,8 @@ public static class BsaCommand
             var expectedFileCount = originalArchive.Header.FileCount - (uint)failedCount;
             if (expectedFileCount != repackedArchive.Header.FileCount)
             {
-                issues.Add($"File count mismatch: expected {expectedFileCount} (original {originalArchive.Header.FileCount} - {failedCount} failed), got {repackedArchive.Header.FileCount}");
+                issues.Add(
+                    $"File count mismatch: expected {expectedFileCount} (original {originalArchive.Header.FileCount} - {failedCount} failed), got {repackedArchive.Header.FileCount}");
             }
 
             // Folder count might differ if all files in a folder failed to extract
@@ -848,7 +856,8 @@ public static class BsaCommand
             }).Distinct().Count();
             if (repackedArchive.Header.FolderCount < expectedMinFolderCount)
             {
-                issues.Add($"Folder count too low: {repackedArchive.Header.FolderCount} vs expected at least {expectedMinFolderCount}");
+                issues.Add(
+                    $"Folder count too low: {repackedArchive.Header.FolderCount} vs expected at least {expectedMinFolderCount}");
             }
 
             // Compare file content by extracting repacked and hashing
@@ -932,8 +941,10 @@ public static class BsaCommand
             else if (!roundTripIssues && extractionIssues)
             {
                 AnsiConsole.MarkupLine("[yellow]⚠ Validation PARTIAL[/]");
-                AnsiConsole.MarkupLine("  Round-trip OK for {0:N0}/{1:N0} files.", extractedHashes.Count, originalArchive.Header.FileCount);
-                AnsiConsole.MarkupLine("  [yellow]{0:N0} file(s) failed extraction (extractor bug - see above)[/]", failedCount);
+                AnsiConsole.MarkupLine("  Round-trip OK for {0:N0}/{1:N0} files.", extractedHashes.Count,
+                    originalArchive.Header.FileCount);
+                AnsiConsole.MarkupLine("  [yellow]{0:N0} file(s) failed extraction (extractor bug - see above)[/]",
+                    failedCount);
             }
             else if (roundTripIssues && extractionIssues)
             {
@@ -943,6 +954,7 @@ public static class BsaCommand
                 {
                     AnsiConsole.MarkupLine("[red]  • {0}[/]", issue);
                 }
+
                 AnsiConsole.MarkupLine("  [yellow]Plus {0} extraction failures (see above)[/]", failedCount);
             }
             else

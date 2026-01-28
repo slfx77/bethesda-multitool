@@ -194,7 +194,7 @@ public sealed class RepackBsaEntry : INotifyPropertyChanged
 /// <summary>
 /// Repacker tab for converting Xbox 360 Fallout: New Vegas to PC format.
 /// </summary>
-public sealed partial class RepackerTab : UserControl
+public sealed partial class RepackerTab : UserControl, IDisposable
 {
     private readonly ObservableCollection<RepackCategory> _categories = [];
 
@@ -599,6 +599,11 @@ public sealed partial class RepackerTab : UserControl
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
+    }
+
+    public void Dispose()
+    {
+        _cts?.Dispose();
     }
 }
 

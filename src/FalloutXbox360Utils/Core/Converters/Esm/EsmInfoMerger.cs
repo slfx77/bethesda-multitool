@@ -5,7 +5,6 @@ namespace FalloutXbox360Utils.Core.Converters.Esm;
 
 internal sealed class EsmInfoMerger
 {
-    private const string ChoiceSignature = "TCLT";
     private const string Nam3Signature = "NAM3";
     private const string PnamSignature = "PNAM";
 
@@ -186,10 +185,6 @@ internal sealed class EsmInfoMerger
         var index = new Dictionary<int, InfoMergeEntry>();
         var infoRecords = ScanInfoRecordsFlat();
 
-        var infoByOffset = infoRecords
-            .GroupBy(r => (int)r.Offset)
-            .ToDictionary(g => g.Key, g => g.First());
-
         // Group by FormID. A FormID may have:
         // 1. Two or more primary records (old split-record logic)
         // 2. One primary record + one TOFT record with response data (streaming cache)
@@ -342,7 +337,9 @@ internal sealed class EsmInfoMerger
 
         return hasData || hasQsti || hasCtda || hasTclt || hasPnam
             ? InfoRecordRole.Base
-            : hasTrdt || hasNam1 || hasNam2 ? InfoRecordRole.Response : InfoRecordRole.Unknown;
+            : hasTrdt || hasNam1 || hasNam2
+                ? InfoRecordRole.Response
+                : InfoRecordRole.Unknown;
     }
 
     private byte[]? BuildMergedInfoSubrecords(List<AnalyzerSubrecordInfo> baseSubs,
@@ -431,7 +428,7 @@ internal sealed class EsmInfoMerger
                 continue;
             }
 
-            WriteSubrecord(writer, item.Subrecord);
+            WriteSubrecord(writer, item.Subrecord!);
         }
 
         for (; nam3Index < baseNam3.Count; nam3Index++)
@@ -650,26 +647,6 @@ internal sealed class EsmInfoMerger
         }
     }
 
-    private byte[] WriteSubrecordsToBuffer(List<AnalyzerSubrecordInfo> subrecords)
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        foreach (var sub in subrecords)
-        {
-            var convertedData = EsmSubrecordConverter.ConvertSubrecordData(sub.Signature, sub.Data, "INFO");
-            writer.Write((byte)sub.Signature[0]);
-            writer.Write((byte)sub.Signature[1]);
-            writer.Write((byte)sub.Signature[2]);
-            writer.Write((byte)sub.Signature[3]);
-            writer.Write((ushort)convertedData.Length);
-            writer.Write(convertedData);
-            _stats.SubrecordsConverted++;
-            _stats.IncrementSubrecordType("INFO", sub.Signature);
-        }
-
-        return stream.ToArray();
-    }
-
     /// <summary>
     ///     Writes already-converted (little-endian) subrecords without further conversion.
     /// </summary>
@@ -738,11 +715,11 @@ internal sealed class EsmInfoMerger
 
     private readonly record struct InfoMergeEntry(int BaseOffset, int ResponseOffset, bool Skip);
 
-    private readonly record struct ResponseItem(bool IsGroup, int GroupIndex, AnalyzerSubrecordInfo Subrecord)
+    private readonly record struct ResponseItem(bool IsGroup, int GroupIndex, AnalyzerSubrecordInfo? Subrecord)
     {
         public static ResponseItem Group(int groupIndex)
         {
-            return new ResponseItem(true, groupIndex, default);
+            return new ResponseItem(true, groupIndex, null);
         }
 
         public static ResponseItem FromSubrecord(AnalyzerSubrecordInfo subrecord)

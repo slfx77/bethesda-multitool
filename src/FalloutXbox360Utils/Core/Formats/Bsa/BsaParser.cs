@@ -57,7 +57,7 @@ public static class BsaParser
         var totalFolderNameLength = reader.ReadUInt32();
         var totalFileNameLength = reader.ReadUInt32();
         var fileFlags = (BsaFileFlags)reader.ReadUInt16();
-        var padding = reader.ReadUInt16(); // Padding
+        _ = reader.ReadUInt16(); // Padding
 
         var header = new BsaHeader
         {
