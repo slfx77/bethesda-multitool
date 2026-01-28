@@ -1,7 +1,7 @@
 using System.CommandLine;
 using System.Text;
-using Spectre.Console;
 using FalloutXbox360Utils.CLI;
+using Spectre.Console;
 
 namespace FalloutXbox360Utils;
 
@@ -94,6 +94,11 @@ public static class Program
             Description = "Maximum files to extract per type",
             DefaultValueFactory = _ => 10000
         };
+        var pcFriendlyOption = new Option<bool>("--pc-friendly", "-pc")
+        {
+            Description = "Enable PC-friendly normal map conversion (merges normal + specular maps)",
+            DefaultValueFactory = _ => true
+        };
 
         rootCommand.Arguments.Add(inputArgument);
         rootCommand.Options.Add(outputOption);
@@ -103,6 +108,7 @@ public static class Program
         rootCommand.Options.Add(typesOption);
         rootCommand.Options.Add(verboseOption);
         rootCommand.Options.Add(maxFilesOption);
+        rootCommand.Options.Add(pcFriendlyOption);
 
         rootCommand.SetAction(async (parseResult, cancellationToken) =>
         {
@@ -113,6 +119,7 @@ public static class Program
             var types = parseResult.GetValue(typesOption);
             var verbose = parseResult.GetValue(verboseOption);
             var maxFiles = parseResult.GetValue(maxFilesOption);
+            var pcFriendly = parseResult.GetValue(pcFriendlyOption);
 
             if (string.IsNullOrEmpty(input))
             {
@@ -128,7 +135,8 @@ public static class Program
 
             try
             {
-                await CarveCommand.ExecuteAsync(input, output, types?.ToList(), convertDdx, verbose, maxFiles);
+                await CarveCommand.ExecuteAsync(input, output, types?.ToList(), convertDdx, verbose, maxFiles,
+                    pcFriendly);
                 return 0;
             }
             catch (Exception ex)

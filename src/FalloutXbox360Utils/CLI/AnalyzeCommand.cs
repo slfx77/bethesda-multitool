@@ -1,10 +1,10 @@
 using System.CommandLine;
 using System.Text.Json;
-using Spectre.Console;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Json;
+using Spectre.Console;
 using static FalloutXbox360Utils.Core.LogLevel;
 
 namespace FalloutXbox360Utils.CLI;
@@ -71,6 +71,10 @@ public static class AnalyzeCommand
             return;
         }
 
+        // Configure logger for verbose mode
+        Logger.Instance.SetVerbose(verbose);
+        Logger.Instance.IncludeTimestamp = verbose;
+
         AnsiConsole.MarkupLine($"[blue]Analyzing:[/] {Path.GetFileName(input)}");
         AnsiConsole.WriteLine();
 
@@ -96,7 +100,7 @@ public static class AnalyzeCommand
                     task.Description = $"[green]{p.Phase}[/][grey]{filesInfo}[/]";
                 });
 
-                result = await analyzer.AnalyzeAsync(input, progress);
+                result = await analyzer.AnalyzeAsync(input, progress, includeMetadata: true, verbose: verbose);
                 task.Value = 100;
                 task.Description = $"[green]Complete[/] [grey]({result.CarvedFiles.Count} files)[/]";
             });
@@ -264,8 +268,9 @@ public static class AnalyzeCommand
                 result.EsmRecords.Heightmaps,
                 result.EsmRecords.CellGrids,
                 heightmapsDir,
-                useColorGradient: true);
-            AnsiConsole.MarkupLine($"[green]Heightmaps exported:[/] {result.EsmRecords.Heightmaps.Count} images to {heightmapsDir}");
+                true);
+            AnsiConsole.MarkupLine(
+                $"[green]Heightmaps exported:[/] {result.EsmRecords.Heightmaps.Count} images to {heightmapsDir}");
 
             // Also try to export a composite worldmap if we have correlated heightmaps
             if (result.EsmRecords.CellGrids.Count > 0)
@@ -275,7 +280,7 @@ public static class AnalyzeCommand
                     result.EsmRecords.Heightmaps,
                     result.EsmRecords.CellGrids,
                     compositePath,
-                    useColorGradient: true);
+                    true);
                 AnsiConsole.MarkupLine($"[green]Composite worldmap:[/] {compositePath}");
             }
         }

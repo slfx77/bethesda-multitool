@@ -20,6 +20,7 @@ public sealed class MemoryCarver : IDisposable
     private readonly bool _saveAtlas;
     private readonly HashSet<string> _signatureIdsToSearch;
     private readonly SignatureMatcher _signatureMatcher;
+    private readonly bool _skipDdxConversion;
     private readonly ConcurrentDictionary<string, int> _stats = new();
     private bool _disposed;
     private CarveWriter? _writer;
@@ -30,12 +31,14 @@ public sealed class MemoryCarver : IDisposable
         bool convertDdxToDds = true,
         List<string>? fileTypes = null,
         bool verbose = false,
-        bool saveAtlas = false)
+        bool saveAtlas = false,
+        bool skipDdxConversion = false)
     {
         _outputDir = outputDir;
         _maxFilesPerType = maxFilesPerType;
         _saveAtlas = saveAtlas;
         _enableConversion = convertDdxToDds;
+        _skipDdxConversion = skipDdxConversion;
 
         _signatureMatcher = new SignatureMatcher();
         _signatureIdsToSearch = GetSignatureIdsToSearch(fileTypes);
@@ -120,6 +123,12 @@ public sealed class MemoryCarver : IDisposable
 
         foreach (var format in FormatRegistry.All)
         {
+            // Skip DDX converter when batch pc-friendly conversion will be done after carving
+            if (_skipDdxConversion && format.FormatId.Equals("ddx", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (format is IFileConverter converter && converter.Initialize(verbose, options))
             {
                 _converters[format.FormatId] = converter;

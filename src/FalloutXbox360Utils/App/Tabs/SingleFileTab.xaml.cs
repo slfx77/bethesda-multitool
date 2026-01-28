@@ -231,6 +231,13 @@ public sealed partial class SingleFileTab : UserControl
                         FileName = _analysisResult.FormIdMap.GetValueOrDefault(esmRecord.FormId)
                     };
                     _allCarvedFiles.Add(item);
+                }
+
+                // Sort all entries by offset so ESM records appear in correct position
+                _allCarvedFiles.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+                _carvedFiles.Clear();
+                foreach (var item in _allCarvedFiles)
+                {
                     _carvedFiles.Add(item);
                 }
             }
@@ -275,14 +282,17 @@ public sealed partial class SingleFileTab : UserControl
                 ConvertDdx = ConvertDdxCheckBox.IsChecked == true,
                 SaveAtlas = SaveAtlasCheckBox.IsChecked == true,
                 Verbose = VerboseCheckBox.IsChecked == true,
-                FileTypes = types
+                FileTypes = types,
+                PcFriendly = true, // Enable PC-friendly normal map conversion
+                GenerateEsmReports = true // Generate ESM reports and heightmaps
             };
             var progress = new Progress<ExtractionProgress>(p => DispatcherQueue.TryEnqueue(() =>
             {
                 AnalysisProgressBar.IsIndeterminate = false;
                 AnalysisProgressBar.Value = p.PercentComplete;
             }));
-            var summary = await Task.Run(() => MemoryDumpExtractor.Extract(filePath, opts, progress));
+            var analysisData = _analysisResult; // Capture for closure
+            var summary = await Task.Run(() => MemoryDumpExtractor.Extract(filePath, opts, progress, analysisData));
 
             // Update status for extracted files
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedOffsets.Contains(x.Offset)))
@@ -302,7 +312,11 @@ public sealed partial class SingleFileTab : UserControl
                 msg +=
                     $"Scripts extracted: {summary.ScriptsExtracted} ({summary.ScriptQuestsGrouped} quests grouped)\n";
             if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
-                msg += $"\nDDX conversion: {summary.DdxConverted} ok, {summary.DdxFailed} failed";
+                msg += $"\nDDX conversion: {summary.DdxConverted} ok, {summary.DdxFailed} failed (PC-friendly)";
+            if (summary.EsmReportGenerated)
+                msg += $"\nESM report: generated";
+            if (summary.HeightmapsExported > 0)
+                msg += $"\nHeightmaps: {summary.HeightmapsExported} exported";
             await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {outputPath}");
         }
         catch (Exception ex)

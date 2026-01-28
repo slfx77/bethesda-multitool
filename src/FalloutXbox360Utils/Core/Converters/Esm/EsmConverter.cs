@@ -64,7 +64,7 @@ public sealed class EsmConverter : IDisposable
             _recordWriter.SetToftInfoIndex(toftInfoOffsetsByFormId);
             if (_verbose)
             {
-                    Log($"TOFT: indexed {toftInfoOffsetsByFormId.Count:N0} INFO records from streaming cache");
+                Log($"TOFT: indexed {toftInfoOffsetsByFormId.Count:N0} INFO records from streaming cache");
             }
         }
 
@@ -74,13 +74,15 @@ public sealed class EsmConverter : IDisposable
             var temporaryGroups = index.CellChildGroups.Count(kvp => kvp.Key.type == 9);
             var persistentGroups = index.CellChildGroups.Count(kvp => kvp.Key.type == 8);
             var totalChildRecords = index.CellChildGroups.Sum(kvp => kvp.Value.Sum(g => g.Size));
-            Log($"Index: worlds={index.Worlds.Count}, interiorCells={index.InteriorCells.Count}, exteriorCells={exteriorCells}, exteriorWorlds={index.ExteriorCellsByWorld.Count}");
+            Log(
+                $"Index: worlds={index.Worlds.Count}, interiorCells={index.InteriorCells.Count}, exteriorCells={exteriorCells}, exteriorWorlds={index.ExteriorCellsByWorld.Count}");
             foreach (var kvp in index.ExteriorCellsByWorld)
             {
                 Console.WriteLine($"  World 0x{kvp.Key:X8}: {kvp.Value.Count} exterior cells");
             }
 
-            Log($"CellChildGroups: persistent={persistentGroups}, temporary={temporaryGroups}, totalSize={totalChildRecords:N0} bytes");
+            Log(
+                $"CellChildGroups: persistent={persistentGroups}, temporary={temporaryGroups}, totalSize={totalChildRecords:N0} bytes");
         }
 
         // Stack to track GRUP boundaries: (outputHeaderPos, inputGrupEnd)
@@ -495,7 +497,7 @@ public sealed class EsmConverter : IDisposable
                     continue;
                 }
 
-                var ofstIndex = (row * columns) + col;
+                var ofstIndex = row * columns + col;
                 if (ofstIndex < 0 || ofstIndex >= count)
                 {
                     continue;
@@ -533,7 +535,7 @@ public sealed class EsmConverter : IDisposable
             }
 
             var ofstDataOffsetLocal = (long)wrld.Offset + EsmParser.MainRecordHeaderSize + ofst.Offset + 6;
-            if (ofstDataOffsetLocal < 0 || ofstDataOffsetLocal + ((long)count * 4) > output.Length)
+            if (ofstDataOffsetLocal < 0 || ofstDataOffsetLocal + (long)count * 4 > output.Length)
             {
                 continue;
             }
@@ -541,7 +543,7 @@ public sealed class EsmConverter : IDisposable
             for (var i = 0; i < offsets.Length; i++)
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(
-                    output.AsSpan((int)ofstDataOffsetLocal + (i * 4), 4),
+                    output.AsSpan((int)ofstDataOffsetLocal + i * 4, 4),
                     offsets[i]);
             }
         }
@@ -846,8 +848,10 @@ public sealed class EsmConverter : IDisposable
 
         if (_verbose)
         {
-            Console.WriteLine($"  [0x{toftStartOffset:X8}] Consuming Xbox TOFT region (streaming cache) for INFO merge");
-            Console.WriteLine($"  Skipped writing {_stats.ToftTrailingBytesSkipped:N0} bytes, resuming at 0x{inputOffset:X8}");
+            Console.WriteLine(
+                $"  [0x{toftStartOffset:X8}] Consuming Xbox TOFT region (streaming cache) for INFO merge");
+            Console.WriteLine(
+                $"  Skipped writing {_stats.ToftTrailingBytesSkipped:N0} bytes, resuming at 0x{inputOffset:X8}");
             foreach (var (type, cnt) in _stats.SkippedRecordTypeCounts.OrderByDescending(x => x.Value).Take(5))
             {
                 Console.WriteLine($"    Skipped writing {cnt:N0} {type} records");
