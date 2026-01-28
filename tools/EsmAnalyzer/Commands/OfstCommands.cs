@@ -4,7 +4,7 @@ using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
 

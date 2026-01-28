@@ -1,6 +1,6 @@
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using static EsmAnalyzer.Helpers.DiffHelpers;
 
 namespace EsmAnalyzer.Commands;

@@ -1,4 +1,4 @@
-# Xbox 360 Memory Carver - AI Assistant Instructions
+# Fallout Xbox 360 Utils - AI Assistant Instructions
 
 ## Project Overview
 

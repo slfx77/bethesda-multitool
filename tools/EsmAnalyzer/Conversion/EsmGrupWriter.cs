@@ -1,6 +1,6 @@
 using EsmAnalyzer.Conversion.Schema;
 using System.Buffers.Binary;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using static EsmAnalyzer.Conversion.EsmEndianHelpers;
 
 namespace EsmAnalyzer.Conversion;

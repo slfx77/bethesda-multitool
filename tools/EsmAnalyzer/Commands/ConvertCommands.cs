@@ -2,7 +2,7 @@ using EsmAnalyzer.Conversion;
 using EsmAnalyzer.Conversion.Schema;
 using Spectre.Console;
 using System.CommandLine;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
 

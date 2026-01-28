@@ -1,0 +1,13 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/DDXConv/">
+    <Project Path="src/DDXConv/DDXConv/DDXConv.csproj" />
+    <Project Path="src/DDXConv/XCompression/XCompression.csproj" />
+  </Folder>
+  <Project Path="src/FalloutXbox360Utils/FalloutXbox360Utils.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="tests/FalloutXbox360Utils.Tests/FalloutXbox360Utils.Tests.csproj" />
+</Solution>

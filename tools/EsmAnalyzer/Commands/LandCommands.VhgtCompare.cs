@@ -1,7 +1,7 @@
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.Globalization;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using static EsmAnalyzer.Core.EsmBinary;
 
 namespace EsmAnalyzer.Commands;

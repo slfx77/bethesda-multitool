@@ -1,6 +1,6 @@
-# Xbox 360 Memory Carver - Architecture Guide
+# Fallout Xbox 360 Utils - Architecture Guide
 
-This document describes the internal architecture of the Xbox 360 Memory Carver, including the core components, data flow, and extensibility points.
+This document describes the internal architecture of the Fallout Xbox 360 Utils, including the core components, data flow, and extensibility points.
 
 ---
 
@@ -21,7 +21,7 @@ This document describes the internal architecture of the Xbox 360 Memory Carver,
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                          Xbox 360 Memory Carver                            │
+│                          Fallout Xbox 360 Utils                            │
 ├──────────────────────────────────┬─────────────────────────────────────────┤
 │           GUI Layer              │               CLI Layer                 │
 │  (WinUI 3 - Windows only)        │        (Cross-platform .NET)            │
@@ -68,7 +68,6 @@ src/Xbox360MemoryCarver/
 │   │   ├── Dds/DdsFormat.cs
 │   │   ├── Ddx/DdxFormat.cs    # Implements IFileConverter
 │   │   ├── EsmRecord/EsmRecordFormat.cs  # Implements IDumpScanner
-│   │   ├── Esp/EspFormat.cs
 │   │   ├── Lip/LipFormat.cs
 │   │   ├── Nif/NifFormat.cs
 │   │   ├── Png/PngFormat.cs
@@ -270,7 +269,6 @@ All format modules extend `FileFormatBase` and are self-contained in their own f
 | `DdsFormat`       | `Core/Formats/Dds/`       | Parsing only                                 |
 | `DdxFormat`       | `Core/Formats/Ddx/`       | Parsing + `IFileConverter`                   |
 | `EsmRecordFormat` | `Core/Formats/EsmRecord/` | `IDumpScanner` (ESM record extraction)       |
-| `EspFormat`       | `Core/Formats/Esp/`       | Parsing only                                 |
 | `LipFormat`       | `Core/Formats/Lip/`       | Parsing only                                 |
 | `NifFormat`       | `Core/Formats/Nif/`       | Parsing + BE -> LE conversion                |
 | `PngFormat`       | `Core/Formats/Png/`       | Parsing only                                 |

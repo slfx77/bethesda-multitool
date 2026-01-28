@@ -1,4 +1,4 @@
-# Xbox 360 Memory Carver
+# Fallout Xbox 360 Utils
 
 A cross-platform tool for Xbox 360 memory dump analysis, file carving, and DDX texture conversion. Features a **WinUI 3 GUI** on Windows and a **cross-platform CLI** for batch processing on Windows, Linux, and macOS.
 
@@ -41,9 +41,9 @@ Download from [Releases](https://github.com/slfx77/xbox-360-minidump-extractor/r
 
 | Platform    | Download                                   |
 | ----------- | ------------------------------------------ |
-| Windows GUI | `Xbox360MemoryCarver-Windows-GUI-x64.zip`  |
-| Windows CLI | `Xbox360MemoryCarver-Windows-CLI-x64.zip`  |
-| Linux CLI   | `Xbox360MemoryCarver-Linux-CLI-x64.tar.gz` |
+| Windows GUI | `FalloutXbox360Utils-Windows-GUI-x64.zip`  |
+| Windows CLI | `FalloutXbox360Utils-Windows-CLI-x64.zip`  |
+| Linux CLI   | `FalloutXbox360Utils-Linux-CLI-x64.tar.gz` |
 
 ### Build from Source
 
@@ -58,10 +58,10 @@ cd xbox-360-minidump-extractor
 dotnet build -c Release
 
 # Run GUI (Windows only)
-dotnet run --project src/Xbox360MemoryCarver -f net10.0-windows10.0.19041.0
+dotnet run --project src/FalloutXbox360Utils -f net10.0-windows10.0.19041.0
 
 # Run CLI (cross-platform)
-dotnet run --project src/Xbox360MemoryCarver -f net10.0 -- --help
+dotnet run --project src/FalloutXbox360Utils -f net10.0 -- --help
 ```
 
 ## Usage
@@ -71,26 +71,26 @@ dotnet run --project src/Xbox360MemoryCarver -f net10.0 -- --help
 Run the application without arguments to launch the GUI:
 
 ```bash
-Xbox360MemoryCarver.exe
+FalloutXbox360Utils.exe
 ```
 
 Or auto-load a dump file:
 
 ```bash
-Xbox360MemoryCarver.exe path/to/dump.dmp
+FalloutXbox360Utils.exe path/to/dump.dmp
 ```
 
 ### CLI Mode
 
 ```bash
 # Basic extraction
-Xbox360MemoryCarver dump.dmp -o output_folder
+FalloutXbox360Utils dump.dmp -o output_folder
 
 # With options
-Xbox360MemoryCarver dump.dmp -o output -t ddx xma nif -v --convert-ddx
+FalloutXbox360Utils dump.dmp -o output -t ddx xma nif -v --convert-ddx
 
 # Windows: Force CLI mode (otherwise defaults to GUI)
-Xbox360MemoryCarver --no-gui dump.dmp -o output
+FalloutXbox360Utils --no-gui dump.dmp -o output
 ```
 
 #### CLI Options
@@ -109,15 +109,15 @@ Xbox360MemoryCarver --no-gui dump.dmp -o output
 
 ```bash
 # Analyze dump structure (console summary)
-Xbox360MemoryCarver analyze dump.dmp
+FalloutXbox360Utils analyze dump.dmp
 
 # Generate markdown report
-Xbox360MemoryCarver analyze dump.dmp -f md -o report.md
+FalloutXbox360Utils analyze dump.dmp -f md -o report.md
 
 # List loaded modules
-Xbox360MemoryCarver modules dump.dmp              # Text output
-Xbox360MemoryCarver modules dump.dmp -f md        # Markdown table
-Xbox360MemoryCarver modules dump.dmp -f csv       # CSV export
+FalloutXbox360Utils modules dump.dmp              # Text output
+FalloutXbox360Utils modules dump.dmp -f md        # Markdown table
+FalloutXbox360Utils modules dump.dmp -f csv       # CSV export
 ```
 
 The `analyze` command provides:
@@ -179,7 +179,7 @@ XMA audio conversion to WAV format requires FFmpeg:
 ## Project Structure
 
 ```
-src/Xbox360MemoryCarver/
+src/FalloutXbox360Utils/
 ├── CLI/                     # Command-line interface commands
 ├── Core/                    # Cross-platform carving logic
 │   ├── Carving/             # File carving engine

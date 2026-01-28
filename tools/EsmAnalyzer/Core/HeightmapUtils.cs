@@ -1,6 +1,6 @@
 using System.IO.Compression;
 using System.Text;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Core;
 

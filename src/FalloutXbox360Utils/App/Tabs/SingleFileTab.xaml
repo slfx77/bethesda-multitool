@@ -1,0 +1,401 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="FalloutXbox360Utils.SingleFileTab"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+  xmlns:ctk="using:CommunityToolkit.WinUI.Controls"
+  xmlns:hexviewer="using:FalloutXbox360Utils"
+  xmlns:local="using:FalloutXbox360Utils">
+
+  <Grid Padding="16"
+        VerticalAlignment="Stretch">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!--  Header row: Titles (outside cards)  -->
+    <Grid Grid.Row="0"
+          Margin="0,0,0,8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition
+          Width="*"
+          MinWidth="500"/>
+        <ColumnDefinition Width="8"/>
+        <ColumnDefinition
+          Width="*"
+          MinWidth="400"/>
+      </Grid.ColumnDefinitions>
+
+      <TextBlock
+        Grid.Column="0"
+        VerticalAlignment="Bottom"
+        Style="{StaticResource SubtitleTextBlockStyle}"
+        Text="Minidump Analyzer"/>
+
+      <TextBlock
+        Grid.Column="2"
+        VerticalAlignment="Bottom"
+        Style="{StaticResource SubtitleTextBlockStyle}"
+        Text="Discovered Files"/>
+    </Grid>
+
+    <!--  MIDDLE: Memory Map and Discovered Files side-by-side  -->
+    <Grid Grid.Row="1"
+          VerticalAlignment="Stretch">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition
+          Width="*"
+          MinWidth="500"/>
+        <ColumnDefinition Width="8"/>
+        <ColumnDefinition
+          Width="*"
+          MinWidth="400"/>
+      </Grid.ColumnDefinitions>
+
+      <!--  Hex Viewer - always dark like code editors  -->
+      <Border
+        Grid.Column="0"
+        VerticalAlignment="Stretch"
+        Style="{StaticResource DarkCardBorderStyle}">
+        <hexviewer:HexViewerControl
+          x:Name="HexViewer"/>
+      </Border>
+
+      <!--  Splitter space  -->
+      <controls:ContentPresenter Grid.Column="1"/>
+
+      <!--  Files Table Card  -->
+      <Border
+        Grid.Column="2"
+        VerticalAlignment="Stretch"
+        Style="{StaticResource CardBorderStyle}">
+        <Grid VerticalAlignment="Stretch">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+
+          <!--  Sticky column headers  -->
+          <Grid
+            Grid.Row="0"
+            Style="{StaticResource ColumnHeaderGridStyle}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="90"/>
+              <ColumnDefinition Width="70"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="50"/>
+            </Grid.ColumnDefinitions>
+            <Button
+              Grid.Column="0"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByOffset_Click">
+              <StackPanel
+                Orientation="Horizontal"
+                Spacing="4">
+                <TextBlock
+                  FontWeight="SemiBold"
+                  Text="Offset"/>
+                <FontIcon
+                  x:Name="OffsetSortIcon"
+                  Style="{StaticResource SortIconStyle}"/>
+              </StackPanel>
+            </Button>
+            <Button
+              Grid.Column="1"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByLength_Click">
+              <StackPanel
+                Orientation="Horizontal"
+                Spacing="4">
+                <TextBlock
+                  FontWeight="SemiBold"
+                  Text="Size"/>
+                <FontIcon
+                  x:Name="LengthSortIcon"
+                  Style="{StaticResource SortIconStyle}"/>
+              </StackPanel>
+            </Button>
+            <Button
+              Grid.Column="2"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByType_Click">
+              <StackPanel
+                Orientation="Horizontal"
+                Spacing="4">
+                <TextBlock
+                  FontWeight="SemiBold"
+                  Text="Type"/>
+                <FontIcon
+                  x:Name="TypeSortIcon"
+                  Style="{StaticResource SortIconStyle}"/>
+              </StackPanel>
+            </Button>
+            <Button
+              Grid.Column="3"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByFilename_Click">
+              <StackPanel
+                Orientation="Horizontal"
+                Spacing="4">
+                <TextBlock
+                  FontWeight="SemiBold"
+                  Text="Filename"/>
+                <FontIcon
+                  x:Name="FilenameSortIcon"
+                  Style="{StaticResource SortIconStyle}"/>
+              </StackPanel>
+            </Button>
+            <TextBlock
+              Grid.Column="4"
+              FontWeight="SemiBold"
+              Text=""/>
+          </Grid>
+
+          <!--  Scrollable file list  -->
+          <ListView
+            x:Name="ResultsListView"
+            Grid.Row="1"
+            RightTapped="ResultsListView_RightTapped"
+            SelectionChanged="ResultsListView_SelectionChanged"
+            SelectionMode="Single">
+            <ListView.ContextFlyout>
+              <MenuFlyout x:Name="FileListContextMenu">
+                <MenuFlyoutItem
+                  x:Name="GoToStartMenuItem"
+                  Click="GoToStart_Click"
+                  Text="Go to Start">
+                  <MenuFlyoutItem.Icon>
+                    <FontIcon Glyph="&#xE76B;"/>
+                  </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem
+                  x:Name="GoToEndMenuItem"
+                  Click="GoToEnd_Click"
+                  Text="Go to End">
+                  <MenuFlyoutItem.Icon>
+                    <FontIcon Glyph="&#xE76C;"/>
+                  </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutItem
+                  x:Name="CopyOffsetMenuItem"
+                  Click="CopyOffset_Click"
+                  Text="Copy Offset">
+                  <MenuFlyoutItem.Icon>
+                    <FontIcon Glyph="&#xE8C8;"/>
+                  </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem
+                  x:Name="CopyFilenameMenuItem"
+                  Click="CopyFilename_Click"
+                  Text="Copy Filename">
+                  <MenuFlyoutItem.Icon>
+                    <FontIcon Glyph="&#xE8C8;"/>
+                  </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+              </MenuFlyout>
+            </ListView.ContextFlyout>
+            <ListView.ItemTemplate>
+              <DataTemplate x:DataType="local:CarvedFileEntry">
+                <Grid Padding="8,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="90"/>
+                    <ColumnDefinition Width="70"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="50"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock
+                    Grid.Column="0"
+                    FontFamily="Consolas"
+                    FontSize="11"
+                    Text="{x:Bind OffsetHex}"/>
+                  <TextBlock
+                    Grid.Column="1"
+                    FontSize="11"
+                    Text="{x:Bind LengthFormatted}"/>
+                  <TextBlock
+                    Grid.Column="2"
+                    FontSize="11"
+                    Text="{x:Bind DisplayType}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind DisplayType}"/>
+                  <TextBlock
+                    Grid.Column="3"
+                    FontSize="11"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="{x:Bind FileNameDisplay}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind FileNameDisplay}"/>
+                  <FontIcon
+                    Grid.Column="4"
+                    HorizontalAlignment="Center"
+                    FontSize="12"
+                    Foreground="{x:Bind ExtractedColor, Mode=OneWay}"
+                    Glyph="{x:Bind ExtractedGlyph, Mode=OneWay}"/>
+                </Grid>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+          </ListView>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!--  Progress Bar (above I/O)  -->
+    <ProgressBar
+      x:Name="AnalysisProgressBar"
+      Grid.Row="2"
+      IsIndeterminate="True"
+      Style="{StaticResource TabProgressBarStyle}"/>
+
+    <!--  Input/Output Section  -->
+    <Grid
+      Grid.Row="3"
+      Style="{StaticResource IoSectionGridStyle}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+
+      <!--  Minidump Path  -->
+      <TextBlock
+        Grid.Row="0"
+        Grid.Column="0"
+        Style="{StaticResource IoLabelStyle}"
+        Text="Minidump Path"/>
+      <TextBox
+        x:Name="MinidumpPathTextBox"
+        Grid.Row="0"
+        Grid.Column="1"
+        Style="{StaticResource IoTextBoxStyle}"
+        AllowDrop="True"
+        PlaceholderText="Select or enter a .dmp file path..."
+        TextChanged="MinidumpPathTextBox_TextChanged"/>
+      <Button
+        Grid.Row="0"
+        Grid.Column="2"
+        Click="OpenMinidumpButton_Click"
+        Content="Browse..."/>
+
+      <!--  Output Directory  -->
+      <TextBlock
+        Grid.Row="1"
+        Grid.Column="0"
+        Style="{StaticResource IoLabelStyle}"
+        Text="Output Directory"/>
+      <TextBox
+        x:Name="OutputPathTextBox"
+        Grid.Row="1"
+        Grid.Column="1"
+        Style="{StaticResource IoTextBoxStyle}"
+        AllowDrop="True"
+        PlaceholderText="Select or enter output directory..."
+        TextChanged="OutputPathTextBox_TextChanged"/>
+      <Button
+        Grid.Row="1"
+        Grid.Column="2"
+        Click="BrowseOutputButton_Click"
+        Content="Browse..."/>
+    </Grid>
+
+    <!--  BOTTOM: File Types, Options, and Extract Button  -->
+    <Grid
+      Grid.Row="4"
+      Margin="0,8,0,0">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+
+      <!--  File Type Filters  -->
+      <Expander
+        Grid.Row="0"
+        Margin="0,0,0,8"
+        HorizontalAlignment="Stretch"
+        HorizontalContentAlignment="Stretch"
+        Header="File Types to Extract">
+        <ctk:WrapPanel
+          x:Name="FileTypeCheckboxPanel"
+          HorizontalSpacing="16"
+          VerticalSpacing="8">
+          <!--  Checkboxes will be generated dynamically  -->
+        </ctk:WrapPanel>
+      </Expander>
+
+      <!--  Options and Extract Button  -->
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel
+          Grid.Column="0"
+          VerticalAlignment="Center"
+          Orientation="Horizontal"
+          Spacing="24">
+          <!--  Conversion Options  -->
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <CheckBox
+              x:Name="ConvertDdxCheckBox"
+              MinWidth="0"
+              Content="Convert Formats"
+              ToolTipService.ToolTip="Convert DDX -> DDS textures and XUR -> XUI interfaces"
+              IsChecked="True"/>
+            <CheckBox
+              x:Name="SaveAtlasCheckBox"
+              Margin="16,0,0,0"
+              Content="Save Atlas Files"/>
+          </StackPanel>
+
+          <Border Width="1"
+                  Height="20"
+                  Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+
+          <!--  Output Options  -->
+          <StackPanel Orientation="Horizontal"
+                      Spacing="8">
+            <CheckBox
+              x:Name="VerboseCheckBox"
+              MinWidth="0"
+              Content="Verbose"
+              ToolTipService.ToolTip="Output detailed progress to the terminal (when launched from command line)"/>
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel
+          Grid.Column="1"
+          Orientation="Horizontal"
+          Spacing="8">
+          <Button
+            x:Name="AnalyzeButton"
+            MinWidth="100"
+            Click="AnalyzeButton_Click"
+            Content="Analyze"
+            IsEnabled="False"
+            Style="{StaticResource AccentButtonStyle}"/>
+          <Button
+            x:Name="ExtractButton"
+            MinWidth="120"
+            Click="ExtractButton_Click"
+            Content="Extract Files"
+            IsEnabled="False"
+            Style="{StaticResource AccentButtonStyle}"/>
+        </StackPanel>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

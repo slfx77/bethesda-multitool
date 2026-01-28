@@ -1,7 +1,7 @@
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.CommandLine;
-using Xbox360MemoryCarver.Core.Utils;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
 

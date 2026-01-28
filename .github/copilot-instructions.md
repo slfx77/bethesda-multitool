@@ -1,4 +1,4 @@
-# Xbox 360 Memory Carver
+# Fallout Xbox 360 Utils
 
 ## Project Overview
 
@@ -143,25 +143,25 @@ Pre-extracted symbol data from the debug PDB for quick reference:
 
 ```bash
 # Linux/macOS - Carve files from memory dump
-./Xbox360MemoryCarver dump.dmp -o output_dir -v
+./FalloutXbox360Utils dump.dmp -o output_dir -v
 
 # Windows (force CLI mode)
-Xbox360MemoryCarver.exe --no-gui dump.dmp -o output_dir -v
+FalloutXbox360Utils.exe --no-gui dump.dmp -o output_dir -v
 
 # Analyze dump structure
-Xbox360MemoryCarver analyze dump.dmp              # Console summary
-Xbox360MemoryCarver analyze dump.dmp -f md        # Markdown report
-Xbox360MemoryCarver analyze dump.dmp -f md -o report.md  # Save report
+FalloutXbox360Utils analyze dump.dmp              # Console summary
+FalloutXbox360Utils analyze dump.dmp -f md        # Markdown report
+FalloutXbox360Utils analyze dump.dmp -f md -o report.md  # Save report
 
 # List loaded modules
-Xbox360MemoryCarver modules dump.dmp              # Text output
-Xbox360MemoryCarver modules dump.dmp -f md        # Markdown table
-Xbox360MemoryCarver modules dump.dmp -f csv       # CSV export
+FalloutXbox360Utils modules dump.dmp              # Text output
+FalloutXbox360Utils modules dump.dmp -f md        # Markdown table
+FalloutXbox360Utils modules dump.dmp -f csv       # CSV export
 
 # Convert Xbox 360 NIF models to PC format
-Xbox360MemoryCarver convert-nif model.nif -o output_dir
-Xbox360MemoryCarver convert-nif meshes_folder/ -r -v    # Recursive, verbose
-Xbox360MemoryCarver convert-nif meshes/ -o converted/ --overwrite
+FalloutXbox360Utils convert-nif model.nif -o output_dir
+FalloutXbox360Utils convert-nif meshes_folder/ -r -v    # Recursive, verbose
+FalloutXbox360Utils convert-nif meshes/ -o converted/ --overwrite
 ```
 
 ## Build Commands
@@ -341,7 +341,7 @@ dotnet run --project tools/NifAnalyzer -f net10.0 -- skinpart file.nif <block_in
 ## Project Structure
 
 ```
-src/Xbox360MemoryCarver/
+src/FalloutXbox360Utils/
 ├── CLI/                         # Command-line interface commands
 │   ├── AnalyzeCommand.cs        # Dump analysis command
 │   ├── CarveCommand.cs          # File extraction command
@@ -356,7 +356,6 @@ src/Xbox360MemoryCarver/
 │   │   ├── Dds/DdsFormat.cs     # DDS texture format
 │   │   ├── Ddx/DdxFormat.cs     # DDX Xbox 360 texture (w/ conversion)
 │   │   ├── EsmRecord/           # ESM record scanning
-│   │   ├── Esp/EspFormat.cs     # ESP/ESM plugin format
 │   │   ├── Lip/LipFormat.cs     # Lip sync format
 │   │   ├── Nif/NifFormat.cs     # NetImmerse model format (w/ conversion)
 │   │   ├── Png/PngFormat.cs     # PNG image format
@@ -372,14 +371,14 @@ src/Xbox360MemoryCarver/
 ├── SignatureMatcher.cs          # Aho-Corasick multi-pattern search
 ├── Program.cs                   # Entry point (CLI/GUI switch)
 ├── GuiEntryPoint.cs             # GUI bootstrap (Windows only)
-└── Xbox360MemoryCarver.csproj   # Multi-target project file
+└── FalloutXbox360Utils.csproj   # Multi-target project file
 
-tests/Xbox360MemoryCarver.Tests/
+tests/FalloutXbox360Utils.Tests/
 ├── Core/
 │   ├── Formats/                 # Format tests (NifFormat, FormatRegistry, etc.)
 │   ├── Parsers/                 # Parser tests (DDS, DDX, PNG, XMA, etc.)
 │   └── Utils/                   # BinaryUtilsTests
-└── Xbox360MemoryCarver.Tests.csproj
+└── FalloutXbox360Utils.Tests.csproj
 
 src/DDXConv/                     # DDX conversion submodule
 ```
@@ -429,5 +428,5 @@ See [docs/Architecture.md](../docs/Architecture.md) for detailed extensibility g
 The Windows build defaults to GUI mode. Force CLI with `--no-gui`:
 
 ```bash
-Xbox360MemoryCarver.exe --no-gui dump.dmp -o output -v
+FalloutXbox360Utils.exe --no-gui dump.dmp -o output -v
 ```

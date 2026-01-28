@@ -30,7 +30,7 @@ jobs:
     
     - name: Run Tests with Coverage
       run: |
-        dotnet test tests/Xbox360MemoryCarver.Tests/Xbox360MemoryCarver.Tests.csproj `
+        dotnet test tests/FalloutXbox360Utils.Tests/FalloutXbox360Utils.Tests.csproj `
           --configuration Release `
           --no-build `
           --verbosity normal `
@@ -91,7 +91,7 @@ jobs:
     
     - name: Build CLI (Linux)
       run: |
-        dotnet build src/Xbox360MemoryCarver/Xbox360MemoryCarver.csproj \
+        dotnet build src/FalloutXbox360Utils/FalloutXbox360Utils.csproj \
           --configuration Release \
           --framework net10.0
     

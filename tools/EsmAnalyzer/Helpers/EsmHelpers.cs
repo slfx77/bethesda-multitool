@@ -1,8 +1,8 @@
 using System.IO.Compression;
 using System.Text;
 using EsmAnalyzer.Core;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
-using Xbox360MemoryCarver.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace EsmAnalyzer.Helpers;
 

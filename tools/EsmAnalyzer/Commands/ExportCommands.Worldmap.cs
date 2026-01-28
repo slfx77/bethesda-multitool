@@ -4,8 +4,8 @@ using ImageMagick;
 using Spectre.Console;
 using System.Text;
 using System.Text.Json;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
-using Xbox360MemoryCarver.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
 

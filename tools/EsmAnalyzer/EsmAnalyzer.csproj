@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Xbox360MemoryCarver\Xbox360MemoryCarver.csproj" />
+    <ProjectReference Include="..\..\src\FalloutXbox360Utils\FalloutXbox360Utils.csproj" />
   </ItemGroup>
 
 </Project>

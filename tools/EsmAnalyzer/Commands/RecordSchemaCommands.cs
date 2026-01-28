@@ -3,7 +3,7 @@ using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 namespace EsmAnalyzer.Commands;
 

@@ -1,7 +1,7 @@
 using EsmAnalyzer.Conversion.Schema;
 using EsmAnalyzer.Helpers;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
-using Xbox360MemoryCarver.Core.Utils;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace EsmAnalyzer.Conversion;
 
