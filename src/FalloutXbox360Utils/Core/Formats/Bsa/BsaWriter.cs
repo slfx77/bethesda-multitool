@@ -12,9 +12,6 @@ namespace FalloutXbox360Utils.Core.Formats.Bsa;
 /// </summary>
 public sealed class BsaWriter : IDisposable
 {
-    /// <summary>BSA magic bytes.</summary>
-    private static readonly byte[] BsaMagic = "BSA\0"u8.ToArray();
-
     /// <summary>BSA header size (36 bytes).</summary>
     private const int HeaderSize = 36;
 
@@ -24,11 +21,15 @@ public sealed class BsaWriter : IDisposable
     /// <summary>File record size (16 bytes).</summary>
     private const int FileRecordSize = 16;
 
-    private readonly Dictionary<string, List<PendingFile>> _folders = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>BSA magic bytes.</summary>
+    private static readonly byte[] BsaMagic = "BSA\0"u8.ToArray();
+
     private readonly BsaArchiveFlags _archiveFlags;
-    private readonly BsaFileFlags _fileFlags;
     private readonly bool _compressFiles;
     private readonly CompressionLevel _compressionLevel;
+    private readonly BsaFileFlags _fileFlags;
+
+    private readonly Dictionary<string, List<PendingFile>> _folders = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
     /// <summary>
@@ -47,6 +48,15 @@ public sealed class BsaWriter : IDisposable
         if (compressFiles)
         {
             _archiveFlags |= BsaArchiveFlags.CompressedArchive;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _folders.Clear();
+            _disposed = true;
         }
     }
 
@@ -117,14 +127,15 @@ public sealed class BsaWriter : IDisposable
         // Calculate total folder/file name lengths (including null terminators)
         // Note: TotalFolderNameLength does NOT include the length bytes, only name chars + null terminators
         var totalFolderNameLength = (uint)sortedFolders.Sum(f => f.Name.Length + 1); // +1 for null terminator only
-        var totalFileNameLength = (uint)sortedFolders.Sum(f => f.Files.Sum(file => file.Name.Length + 1)); // +1 for null
+        var totalFileNameLength =
+            (uint)sortedFolders.Sum(f => f.Files.Sum(file => file.Name.Length + 1)); // +1 for null
 
         // Calculate offsets
         // File record blocks contain: 1 byte (name length) + name bytes + null + file records per folder
         // So total size = folderCount (length bytes) + totalFolderNameLength (name+null) + fileCount * FileRecordSize
         var folderRecordsOffset = (uint)HeaderSize;
-        var fileRecordsOffset = folderRecordsOffset + (folderCount * FolderRecordSize);
-        var fileNamesOffset = fileRecordsOffset + folderCount + totalFolderNameLength + (fileCount * FileRecordSize);
+        var fileRecordsOffset = folderRecordsOffset + folderCount * FolderRecordSize;
+        var fileNamesOffset = fileRecordsOffset + folderCount + totalFolderNameLength + fileCount * FileRecordSize;
         var fileDataOffset = fileNamesOffset + totalFileNameLength;
 
         // Write header
@@ -185,7 +196,7 @@ public sealed class BsaWriter : IDisposable
             writer.Write(currentFileRecordOffset);
 
             // Offset includes folder name length byte + null + name + file records
-            currentFileRecordOffset += (uint)(1 + folder.Name.Length + 1 + (folder.FileCount * FileRecordSize));
+            currentFileRecordOffset += (uint)(1 + folder.Name.Length + 1 + folder.FileCount * FileRecordSize);
         }
 
         // Write file record blocks (folder name + file records)
@@ -295,9 +306,9 @@ public sealed class BsaWriter : IDisposable
         if (nameBytes.Length > 0)
         {
             hash1 = (ulong)(nameBytes[^1] | // Last char
-                           (nameBytes.Length > 2 ? nameBytes[^2] << 8 : 0) | // Second to last
-                           (nameBytes.Length << 16) | // Length
-                           (nameBytes[0] << 24)); // First char
+                            (nameBytes.Length > 2 ? nameBytes[^2] << 8 : 0) | // Second to last
+                            (nameBytes.Length << 16) | // Length
+                            (nameBytes[0] << 24)); // First char
 
             // Extension contribution to hash1
             if (extBytes.Length > 0)
@@ -334,15 +345,6 @@ public sealed class BsaWriter : IDisposable
         }
 
         return (hash2 << 32) | hash1;
-    }
-
-    public void Dispose()
-    {
-        if (!_disposed)
-        {
-            _folders.Clear();
-            _disposed = true;
-        }
     }
 
     private sealed record PendingFile(string Name, byte[] Data);

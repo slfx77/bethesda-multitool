@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 namespace FalloutXbox360Utils.Core;
@@ -519,7 +520,8 @@ public sealed partial class MemoryDumpAnalyzer
 
         foreach (var group in byType)
         {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"--- {group.Key} ({GetRecordDescription(group.Key)}) - {group.Count()} records ---");
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"--- {group.Key} ({GetRecordDescription(group.Key)}) - {group.Count()} records ---");
             foreach (var record in group.Take(20))
             {
                 var flags = new List<string>();
@@ -828,7 +830,7 @@ public sealed partial class MemoryDumpAnalyzer
         }
 
         // Look for common naming patterns
-        var match = System.Text.RegularExpressions.Regex.Match(editorId, @"^([A-Z][a-z]+|[A-Z]+)");
+        var match = Regex.Match(editorId, @"^([A-Z][a-z]+|[A-Z]+)");
         return match.Success ? $"{match.Value}*" : "Other";
     }
 }

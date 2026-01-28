@@ -98,7 +98,7 @@ internal static class EsmConverterHelpers
 
         while (offset + EsmConverterConstants.SubrecordHeaderSize <= recordData.Length)
         {
-            string sig = bigEndian
+            var sig = bigEndian
                 ? new string([
                     (char)recordData[offset + 3],
                     (char)recordData[offset + 2],

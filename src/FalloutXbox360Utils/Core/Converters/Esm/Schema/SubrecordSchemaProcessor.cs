@@ -64,6 +64,7 @@ public static class SubrecordSchemaProcessor
             {
                 Swap4Bytes(dnam, i);
             }
+
             return dnam;
         }
 
@@ -79,12 +80,14 @@ public static class SubrecordSchemaProcessor
             {
                 Swap4Bytes(inam, i);
             }
+
             // Skip floats 21-24 (bytes 84-99) - already little-endian on Xbox!
             // Swap floats 25-31 (bytes 100-127)
             for (var i = 100; i < 128; i += 4)
             {
                 Swap4Bytes(inam, i);
             }
+
             // Floats 32-37 are zero - no swap needed
             // Swap float 38 (bytes 152-155)
             Swap4Bytes(inam, 152);
@@ -324,6 +327,7 @@ public static class SubrecordSchemaProcessor
                     // Swap low word bytes (offset 2-3)
                     (data[offset + 2], data[offset + 3]) = (data[offset + 3], data[offset + 2]);
                 }
+
                 break;
 
             case SubrecordFieldType.UInt64:
@@ -349,7 +353,7 @@ public static class SubrecordSchemaProcessor
                 // 6 floats
                 for (var i = 0; i < 6; i++)
                 {
-                    Swap4Bytes(data, offset + (i * 4));
+                    Swap4Bytes(data, offset + i * 4);
                 }
 
                 break;

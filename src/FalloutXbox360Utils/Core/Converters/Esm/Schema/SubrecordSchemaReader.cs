@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 
 namespace FalloutXbox360Utils.Core.Converters.Esm.Schema;
 
@@ -130,9 +131,9 @@ public static class SubrecordSchemaReader
             : BinaryPrimitives.ReadInt32LittleEndian(data[4..]);
 
         var flags = data.Length >= 12
-            ? (bigEndian
+            ? bigEndian
                 ? BinaryPrimitives.ReadUInt32BigEndian(data[8..])
-                : BinaryPrimitives.ReadUInt32LittleEndian(data[8..]))
+                : BinaryPrimitives.ReadUInt32LittleEndian(data[8..])
             : 0u;
 
         return (gridX, gridY, flags);
@@ -388,7 +389,7 @@ public static class SubrecordSchemaReader
         // Find null terminator
         var nullIndex = data.IndexOf((byte)0);
         var length = nullIndex >= 0 ? nullIndex : data.Length;
-        return System.Text.Encoding.Latin1.GetString(data[..length]);
+        return Encoding.Latin1.GetString(data[..length]);
     }
 
     #endregion

@@ -119,14 +119,14 @@ public sealed class RepackerService
             // Process ESM
             if (options.ProcessEsm)
             {
-                var esmProcessor = new EsmProcessor(isEsp: false);
+                var esmProcessor = new EsmProcessor(false);
                 result.EsmFilesProcessed = await esmProcessor.ProcessAsync(options, progress, cancellationToken);
             }
 
             // Process ESP
             if (options.ProcessEsp)
             {
-                var espProcessor = new EsmProcessor(isEsp: true);
+                var espProcessor = new EsmProcessor(true);
                 result.EspFilesProcessed = await espProcessor.ProcessAsync(options, progress, cancellationToken);
             }
 
@@ -214,5 +214,6 @@ public sealed record RepackResult
     public int IniFilesProcessed { get; set; }
 
     public int TotalFilesProcessed =>
-        VideoFilesProcessed + MusicFilesProcessed + BsaFilesProcessed + EsmFilesProcessed + EspFilesProcessed + IniFilesProcessed;
+        VideoFilesProcessed + MusicFilesProcessed + BsaFilesProcessed + EsmFilesProcessed + EspFilesProcessed +
+        IniFilesProcessed;
 }

@@ -147,7 +147,8 @@ public sealed class EsmConversionStats
             {
                 foreach (var kvp in SkippedGrupTypeCounts.OrderByDescending(x => x.Value))
                 {
-                    sb.AppendLine($"    {GetGrupTypeName(kvp.Key)}: {kvp.Value.ToString("N0", CultureInfo.InvariantCulture)}");
+                    sb.AppendLine(
+                        $"    {GetGrupTypeName(kvp.Key)}: {kvp.Value.ToString("N0", CultureInfo.InvariantCulture)}");
                 }
             }
         }

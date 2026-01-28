@@ -35,8 +35,8 @@ public static class PcCellOrderGenerator
         {
             // Generate cells for this block in reverse serpentine order
             var blockCells = GenerateBlockOrder(
-                minX + (blockX * 8),
-                minY + (blockY * 8),
+                minX + blockX * 8,
+                minY + blockY * 8,
                 minX, maxX, minY, maxY);
 
             result.AddRange(blockCells);
@@ -253,8 +253,8 @@ public static class PcCellOrderGenerator
             for (var by = 0; by < blocksY; by++)
             {
                 cellsBeforeThisBlock += GetBlockCellCount(
-                minX + (bx * 8), minY + (by * 8),
-                minX, maxX, minY, maxY);
+                    minX + bx * 8, minY + by * 8,
+                    minX, maxX, minY, maxY);
             }
         }
 
@@ -262,13 +262,13 @@ public static class PcCellOrderGenerator
         for (var by = 0; by < blockY; by++)
         {
             cellsBeforeThisBlock += GetBlockCellCount(
-                minX + (blockX * 8), minY + (by * 8),
+                minX + blockX * 8, minY + by * 8,
                 minX, maxX, minY, maxY);
         }
 
         // Calculate position within this block
         var posInBlock = GetPositionInBlock(localX, localY,
-            minX + (blockX * 8), minY + (blockY * 8),
+            minX + blockX * 8, minY + blockY * 8,
             minX, maxX, minY, maxY);
 
         return cellsBeforeThisBlock + posInBlock;

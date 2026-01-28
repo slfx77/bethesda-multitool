@@ -179,7 +179,7 @@ internal static class EsmRecordParser
         while (offset + EsmConverterConstants.SubrecordHeaderSize <= recordData.Length)
         {
             // Read signature - for big-endian files, signatures are byte-reversed
-            string sig = bigEndian
+            var sig = bigEndian
                 ? new string([
                     (char)recordData[offset + 3],
                     (char)recordData[offset + 2],

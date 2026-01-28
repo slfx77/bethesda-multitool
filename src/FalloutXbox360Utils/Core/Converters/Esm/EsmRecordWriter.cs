@@ -108,7 +108,7 @@ public sealed class EsmRecordWriter
 
         convertedData = isCompressed
             ? EsmRecordCompression.ConvertCompressedRecordData(_input, dataOffset, (int)header.DataSize, signature,
-                    _stats)
+                _stats)
             : ConvertSubrecordsToBuffer(dataOffset, (int)header.DataSize, signature);
 
         // For non-merged INFO records, reorder subrecords to strip orphaned NAM3

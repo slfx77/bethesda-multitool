@@ -51,7 +51,8 @@ public sealed class BsaExtractor : IDisposable
             throw new ArgumentException("Stream must be a FileStream for memory-mapped access", nameof(stream));
         }
 
-        _mappedFile = MemoryMappedFile.CreateFromFile(fs, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
+        _mappedFile =
+            MemoryMappedFile.CreateFromFile(fs, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
         _defaultCompressed = Archive.Header.DefaultCompressed;
         _embedFileNames = Archive.Header.EmbedFileNames;
     }
@@ -215,7 +216,7 @@ public sealed class BsaExtractor : IDisposable
 
         var metadata = parseResult.Metadata;
         if (!converter.CanConvert("nif", metadata))
-        // Already little-endian (PC format), no conversion needed
+            // Already little-endian (PC format), no conversion needed
         {
             return new ConversionResult
             {
@@ -287,8 +288,10 @@ public sealed class BsaExtractor : IDisposable
             // This means the original file was empty (0 bytes)
             if (compressedSize <= 0)
             {
-                return uncompressedSize == 0 ? [] : throw new InvalidDataException(
-                    $"Compressed file has no data but uncompressed size is {uncompressedSize}");
+                return uncompressedSize == 0
+                    ? []
+                    : throw new InvalidDataException(
+                        $"Compressed file has no data but uncompressed size is {uncompressedSize}");
             }
 
             var compressedData = ArrayPool<byte>.Shared.Rent(compressedSize);

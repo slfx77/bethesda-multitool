@@ -160,7 +160,8 @@ public sealed partial class IniProcessor : IRepackProcessor
     ///     Updates the user's Fallout.ini with the converted BSA list.
     ///     Creates a backup before modification.
     /// </summary>
-    private static async Task<string?> UpdateUserIniAsync(List<string> sourceBsaFiles, CancellationToken cancellationToken)
+    private static async Task<string?> UpdateUserIniAsync(List<string> sourceBsaFiles,
+        CancellationToken cancellationToken)
     {
         var userIniPath = GetUserIniPath();
         var userIniDir = Path.GetDirectoryName(userIniPath);
@@ -332,6 +333,7 @@ public sealed partial class IniProcessor : IRepackProcessor
                 {
                     return $"{key}=FNV_FE_Intro.bik";
                 }
+
                 break;
 
             // Replace Xbox-specific thread assignments (PC uses different threading)
@@ -358,9 +360,11 @@ public sealed partial class IniProcessor : IRepackProcessor
                     {
                         value += ", ";
                     }
+
                     value += "Fallout - Voices2.bsa, Fallout - Voices3.bsa, Fallout - Voices4.bsa";
                     return $"{key}={value}";
                 }
+
                 break;
         }
 

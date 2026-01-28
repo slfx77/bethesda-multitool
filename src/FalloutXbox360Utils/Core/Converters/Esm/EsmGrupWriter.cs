@@ -269,7 +269,7 @@ public sealed class EsmGrupWriter
                 .GroupBy(c => (SubX: FloorDiv(c.GridX!.Value, 8), SubY: FloorDiv(c.GridY!.Value, 8)))
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            IEnumerable<(int SubX, int SubY)> subBlockOrder = orderMap != null
+            var subBlockOrder = orderMap != null
                 ? subBlockGroups
                     .Select(g => (g.Key.SubX, g.Key.SubY, Rank: GetMinRank(g.Value, orderMap)))
                     .OrderBy(g => g.Rank)
@@ -383,8 +383,8 @@ public sealed class EsmGrupWriter
         return !cell.GridX.HasValue || !cell.GridY.HasValue
             ? int.MaxValue
             : orderMap.TryGetValue((cell.GridX.Value, cell.GridY.Value), out var rank)
-            ? rank
-            : int.MaxValue;
+                ? rank
+                : int.MaxValue;
     }
 
     private static Dictionary<(int x, int y), int>? TryGetWastelandOrderMap(uint worldFormId)
@@ -513,7 +513,7 @@ public sealed class EsmGrupWriter
 
     private static int LocalCoord(int value, int size)
     {
-        return value - (FloorDiv(value, size) * size);
+        return value - FloorDiv(value, size) * size;
     }
 
     #endregion
@@ -604,7 +604,7 @@ public sealed class EsmGrupWriter
 
         // GRUP labels are stored big-endian in Xbox data.
         // Writing the uint32 little-endian for PC output will flip the byte order automatically.
-        uint labelValue = BinaryPrimitives.ReadUInt32BigEndian(labelBytes);
+        var labelValue = BinaryPrimitives.ReadUInt32BigEndian(labelBytes);
         var header = new ParsedGrupHeader(0u, labelValue, (uint)grupType, stamp, unknown);
         _ = RecordHeaderProcessor.WriteGrupHeader(writer.BaseStream, header);
         _stats.GrupsConverted++;

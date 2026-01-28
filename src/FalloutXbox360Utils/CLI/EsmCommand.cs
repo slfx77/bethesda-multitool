@@ -1,8 +1,8 @@
 using System.CommandLine;
 using System.Text;
 using System.Text.Json;
-using Spectre.Console;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
 
@@ -24,7 +24,7 @@ public static class EsmCommand
         };
         var outputOpt = new Option<string?>("-o", "--output") { Description = "Output file path" };
         var recordTypeOpt = new Option<string?>("-t", "--type")
-        { Description = "Filter by record type (e.g., WEAP, NPC_, CELL)" };
+            { Description = "Filter by record type (e.g., WEAP, NPC_, CELL)" };
         var limitOpt = new Option<int?>("-l", "--limit") { Description = "Limit number of records shown" };
 
         command.Arguments.Add(inputArg);

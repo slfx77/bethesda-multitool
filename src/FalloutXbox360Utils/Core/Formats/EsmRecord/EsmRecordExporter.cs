@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 /// <summary>
@@ -222,10 +224,12 @@ public static class EsmRecordExporter
             var row = new List<string>();
             for (var x = 0; x < 33; x++)
             {
-                row.Add(heights[y, x].ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+                row.Add(heights[y, x].ToString("F2", CultureInfo.InvariantCulture));
             }
+
             lines.Add(string.Join(",", row));
         }
+
         await File.WriteAllLinesAsync(filepath, lines);
     }
 
@@ -241,6 +245,7 @@ public static class EsmRecordExporter
                 maxHeight = Math.Max(maxHeight, heights[y, x]);
             }
         }
+
         return (minHeight, maxHeight);
     }
 
@@ -307,7 +312,7 @@ public static class EsmRecordExporter
         foreach (var refr in refrRecords.OrderBy(r => r.Header.FormId))
         {
             var baseEditorId = refr.BaseEditorId ??
-                (formIdMap.TryGetValue(refr.BaseFormId, out var name) ? name : "");
+                               (formIdMap.TryGetValue(refr.BaseFormId, out var name) ? name : "");
 
             var posX = refr.Position?.X.ToString("F2") ?? "";
             var posY = refr.Position?.Y.ToString("F2") ?? "";
@@ -331,9 +336,12 @@ public static class EsmRecordExporter
         foreach (var refr in refrRecords.Where(r => r.Position != null))
         {
             var baseEditorId = refr.BaseEditorId ??
-                (formIdMap.TryGetValue(refr.BaseFormId, out var name) ? name : $"0x{refr.BaseFormId:X8}");
+                               (formIdMap.TryGetValue(refr.BaseFormId, out var name)
+                                   ? name
+                                   : $"0x{refr.BaseFormId:X8}");
             posLines.Add($"{refr.Position!.X:F2},{refr.Position.Y:F2},{refr.Position.Z:F2},{baseEditorId}");
         }
+
         await File.WriteAllLinesAsync(positionsPath, posLines);
 
         Log.Debug($"  [ESM] Exported {refrRecords.Count} placed objects to placed_objects.csv");

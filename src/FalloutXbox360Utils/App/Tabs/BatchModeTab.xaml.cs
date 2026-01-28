@@ -228,7 +228,9 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
                 ConvertDdx = BatchConvertDdxCheckBox.IsChecked is true,
                 SaveAtlas = BatchSaveAtlasCheckBox.IsChecked is true,
                 Verbose = BatchVerboseCheckBox.IsChecked is true,
-                FileTypes = selectedTypes.Count > 0 ? selectedTypes : null
+                FileTypes = selectedTypes.Count > 0 ? selectedTypes : null,
+                PcFriendly = true, // Enable PC-friendly normal map conversion
+                GenerateEsmReports = false // Skip ESM reports in batch mode (requires analysis first)
             };
 
             var processed = 0;

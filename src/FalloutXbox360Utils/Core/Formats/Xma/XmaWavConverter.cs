@@ -93,7 +93,8 @@ internal sealed class XmaWavConverter
             }
 
             var duration = EstimateWavDuration(wavData);
-            Log.Debug($"[XmaWavConverter] Decoded {xmaData.Length} bytes XMA -> {wavData.Length} bytes WAV ({duration:F2}s)");
+            Log.Debug(
+                $"[XmaWavConverter] Decoded {xmaData.Length} bytes XMA -> {wavData.Length} bytes WAV ({duration:F2}s)");
 
             return new ConversionResult
             {

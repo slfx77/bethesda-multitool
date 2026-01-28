@@ -78,7 +78,7 @@ internal static class EsmEndianHelpers
 
         foreach (var c in signature)
         {
-            if (c is not ((>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_'))
+            if (c is not (>= 'A' and <= 'Z' or >= '0' and <= '9' or '_'))
             {
                 return false;
             }
@@ -204,16 +204,18 @@ internal static class EsmEndianHelpers
         }
 
         // MSET NAM2-NAM7 are audio path strings
-        return (recordType == "MSET" && signature is "NAM2" or "NAM3" or "NAM4" or "NAM5" or "NAM6" or "NAM7") || signature switch
-        {
-            "EDID" or "FULL" or "MODL" or "DMDL" or "ICON" or "MICO" or "ICO2" or "MIC2" or "DESC" or "BMCT" or "NNAM"
-                or "KFFZ" or
-                "TX00" or "TX01" or "TX02" or "TX03" or "TX04" or "TX05" or "TX06" or "TX07" or
-                "MWD1" or "MWD2" or "MWD3" or "MWD4" or "MWD5" or "MWD6" or "MWD7" or
-                "VANM" or "MOD2" or "MOD3" or "MOD4" or "NIFZ" or "SCVR" or "XATO" or "ITXT" or
-                "ONAM" or "SCTX" or "NAM1" or "RDMP" => true,
-            _ => false
-        };
+        return (recordType == "MSET" && signature is "NAM2" or "NAM3" or "NAM4" or "NAM5" or "NAM6" or "NAM7") ||
+               signature switch
+               {
+                   "EDID" or "FULL" or "MODL" or "DMDL" or "ICON" or "MICO" or "ICO2" or "MIC2" or "DESC" or "BMCT"
+                       or "NNAM"
+                       or "KFFZ" or
+                       "TX00" or "TX01" or "TX02" or "TX03" or "TX04" or "TX05" or "TX06" or "TX07" or
+                       "MWD1" or "MWD2" or "MWD3" or "MWD4" or "MWD5" or "MWD6" or "MWD7" or
+                       "VANM" or "MOD2" or "MOD3" or "MOD4" or "NIFZ" or "SCVR" or "XATO" or "ITXT" or
+                       "ONAM" or "SCTX" or "NAM1" or "RDMP" => true,
+                   _ => false
+               };
     }
 
     /// <summary>
@@ -256,7 +258,7 @@ internal static class EsmEndianHelpers
     {
         var result = value / divisor;
         var remainder = value % divisor;
-        if (remainder != 0 && (remainder > 0) != (divisor > 0))
+        if (remainder != 0 && remainder > 0 != divisor > 0)
         {
             result -= 1;
         }

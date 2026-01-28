@@ -1,6 +1,6 @@
 using System.CommandLine;
-using Spectre.Console;
 using FalloutXbox360Utils.Repack;
+using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
 

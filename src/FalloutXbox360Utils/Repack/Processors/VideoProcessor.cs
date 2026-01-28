@@ -87,9 +87,9 @@ public sealed class VideoProcessor : IRepackProcessor
     private static async Task CopyFileAsync(string source, string destination, CancellationToken ct)
     {
         await using var sourceStream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read,
-            bufferSize: 81920, useAsync: true);
+            81920, true);
         await using var destStream = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None,
-            bufferSize: 81920, useAsync: true);
+            81920, true);
         await sourceStream.CopyToAsync(destStream, ct);
     }
 }

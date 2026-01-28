@@ -10,8 +10,6 @@ namespace FalloutXbox360Utils.Core.Formats.Xma;
 /// </summary>
 internal sealed class XmaMp3Converter
 {
-    private static readonly Logger Log = Logger.Instance;
-
     /// <summary>
     ///     Default bitrate for music files (192 kbps).
     /// </summary>
@@ -26,6 +24,8 @@ internal sealed class XmaMp3Converter
     ///     Default number of channels (stereo).
     /// </summary>
     public const int DefaultChannels = 2;
+
+    private static readonly Logger Log = Logger.Instance;
 
     public XmaMp3Converter()
     {

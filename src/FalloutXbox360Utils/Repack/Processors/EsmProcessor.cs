@@ -7,8 +7,8 @@ namespace FalloutXbox360Utils.Repack.Processors;
 /// </summary>
 public sealed class EsmProcessor : IRepackProcessor
 {
-    private readonly RepackPhase _phase;
     private readonly string _extension;
+    private readonly RepackPhase _phase;
 
     public EsmProcessor(bool isEsp = false)
     {
