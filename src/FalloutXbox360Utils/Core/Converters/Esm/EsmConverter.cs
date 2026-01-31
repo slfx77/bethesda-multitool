@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Converters.Esm.Schema;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using static FalloutXbox360Utils.Core.Converters.Esm.EsmEndianHelpers;

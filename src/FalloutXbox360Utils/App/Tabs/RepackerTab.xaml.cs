@@ -4,204 +4,28 @@
 #if WINDOWS_GUI
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using Windows.Storage.Pickers;
+using FalloutXbox360Utils.Core.Utils;
+using FalloutXbox360Utils.Repack;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Windows.Storage.Pickers;
 using WinRT.Interop;
-using FalloutXbox360Utils.Repack;
 
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// Status of a category during repacking.
-/// </summary>
-public enum RepackCategoryStatus
-{
-    Pending,
-    Processing,
-    Complete,
-    Skipped,
-    Failed
-}
-
-/// <summary>
-/// Data model for repack category entries in the list.
-/// </summary>
-public sealed class RepackCategory : INotifyPropertyChanged
-{
-    private static SolidColorBrush? _grayBrush;
-    private static SolidColorBrush? _greenBrush;
-    private static SolidColorBrush? _blueBrush;
-    private static SolidColorBrush? _redBrush;
-
-    private bool _isEnabled = true;
-    private bool _isExpanded;
-    private int _fileCount;
-    private RepackCategoryStatus _status = RepackCategoryStatus.Pending;
-    private string? _statusMessage;
-
-    private static SolidColorBrush GrayBrush => _grayBrush ??= new SolidColorBrush(Colors.Gray);
-    private static SolidColorBrush GreenBrush => _greenBrush ??= new SolidColorBrush(Colors.Green);
-    private static SolidColorBrush BlueBrush => _blueBrush ??= new SolidColorBrush(Colors.DodgerBlue);
-    private static SolidColorBrush RedBrush => _redBrush ??= new SolidColorBrush(Colors.OrangeRed);
-
-    public required string Name { get; init; }
-    public required string Description { get; init; }
-    public required RepackPhase Phase { get; init; }
-    public bool IsAvailable { get; init; } = true;
-
-    /// <summary>Sub-items for this category (e.g., individual BSA files).</summary>
-    public ObservableCollection<RepackBsaEntry> SubItems { get; } = [];
-
-    /// <summary>Whether this category has expandable sub-items.</summary>
-    public bool HasSubItems => SubItems.Count > 0;
-
-    /// <summary>Visibility for sub-items based on expansion state.</summary>
-    public Visibility SubItemsVisibility => _isExpanded && SubItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-
-    public bool IsExpanded
-    {
-        get => _isExpanded;
-        set
-        {
-            if (_isExpanded != value)
-            {
-                _isExpanded = value;
-                OnPropertyChanged(nameof(IsExpanded));
-                OnPropertyChanged(nameof(SubItemsVisibility));
-                OnPropertyChanged(nameof(ExpanderGlyph));
-            }
-        }
-    }
-
-    /// <summary>Glyph for expand/collapse indicator.</summary>
-    public string ExpanderGlyph => _isExpanded ? "\uE70E" : "\uE70D"; // ChevronDown : ChevronRight
-
-    public bool IsEnabled
-    {
-        get => _isEnabled;
-        set
-        {
-            if (_isEnabled != value)
-            {
-                _isEnabled = value;
-                OnPropertyChanged(nameof(IsEnabled));
-            }
-        }
-    }
-
-    public int FileCount
-    {
-        get => _fileCount;
-        set
-        {
-            if (_fileCount != value)
-            {
-                _fileCount = value;
-                OnPropertyChanged(nameof(FileCount));
-                OnPropertyChanged(nameof(FileCountDisplay));
-            }
-        }
-    }
-
-    public string FileCountDisplay => _fileCount > 0 ? $"{_fileCount:N0}" : "0";
-
-    public RepackCategoryStatus Status
-    {
-        get => _status;
-        set
-        {
-            if (_status != value)
-            {
-                _status = value;
-                OnPropertyChanged(nameof(Status));
-                OnPropertyChanged(nameof(StatusDisplay));
-                OnPropertyChanged(nameof(StatusColor));
-            }
-        }
-    }
-
-    public string? StatusMessage
-    {
-        get => _statusMessage;
-        set
-        {
-            if (_statusMessage != value)
-            {
-                _statusMessage = value;
-                OnPropertyChanged(nameof(StatusMessage));
-                OnPropertyChanged(nameof(StatusDisplay));
-            }
-        }
-    }
-
-    public string StatusDisplay => _status switch
-    {
-        RepackCategoryStatus.Pending => "",
-        RepackCategoryStatus.Processing => _statusMessage ?? "Processing...",
-        RepackCategoryStatus.Complete => _statusMessage ?? "Complete",
-        RepackCategoryStatus.Skipped => "Skipped",
-        RepackCategoryStatus.Failed => _statusMessage ?? "Failed",
-        _ => ""
-    };
-
-    public SolidColorBrush StatusColor => _status switch
-    {
-        RepackCategoryStatus.Pending => GrayBrush,
-        RepackCategoryStatus.Processing => BlueBrush,
-        RepackCategoryStatus.Complete => GreenBrush,
-        RepackCategoryStatus.Skipped => GrayBrush,
-        RepackCategoryStatus.Failed => RedBrush,
-        _ => GrayBrush
-    };
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string propertyName)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-}
-
-/// <summary>
-/// Data model for individual BSA file entries in the repacker.
-/// </summary>
-public sealed class RepackBsaEntry : INotifyPropertyChanged
-{
-    private bool _isSelected = true;
-
-    public required string FileName { get; init; }
-    public required string FullPath { get; init; }
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set
-        {
-            if (_isSelected != value)
-            {
-                _isSelected = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
-            }
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-}
-
-/// <summary>
-/// Repacker tab for converting Xbox 360 Fallout: New Vegas to PC format.
+///     Repacker tab for converting Xbox 360 Fallout: New Vegas to PC format.
 /// </summary>
 public sealed partial class RepackerTab : UserControl, IDisposable
 {
     private readonly ObservableCollection<RepackCategory> _categories = [];
+    private CancellationTokenSource? _cts;
+    private string? _outputPath;
 
     private string? _sourcePath;
-    private string? _outputPath;
     private bool _sourceValid;
-    private CancellationTokenSource? _cts;
 
     public RepackerTab()
     {
@@ -260,6 +84,11 @@ public sealed partial class RepackerTab : UserControl, IDisposable
         UpdateEmptyState();
     }
 
+    public void Dispose()
+    {
+        _cts?.Dispose();
+    }
+
     private void Category_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(RepackCategory.IsEnabled))
@@ -301,7 +130,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WindowNative.GetWindowHandle(global::FalloutXbox360Utils.App.Current.MainWindow);
+        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
         InitializeWithWindow.Initialize(picker, hwnd);
 
         var folder = await picker.PickSingleFolderAsync();
@@ -374,7 +203,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable
 
     private void UpdateDependencyStatus()
     {
-        if (Core.Utils.FfmpegLocator.IsAvailable)
+        if (FfmpegLocator.IsAvailable)
         {
             FfmpegStatusText.Text = "Available";
             FfmpegStatusText.Foreground = new SolidColorBrush(Colors.Green);
@@ -425,7 +254,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WindowNative.GetWindowHandle(global::FalloutXbox360Utils.App.Current.MainWindow);
+        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
         InitializeWithWindow.Initialize(picker, hwnd);
 
         var folder = await picker.PickSingleFolderAsync();
@@ -599,11 +428,6 @@ public sealed partial class RepackerTab : UserControl, IDisposable
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
-    }
-
-    public void Dispose()
-    {
-        _cts?.Dispose();
     }
 }
 

@@ -1,8 +1,11 @@
-using EsmAnalyzer.Conversion;
-using EsmAnalyzer.Conversion.Schema;
-using Spectre.Console;
+﻿using Spectre.Console;
 using System.CommandLine;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -115,7 +118,7 @@ public static class ConvertCommands
             AnsiConsole.MarkupLine($"  Output size: {outputData.Length:N0} bytes");
 
             // Show stats
-            converter.PrintStats();
+            AnsiConsole.Write(converter.GetStatsSummary());
 
             // Show fallback usage if any
             PrintFallbackUsage();

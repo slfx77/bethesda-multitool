@@ -46,10 +46,6 @@
 
       <!--  Make NavigationView content area transparent so Mica shows in title bar  -->
       <NavigationView.Resources>
-        <SolidColorBrush x:Key="NavigationViewContentBackground"
-                         Color="Transparent" />
-        <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush"
-                         Color="Transparent" />
       </NavigationView.Resources>
 
       <NavigationView.MenuItems>

@@ -10,7 +10,7 @@ public static class LandHelpers
     /// <summary>
     ///     Summarizes ATXT (texture layer) subrecords.
     /// </summary>
-    public static string SummarizeAtxt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
+    internal static string SummarizeAtxt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
     {
         var entries = 0;
         var uniqueFormIds = new HashSet<uint>();
@@ -44,7 +44,7 @@ public static class LandHelpers
     /// <summary>
     ///     Summarizes VTXT (texture opacity) subrecords.
     /// </summary>
-    public static string SummarizeVtxt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
+    internal static string SummarizeVtxt(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian)
     {
         var entries = 0;
         var minPos = ushort.MaxValue;

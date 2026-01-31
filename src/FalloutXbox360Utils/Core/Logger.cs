@@ -4,30 +4,6 @@ using Spectre.Console;
 namespace FalloutXbox360Utils.Core;
 
 /// <summary>
-///     Verbosity levels for logging.
-/// </summary>
-public enum LogLevel
-{
-    /// <summary>No output.</summary>
-    None = 0,
-
-    /// <summary>Errors only.</summary>
-    Error = 1,
-
-    /// <summary>Warnings and above.</summary>
-    Warn = 2,
-
-    /// <summary>Informational messages and above.</summary>
-    Info = 3,
-
-    /// <summary>Debug/verbose output and above.</summary>
-    Debug = 4,
-
-    /// <summary>Trace-level output (most verbose).</summary>
-    Trace = 5
-}
-
-/// <summary>
 ///     Simple logger with verbosity levels. Thread-safe singleton pattern.
 ///     Uses Spectre.Console for output to integrate with CLI formatting.
 /// </summary>
@@ -37,14 +13,19 @@ public sealed class Logger
     private static readonly Lock SyncLock = new();
 
     /// <summary>
-    ///     Whether to use Spectre.Console for output (default: true).
-    ///     When false, falls back to Console.Out.
+    ///     Custom output writer for testing. When set, bypasses Spectre.Console.
     /// </summary>
-    public bool UseSpectre { get; set; } = true;
+    private TextWriter? _customOutput;
 
     private Logger()
     {
     }
+
+    /// <summary>
+    ///     Whether to use Spectre.Console for output (default: true).
+    ///     When false, falls back to Console.Out.
+    /// </summary>
+    public bool UseSpectre { get; set; } = true;
 
     /// <summary>
     ///     Gets the singleton logger instance.
@@ -86,6 +67,14 @@ public sealed class Logger
     public void SetVerbose(bool verbose)
     {
         Level = verbose ? LogLevel.Debug : LogLevel.Info;
+    }
+
+    /// <summary>
+    ///     Set a custom output writer (for testing). When set, bypasses Spectre.Console.
+    /// </summary>
+    public void SetOutput(TextWriter writer)
+    {
+        _customOutput = writer;
     }
 
     /// <summary>
@@ -186,6 +175,14 @@ public sealed class Logger
             return;
         }
 
+        // If custom output is set (for testing), use plain text output
+        if (_customOutput != null)
+        {
+            var prefix = BuildPlainPrefix(level);
+            _customOutput.WriteLine(prefix + message);
+            return;
+        }
+
         // Escape any Spectre markup characters in the message
         var escapedMessage = Markup.Escape(message);
 
@@ -253,5 +250,6 @@ public sealed class Logger
         UseSpectre = true;
         IncludeTimestamp = false;
         IncludeLevel = true;
+        _customOutput = null;
     }
 }

@@ -1,11 +1,15 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text;
-using EsmAnalyzer.Conversion.Schema;
 using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
 
 namespace EsmAnalyzer.Commands;
 

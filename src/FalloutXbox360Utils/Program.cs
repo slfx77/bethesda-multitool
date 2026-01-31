@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Text;
 using FalloutXbox360Utils.CLI;
+using FalloutXbox360Utils.Core;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils;
@@ -89,6 +90,10 @@ public static class Program
         {
             Description = "Enable verbose output"
         };
+        var noAnsiOption = new Option<bool>("--no-ansi")
+        {
+            Description = "Disable ANSI color output (plain text logging)"
+        };
         var maxFilesOption = new Option<int>("--max-files")
         {
             Description = "Maximum files to extract per type",
@@ -107,6 +112,7 @@ public static class Program
         rootCommand.Options.Add(convertDdxOption);
         rootCommand.Options.Add(typesOption);
         rootCommand.Options.Add(verboseOption);
+        rootCommand.Options.Add(noAnsiOption);
         rootCommand.Options.Add(maxFilesOption);
         rootCommand.Options.Add(pcFriendlyOption);
 
@@ -118,8 +124,14 @@ public static class Program
             var convertDdx = parseResult.GetValue(convertDdxOption);
             var types = parseResult.GetValue(typesOption);
             var verbose = parseResult.GetValue(verboseOption);
+            var noAnsi = parseResult.GetValue(noAnsiOption);
             var maxFiles = parseResult.GetValue(maxFilesOption);
             var pcFriendly = parseResult.GetValue(pcFriendlyOption);
+
+            if (noAnsi)
+            {
+                Logger.Instance.UseSpectre = false;
+            }
 
             if (string.IsNullOrEmpty(input))
             {

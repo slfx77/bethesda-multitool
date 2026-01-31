@@ -1,8 +1,9 @@
 using System.CommandLine;
+using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 using NifAnalyzer.Models;
 using NifAnalyzer.Parsers;
 using Spectre.Console;
-using static NifAnalyzer.Utils.BinaryHelpers;
+using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
 
 namespace NifAnalyzer.Commands;
 
@@ -197,7 +198,7 @@ internal static class PackedCommands
         AnsiConsole.WriteLine($"Xbox normals out of [-1,1] range: {outOfRange}");
     }
 
-    private static (int NumVertices, int Stride, int RawDataOffset, List<PackedGeomStreamInfo> Streams)
+    private static (int NumVertices, int Stride, int RawDataOffset, List<DataStreamInfo> Streams)
         ParsePackedGeometry(
             byte[] data, int offset, int size, bool bigEndian)
     {
@@ -207,10 +208,10 @@ internal static class PackedCommands
         var numBlockInfos = ReadUInt32(data, pos, bigEndian);
         pos += 4;
 
-        var streams = new List<PackedGeomStreamInfo>();
+        var streams = new List<DataStreamInfo>();
         for (var i = 0; i < numBlockInfos; i++)
         {
-            streams.Add(new PackedGeomStreamInfo
+            streams.Add(new DataStreamInfo
             {
                 Type = ReadUInt32(data, pos, bigEndian),
                 UnitSize = ReadUInt32(data, pos + 4, bigEndian),
@@ -323,7 +324,7 @@ internal static class PackedCommands
         AnsiConsole.WriteLine();
 
         // Parse stream infos (25 bytes each)
-        var streams = new PackedGeomStreamInfo[numBlockInfos];
+        var streams = new DataStreamInfo[numBlockInfos];
         AnsiConsole.WriteLine("=== Data Streams ===");
         Console.WriteLine(
             $"{"#",-3} {"Type",-6} {"Unit",-5} {"Total",-8} {"Stride",-7} {"BlkIdx",-7} {"Offset",-7} {"Semantic",-25}");
@@ -332,7 +333,7 @@ internal static class PackedCommands
         // First pass: collect all streams
         for (var i = 0; i < numBlockInfos; i++)
         {
-            streams[i] = new PackedGeomStreamInfo
+            streams[i] = new DataStreamInfo
             {
                 Type = ReadUInt32(data, pos, nif.IsBigEndian),
                 UnitSize = ReadUInt32(data, pos + 4, nif.IsBigEndian),
@@ -782,12 +783,12 @@ internal static class PackedCommands
                 var sem = stream.GetSemantic(half4Idx);
                 var c = sem switch
                 {
-                    PackedGeomStreamInfo.StreamSemantic.Position => 'P',
-                    PackedGeomStreamInfo.StreamSemantic.Tangent => 'T',
-                    PackedGeomStreamInfo.StreamSemantic.Bitangent => 'B',
-                    PackedGeomStreamInfo.StreamSemantic.Normal => 'N',
-                    PackedGeomStreamInfo.StreamSemantic.UV => 'U',
-                    PackedGeomStreamInfo.StreamSemantic.VertexColor => 'C',
+                    StreamSemantic.Position => 'P',
+                    StreamSemantic.Tangent => 'T',
+                    StreamSemantic.Bitangent => 'B',
+                    StreamSemantic.Normal => 'N',
+                    StreamSemantic.UV => 'U',
+                    StreamSemantic.VertexColor => 'C',
                     _ => '?'
                 };
                 Console.Write(c);

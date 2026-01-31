@@ -60,6 +60,8 @@ public static class CarveCommand
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule($"[blue]{Path.GetFileName(file)}[/]").LeftJustified());
 
+        Logger.Instance.SetVerbose(verbose);
+
         var stopwatch = Stopwatch.StartNew();
 
         var options = new ExtractionOptions
@@ -97,7 +99,8 @@ public static class CarveCommand
         PrintSummary(summary, convertDdx);
     }
 
-    private static async Task<ExtractionSummary> ExtractWithProgressAsync(string file, ExtractionOptions options, bool verbose)
+    private static async Task<ExtractionSummary> ExtractWithProgressAsync(string file, ExtractionOptions options,
+        bool verbose)
     {
         ExtractionSummary? summary = null;
         AnalysisResult? analysisResult = null;
@@ -122,7 +125,7 @@ public static class CarveCommand
                     });
 
                     var analyzer = new MemoryDumpAnalyzer();
-                    analysisResult = await analyzer.AnalyzeAsync(file, analysisProgress, includeMetadata: true, verbose: verbose);
+                    analysisResult = await analyzer.AnalyzeAsync(file, analysisProgress, true, verbose);
                     analysisTask.Value = 100;
                     analysisTask.Description = "[green]Analysis complete[/]";
                 }

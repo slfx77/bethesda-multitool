@@ -1,9 +1,9 @@
 using Windows.UI;
+using FalloutXbox360Utils.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
-using FalloutXbox360Utils.Core;
 
 namespace FalloutXbox360Utils;
 

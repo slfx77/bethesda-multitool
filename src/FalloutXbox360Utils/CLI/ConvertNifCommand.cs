@@ -1,5 +1,6 @@
 using System.CommandLine;
 using FalloutXbox360Utils.Core.Formats.Nif;
+using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;

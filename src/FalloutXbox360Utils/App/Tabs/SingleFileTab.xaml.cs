@@ -1,10 +1,10 @@
 using System.Collections.ObjectModel;
 using Windows.Storage.Pickers;
+using FalloutXbox360Utils.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using WinRT.Interop;
-using FalloutXbox360Utils.Core;
 
 namespace FalloutXbox360Utils;
 
@@ -150,7 +150,7 @@ public sealed partial class SingleFileTab : UserControl
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add(".dmp");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(global::FalloutXbox360Utils.App.Current.MainWindow));
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
 
         var file = await picker.PickSingleFileAsync();
         if (file == null) return;
@@ -168,7 +168,7 @@ public sealed partial class SingleFileTab : UserControl
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(global::FalloutXbox360Utils.App.Current.MainWindow));
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
         {
@@ -314,7 +314,7 @@ public sealed partial class SingleFileTab : UserControl
             if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
                 msg += $"\nDDX conversion: {summary.DdxConverted} ok, {summary.DdxFailed} failed (PC-friendly)";
             if (summary.EsmReportGenerated)
-                msg += $"\nESM report: generated";
+                msg += "\nESM report: generated";
             if (summary.HeightmapsExported > 0)
                 msg += $"\nHeightmaps: {summary.HeightmapsExported} exported";
             await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {outputPath}");

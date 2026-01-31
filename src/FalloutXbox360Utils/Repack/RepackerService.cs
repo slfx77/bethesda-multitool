@@ -119,7 +119,7 @@ public sealed class RepackerService
             // Process ESM
             if (options.ProcessEsm)
             {
-                var esmProcessor = new EsmProcessor(false);
+                var esmProcessor = new EsmProcessor();
                 result.EsmFilesProcessed = await esmProcessor.ProcessAsync(options, progress, cancellationToken);
             }
 
@@ -178,42 +178,4 @@ public sealed class RepackerService
 
         return result;
     }
-}
-
-/// <summary>
-///     Result of source folder validation.
-/// </summary>
-public sealed record ValidationResult(bool IsValid, string Message);
-
-/// <summary>
-///     Information about source folder contents.
-/// </summary>
-public sealed record SourceInfo
-{
-    public int VideoFiles { get; init; }
-    public int MusicFiles { get; init; }
-    public int BsaFiles { get; init; }
-    public int EsmFiles { get; init; }
-    public int EspFiles { get; init; }
-
-    public int TotalFiles => VideoFiles + MusicFiles + BsaFiles + EsmFiles + EspFiles;
-}
-
-/// <summary>
-///     Result of the repacking process.
-/// </summary>
-public sealed record RepackResult
-{
-    public bool Success { get; set; }
-    public string? Error { get; set; }
-    public int VideoFilesProcessed { get; set; }
-    public int MusicFilesProcessed { get; set; }
-    public int BsaFilesProcessed { get; set; }
-    public int EsmFilesProcessed { get; set; }
-    public int EspFilesProcessed { get; set; }
-    public int IniFilesProcessed { get; set; }
-
-    public int TotalFilesProcessed =>
-        VideoFilesProcessed + MusicFilesProcessed + BsaFilesProcessed + EsmFilesProcessed + EspFilesProcessed +
-        IniFilesProcessed;
 }

@@ -34,9 +34,12 @@
     <None Remove="Core\Models\**" />
   </ItemGroup>
 
-  <!-- Expose internals to test project -->
+  <!-- Expose internals to test project and EsmAnalyzer tool -->
   <ItemGroup>
     <InternalsVisibleTo Include="FalloutXbox360Utils.Tests" />
+    <InternalsVisibleTo Include="EsmAnalyzer" />
+    <InternalsVisibleTo Include="NifAnalyzer" />
+    <InternalsVisibleTo Include="MinidumpAnalyzer" />
   </ItemGroup>
 
   <!-- Windows GUI settings -->

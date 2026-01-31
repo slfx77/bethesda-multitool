@@ -1,7 +1,8 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;

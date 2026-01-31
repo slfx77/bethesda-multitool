@@ -1,5 +1,10 @@
-using System.Text;
+﻿using System.Text;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
 
 namespace EsmAnalyzer.Core;
 
@@ -61,7 +66,7 @@ public static class WorldspaceUtils
     /// <summary>
     ///     Finds a WRLD record by FormID.
     /// </summary>
-    public static (AnalyzerRecordInfo? record, byte[]? recordData) FindWorldspaceRecord(
+    internal static (AnalyzerRecordInfo? record, byte[]? recordData) FindWorldspaceRecord(
         byte[] data, bool bigEndian, uint worldspaceFormId)
     {
         var records = EsmRecordParser.ScanForRecordType(data, bigEndian, "WRLD");

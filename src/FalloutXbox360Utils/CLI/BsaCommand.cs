@@ -690,7 +690,8 @@ public static class BsaCommand
 
                 foreach (var failure in results.Where(r => !r.Success).Take(10))
                 {
-                    AnsiConsole.MarkupLine("  [red]•[/] {0}: {1}", failure.SourcePath, failure.Error ?? "Unknown error");
+                    AnsiConsole.MarkupLine("  [red]•[/] {0}: {1}", failure.SourcePath,
+                        failure.Error ?? "Unknown error");
                 }
             }
         }
@@ -775,7 +776,8 @@ public static class BsaCommand
                 AnsiConsole.MarkupLine("  [red]Failed: {0:N0} files[/]", failedCount);
                 foreach (var failed in extractResults.Where(r => !r.Success))
                 {
-                    AnsiConsole.MarkupLine("    [red]• {0}: {1}[/]", failed.SourcePath, failed.Error ?? "Unknown error");
+                    AnsiConsole.MarkupLine("    [red]• {0}: {1}[/]", failed.SourcePath,
+                        failed.Error ?? "Unknown error");
                 }
             }
 

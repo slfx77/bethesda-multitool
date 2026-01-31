@@ -148,6 +148,60 @@ public class MinidumpInfo
         return sorted;
     }
 
+    /// <summary>
+    ///     Read a big-endian uint32 at a file offset from a stream.
+    /// </summary>
+    public static uint ReadBigEndianUInt32(Stream stream, long fileOffset)
+    {
+        stream.Seek(fileOffset, SeekOrigin.Begin);
+        Span<byte> buf = stackalloc byte[4];
+        stream.ReadExactly(buf);
+        return System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(buf);
+    }
+
+    /// <summary>
+    ///     Read a null-terminated ASCII string at a virtual address from a stream.
+    /// </summary>
+    public string? ReadStringAtVA(Stream stream, long va, int maxLen = 256)
+    {
+        var fo = VirtualAddressToFileOffset(va);
+        if (fo == null)
+        {
+            return null;
+        }
+
+        stream.Seek(fo.Value, SeekOrigin.Begin);
+        var bytes = new byte[maxLen];
+        var read = stream.Read(bytes, 0, maxLen);
+
+        for (var i = 0; i < read; i++)
+        {
+            if (bytes[i] == 0)
+            {
+                return i == 0 ? null : System.Text.Encoding.ASCII.GetString(bytes, 0, i);
+            }
+
+            if (bytes[i] < 32 || bytes[i] > 126)
+            {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Find the Fallout game module.
+    /// </summary>
+    public MinidumpModule? FindGameModule()
+    {
+        return Modules.FirstOrDefault(m =>
+        {
+            var nameLower = m.Name.ToLowerInvariant();
+            return nameLower.Contains("fallout") && nameLower.EndsWith(".exe");
+        });
+    }
+
     #region Region Grouping for Parallel Scanning
 
     /// <summary>
@@ -260,41 +314,4 @@ public class MinidumpInfo
     }
 
     #endregion
-}
-
-/// <summary>
-///     A group of memory regions with contiguous virtual addresses.
-///     Can be scanned as a single unit for parallel processing.
-/// </summary>
-public class ContiguousRegionGroup
-{
-    /// <summary>
-    ///     The individual memory regions in this group (sorted by VA).
-    /// </summary>
-    public required List<MinidumpMemoryRegion> Regions { get; init; }
-
-    /// <summary>
-    ///     Starting virtual address of the group.
-    /// </summary>
-    public long StartVirtualAddress { get; init; }
-
-    /// <summary>
-    ///     Ending virtual address of the group (exclusive).
-    /// </summary>
-    public long EndVirtualAddress { get; init; }
-
-    /// <summary>
-    ///     Starting file offset of the group.
-    /// </summary>
-    public long StartFileOffset { get; init; }
-
-    /// <summary>
-    ///     Total size in bytes across all regions in the group.
-    /// </summary>
-    public long TotalSize { get; init; }
-
-    /// <summary>
-    ///     Number of regions in this group.
-    /// </summary>
-    public int RegionCount => Regions.Count;
 }

@@ -4,18 +4,6 @@ using FalloutXbox360Utils.Core.Formats;
 namespace FalloutXbox360Utils.Core.Carving;
 
 /// <summary>
-///     Parameters for file write operations.
-/// </summary>
-internal sealed record WriteFileParams(
-    string OutputFile,
-    byte[] Data,
-    long Offset,
-    string SignatureId,
-    int FileSize,
-    string? OriginalPath,
-    Dictionary<string, object>? Metadata);
-
-/// <summary>
 ///     Handles file writing, conversion, and repair operations for carved files.
 /// </summary>
 internal sealed class CarveWriter(

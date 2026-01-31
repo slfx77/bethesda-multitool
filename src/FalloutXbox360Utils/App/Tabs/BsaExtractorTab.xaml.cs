@@ -5,145 +5,19 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Threading.Channels;
+using Windows.Storage.Pickers;
+using FalloutXbox360Utils.Core.Converters;
+using FalloutXbox360Utils.Core.Formats.Bsa;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Windows.Storage.Pickers;
 using WinRT.Interop;
-using FalloutXbox360Utils.Core.Converters;
-using FalloutXbox360Utils.Core.Formats.Bsa;
 
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// Status of a file during BSA extraction.
-/// </summary>
-public enum BsaExtractionStatus
-{
-    Pending,
-    Extracting,
-    Converting,
-    Done,
-    Skipped,
-    Failed
-}
-
-/// <summary>
-/// Data model for BSA file entries in the list.
-/// </summary>
-public sealed class BsaFileEntry : INotifyPropertyChanged
-{
-    private static SolidColorBrush? _grayBrush;
-    private static SolidColorBrush? _greenBrush;
-    private static SolidColorBrush? _yellowBrush;
-    private static SolidColorBrush? _blueBrush;
-    private static SolidColorBrush? _redBrush;
-
-    private bool _isSelected = true;
-    private BsaExtractionStatus _status = BsaExtractionStatus.Pending;
-    private string? _statusMessage;
-
-    private static SolidColorBrush GrayBrush => _grayBrush ??= new SolidColorBrush(Colors.Gray);
-    private static SolidColorBrush GreenBrush => _greenBrush ??= new SolidColorBrush(Colors.Green);
-    private static SolidColorBrush YellowBrush => _yellowBrush ??= new SolidColorBrush(Colors.Yellow);
-    private static SolidColorBrush BlueBrush => _blueBrush ??= new SolidColorBrush(Colors.DodgerBlue);
-    private static SolidColorBrush RedBrush => _redBrush ??= new SolidColorBrush(Colors.OrangeRed);
-
-    public required BsaFileRecord Record { get; init; }
-
-    public string FullPath => Record.FullPath;
-    public string FileName => Record.Name ?? $"unknown_{Record.NameHash:X16}";
-    public string FolderPath => Record.Folder?.Name ?? "";
-    public long Size => Record.Size;
-    public bool IsCompressed { get; init; }
-
-    public string SizeDisplay => Size switch
-    {
-        < 1024 => $"{Size} B",
-        < 1024 * 1024 => $"{Size / 1024.0:F1} KB",
-        _ => $"{Size / (1024.0 * 1024.0):F2} MB"
-    };
-
-    public string CompressedDisplay => IsCompressed ? "Yes" : "";
-    public SolidColorBrush CompressedColor => IsCompressed ? GreenBrush : GrayBrush;
-
-    public string Extension => Path.GetExtension(FileName).ToLowerInvariant();
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set
-        {
-            if (_isSelected != value)
-            {
-                _isSelected = value;
-                OnPropertyChanged(nameof(IsSelected));
-            }
-        }
-    }
-
-    public BsaExtractionStatus Status
-    {
-        get => _status;
-        set
-        {
-            if (_status != value)
-            {
-                _status = value;
-                OnPropertyChanged(nameof(Status));
-                OnPropertyChanged(nameof(StatusDisplay));
-                OnPropertyChanged(nameof(StatusColor));
-            }
-        }
-    }
-
-    public string? StatusMessage
-    {
-        get => _statusMessage;
-        set
-        {
-            if (_statusMessage != value)
-            {
-                _statusMessage = value;
-                OnPropertyChanged(nameof(StatusMessage));
-                OnPropertyChanged(nameof(StatusDisplay));
-            }
-        }
-    }
-
-    public string StatusDisplay => _status switch
-    {
-        BsaExtractionStatus.Pending => "",
-        BsaExtractionStatus.Extracting => "Extracting...",
-        BsaExtractionStatus.Converting => "Converting...",
-        BsaExtractionStatus.Done => _statusMessage ?? "Done",
-        BsaExtractionStatus.Skipped => _statusMessage ?? "Skipped",
-        BsaExtractionStatus.Failed => _statusMessage ?? "Failed",
-        _ => ""
-    };
-
-    public SolidColorBrush StatusColor => _status switch
-    {
-        BsaExtractionStatus.Pending => GrayBrush,
-        BsaExtractionStatus.Extracting => BlueBrush,
-        BsaExtractionStatus.Converting => YellowBrush,
-        BsaExtractionStatus.Done => GreenBrush,
-        BsaExtractionStatus.Skipped => GrayBrush,
-        BsaExtractionStatus.Failed => RedBrush,
-        _ => GrayBrush
-    };
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string propertyName)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-}
-
-/// <summary>
-/// BSA Extractor tab for extracting files from Bethesda archives.
+///     BSA Extractor tab for extracting files from Bethesda archives.
 /// </summary>
 public sealed partial class BsaExtractorTab : UserControl, IDisposable
 {
@@ -151,11 +25,11 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
     private readonly ObservableCollection<BsaFileEntry> _filteredFiles = [];
 
     private BsaArchive? _archive;
-    private BsaExtractor? _extractor;
     private string? _bsaFilePath;
     private CancellationTokenSource? _cts;
 
     private string _currentSortColumn = "Path";
+    private BsaExtractor? _extractor;
     private bool _sortAscending = true;
 
     public BsaExtractorTab()
@@ -170,6 +44,12 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         }
 
         UpdateEmptyState();
+    }
+
+    public void Dispose()
+    {
+        _cts?.Dispose();
+        _extractor?.Dispose();
     }
 
     private void File_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -196,7 +76,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         picker.FileTypeFilter.Add(".ba2");
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
 
-        var hwnd = WindowNative.GetWindowHandle(global::FalloutXbox360Utils.App.Current.MainWindow);
+        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
         InitializeWithWindow.Initialize(picker, hwnd);
 
         var file = await picker.PickSingleFileAsync();
@@ -269,6 +149,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                 var count = _allFiles.Count(f => f.Extension == ext);
                 ExtensionFilterCombo.Items.Add(new ComboBoxItem { Content = $"{ext} ({count:N0})", Tag = ext });
             }
+
             ExtensionFilterCombo.SelectedIndex = 0;
 
             ApplyFilters();
@@ -308,9 +189,13 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         filtered = _currentSortColumn switch
         {
             "Path" => _sortAscending ? filtered.OrderBy(f => f.FullPath) : filtered.OrderByDescending(f => f.FullPath),
-            "Folder" => _sortAscending ? filtered.OrderBy(f => f.FolderPath) : filtered.OrderByDescending(f => f.FolderPath),
+            "Folder" => _sortAscending
+                ? filtered.OrderBy(f => f.FolderPath)
+                : filtered.OrderByDescending(f => f.FolderPath),
             "Size" => _sortAscending ? filtered.OrderBy(f => f.Size) : filtered.OrderByDescending(f => f.Size),
-            "Compressed" => _sortAscending ? filtered.OrderBy(f => f.IsCompressed) : filtered.OrderByDescending(f => f.IsCompressed),
+            "Compressed" => _sortAscending
+                ? filtered.OrderBy(f => f.IsCompressed)
+                : filtered.OrderByDescending(f => f.IsCompressed),
             "Status" => _sortAscending ? filtered.OrderBy(f => f.Status) : filtered.OrderByDescending(f => f.Status),
             _ => filtered
         };
@@ -374,11 +259,30 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         }
     }
 
-    private void SortByPath_Click(object sender, RoutedEventArgs e) => ToggleSort("Path", PathSortIcon);
-    private void SortByFolder_Click(object sender, RoutedEventArgs e) => ToggleSort("Folder", FolderSortIcon);
-    private void SortBySize_Click(object sender, RoutedEventArgs e) => ToggleSort("Size", SizeSortIcon);
-    private void SortByCompressed_Click(object sender, RoutedEventArgs e) => ToggleSort("Compressed", CompressedSortIcon);
-    private void SortByStatus_Click(object sender, RoutedEventArgs e) => ToggleSort("Status", StatusSortIcon);
+    private void SortByPath_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleSort("Path", PathSortIcon);
+    }
+
+    private void SortByFolder_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleSort("Folder", FolderSortIcon);
+    }
+
+    private void SortBySize_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleSort("Size", SizeSortIcon);
+    }
+
+    private void SortByCompressed_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleSort("Compressed", CompressedSortIcon);
+    }
+
+    private void SortByStatus_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleSort("Status", StatusSortIcon);
+    }
 
     private void ToggleSort(string column, FontIcon icon)
     {
@@ -417,7 +321,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
         picker.FileTypeFilter.Add("*");
 
-        var hwnd = WindowNative.GetWindowHandle(global::FalloutXbox360Utils.App.Current.MainWindow);
+        var hwnd = WindowNative.GetWindowHandle(App.Current.MainWindow);
         InitializeWithWindow.Initialize(picker, hwnd);
 
         var folder = await picker.PickSingleFolderAsync();
@@ -435,9 +339,9 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         var nifConversionAvailable = false;
         if (convertFiles)
         {
-            ddxConversionAvailable = _extractor.EnableDdxConversion(true, verbose: false);
+            ddxConversionAvailable = _extractor.EnableDdxConversion(true);
             xmaConversionAvailable = _extractor.EnableXmaConversion(true);
-            nifConversionAvailable = _extractor.EnableNifConversion(true, verbose: false);
+            nifConversionAvailable = _extractor.EnableNifConversion(true);
 
             // Check what's unavailable (NIF is always available as it's built-in)
             var unavailable = new List<string>();
@@ -497,8 +401,8 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         {
             // Create a channel for files that need conversion
             var conversionChannel =
- Channel.CreateBounded<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)>(
-                new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.Wait });
+                Channel.CreateBounded<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)>(
+                    new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.Wait });
 
             var total = selectedEntries.Count;
             var processed = 0;
@@ -533,7 +437,14 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                         // Update status on UI thread
                         DispatcherQueue.TryEnqueue(() =>
                         {
-                            try { entry.Status = BsaExtractionStatus.Extracting; } catch { /* ignore UI errors */ }
+                            try
+                            {
+                                entry.Status = BsaExtractionStatus.Extracting;
+                            }
+                            catch
+                            {
+                                /* ignore UI errors */
+                            }
                         });
 
                         var extension = Path.GetExtension(entry.FileName).ToLowerInvariant();
@@ -561,10 +472,18 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                             // Queue for conversion
                             DispatcherQueue.TryEnqueue(() =>
                             {
-                                try { entry.Status = BsaExtractionStatus.Converting; } catch { /* ignore UI errors */ }
+                                try
+                                {
+                                    entry.Status = BsaExtractionStatus.Converting;
+                                }
+                                catch
+                                {
+                                    /* ignore UI errors */
+                                }
                             });
                             var conversionType = needsDdxConversion ? "ddx" : needsXmaConversion ? "xma" : "nif";
-                            await conversionChannel.Writer.WriteAsync((entry, data, outputPath, conversionType), _cts.Token);
+                            await conversionChannel.Writer.WriteAsync((entry, data, outputPath, conversionType),
+                                _cts.Token);
                             // Note: conversion worker will set final status
                             extractionSucceeded = true; // Don't update status here, conversion worker handles it
                         }
@@ -604,11 +523,14 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                             if (!wasQueued)
                             {
                                 entry.Status =
- extractionSucceeded ? BsaExtractionStatus.Done : BsaExtractionStatus.Failed;
+                                    extractionSucceeded ? BsaExtractionStatus.Done : BsaExtractionStatus.Failed;
                                 entry.StatusMessage = statusMessage;
                             }
                         }
-                        catch { /* ignore UI update errors */ }
+                        catch
+                        {
+                            /* ignore UI update errors */
+                        }
                     });
 
                     semaphore.Release();
@@ -635,6 +557,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
             {
                 message += $"\n{converted:N0} files converted (DDX->DDS, XMA->OGG, NIF endian swap).";
             }
+
             if (failed > 0)
             {
                 message += $"\n{failed:N0} files failed.";
@@ -656,7 +579,8 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
             FilterStatusText.Text = "Extraction cancelled";
 
             // Mark remaining as skipped
-            foreach (var entry in selectedEntries.Where(e => e.Status == BsaExtractionStatus.Pending || e.Status == BsaExtractionStatus.Extracting))
+            foreach (var entry in selectedEntries.Where(e =>
+                         e.Status == BsaExtractionStatus.Pending || e.Status == BsaExtractionStatus.Extracting))
             {
                 entry.Status = BsaExtractionStatus.Skipped;
                 entry.StatusMessage = "Cancelled";
@@ -683,7 +607,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
     }
 
     /// <summary>
-    /// Run conversion workers that process DDX, XMA, and NIF files from the channel.
+    ///     Run conversion workers that process DDX, XMA, and NIF files from the channel.
     /// </summary>
     private async Task RunConversionWorkersAsync(
         ChannelReader<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)> reader,
@@ -695,7 +619,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         const int workerCount = 2;
         var workers = new Task[workerCount];
 
-        for (int i = 0; i < workerCount; i++)
+        for (var i = 0; i < workerCount; i++)
         {
             workers[i] = Task.Run(async () =>
             {
@@ -724,8 +648,11 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                                 originalExtension = ".nif";
                                 break;
                             default:
-                                result = new ConversionResult { Success = false, Notes =
- $"Unknown conversion type: {conversionType}" };
+                                result = new ConversionResult
+                                {
+                                    Success = false, Notes =
+                                        $"Unknown conversion type: {conversionType}"
+                                };
                                 originalExtension = "";
                                 break;
                         }
@@ -749,7 +676,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                             await File.WriteAllBytesAsync(fallbackPath, data, cancellationToken);
                             conversionSucceeded = true; // File was saved, just not converted
                             statusMessage =
- $"Saved as {originalExtension.ToUpperInvariant().TrimStart('.')} ({result.Notes})";
+                                $"Saved as {originalExtension.ToUpperInvariant().TrimStart('.')} ({result.Notes})";
                         }
                     }
                     catch (Exception ex)
@@ -766,7 +693,10 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                             entry.Status = conversionSucceeded ? BsaExtractionStatus.Done : BsaExtractionStatus.Failed;
                             entry.StatusMessage = statusMessage;
                         }
-                        catch { /* ignore UI update errors */ }
+                        catch
+                        {
+                            /* ignore UI update errors */
+                        }
                     });
                 }
             }, cancellationToken);
@@ -780,18 +710,15 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
         _cts?.Cancel();
     }
 
-    private static string FormatSize(long bytes) => bytes switch
+    private static string FormatSize(long bytes)
     {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
-        _ => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB"
-    };
-
-    public void Dispose()
-    {
-        _cts?.Dispose();
-        _extractor?.Dispose();
+        return bytes switch
+        {
+            < 1024 => $"{bytes} B",
+            < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+            < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
+            _ => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB"
+        };
     }
 }
 

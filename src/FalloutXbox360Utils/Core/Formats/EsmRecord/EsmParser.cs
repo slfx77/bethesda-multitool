@@ -1,4 +1,5 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
@@ -546,86 +547,4 @@ public static class EsmParser
 
         return Encoding.UTF8.GetString(data[..end]);
     }
-}
-
-/// <summary>
-///     ESM file header (TES4 record contents).
-/// </summary>
-public record EsmFileHeader
-{
-    public float Version { get; init; }
-    public uint NextObjectId { get; init; }
-    public string? Author { get; init; }
-    public string? Description { get; init; }
-    public IReadOnlyList<string> Masters { get; init; } = [];
-    public uint RecordFlags { get; init; }
-    public bool IsBigEndian { get; init; }
-}
-
-/// <summary>
-///     Main record header (24 bytes for FNV).
-/// </summary>
-public record MainRecordHeader
-{
-    public required string Signature { get; init; }
-    public uint DataSize { get; init; }
-    public uint Flags { get; init; }
-    public uint FormId { get; init; }
-    public uint VersionControl1 { get; init; }
-    public uint VersionControl2 { get; init; }
-
-    public bool IsCompressed => (Flags & 0x00040000) != 0;
-    public bool IsDeleted => (Flags & 0x00000020) != 0;
-    public bool IsIgnored => (Flags & 0x00001000) != 0;
-}
-
-/// <summary>
-///     Group header (24 bytes).
-/// </summary>
-public record GroupHeader
-{
-    public uint GroupSize { get; init; }
-    public byte[] Label { get; init; } = [];
-    public int GroupType { get; init; }
-    public uint Stamp { get; init; }
-
-    public string LabelAsSignature => EsmRecordTypes.SignatureToString(Label);
-    public int LabelAsInt => Label.Length >= 4 ? BitConverter.ToInt32(Label, 0) : 0;
-}
-
-/// <summary>
-///     Parsed subrecord.
-/// </summary>
-public record ParsedSubrecord
-{
-    public required string Signature { get; init; }
-    public required byte[] Data { get; init; }
-
-    public string DataAsString => Encoding.UTF8.GetString(Data).TrimEnd('\0');
-    public uint DataAsFormId => Data.Length >= 4 ? BinaryUtils.ReadUInt32LE(Data) : 0;
-    public float DataAsFloat => Data.Length >= 4 ? BinaryUtils.ReadFloatLE(Data) : 0f;
-    public int DataAsInt32 => Data.Length >= 4 ? BinaryUtils.ReadInt32LE(Data) : 0;
-}
-
-/// <summary>
-///     Parsed main record with subrecords.
-/// </summary>
-public record ParsedMainRecord
-{
-    public required MainRecordHeader Header { get; init; }
-    public long Offset { get; init; }
-    public List<ParsedSubrecord> Subrecords { get; init; } = [];
-
-    public string? EditorId => Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
-}
-
-/// <summary>
-///     Basic record info from scanning.
-/// </summary>
-public record RecordInfo
-{
-    public required string Signature { get; init; }
-    public uint FormId { get; init; }
-    public long Offset { get; init; }
-    public uint DataSize { get; init; }
 }

@@ -168,8 +168,7 @@
           <ListView
             x:Name="CategoriesListView"
             Grid.Row="1"
-            Style="{StaticResource FileListViewStyle}"
-            SelectionMode="None">
+            Style="{StaticResource FileListViewStyle}">
             <ListView.ItemTemplate>
               <DataTemplate x:DataType="local:RepackCategory">
                 <StackPanel>

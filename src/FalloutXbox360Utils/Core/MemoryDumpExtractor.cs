@@ -1,7 +1,8 @@
-using System.IO.MemoryMappedFiles;
+﻿using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Carving;
 using FalloutXbox360Utils.Core.Converters;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
 using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Minidump;
 
@@ -99,7 +100,7 @@ public static class MemoryDumpExtractor
         var scriptResult = new ScdaExtractionResult();
         if (options.ExtractScripts)
         {
-            scriptResult = await ExtractScriptsAsync(filePath, options, progress);
+            scriptResult = await ExtractScriptsAsync(filePath, options, progress, analysisResult);
         }
 
         // Generate ESM reports and heightmaps if requested and analysis data is available
@@ -108,7 +109,7 @@ public static class MemoryDumpExtractor
         if (options.GenerateEsmReports && analysisResult?.EsmRecords != null)
         {
             (esmReportGenerated, heightmapsExported) = await GenerateEsmOutputsAsync(
-                analysisResult, extractDir, progress);
+                analysisResult, filePath, extractDir, progress, scriptResult);
         }
 
         // Return summary
@@ -137,13 +138,20 @@ public static class MemoryDumpExtractor
     private static async Task<ScdaExtractionResult> ExtractScriptsAsync(
         string filePath,
         ExtractionOptions options,
-        IProgress<ExtractionProgress>? progress)
+        IProgress<ExtractionProgress>? progress,
+        AnalysisResult? analysisResult = null)
     {
         progress?.Report(new ExtractionProgress
         {
             PercentComplete = 85,
             CurrentOperation = "Scanning for compiled scripts..."
         });
+
+        // Set FormID map for SCRO resolution in script output
+        if (analysisResult?.FormIdMap != null && analysisResult.FormIdMap.Count > 0)
+        {
+            ScdaFormatter.FormIdMap = analysisResult.FormIdMap;
+        }
 
         // Read the entire dump for SCDA scanning
         var dumpData = await File.ReadAllBytesAsync(filePath);
@@ -339,8 +347,10 @@ public static class MemoryDumpExtractor
     /// </summary>
     private static async Task<(bool reportGenerated, int heightmapsExported)> GenerateEsmOutputsAsync(
         AnalysisResult analysisResult,
+        string filePath,
         string extractDir,
-        IProgress<ExtractionProgress>? progress)
+        IProgress<ExtractionProgress>? progress,
+        ScdaExtractionResult? scriptResult = null)
     {
         var reportGenerated = false;
         var heightmapsExported = 0;
@@ -358,10 +368,20 @@ public static class MemoryDumpExtractor
 
         try
         {
-            // Generate semantic reconstruction
+            // Open memory-mapped file for accessor-based reconstruction
+            var fileInfo = new FileInfo(filePath);
+            using var mmf =
+                MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+
+            // Generate semantic reconstruction with accessor for full data access
+            // Pass MinidumpInfo to enable runtime C++ struct reading for types with poor ESM coverage
             var reconstructor = new SemanticReconstructor(
                 analysisResult.EsmRecords,
-                analysisResult.FormIdMap);
+                analysisResult.FormIdMap,
+                accessor,
+                fileInfo.Length,
+                analysisResult.MinidumpInfo);
             var semanticResult = reconstructor.ReconstructAll();
 
             // Generate split GECK-style reports (one file per record type)
@@ -388,7 +408,14 @@ public static class MemoryDumpExtractor
             {
                 var runtimeEdidReport =
                     GeckReportGenerator.GenerateRuntimeEditorIdsReport(analysisResult.EsmRecords.RuntimeEditorIds);
-                await File.WriteAllTextAsync(Path.Combine(esmDir, "runtime_editorids.txt"), runtimeEdidReport);
+                await File.WriteAllTextAsync(Path.Combine(esmDir, "runtime_editorids.csv"), runtimeEdidReport);
+            }
+
+            // Generate scripts summary report if SCDA extraction was done
+            if (scriptResult != null && scriptResult.TotalRecords > 0)
+            {
+                var scriptsSummary = GeckReportGenerator.GenerateScriptsSummaryReport(scriptResult);
+                await File.WriteAllTextAsync(Path.Combine(esmDir, "scripts_summary.txt"), scriptsSummary);
             }
 
             reportGenerated = splitReports.Count > 0;
@@ -411,14 +438,28 @@ public static class MemoryDumpExtractor
                 heightmapsExported = analysisResult.EsmRecords.Heightmaps.Count;
 
                 // Also try to generate composite worldmap (grayscale for consistency)
-                if (analysisResult.EsmRecords.CellGrids.Count > 0)
+                // Use LAND records as primary positioning source when available
+                if (analysisResult.EsmRecords.CellGrids.Count > 0 ||
+                    analysisResult.EsmRecords.LandRecords.Count > 0)
                 {
                     var worldmapPath = Path.Combine(esmDir, "worldmap_composite.png");
-                    await HeightmapPngExporter.ExportCompositeWorldmapAsync(
-                        analysisResult.EsmRecords.Heightmaps,
-                        analysisResult.EsmRecords.CellGrids,
-                        worldmapPath,
-                        false);
+                    if (analysisResult.EsmRecords.LandRecords.Count > 0)
+                    {
+                        await HeightmapPngExporter.ExportCompositeWorldmapAsync(
+                            analysisResult.EsmRecords.Heightmaps,
+                            analysisResult.EsmRecords.CellGrids,
+                            analysisResult.EsmRecords.LandRecords,
+                            worldmapPath,
+                            false);
+                    }
+                    else
+                    {
+                        await HeightmapPngExporter.ExportCompositeWorldmapAsync(
+                            analysisResult.EsmRecords.Heightmaps,
+                            analysisResult.EsmRecords.CellGrids,
+                            worldmapPath,
+                            false);
+                    }
                 }
             }
 
@@ -450,42 +491,4 @@ public static class MemoryDumpExtractor
 
         return new string(sanitized);
     }
-}
-
-/// <summary>
-///     Summary of extraction results.
-/// </summary>
-public class ExtractionSummary
-{
-    public int TotalExtracted { get; init; }
-    public int DdxConverted { get; init; }
-    public int DdxFailed { get; init; }
-    public int XurConverted { get; init; }
-    public int XurFailed { get; init; }
-    public int ModulesExtracted { get; init; }
-    public int ScriptsExtracted { get; init; }
-    public int ScriptQuestsGrouped { get; init; }
-    public Dictionary<string, int> TypeCounts { get; init; } = [];
-    public HashSet<long> ExtractedOffsets { get; init; } = [];
-
-    /// <summary>
-    ///     Offsets of files that failed conversion (DDX -> DDS, XMA -> WAV, etc.).
-    ///     These files were extracted but conversion failed.
-    /// </summary>
-    public HashSet<long> FailedConversionOffsets { get; init; } = [];
-
-    /// <summary>
-    ///     File offsets of extracted modules from minidump metadata.
-    /// </summary>
-    public HashSet<long> ExtractedModuleOffsets { get; init; } = [];
-
-    /// <summary>
-    ///     Whether an ESM semantic report was generated.
-    /// </summary>
-    public bool EsmReportGenerated { get; init; }
-
-    /// <summary>
-    ///     Number of heightmap PNG images exported.
-    /// </summary>
-    public int HeightmapsExported { get; init; }
 }

@@ -1,6 +1,6 @@
 using System.CommandLine;
 using Spectre.Console;
-using static NifAnalyzer.Utils.BinaryHelpers;
+using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
 
 namespace NifAnalyzer.Commands;
 

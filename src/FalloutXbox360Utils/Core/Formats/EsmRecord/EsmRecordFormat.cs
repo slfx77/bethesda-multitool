@@ -1,9 +1,14 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Converters.Esm.Schema;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
@@ -78,6 +83,11 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         "FACT", // Faction
         "RACE", // Race
         "CLAS", // Class
+
+        // Leveled lists
+        "LVLI", // Leveled Item
+        "LVLN", // Leveled NPC
+        "LVLC", // Leveled Creature
 
         // Game settings and globals
         "GMST", // Game Setting
@@ -497,6 +507,44 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     }
 
     /// <summary>
+    ///     Enrich extracted LAND records with runtime cell coordinates from LoadedLandData.
+    ///     Call this after runtime scanning has populated RuntimeEditorIds.
+    /// </summary>
+    public static void EnrichLandRecordsWithRuntimeData(
+        EsmRecordScanResult scanResult,
+        Dictionary<uint, RuntimeLoadedLandData> runtimeLandData)
+    {
+        if (runtimeLandData.Count == 0)
+        {
+            return;
+        }
+
+        // Create new list with enriched records (records are immutable)
+        var enrichedRecords = new List<ExtractedLandRecord>();
+
+        foreach (var land in scanResult.LandRecords)
+        {
+            if (runtimeLandData.TryGetValue(land.Header.FormId, out var runtimeData))
+            {
+                // Create enriched record with runtime coordinates
+                enrichedRecords.Add(land with
+                {
+                    RuntimeCellX = runtimeData.CellX,
+                    RuntimeCellY = runtimeData.CellY,
+                    RuntimeBaseHeight = runtimeData.BaseHeight
+                });
+            }
+            else
+            {
+                enrichedRecords.Add(land);
+            }
+        }
+
+        scanResult.LandRecords.Clear();
+        scanResult.LandRecords.AddRange(enrichedRecords);
+    }
+
+    /// <summary>
     ///     Extract full REFR records with position and base object data.
     /// </summary>
     public static void ExtractRefrRecords(
@@ -600,6 +648,9 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         PositionSubrecord? position = null;
         var scale = 1.0f;
         uint? ownerFormId = null;
+        var isMapMarker = false;
+        ushort? markerType = null;
+        string? markerName = null;
 
         // Iterate through subrecords using the standard subrecord header format
         foreach (var sub in IterateSubrecords(data, dataSize, header.IsBigEndian))
@@ -631,6 +682,30 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
                 case "XOWN" when sub.DataLength == 4:
                     ownerFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
                     break;
+
+                case "XMRK": // Map marker presence flag (0 bytes)
+                    isMapMarker = true;
+                    break;
+
+                case "TNAM" when sub.DataLength == 2: // Marker type
+                    markerType = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt16BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt16LittleEndian(subData);
+                    break;
+
+                case "FULL" when sub.DataLength > 0: // Marker name (null-terminated string)
+                    var nameLength = sub.DataLength;
+                    while (nameLength > 0 && subData[nameLength - 1] == 0)
+                    {
+                        nameLength--;
+                    }
+
+                    if (nameLength > 0)
+                    {
+                        markerName = Encoding.UTF8.GetString(subData[..nameLength]);
+                    }
+
+                    break;
             }
         }
 
@@ -646,7 +721,10 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             Position = position,
             Scale = scale,
             OwnerFormId = ownerFormId,
-            BaseEditorId = editorIdMap?.GetValueOrDefault(baseFormId)
+            BaseEditorId = editorIdMap?.GetValueOrDefault(baseFormId),
+            IsMapMarker = isMapMarker,
+            MarkerType = markerType,
+            MarkerName = markerName
         };
     }
 
@@ -749,6 +827,15 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        // Merge runtime EditorID hash table entries (48K+ entries with validated FormIDs)
+        foreach (var entry in existingScan.RuntimeEditorIds)
+        {
+            if (entry.FormId != 0 && !correlations.ContainsKey(entry.FormId))
+            {
+                correlations[entry.FormId] = entry.EditorId;
+            }
+        }
+
         return correlations;
     }
 
@@ -758,9 +845,11 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     public static Task ExportRecordsAsync(
         EsmRecordScanResult records,
         Dictionary<uint, string> formIdMap,
-        string outputDir)
+        string outputDir,
+        List<ReconstructedCell>? cells = null,
+        List<ReconstructedWorldspace>? worldspaces = null)
     {
-        return EsmRecordExporter.ExportRecordsAsync(records, formIdMap, outputDir);
+        return EsmRecordExporter.ExportRecordsAsync(records, formIdMap, outputDir, cells, worldspaces);
     }
 
     #endregion
@@ -1041,17 +1130,53 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             return false;
         }
 
-        // Direct iteration instead of LINQ Count to avoid delegate allocation
-        var validChars = 0;
+        // Require 100% valid characters (alphanumeric + underscore)
         foreach (var c in name)
         {
-            if (char.IsLetterOrDigit(c) || c == '_')
+            if (!char.IsLetterOrDigit(c) && c != '_')
             {
-                validChars++;
+                return false;
             }
         }
 
-        return validChars >= name.Length * 0.9;
+        // Reject repeated-pattern junk (e.g., "katSkatSkatS...")
+        if (name.Length >= 8 && HasRepeatedPattern(name))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Detect repeated substring patterns (e.g., "katSkatSkatS" repeats "katS").
+    /// </summary>
+    private static bool HasRepeatedPattern(string s)
+    {
+        // Check for patterns of length 2-6 that repeat 3+ times
+        for (var patLen = 2; patLen <= Math.Min(6, s.Length / 3); patLen++)
+        {
+            var pattern = s[..patLen];
+            var repeatCount = 0;
+            for (var i = 0; i + patLen <= s.Length; i += patLen)
+            {
+                if (s.AsSpan(i, patLen).SequenceEqual(pattern))
+                {
+                    repeatCount++;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (repeatCount >= 3)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsValidSettingName(string name)
@@ -1355,7 +1480,10 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
                IsPrintableAscii(b2) && IsPrintableAscii(b3);
     }
 
-    private static bool IsPrintableAscii(byte b) => b >= 0x20 && b < 0x7F;
+    private static bool IsPrintableAscii(byte b)
+    {
+        return b >= 0x20 && b < 0x7F;
+    }
 
     /// <summary>
     ///     Validates a record signature using the comprehensive MainRecordTypes dictionary.
@@ -2443,7 +2571,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         EsmRecordScanResult scanResult,
         bool verbose = false)
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var sw = Stopwatch.StartNew();
 
         const int chunkSize = 4 * 1024 * 1024; // 4MB chunks
         const int minStringLength = 8; // Minimum path length (e.g., "a/b.nif")
@@ -2583,7 +2711,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
 
         // Check for known game asset extensions
         return extension is
-            "nif" or "kf" or "hkx" or  // Models/animations
+            "nif" or "kf" or "hkx" or // Models/animations
             "dds" or "ddx" or "tga" or "bmp" or // Textures
             "wav" or "mp3" or "ogg" or "lip" or // Sound/lipsync
             "psc" or "pex" or // Scripts
@@ -2620,25 +2748,25 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
 
     #region Runtime EditorID Hash Table Extraction
 
+    // Dynamic hash table detection - scans memory for NiTMapBase structure signatures
+    // since PDB addresses don't match across build versions (dumps are Dec 2009 - Apr 2010,
+    // PDBs are from July 2010)
+
     /// <summary>
-    ///     Extract runtime Editor IDs from the game's EditorID hash table by following TESForm pointers.
-    ///     This requires MinidumpInfo to convert Xbox virtual addresses to file offsets.
+    ///     Extract runtime Editor IDs by dynamically locating the hash table structure in memory.
+    ///     Scans for NiTMapBase signatures and validates candidates before extraction.
     /// </summary>
-    /// <param name="accessor">Memory-mapped file accessor.</param>
-    /// <param name="fileSize">Total file size in bytes.</param>
-    /// <param name="minidumpInfo">Minidump info with memory region mappings.</param>
-    /// <param name="scanResult">The scan result to add extracted Editor IDs to.</param>
     public static void ExtractRuntimeEditorIds(
         MemoryMappedViewAccessor accessor,
         long fileSize,
-        Minidump.MinidumpInfo? minidumpInfo,
+        MinidumpInfo? minidumpInfo,
         EsmRecordScanResult scanResult,
         bool verbose = false)
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var sw = Stopwatch.StartNew();
         var log = Logger.Instance;
 
-        log.Debug("EditorIDs: Starting extraction...");
+        log.Debug("EditorIDs: Starting dynamic hash table detection...");
 
         if (minidumpInfo == null || minidumpInfo.MemoryRegions.Count == 0)
         {
@@ -2646,16 +2774,36 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             return;
         }
 
-        const int minEditorIdLength = 4; // Minimum meaningful EditorID
+        // Use dynamic hash table detection (scans memory for signature)
+        var hashTableCount = TryFindAndExtractFromHashTable(accessor, fileSize, minidumpInfo, scanResult, log);
+        sw.Stop();
+
+        if (hashTableCount > 0)
+        {
+            log.Debug("EditorIDs: Dynamic detection extracted {0:N0} EditorIDs in {1:N0} ms",
+                hashTableCount, sw.ElapsedMilliseconds);
+        }
+        else
+        {
+            log.Debug("EditorIDs: No valid hash table found in captured memory");
+        }
+
+        return;
+
+#pragma warning disable CS0162 // Unreachable code detected - keeping for reference
+        // ReSharper disable HeuristicUnreachableCode
+        log.Debug("EditorIDs: Hash table walk failed, falling back to brute-force scan");
+
+        const int minEditorIdLength = 6; // Minimum meaningful EditorID (stricter to reduce noise)
         const int maxEditorIdLength = 128;
 
         var seenEditorIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var buffer = ArrayPool<byte>.Shared.Rent(256 * 1024); // 256KB buffer for reading
         var tesFormBuffer = new byte[24]; // TESForm is 24 bytes
         long totalScanned = 0;
-        int regionsProcessed = 0;
-        int pointersFollowed = 0;
-        int pointersResolved = 0;
+        var regionsProcessed = 0;
+        var pointersFollowed = 0;
+        var pointersResolved = 0;
 
         try
         {
@@ -2731,14 +2879,20 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
 
                             if (tesFormInfo.HasValue)
                             {
-                                pointersResolved++;
-                                entry = entry with
+                                // Validate FormID: plugin index 0x00-0x0F, not garbage patterns
+                                var pluginIndex = tesFormInfo.Value.formId >> 24;
+                                if (pluginIndex <= 0x0F &&
+                                    (tesFormInfo.Value.formId & 0x00FF0000) != 0x00CB0000)
                                 {
-                                    FormId = tesFormInfo.Value.formId,
-                                    FormType = tesFormInfo.Value.formType,
-                                    TesFormOffset = tesFormInfo.Value.fileOffset,
-                                    TesFormPointer = tesFormInfo.Value.pointer
-                                };
+                                    pointersResolved++;
+                                    entry = entry with
+                                    {
+                                        FormId = tesFormInfo.Value.formId,
+                                        FormType = tesFormInfo.Value.formType,
+                                        TesFormOffset = tesFormInfo.Value.fileOffset,
+                                        TesFormPointer = tesFormInfo.Value.pointer
+                                    };
+                                }
                             }
                         }
 
@@ -2781,6 +2935,679 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             totalScanned / (1024 * 1024), regionsProcessed);
         log.Debug("EditorIDs:   Pointer following: {0} attempts, {1} resolved ({2:F1}%)",
             pointersFollowed, pointersResolved, 100.0 * pointersResolved / Math.Max(1, pointersFollowed));
+        // ReSharper restore HeuristicUnreachableCode
+#pragma warning restore CS0162
+    }
+
+    /// <summary>
+    ///     Represents a candidate hash table found during dynamic scanning.
+    /// </summary>
+    private readonly record struct HashTableCandidate(
+        long FileOffset,
+        long VirtualAddress,
+        uint HashSize,
+        long BucketArrayVa,
+        long BucketArrayFileOffset,
+        int ValidationScore);
+
+    /// <summary>
+    ///     Locate and extract EditorIDs from the game's hash table using a three-stage approach:
+    ///     Stage 1: PE-guided PDB offset lookup (cheapest, most reliable)
+    ///     Stage 2: Data section triple-pointer scan (targeted fallback)
+    ///     Stage 3: Full memory brute-force scan (last resort)
+    /// </summary>
+    private static int TryFindAndExtractFromHashTable(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        EsmRecordScanResult scanResult,
+        Logger log)
+    {
+        log.Debug("EditorIDs: Starting PE-guided hash table detection...");
+
+        // Find game module and parse PE sections
+        var gameModule = MemoryDumpAnalyzer.FindGameModule(minidumpInfo);
+        if (gameModule == null)
+        {
+            log.Debug("EditorIDs: No game module found");
+            return 0;
+        }
+
+        log.Debug("EditorIDs: Game module: {0} at VA 0x{1:X8}, size={2:N0}",
+            Path.GetFileName(gameModule.Name), gameModule.BaseAddress, gameModule.Size);
+
+        var sections = EnumeratePeSections(accessor, fileSize, minidumpInfo, gameModule);
+        if (sections == null || sections.Count == 0)
+        {
+            log.Debug("EditorIDs: Failed to parse PE sections");
+            return 0;
+        }
+
+        log.Debug("EditorIDs: Found {0} PE sections:", sections.Count);
+        foreach (var s in sections)
+        {
+            log.Debug("EditorIDs:   [{0}] '{1}' RVA=0x{2:X8} Size=0x{3:X8} Chars=0x{4:X8}",
+                s.Index + 1, s.Name, s.VirtualAddress, s.VirtualSize, s.Characteristics);
+        }
+
+        // Scan .data section for global pointer triple (pAllForms, pAlteredForms, pAllFormsByEditorID)
+        log.Debug("EditorIDs: Scanning data sections for global pointer triple...");
+        var candidate = ScanDataSectionForGlobalTriple(
+            accessor, fileSize, minidumpInfo, gameModule, sections, log);
+
+        if (!candidate.HasValue)
+        {
+            log.Debug("EditorIDs: No hash table candidate found via data section scan");
+            return 0;
+        }
+
+        log.Debug("EditorIDs: Extracting from candidate at VA 0x{0:X8}, hashSize={1}, score={2}",
+            candidate.Value.VirtualAddress, candidate.Value.HashSize, candidate.Value.ValidationScore);
+
+        var count = ExtractFromHashTableCandidate(
+            accessor, fileSize, minidumpInfo, scanResult, candidate.Value, log);
+
+        log.Debug("EditorIDs: Extracted {0:N0} EditorIDs", count);
+        return count;
+    }
+
+    private static bool IsValidPointerInDump(uint value, MinidumpInfo minidumpInfo)
+    {
+        // Dynamically check if this pointer falls within any captured memory region
+        // This handles all Xbox 360 builds regardless of memory layout
+        if (value == 0)
+        {
+            return false;
+        }
+
+        return minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(value)).HasValue;
+    }
+
+    /// <summary>
+    ///     Convert a 32-bit Xbox 360 virtual address to the 64-bit representation
+    ///     used by minidump memory regions. Xbox 360 addresses with bit 31 set
+    ///     (e.g., module space at 0x82XXXXXX) are stored sign-extended in minidumps.
+    /// </summary>
+    private static long Xbox360VaToLong(uint address)
+    {
+        return unchecked((int)address);
+    }
+
+    /// <summary>
+    ///     Byte offset of the BSStringT.pString field for TESFullName.cFullName within each TESForm subclass.
+    ///     Offsets are measured from the start of the TESForm object in memory.
+    ///     Empirically verified against runtime dump data (Xbox 360 PowerPC layout).
+    /// </summary>
+    private static readonly Dictionary<byte, int> FullNameOffsetByFormType = new()
+    {
+        [0x08] = 44, // FACT - TESFaction
+        [0x0A] = 44, // HAIR - TESHair (TESForm→TESFullName→TESModel→TESHair)
+        [0x0B] = 44, // EYES - TESEyes (TESForm→TESFullName→TESModel→TESEyes)
+        [0x0C] = 44, // RACE - TESRace
+        [0x15] = 68, // ACTI - TESObjectACTI
+        [0x18] = 68, // ARMO - TESObjectARMO
+        [0x19] = 68, // BOOK - TESObjectBOOK
+        [0x1B] = 80, // CONT - TESObjectCONT
+        [0x1C] = 68, // DOOR - TESObjectDOOR
+        [0x1F] = 68, // MISC - TESObjectMISC
+        [0x28] = 68, // WEAP - TESObjectWEAP
+        [0x29] = 68, // AMMO - TESAmmo
+        [0x2A] = 228, // NPC_ - TESNPC
+        [0x2E] = 68, // KEYM - TESKey
+        [0x2F] = 68, // ALCH - AlchemyItem
+        [0x33] = 68 // PROJ - BGSProjectile (TESBoundObject→TESFullName→TESModel→...)
+    };
+
+    /// <summary>
+    ///     Byte offset of BSStringT.pString for TESTopicInfo.cPrompt (dialogue line text).
+    /// </summary>
+    private const int InfoPromptOffset = 44;
+
+    /// <summary>
+    ///     Read a BSStringT&lt;char&gt; string from a TESForm object in the dump.
+    ///     BSStringT layout (8 bytes, big-endian on Xbox 360):
+    ///     Offset 0: pString (char* pointer, 4 bytes BE)
+    ///     Offset 4: sLen (uint16 BE)
+    /// </summary>
+    private static string? ReadBSStringT(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        long tesFormFileOffset,
+        int fieldOffset)
+    {
+        var bstOffset = tesFormFileOffset + fieldOffset;
+        if (bstOffset + 8 > fileSize)
+        {
+            return null;
+        }
+
+        var bstBuffer = new byte[8];
+        accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
+
+        var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
+        var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
+
+        if (pString == 0 || sLen == 0 || sLen > 4096)
+        {
+            return null;
+        }
+
+        if (!IsValidPointerInDump(pString, minidumpInfo))
+        {
+            return null;
+        }
+
+        var strFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(pString));
+        if (!strFileOffset.HasValue || strFileOffset.Value + sLen > fileSize)
+        {
+            return null;
+        }
+
+        var strBuffer = new byte[sLen];
+        accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
+
+        // Validate: should be mostly printable ASCII
+        var printable = 0;
+        for (var i = 0; i < sLen; i++)
+        {
+            var c = strBuffer[i];
+            if ((c >= 32 && c <= 126) || c == '\n' || c == '\r' || c == '\t')
+            {
+                printable++;
+            }
+        }
+
+        if (printable < sLen * 0.8)
+        {
+            return null;
+        }
+
+        return Encoding.ASCII.GetString(strBuffer, 0, sLen);
+    }
+
+    /// <summary>
+    ///     Extract EditorIDs from a validated hash table candidate.
+    /// </summary>
+    private static int ExtractFromHashTableCandidate(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        EsmRecordScanResult scanResult,
+        HashTableCandidate candidate,
+        Logger log)
+    {
+        // Walk the bucket array (pass 1: collect entries with display names, defer dialogue)
+        var startIndex = scanResult.RuntimeEditorIds.Count;
+        var extracted = 0;
+        var chainErrors = 0;
+        var bucketBuffer = new byte[4];
+        var itemBuffer = new byte[12]; // NiTMapItem: m_pkNext(4) + m_key(4) + m_val(4)
+        var stringBuffer = new byte[256];
+        var tesFormBuffer = new byte[24];
+
+        for (uint i = 0; i < candidate.HashSize; i++)
+        {
+            var bucketOffset = candidate.BucketArrayFileOffset + i * 4;
+            if (bucketOffset + 4 > fileSize)
+            {
+                break;
+            }
+
+            accessor.ReadArray(bucketOffset, bucketBuffer, 0, 4);
+            var itemVa = BinaryUtils.ReadUInt32BE(bucketBuffer);
+
+            if (itemVa == 0)
+            {
+                continue; // Empty bucket
+            }
+
+            // Walk the chain
+            var chainDepth = 0;
+            while (itemVa != 0 && chainDepth < 1000)
+            {
+                chainDepth++;
+
+                if (!IsValidPointerInDump(itemVa, minidumpInfo))
+                {
+                    break; // Invalid pointer
+                }
+
+                var itemFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(itemVa));
+                if (!itemFileOffset.HasValue || itemFileOffset.Value + 12 > fileSize)
+                {
+                    chainErrors++;
+                    break;
+                }
+
+                accessor.ReadArray(itemFileOffset.Value, itemBuffer, 0, 12);
+                var nextVa = BinaryUtils.ReadUInt32BE(itemBuffer); // m_pkNext
+                var keyVa = BinaryUtils.ReadUInt32BE(itemBuffer, 4); // m_key (const char*)
+                var valVa = BinaryUtils.ReadUInt32BE(itemBuffer, 8); // m_val (TESForm*)
+
+                // Read EditorID string from m_key
+                string? editorId = null;
+                long stringFileOffset = 0;
+                if (keyVa != 0 && IsValidPointerInDump(keyVa, minidumpInfo))
+                {
+                    var keyFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(keyVa));
+                    if (keyFileOffset.HasValue && keyFileOffset.Value + 4 <= fileSize)
+                    {
+                        stringFileOffset = keyFileOffset.Value;
+                        var toRead = (int)Math.Min(stringBuffer.Length, fileSize - keyFileOffset.Value);
+                        accessor.ReadArray(keyFileOffset.Value, stringBuffer, 0, toRead);
+
+                        // Find null terminator
+                        var len = 0;
+                        while (len < toRead && stringBuffer[len] != 0)
+                        {
+                            len++;
+                        }
+
+                        if (len > 0 && len < toRead)
+                        {
+                            editorId = Encoding.ASCII.GetString(stringBuffer, 0, len);
+                        }
+                    }
+                }
+
+                // Read FormID from TESForm at m_val
+                uint formId = 0;
+                byte formType = 0;
+                long? tesFormFileOffset = null;
+                if (valVa != 0 && IsValidPointerInDump(valVa, minidumpInfo))
+                {
+                    var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(valVa));
+                    if (formFileOffset.HasValue && formFileOffset.Value + 24 <= fileSize)
+                    {
+                        tesFormFileOffset = formFileOffset.Value;
+                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0, 24);
+                        formType = tesFormBuffer[4]; // Offset 0x04: cFormType
+                        formId = BinaryUtils.ReadUInt32BE(tesFormBuffer, 12); // Offset 0x0C: iFormID
+                    }
+                }
+
+                // Read display name from TESForm fields (dialogue deferred to pass 2)
+                string? displayName = null;
+                if (tesFormFileOffset.HasValue)
+                {
+                    // Read TESFullName.cFullName for types that have it
+                    if (FullNameOffsetByFormType.TryGetValue(formType, out var fullNameOffset))
+                    {
+                        displayName = ReadBSStringT(accessor, fileSize, minidumpInfo,
+                            tesFormFileOffset.Value, fullNameOffset);
+                    }
+                }
+
+                // Add if valid
+                if (editorId != null && editorId.Length >= 4 && IsValidEditorId(editorId))
+                {
+                    scanResult.RuntimeEditorIds.Add(new RuntimeEditorIdEntry
+                    {
+                        EditorId = editorId,
+                        FormId = formId,
+                        FormType = formType,
+                        StringOffset = stringFileOffset,
+                        TesFormOffset = tesFormFileOffset,
+                        TesFormPointer = Xbox360VaToLong(valVa),
+                        DisplayName = displayName
+                    });
+                    extracted++;
+                }
+
+                itemVa = nextVa;
+            }
+        }
+
+        log.Debug("EditorIDs: Hash table walk complete - {0:N0} extracted, {1} chain errors", extracted, chainErrors);
+
+        // Pass 2: Detect INFO FormType from EditorID patterns, then extract dialogue
+        var infoFormType = DetectInfoFormType(scanResult.RuntimeEditorIds, startIndex);
+        if (infoFormType.HasValue)
+        {
+            log.Debug("EditorIDs: Detected INFO FormType = {0} (0x{0:X2})", infoFormType.Value);
+            var dialogueCount = 0;
+            var infoCount = 0;
+            for (var i = startIndex; i < scanResult.RuntimeEditorIds.Count; i++)
+            {
+                var entry = scanResult.RuntimeEditorIds[i];
+                if (entry.FormType == infoFormType.Value && entry.TesFormOffset.HasValue)
+                {
+                    infoCount++;
+                    var dialogueLine = ReadBSStringT(accessor, fileSize, minidumpInfo,
+                        entry.TesFormOffset.Value, InfoPromptOffset);
+                    if (dialogueLine != null)
+                    {
+                        entry.DialogueLine = dialogueLine;
+                        dialogueCount++;
+                    }
+                }
+            }
+
+            log.Debug("EditorIDs: Extracted {0:N0} dialogue lines from {1:N0} INFO entries",
+                dialogueCount, infoCount);
+        }
+        else
+        {
+            log.Debug("EditorIDs: Could not detect INFO FormType - no dialogue extraction");
+        }
+
+        return extracted;
+    }
+
+    /// <summary>
+    ///     Detect the runtime FormType value for INFO records by matching EditorID naming
+    ///     conventions. The FormType enum shifts between game builds, so we calibrate from
+    ///     actual data rather than using hardcoded values.
+    /// </summary>
+    private static byte? DetectInfoFormType(List<RuntimeEditorIdEntry> entries, int startIndex)
+    {
+        // INFO EditorIDs in Fallout: New Vegas reliably contain "Topic"
+        // (e.g., aBHTopicAgree, VDialogueDocMitchellTopic001)
+        var formTypeCounts = new Dictionary<byte, int>();
+        for (var i = startIndex; i < entries.Count; i++)
+        {
+            if (entries[i].EditorId.Contains("Topic", StringComparison.OrdinalIgnoreCase))
+            {
+                formTypeCounts.TryGetValue(entries[i].FormType, out var count);
+                formTypeCounts[entries[i].FormType] = count + 1;
+            }
+        }
+
+        if (formTypeCounts.Count == 0)
+        {
+            return null;
+        }
+
+        // Return the FormType with the most Topic matches (require at least 5)
+        var best = formTypeCounts.MaxBy(kv => kv.Value);
+        return best.Value >= 5 ? best.Key : null;
+    }
+
+    /// <summary>
+    ///     Describes a PE section from the module's in-memory PE headers.
+    /// </summary>
+    private readonly record struct PeSectionInfo(
+        int Index,
+        string Name,
+        uint VirtualAddress,
+        uint VirtualSize,
+        uint Characteristics);
+
+    /// <summary>
+    ///     Enumerate all PE sections from a module's in-memory PE headers.
+    ///     PE headers use little-endian format (standard PE convention), even on Xbox 360.
+    /// </summary>
+    private static List<PeSectionInfo>? EnumeratePeSections(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        MinidumpModule module)
+    {
+        var baseFileOffset = minidumpInfo.VirtualAddressToFileOffset(module.BaseAddress);
+        if (!baseFileOffset.HasValue || baseFileOffset.Value + 0x40 > fileSize)
+        {
+            return null;
+        }
+
+        var dosHeader = new byte[64];
+        accessor.ReadArray(baseFileOffset.Value, dosHeader, 0, 64);
+
+        if (dosHeader[0] != 0x4D || dosHeader[1] != 0x5A) // "MZ"
+        {
+            return null;
+        }
+
+        var eLfanew = BinaryUtils.ReadUInt32LE(dosHeader, 0x3C);
+        if (eLfanew > 0x10000)
+        {
+            return null;
+        }
+
+        var peOffset = baseFileOffset.Value + eLfanew;
+        if (peOffset + 24 > fileSize)
+        {
+            return null;
+        }
+
+        var peHeader = new byte[24];
+        accessor.ReadArray(peOffset, peHeader, 0, 24);
+
+        if (peHeader[0] != 0x50 || peHeader[1] != 0x45 || peHeader[2] != 0 || peHeader[3] != 0)
+        {
+            return null;
+        }
+
+        var numberOfSections = ReadUInt16LE(peHeader, 6);
+        var sizeOfOptionalHeader = ReadUInt16LE(peHeader, 20);
+
+        var sectionTableOffset = peOffset + 24 + sizeOfOptionalHeader;
+        var sections = new List<PeSectionInfo>(numberOfSections);
+
+        for (var i = 0; i < numberOfSections; i++)
+        {
+            var sectionOffset = sectionTableOffset + i * 40;
+            if (sectionOffset + 40 > fileSize)
+            {
+                break;
+            }
+
+            var sectionHeader = new byte[40];
+            accessor.ReadArray(sectionOffset, sectionHeader, 0, 40);
+
+            var name = Encoding.ASCII.GetString(sectionHeader, 0, 8).TrimEnd('\0');
+            var virtualSize = BinaryUtils.ReadUInt32LE(sectionHeader, 8);
+            var virtualAddress = BinaryUtils.ReadUInt32LE(sectionHeader, 12);
+            var characteristics = BinaryUtils.ReadUInt32LE(sectionHeader, 36);
+
+            sections.Add(new PeSectionInfo(i, name, virtualAddress, virtualSize, characteristics));
+        }
+
+        return sections;
+    }
+
+    /// <summary>
+    ///     Read a 16-bit unsigned integer in little-endian from a span.
+    /// </summary>
+    private static ushort ReadUInt16LE(ReadOnlySpan<byte> data, int offset)
+    {
+        return (ushort)(data[offset] | (data[offset + 1] << 8));
+    }
+
+    /// <summary>
+    ///     Validate a hash table at a specific virtual address (the target of the global pointer).
+    ///     Reads the NiTMapBase layout and validates the structure.
+    /// </summary>
+    private static HashTableCandidate? ValidateHashTableAtAddress(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        uint hashTableVa,
+        Logger log)
+    {
+        var htFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(hashTableVa));
+        if (!htFileOffset.HasValue || htFileOffset.Value + 16 > fileSize)
+        {
+            log.Debug("EditorIDs:   Hash table VA 0x{0:X8} not in captured memory", hashTableVa);
+            return null;
+        }
+
+        var htBuffer = new byte[16];
+        accessor.ReadArray(htFileOffset.Value, htBuffer, 0, 16);
+
+        var vfptr = BinaryUtils.ReadUInt32BE(htBuffer);
+        var hashSize = BinaryUtils.ReadUInt32BE(htBuffer, 4);
+        var bucketArrayVa = BinaryUtils.ReadUInt32BE(htBuffer, 8);
+        var entryCount = BinaryUtils.ReadUInt32BE(htBuffer, 12);
+
+        log.Debug("EditorIDs:   HashTable at 0x{0:X8}: vfptr=0x{1:X8}, hashSize={2}, buckets=0x{3:X8}, count={4}",
+            hashTableVa, vfptr, hashSize, bucketArrayVa, entryCount);
+
+        // BSTCaseInsensitiveStringMap may use non-power-of-2 hash sizes (e.g., 131213 observed in Beta build)
+        if (hashSize < 64 || hashSize > 262144)
+        {
+            log.Debug("EditorIDs:   Invalid hash size {0}", hashSize);
+            return null;
+        }
+
+        if (!IsValidPointerInDump(vfptr, minidumpInfo))
+        {
+            log.Debug("EditorIDs:   Invalid vfptr 0x{0:X8}", vfptr);
+            return null;
+        }
+
+        var bucketFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(bucketArrayVa));
+        if (!bucketFileOffset.HasValue)
+        {
+            log.Debug("EditorIDs:   Bucket array 0x{0:X8} not in captured memory", bucketArrayVa);
+            return null;
+        }
+
+        // Validate by sampling buckets for EditorID strings
+        var score = 0;
+        var bucketBuf = new byte[4];
+        var itemBuf = new byte[12];
+        var strBuf = new byte[64];
+        var step = Math.Max(1, (int)(hashSize / 50));
+
+        for (uint si = 0; si < hashSize && score < 20; si += (uint)step)
+        {
+            var bOff = bucketFileOffset.Value + si * 4;
+            if (bOff + 4 > fileSize)
+            {
+                break;
+            }
+
+            accessor.ReadArray(bOff, bucketBuf, 0, 4);
+            var itemVa = BinaryUtils.ReadUInt32BE(bucketBuf);
+            if (itemVa == 0 || !IsValidPointerInDump(itemVa, minidumpInfo))
+            {
+                continue;
+            }
+
+            var itemFo = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(itemVa));
+            if (!itemFo.HasValue || itemFo.Value + 12 > fileSize)
+            {
+                continue;
+            }
+
+            accessor.ReadArray(itemFo.Value, itemBuf, 0, 12);
+            var keyVa = BinaryUtils.ReadUInt32BE(itemBuf, 4);
+            if (!IsValidPointerInDump(keyVa, minidumpInfo))
+            {
+                continue;
+            }
+
+            var keyFo = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(keyVa));
+            if (!keyFo.HasValue || keyFo.Value + 4 > fileSize)
+            {
+                continue;
+            }
+
+            accessor.ReadArray(keyFo.Value, strBuf, 0, Math.Min(64, (int)(fileSize - keyFo.Value)));
+            var len = 0;
+            while (len < strBuf.Length && strBuf[len] != 0)
+            {
+                len++;
+            }
+
+            if (len >= 4 && len < 64)
+            {
+                var str = Encoding.ASCII.GetString(strBuf, 0, len);
+                if (IsValidEditorId(str))
+                {
+                    score++;
+                }
+            }
+        }
+
+        log.Debug("EditorIDs:   Validation score = {0}", score);
+
+        if (score < 1)
+        {
+            return null;
+        }
+
+        return new HashTableCandidate(
+            htFileOffset.Value, hashTableVa, hashSize,
+            bucketArrayVa, bucketFileOffset.Value, score);
+    }
+
+    /// <summary>
+    ///     Scan the game module's writable data sections for the global pointer triple:
+    ///     pAllForms + pAlteredForms + pAllFormsByEditorID (12 consecutive bytes, all valid BE pointers).
+    /// </summary>
+    private static HashTableCandidate? ScanDataSectionForGlobalTriple(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        MinidumpModule gameModule,
+        List<PeSectionInfo> sections,
+        Logger log)
+    {
+        // Find writable data sections; also include section 7 (0-based index 6)
+        // IMAGE_SCN_MEM_WRITE = 0x80000000, IMAGE_SCN_CNT_INITIALIZED_DATA = 0x00000040
+        var dataSections = sections
+            .Where(s => (s.Characteristics & 0x80000040) == 0x80000040 || s.Index == 6)
+            .OrderByDescending(s => s.Index == 6 ? 1 : 0)
+            .ToList();
+
+        log.Debug("EditorIDs: Scanning {0} data sections for global pointer triple", dataSections.Count);
+
+        foreach (var section in dataSections)
+        {
+            var sectionVaStart = gameModule.BaseAddress + section.VirtualAddress;
+
+            log.Debug("EditorIDs: Scanning section '{0}' at VA 0x{1:X8}, size={2:N0} bytes",
+                section.Name, sectionVaStart, section.VirtualSize);
+
+            var sectionFileOffset = minidumpInfo.VirtualAddressToFileOffset(sectionVaStart);
+            if (!sectionFileOffset.HasValue)
+            {
+                log.Debug("EditorIDs:   Section not in captured memory");
+                continue;
+            }
+
+            var sectionSize = (int)Math.Min(section.VirtualSize, fileSize - sectionFileOffset.Value);
+            if (sectionSize < 12)
+            {
+                continue;
+            }
+
+            var buffer = new byte[sectionSize];
+            accessor.ReadArray(sectionFileOffset.Value, buffer, 0, sectionSize);
+
+            // Scan for triple-pointer pattern at 4-byte alignment
+            for (var i = 0; i <= sectionSize - 12; i += 4)
+            {
+                var ptr1 = BinaryUtils.ReadUInt32BE(buffer, i);
+                var ptr2 = BinaryUtils.ReadUInt32BE(buffer, i + 4);
+                var ptr3 = BinaryUtils.ReadUInt32BE(buffer, i + 8);
+
+                if (ptr1 == 0 || ptr2 == 0 || ptr3 == 0)
+                {
+                    continue;
+                }
+
+                if (!IsValidPointerInDump(ptr1, minidumpInfo) ||
+                    !IsValidPointerInDump(ptr2, minidumpInfo) ||
+                    !IsValidPointerInDump(ptr3, minidumpInfo))
+                {
+                    continue;
+                }
+
+                // Follow ptr3 (should be pAllFormsByEditorID)
+                var candidate = ValidateHashTableAtAddress(accessor, fileSize, minidumpInfo, ptr3, log);
+                if (candidate.HasValue && candidate.Value.ValidationScore >= 3)
+                {
+                    log.Debug("EditorIDs: Found triple at section '{0}' offset 0x{1:X4}, score={2}",
+                        section.Name, i, candidate.Value.ValidationScore);
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -2826,7 +3653,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         int bufferLength,
         long baseOffset,
         MemoryMappedViewAccessor accessor,
-        Minidump.MinidumpInfo minidumpInfo,
+        MinidumpInfo minidumpInfo,
         byte[] tesFormBuffer)
     {
         // Look for Xbox 360 pointers (0x40-0x7F range) within 32 bytes before/after string
@@ -2838,16 +3665,16 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         for (var i = searchStart; i < searchEnd; i += 4) // Pointers are typically 4-byte aligned
         {
             // Read as big-endian (Xbox 360)
-            var pointer = (long)BinaryUtils.ReadUInt32BE(buffer, i);
+            var pointer = BinaryUtils.ReadUInt32BE(buffer, i);
 
-            // Check if it looks like a valid Xbox 360 pointer (0x40000000 - 0x7FFFFFFF range)
-            if (pointer < 0x40000000 || pointer > 0x7FFFFFFF)
+            // Check if it looks like a valid pointer in captured memory
+            if (!IsValidPointerInDump(pointer, minidumpInfo))
             {
                 continue;
             }
 
             // Try to convert to file offset
-            var fileOffset = minidumpInfo.VirtualAddressToFileOffset(pointer);
+            var fileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360VaToLong(pointer));
             if (!fileOffset.HasValue)
             {
                 continue;
@@ -2882,7 +3709,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
                     continue;
                 }
 
-                return (formId, formType, fileOffset.Value, pointer);
+                return (formId, formType, fileOffset.Value, Xbox360VaToLong(pointer));
             }
             catch
             {

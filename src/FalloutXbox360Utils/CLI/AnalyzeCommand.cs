@@ -1,7 +1,10 @@
-using System.CommandLine;
+﻿using System.CommandLine;
+using System.IO.MemoryMappedFiles;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Json;
 using Spectre.Console;
@@ -33,10 +36,6 @@ public static class AnalyzeCommand
         {
             Description = "Export semantic reconstruction (GECK-style report) to file"
         };
-        var heightmapPngOpt = new Option<bool>("--heightmap-png")
-        {
-            Description = "Export heightmap PNG images (requires -e/--extract-esm)"
-        };
         var verboseOpt = new Option<bool>("-v", "--verbose") { Description = "Show detailed progress" };
 
         command.Arguments.Add(inputArg);
@@ -44,7 +43,6 @@ public static class AnalyzeCommand
         command.Options.Add(formatOpt);
         command.Options.Add(extractEsmOpt);
         command.Options.Add(semanticOpt);
-        command.Options.Add(heightmapPngOpt);
         command.Options.Add(verboseOpt);
 
         command.SetAction(async (parseResult, _) =>
@@ -54,16 +52,15 @@ public static class AnalyzeCommand
             var format = parseResult.GetValue(formatOpt)!;
             var extractEsm = parseResult.GetValue(extractEsmOpt);
             var semantic = parseResult.GetValue(semanticOpt);
-            var heightmapPng = parseResult.GetValue(heightmapPngOpt);
             var verbose = parseResult.GetValue(verboseOpt);
-            await ExecuteAsync(input, output, format, extractEsm, semantic, heightmapPng, verbose);
+            await ExecuteAsync(input, output, format, extractEsm, semantic, verbose);
         });
 
         return command;
     }
 
     private static async Task ExecuteAsync(string input, string? output, string format, string? extractEsm,
-        string? semantic, bool heightmapPng, bool verbose)
+        string? semantic, bool verbose)
     {
         if (!File.Exists(input))
         {
@@ -100,7 +97,7 @@ public static class AnalyzeCommand
                     task.Description = $"[green]{p.Phase}[/][grey]{filesInfo}[/]";
                 });
 
-                result = await analyzer.AnalyzeAsync(input, progress, includeMetadata: true, verbose: verbose);
+                result = await analyzer.AnalyzeAsync(input, progress, true, verbose);
                 task.Value = 100;
                 task.Description = $"[green]Complete[/] [grey]({result.CarvedFiles.Count} files)[/]";
             });
@@ -116,6 +113,12 @@ public static class AnalyzeCommand
 
         if (!string.IsNullOrEmpty(output))
         {
+            var outputDir = Path.GetDirectoryName(output);
+            if (!string.IsNullOrEmpty(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+            }
+
             await File.WriteAllTextAsync(output, report);
             AnsiConsole.MarkupLine($"[green]Report saved to:[/] {output}");
         }
@@ -131,7 +134,7 @@ public static class AnalyzeCommand
 
         if (!string.IsNullOrEmpty(extractEsm) && result.EsmRecords != null)
         {
-            await ExtractEsmRecordsAsync(input, extractEsm, result, heightmapPng, verbose);
+            await ExtractEsmRecordsAsync(input, extractEsm, result, verbose);
         }
     }
 
@@ -140,11 +143,17 @@ public static class AnalyzeCommand
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Generating semantic reconstruction (GECK-style report)...[/]");
 
-        // Create the semantic reconstructor
-        var reconstructor = new SemanticReconstructor(result.EsmRecords!, result.FormIdMap);
-
-        // Perform full reconstruction
-        var semanticResult = reconstructor.ReconstructAll();
+        // Create the semantic reconstructor with memory-mapped access for full data extraction
+        // This enables runtime C++ struct reading for types with poor ESM coverage (NPC, WEAP, etc.)
+        SemanticReconstructionResult semanticResult;
+        using (var mmf = MemoryMappedFile.CreateFromFile(result.FilePath, FileMode.Open, null, 0,
+                   MemoryMappedFileAccess.Read))
+        using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
+        {
+            var reconstructor = new SemanticReconstructor(
+                result.EsmRecords!, result.FormIdMap, accessor, result.FileSize, result.MinidumpInfo);
+            semanticResult = reconstructor.ReconstructAll();
+        }
 
         // Generate the GECK-style report
         var report = GeckReportGenerator.Generate(semanticResult);
@@ -242,7 +251,7 @@ public static class AnalyzeCommand
     }
 
     private static async Task ExtractEsmRecordsAsync(string input, string extractEsm,
-        AnalysisResult result, bool heightmapPng, bool verbose)
+        AnalysisResult result, bool verbose)
     {
         // Set logger level based on verbose flag
         if (verbose)
@@ -252,14 +261,52 @@ public static class AnalyzeCommand
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[blue]Exporting ESM records to:[/] {extractEsm}");
-        await EsmRecordFormat.ExportRecordsAsync(
-            result.EsmRecords!,
-            result.FormIdMap,
-            extractEsm);
-        AnsiConsole.MarkupLine("[green]ESM export complete.[/]");
+        Directory.CreateDirectory(extractEsm);
 
-        // Export heightmap PNGs if requested
-        if (heightmapPng && result.EsmRecords!.Heightmaps.Count > 0)
+        // Run full semantic reconstruction with memory-mapped file access
+        // This enables runtime C++ struct reading for types with poor ESM coverage
+        SemanticReconstructionResult semanticResult;
+        var fileSize = new FileInfo(input).Length;
+        using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
+        using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
+        {
+            var reconstructor = new SemanticReconstructor(
+                result.EsmRecords!, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
+            semanticResult = reconstructor.ReconstructAll();
+        }
+
+        // Generate split CSV reports (one file per record type)
+        var splitReports = GeckReportGenerator.GenerateSplit(semanticResult, result.FormIdMap);
+        foreach (var (filename, content) in splitReports)
+        {
+            await File.WriteAllTextAsync(Path.Combine(extractEsm, filename), content);
+        }
+
+        // Export script source files (individual .txt per script)
+        await EsmRecordExporter.ExportScriptSourcesAsync(result.EsmRecords!.ScriptSources, extractEsm);
+
+        // Export runtime EditorIDs report
+        if (result.EsmRecords!.RuntimeEditorIds.Count > 0)
+        {
+            var runtimeReport = GeckReportGenerator.GenerateRuntimeEditorIdsReport(
+                result.EsmRecords.RuntimeEditorIds);
+            await File.WriteAllTextAsync(Path.Combine(extractEsm, "runtime_editorids.csv"), runtimeReport);
+        }
+
+        // Export asset strings report
+        if (result.EsmRecords.AssetStrings.Count > 0)
+        {
+            var assetReport = GeckReportGenerator.GenerateAssetListReport(result.EsmRecords.AssetStrings);
+            await File.WriteAllTextAsync(Path.Combine(extractEsm, "assets.txt"), assetReport);
+        }
+
+        AnsiConsole.MarkupLine($"[green]ESM export complete.[/] {splitReports.Count} CSV files generated");
+        AnsiConsole.MarkupLine($"  NPCs: {semanticResult.Npcs.Count}, Weapons: {semanticResult.Weapons.Count}, " +
+                               $"Quests: {semanticResult.Quests.Count}, Dialogue: {semanticResult.Dialogues.Count}, " +
+                               $"Cells: {semanticResult.Cells.Count}");
+
+        // Export heightmap PNGs
+        if (result.EsmRecords!.Heightmaps.Count > 0)
         {
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[blue]Exporting heightmap PNG images...[/]");
@@ -267,20 +314,26 @@ public static class AnalyzeCommand
             await HeightmapPngExporter.ExportAsync(
                 result.EsmRecords.Heightmaps,
                 result.EsmRecords.CellGrids,
-                heightmapsDir,
-                true);
+                heightmapsDir);
             AnsiConsole.MarkupLine(
                 $"[green]Heightmaps exported:[/] {result.EsmRecords.Heightmaps.Count} images to {heightmapsDir}");
 
-            // Also try to export a composite worldmap if we have correlated heightmaps
+            // Also export LAND record heightmaps as PNGs
+            if (result.EsmRecords.LandRecords.Any(l => l.Heightmap != null))
+            {
+                await HeightmapPngExporter.ExportLandRecordsAsync(
+                    result.EsmRecords.LandRecords,
+                    heightmapsDir);
+            }
+
+            // Export a composite worldmap if we have correlated heightmaps
             if (result.EsmRecords.CellGrids.Count > 0)
             {
                 var compositePath = Path.Combine(heightmapsDir, "worldmap_composite.png");
                 await HeightmapPngExporter.ExportCompositeWorldmapAsync(
                     result.EsmRecords.Heightmaps,
                     result.EsmRecords.CellGrids,
-                    compositePath,
-                    true);
+                    compositePath);
                 AnsiConsole.MarkupLine($"[green]Composite worldmap:[/] {compositePath}");
             }
         }

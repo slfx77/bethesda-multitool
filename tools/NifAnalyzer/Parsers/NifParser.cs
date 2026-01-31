@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using NifAnalyzer.Models;
-using static NifAnalyzer.Utils.BinaryHelpers;
+using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
 
 namespace NifAnalyzer.Parsers;
 

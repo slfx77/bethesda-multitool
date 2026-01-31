@@ -13,6 +13,12 @@ public static class ScdaFormatter
     private static ScdaDecompiler Decompiler => _decompiler ??= new ScdaDecompiler();
 
     /// <summary>
+    ///     Optional FormID-to-EditorID map for resolving SCRO references.
+    ///     Set before formatting to enable SCRO name resolution.
+    /// </summary>
+    public static Dictionary<uint, string>? FormIdMap { get; set; }
+
+    /// <summary>
     ///     Initialize the decompiler with opcode table.
     /// </summary>
     public static async Task InitializeAsync(string? opcodeTablePath = null)
@@ -100,7 +106,7 @@ public static class ScdaFormatter
         if (stage.FormIdReferences.Count > 0)
         {
             sb.AppendLine(CultureInfo.InvariantCulture,
-                $"; SCRO References: {string.Join(", ", stage.FormIdReferences.Select((id, i) => $"#{i + 1}=0x{id:X8}"))}");
+                $"; SCRO References: {string.Join(", ", stage.FormIdReferences.Select((id, i) => FormatScroReference(i + 1, id)))}");
         }
 
         AppendSourceTextInline(sb, stage);
@@ -119,8 +125,31 @@ public static class ScdaFormatter
         sb.AppendLine(CultureInfo.InvariantCulture, $"; SCRO References ({formIds.Count}):");
         for (var j = 0; j < formIds.Count; j++)
         {
-            sb.AppendLine(CultureInfo.InvariantCulture, $";   SCRO#{j + 1} = FormID 0x{formIds[j]:X8}");
+            var resolved = ResolveFormId(formIds[j]);
+            if (resolved != null)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $";   SCRO#{j + 1} = FormID 0x{formIds[j]:X8} [{resolved}]");
+            }
+            else
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $";   SCRO#{j + 1} = FormID 0x{formIds[j]:X8}");
+            }
         }
+    }
+
+    private static string FormatScroReference(int index, uint formId)
+    {
+        var resolved = ResolveFormId(formId);
+        return resolved != null
+            ? $"#{index}=0x{formId:X8} [{resolved}]"
+            : $"#{index}=0x{formId:X8}";
+    }
+
+    private static string? ResolveFormId(uint formId)
+    {
+        return FormIdMap?.GetValueOrDefault(formId);
     }
 
     private static void AppendSourceText(StringBuilder sb, ScdaRecord record)

@@ -99,10 +99,3 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 }
-
-public enum ExtractionStatus
-{
-    NotExtracted,
-    Extracted,
-    Failed
-}

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using FalloutXbox360Utils.Core.Converters;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Nif;
+using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Xma;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -528,7 +529,7 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
             Message = $"{bsaName}: Writing {allFiles.Count} files..."
         });
 
-        using var writer = new BsaWriter(true);
+        using var writer = new BsaWriter();
 
         var writeIndex = 0;
         foreach (var (relativePath, data) in allFiles)

@@ -4,34 +4,6 @@ using Microsoft.Win32;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-///     Result of a dependency check with details about availability.
-/// </summary>
-public sealed record DependencyStatus
-{
-    public required string Name { get; init; }
-    public required string Description { get; init; }
-    public required bool IsAvailable { get; init; }
-    public string? Version { get; init; }
-    public string? Path { get; init; }
-    public string? DownloadUrl { get; init; }
-    public string? InstallInstructions { get; init; }
-}
-
-/// <summary>
-///     Aggregated dependency check result for a tab.
-/// </summary>
-public sealed class TabDependencyResult
-{
-    public required string TabName { get; init; }
-    public required List<DependencyStatus> Dependencies { get; init; }
-
-    public bool AllAvailable => Dependencies.All(d => d.IsAvailable);
-    public bool AnyAvailable => Dependencies.Any(d => d.IsAvailable);
-    public IEnumerable<DependencyStatus> Missing => Dependencies.Where(d => !d.IsAvailable);
-    public IEnumerable<DependencyStatus> Available => Dependencies.Where(d => d.IsAvailable);
-}
-
-/// <summary>
 ///     Checks for external dependencies required by various tabs.
 /// </summary>
 #pragma warning disable S1075 // URIs should not be hardcoded - these are intentional download URLs

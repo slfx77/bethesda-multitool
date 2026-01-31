@@ -1,10 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using Windows.Storage.Pickers;
+using FalloutXbox360Utils.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WinRT.Interop;
-using FalloutXbox360Utils.Core;
 
 namespace FalloutXbox360Utils;
 
@@ -117,7 +117,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(global::FalloutXbox360Utils.App.Current.MainWindow));
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder == null) return;
@@ -134,7 +134,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker,
-            WindowNative.GetWindowHandle(global::FalloutXbox360Utils.App.Current.MainWindow));
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)

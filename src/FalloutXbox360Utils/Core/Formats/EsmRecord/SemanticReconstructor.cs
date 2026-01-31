@@ -2,6 +2,10 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
@@ -16,6 +20,7 @@ public sealed class SemanticReconstructor
     private readonly long _fileSize;
     private readonly Dictionary<uint, string> _formIdToEditorId;
     private readonly Dictionary<uint, DetectedMainRecord> _recordsByFormId;
+    private readonly RuntimeStructReader? _runtimeReader;
     private readonly EsmRecordScanResult _scanResult;
 
     /// <summary>
@@ -25,23 +30,44 @@ public sealed class SemanticReconstructor
     /// <param name="formIdCorrelations">FormID to Editor ID correlations.</param>
     /// <param name="accessor">Optional memory-mapped accessor for reading additional record data.</param>
     /// <param name="fileSize">Size of the memory dump file.</param>
+    /// <param name="minidumpInfo">Optional minidump info for runtime struct reading (pointer following).</param>
     public SemanticReconstructor(
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? formIdCorrelations = null,
         MemoryMappedViewAccessor? accessor = null,
-        long fileSize = 0)
+        long fileSize = 0,
+        MinidumpInfo? minidumpInfo = null)
     {
         _scanResult = scanResult;
         _accessor = accessor;
         _fileSize = fileSize;
+
+        // Create runtime struct reader if we have both accessor and minidump info
+        if (accessor != null && minidumpInfo != null && fileSize > 0)
+        {
+            _runtimeReader = new RuntimeStructReader(accessor, fileSize, minidumpInfo);
+        }
 
         // Build FormID lookup from main records
         _recordsByFormId = scanResult.MainRecords
             .GroupBy(r => r.FormId)
             .ToDictionary(g => g.Key, g => g.First());
 
-        // Build EditorID lookups
-        _formIdToEditorId = formIdCorrelations ?? BuildFormIdToEditorIdMap(scanResult);
+        // Build EditorID lookups from ESM EDID subrecords
+        _formIdToEditorId = formIdCorrelations != null
+            ? new Dictionary<uint, string>(formIdCorrelations)
+            : BuildFormIdToEditorIdMap(scanResult);
+
+        // Merge runtime EditorIDs (from hash table walk or brute-force scan)
+        // These provide additional FormID -> EditorID mappings not found in ESM subrecords
+        foreach (var entry in scanResult.RuntimeEditorIds)
+        {
+            if (entry.FormId != 0 && !_formIdToEditorId.ContainsKey(entry.FormId))
+            {
+                _formIdToEditorId[entry.FormId] = entry.EditorId;
+            }
+        }
+
         _editorIdToFormId = _formIdToEditorId
             .GroupBy(kv => kv.Value)
             .ToDictionary(g => g.Key, g => g.First().Key);
@@ -102,6 +128,12 @@ public sealed class SemanticReconstructor
             .Where(kvp => !reconstructedTypes.Contains(kvp.Key))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
+        // Build weapons and ammo first, then cross-reference for projectile data
+        var weapons = ReconstructWeapons();
+        var ammo = ReconstructAmmo();
+        EnrichAmmoWithProjectileModels(weapons, ammo);
+        EnrichWeaponsWithProjectileData(weapons);
+
         return new SemanticReconstructionResult
         {
             // Characters
@@ -119,9 +151,9 @@ public sealed class SemanticReconstructor
             Terminals = ReconstructTerminals(),
 
             // Items
-            Weapons = ReconstructWeapons(),
+            Weapons = weapons,
             Armor = ReconstructArmor(),
-            Ammo = ReconstructAmmo(),
+            Ammo = ammo,
             Consumables = ReconstructConsumables(),
             MiscItems = ReconstructMiscItems(),
             Keys = ReconstructKeys(),
@@ -134,23 +166,50 @@ public sealed class SemanticReconstructor
             // World
             Cells = ReconstructCells(),
             Worldspaces = ReconstructWorldspaces(),
+            MapMarkers = ExtractMapMarkers(),
+            LeveledLists = ReconstructLeveledLists(),
 
             // Game Data
             GameSettings = ReconstructGameSettings(),
 
             FormIdToEditorId = new Dictionary<uint, string>(_formIdToEditorId),
+            FormIdToDisplayName = BuildFormIdToDisplayNameMap(),
             TotalRecordsProcessed = _scanResult.MainRecords.Count,
             UnreconstructedTypeCounts = unreconstructedCounts
         };
     }
 
     /// <summary>
+    ///     Build a FormID to display name (FullName) mapping from runtime hash table entries.
+    ///     These display names come from TESFullName.cFullName read during the hash table walk.
+    /// </summary>
+    private Dictionary<uint, string> BuildFormIdToDisplayNameMap()
+    {
+        var map = new Dictionary<uint, string>();
+
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (entry.FormId != 0 && !string.IsNullOrEmpty(entry.DisplayName))
+            {
+                map.TryAdd(entry.FormId, entry.DisplayName);
+            }
+        }
+
+        return map;
+    }
+
+    /// <summary>
     ///     Reconstruct all NPC records from the scan result.
+    ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
+    ///     for records not found as raw ESM data (typically thousands of NPCs vs ~7 ESM records).
     /// </summary>
     public List<ReconstructedNpc> ReconstructNpcs()
     {
         var npcs = new List<ReconstructedNpc>();
         var npcRecords = GetRecordsByType("NPC_").ToList();
+
+        // Track FormIDs from ESM records to avoid duplicates when merging runtime data
+        var esmFormIds = new HashSet<uint>();
 
         if (_accessor == null)
         {
@@ -161,6 +220,7 @@ public sealed class SemanticReconstructor
                 if (npc != null)
                 {
                     npcs.Add(npc);
+                    esmFormIds.Add(npc.FormId);
                 }
             }
         }
@@ -176,12 +236,40 @@ public sealed class SemanticReconstructor
                     if (npc != null)
                     {
                         npcs.Add(npc);
+                        esmFormIds.Add(npc.FormId);
                     }
                 }
             }
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge NPCs from runtime struct reading (hash table entries not found as ESM records)
+        if (_runtimeReader != null)
+        {
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x2A || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var npc = _runtimeReader.ReadRuntimeNpc(entry);
+                if (npc != null)
+                {
+                    npcs.Add(npc);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} NPCs from runtime struct reading " +
+                    $"(total: {npcs.Count}, ESM: {esmFormIds.Count})");
             }
         }
 
@@ -227,6 +315,34 @@ public sealed class SemanticReconstructor
             }
         }
 
+        // Merge quests from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(quests.Select(q => q.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x47 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var quest = _runtimeReader.ReadRuntimeQuest(entry);
+                if (quest != null)
+                {
+                    quests.Add(quest);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} quests from runtime struct reading " +
+                    $"(total: {quests.Count}, ESM: {esmFormIds.Count})");
+            }
+        }
+
         return quests;
     }
 
@@ -269,7 +385,16 @@ public sealed class SemanticReconstructor
             }
         }
 
-        return dialogues;
+        // Deduplicate by FormID — same record can appear in both BE and LE memory regions.
+        // Keep the version with the most response data.
+        var deduped = dialogues
+            .GroupBy(d => d.FormId)
+            .Select(g => g.OrderByDescending(d => d.Responses.Count)
+                .ThenByDescending(d => d.Responses.Sum(r => r.Text?.Length ?? 0))
+                .First())
+            .ToList();
+
+        return deduped;
     }
 
     /// <summary>
@@ -308,6 +433,34 @@ public sealed class SemanticReconstructor
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge notes from runtime struct reading (hash table entries not found as ESM records)
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(notes.Select(n => n.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x31 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var note = _runtimeReader.ReadRuntimeNote(entry);
+                if (note != null)
+                {
+                    notes.Add(note);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} notes from runtime struct reading " +
+                    $"(total: {notes.Count}, ESM: {esmFormIds.Count})");
             }
         }
 
@@ -402,25 +555,208 @@ public sealed class SemanticReconstructor
     }
 
     /// <summary>
+    ///     Extract map markers from REFR records that have the XMRK subrecord.
+    /// </summary>
+    public List<PlacedReference> ExtractMapMarkers()
+    {
+        var markers = new List<PlacedReference>();
+
+        // Map markers come from REFR records with XMRK subrecord
+        foreach (var refr in _scanResult.RefrRecords)
+        {
+            if (!refr.IsMapMarker)
+            {
+                continue;
+            }
+
+            var marker = new PlacedReference
+            {
+                FormId = refr.Header.FormId,
+                BaseFormId = refr.BaseFormId,
+                BaseEditorId = refr.BaseEditorId ?? GetEditorId(refr.BaseFormId),
+                RecordType = refr.Header.RecordType,
+                X = refr.Position?.X ?? 0,
+                Y = refr.Position?.Y ?? 0,
+                Z = refr.Position?.Z ?? 0,
+                RotX = refr.Position?.RotX ?? 0,
+                RotY = refr.Position?.RotY ?? 0,
+                RotZ = refr.Position?.RotZ ?? 0,
+                Scale = refr.Scale,
+                OwnerFormId = refr.OwnerFormId,
+                IsMapMarker = true,
+                MarkerType = refr.MarkerType.HasValue ? (MapMarkerType)refr.MarkerType.Value : null,
+                MarkerName = refr.MarkerName,
+                Offset = refr.Header.Offset,
+                IsBigEndian = refr.Header.IsBigEndian
+            };
+
+            markers.Add(marker);
+        }
+
+        return markers;
+    }
+
+    /// <summary>
+    ///     Reconstruct leveled list records (LVLI/LVLN/LVLC).
+    /// </summary>
+    public List<ReconstructedLeveledList> ReconstructLeveledLists()
+    {
+        var lists = new List<ReconstructedLeveledList>();
+        var lvliRecords = GetRecordsByType("LVLI").ToList();
+        var lvlnRecords = GetRecordsByType("LVLN").ToList();
+        var lvlcRecords = GetRecordsByType("LVLC").ToList();
+
+        // Combine all leveled list records
+        var allRecords = lvliRecords
+            .Concat(lvlnRecords)
+            .Concat(lvlcRecords)
+            .ToList();
+
+        if (_accessor == null)
+        {
+            foreach (var record in allRecords)
+            {
+                var list = ReconstructLeveledListFromScanResult(record);
+                if (list != null)
+                {
+                    lists.Add(list);
+                }
+            }
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(8192);
+            try
+            {
+                foreach (var record in allRecords)
+                {
+                    var list = ReconstructLeveledListFromAccessor(record, buffer);
+                    if (list != null)
+                    {
+                        lists.Add(list);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        return lists;
+    }
+
+    private ReconstructedLeveledList? ReconstructLeveledListFromScanResult(DetectedMainRecord record)
+    {
+        return new ReconstructedLeveledList
+        {
+            FormId = record.FormId,
+            EditorId = GetEditorId(record.FormId),
+            ListType = record.RecordType,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private ReconstructedLeveledList? ReconstructLeveledListFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var dataStart = record.Offset + 24;
+        var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+
+        if (dataStart + dataSize > _fileSize)
+        {
+            return ReconstructLeveledListFromScanResult(record);
+        }
+
+        _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+        byte chanceNone = 0;
+        byte flags = 0;
+        uint? globalFormId = null;
+        var entries = new List<LeveledEntry>();
+
+        // Parse subrecords
+        foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+        {
+            var subData = buffer.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "LVLD" when sub.DataLength == 1:
+                    chanceNone = subData[0];
+                    break;
+
+                case "LVLF" when sub.DataLength == 1:
+                    flags = subData[0];
+                    break;
+
+                case "LVLG" when sub.DataLength == 4:
+                    globalFormId = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    break;
+
+                case "LVLO" when sub.DataLength == 12:
+                    // LVLO: level (u16) + pad (u16) + FormID (u32) + count (u16) + pad (u16)
+                    var level = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt16BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt16LittleEndian(subData);
+                    var formId = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    var count = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt16BigEndian(subData[8..])
+                        : BinaryPrimitives.ReadUInt16LittleEndian(subData[8..]);
+
+                    entries.Add(new LeveledEntry(level, formId, count));
+                    break;
+            }
+        }
+
+        return new ReconstructedLeveledList
+        {
+            FormId = record.FormId,
+            EditorId = GetEditorId(record.FormId),
+            ListType = record.RecordType,
+            ChanceNone = chanceNone,
+            Flags = flags,
+            GlobalFormId = globalFormId,
+            Entries = entries,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    /// <summary>
     ///     Reconstruct all Weapon records from the scan result.
+    /// </summary>
+    /// <summary>
+    ///     Reconstruct all Weapon records from the scan result.
+    ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
+    ///     for records not found as raw ESM data (typically hundreds of weapons vs ~34 ESM records).
     /// </summary>
     public List<ReconstructedWeapon> ReconstructWeapons()
     {
         var weapons = new List<ReconstructedWeapon>();
         var weaponRecords = GetRecordsByType("WEAP").ToList();
 
+        // Track FormIDs from ESM records to avoid duplicates
+        var esmFormIds = new HashSet<uint>();
+
         if (_accessor == null)
         {
             foreach (var record in weaponRecords)
             {
-                weapons.Add(new ReconstructedWeapon
+                var weapon = new ReconstructedWeapon
                 {
                     FormId = record.FormId,
                     EditorId = GetEditorId(record.FormId),
                     FullName = FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
-                });
+                };
+                weapons.Add(weapon);
+                esmFormIds.Add(weapon.FormId);
             }
         }
         else
@@ -434,12 +770,40 @@ public sealed class SemanticReconstructor
                     if (weapon != null)
                     {
                         weapons.Add(weapon);
+                        esmFormIds.Add(weapon.FormId);
                     }
                 }
             }
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge weapons from runtime struct reading (hash table entries not found as ESM records)
+        if (_runtimeReader != null)
+        {
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x28 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var weapon = _runtimeReader.ReadRuntimeWeapon(entry);
+                if (weapon != null)
+                {
+                    weapons.Add(weapon);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} weapons from runtime struct reading " +
+                    $"(total: {weapons.Count}, ESM: {esmFormIds.Count})");
             }
         }
 
@@ -488,6 +852,27 @@ public sealed class SemanticReconstructor
             }
         }
 
+        // Merge armor from runtime struct reading (hash table entries not found as ESM records)
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(armor.Select(a => a.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x18 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _runtimeReader.ReadRuntimeArmor(entry);
+                if (item != null)
+                {
+                    armor.Add(item);
+                    runtimeCount++;
+                }
+            }
+        }
+
         return armor;
     }
 
@@ -533,7 +918,161 @@ public sealed class SemanticReconstructor
             }
         }
 
+        // Merge ammo from runtime struct reading (hash table entries not found as ESM records)
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(ammo.Select(a => a.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x29 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _runtimeReader.ReadRuntimeAmmo(entry);
+                if (item != null)
+                {
+                    ammo.Add(item);
+                    runtimeCount++;
+                }
+            }
+        }
+
         return ammo;
+    }
+
+    /// <summary>
+    ///     Cross-references weapons and ammo to populate ProjectileFormId and ProjectileModelPath
+    ///     on ammo records. Each weapon has an AmmoFormId and a ProjectileFormId. We reverse-map:
+    ///     ammo FormID → weapon → projectile FormID → BGSProjectile model path at dump offset +80.
+    /// </summary>
+    private void EnrichAmmoWithProjectileModels(
+        List<ReconstructedWeapon> weapons,
+        List<ReconstructedAmmo> ammo)
+    {
+        if (_runtimeReader == null || ammo.Count == 0)
+        {
+            return;
+        }
+
+        // Build: ammo FormID → projectile FormID (from weapons that reference both)
+        var ammoToProjectile = new Dictionary<uint, uint>();
+        foreach (var weapon in weapons)
+        {
+            if (weapon.AmmoFormId is > 0 && weapon.ProjectileFormId is > 0)
+            {
+                ammoToProjectile.TryAdd(weapon.AmmoFormId.Value, weapon.ProjectileFormId.Value);
+            }
+        }
+
+        if (ammoToProjectile.Count == 0)
+        {
+            return;
+        }
+
+        // Build: projectile FormID → TesFormOffset (from runtime EditorID hash table)
+        // PROJ = FormType 0x33
+        var projectileOffsets = new Dictionary<uint, long>();
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
+            {
+                projectileOffsets.TryAdd(entry.FormId, entry.TesFormOffset.Value);
+            }
+        }
+
+        // Enrich each ammo record with projectile FormID and model path
+        var enrichedCount = 0;
+        for (var i = 0; i < ammo.Count; i++)
+        {
+            var a = ammo[i];
+            if (!ammoToProjectile.TryGetValue(a.FormId, out var projFormId))
+            {
+                continue;
+            }
+
+            string? projModelPath = null;
+            if (projectileOffsets.TryGetValue(projFormId, out var projFileOffset))
+            {
+                // Read model path BSStringT at dump offset +80 (TESModel.cModel in BGSProjectile)
+                projModelPath = _runtimeReader.ReadBSStringT(projFileOffset, 80);
+            }
+
+            // Create updated record with projectile data
+            // (records are immutable, so we replace in the list)
+            ammo[i] = a with
+            {
+                ProjectileFormId = projFormId,
+                ProjectileModelPath = projModelPath
+            };
+            enrichedCount++;
+        }
+
+        if (enrichedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Enriched {enrichedCount}/{ammo.Count} ammo records with projectile data " +
+                $"({projectileOffsets.Count} projectiles in hash table)");
+        }
+    }
+
+    /// <summary>
+    ///     Enrich weapon records with projectile physics data (gravity, speed, range,
+    ///     explosion, in-flight sounds) read from the BGSProjectile runtime struct.
+    /// </summary>
+    private void EnrichWeaponsWithProjectileData(List<ReconstructedWeapon> weapons)
+    {
+        if (_runtimeReader == null || weapons.Count == 0)
+        {
+            return;
+        }
+
+        // Build: projectile FormID → TesFormOffset (from runtime EditorID hash table)
+        var projectileEntries = new Dictionary<uint, RuntimeEditorIdEntry>();
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
+            {
+                projectileEntries.TryAdd(entry.FormId, entry);
+            }
+        }
+
+        if (projectileEntries.Count == 0)
+        {
+            return;
+        }
+
+        var enrichedCount = 0;
+        for (var i = 0; i < weapons.Count; i++)
+        {
+            var weapon = weapons[i];
+            if (!weapon.ProjectileFormId.HasValue)
+            {
+                continue;
+            }
+
+            if (!projectileEntries.TryGetValue(weapon.ProjectileFormId.Value, out var projEntry))
+            {
+                continue;
+            }
+
+            var projData = _runtimeReader.ReadProjectilePhysics(
+                projEntry.TesFormOffset!.Value, projEntry.FormId);
+
+            if (projData != null)
+            {
+                weapons[i] = weapon with { ProjectileData = projData };
+                enrichedCount++;
+            }
+        }
+
+        if (enrichedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Enriched {enrichedCount}/{weapons.Count} weapons with projectile physics " +
+                $"({projectileEntries.Count} projectiles in hash table)");
+        }
     }
 
     /// <summary>
@@ -575,6 +1114,27 @@ public sealed class SemanticReconstructor
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge consumables from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(consumables.Select(c => c.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x2F || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _runtimeReader.ReadRuntimeConsumable(entry);
+                if (item != null)
+                {
+                    consumables.Add(item);
+                    runtimeCount++;
+                }
             }
         }
 
@@ -620,6 +1180,27 @@ public sealed class SemanticReconstructor
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge misc items from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(miscItems.Select(m => m.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x1F || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _runtimeReader.ReadRuntimeMiscItem(entry);
+                if (item != null)
+                {
+                    miscItems.Add(item);
+                    runtimeCount++;
+                }
             }
         }
 
@@ -781,6 +1362,34 @@ public sealed class SemanticReconstructor
             });
         }
 
+        // Merge creatures from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(creatures.Select(c => c.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x2B || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var creature = _runtimeReader.ReadRuntimeCreature(entry);
+                if (creature != null)
+                {
+                    creatures.Add(creature);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} creatures from runtime struct reading " +
+                    $"(total: {creatures.Count}, ESM: {esmFormIds.Count})");
+            }
+        }
+
         return creatures;
     }
 
@@ -802,6 +1411,34 @@ public sealed class SemanticReconstructor
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
+        }
+
+        // Merge factions from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(factions.Select(f => f.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x08 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var faction = _runtimeReader.ReadRuntimeFaction(entry);
+                if (faction != null)
+                {
+                    factions.Add(faction);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} factions from runtime struct reading " +
+                    $"(total: {factions.Count}, ESM: {esmFormIds.Count})");
+            }
         }
 
         return factions;
@@ -850,6 +1487,27 @@ public sealed class SemanticReconstructor
             });
         }
 
+        // Merge keys from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(keys.Select(k => k.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x2E || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _runtimeReader.ReadRuntimeKey(entry);
+                if (item != null)
+                {
+                    keys.Add(item);
+                    runtimeCount++;
+                }
+            }
+        }
+
         return keys;
     }
 
@@ -871,6 +1529,34 @@ public sealed class SemanticReconstructor
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
             });
+        }
+
+        // Merge containers from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(containers.Select(c => c.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x1B || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var container = _runtimeReader.ReadRuntimeContainer(entry);
+                if (container != null)
+                {
+                    containers.Add(container);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} containers from runtime struct reading " +
+                    $"(total: {containers.Count}, ESM: {esmFormIds.Count})");
+            }
         }
 
         return containers;
@@ -896,6 +1582,34 @@ public sealed class SemanticReconstructor
             });
         }
 
+        // Merge terminals from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(terminals.Select(t => t.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x17 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var terminal = _runtimeReader.ReadRuntimeTerminal(entry);
+                if (terminal != null)
+                {
+                    terminals.Add(terminal);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} terminals from runtime struct reading " +
+                    $"(total: {terminals.Count}, ESM: {esmFormIds.Count})");
+            }
+        }
+
         return terminals;
     }
 
@@ -907,19 +1621,58 @@ public sealed class SemanticReconstructor
         var topics = new List<ReconstructedDialogTopic>();
         var topicRecords = GetRecordsByType("DIAL").ToList();
 
-        foreach (var record in topicRecords)
+        if (_accessor != null)
         {
-            topics.Add(new ReconstructedDialogTopic
+            // Use accessor-based subrecord parsing to find FULL within DIAL record bounds
+            var buffer = ArrayPool<byte>.Shared.Rent(4096);
+            try
             {
-                FormId = record.FormId,
-                EditorId = GetEditorId(record.FormId),
-                FullName = FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            });
+                foreach (var record in topicRecords)
+                {
+                    var fullName = FindFullNameInRecord(record, buffer);
+                    topics.Add(new ReconstructedDialogTopic
+                    {
+                        FormId = record.FormId,
+                        EditorId = GetEditorId(record.FormId),
+                        FullName = fullName,
+                        Offset = record.Offset,
+                        IsBigEndian = record.IsBigEndian
+                    });
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+        else
+        {
+            foreach (var record in topicRecords)
+            {
+                // Fallback: only accept FULL subrecords strictly within the DIAL record's data
+                var fullName = FindFullNameInRecordBounds(record);
+                topics.Add(new ReconstructedDialogTopic
+                {
+                    FormId = record.FormId,
+                    EditorId = GetEditorId(record.FormId),
+                    FullName = fullName,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
         }
 
-        return topics;
+        // Deduplicate by FormID — same DIAL record can appear in both BE and LE memory regions.
+        // Keep the version with the most data (prefer one with FullName and EditorId).
+        var deduped = topics
+            .GroupBy(t => t.FormId)
+            .Select(g => g
+                .OrderByDescending(t => t.FullName?.Length ?? 0)
+                .ThenByDescending(t => t.EditorId?.Length ?? 0)
+                .First())
+            .ToList();
+
+        return deduped;
     }
 
     #region Private Reconstruction Methods
@@ -1190,9 +1943,11 @@ public sealed class SemanticReconstructor
 
     private ReconstructedDialogue? ReconstructDialogueFromScanResult(DetectedMainRecord record)
     {
-        // Find matching response texts and data near this INFO record
+        // Find response texts strictly within this INFO record's data bounds
+        var dataStart = record.Offset + 24; // Skip main record header
+        var dataEnd = dataStart + record.DataSize;
         var responseTexts = _scanResult.ResponseTexts
-            .Where(r => Math.Abs(r.Offset - record.Offset) < record.DataSize + 100)
+            .Where(r => r.Offset >= dataStart && r.Offset < dataEnd)
             .ToList();
 
         var responses = responseTexts.Select(rt => new DialogueResponse
@@ -1671,7 +2426,8 @@ public sealed class SemanticReconstructor
                     reach = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
-                    weaponType = (WeaponType)subData[44];
+                    // Animation type (DNAM byte 0, already read as uint32) is the weapon type
+                    weaponType = (WeaponType)(animationType <= 11 ? animationType : 0);
                     minSpread = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData[20..])
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[20..]);
@@ -2333,6 +3089,49 @@ public sealed class SemanticReconstructor
         }
 
         return map;
+    }
+
+    /// <summary>
+    ///     Find FULL subrecord by parsing the record's data using the accessor.
+    ///     Only finds FULL subrecords within the record's own data bounds.
+    /// </summary>
+    private string? FindFullNameInRecord(DetectedMainRecord record, byte[] buffer)
+    {
+        var dataStart = record.Offset + 24; // Skip main record header
+        var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+
+        if (dataStart + dataSize > _fileSize)
+        {
+            return FindFullNameInRecordBounds(record);
+        }
+
+        Array.Clear(buffer, 0, dataSize);
+        _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+        foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+        {
+            if (sub.Signature == "FULL")
+            {
+                return ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Find FULL subrecord strictly within a record's data bounds (no accessor).
+    ///     Only accepts FULL offsets between record header and record end.
+    /// </summary>
+    private string? FindFullNameInRecordBounds(DetectedMainRecord record)
+    {
+        var dataStart = record.Offset + 24;
+        var dataEnd = dataStart + record.DataSize;
+
+        return _scanResult.FullNames
+            .Where(f => f.Offset >= dataStart && f.Offset < dataEnd)
+            .OrderBy(f => f.Offset)
+            .FirstOrDefault()?.Text;
     }
 
     private string? FindFullNameNear(long recordOffset)

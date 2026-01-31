@@ -1,10 +1,11 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 namespace FalloutXbox360Utils.Core.Converters.Esm;
 
 internal sealed class EsmInfoMerger
 {
+    private const string ChoiceSignature = "TCLT";
     private const string Nam3Signature = "NAM3";
     private const string PnamSignature = "PNAM";
 
@@ -645,6 +646,26 @@ internal sealed class EsmInfoMerger
         {
             WriteSubrecord(writer, sub);
         }
+    }
+
+    private byte[] WriteSubrecordsToBuffer(List<AnalyzerSubrecordInfo> subrecords)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        foreach (var sub in subrecords)
+        {
+            var convertedData = EsmSubrecordConverter.ConvertSubrecordData(sub.Signature, sub.Data, "INFO");
+            writer.Write((byte)sub.Signature[0]);
+            writer.Write((byte)sub.Signature[1]);
+            writer.Write((byte)sub.Signature[2]);
+            writer.Write((byte)sub.Signature[3]);
+            writer.Write((ushort)convertedData.Length);
+            writer.Write(convertedData);
+            _stats.SubrecordsConverted++;
+            _stats.IncrementSubrecordType("INFO", sub.Signature);
+        }
+
+        return stream.ToArray();
     }
 
     /// <summary>

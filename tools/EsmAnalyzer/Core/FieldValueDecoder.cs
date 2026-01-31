@@ -1,5 +1,4 @@
 using System.Text;
-using EsmAnalyzer.Conversion.Schema;
 
 namespace EsmAnalyzer.Core;
 

@@ -447,7 +447,7 @@ public static class EsmDisplayHelpers
     /// <summary>
     ///     Displays a complete record with info table, subrecords, and optional hex dump.
     /// </summary>
-    public static void DisplayRecord(AnalyzerRecordInfo rec, byte[] fileData, bool bigEndian, bool showHex,
+    internal static void DisplayRecord(AnalyzerRecordInfo rec, byte[] fileData, bool bigEndian, bool showHex,
         bool showPreview = false)
     {
         WriteRecordHeader(rec.Signature, rec.FormId, rec.Offset);

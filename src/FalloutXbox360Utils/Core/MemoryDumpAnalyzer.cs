@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
@@ -69,7 +69,9 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Phase 1: Signature scanning (0-50%)
         var scanProgress = CreateScanProgress(progress);
-        var matches = await Task.Run(() => FindAllMatchesParallel(accessor, result.FileSize, minidumpInfo, scanProgress), cancellationToken);
+        var matches =
+            await Task.Run(() => FindAllMatchesParallel(accessor, result.FileSize, minidumpInfo, scanProgress),
+                cancellationToken);
 
         // Phase 2: Parsing matches (50-70%)
         progress?.Report(new AnalysisProgress { Phase = "Parsing", FilesFound = matches.Count, PercentComplete = 50 });
@@ -83,7 +85,8 @@ public sealed partial class MemoryDumpAnalyzer
         {
             // Build module ranges for ESM exclusion (modules may contain ESM-like data)
             var moduleRanges = BuildModuleRanges(minidumpInfo);
-            await ExtractMetadataAsync(accessor, result, moduleRanges, minidumpInfo, progress, verbose, cancellationToken);
+            await ExtractMetadataAsync(accessor, result, moduleRanges, minidumpInfo, progress, verbose,
+                cancellationToken);
         }
 
         progress?.Report(new AnalysisProgress

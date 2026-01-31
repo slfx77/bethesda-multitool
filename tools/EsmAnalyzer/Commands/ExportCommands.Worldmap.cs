@@ -1,10 +1,15 @@
-using EsmAnalyzer.Core;
+﻿using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
 using ImageMagick;
 using Spectre.Console;
 using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace EsmAnalyzer.Commands;

@@ -1,6 +1,11 @@
-using EsmAnalyzer.Helpers;
+﻿using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -212,7 +217,7 @@ public static partial class DiffCommands
                     continue;
                 }
 
-                var comparison = EsmHelpers.CompareRecords(dataA, recA, bigEndianA,
+                var comparison = RecordComparisonHelpers.CompareRecords(dataA, recA, bigEndianA,
                     dataB, recB, bigEndianB);
 
                 if (comparison.IsIdentical)

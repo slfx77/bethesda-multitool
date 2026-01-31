@@ -62,14 +62,3 @@ public sealed class DumpFileEntry : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 }
-
-/// <summary>
-///     Sort columns for the batch dump files list.
-/// </summary>
-public enum BatchSortColumn
-{
-    None,
-    Filename,
-    Size,
-    Status
-}

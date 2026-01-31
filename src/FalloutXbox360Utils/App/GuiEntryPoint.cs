@@ -36,7 +36,7 @@ public static class GuiEntryPoint
                 var context = new DispatcherQueueSynchronizationContext(
                     DispatcherQueue.GetForCurrentThread());
                 SynchronizationContext.SetSynchronizationContext(context);
-                _ = new global::FalloutXbox360Utils.App();
+                _ = new App();
             });
 
             return 0;

@@ -50,6 +50,9 @@ tools/TextureAnalyzer/obj/
 !tools/EsmAnalyzer/
 tools/EsmAnalyzer/bin/
 tools/EsmAnalyzer/obj/
+!tools/MinidumpAnalyzer/
+tools/MinidumpAnalyzer/bin/
+tools/MinidumpAnalyzer/obj/
 
 # Python remnants (if any)
 .venv/

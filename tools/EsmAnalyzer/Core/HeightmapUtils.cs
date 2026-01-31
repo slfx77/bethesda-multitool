@@ -1,6 +1,11 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
 
 namespace EsmAnalyzer.Core;
 
@@ -168,7 +173,7 @@ public static class HeightmapUtils
     /// <summary>
     ///     Finds CELL and LAND records belonging to a worldspace.
     /// </summary>
-    public static (List<AnalyzerRecordInfo> cells, List<AnalyzerRecordInfo> lands)
+    internal static (List<AnalyzerRecordInfo> cells, List<AnalyzerRecordInfo> lands)
         FindCellsAndLandsForWorldspace(byte[] data, bool bigEndian, uint worldspaceFormId)
     {
         var cells = new List<AnalyzerRecordInfo>();
@@ -265,7 +270,7 @@ public static class HeightmapUtils
     /// <summary>
     ///     Gets decompressed record data.
     /// </summary>
-    public static byte[] GetRecordData(byte[] data, AnalyzerRecordInfo record, bool bigEndian)
+    internal static byte[] GetRecordData(byte[] data, AnalyzerRecordInfo record, bool bigEndian)
     {
         var recordDataStart = (int)record.Offset + EsmParser.MainRecordHeaderSize;
         var recordDataEnd = recordDataStart + (int)record.DataSize;

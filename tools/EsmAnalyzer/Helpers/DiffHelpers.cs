@@ -1,8 +1,12 @@
-using EsmAnalyzer.Conversion.Schema;
-using EsmAnalyzer.Core;
+﻿using EsmAnalyzer.Core;
 using Spectre.Console;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace EsmAnalyzer.Helpers;
@@ -704,7 +708,7 @@ public static class DiffHelpers
     /// <summary>
     ///     Finds a record by FormID in the file data.
     /// </summary>
-    public static AnalyzerRecordInfo? FindRecordByFormId(byte[] data, bool bigEndian, uint formId)
+    internal static AnalyzerRecordInfo? FindRecordByFormId(byte[] data, bool bigEndian, uint formId)
     {
         var offset = 0;
         while (offset + EsmParser.MainRecordHeaderSize <= data.Length)

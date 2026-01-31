@@ -1,6 +1,7 @@
-using System.IO.MemoryMappedFiles;
+﻿using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 
 namespace FalloutXbox360Utils;
 
@@ -155,7 +156,7 @@ internal sealed class HexDataManager : IDisposable
     ///     This reduces visual noise in the memory map.
     /// </summary>
     private static List<(long Start, long End, int Count)> GroupEsmRecordsIntoRegions(
-        IReadOnlyList<Core.Formats.EsmRecord.DetectedMainRecord> records)
+        IReadOnlyList<DetectedMainRecord> records)
     {
         if (records.Count == 0) return [];
 

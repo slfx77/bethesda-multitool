@@ -1,4 +1,6 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
@@ -294,58 +296,3 @@ public static class EsmRecordTypes
         return Encoding.ASCII.GetString(sig[..4]);
     }
 }
-
-/// <summary>
-///     Categories for main record types.
-/// </summary>
-public enum RecordCategory
-{
-    System,
-    GameData,
-    Actor,
-    Object,
-    Item,
-    Magic,
-    Script,
-    World,
-    Reference,
-    Dialog,
-    Quest,
-    Combat,
-    Animation,
-    Navigation,
-    AI,
-    Audio,
-    Graphics,
-    UI
-}
-
-/// <summary>
-///     Data types for subrecord content.
-/// </summary>
-public enum SubrecordDataType
-{
-    ByteArray,
-    NullTermString,
-    LocalizedString,
-    String,
-    FormId,
-    FormIdArray,
-    UInt8,
-    UInt16,
-    UInt32,
-    Int32,
-    Float,
-    Struct,
-    Empty
-}
-
-/// <summary>
-///     Information about a main record type.
-/// </summary>
-public record RecordTypeInfo(string Name, RecordCategory Category, int? FormTypeId = null);
-
-/// <summary>
-///     Information about a subrecord type.
-/// </summary>
-public record SubrecordTypeInfo(string Name, SubrecordDataType DataType, int? FixedSize = null);
