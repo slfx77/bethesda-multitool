@@ -11,7 +11,7 @@ namespace FalloutXbox360Utils.CLI;
 /// <summary>
 ///     CLI command for BSA archive operations.
 /// </summary>
-public static class BsaCommand
+public static partial class BsaCommand
 {
     public static Command Create()
     {

@@ -11,7 +11,7 @@ namespace FalloutXbox360Utils.Core;
 ///     Walks PDB globals, extracts strings from memory pools,
 ///     scans for format signatures, and analyzes pointer graphs.
 /// </summary>
-internal sealed class RuntimeBufferAnalyzer
+internal sealed partial class RuntimeBufferAnalyzer
 {
     private const int MinStringLength = 4;
     private const int MaxStringLength = 512;

@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
 ///     Generates CSV reports from reconstructed ESM data.
 ///     Uses a RowType column for records with nested sub-lists.
 /// </summary>
-public static class CsvReportGenerator
+public static partial class CsvReportGenerator
 {
     private static string E(string? value)
     {

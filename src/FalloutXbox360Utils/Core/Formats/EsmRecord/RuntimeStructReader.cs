@@ -15,7 +15,7 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 ///     All offsets are from the start of the TESForm object in the dump file (TesFormOffset).
 ///     Xbox 360 uses big-endian (PowerPC) byte order for all fields.
 /// </summary>
-public sealed class RuntimeStructReader
+public sealed partial class RuntimeStructReader
 {
     private readonly MemoryMappedViewAccessor _accessor;
     private readonly long _fileSize;
@@ -189,9 +189,9 @@ public sealed class RuntimeStructReader
         var hairLength = ReadNpcHairLength(buffer);
 
         // Read FaceGen morph data (follow pointers to float arrays in module space)
-        var fggs = ReadFaceGenMorphArray(buffer, offset, NpcFggsPointerOffset, NpcFggsCountOffset);
-        var fgga = ReadFaceGenMorphArray(buffer, offset, NpcFggaPointerOffset, NpcFggaCountOffset);
-        var fgts = ReadFaceGenMorphArray(buffer, offset, NpcFgtsPointerOffset, NpcFgtsCountOffset);
+        var fggs = ReadFaceGenMorphArray(buffer, NpcFggsPointerOffset, NpcFggsCountOffset);
+        var fgga = ReadFaceGenMorphArray(buffer, NpcFggaPointerOffset, NpcFggaCountOffset);
+        var fgts = ReadFaceGenMorphArray(buffer, NpcFgtsPointerOffset, NpcFgtsCountOffset);
 
         return new ReconstructedNpc
         {
@@ -400,7 +400,7 @@ public sealed class RuntimeStructReader
     ///     padding(3), flags(4 at +172), ..., assistance(1 at +178).
     ///     Empirically verified via GSSunnySmiles (aggression=1, confidence=4, assistance=2).
     /// </summary>
-    private NpcAiData? ReadNpcAiData(byte[] buffer)
+    private static NpcAiData? ReadNpcAiData(byte[] buffer)
     {
         if (NpcAiAssistanceOffset + 1 > buffer.Length)
         {
@@ -464,7 +464,7 @@ public sealed class RuntimeStructReader
     ///     Returns null if the pointer is invalid or the data cannot be read.
     ///     Empirically verified across xex3 + xex44 dumps, all tested NPCs have consistent data.
     /// </summary>
-    private float[]? ReadFaceGenMorphArray(byte[] npcBuffer, long npcFileOffset, int pointerOffset, int countOffset)
+    private float[]? ReadFaceGenMorphArray(byte[] npcBuffer, int pointerOffset, int countOffset)
     {
         if (pointerOffset + 4 > npcBuffer.Length || countOffset + 4 > npcBuffer.Length)
         {
@@ -1745,7 +1745,7 @@ public sealed class RuntimeStructReader
     ///     Same structure for both NPC and Creature. Uses the same layout as the
     ///     existing NPC ACBS reader.
     /// </summary>
-    private ActorBaseSubrecord? ReadCreatureActorBaseStats(byte[] buffer, int acbsOffset, long structOffset)
+    private static ActorBaseSubrecord? ReadCreatureActorBaseStats(byte[] buffer, int acbsOffset, long structOffset)
     {
         if (acbsOffset + 24 > buffer.Length)
         {

@@ -41,17 +41,17 @@ public sealed class CoverageAnalyzer
         var gaps = FindGaps(regionIntervals, merged);
 
         // Step 5: Build asset VA lookup for pointer→asset cross-referencing
-        var assetVAs = BuildAssetVASet(result, minidump);
+        var assetVas = BuildAssetVaSet(result, minidump);
 
         // Step 6: Build module VA ranges for context classification
-        var moduleVARanges = BuildModuleVARanges(minidump);
+        var moduleVaRanges = BuildModuleVaRanges(minidump);
 
         // Step 7: Classify each gap
         foreach (var gap in gaps)
         {
             gap.VirtualAddress = minidump.FileOffsetToVirtualAddress(gap.FileOffset);
-            gap.Context = ClassifyContext(gap.VirtualAddress, moduleVARanges);
-            gap.Classification = ClassifyGap(accessor, gap, assetVAs, moduleVARanges);
+            gap.Context = ClassifyContext(gap.VirtualAddress, moduleVaRanges);
+            gap.Classification = ClassifyGap(accessor, gap, assetVas, moduleVaRanges);
         }
 
         var totalRecognized = merged
@@ -107,11 +107,11 @@ public sealed class CoverageAnalyzer
         Console.WriteLine($"[PDB] Parsed {globals.Count} globals from {Path.GetFileName(pdbGlobalsPath)}");
 
         // Build asset VA set for cross-referencing
-        var assetVAs = BuildAssetVASet(result, minidump);
+        var assetVas = BuildAssetVaSet(result, minidump);
 
         // Resolve and analyze
         var resolver = new PdbGlobalResolver(accessor, result.FileSize, minidump, gameModule, peSections);
-        return resolver.ResolveAndAnalyze(globals, assetVAs);
+        return resolver.ResolveAndAnalyze(globals, assetVas);
     }
 
     #region Step 1: Interval Building
@@ -353,7 +353,7 @@ public sealed class CoverageAnalyzer
 
     #region Step 5-6: Asset VA Set & Module VA Ranges
 
-    private static HashSet<long> BuildAssetVASet(AnalysisResult result, MinidumpInfo minidump)
+    private static HashSet<long> BuildAssetVaSet(AnalysisResult result, MinidumpInfo minidump)
     {
         var vaSet = new HashSet<long>();
         foreach (var cf in result.CarvedFiles)
@@ -373,7 +373,7 @@ public sealed class CoverageAnalyzer
         return vaSet;
     }
 
-    private static List<(long start, long end, string name)> BuildModuleVARanges(MinidumpInfo minidump)
+    private static List<(long start, long end, string name)> BuildModuleVaRanges(MinidumpInfo minidump)
     {
         return minidump.Modules
             .Select(m => (start: m.BaseAddress, end: m.BaseAddress + m.Size, name: Path.GetFileName(m.Name)))
@@ -385,14 +385,14 @@ public sealed class CoverageAnalyzer
 
     #region Step 7: Gap Classification
 
-    private static string ClassifyContext(long? va, List<(long start, long end, string name)> moduleVARanges)
+    private static string ClassifyContext(long? va, List<(long start, long end, string name)> moduleVaRanges)
     {
         if (!va.HasValue)
         {
             return "Unknown VA";
         }
 
-        foreach (var (start, end, name) in moduleVARanges)
+        foreach (var (start, end, name) in moduleVaRanges)
         {
             if (va.Value >= start && va.Value < end)
             {
@@ -406,8 +406,8 @@ public sealed class CoverageAnalyzer
     private static GapClassification ClassifyGap(
         MemoryMappedViewAccessor accessor,
         CoverageGap gap,
-        HashSet<long> assetVAs,
-        List<(long start, long end, string name)> moduleVARanges)
+        HashSet<long> assetVas,
+        List<(long start, long end, string name)> moduleVaRanges)
     {
         var sampleSize = (int)Math.Min(gap.Size, 4096);
         var buffer = new byte[sampleSize];
@@ -450,7 +450,7 @@ public sealed class CoverageAnalyzer
         }
 
         // Check pointer density
-        var (pointerCount, assetPointerCount) = CountPointers(buffer, assetVAs, moduleVARanges);
+        var (pointerCount, assetPointerCount) = CountPointers(buffer, assetVas, moduleVaRanges);
         var alignedSlots = sampleSize / 4;
 
         if (pointerCount > alignedSlots * 0.3)
@@ -502,8 +502,8 @@ public sealed class CoverageAnalyzer
 
     private static (int pointerCount, int assetPointerCount) CountPointers(
         byte[] buffer,
-        HashSet<long> assetVAs,
-        List<(long start, long end, string name)> moduleVARanges)
+        HashSet<long> assetVas,
+        List<(long start, long end, string name)> moduleVaRanges)
     {
         var pointerCount = 0;
         var assetPointerCount = 0;
@@ -513,14 +513,14 @@ public sealed class CoverageAnalyzer
             // Read as big-endian uint32 (Xbox 360 is big-endian)
             var val = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(i, 4));
 
-            if (!IsPlausiblePointer(val, moduleVARanges))
+            if (!IsPlausiblePointer(val, moduleVaRanges))
             {
                 continue;
             }
 
             pointerCount++;
 
-            if (assetVAs.Contains(val))
+            if (assetVas.Contains(val))
             {
                 assetPointerCount++;
             }
@@ -529,7 +529,7 @@ public sealed class CoverageAnalyzer
         return (pointerCount, assetPointerCount);
     }
 
-    private static bool IsPlausiblePointer(uint val, List<(long start, long end, string name)> moduleVARanges)
+    private static bool IsPlausiblePointer(uint val, List<(long start, long end, string name)> moduleVaRanges)
     {
         // Xbox 360 memory layout:
         // 0x00000000-0x3FFFFFFF: User space (unlikely for heap pointers in Fallout)
@@ -541,7 +541,7 @@ public sealed class CoverageAnalyzer
         // 0xE0000000-0xFFFFFFFF: Kernel space
 
         // Accept module range pointers
-        foreach (var (start, end, _) in moduleVARanges)
+        foreach (var (start, end, _) in moduleVaRanges)
         {
             if (val >= (uint)start && val < (uint)end)
             {

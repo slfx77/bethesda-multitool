@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
 ///     Generates human-readable GECK-style reports from reconstructed ESM data.
 ///     Output format is designed to be similar to how data appears in the GECK editor.
 /// </summary>
-public static class GeckReportGenerator
+public static partial class GeckReportGenerator
 {
     private const int SeparatorWidth = 80;
     private const char SeparatorChar = '=';
@@ -90,7 +90,7 @@ public static class GeckReportGenerator
 
         if (result.Terminals.Count > 0)
         {
-            AppendTerminalsSection(sb, result.Terminals, lookup);
+            AppendTerminalsSection(sb, result.Terminals);
         }
 
         if (result.Dialogues.Count > 0)
@@ -126,7 +126,7 @@ public static class GeckReportGenerator
 
         if (result.Keys.Count > 0)
         {
-            AppendKeysSection(sb, result.Keys, lookup);
+            AppendKeysSection(sb, result.Keys);
         }
 
         if (result.Containers.Count > 0)
@@ -348,7 +348,7 @@ public static class GeckReportGenerator
     public static string GenerateKeysReport(List<ReconstructedKey> keys, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
-        AppendKeysSection(sb, keys, lookup ?? []);
+        AppendKeysSection(sb, keys);
         return sb.ToString();
     }
 
@@ -370,7 +370,7 @@ public static class GeckReportGenerator
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
-        AppendTerminalsSection(sb, terminals, lookup ?? []);
+        AppendTerminalsSection(sb, terminals);
         return sb.ToString();
     }
 
@@ -480,7 +480,7 @@ public static class GeckReportGenerator
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
-        AppendMapMarkersSection(sb, markers, lookup ?? []);
+        AppendMapMarkersSection(sb, markers);
         return sb.ToString();
     }
 
@@ -1994,8 +1994,7 @@ public static class GeckReportGenerator
         }
     }
 
-    private static void AppendKeysSection(StringBuilder sb, List<ReconstructedKey> keys,
-        Dictionary<uint, string> lookup)
+    private static void AppendKeysSection(StringBuilder sb, List<ReconstructedKey> keys)
     {
         AppendSectionHeader(sb, $"Keys ({keys.Count})");
 
@@ -2042,8 +2041,7 @@ public static class GeckReportGenerator
         }
     }
 
-    private static void AppendTerminalsSection(StringBuilder sb, List<ReconstructedTerminal> terminals,
-        Dictionary<uint, string> lookup)
+    private static void AppendTerminalsSection(StringBuilder sb, List<ReconstructedTerminal> terminals)
     {
         AppendSectionHeader(sb, $"Terminals ({terminals.Count})");
 
@@ -2430,7 +2428,6 @@ public static class GeckReportGenerator
 
         foreach (var ench in enchantments.OrderBy(e => e.EditorId, StringComparer.OrdinalIgnoreCase))
         {
-            var name = ench.FullName ?? ench.EditorId ?? FormatFormId(ench.FormId);
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  ENCHANTMENT: {ench.EditorId ?? "(none)"} \u2014 {ench.FullName ?? "(unnamed)"}");
             sb.AppendLine($"  FormID:      {FormatFormId(ench.FormId)}");
@@ -3049,8 +3046,7 @@ public static class GeckReportGenerator
         }
     }
 
-    private static void AppendMapMarkersSection(StringBuilder sb, List<PlacedReference> markers,
-        Dictionary<uint, string> lookup)
+    private static void AppendMapMarkersSection(StringBuilder sb, List<PlacedReference> markers)
     {
         AppendSectionHeader(sb, $"Map Markers ({markers.Count})");
         sb.AppendLine();

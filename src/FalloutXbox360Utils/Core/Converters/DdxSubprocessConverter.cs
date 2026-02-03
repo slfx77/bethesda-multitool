@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Converters;
 
@@ -49,7 +50,7 @@ public partial class DdxSubprocessConverter
         }
 
         var assemblyDir = AppContext.BaseDirectory;
-        var workspaceRoot = FindWorkspaceRoot(assemblyDir);
+        var workspaceRoot = ToolPathFinder.FindWorkspaceRoot(assemblyDir);
 
         foreach (var path in BuildCandidatePaths(assemblyDir, workspaceRoot))
         {
@@ -84,28 +85,6 @@ public partial class DdxSubprocessConverter
         candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "..", DdxConvFolderName, DdxConvFolderName,
             "bin", "Debug", TargetFramework, DdxConvExeName));
         return candidates;
-    }
-
-    private static string? FindWorkspaceRoot(string startDir)
-    {
-        var dir = startDir;
-        while (!string.IsNullOrEmpty(dir))
-        {
-            if (Directory.GetFiles(dir, "*.slnx").Length > 0 || Directory.GetFiles(dir, "*.sln").Length > 0)
-            {
-                return dir;
-            }
-
-            var parent = Directory.GetParent(dir);
-            if (parent == null)
-            {
-                break;
-            }
-
-            dir = parent.FullName;
-        }
-
-        return null;
     }
 
     public static bool IsAvailable()

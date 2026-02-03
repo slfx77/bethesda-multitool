@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Converters.Esm.Schema;
 ///     Defines subrecord schemas by key (signature + optional record type + optional data length).
 ///     This is the single source of truth for subrecord conversion rules.
 /// </summary>
-public static class SubrecordSchemaRegistry
+public static partial class SubrecordSchemaRegistry
 {
     /// <summary>
     ///     Constant indicating this string subrecord applies to all record types.
@@ -18,13 +18,13 @@ public static class SubrecordSchemaRegistry
     /// <summary>
     ///     All registered schemas indexed by key.
     /// </summary>
-    private static readonly Dictionary<SchemaKey, SubrecordSchema> s_schemas = BuildSchemaRegistry();
+    private static readonly Dictionary<SchemaKey, SubrecordSchema> _schemas = BuildSchemaRegistry();
 
     /// <summary>
     ///     String subrecords by (signature, recordType) for quick lookup.
     /// </summary>
     private static readonly HashSet<(string Signature, string? RecordType)>
-        s_stringSubrecords = BuildStringSubrecords();
+        _stringSubrecords = BuildStringSubrecords();
 
     /// <summary>
     ///     Tracks fallback usage during conversion for diagnostics.
@@ -32,7 +32,7 @@ public static class SubrecordSchemaRegistry
     /// </summary>
     private static readonly ConcurrentDictionary<(string RecordType, string Subrecord, int DataLength, string
             FallbackType), int>
-        s_fallbackUsage = new();
+        _fallbackUsage = new();
 
     /// <summary>
     ///     Whether fallback logging is enabled.
@@ -42,7 +42,7 @@ public static class SubrecordSchemaRegistry
     /// <summary>
     ///     Gets whether any fallbacks were recorded.
     /// </summary>
-    public static bool HasFallbackUsage => !s_fallbackUsage.IsEmpty;
+    public static bool HasFallbackUsage => !_fallbackUsage.IsEmpty;
 
     /// <summary>
     ///     Records a fallback usage for diagnostics.
@@ -53,7 +53,7 @@ public static class SubrecordSchemaRegistry
             return;
 
         var key = (recordType, subrecord, dataLength, fallbackType);
-        s_fallbackUsage.AddOrUpdate(key, 1, (_, count) => count + 1);
+        _fallbackUsage.AddOrUpdate(key, 1, (_, count) => count + 1);
     }
 
     /// <summary>
@@ -61,7 +61,7 @@ public static class SubrecordSchemaRegistry
     /// </summary>
     public static void ClearFallbackLog()
     {
-        s_fallbackUsage.Clear();
+        _fallbackUsage.Clear();
     }
 
     /// <summary>
@@ -70,7 +70,7 @@ public static class SubrecordSchemaRegistry
     public static IEnumerable<(string FallbackType, string RecordType, string Subrecord, int DataLength, int Count)>
         GetFallbackUsage()
     {
-        return s_fallbackUsage
+        return _fallbackUsage
             .Select(kvp => (
                 kvp.Key.FallbackType,
                 kvp.Key.RecordType,
@@ -104,25 +104,25 @@ public static class SubrecordSchemaRegistry
         }
 
         // Try exact match
-        if (s_schemas.TryGetValue(new SchemaKey(signature, recordType, dataLength), out var schema))
+        if (_schemas.TryGetValue(new SchemaKey(signature, recordType, dataLength), out var schema))
         {
             return schema;
         }
 
         // Try signature + recordType (any length)
-        if (s_schemas.TryGetValue(new SchemaKey(signature, recordType), out schema))
+        if (_schemas.TryGetValue(new SchemaKey(signature, recordType), out schema))
         {
             return schema;
         }
 
         // Try signature + dataLength (any record type)
-        if (s_schemas.TryGetValue(new SchemaKey(signature, null, dataLength), out schema))
+        if (_schemas.TryGetValue(new SchemaKey(signature, null, dataLength), out schema))
         {
             return schema;
         }
 
         // Try signature only
-        if (s_schemas.TryGetValue(new SchemaKey(signature), out schema))
+        if (_schemas.TryGetValue(new SchemaKey(signature), out schema))
         {
             return schema;
         }
@@ -193,13 +193,13 @@ public static class SubrecordSchemaRegistry
     public static bool IsStringSubrecord(string signature, string recordType)
     {
         // Check record-specific string signatures first (more specific)
-        if (s_stringSubrecords.Contains((signature, recordType)))
+        if (_stringSubrecords.Contains((signature, recordType)))
         {
             return true;
         }
 
         // Check global string signatures (universal like EDID, FULL, MODL)
-        return s_stringSubrecords.Contains((signature, null));
+        return _stringSubrecords.Contains((signature, null));
     }
 
     /// <summary>
@@ -2767,13 +2767,13 @@ public static class SubrecordSchemaRegistry
         var signatures = new HashSet<string>();
 
         // Get signatures from schema registry
-        foreach (var key in s_schemas.Keys)
+        foreach (var key in _schemas.Keys)
         {
             signatures.Add(key.Signature);
         }
 
         // Get signatures from string subrecords
-        foreach (var (signature, _) in s_stringSubrecords)
+        foreach (var (signature, _) in _stringSubrecords)
         {
             signatures.Add(signature);
         }

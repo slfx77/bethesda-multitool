@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FalloutXbox360Utils.Core.Utils;
 using Microsoft.Win32;
 
 namespace FalloutXbox360Utils;
@@ -332,7 +333,7 @@ public static class DependencyChecker
         };
 
         // Add workspace-relative paths
-        var workspaceRoot = FindWorkspaceRoot(assemblyDir);
+        var workspaceRoot = ToolPathFinder.FindWorkspaceRoot(assemblyDir);
         if (!string.IsNullOrEmpty(workspaceRoot))
         {
             candidates.Add(Path.Combine(workspaceRoot, "src", folderName, folderName, "bin", "Release",
@@ -367,7 +368,7 @@ public static class DependencyChecker
         };
 
         // Add workspace-relative paths
-        var workspaceRoot = FindWorkspaceRoot(assemblyDir);
+        var workspaceRoot = ToolPathFinder.FindWorkspaceRoot(assemblyDir);
         if (!string.IsNullOrEmpty(workspaceRoot))
         {
             candidates.Add(Path.Combine(workspaceRoot, "src", folderName, cliProject, "bin", "Release",
@@ -383,22 +384,6 @@ public static class DependencyChecker
         }
 
         return (false, null);
-    }
-
-    private static string? FindWorkspaceRoot(string startDir)
-    {
-        var dir = startDir;
-        while (!string.IsNullOrEmpty(dir))
-        {
-            if (Directory.GetFiles(dir, "*.slnx").Length > 0 || Directory.GetFiles(dir, "*.sln").Length > 0) return dir;
-
-            var parent = Directory.GetParent(dir);
-            if (parent == null) break;
-
-            dir = parent.FullName;
-        }
-
-        return null;
     }
 
     #endregion

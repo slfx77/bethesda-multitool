@@ -3,7 +3,7 @@ namespace FalloutXbox360Utils.Core.Converters.Esm;
 /// <summary>
 ///     Extended record info with additional fields for analysis.
 /// </summary>
-internal sealed record AnalyzerRecordInfo
+public sealed record AnalyzerRecordInfo
 {
     private const uint CompressedFlag = 0x00040000;
 

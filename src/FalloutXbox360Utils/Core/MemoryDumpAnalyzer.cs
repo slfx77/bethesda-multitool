@@ -24,9 +24,11 @@ public sealed partial class MemoryDumpAnalyzer
         // Register all signatures from the format registry for analysis
         // (includes all formats for visualization, even those with scanning disabled)
         foreach (var format in FormatRegistry.All)
-        foreach (var sig in format.Signatures)
         {
-            _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
+            foreach (var sig in format.Signatures)
+            {
+                _signatureMatcher.AddPattern(sig.Id, sig.MagicBytes);
+            }
         }
 
         _signatureMatcher.Build();

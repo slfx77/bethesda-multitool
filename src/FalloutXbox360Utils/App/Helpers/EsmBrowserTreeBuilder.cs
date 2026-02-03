@@ -12,7 +12,7 @@ namespace FalloutXbox360Utils;
 ///     Builds a hierarchical tree of ESM records for the data browser,
 ///     grouping records by category and type (inspired by TES5Edit/xEdit).
 /// </summary>
-internal static class EsmBrowserTreeBuilder
+internal static partial class EsmBrowserTreeBuilder
 {
     /// <summary>
     ///     Known property names that represent FormID references but don't end with "FormId".

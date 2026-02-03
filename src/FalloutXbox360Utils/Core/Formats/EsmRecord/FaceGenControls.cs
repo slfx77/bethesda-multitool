@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 ///     The GECK's Face Advanced slider values are projections of
 ///     NPC face coordinates onto these control directions.
 /// </summary>
-public static class FaceGenControls
+public static partial class FaceGenControls
 {
     /// <summary>
     ///     Geometry-Symmetric control names (56 controls).

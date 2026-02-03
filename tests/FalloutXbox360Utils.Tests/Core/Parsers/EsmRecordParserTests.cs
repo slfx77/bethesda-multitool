@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;

@@ -8,7 +8,7 @@ namespace FalloutXbox360Utils.Core.Converters.Esm;
 /// <summary>
 ///     ESM file converter from Xbox 360 (big-endian) to PC (little-endian) format.
 /// </summary>
-public sealed class EsmConverter : IDisposable
+public sealed partial class EsmConverter : IDisposable
 {
     private readonly EsmGrupWriter _grupWriter;
     private readonly byte[] _input;
@@ -225,7 +225,6 @@ public sealed class EsmConverter : IDisposable
             if (grupEndStack.Count == 0 && signature == "TOFT")
             {
                 var cur = offset;
-                var toftInfoCount = 0;
                 while (cur + 4 <= _input.Length)
                 {
                     var sig = ReadSignature(cur);
@@ -271,7 +270,6 @@ public sealed class EsmConverter : IDisposable
                             if (innerSig == "INFO")
                             {
                                 _ = map.TryAdd(innerHeader.FormId, inner);
-                                toftInfoCount++;
                             }
 
                             var innerNext = inner + recordHeaderSize + (int)innerHeader.DataSize;
@@ -292,7 +290,6 @@ public sealed class EsmConverter : IDisposable
                     if (sig == "INFO")
                     {
                         _ = map.TryAdd(header.FormId, cur);
-                        toftInfoCount++;
                     }
 
                     var next = cur + recordHeaderSize + (int)header.DataSize;
@@ -482,10 +479,6 @@ public sealed class EsmConverter : IDisposable
 
             var offsets = new uint[count];
             var bestByIndex = new Dictionary<int, uint>();
-            var cellsMatched = 0;
-            var cellsOutOfBounds = 0;
-            var cellsNotFound = 0;
-            var cellsNegativeRel = 0;
 
             foreach (var cell in exteriorCells)
             {
@@ -493,7 +486,6 @@ public sealed class EsmConverter : IDisposable
                 var row = cell.GridY - minY;
                 if (col < 0 || col >= columns || row < 0 || row >= rows)
                 {
-                    cellsOutOfBounds++;
                     continue;
                 }
 
@@ -505,14 +497,12 @@ public sealed class EsmConverter : IDisposable
 
                 if (!cellRecordOffsets.TryGetValue(cell.FormId, out var cellOffset))
                 {
-                    cellsNotFound++;
                     continue;
                 }
 
                 var rel = cellOffset - (long)wrld.Offset;
                 if (rel is <= 0 or > uint.MaxValue)
                 {
-                    cellsNegativeRel++;
                     continue;
                 }
 
@@ -530,8 +520,6 @@ public sealed class EsmConverter : IDisposable
                     bestByIndex[ofstIndex] = relValue;
                     offsets[ofstIndex] = relValue;
                 }
-
-                cellsMatched++;
             }
 
             var ofstDataOffsetLocal = (long)wrld.Offset + EsmParser.MainRecordHeaderSize + ofst.Offset + 6;

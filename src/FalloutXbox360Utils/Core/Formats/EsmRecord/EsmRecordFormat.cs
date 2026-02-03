@@ -21,7 +21,7 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 ///     This format doesn't participate in normal carving (ShowInFilterUI = false)
 ///     but provides dump analysis capabilities.
 /// </summary>
-public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
+public sealed partial class EsmRecordFormat : FileFormatBase, IDumpScanner
 {
     // Precomputed subrecord signature magic values (little-endian) for fast comparison
     // These avoid repeated MatchesSignature calls in the hot path

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Converters;
 
@@ -38,7 +39,7 @@ public class XurSubprocessConverter
         }
 
         var assemblyDir = AppContext.BaseDirectory;
-        var workspaceRoot = FindWorkspaceRoot(assemblyDir);
+        var workspaceRoot = ToolPathFinder.FindWorkspaceRoot(assemblyDir);
 
         foreach (var path in BuildCandidatePaths(assemblyDir, workspaceRoot))
         {
@@ -79,28 +80,6 @@ public class XurSubprocessConverter
             "bin", "Debug", TargetFramework, XuiHelperExeName));
 
         return candidates;
-    }
-
-    private static string? FindWorkspaceRoot(string startDir)
-    {
-        var dir = startDir;
-        while (!string.IsNullOrEmpty(dir))
-        {
-            if (Directory.GetFiles(dir, "*.slnx").Length > 0 || Directory.GetFiles(dir, "*.sln").Length > 0)
-            {
-                return dir;
-            }
-
-            var parent = Directory.GetParent(dir);
-            if (parent == null)
-            {
-                break;
-            }
-
-            dir = parent.FullName;
-        }
-
-        return null;
     }
 
     /// <summary>

@@ -8,7 +8,7 @@ namespace FalloutXbox360Utils.Core.Converters.Esm;
 /// <summary>
 ///     Shared helper methods for ESM analysis operations.
 /// </summary>
-internal static class EsmHelpers
+public static class EsmHelpers
 {
     /// <summary>
     ///     Scans all records in an ESM file using flat GRUP scanning for Xbox 360 format.
@@ -16,16 +16,6 @@ internal static class EsmHelpers
     public static List<AnalyzerRecordInfo> ScanAllRecords(byte[] data, bool bigEndian)
     {
         return EsmRecordParser.ScanAllRecords(data, bigEndian);
-    }
-
-    /// <summary>
-    ///     Flat GRUP scanner that finds all records regardless of nesting structure.
-    ///     Xbox 360 ESMs have a different GRUP hierarchy than PC.
-    /// </summary>
-    public static void ScanAllGrupsFlat(byte[] data, bool bigEndian, int startOffset, int endOffset,
-        List<AnalyzerRecordInfo> records)
-    {
-        EsmRecordParser.ScanAllGrupsFlat(data, bigEndian, startOffset, endOffset, records);
     }
 
     /// <summary>
@@ -102,95 +92,6 @@ internal static class EsmHelpers
     }
 
     /// <summary>
-    ///     Creates a hex dump string of the given data.
-    /// </summary>
-    public static string HexDump(byte[] data, int maxLength = 64)
-    {
-        var length = Math.Min(data.Length, maxLength);
-        var sb = new StringBuilder();
-
-        for (var i = 0; i < length; i += 16)
-        {
-            _ = sb.Append($"  {i:X4}: ");
-
-            // Hex bytes
-            for (var j = 0; j < 16; j++)
-            {
-                _ = i + j < length ? sb.Append($"{data[i + j]:X2} ") : sb.Append("   ");
-            }
-
-            _ = sb.Append(" ");
-
-            // ASCII representation
-            for (var j = 0; j < 16 && i + j < length; j++)
-            {
-                var b = data[i + j];
-                if (b is >= 32 and < 127)
-                {
-                    _ = sb.Append((char)b);
-                }
-                else
-                {
-                    _ = sb.Append('.');
-                }
-            }
-
-            _ = sb.AppendLine();
-        }
-
-        if (data.Length > maxLength)
-        {
-            _ = sb.AppendLine($"  ... ({data.Length - maxLength} more bytes)");
-        }
-
-        return sb.ToString();
-    }
-
-    /// <summary>
-    ///     Gets a descriptive label for a GRUP based on its type.
-    /// </summary>
-    public static string GetGroupLabel(byte[] data, int offset, bool bigEndian)
-    {
-        // Group type is at offset 12 (after signature, size, label)
-        var groupType = bigEndian
-            ? BinaryUtils.ReadUInt32BE(data.AsSpan(offset + 12))
-            : BinaryUtils.ReadUInt32LE(data.AsSpan(offset + 12));
-
-        // Label is at offset 8 - for big-endian, reverse bytes to get correct ASCII
-        var labelBytes = data.AsSpan(offset + 8, 4);
-        string labelStr;
-        if (bigEndian)
-        {
-            Span<byte> reversed = stackalloc byte[4];
-            reversed[0] = labelBytes[3];
-            reversed[1] = labelBytes[2];
-            reversed[2] = labelBytes[1];
-            reversed[3] = labelBytes[0];
-            labelStr = Encoding.ASCII.GetString(reversed);
-        }
-        else
-        {
-            labelStr = Encoding.ASCII.GetString(labelBytes);
-        }
-
-        return groupType switch
-        {
-            0 => $"Top '{labelStr}'", // Top-level group (record type)
-            1 => "World Children", // World children
-            2 => "Interior Cell Block",
-            3 => "Interior Cell Sub-block",
-            4 => "Exterior Cell Block",
-            5 => "Exterior Cell Sub-block",
-            6 => "Cell Children",
-            7 => "Topic Children",
-            8 => "Cell Persistent",
-            9 => "Cell Temporary",
-            10 => "Cell Visible Dist",
-            _ => $"Type {groupType}"
-        };
-    }
-
-    /// <summary>
     ///     Gets decompressed record data.
     /// </summary>
     public static byte[] GetRecordData(byte[] fileData, AnalyzerRecordInfo rec, bool bigEndian)
@@ -210,64 +111,91 @@ internal static class EsmHelpers
     }
 
     /// <summary>
-    ///     Builds a map of FormID to EDID (Editor ID) for all records in an ESM file.
+    ///     Returns a hex dump string representation of binary data.
+    /// </summary>
+    public static string HexDump(byte[] data, int maxBytes = -1)
+    {
+        var sb = new StringBuilder();
+        var length = maxBytes > 0 ? Math.Min(data.Length, maxBytes) : data.Length;
+
+        for (var i = 0; i < length; i += 16)
+        {
+            sb.Append($"0x{i:X8}: ");
+
+            // Hex bytes
+            for (var j = 0; j < 16; j++)
+            {
+                if (i + j < length)
+                    sb.Append($"{data[i + j]:X2} ");
+                else
+                    sb.Append("   ");
+            }
+
+            sb.Append(" ");
+
+            // ASCII representation
+            for (var j = 0; j < 16 && i + j < length; j++)
+            {
+                var b = data[i + j];
+                sb.Append(b is >= 32 and < 127 ? (char)b : '.');
+            }
+
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    ///     Gets the label for a GRUP record based on its group type.
+    /// </summary>
+    public static string GetGroupLabel(byte[] data, int offset, bool bigEndian)
+    {
+        if (offset + 16 > data.Length)
+            return "GRUP (truncated)";
+
+        var groupType = EsmBinary.ReadInt32(data, offset + 12, bigEndian);
+        var labelBytes = data.AsSpan(offset + 8, 4);
+
+        return groupType switch
+        {
+            0 => $"GRUP Top '{Encoding.ASCII.GetString(labelBytes)}'", // Top-level (record type)
+            1 => $"GRUP World {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // World children
+            2 or 3 => $"GRUP Block {EsmBinary.ReadInt32(labelBytes, bigEndian)}", // Interior/Exterior cell block
+            4 or 5 => $"GRUP Sub-Block {EsmBinary.ReadInt32(labelBytes, bigEndian)}", // Interior/Exterior cell sub-block
+            6 => $"GRUP Cell {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Cell children
+            7 => $"GRUP Topic {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Topic children
+            8 => $"GRUP Persistent {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Cell persistent
+            9 => $"GRUP Temporary {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Cell temporary
+            10 => $"GRUP VisibleDistant {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Visible distant
+            _ => $"GRUP Type {groupType}"
+        };
+    }
+
+    /// <summary>
+    ///     Builds a dictionary mapping FormID to Editor ID (EDID) for all records in the file.
     /// </summary>
     public static Dictionary<uint, string> BuildFormIdToEdidMap(byte[] data, bool bigEndian)
     {
         var map = new Dictionary<uint, string>();
         var records = ScanAllRecords(data, bigEndian);
 
-        foreach (var record in records)
+        foreach (var rec in records)
         {
+            if (rec.Signature == "GRUP")
+                continue;
+
             try
             {
-                // Skip GRUP records
-                if (record.Signature == "GRUP")
-                {
-                    continue;
-                }
-
-                // Get record data
-                var recordDataStart = (int)record.Offset + EsmParser.MainRecordHeaderSize;
-                var recordDataEnd = recordDataStart + (int)record.DataSize;
-
-                if (recordDataEnd > data.Length)
-                {
-                    continue;
-                }
-
-                var recordData = data.AsSpan(recordDataStart, (int)record.DataSize).ToArray();
-
-                // Handle compressed records
-                if ((record.Flags & 0x00040000) != 0 && record.DataSize >= 4)
-                {
-                    var decompressedSize = EsmBinary.ReadUInt32(recordData, 0, bigEndian);
-                    if (decompressedSize > 0 && decompressedSize < 100_000_000)
-                    {
-                        try
-                        {
-                            recordData = DecompressZlib(recordData[4..], (int)decompressedSize);
-                        }
-                        catch
-                        {
-                            continue;
-                        }
-                    }
-                }
-
-                // Parse subrecords to find EDID
+                var recordData = GetRecordData(data, rec, bigEndian);
                 var subrecords = ParseSubrecords(recordData, bigEndian);
-                var edidSub = subrecords.FirstOrDefault(s => s.Signature == "EDID");
 
+                var edidSub = subrecords.FirstOrDefault(s => s.Signature == "EDID");
                 if (edidSub != null && edidSub.Data.Length > 0)
                 {
-                    var nullIdx = Array.IndexOf(edidSub.Data, (byte)0);
-                    var len = nullIdx >= 0 ? nullIdx : edidSub.Data.Length;
-                    if (len > 0)
-                    {
-                        var edid = Encoding.ASCII.GetString(edidSub.Data, 0, len);
-                        map[record.FormId] = edid;
-                    }
+                    var edid = Encoding.ASCII.GetString(edidSub.Data).TrimEnd('\0');
+                    if (!string.IsNullOrEmpty(edid))
+                        map[rec.FormId] = edid;
                 }
             }
             catch

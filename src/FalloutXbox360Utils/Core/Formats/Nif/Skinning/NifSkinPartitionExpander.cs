@@ -195,14 +195,16 @@ internal static partial class NifSkinPartitionExpander
 
         partition.VertexWeights = new float[partition.NumVertices, partition.NumWeightsPerVertex];
         for (var v = 0; v < partition.NumVertices; v++)
-        for (var w = 0; w < partition.NumWeightsPerVertex; w++)
         {
-            if (!reader.CanRead(4))
+            for (var w = 0; w < partition.NumWeightsPerVertex; w++)
             {
-                return false;
-            }
+                if (!reader.CanRead(4))
+                {
+                    return false;
+                }
 
-            partition.VertexWeights[v, w] = reader.ReadFloat();
+                partition.VertexWeights[v, w] = reader.ReadFloat();
+            }
         }
 
         return true;
@@ -313,14 +315,16 @@ internal static partial class NifSkinPartitionExpander
 
         partition.BoneIndices = new byte[partition.NumVertices, partition.NumWeightsPerVertex];
         for (var v = 0; v < partition.NumVertices; v++)
-        for (var w = 0; w < partition.NumWeightsPerVertex; w++)
         {
-            if (!reader.CanRead(1))
+            for (var w = 0; w < partition.NumWeightsPerVertex; w++)
             {
-                return false;
-            }
+                if (!reader.CanRead(1))
+                {
+                    return false;
+                }
 
-            partition.BoneIndices[v, w] = reader.ReadByte();
+                partition.BoneIndices[v, w] = reader.ReadByte();
+            }
         }
 
         return true;

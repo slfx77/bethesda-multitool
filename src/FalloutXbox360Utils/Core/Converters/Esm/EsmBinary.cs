@@ -26,6 +26,24 @@ internal static class EsmBinary
     }
 
     /// <summary>
+    ///     Reads a 16-bit signed integer from the specified offset.
+    /// </summary>
+    public static short ReadInt16(ReadOnlySpan<byte> data, int offset, bool bigEndian)
+    {
+        return bigEndian
+            ? BinaryPrimitives.ReadInt16BigEndian(data.Slice(offset, 2))
+            : BinaryPrimitives.ReadInt16LittleEndian(data.Slice(offset, 2));
+    }
+
+    /// <summary>
+    ///     Reads a 16-bit signed integer from a byte array.
+    /// </summary>
+    public static short ReadInt16(byte[] data, int offset, bool bigEndian)
+    {
+        return ReadInt16(data.AsSpan(), offset, bigEndian);
+    }
+
+    /// <summary>
     ///     Reads a 32-bit unsigned integer from the specified offset.
     /// </summary>
     public static uint ReadUInt32(ReadOnlySpan<byte> data, int offset, bool bigEndian)
@@ -59,41 +77,6 @@ internal static class EsmBinary
     public static int ReadInt32(byte[] data, int offset, bool bigEndian)
     {
         return ReadInt32(data.AsSpan(), offset, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 16-bit signed integer from the specified offset.
-    /// </summary>
-    public static short ReadInt16(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadInt16BigEndian(data.Slice(offset, 2))
-            : BinaryPrimitives.ReadInt16LittleEndian(data.Slice(offset, 2));
-    }
-
-    /// <summary>
-    ///     Reads a 16-bit signed integer from a byte array.
-    /// </summary>
-    public static short ReadInt16(byte[] data, int offset, bool bigEndian)
-    {
-        return ReadInt16(data.AsSpan(), offset, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 32-bit floating point value from the specified offset.
-    /// </summary>
-    public static float ReadSingle(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-    {
-        var intValue = ReadInt32(data, offset, bigEndian);
-        return BitConverter.Int32BitsToSingle(intValue);
-    }
-
-    /// <summary>
-    ///     Reads a 32-bit floating point value from a byte array.
-    /// </summary>
-    public static float ReadSingle(byte[] data, int offset, bool bigEndian)
-    {
-        return ReadSingle(data.AsSpan(), offset, bigEndian);
     }
 
     /// <summary>
@@ -133,7 +116,24 @@ internal static class EsmBinary
     }
 
     /// <summary>
-    ///     Reads a 64-bit double precision floating point value from the specified offset.
+    ///     Reads a 32-bit floating point value from the specified offset.
+    /// </summary>
+    public static float ReadSingle(ReadOnlySpan<byte> data, int offset, bool bigEndian)
+    {
+        var intValue = ReadInt32(data, offset, bigEndian);
+        return BitConverter.Int32BitsToSingle(intValue);
+    }
+
+    /// <summary>
+    ///     Reads a 32-bit floating point value from a byte array.
+    /// </summary>
+    public static float ReadSingle(byte[] data, int offset, bool bigEndian)
+    {
+        return ReadSingle(data.AsSpan(), offset, bigEndian);
+    }
+
+    /// <summary>
+    ///     Reads a 64-bit floating point value from the specified offset.
     /// </summary>
     public static double ReadDouble(ReadOnlySpan<byte> data, int offset, bool bigEndian)
     {
@@ -142,7 +142,7 @@ internal static class EsmBinary
     }
 
     /// <summary>
-    ///     Reads a 64-bit double precision floating point value from a byte array.
+    ///     Reads a 64-bit floating point value from a byte array.
     /// </summary>
     public static double ReadDouble(byte[] data, int offset, bool bigEndian)
     {
@@ -157,14 +157,6 @@ internal static class EsmBinary
     public static ushort ReadUInt16(ReadOnlySpan<byte> data, bool bigEndian)
     {
         return ReadUInt16(data, 0, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 16-bit signed integer from the start of the span.
-    /// </summary>
-    public static short ReadInt16(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadInt16(data, 0, bigEndian);
     }
 
     /// <summary>
@@ -184,11 +176,11 @@ internal static class EsmBinary
     }
 
     /// <summary>
-    ///     Reads a 32-bit floating point value from the start of the span.
+    ///     Reads a 16-bit signed integer from the start of the span.
     /// </summary>
-    public static float ReadSingle(ReadOnlySpan<byte> data, bool bigEndian)
+    public static short ReadInt16(ReadOnlySpan<byte> data, bool bigEndian)
     {
-        return ReadSingle(data, 0, bigEndian);
+        return ReadInt16(data, 0, bigEndian);
     }
 
     /// <summary>
@@ -208,7 +200,15 @@ internal static class EsmBinary
     }
 
     /// <summary>
-    ///     Reads a 64-bit double precision value from the start of the span.
+    ///     Reads a 32-bit floating point value from the start of the span.
+    /// </summary>
+    public static float ReadSingle(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadSingle(data, 0, bigEndian);
+    }
+
+    /// <summary>
+    ///     Reads a 64-bit floating point value from the start of the span.
     /// </summary>
     public static double ReadDouble(ReadOnlySpan<byte> data, bool bigEndian)
     {

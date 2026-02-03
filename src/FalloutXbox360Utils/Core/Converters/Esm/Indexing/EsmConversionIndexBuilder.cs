@@ -147,7 +147,6 @@ internal sealed class EsmConversionIndexBuilder
     private void ScanFlatCellGroups(ConversionIndex index, int startOffset)
     {
         var offset = startOffset;
-        var worldChildrenFound = 0;
 
         // Skip past TOFT records and any non-GRUP streaming cache records
         while (offset + EsmParser.MainRecordHeaderSize <= _input.Length)
@@ -214,7 +213,6 @@ internal sealed class EsmConversionIndexBuilder
             {
                 var worldId = grupHeader.Label;
                 ScanFlatWorldChildrenGroup(index, offset, (int)grupHeader.Size, worldId);
-                worldChildrenFound++;
             }
 
             offset += (int)grupHeader.Size;
@@ -274,7 +272,6 @@ internal sealed class EsmConversionIndexBuilder
         var offset = grupOffset + EsmParser.MainRecordHeaderSize;
         var grupEnd = grupOffset + grupSize;
         var grupStack = new Stack<(int end, int type, uint label)>();
-        var cellCount = 0;
 
         while (offset < grupEnd && offset + 4 <= _input.Length)
         {
@@ -335,7 +332,6 @@ internal sealed class EsmConversionIndexBuilder
                     }
 
                     list.Add(cellEntry);
-                    cellCount++;
                 }
 
                 offset = recordEnd;

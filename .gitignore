@@ -10,6 +10,7 @@ out/
 *.user
 *.userosscache
 *.sln.docstates
+.claude/
 
 # NuGet
 packages/
