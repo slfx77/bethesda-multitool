@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Converters.Esm.Schema;
@@ -22,6 +23,32 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 /// </summary>
 public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
 {
+    // Precomputed subrecord signature magic values (little-endian) for fast comparison
+    // These avoid repeated MatchesSignature calls in the hot path
+    private const uint SigEdid = 0x44494445; // "EDID"
+    private const uint SigGmst = 0x54534D47; // "GMST"
+    private const uint SigSctx = 0x58544353; // "SCTX"
+    private const uint SigScro = 0x4F524353; // "SCRO"
+    private const uint SigName = 0x454D414E; // "NAME"
+    private const uint SigData = 0x41544144; // "DATA"
+    private const uint SigAcbs = 0x53424341; // "ACBS"
+    private const uint SigNam1 = 0x314D414E; // "NAM1"
+    private const uint SigTrdt = 0x54445254; // "TRDT"
+    private const uint SigFull = 0x4C4C5546; // "FULL"
+    private const uint SigDesc = 0x43534544; // "DESC"
+    private const uint SigModl = 0x4C444F4D; // "MODL"
+    private const uint SigIcon = 0x4E4F4349; // "ICON"
+    private const uint SigMico = 0x4F43494D; // "MICO"
+    private const uint SigScri = 0x49524353; // "SCRI"
+    private const uint SigEnam = 0x4D414E45; // "ENAM"
+    private const uint SigSnam = 0x4D414E53; // "SNAM"
+    private const uint SigQnam = 0x4D414E51; // "QNAM"
+    private const uint SigCtda = 0x41445443; // "CTDA"
+    private const uint SigVhgt = 0x54474856; // "VHGT"
+    private const uint SigTghv = 0x56484754; // "TGHV" (BE reversed)
+    private const uint SigXclc = 0x434C4358; // "XCLC"
+    private const uint SigClcx = 0x58434C43; // "CLCX" (BE reversed)
+
     /// <summary>
     ///     High-priority record types likely to be in memory during gameplay.
     ///     These are placed objects, actors, and commonly accessed definitions.
@@ -96,7 +123,19 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         "CLMT", // Climate
         "REGN", // Region
         "IMAD", // Image Space Adapter
-        "IMGS" // Image Space
+        "IMGS", // Image Space
+
+        // FNV-specific gameplay records
+        "IMOD", // Weapon Mod
+        "RCPE", // Recipe
+        "CHAL", // Challenge
+        "REPU", // Reputation
+        "PROJ", // Projectile
+        "EXPL", // Explosion
+        "MESG", // Message
+
+        // Perks (already reconstructed, ensure scanned)
+        "PERK" // Perk
     ];
 
     /// <summary>
@@ -306,7 +345,8 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     public static EsmRecordScanResult ScanForRecordsMemoryMapped(
         MemoryMappedViewAccessor accessor,
         long fileSize,
-        List<(long start, long end)>? excludeRanges = null)
+        List<(long start, long end)>? excludeRanges = null,
+        IProgress<(long bytesProcessed, long totalBytes, int recordsFound)>? progress = null)
     {
         const int chunkSize = 16 * 1024 * 1024; // 16MB chunks
         const int overlapSize = 1024; // Overlap to handle records at chunk boundaries
@@ -323,13 +363,17 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             while (offset < fileSize)
             {
                 var toRead = (int)Math.Min(chunkSize + overlapSize, fileSize - offset);
+
+                // Report progress after each chunk
+                progress?.Report((offset, fileSize, result.MainRecords.Count));
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
                 // Determine the search limit for this chunk
                 // Only search up to chunkSize unless this is the last chunk
                 var searchLimit = offset + chunkSize >= fileSize ? toRead - 24 : chunkSize;
 
-                // Scan this chunk
+                // Scan this chunk - optimized with single magic read + switch + smart byte skipping
+                var bufferSpan = buffer.AsSpan(0, toRead);
                 for (var i = 0; i <= searchLimit; i++)
                 {
                     // Skip offsets inside excluded ranges (e.g., module memory)
@@ -339,118 +383,114 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
                         continue;
                     }
 
-                    // Check for main record headers first
-                    TryAddMainRecordHeaderWithOffset(buffer, i, toRead, offset, result.MainRecords,
+                    // Check for main record headers first - returns record size for skip-ahead
+                    var recordSize = TryAddMainRecordHeaderWithOffset(buffer, i, toRead, offset, result.MainRecords,
                         seenMainRecordOffsets);
 
-                    // Subrecord detection
-                    if (MatchesSignature(buffer, i, "EDID"u8))
+                    // Smart byte skipping: if we found a valid main record, skip ahead past it
+                    // This avoids re-scanning bytes that are part of a known record structure
+                    if (recordSize > 24)
                     {
-                        TryAddEdidRecordWithOffset(buffer, i, toRead, offset, result.EditorIds, seenEdids);
+                        // Skip to end of record (minus 1 because loop will increment i)
+                        // Cap the skip to stay within searchLimit and leave room for boundary overlap
+                        var skipAmount = Math.Min(recordSize - 1, searchLimit - i);
+                        if (skipAmount > 0)
+                        {
+                            i += skipAmount;
+                        }
+
+                        continue;
                     }
-                    else if (MatchesSignature(buffer, i, "GMST"u8))
+
+                    // Read magic once and use switch for subrecord detection
+                    // This replaces 20+ MatchesSignature calls per byte with 1 read + 1 switch
+                    if (i + 4 > toRead) continue;
+                    var magic = BinaryPrimitives.ReadUInt32LittleEndian(bufferSpan.Slice(i, 4));
+
+                    switch (magic)
                     {
-                        TryAddGmstRecordWithOffset(buffer, i, toRead, offset, result.GameSettings);
-                    }
-                    else if (MatchesSignature(buffer, i, "SCTX"u8))
-                    {
-                        TryAddSctxRecordWithOffset(buffer, i, toRead, offset, result.ScriptSources);
-                    }
-                    else if (MatchesSignature(buffer, i, "SCRO"u8))
-                    {
-                        TryAddScroRecordWithOffset(buffer, i, toRead, offset, result.FormIdReferences, seenFormIds);
-                    }
-                    else if (MatchesSignature(buffer, i, "NAME"u8))
-                    {
-                        TryAddNameSubrecordWithOffset(buffer, i, toRead, offset, result.NameReferences);
-                    }
-                    else if (MatchesSignature(buffer, i, "DATA"u8))
-                    {
-                        TryAddPositionSubrecordWithOffset(buffer, i, toRead, offset, result.Positions);
-                    }
-                    else if (MatchesSignature(buffer, i, "ACBS"u8))
-                    {
-                        TryAddActorBaseSubrecordWithOffset(buffer, i, toRead, offset, result.ActorBases);
-                    }
-                    else if (MatchesSignature(buffer, i, "NAM1"u8))
-                    {
-                        TryAddResponseTextSubrecordWithOffset(buffer, i, toRead, offset, result.ResponseTexts);
-                    }
-                    else if (MatchesSignature(buffer, i, "TRDT"u8))
-                    {
-                        TryAddResponseDataSubrecordWithOffset(buffer, i, toRead, offset, result.ResponseData);
-                    }
-                    // Text-containing subrecords
-                    else if (MatchesSignature(buffer, i, "FULL"u8))
-                    {
-                        TryAddTextSubrecordWithOffset(buffer, i, toRead, offset, "FULL", result.FullNames);
-                    }
-                    else if (MatchesSignature(buffer, i, "DESC"u8))
-                    {
-                        TryAddTextSubrecordWithOffset(buffer, i, toRead, offset, "DESC", result.Descriptions);
-                    }
-                    else if (MatchesSignature(buffer, i, "MODL"u8))
-                    {
-                        TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, "MODL", result.ModelPaths);
-                    }
-                    else if (MatchesSignature(buffer, i, "ICON"u8))
-                    {
-                        TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, "ICON", result.IconPaths);
-                    }
-                    else if (MatchesSignature(buffer, i, "MICO"u8))
-                    {
-                        TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, "MICO", result.IconPaths);
-                    }
-                    // Texture set paths (TX00-TX07)
-                    else if (MatchesTextureSignature(buffer, i))
-                    {
-                        var sig = Encoding.ASCII.GetString(buffer, i, 4);
-                        TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, sig, result.TexturePaths);
-                    }
-                    // FormID reference subrecords
-                    else if (MatchesSignature(buffer, i, "SCRI"u8))
-                    {
-                        TryAddFormIdSubrecordWithOffset(buffer, i, toRead, offset, "SCRI", result.ScriptRefs);
-                    }
-                    else if (MatchesSignature(buffer, i, "ENAM"u8))
-                    {
-                        TryAddFormIdSubrecordWithOffset(buffer, i, toRead, offset, "ENAM", result.EffectRefs);
-                    }
-                    else if (MatchesSignature(buffer, i, "SNAM"u8))
-                    {
-                        TryAddFormIdSubrecordWithOffset(buffer, i, toRead, offset, "SNAM", result.SoundRefs);
-                    }
-                    else if (MatchesSignature(buffer, i, "QNAM"u8))
-                    {
-                        TryAddFormIdSubrecordWithOffset(buffer, i, toRead, offset, "QNAM", result.QuestRefs);
-                    }
-                    // Condition data
-                    else if (MatchesSignature(buffer, i, "CTDA"u8))
-                    {
-                        TryAddConditionSubrecordWithOffset(buffer, i, toRead, offset, result.Conditions);
-                    }
-                    // VHGT heightmap subrecords (LE and BE)
-                    else if (MatchesSignature(buffer, i, "VHGT"u8))
-                    {
-                        TryAddVhgtHeightmapWithOffset(buffer, i, toRead, offset, false, result.Heightmaps);
-                    }
-                    else if (MatchesSignature(buffer, i, "TGHV"u8)) // BE reversed
-                    {
-                        TryAddVhgtHeightmapWithOffset(buffer, i, toRead, offset, true, result.Heightmaps);
-                    }
-                    // XCLC cell grid subrecords (LE and BE)
-                    else if (MatchesSignature(buffer, i, "XCLC"u8))
-                    {
-                        TryAddXclcSubrecordWithOffset(buffer, i, toRead, offset, false, result.CellGrids);
-                    }
-                    else if (MatchesSignature(buffer, i, "CLCX"u8)) // BE reversed
-                    {
-                        TryAddXclcSubrecordWithOffset(buffer, i, toRead, offset, true, result.CellGrids);
-                    }
-                    // Generic schema-driven subrecord detection
-                    else
-                    {
-                        TryAddGenericSubrecordWithOffset(buffer, i, toRead, offset, result.GenericSubrecords);
+                        case SigEdid:
+                            TryAddEdidRecordWithOffset(buffer, i, toRead, offset, result.EditorIds, seenEdids);
+                            break;
+                        case SigGmst:
+                            TryAddGmstRecordWithOffset(buffer, i, toRead, offset, result.GameSettings);
+                            break;
+                        case SigSctx:
+                            TryAddSctxRecordWithOffset(buffer, i, toRead, offset, result.ScriptSources);
+                            break;
+                        case SigScro:
+                            TryAddScroRecordWithOffset(buffer, i, toRead, offset, result.FormIdReferences, seenFormIds);
+                            break;
+                        case SigName:
+                            TryAddNameSubrecordWithOffset(buffer, i, toRead, offset, result.NameReferences);
+                            break;
+                        case SigData:
+                            TryAddPositionSubrecordWithOffset(buffer, i, toRead, offset, result.Positions);
+                            break;
+                        case SigAcbs:
+                            TryAddActorBaseSubrecordWithOffset(buffer, i, toRead, offset, result.ActorBases);
+                            break;
+                        case SigNam1:
+                            TryAddResponseTextSubrecordWithOffset(buffer, i, toRead, offset, result.ResponseTexts);
+                            break;
+                        case SigTrdt:
+                            TryAddResponseDataSubrecordWithOffset(buffer, i, toRead, offset, result.ResponseData);
+                            break;
+                        case SigFull:
+                            TryAddTextSubrecordWithOffset(buffer, i, toRead, offset, "FULL", result.FullNames);
+                            break;
+                        case SigDesc:
+                            TryAddTextSubrecordWithOffset(buffer, i, toRead, offset, "DESC", result.Descriptions);
+                            break;
+                        case SigModl:
+                            TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, "MODL", result.ModelPaths);
+                            break;
+                        case SigIcon:
+                            TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, "ICON", result.IconPaths);
+                            break;
+                        case SigMico:
+                            TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, "MICO", result.IconPaths);
+                            break;
+                        case SigScri:
+                            TryAddFormIdSubrecordWithOffset(buffer, i, toRead, offset, "SCRI", result.ScriptRefs);
+                            break;
+                        case SigEnam:
+                            TryAddFormIdSubrecordWithOffset(buffer, i, toRead, offset, "ENAM", result.EffectRefs);
+                            break;
+                        case SigSnam:
+                            TryAddFormIdSubrecordWithOffset(buffer, i, toRead, offset, "SNAM", result.SoundRefs);
+                            break;
+                        case SigQnam:
+                            TryAddFormIdSubrecordWithOffset(buffer, i, toRead, offset, "QNAM", result.QuestRefs);
+                            break;
+                        case SigCtda:
+                            TryAddConditionSubrecordWithOffset(buffer, i, toRead, offset, result.Conditions);
+                            break;
+                        case SigVhgt:
+                            TryAddVhgtHeightmapWithOffset(buffer, i, toRead, offset, false, result.Heightmaps);
+                            break;
+                        case SigTghv: // BE reversed
+                            TryAddVhgtHeightmapWithOffset(buffer, i, toRead, offset, true, result.Heightmaps);
+                            break;
+                        case SigXclc:
+                            TryAddXclcSubrecordWithOffset(buffer, i, toRead, offset, false, result.CellGrids);
+                            break;
+                        case SigClcx: // BE reversed
+                            TryAddXclcSubrecordWithOffset(buffer, i, toRead, offset, true, result.CellGrids);
+                            break;
+                        default:
+                            // Check for texture signatures (TX00-TX07) and generic subrecords
+                            if (MatchesTextureSignature(buffer, i))
+                            {
+                                var sig = Encoding.ASCII.GetString(buffer, i, 4);
+                                TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, sig, result.TexturePaths);
+                            }
+                            else
+                            {
+                                TryAddGenericSubrecordWithOffset(buffer, i, toRead, offset, result.GenericSubrecords);
+                            }
+
+                            break;
                     }
                 }
 
@@ -474,7 +514,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         long fileSize,
         EsmRecordScanResult scanResult)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(8192); // LAND records are typically 2-6KB
+        var buffer = ArrayPool<byte>.Shared.Rent(16384); // LAND records: compressed ~2-6KB, decompressed ~12KB
 
         try
         {
@@ -484,7 +524,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             {
                 // Read the record data (after 24-byte header)
                 var dataStart = header.Offset + 24;
-                var dataSize = (int)Math.Min(header.DataSize, 8192);
+                var dataSize = (int)Math.Min(header.DataSize, 16384);
 
                 if (dataStart + dataSize > fileSize)
                 {
@@ -493,7 +533,45 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
 
                 accessor.ReadArray(dataStart, buffer, 0, dataSize);
 
-                var land = ExtractLandFromBuffer(buffer, dataSize, header);
+                byte[] workBuffer;
+                int workSize;
+
+                if (header.IsCompressed && dataSize > 4)
+                {
+                    // Compressed record: first 4 bytes = uncompressed size, rest = zlib data
+                    var uncompressedSize = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(0, 4))
+                        : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(0, 4));
+
+                    if (uncompressedSize > 0 && uncompressedSize < 100_000)
+                    {
+                        try
+                        {
+                            using var input = new MemoryStream(buffer, 4, dataSize - 4);
+                            using var zlibStream = new ZLibStream(input, CompressionMode.Decompress);
+                            using var output = new MemoryStream((int)uncompressedSize);
+                            zlibStream.CopyTo(output);
+                            workBuffer = output.ToArray();
+                            workSize = workBuffer.Length;
+                        }
+                        catch (Exception)
+                        {
+                            // Decompression failed — skip this record
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    workBuffer = buffer;
+                    workSize = dataSize;
+                }
+
+                var land = ExtractLandFromBuffer(workBuffer, workSize, header);
                 if (land?.Heightmap != null)
                 {
                     scanResult.LandRecords.Add(land);
@@ -503,6 +581,44 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        // Match LAND records to nearby XCLC cell grids for cell coordinates.
+        // In ESM structure, CELL (containing XCLC) precedes its child LAND record by ~100-150 bytes.
+        if (scanResult.CellGrids.Count > 0 && scanResult.LandRecords.Count > 0)
+        {
+            var sortedGrids = scanResult.CellGrids.OrderBy(g => g.Offset).ToList();
+            var enriched = new List<ExtractedLandRecord>();
+
+            foreach (var land in scanResult.LandRecords)
+            {
+                // Find the XCLC that is closest before this LAND record (within 500 bytes)
+                CellGridSubrecord? match = null;
+                foreach (var grid in sortedGrids)
+                {
+                    var gap = land.Header.Offset - grid.Offset;
+                    if (gap is > 0 and < 500)
+                    {
+                        match = grid;
+                    }
+                    else if (grid.Offset > land.Header.Offset)
+                    {
+                        break;
+                    }
+                }
+
+                if (match != null)
+                {
+                    enriched.Add(land with { CellX = match.GridX, CellY = match.GridY });
+                }
+                else
+                {
+                    enriched.Add(land);
+                }
+            }
+
+            scanResult.LandRecords.Clear();
+            scanResult.LandRecords.AddRange(enriched);
         }
     }
 
@@ -1258,20 +1374,25 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         }
     }
 
-    private static void TryAddMainRecordHeaderWithOffset(byte[] data, int i, int dataLength, long baseOffset,
+    /// <summary>
+    ///     Try to parse a main record header at position i. If successful, adds to records
+    ///     and returns the total record size (24-byte header + data size) for skip-ahead optimization.
+    /// </summary>
+    /// <returns>Total record size if a valid record was found; 0 otherwise.</returns>
+    private static int TryAddMainRecordHeaderWithOffset(byte[] data, int i, int dataLength, long baseOffset,
         List<DetectedMainRecord> records, HashSet<long> seenOffsets)
     {
         var globalOffset = baseOffset + i;
         if (i + 24 > dataLength || seenOffsets.Contains(globalOffset))
         {
-            return;
+            return 0;
         }
 
         // Reject known GPU debug patterns BEFORE parsing header
         // These ASCII patterns look like valid 4-char signatures but are GPU register names
         if (IsKnownFalsePositive(data, i))
         {
-            return;
+            return 0;
         }
 
         var magic = BinaryUtils.ReadUInt32LE(data, i);
@@ -1283,9 +1404,11 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             if (header != null && seenOffsets.Add(globalOffset))
             {
                 records.Add(header);
+                // Return total record size: 24-byte header + data size
+                return 24 + (int)header.DataSize;
             }
 
-            return;
+            return 0;
         }
 
         // Try big-endian (Xbox 360 format)
@@ -1295,8 +1418,12 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
             if (header != null && seenOffsets.Add(globalOffset))
             {
                 records.Add(header);
+                // Return total record size: 24-byte header + data size
+                return 24 + (int)header.DataSize;
             }
         }
+
+        return 0;
     }
 
     private static DetectedMainRecord? TryParseMainRecordHeader(byte[] data, int i, int dataLength, bool isBigEndian)
@@ -3011,7 +3138,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
         return count;
     }
 
-    private static bool IsValidPointerInDump(uint value, MinidumpInfo minidumpInfo)
+    internal static bool IsValidPointerInDump(uint value, MinidumpInfo minidumpInfo)
     {
         // Dynamically check if this pointer falls within any captured memory region
         // This handles all Xbox 360 builds regardless of memory layout
@@ -3028,7 +3155,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     ///     used by minidump memory regions. Xbox 360 addresses with bit 31 set
     ///     (e.g., module space at 0x82XXXXXX) are stored sign-extended in minidumps.
     /// </summary>
-    private static long Xbox360VaToLong(uint address)
+    internal static long Xbox360VaToLong(uint address)
     {
         return unchecked((int)address);
     }
@@ -3327,7 +3454,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     /// <summary>
     ///     Describes a PE section from the module's in-memory PE headers.
     /// </summary>
-    private readonly record struct PeSectionInfo(
+    internal readonly record struct PeSectionInfo(
         int Index,
         string Name,
         uint VirtualAddress,
@@ -3338,7 +3465,7 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     ///     Enumerate all PE sections from a module's in-memory PE headers.
     ///     PE headers use little-endian format (standard PE convention), even on Xbox 360.
     /// </summary>
-    private static List<PeSectionInfo>? EnumeratePeSections(
+    internal static List<PeSectionInfo>? EnumeratePeSections(
         MemoryMappedViewAccessor accessor,
         long fileSize,
         MinidumpInfo minidumpInfo,

@@ -322,7 +322,29 @@ public sealed partial class MemoryDumpAnalyzer
         log.Debug("Metadata: Phase 4 - ESM scan");
         await Task.Run(() =>
         {
-            var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize, moduleRanges);
+            // Create progress callback for ESM scanning (80-85% range)
+            // Throttle to max 10 updates/second to avoid UI thread saturation in GUI
+            var lastEsmReport = Stopwatch.GetTimestamp();
+            var esmProgress = new Progress<(long bytesProcessed, long totalBytes, int recordsFound)>(p =>
+            {
+                var now = Stopwatch.GetTimestamp();
+                var elapsedMs = (now - lastEsmReport) * 1000.0 / Stopwatch.Frequency;
+                if (elapsedMs < 100) return; // Throttle to max 10 updates/second
+                lastEsmReport = now;
+
+                var pct = p.totalBytes > 0 ? 80 + p.bytesProcessed * 5.0 / p.totalBytes : 80;
+                progress?.Report(new AnalysisProgress
+                {
+                    Phase = "ESM Records",
+                    FilesFound = result.CarvedFiles.Count,
+                    PercentComplete = pct,
+                    BytesProcessed = p.bytesProcessed,
+                    TotalBytes = p.totalBytes
+                });
+            });
+
+            var esmRecords = EsmRecordFormat.ScanForRecordsMemoryMapped(
+                accessor, result.FileSize, moduleRanges, esmProgress);
             result.EsmRecords = esmRecords;
             log.Debug("Metadata:   ESM records: {0}", esmRecords.MainRecords.Count);
 
