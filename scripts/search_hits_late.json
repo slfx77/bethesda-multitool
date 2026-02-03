@@ -1,0 +1,2388 @@
+[
+  {
+    "form_id": 966723,
+    "text": "Good work, human. Maybe now this place can rest in peace.",
+    "text_full": "Good work, human. Maybe now this place can rest in peace.",
+    "esm_offset": 28468373,
+    "dump_offsets": [
+      33806412
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1214428,
+    "text": "Well, well. If it isn't the courier who wiped out the Legion over at Nelson. Goo",
+    "text_full": "Well, well. If it isn't the courier who wiped out the Legion over at Nelson. Good to see you around {nickname for camp}the Hope.",
+    "esm_offset": 28481637,
+    "dump_offsets": [
+      33873857
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1053838,
+    "text": "You should go talk to Blake or Alice, they handle most of our contact with visit",
+    "text_full": "You should go talk to Blake or Alice, they handle most of our contact with visitors.",
+    "esm_offset": 28496967,
+    "dump_offsets": [
+      33897964
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1245436,
+    "text": "Hey, thanks for all the hard work back there. I'm going to run a tight ship here",
+    "text_full": "Hey, thanks for all the hard work back there. I'm going to run a tight ship here, don't you worry.",
+    "esm_offset": 28497347,
+    "dump_offsets": [
+      33963764
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1454997,
+    "text": "What's up?",
+    "text_full": "What's up?",
+    "esm_offset": 28509401,
+    "dump_offsets": [
+      33995721,
+      34030998,
+      34096204,
+      34096528,
+      34442130,
+      150216999
+    ],
+    "hit_count": 6
+  },
+  {
+    "form_id": 1312410,
+    "text": "You need something?",
+    "text_full": "You need something?",
+    "esm_offset": 28521974,
+    "dump_offsets": [
+      34031100
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1286817,
+    "text": "I'm out of here.",
+    "text_full": "I'm out of here.",
+    "esm_offset": 28564463,
+    "dump_offsets": [
+      137669439,
+      137693265,
+      142075232,
+      142192032,
+      144454156,
+      145111304,
+      145118653,
+      145123671,
+      149564019,
+      150899483,
+      160122161
+    ],
+    "hit_count": 11
+  },
+  {
+    "form_id": 1387029,
+    "text": "<INERT NODE TO HOLD LINES FOR HOW PLAYER HAS TROUBLED NCR.>",
+    "text_full": "<INERT NODE TO HOLD LINES FOR HOW PLAYER HAS TROUBLED NCR.>",
+    "esm_offset": 28566345,
+    "dump_offsets": [
+      32152052
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1455202,
+    "text": "What can I do for you?",
+    "text_full": "What can I do for you?",
+    "esm_offset": 28589494,
+    "dump_offsets": [
+      34097221,
+      136028188
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1137946,
+    "text": "Who are you?",
+    "text_full": "Who are you?",
+    "esm_offset": 28601820,
+    "dump_offsets": [
+      27920036,
+      128940708,
+      129014548,
+      129014628,
+      129015380,
+      129015396,
+      129016244,
+      129016404,
+      129018772,
+      129019620,
+      129019700,
+      129019732,
+      129019876,
+      129019972,
+      129019988,
+      129020052,
+      129020068,
+      129020116,
+      129020164,
+      129020500,
+      129020660,
+      129021700,
+      129021732,
+      129023108,
+      129023492,
+      129023540,
+      129024100,
+      129024244,
+      129025012,
+      129025060,
+      129027060,
+      129028196,
+      129028308,
+      129028372,
+      129028436,
+      129029988,
+      129031428,
+      129033540,
+      129037220,
+      129050132,
+      129124420,
+      129124436,
+      129125588,
+      129125684,
+      129126276,
+      129126292,
+      129126324,
+      129126532,
+      129126916,
+      129127012
+    ],
+    "hit_count": 50
+  },
+  {
+    "form_id": 1166131,
+    "text": "Good day.",
+    "text_full": "Good day.",
+    "esm_offset": 28601996,
+    "dump_offsets": [
+      34076307
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1441719,
+    "text": "Move along.",
+    "text_full": "Move along.",
+    "esm_offset": 28606914,
+    "dump_offsets": [
+      33818048,
+      33928447,
+      33970637,
+      33975810,
+      34021187,
+      34446433
+    ],
+    "hit_count": 6
+  },
+  {
+    "form_id": 1068121,
+    "text": "What do you want?",
+    "text_full": "What do you want?",
+    "esm_offset": 28612007,
+    "dump_offsets": [
+      33973437,
+      33976075,
+      34030907,
+      34091506
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1068528,
+    "text": "What is it?",
+    "text_full": "What is it?",
+    "esm_offset": 28617189,
+    "dump_offsets": [
+      33975990,
+      34080164,
+      34315160,
+      126817240,
+      142173332,
+      148222814
+    ],
+    "hit_count": 6
+  },
+  {
+    "form_id": 1079165,
+    "text": "Howdy, pardner!",
+    "text_full": "Howdy, pardner!",
+    "esm_offset": 28619570,
+    "dump_offsets": [
+      34077098,
+      34455875,
+      34530217,
+      34530511
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1334009,
+    "text": "What are you doing up here?",
+    "text_full": "What are you doing up here?",
+    "esm_offset": 28646372,
+    "dump_offsets": [
+      138210432
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1152991,
+    "text": "Make it quick.",
+    "text_full": "Make it quick.",
+    "esm_offset": 28667290,
+    "dump_offsets": [
+      34087738
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1152997,
+    "text": "What's going on?",
+    "text_full": "What's going on?",
+    "esm_offset": 28670872,
+    "dump_offsets": [
+      34584918,
+      143110641
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1420253,
+    "text": "Can I help you?",
+    "text_full": "Can I help you?",
+    "esm_offset": 28674522,
+    "dump_offsets": [
+      34062455
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1020123,
+    "text": "I said fuck off.",
+    "text_full": "I said fuck off.",
+    "esm_offset": 28694087,
+    "dump_offsets": [
+      34024738
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1410123,
+    "text": "Hello again.",
+    "text_full": "Hello again.",
+    "esm_offset": 28699411,
+    "dump_offsets": [
+      34031313
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 881072,
+    "text": "What are you looking at?",
+    "text_full": "What are you looking at?",
+    "esm_offset": 28722368,
+    "dump_offsets": [
+      34010967,
+      137670380
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1017832,
+    "text": "I hear you killed Driver Nephi. My team would've liked to get a shot at him... b",
+    "text_full": "I hear you killed Driver Nephi. My team would've liked to get a shot at him... but we're still glad he's dead.",
+    "esm_offset": 28730840,
+    "dump_offsets": [
+      34018857
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1107669,
+    "text": "Look, I'm being paid to shoot people who talk to you, not talk to you myself. Ju",
+    "text_full": "Look, I'm being paid to shoot people who talk to you, not talk to you myself. Just pretend I'm not here or something.",
+    "esm_offset": 28772262,
+    "dump_offsets": [
+      33983155
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1107670,
+    "text": "Freeside truly is an interesting place, isn't it?",
+    "text_full": "Freeside truly is an interesting place, isn't it?",
+    "esm_offset": 28772453,
+    "dump_offsets": [
+      33983346
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1107671,
+    "text": "I am sorry, my friend, but I must concentrate on watching out for threats. Pleas",
+    "text_full": "I am sorry, my friend, but I must concentrate on watching out for threats. Please do not take offense.",
+    "esm_offset": 28772576,
+    "dump_offsets": [
+      33983469
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1325183,
+    "text": "Welcome back.",
+    "text_full": "Welcome back.",
+    "esm_offset": 28783695,
+    "dump_offsets": [
+      34010560
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1226873,
+    "text": "Did you need something else?",
+    "text_full": "Did you need something else?",
+    "esm_offset": 28818653,
+    "dump_offsets": [
+      34031326
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1227102,
+    "text": "Why are you still here?",
+    "text_full": "Why are you still here?",
+    "esm_offset": 28818953,
+    "dump_offsets": [
+      136233556,
+      136235812,
+      136257940,
+      136334636
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 585910,
+    "text": "What's new?",
+    "text_full": "What's new?",
+    "esm_offset": 28823498,
+    "dump_offsets": [
+      34096288,
+      126587656
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1030401,
+    "text": "Thank you for your kindness, stranger.",
+    "text_full": "Thank you for your kindness, stranger.",
+    "esm_offset": 28840073,
+    "dump_offsets": [
+      33898122
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1317278,
+    "text": "<Questions>",
+    "text_full": "<Questions>",
+    "esm_offset": 28865646,
+    "dump_offsets": [
+      126828868,
+      126828892,
+      126830488,
+      126830512,
+      126830536,
+      126830584,
+      126830608,
+      126830632,
+      126830656,
+      126830680
+    ],
+    "hit_count": 10
+  },
+  {
+    "form_id": 1346075,
+    "text": "Our business is with the muties, not you.",
+    "text_full": "Our business is with the muties, not you.",
+    "esm_offset": 28871189,
+    "dump_offsets": [
+      33922666
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1202343,
+    "text": "Why not?",
+    "text_full": "Why not?",
+    "esm_offset": 28915434,
+    "dump_offsets": [
+      126582796,
+      126725832,
+      136201898,
+      160843716
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1400466,
+    "text": "This is going to be fun!",
+    "text_full": "This is going to be fun!",
+    "esm_offset": 28923758,
+    "dump_offsets": [
+      137711792
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1041158,
+    "text": "What happened?",
+    "text_full": "What happened?",
+    "esm_offset": 28929950,
+    "dump_offsets": [
+      129034740,
+      129124580,
+      129126356,
+      129128420,
+      129128724,
+      136232772,
+      144452179,
+      147246612
+    ],
+    "hit_count": 8
+  },
+  {
+    "form_id": 1093397,
+    "text": "Hello again, my friend. I hope you've been finding the information in the datast",
+    "text_full": "Hello again, my friend. I hope you've been finding the information in the datastore useful.",
+    "esm_offset": 28939342,
+    "dump_offsets": [
+      34027345
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 765165,
+    "text": "Oh, it's you.",
+    "text_full": "Oh, it's you.",
+    "esm_offset": 28956831,
+    "dump_offsets": [
+      33798008,
+      34089390
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 847335,
+    "text": "It is almost time for the great Journey!",
+    "text_full": "It is almost time for the great Journey!",
+    "esm_offset": 28961064,
+    "dump_offsets": [
+      34030787
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 841862,
+    "text": "Leave me alone.",
+    "text_full": "Leave me alone.",
+    "esm_offset": 28962502,
+    "dump_offsets": [
+      33926017,
+      33984524,
+      147253924
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1471671,
+    "text": "Suit yourself.",
+    "text_full": "Suit yourself.",
+    "esm_offset": 28979801,
+    "dump_offsets": [
+      34106808
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 726719,
+    "text": "Fine by me.",
+    "text_full": "Fine by me.",
+    "esm_offset": 28986475,
+    "dump_offsets": [
+      126769656,
+      126769668
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 726722,
+    "text": "All right.",
+    "text_full": "All right.",
+    "esm_offset": 28988287,
+    "dump_offsets": [
+      27893668,
+      27934724,
+      34209352,
+      34308934,
+      34539030,
+      126658256,
+      136030012,
+      136030084,
+      136049212,
+      136086332,
+      136159356,
+      136189596,
+      136206084,
+      136207044,
+      136261804,
+      137588548,
+      137678584,
+      137704484,
+      137876032,
+      137876116,
+      137896612,
+      137896836,
+      138095852,
+      142127572,
+      142136212,
+      142136276,
+      142140532,
+      142140564,
+      142148052,
+      142167284,
+      143095000,
+      143097196,
+      143097232,
+      143108212,
+      143275248,
+      144418716,
+      144418756,
+      144427796,
+      144439076,
+      145129164,
+      145251768,
+      147242308,
+      147337316,
+      147339428,
+      148450740,
+      148450844,
+      148450948,
+      148451052,
+      149539676,
+      149554124
+    ],
+    "hit_count": 50
+  },
+  {
+    "form_id": 726732,
+    "text": "Let's go.",
+    "text_full": "Let's go.",
+    "esm_offset": 28991196,
+    "dump_offsets": [
+      34454774,
+      126583840,
+      126616072,
+      126762420,
+      126821020,
+      129014890,
+      129053784,
+      129053800,
+      129124458,
+      131348786,
+      138118003,
+      144465716,
+      149563576,
+      149563744
+    ],
+    "hit_count": 14
+  },
+  {
+    "form_id": 726720,
+    "text": "I'm listening.",
+    "text_full": "I'm listening.",
+    "esm_offset": 28992522,
+    "dump_offsets": [
+      129014388,
+      129015444,
+      129015892,
+      129020964,
+      129049332,
+      136072091
+    ],
+    "hit_count": 6
+  },
+  {
+    "form_id": 1428078,
+    "text": "What now?",
+    "text_full": "What now?",
+    "esm_offset": 28992940,
+    "dump_offsets": [
+      126817384,
+      137857318,
+      144456505
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 726724,
+    "text": "We can do that.",
+    "text_full": "We can do that.",
+    "esm_offset": 28997136,
+    "dump_offsets": [
+      129128436
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 945312,
+    "text": "You got it.",
+    "text_full": "You got it.",
+    "esm_offset": 29006156,
+    "dump_offsets": [
+      131357502
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1469880,
+    "text": "After you.",
+    "text_full": "After you.",
+    "esm_offset": 29006241,
+    "dump_offsets": [
+      126745812
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1372519,
+    "text": "Count me in.",
+    "text_full": "Count me in.",
+    "esm_offset": 29006325,
+    "dump_offsets": [
+      129129220,
+      131353582
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 726730,
+    "text": "I've got your back.",
+    "text_full": "I've got your back.",
+    "esm_offset": 29009869,
+    "dump_offsets": [
+      34454015
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1372517,
+    "text": "Lead the way. ",
+    "text_full": "Lead the way. ",
+    "esm_offset": 29010225,
+    "dump_offsets": [
+      144465916
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1455171,
+    "text": "Finally.",
+    "text_full": "Finally.",
+    "esm_offset": 29011491,
+    "dump_offsets": [
+      34102654
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 585854,
+    "text": "Be careful out there.",
+    "text_full": "Be careful out there.",
+    "esm_offset": 29058824,
+    "dump_offsets": [
+      33887017,
+      34098477
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 585871,
+    "text": "Like what?",
+    "text_full": "Like what?",
+    "esm_offset": 29062298,
+    "dump_offsets": [
+      31005988
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 615669,
+    "text": "Why are you here?",
+    "text_full": "Why are you here?",
+    "esm_offset": 29070559,
+    "dump_offsets": [
+      131240820,
+      144445258,
+      145086444
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 629992,
+    "text": "Yeah, good luck with that.",
+    "text_full": "Yeah, good luck with that.",
+    "esm_offset": 29081448,
+    "dump_offsets": [
+      143131548
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 840051,
+    "text": "You touched Antler!",
+    "text_full": "You touched Antler!",
+    "esm_offset": 29150129,
+    "dump_offsets": [
+      34135740
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 840052,
+    "text": "Now you pay!",
+    "text_full": "Now you pay!",
+    "esm_offset": 29150222,
+    "dump_offsets": [
+      34226632
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 841791,
+    "text": "Hurry up.",
+    "text_full": "Hurry up.",
+    "esm_offset": 29155108,
+    "dump_offsets": [
+      34105308
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 847096,
+    "text": "Stop wasting time.",
+    "text_full": "Stop wasting time.",
+    "esm_offset": 29162541,
+    "dump_offsets": [
+      33882347
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 847097,
+    "text": "Get moving.",
+    "text_full": "Get moving.",
+    "esm_offset": 29162633,
+    "dump_offsets": [
+      34011890
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 841879,
+    "text": "Good riddance.",
+    "text_full": "Good riddance.",
+    "esm_offset": 29163071,
+    "dump_offsets": [
+      33891689,
+      33965397,
+      34069871,
+      34105985,
+      34246619,
+      34330310,
+      34335644,
+      129017044,
+      149554572
+    ],
+    "hit_count": 9
+  },
+  {
+    "form_id": 931241,
+    "text": "Try not to make any trouble.",
+    "text_full": "Try not to make any trouble.",
+    "esm_offset": 29192670,
+    "dump_offsets": [
+      33849100
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 940684,
+    "text": "What do you need?",
+    "text_full": "What do you need?",
+    "esm_offset": 29215715,
+    "dump_offsets": [
+      14052356,
+      14052436,
+      131358696,
+      131359456,
+      144466217,
+      150896011,
+      160448580
+    ],
+    "hit_count": 7
+  },
+  {
+    "form_id": 951428,
+    "text": "No! I won't let you have my Raul!",
+    "text_full": "No! I won't let you have my Raul!",
+    "esm_offset": 29231397,
+    "dump_offsets": [
+      34567538
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 954229,
+    "text": "Of course.",
+    "text_full": "Of course.",
+    "esm_offset": 29254335,
+    "dump_offsets": [
+      34510742,
+      136268428,
+      142163188,
+      149549252
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 954230,
+    "text": "Until next time.",
+    "text_full": "Until next time.",
+    "esm_offset": 29254457,
+    "dump_offsets": [
+      34102129
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 976644,
+    "text": "Come back and see us again soon.",
+    "text_full": "Come back and see us again soon.",
+    "esm_offset": 29282860,
+    "dump_offsets": [
+      34100953
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 981336,
+    "text": "I'll be waiting.",
+    "text_full": "I'll be waiting.",
+    "esm_offset": 29292920,
+    "dump_offsets": [
+      34358647
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 981861,
+    "text": "Make yourself scarce. If you get yourself in trouble, I'm not going to cover you",
+    "text_full": "Make yourself scarce. If you get yourself in trouble, I'm not going to cover your back.",
+    "esm_offset": 29304685,
+    "dump_offsets": [
+      34110298
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 985891,
+    "text": "Sure thing!",
+    "text_full": "Sure thing!",
+    "esm_offset": 29328131,
+    "dump_offsets": [
+      34108654
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 992376,
+    "text": "Hand over your weapons. You're under arrest.",
+    "text_full": "Hand over your weapons. You're under arrest.",
+    "esm_offset": 29356006,
+    "dump_offsets": [
+      106564767
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 992357,
+    "text": "You know what? I believe you.",
+    "text_full": "You know what? I believe you.",
+    "esm_offset": 29356408,
+    "dump_offsets": [
+      106564885
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 992357,
+    "text": "You're free to go. Contreras, however, won't be moving drugs ever again.",
+    "text_full": "You're free to go. Contreras, however, won't be moving drugs ever again.",
+    "esm_offset": 29356408,
+    "dump_offsets": [
+      106564958
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 992350,
+    "text": "Crazy wastelander.",
+    "text_full": "Crazy wastelander.",
+    "esm_offset": 29357816,
+    "dump_offsets": [
+      106566323
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 997263,
+    "text": "NCR? Here? Not for long.",
+    "text_full": "NCR? Here? Not for long.",
+    "esm_offset": 29360556,
+    "dump_offsets": [
+      106569058
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 997265,
+    "text": "How the hell did you get in here? Where the fuck are my guards?",
+    "text_full": "How the hell did you get in here? Where the fuck are my guards?",
+    "esm_offset": 29360775,
+    "dump_offsets": [
+      106569277
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1025845,
+    "text": "Take your time.",
+    "text_full": "Take your time.",
+    "esm_offset": 29374473,
+    "dump_offsets": [
+      29143460
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 994782,
+    "text": "[SUCCEEDED] No! That's not what I meant! I-",
+    "text_full": "[SUCCEEDED] No! That's not what I meant! I-",
+    "esm_offset": 29375223,
+    "dump_offsets": [
+      106584445
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 994781,
+    "text": "[SUCCEEDED] I'll show you gutless, you sniveling bastard. I'll spill your guts a",
+    "text_full": "[SUCCEEDED] I'll show you gutless, you sniveling bastard. I'll spill your guts all over this room!",
+    "esm_offset": 29376418,
+    "dump_offsets": [
+      106585221
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 994796,
+    "text": "Very well.",
+    "text_full": "Very well.",
+    "esm_offset": 29377325,
+    "dump_offsets": [
+      137658312,
+      142229876,
+      148228548
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1004117,
+    "text": "Get the hell out of my sight.",
+    "text_full": "Get the hell out of my sight.",
+    "esm_offset": 29425480,
+    "dump_offsets": [
+      34021522
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1016013,
+    "text": "You've got it.",
+    "text_full": "You've got it.",
+    "esm_offset": 29468527,
+    "dump_offsets": [
+      34454686
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1019202,
+    "text": "Goodbye.",
+    "text_full": "Goodbye.",
+    "esm_offset": 29471789,
+    "dump_offsets": [
+      27929380,
+      34100390,
+      34102224,
+      34107920,
+      34111549,
+      126618292,
+      126620392,
+      126620404,
+      126620416,
+      126620428,
+      126620440,
+      126620452,
+      126620464,
+      126620476,
+      126620488,
+      126620512,
+      126620524,
+      126620536,
+      126620548,
+      126620560,
+      126620572,
+      126620584,
+      126620596,
+      126643820,
+      126643964,
+      126644756,
+      126644780,
+      126644924,
+      126645644,
+      126645776,
+      126646256,
+      126647144,
+      126647648,
+      126647732,
+      126648500,
+      126648644,
+      126648944,
+      126649184,
+      126649328,
+      126649484,
+      126649664,
+      126650228,
+      126650552,
+      126650864,
+      126650948,
+      126651956,
+      126652376,
+      126653420,
+      126653972,
+      126657584
+    ],
+    "hit_count": 50
+  },
+  {
+    "form_id": 1033954,
+    "text": "What do you mean?",
+    "text_full": "What do you mean?",
+    "esm_offset": 29516397,
+    "dump_offsets": [
+      131232680,
+      131258100,
+      131346176,
+      131350236,
+      131350276,
+      131359216,
+      137666691,
+      142059137,
+      145115791
+    ],
+    "hit_count": 9
+  },
+  {
+    "form_id": 1042144,
+    "text": "Mahsohfabish.",
+    "text_full": "Mahsohfabish.",
+    "esm_offset": 29549744,
+    "dump_offsets": [
+      143094660
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1046156,
+    "text": "You've been warned.",
+    "text_full": "You've been warned.",
+    "esm_offset": 29551958,
+    "dump_offsets": [
+      34283798
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1068520,
+    "text": "Welcome.",
+    "text_full": "Welcome.",
+    "esm_offset": 29597666,
+    "dump_offsets": [
+      34082927,
+      34083441
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1069309,
+    "text": "You picked a good time to stop by, for we're swimming in problems. My youngers c",
+    "text_full": "You picked a good time to stop by, for we're swimming in problems. My youngers can tell you all about it.",
+    "esm_offset": 29614445,
+    "dump_offsets": [
+      106718115
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1069309,
+    "text": "Raquel could use help with the bug problem, Doc Argyll has wounded he's tending ",
+    "text_full": "Raquel could use help with the bug problem, Doc Argyll has wounded he's tending to, and Loyal and Jack might be looking for help with some repairs.",
+    "esm_offset": 29614445,
+    "dump_offsets": [
+      106718264
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1071450,
+    "text": "Now, the threat of legal action forces me to say that Nuka-cola is a swell bever",
+    "text_full": "Now, the threat of legal action forces me to say that Nuka-cola is a swell beverage, but sometimes people just wanted something different, you know?",
+    "esm_offset": 29649518,
+    "dump_offsets": [
+      34544273
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1071450,
+    "text": "And that's the Legend of the Star. Hope you enjoyed it, and hope you continue en",
+    "text_full": "And that's the Legend of the Star. Hope you enjoyed it, and hope you continue enjoying Sunset Sarsaparilla!",
+    "esm_offset": 29649518,
+    "dump_offsets": [
+      34545924
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1077264,
+    "text": "How many?",
+    "text_full": "How many?",
+    "esm_offset": 29672818,
+    "dump_offsets": [
+      138920308,
+      207011832
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1079157,
+    "text": "Happy trails!",
+    "text_full": "Happy trails!",
+    "esm_offset": 29682378,
+    "dump_offsets": [
+      34098742
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1090027,
+    "text": "Come with me.",
+    "text_full": "Come with me.",
+    "esm_offset": 29706663,
+    "dump_offsets": [
+      14070788,
+      34539220,
+      129125236,
+      129126820
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1094042,
+    "text": "Never heard of it.",
+    "text_full": "Never heard of it.",
+    "esm_offset": 29733245,
+    "dump_offsets": [
+      137692786,
+      144461210,
+      147252724
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1119348,
+    "text": "Whatever.",
+    "text_full": "Whatever.",
+    "esm_offset": 29783293,
+    "dump_offsets": [
+      34028709,
+      34099810,
+      34101780,
+      34115644,
+      34317743,
+      34327163,
+      106566313,
+      126610768,
+      126615544,
+      126699728,
+      126752004,
+      128941226,
+      131233100,
+      136064404,
+      143115628,
+      143375792,
+      145123688,
+      145123908,
+      147255268,
+      148238284,
+      150106484,
+      150233332,
+      151016313,
+      160163796
+    ],
+    "hit_count": 24
+  },
+  {
+    "form_id": 1137871,
+    "text": "Here you go.",
+    "text_full": "Here you go.",
+    "esm_offset": 29814107,
+    "dump_offsets": [
+      34559509,
+      129015956,
+      129035348,
+      129128308,
+      129129236,
+      129129252,
+      137964627,
+      138099156,
+      142067508,
+      142222116,
+      142222148,
+      143106396,
+      143106432,
+      143112877,
+      143121676,
+      144411462,
+      144513292,
+      148422504,
+      148444979,
+      150213095
+    ],
+    "hit_count": 20
+  },
+  {
+    "form_id": 1137941,
+    "text": "Not for long.",
+    "text_full": "Not for long.",
+    "esm_offset": 29822180,
+    "dump_offsets": [
+      106569069
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1520989,
+    "text": "Huh? What are you talking about?",
+    "text_full": "Huh? What are you talking about?",
+    "esm_offset": 29832684,
+    "dump_offsets": [
+      148224336
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1141832,
+    "text": "Go ahead.",
+    "text_full": "Go ahead.",
+    "esm_offset": 29889181,
+    "dump_offsets": [
+      34052092,
+      126824836
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1141797,
+    "text": "Good luck!",
+    "text_full": "Good luck!",
+    "esm_offset": 29889973,
+    "dump_offsets": [
+      160112407
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1142755,
+    "text": "Good luck.",
+    "text_full": "Good luck.",
+    "esm_offset": 29897217,
+    "dump_offsets": [
+      33874216,
+      34105783,
+      34110031,
+      126610732,
+      126657188,
+      144477718,
+      144493841
+    ],
+    "hit_count": 7
+  },
+  {
+    "form_id": 1152892,
+    "text": "See you.",
+    "text_full": "See you.",
+    "esm_offset": 29973646,
+    "dump_offsets": [
+      34100308,
+      34102736,
+      34115409,
+      34115497
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1157331,
+    "text": "Don't worry about it.",
+    "text_full": "Don't worry about it.",
+    "esm_offset": 30005468,
+    "dump_offsets": [
+      27540644
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1169584,
+    "text": "No problem.",
+    "text_full": "No problem.",
+    "esm_offset": 30064619,
+    "dump_offsets": [
+      34104612,
+      34454522,
+      126825892,
+      136085276,
+      137703323,
+      142166708,
+      144446356,
+      145106572
+    ],
+    "hit_count": 8
+  },
+  {
+    "form_id": 1427569,
+    "text": "I hear you.",
+    "text_full": "I hear you.",
+    "esm_offset": 30085244,
+    "dump_offsets": [
+      151669894,
+      151676570
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1177211,
+    "text": "There's an intruder in the dish hut! Get over there and kill whoever it is, you ",
+    "text_full": "There's an intruder in the dish hut! Get over there and kill whoever it is, you fools!",
+    "esm_offset": 30101525,
+    "dump_offsets": [
+      33806571,
+      34479489
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1181750,
+    "text": "Get lost.",
+    "text_full": "Get lost.",
+    "esm_offset": 30187584,
+    "dump_offsets": [
+      33819285,
+      33819415,
+      34106356,
+      34280790,
+      34561190
+    ],
+    "hit_count": 5
+  },
+  {
+    "form_id": 1187863,
+    "text": "I'll be here if you change your mind.",
+    "text_full": "I'll be here if you change your mind.",
+    "esm_offset": 30207767,
+    "dump_offsets": [
+      34106849
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1195129,
+    "text": "Follow me.",
+    "text_full": "Follow me.",
+    "esm_offset": 30229931,
+    "dump_offsets": [
+      126672176,
+      126673508,
+      131173393,
+      142077990
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1195127,
+    "text": "Sure thing.",
+    "text_full": "Sure thing.",
+    "esm_offset": 30230939,
+    "dump_offsets": [
+      142048052
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1201053,
+    "text": "What would you like to know?",
+    "text_full": "What would you like to know?",
+    "esm_offset": 30232847,
+    "dump_offsets": [
+      142140212
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1198765,
+    "text": "What do you have in mind?",
+    "text_full": "What do you have in mind?",
+    "esm_offset": 30266545,
+    "dump_offsets": [
+      137667664,
+      151559090
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1200415,
+    "text": "Thank you so much for your help.",
+    "text_full": "Thank you so much for your help.",
+    "esm_offset": 30278680,
+    "dump_offsets": [
+      33979993,
+      34006597,
+      34055437
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1200540,
+    "text": "Not at all.",
+    "text_full": "Not at all.",
+    "esm_offset": 30296842,
+    "dump_offsets": [
+      131169150,
+      142172040
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1203209,
+    "text": "See you around.",
+    "text_full": "See you around.",
+    "esm_offset": 30334059,
+    "dump_offsets": [
+      34098199,
+      34098288,
+      34098829,
+      34110959,
+      34114808,
+      34560242,
+      138055040
+    ],
+    "hit_count": 7
+  },
+  {
+    "form_id": 1208715,
+    "text": "It's now or never, let's go.",
+    "text_full": "It's now or never, let's go.",
+    "esm_offset": 30386863,
+    "dump_offsets": [
+      33978682
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1210959,
+    "text": "Time to die!",
+    "text_full": "Time to die!",
+    "esm_offset": 30401647,
+    "dump_offsets": [
+      34162864,
+      34265876,
+      147288533
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1217837,
+    "text": "I understand.",
+    "text_full": "I understand.",
+    "esm_offset": 30457868,
+    "dump_offsets": [
+      129015924,
+      129020420,
+      137680054,
+      142123651,
+      142175412,
+      144993964,
+      147254628,
+      148539068,
+      149565324
+    ],
+    "hit_count": 9
+  },
+  {
+    "form_id": 1217864,
+    "text": "Suit yourself. Gambling's thirsty work - I'll be here if you change your mind.",
+    "text_full": "Suit yourself. Gambling's thirsty work - I'll be here if you change your mind.",
+    "esm_offset": 30458607,
+    "dump_offsets": [
+      34106808
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1255422,
+    "text": "Maybe some other time.",
+    "text_full": "Maybe some other time.",
+    "esm_offset": 30489915,
+    "dump_offsets": [
+      144471708
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1269560,
+    "text": "You've got yourself a deal.",
+    "text_full": "You've got yourself a deal.",
+    "esm_offset": 30522462,
+    "dump_offsets": [
+      137670744,
+      137965172,
+      137967216,
+      148224544
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1269493,
+    "text": "Take care.",
+    "text_full": "Take care.",
+    "esm_offset": 30544697,
+    "dump_offsets": [
+      34101696
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1271797,
+    "text": "Thank you!",
+    "text_full": "Thank you!",
+    "esm_offset": 30562264,
+    "dump_offsets": [
+      33994990
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1273349,
+    "text": "Hurry up. The guards keep eyeing me like I'm a piece of meat.",
+    "text_full": "Hurry up. The guards keep eyeing me like I'm a piece of meat.",
+    "esm_offset": 30616739,
+    "dump_offsets": [
+      34105308
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1279326,
+    "text": "Just saying.",
+    "text_full": "Just saying.",
+    "esm_offset": 30655583,
+    "dump_offsets": [
+      34057743
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1284681,
+    "text": "Let me know if you change your mind.",
+    "text_full": "Let me know if you change your mind.",
+    "esm_offset": 30661771,
+    "dump_offsets": [
+      149542830
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1286420,
+    "text": "What did you do?",
+    "text_full": "What did you do?",
+    "esm_offset": 30683047,
+    "dump_offsets": [
+      131346876,
+      131353296
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1286416,
+    "text": "What about Benny?",
+    "text_full": "What about Benny?",
+    "esm_offset": 30684252,
+    "dump_offsets": [
+      131344496,
+      131344516,
+      131344536,
+      131344556
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1286508,
+    "text": "What's going on with the Great Khans?",
+    "text_full": "What's going on with the Great Khans?",
+    "esm_offset": 30692586,
+    "dump_offsets": [
+      144599828
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1286767,
+    "text": "{LATIN}{\"WALL-ae\"}Vale.",
+    "text_full": "{LATIN}{\"WALL-ae\"}Vale.",
+    "esm_offset": 30695441,
+    "dump_offsets": [
+      34104835,
+      34104932
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1286768,
+    "text": "{LATIN}{\"wallae\"}Vale.",
+    "text_full": "{LATIN}{\"wallae\"}Vale.",
+    "esm_offset": 30699526,
+    "dump_offsets": [
+      34105029
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1286763,
+    "text": "{Quiet pathetic moan}Bye.",
+    "text_full": "{Quiet pathetic moan}Bye.",
+    "esm_offset": 30700255,
+    "dump_offsets": [
+      34105443
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1287100,
+    "text": "{muttering}Momma...",
+    "text_full": "{muttering}Momma...",
+    "esm_offset": 30705799,
+    "dump_offsets": [
+      34105215
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1287727,
+    "text": "{\"Wall-ae\"}Vale.",
+    "text_full": "{\"Wall-ae\"}Vale.",
+    "esm_offset": 30710744,
+    "dump_offsets": [
+      34105125
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1289360,
+    "text": "Dammit, I'll find them eventually! Mark my words!",
+    "text_full": "Dammit, I'll find them eventually! Mark my words!",
+    "esm_offset": 30735155,
+    "dump_offsets": [
+      33898234
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1344531,
+    "text": "If we must.",
+    "text_full": "If we must.",
+    "esm_offset": 30750281,
+    "dump_offsets": [
+      34606072
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1404790,
+    "text": "Shit, you're crazy!",
+    "text_full": "Shit, you're crazy!",
+    "esm_offset": 30754704,
+    "dump_offsets": [
+      34196733
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1303191,
+    "text": "Get lost!",
+    "text_full": "Get lost!",
+    "esm_offset": 30756667,
+    "dump_offsets": [
+      34016393
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1305350,
+    "text": "I'll see you around.",
+    "text_full": "I'll see you around.",
+    "esm_offset": 30775165,
+    "dump_offsets": [
+      34101337,
+      144448935
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1307009,
+    "text": "Yeah, sure.",
+    "text_full": "Yeah, sure.",
+    "esm_offset": 30777115,
+    "dump_offsets": [
+      147249124,
+      150900384
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1308288,
+    "text": "Lead on.",
+    "text_full": "Lead on.",
+    "esm_offset": 30790911,
+    "dump_offsets": [
+      142070507
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1310951,
+    "text": "Carry on.",
+    "text_full": "Carry on.",
+    "esm_offset": 30802181,
+    "dump_offsets": [
+      34099164,
+      34506224,
+      142117129
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1317019,
+    "text": "You're welcome.",
+    "text_full": "You're welcome.",
+    "esm_offset": 30850184,
+    "dump_offsets": [
+      129017076,
+      148570541
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1320129,
+    "text": "Take care, now.",
+    "text_full": "Take care, now.",
+    "esm_offset": 30862980,
+    "dump_offsets": [
+      34098918
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1325325,
+    "text": "Good luck with that.",
+    "text_full": "Good luck with that.",
+    "esm_offset": 30891546,
+    "dump_offsets": [
+      145123952,
+      145187090
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1364801,
+    "text": "Alright.",
+    "text_full": "Alright.",
+    "esm_offset": 30900570,
+    "dump_offsets": [
+      34568954,
+      142111476,
+      145094840
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1364805,
+    "text": "I suppose.",
+    "text_full": "I suppose.",
+    "esm_offset": 30902444,
+    "dump_offsets": [
+      136238246,
+      143127760,
+      145120949
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1328722,
+    "text": "If you say so.",
+    "text_full": "If you say so.",
+    "esm_offset": 30919034,
+    "dump_offsets": [
+      128942852,
+      144407876,
+      144407916
+    ],
+    "hit_count": 3
+  },
+  {
+    "form_id": 1330840,
+    "text": "Well-spoken.",
+    "text_full": "Well-spoken.",
+    "esm_offset": 30937648,
+    "dump_offsets": [
+      143240796
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1333993,
+    "text": "I don't have time for this.",
+    "text_full": "I don't have time for this.",
+    "esm_offset": 30942431,
+    "dump_offsets": [
+      137988232,
+      144439767,
+      149543679,
+      149568152
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1333993,
+    "text": "Death to the Legion's enemies!",
+    "text_full": "Death to the Legion's enemies!",
+    "esm_offset": 30942431,
+    "dump_offsets": [
+      34453362
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1334000,
+    "text": "For {KAI-zar}Caesar!",
+    "text_full": "For {KAI-zar}Caesar!",
+    "esm_offset": 30942860,
+    "dump_offsets": [
+      34453268
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1334005,
+    "text": "Die, Profligate!",
+    "text_full": "Die, Profligate!",
+    "esm_offset": 30943197,
+    "dump_offsets": [
+      33816714,
+      34453466
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1337029,
+    "text": "Let me take a look.",
+    "text_full": "Let me take a look.",
+    "esm_offset": 30966452,
+    "dump_offsets": [
+      29269180,
+      160701662
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1337100,
+    "text": "Yeah, whatever.",
+    "text_full": "Yeah, whatever.",
+    "esm_offset": 30967145,
+    "dump_offsets": [
+      34100746,
+      34101526,
+      34106960,
+      34110602,
+      128940980,
+      129015412,
+      148228236
+    ],
+    "hit_count": 7
+  },
+  {
+    "form_id": 1339242,
+    "text": "It's about damn time.",
+    "text_full": "It's about damn time.",
+    "esm_offset": 30984351,
+    "dump_offsets": [
+      136062796
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1345998,
+    "text": "Yes, yes.",
+    "text_full": "Yes, yes.",
+    "esm_offset": 31037861,
+    "dump_offsets": [
+      34102911
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1346062,
+    "text": "Yep, get a move on.",
+    "text_full": "Yep, get a move on.",
+    "esm_offset": 31041612,
+    "dump_offsets": [
+      34102818
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1355997,
+    "text": "Okay, then.",
+    "text_full": "Okay, then.",
+    "esm_offset": 31071385,
+    "dump_offsets": [
+      34102306
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1356352,
+    "text": "See you later.",
+    "text_full": "See you later.",
+    "esm_offset": 31074813,
+    "dump_offsets": [
+      34102391,
+      34107410,
+      128944948,
+      129019028,
+      129028180
+    ],
+    "hit_count": 5
+  },
+  {
+    "form_id": 1356382,
+    "text": "Come back real soon!",
+    "text_full": "Come back real soon!",
+    "esm_offset": 31077661,
+    "dump_offsets": [
+      34097702
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1411581,
+    "text": "That's it. What do you think?",
+    "text_full": "That's it. What do you think?",
+    "esm_offset": 31109355,
+    "dump_offsets": [
+      142147380
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1409779,
+    "text": "Stay safe.",
+    "text_full": "Stay safe.",
+    "esm_offset": 31120203,
+    "dump_offsets": [
+      33971183
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1364567,
+    "text": "It's been a pleasure.",
+    "text_full": "It's been a pleasure.",
+    "esm_offset": 31136905,
+    "dump_offsets": [
+      34101431
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1367510,
+    "text": "No, not yet.",
+    "text_full": "No, not yet.",
+    "esm_offset": 31149440,
+    "dump_offsets": [
+      129020404,
+      129129716
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1368743,
+    "text": "Much obliged.",
+    "text_full": "Much obliged.",
+    "esm_offset": 31157788,
+    "dump_offsets": [
+      34563124
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1372788,
+    "text": "Just leave me alone.",
+    "text_full": "Just leave me alone.",
+    "esm_offset": 31216359,
+    "dump_offsets": [
+      142047604
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1373037,
+    "text": "So long.",
+    "text_full": "So long.",
+    "esm_offset": 31221359,
+    "dump_offsets": [
+      34099247,
+      34104117,
+      34106439,
+      34112802,
+      34115249
+    ],
+    "hit_count": 5
+  },
+  {
+    "form_id": 1373031,
+    "text": "Careful out there.",
+    "text_full": "Careful out there.",
+    "esm_offset": 31223208,
+    "dump_offsets": [
+      34098572
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1373036,
+    "text": "Don't get killed out there.",
+    "text_full": "Don't get killed out there.",
+    "esm_offset": 31223300,
+    "dump_offsets": [
+      34099329
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1385976,
+    "text": "Watch out for Great Khans.",
+    "text_full": "Watch out for Great Khans.",
+    "esm_offset": 31240866,
+    "dump_offsets": [
+      34098377
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1390599,
+    "text": "Be careful.",
+    "text_full": "Be careful.",
+    "esm_offset": 31280820,
+    "dump_offsets": [
+      33915859
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1393541,
+    "text": "{WAH-lay}Vale.",
+    "text_full": "{WAH-lay}Vale.",
+    "esm_offset": 31297777,
+    "dump_offsets": [
+      34097914
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1393717,
+    "text": "Observe the rules, citizen.",
+    "text_full": "Observe the rules, citizen.",
+    "esm_offset": 31299614,
+    "dump_offsets": [
+      33971406
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1400326,
+    "text": "Watch yourself out there.",
+    "text_full": "Watch yourself out there.",
+    "esm_offset": 31335355,
+    "dump_offsets": [
+      34107224
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1402656,
+    "text": "You're welcome to try.",
+    "text_full": "You're welcome to try.",
+    "esm_offset": 31348827,
+    "dump_offsets": [
+      136090340
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1404250,
+    "text": "Understood.",
+    "text_full": "Understood.",
+    "esm_offset": 31391773,
+    "dump_offsets": [
+      126658136,
+      126812596,
+      143094532,
+      147230788
+    ],
+    "hit_count": 4
+  },
+  {
+    "form_id": 1410664,
+    "text": "I could pay you.",
+    "text_full": "I could pay you.",
+    "esm_offset": 31500323,
+    "dump_offsets": [
+      131353496
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1411425,
+    "text": "Watch your back out there.",
+    "text_full": "Watch your back out there.",
+    "esm_offset": 31512925,
+    "dump_offsets": [
+      34112420
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1415314,
+    "text": "Yeah, that's what I thought.",
+    "text_full": "Yeah, that's what I thought.",
+    "esm_offset": 31609913,
+    "dump_offsets": [
+      34208540,
+      34209875
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1420135,
+    "text": "Take it.",
+    "text_full": "Take it.",
+    "esm_offset": 31703537,
+    "dump_offsets": [
+      137675268,
+      145121098
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1422933,
+    "text": "Good point.",
+    "text_full": "Good point.",
+    "esm_offset": 31715329,
+    "dump_offsets": [
+      145112473
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1424477,
+    "text": "Best of luck to you.",
+    "text_full": "Best of luck to you.",
+    "esm_offset": 31833198,
+    "dump_offsets": [
+      34108961
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1424452,
+    "text": "Whatever you say.",
+    "text_full": "Whatever you say.",
+    "esm_offset": 31845138,
+    "dump_offsets": [
+      131174504,
+      142072159
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1427367,
+    "text": "You take care now.",
+    "text_full": "You take care now.",
+    "esm_offset": 31876943,
+    "dump_offsets": [
+      34103909
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1428960,
+    "text": "Sounds good to me.",
+    "text_full": "Sounds good to me.",
+    "esm_offset": 31899473,
+    "dump_offsets": [
+      131265220,
+      131283660,
+      143166980,
+      143279568,
+      148228704
+    ],
+    "hit_count": 5
+  },
+  {
+    "form_id": 1430623,
+    "text": "Let's do it.",
+    "text_full": "Let's do it.",
+    "esm_offset": 31932528,
+    "dump_offsets": [
+      34454108,
+      129022356,
+      136030023,
+      136030095,
+      136200540,
+      136221014,
+      137910724,
+      142210708,
+      144423171
+    ],
+    "hit_count": 9
+  },
+  {
+    "form_id": 1432526,
+    "text": "Thanks, I appreciate it.",
+    "text_full": "Thanks, I appreciate it.",
+    "esm_offset": 31970421,
+    "dump_offsets": [
+      138173988,
+      138266672
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1449749,
+    "text": "What'd you have in mind?",
+    "text_full": "What'd you have in mind?",
+    "esm_offset": 32141950,
+    "dump_offsets": [
+      138042720
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1453331,
+    "text": "Yeah, {as in, \"go on, get out\"}go on.",
+    "text_full": "Yeah, {as in, \"go on, get out\"}go on.",
+    "esm_offset": 32161171,
+    "dump_offsets": [
+      34097796
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1454910,
+    "text": "What did you have in mind?",
+    "text_full": "What did you have in mind?",
+    "esm_offset": 32195252,
+    "dump_offsets": [
+      138016848,
+      138054132
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1454939,
+    "text": "Certainly.",
+    "text_full": "Certainly.",
+    "esm_offset": 32197116,
+    "dump_offsets": [
+      136110596,
+      144510532
+    ],
+    "hit_count": 2
+  },
+  {
+    "form_id": 1456786,
+    "text": "Watch yourself.",
+    "text_full": "Watch yourself.",
+    "esm_offset": 32225083,
+    "dump_offsets": [
+      34093437
+    ],
+    "hit_count": 1
+  },
+  {
+    "form_id": 1461180,
+    "text": "We'll see.",
+    "text_full": "We'll see.",
+    "esm_offset": 32272187,
+    "dump_offsets": [
+      126611008,
+      145059348
+    ],
+    "hit_count": 2
+  }
+]

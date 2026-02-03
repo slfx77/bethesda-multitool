@@ -28,8 +28,12 @@ public record ReconstructedAmmo
     /// <summary>Rounds per clip (for display).</summary>
     public byte ClipRounds { get; init; }
 
-    /// <summary>Projectile FormID.</summary>
+    // DAT2 subrecord (FNV-specific, 20 bytes)
+    /// <summary>Projectile FormID (from DAT2 subrecord).</summary>
     public uint? ProjectileFormId { get; init; }
+
+    /// <summary>Weight (from DAT2 subrecord).</summary>
+    public float Weight { get; init; }
 
     /// <summary>Model file path (MODL subrecord) — the ammo's world model.</summary>
     public string? ModelPath { get; init; }

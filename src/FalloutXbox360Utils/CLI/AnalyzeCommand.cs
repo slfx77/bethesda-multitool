@@ -146,6 +146,7 @@ public static class AnalyzeCommand
         // Create the semantic reconstructor with memory-mapped access for full data extraction
         // This enables runtime C++ struct reading for types with poor ESM coverage (NPC, WEAP, etc.)
         SemanticReconstructionResult semanticResult;
+        StringPoolSummary? stringPool = null;
         using (var mmf = MemoryMappedFile.CreateFromFile(result.FilePath, FileMode.Open, null, 0,
                    MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
@@ -153,10 +154,13 @@ public static class AnalyzeCommand
             var reconstructor = new SemanticReconstructor(
                 result.EsmRecords!, result.FormIdMap, accessor, result.FileSize, result.MinidumpInfo);
             semanticResult = reconstructor.ReconstructAll();
+
+            // Extract string pool data to enrich the report
+            stringPool = ExtractStringPool(result, accessor);
         }
 
         // Generate the GECK-style report
-        var report = GeckReportGenerator.Generate(semanticResult);
+        var report = GeckReportGenerator.Generate(semanticResult, stringPool);
 
         await File.WriteAllTextAsync(outputPath, report);
 
@@ -266,6 +270,7 @@ public static class AnalyzeCommand
         // Run full semantic reconstruction with memory-mapped file access
         // This enables runtime C++ struct reading for types with poor ESM coverage
         SemanticReconstructionResult semanticResult;
+        StringPoolSummary? stringPool = null;
         var fileSize = new FileInfo(input).Length;
         using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
@@ -273,6 +278,9 @@ public static class AnalyzeCommand
             var reconstructor = new SemanticReconstructor(
                 result.EsmRecords!, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
             semanticResult = reconstructor.ReconstructAll();
+
+            // Extract string pool data to enrich the CSV exports
+            stringPool = ExtractStringPool(result, accessor);
         }
 
         // Generate split CSV reports (one file per record type)
@@ -291,6 +299,23 @@ public static class AnalyzeCommand
             var runtimeReport = GeckReportGenerator.GenerateRuntimeEditorIdsReport(
                 result.EsmRecords.RuntimeEditorIds);
             await File.WriteAllTextAsync(Path.Combine(extractEsm, "runtime_editorids.csv"), runtimeReport);
+        }
+
+        // Export string pool data (dialogue, file paths, EditorIDs, settings from runtime memory)
+        if (stringPool != null)
+        {
+            var stringPoolCsvs = CsvReportGenerator.GenerateStringPoolCsvs(stringPool);
+            foreach (var (filename, content) in stringPoolCsvs)
+            {
+                await File.WriteAllTextAsync(Path.Combine(extractEsm, filename), content);
+            }
+
+            if (stringPoolCsvs.Count > 0)
+            {
+                AnsiConsole.MarkupLine(
+                    $"  String pool: {stringPool.DialogueLines:N0} dialogue, " +
+                    $"{stringPool.FilePaths:N0} paths, {stringPool.EditorIds:N0} EditorIDs");
+            }
         }
 
         // Export asset strings report
@@ -318,7 +343,7 @@ public static class AnalyzeCommand
             AnsiConsole.MarkupLine(
                 $"[green]Heightmaps exported:[/] {result.EsmRecords.Heightmaps.Count} images to {heightmapsDir}");
 
-            // Also export LAND record heightmaps as PNGs
+            // Also export LAND record heightmaps as PNGs (with cell coordinate names)
             if (result.EsmRecords.LandRecords.Any(l => l.Heightmap != null))
             {
                 await HeightmapPngExporter.ExportLandRecordsAsync(
@@ -327,14 +352,36 @@ public static class AnalyzeCommand
             }
 
             // Export a composite worldmap if we have correlated heightmaps
-            if (result.EsmRecords.CellGrids.Count > 0)
+            if (result.EsmRecords.CellGrids.Count > 0 ||
+                result.EsmRecords.LandRecords.Count > 0)
             {
                 var compositePath = Path.Combine(heightmapsDir, "worldmap_composite.png");
-                await HeightmapPngExporter.ExportCompositeWorldmapAsync(
-                    result.EsmRecords.Heightmaps,
-                    result.EsmRecords.CellGrids,
-                    compositePath);
-                AnsiConsole.MarkupLine($"[green]Composite worldmap:[/] {compositePath}");
+                if (result.EsmRecords.LandRecords.Count > 0)
+                {
+                    await HeightmapPngExporter.ExportCompositeWorldmapAsync(
+                        result.EsmRecords.Heightmaps,
+                        result.EsmRecords.CellGrids,
+                        result.EsmRecords.LandRecords,
+                        compositePath,
+                        false);
+                }
+                else
+                {
+                    await HeightmapPngExporter.ExportCompositeWorldmapAsync(
+                        result.EsmRecords.Heightmaps,
+                        result.EsmRecords.CellGrids,
+                        compositePath,
+                        false);
+                }
+
+                if (File.Exists(compositePath))
+                {
+                    AnsiConsole.MarkupLine($"[green]Composite worldmap:[/] {compositePath}");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[yellow]Composite worldmap:[/] not generated (no correlated heightmaps)");
+                }
             }
         }
 
@@ -349,6 +396,36 @@ public static class AnalyzeCommand
             var scriptResult = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress);
             AnsiConsole.MarkupLine(
                 $"[green]Scripts extracted:[/] {scriptResult.TotalRecords} records ({scriptResult.GroupedQuests} quests, {scriptResult.UngroupedScripts} ungrouped)");
+        }
+    }
+
+    /// <summary>
+    ///     Extract string pool data from the memory dump using coverage analysis.
+    ///     Returns null if the dump doesn't have minidump info (required for coverage).
+    /// </summary>
+    private static StringPoolSummary? ExtractStringPool(
+        AnalysisResult result, MemoryMappedViewAccessor accessor)
+    {
+        if (result.MinidumpInfo == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            AnsiConsole.MarkupLine("[blue]Extracting string pool data...[/]");
+            var coverageAnalyzer = new CoverageAnalyzer();
+            var coverage = coverageAnalyzer.Analyze(result, accessor);
+            var bufferAnalyzer = new RuntimeBufferAnalyzer(
+                accessor, result.FileSize, result.MinidumpInfo, coverage, null);
+            var stringPool = bufferAnalyzer.ExtractStringPoolOnly();
+            RuntimeBufferAnalyzer.CrossReferenceWithCarvedFiles(stringPool, result.CarvedFiles);
+            return stringPool;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] String pool extraction failed: {ex.Message}");
+            return null;
         }
     }
 }

@@ -13,6 +13,7 @@ internal sealed class HexDataManager : IDisposable
     private readonly List<FileRegion> _fileRegions = [];
     private bool _disposed;
     private MemoryMappedFile? _mmf;
+    private bool _ownsAccessor = true;
 
     public MemoryMappedViewAccessor? Accessor { get; private set; }
 
@@ -31,10 +32,15 @@ internal sealed class HexDataManager : IDisposable
 
     public void Cleanup()
     {
-        Accessor?.Dispose();
+        if (_ownsAccessor)
+        {
+            Accessor?.Dispose();
+            _mmf?.Dispose();
+        }
+
         Accessor = null;
-        _mmf?.Dispose();
         _mmf = null;
+        _ownsAccessor = true;
     }
 
     public void Clear()
@@ -48,6 +54,7 @@ internal sealed class HexDataManager : IDisposable
     public bool Load(string filePath, AnalysisResult analysisResult)
     {
         Cleanup();
+        _ownsAccessor = true;
         FilePath = filePath;
         FileSize = new FileInfo(filePath).Length;
         BuildFileRegions(analysisResult);
@@ -62,6 +69,53 @@ internal sealed class HexDataManager : IDisposable
         {
             return false;
         }
+    }
+
+    /// <summary>
+    ///     Loads data using an externally-owned accessor (not disposed by this manager).
+    /// </summary>
+    public bool Load(string filePath, AnalysisResult analysisResult, MemoryMappedViewAccessor externalAccessor)
+    {
+        Cleanup();
+        _ownsAccessor = false;
+        FilePath = filePath;
+        FileSize = new FileInfo(filePath).Length;
+        Accessor = externalAccessor;
+        BuildFileRegions(analysisResult);
+        return true;
+    }
+
+    /// <summary>
+    ///     Adds classified gap regions from coverage analysis to the file region list.
+    ///     Call after Load() to color-code unknown areas by their classification.
+    /// </summary>
+    public void AddCoverageGapRegions(CoverageResult coverage)
+    {
+        foreach (var gap in coverage.Gaps)
+        {
+            var color = FileTypeColors.GapColors.GetValueOrDefault(
+                gap.Classification, FileTypeColors.UnknownColor);
+
+            _fileRegions.Add(new FileRegion
+            {
+                Start = gap.FileOffset,
+                End = gap.FileOffset + gap.Size,
+                TypeName = $"Gap: {gap.Classification} ({FormatGapSize(gap.Size)})",
+                Color = color
+            });
+        }
+
+        _fileRegions.Sort((a, b) => a.Start.CompareTo(b.Start));
+    }
+
+    private static string FormatGapSize(long bytes)
+    {
+        return bytes switch
+        {
+            >= 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
+            >= 1024 => $"{bytes / 1024.0:F1} KB",
+            _ => $"{bytes:N0} B"
+        };
     }
 
     public void ReadBytes(long offset, byte[] buffer)

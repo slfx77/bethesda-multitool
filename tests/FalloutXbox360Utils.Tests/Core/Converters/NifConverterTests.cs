@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Nif;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Converters;

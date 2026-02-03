@@ -25,9 +25,12 @@ public record ReconstructedArmor
     /// <summary>Weight in units.</summary>
     public float Weight { get; init; }
 
-    // DNAM subrecord (12 bytes)
-    /// <summary>Armor rating (damage resistance).</summary>
-    public int ArmorRating { get; init; }
+    // DNAM subrecord (12 bytes): DR (int16), DT (float), Flags (uint16)
+    /// <summary>Damage Threshold (DT) — the primary armor stat in Fallout New Vegas.</summary>
+    public float DamageThreshold { get; init; }
+
+    /// <summary>Damage Resistance (DR) — deprecated in FNV, typically 0.</summary>
+    public int DamageResistance { get; init; }
 
     /// <summary>Model file path (MODL subrecord).</summary>
     public string? ModelPath { get; init; }

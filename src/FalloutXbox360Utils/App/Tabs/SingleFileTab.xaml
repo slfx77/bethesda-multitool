@@ -12,252 +12,510 @@
   <Grid Padding="16"
         VerticalAlignment="Stretch">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!--  Header row: Titles (outside cards)  -->
-    <Grid Grid.Row="0"
-          Margin="0,0,0,8">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition
-          Width="*"
-          MinWidth="500" />
-        <ColumnDefinition Width="8" />
-        <ColumnDefinition
-          Width="*"
-          MinWidth="400" />
-      </Grid.ColumnDefinitions>
+    <!--  Sub-Tab View  -->
+    <controls:TabView x:Name="SubTabView" Grid.Row="0"
+                      VerticalAlignment="Stretch"
+                      IsAddTabButtonVisible="False" TabWidthMode="SizeToContent"
+                      CanDragTabs="False" CanReorderTabs="False"
+                      SelectionChanged="SubTabView_SelectionChanged">
 
-      <TextBlock
-        Grid.Column="0"
-        VerticalAlignment="Bottom"
-        Style="{StaticResource SubtitleTextBlockStyle}"
-        Text="Minidump Analyzer" />
+      <!--  Tab 1: Memory Map  -->
+      <controls:TabViewItem Header="Memory Map" IsClosable="False">
+        <Grid VerticalAlignment="Stretch"
+              HorizontalAlignment="Stretch">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="500" />
+            <ColumnDefinition Width="8" />
+            <ColumnDefinition Width="*" MinWidth="400" />
+          </Grid.ColumnDefinitions>
 
-      <TextBlock
-        Grid.Column="2"
-        VerticalAlignment="Bottom"
-        Style="{StaticResource SubtitleTextBlockStyle}"
-        Text="Discovered Files" />
-    </Grid>
+          <!--  Hex Viewer  -->
+          <Border Grid.Column="0"
+                  VerticalAlignment="Stretch"
+                  Style="{StaticResource DarkCardBorderStyle}">
+            <hexviewer:HexViewerControl x:Name="HexViewer" />
+          </Border>
 
-    <!--  MIDDLE: Memory Map and Discovered Files side-by-side  -->
-    <Grid Grid.Row="1"
-          VerticalAlignment="Stretch">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition
-          Width="*"
-          MinWidth="500" />
-        <ColumnDefinition Width="8" />
-        <ColumnDefinition
-          Width="*"
-          MinWidth="400" />
-      </Grid.ColumnDefinitions>
+          <controls:ContentPresenter Grid.Column="1" />
 
-      <!--  Hex Viewer - always dark like code editors  -->
-      <Border
-        Grid.Column="0"
-        VerticalAlignment="Stretch"
-        Style="{StaticResource DarkCardBorderStyle}">
-        <hexviewer:HexViewerControl
-          x:Name="HexViewer" />
-      </Border>
+          <!--  Files Table  -->
+          <Border Grid.Column="2"
+                  VerticalAlignment="Stretch"
+                  Style="{StaticResource CardBorderStyle}">
+            <Grid VerticalAlignment="Stretch">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
 
-      <!--  Splitter space  -->
-      <controls:ContentPresenter Grid.Column="1" />
+              <!--  Column headers  -->
+              <Grid Grid.Row="0"
+                    Style="{StaticResource ColumnHeaderGridStyle}">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="90" />
+                  <ColumnDefinition Width="70" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="50" />
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0"
+                        Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                        Click="SortByOffset_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Offset" />
+                    <FontIcon x:Name="OffsetSortIcon"
+                              Style="{StaticResource SortIconStyle}" />
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="1"
+                        Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                        Click="SortByLength_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Size" />
+                    <FontIcon x:Name="LengthSortIcon"
+                              Style="{StaticResource SortIconStyle}" />
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="2"
+                        Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                        Click="SortByType_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Type" />
+                    <FontIcon x:Name="TypeSortIcon"
+                              Style="{StaticResource SortIconStyle}" />
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="3"
+                        Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                        Click="SortByFilename_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Filename" />
+                    <FontIcon x:Name="FilenameSortIcon"
+                              Style="{StaticResource SortIconStyle}" />
+                  </StackPanel>
+                </Button>
+                <TextBlock Grid.Column="4" FontWeight="SemiBold" Text="" />
+              </Grid>
 
-      <!--  Files Table Card  -->
-      <Border
-        Grid.Column="2"
-        VerticalAlignment="Stretch"
-        Style="{StaticResource CardBorderStyle}">
-        <Grid VerticalAlignment="Stretch">
+              <!--  File list  -->
+              <ListView x:Name="ResultsListView"
+                        Grid.Row="1"
+                        RightTapped="ResultsListView_RightTapped"
+                        SelectionChanged="ResultsListView_SelectionChanged"
+                        SelectionMode="Single">
+                <ListView.ContextFlyout>
+                  <MenuFlyout x:Name="FileListContextMenu">
+                    <MenuFlyoutItem x:Name="GoToStartMenuItem"
+                                    Click="GoToStart_Click" Text="Go to Start">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE76B;" />
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem x:Name="GoToEndMenuItem"
+                                    Click="GoToEnd_Click" Text="Go to End">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE76C;" />
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem x:Name="CopyOffsetMenuItem"
+                                    Click="CopyOffset_Click" Text="Copy Offset">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE8C8;" />
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem x:Name="CopyFilenameMenuItem"
+                                    Click="CopyFilename_Click" Text="Copy Filename">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE8C8;" />
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                  </MenuFlyout>
+                </ListView.ContextFlyout>
+                <ListView.ItemTemplate>
+                  <DataTemplate x:DataType="local:CarvedFileEntry">
+                    <Grid Padding="8,4">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="70" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="50" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" FontFamily="Consolas" FontSize="11"
+                                 Text="{x:Bind OffsetHex}" />
+                      <TextBlock Grid.Column="1" FontSize="11"
+                                 Text="{x:Bind LengthFormatted}" />
+                      <TextBlock Grid.Column="2" FontSize="11"
+                                 Text="{x:Bind DisplayType}"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTipService.ToolTip="{x:Bind DisplayType}" />
+                      <TextBlock Grid.Column="3" FontSize="11"
+                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                 Text="{x:Bind FileNameDisplay}"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTipService.ToolTip="{x:Bind FileNameDisplay}" />
+                      <FontIcon Grid.Column="4" HorizontalAlignment="Center" FontSize="12"
+                                Foreground="{x:Bind ExtractedColor, Mode=OneWay}"
+                                Glyph="{x:Bind ExtractedGlyph, Mode=OneWay}" />
+                    </Grid>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+            </Grid>
+          </Border>
+        </Grid>
+      </controls:TabViewItem>
+
+      <!--  Tab 2: Data Browser  -->
+      <controls:TabViewItem x:Name="DataBrowserTab" Header="Data Browser"
+                            IsClosable="False" IsEnabled="False">
+        <Grid>
+          <!--  Placeholder: loading indicator  -->
+          <StackPanel x:Name="DataBrowserPlaceholder"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Spacing="12">
+            <ProgressRing x:Name="ReconstructProgressRing"
+                          Width="32" Height="32"
+                          IsActive="False" Visibility="Collapsed" />
+            <TextBlock x:Name="ReconstructStatusText"
+                       HorizontalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="Run analysis to view ESM records" />
+            <Button x:Name="ReconstructButton"
+                    Click="ReconstructButton_Click"
+                    Content="Reconstruct Records"
+                    Visibility="Collapsed"
+                    Style="{StaticResource AccentButtonStyle}" />
+          </StackPanel>
+
+          <!--  Browser content: toolbar + tree + properties  -->
+          <Grid x:Name="DataBrowserContent" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="2*" MinWidth="350" />
+              <ColumnDefinition Width="3*" />
+            </Grid.ColumnDefinitions>
+
+            <!--  Left: search + sort + tree  -->
+            <Grid Grid.Column="0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+
+              <!--  Search bar  -->
+              <TextBox x:Name="EsmSearchBox"
+                       Grid.Row="0"
+                       Margin="0,0,0,8"
+                       PlaceholderText="Search by name, editor ID, or FormID..."
+                       TextChanged="EsmSearchBox_TextChanged" />
+
+              <!--  Sort controls  -->
+              <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
+                          Margin="0,0,0,8">
+                <TextBlock VerticalAlignment="Center" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Sort:" />
+                <ComboBox x:Name="EsmSortComboBox"
+                          MinWidth="140"
+                          SelectedIndex="0"
+                          SelectionChanged="EsmSortComboBox_SelectionChanged">
+                  <ComboBoxItem Content="By Name" />
+                  <ComboBoxItem Content="By Editor ID" />
+                  <ComboBoxItem Content="By Form ID" />
+                </ComboBox>
+              </StackPanel>
+
+              <!--  Tree view (shown when no search)  -->
+              <TreeView x:Name="EsmTreeView"
+                        Grid.Row="2"
+                        Expanding="EsmTreeView_Expanding"
+                        ItemInvoked="EsmTreeView_ItemInvoked"
+                        SelectionMode="Single">
+                <TreeView.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <FontIcon FontSize="12" Glyph="{Binding Content.IconGlyph}" />
+                      <TextBlock FontSize="12" Text="{Binding Content.DisplayName}" />
+                      <TextBlock FontSize="11"
+                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                 Text="{Binding Content.Detail}" />
+                    </StackPanel>
+                  </DataTemplate>
+                </TreeView.ItemTemplate>
+              </TreeView>
+
+              <!--  Search results list (shown during search)  -->
+              <ListView x:Name="EsmSearchResultsListView"
+                        Grid.Row="2"
+                        Visibility="Collapsed"
+                        SelectionChanged="EsmSearchResultsListView_SelectionChanged"
+                        SelectionMode="Single">
+                <ListView.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Padding="4,2" Spacing="2">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="12" Glyph="{Binding ParentIconGlyph}" />
+                        <TextBlock FontSize="12" Text="{Binding DisplayName}" />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Text="{Binding ParentTypeName}" />
+                        <TextBlock FontSize="11" FontFamily="Consolas"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   Text="{Binding FormIdHex}" />
+                      </StackPanel>
+                    </StackPanel>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+            </Grid>
+
+            <!--  Property detail panel  -->
+            <Grid Grid.Column="1" Padding="12,0,0,0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+
+              <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8"
+                          Margin="0,0,0,8">
+                <TextBlock x:Name="SelectedRecordTitle"
+                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           Text="Select a record" />
+                <Button x:Name="GoToOffsetButton"
+                        Click="GoToRecordOffset_Click"
+                        Content="Go to Offset"
+                        Visibility="Collapsed" />
+              </StackPanel>
+
+              <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PropertyPanel" Spacing="2" />
+              </ScrollViewer>
+            </Grid>
+          </Grid>
+        </Grid>
+      </controls:TabViewItem>
+
+      <!--  Tab 3: Reports  -->
+      <controls:TabViewItem x:Name="ReportsTab" Header="Reports"
+                            IsClosable="False" IsEnabled="False">
+        <Grid Padding="16">
           <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
           </Grid.RowDefinitions>
 
-          <!--  Sticky column headers  -->
-          <Grid
-            Grid.Row="0"
-            Style="{StaticResource ColumnHeaderGridStyle}">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="90" />
-              <ColumnDefinition Width="70" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="50" />
-            </Grid.ColumnDefinitions>
-            <Button
-              Grid.Column="0"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByOffset_Click">
-              <StackPanel
-                Orientation="Horizontal"
-                Spacing="4">
-                <TextBlock
-                  FontWeight="SemiBold"
-                  Text="Offset" />
-                <FontIcon
-                  x:Name="OffsetSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="1"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByLength_Click">
-              <StackPanel
-                Orientation="Horizontal"
-                Spacing="4">
-                <TextBlock
-                  FontWeight="SemiBold"
-                  Text="Size" />
-                <FontIcon
-                  x:Name="LengthSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="2"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByType_Click">
-              <StackPanel
-                Orientation="Horizontal"
-                Spacing="4">
-                <TextBlock
-                  FontWeight="SemiBold"
-                  Text="Type" />
-                <FontIcon
-                  x:Name="TypeSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="3"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByFilename_Click">
-              <StackPanel
-                Orientation="Horizontal"
-                Spacing="4">
-                <TextBlock
-                  FontWeight="SemiBold"
-                  Text="Filename" />
-                <FontIcon
-                  x:Name="FilenameSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <TextBlock
-              Grid.Column="4"
-              FontWeight="SemiBold"
-              Text="" />
-          </Grid>
+          <!--  Top bar: Generate + Export buttons  -->
+          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8"
+                      Margin="0,0,0,8">
+            <Button x:Name="GenerateReportsButton"
+                    Click="GenerateReportsButton_Click"
+                    Content="Generate Reports"
+                    Style="{StaticResource AccentButtonStyle}" />
+            <ProgressRing x:Name="ReportsProgressRing"
+                          Width="20" Height="20"
+                          IsActive="False" Visibility="Collapsed" />
+            <Button x:Name="ExportSelectedReportButton"
+                    Click="ExportSelectedReport_Click"
+                    Content="Export Selected"
+                    IsEnabled="False" />
+            <Button x:Name="ExportAllReportsButton"
+                    Click="ExportAllReports_Click"
+                    Content="Export All"
+                    IsEnabled="False" />
+          </StackPanel>
 
-          <!--  Scrollable file list  -->
-          <ListView
-            x:Name="ResultsListView"
-            Grid.Row="1"
-            RightTapped="ResultsListView_RightTapped"
-            SelectionChanged="ResultsListView_SelectionChanged"
-            SelectionMode="Single">
-            <ListView.ContextFlyout>
-              <MenuFlyout x:Name="FileListContextMenu">
-                <MenuFlyoutItem
-                  x:Name="GoToStartMenuItem"
-                  Click="GoToStart_Click"
-                  Text="Go to Start">
-                  <MenuFlyoutItem.Icon>
-                    <FontIcon Glyph="&#xE76B;" />
-                  </MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
-                <MenuFlyoutItem
-                  x:Name="GoToEndMenuItem"
-                  Click="GoToEnd_Click"
-                  Text="Go to End">
-                  <MenuFlyoutItem.Icon>
-                    <FontIcon Glyph="&#xE76C;" />
-                  </MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
-                <MenuFlyoutSeparator />
-                <MenuFlyoutItem
-                  x:Name="CopyOffsetMenuItem"
-                  Click="CopyOffset_Click"
-                  Text="Copy Offset">
-                  <MenuFlyoutItem.Icon>
-                    <FontIcon Glyph="&#xE8C8;" />
-                  </MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
-                <MenuFlyoutItem
-                  x:Name="CopyFilenameMenuItem"
-                  Click="CopyFilename_Click"
-                  Text="Copy Filename">
-                  <MenuFlyoutItem.Icon>
-                    <FontIcon Glyph="&#xE8C8;" />
-                  </MenuFlyoutItem.Icon>
-                </MenuFlyoutItem>
-              </MenuFlyout>
-            </ListView.ContextFlyout>
-            <ListView.ItemTemplate>
-              <DataTemplate x:DataType="local:CarvedFileEntry">
-                <Grid Padding="8,4">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="90" />
-                    <ColumnDefinition Width="70" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="50" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock
-                    Grid.Column="0"
-                    FontFamily="Consolas"
-                    FontSize="11"
-                    Text="{x:Bind OffsetHex}" />
-                  <TextBlock
-                    Grid.Column="1"
-                    FontSize="11"
-                    Text="{x:Bind LengthFormatted}" />
-                  <TextBlock
-                    Grid.Column="2"
-                    FontSize="11"
-                    Text="{x:Bind DisplayType}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind DisplayType}" />
-                  <TextBlock
-                    Grid.Column="3"
-                    FontSize="11"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="{x:Bind FileNameDisplay}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind FileNameDisplay}" />
-                  <FontIcon
-                    Grid.Column="4"
-                    HorizontalAlignment="Center"
-                    FontSize="12"
-                    Foreground="{x:Bind ExtractedColor, Mode=OneWay}"
-                    Glyph="{x:Bind ExtractedGlyph, Mode=OneWay}" />
-                </Grid>
-              </DataTemplate>
-            </ListView.ItemTemplate>
-          </ListView>
+          <!--  Search bar  -->
+          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
+                      Margin="0,0,0,8">
+            <TextBox x:Name="ReportSearchBox"
+                     Width="250"
+                     PlaceholderText="Search in report..."
+                     KeyDown="ReportSearchBox_KeyDown" />
+            <Button Content="Find Next" Click="ReportSearchNext_Click" />
+            <Button Content="Find Prev" Click="ReportSearchPrev_Click" />
+            <TextBlock x:Name="ReportSearchStatus"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </StackPanel>
+
+          <!--  Report list + preview  -->
+          <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="300" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ListView x:Name="ReportListView"
+                      Grid.Column="0"
+                      SelectionChanged="ReportListView_SelectionChanged"
+                      SelectionMode="Single">
+              <ListView.ItemTemplate>
+                <DataTemplate x:DataType="local:ReportEntry">
+                  <StackPanel Padding="4,2" Spacing="2">
+                    <TextBlock FontSize="12" FontWeight="SemiBold"
+                               Text="{x:Bind FileName}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock FontSize="11"
+                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                 Text="{x:Bind ReportType}" />
+                      <TextBlock FontSize="11"
+                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                 Text="{x:Bind SizeFormatted}" />
+                    </StackPanel>
+                  </StackPanel>
+                </DataTemplate>
+              </ListView.ItemTemplate>
+            </ListView>
+
+            <Grid Grid.Column="1" Margin="12,0,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBox x:Name="ReportPreviewTextBox"
+                       Grid.Column="0"
+                       FontFamily="Consolas" FontSize="11"
+                       IsReadOnly="True"
+                       AcceptsReturn="True"
+                       TextWrapping="NoWrap"
+                       ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                       SizeChanged="ReportPreviewTextBox_SizeChanged"
+                       PointerWheelChanged="ReportPreviewTextBox_PointerWheelChanged" />
+              <ScrollBar x:Name="ReportViewerScrollBar"
+                         Grid.Column="1"
+                         Orientation="Vertical"
+                         Maximum="0"
+                         ViewportSize="50"
+                         SmallChange="1"
+                         LargeChange="10"
+                         ValueChanged="ReportViewerScrollBar_ValueChanged" />
+            </Grid>
+          </Grid>
         </Grid>
-      </Border>
-    </Grid>
+      </controls:TabViewItem>
+
+      <!--  Tab 4: Coverage (last)  -->
+      <controls:TabViewItem x:Name="CoverageTab" Header="Coverage"
+                            IsClosable="False" IsEnabled="False">
+        <Grid Padding="16">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="400" />
+            <ColumnDefinition Width="16" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+
+          <!--  Left column: Summary + Classification  -->
+          <ScrollViewer Grid.Column="0"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16">
+              <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Coverage Summary" />
+              <TextBlock x:Name="CoverageSummaryText"
+                         FontFamily="Consolas" FontSize="12"
+                         TextWrapping="Wrap"
+                         Text="Run analysis to see coverage data." />
+
+              <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Gap Classification" />
+              <TextBlock x:Name="CoverageClassificationText"
+                         FontFamily="Consolas" FontSize="12"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </ScrollViewer>
+
+          <!--  Right column: Sortable Gap Details  -->
+          <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Style="{StaticResource SubtitleTextBlockStyle}"
+                       Text="Gap Details"
+                       Margin="0,0,0,8" />
+
+            <!--  Sortable column headers  -->
+            <Grid Grid.Row="1" Padding="8,4" Margin="0,0,0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="50" />
+                <ColumnDefinition Width="110" />
+                <ColumnDefinition Width="90" />
+                <ColumnDefinition Width="140" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Button Grid.Column="0"
+                      Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                      Click="CoverageSortByIndex_Click">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock FontSize="11" FontWeight="SemiBold" Text="#" />
+                  <FontIcon x:Name="CoverageIndexSortIcon"
+                            Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+              <Button Grid.Column="1"
+                      Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                      Click="CoverageSortByOffset_Click">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock FontSize="11" FontWeight="SemiBold" Text="File Offset" />
+                  <FontIcon x:Name="CoverageOffsetSortIcon"
+                            Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+              <Button Grid.Column="2"
+                      Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                      Click="CoverageSortBySize_Click">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock FontSize="11" FontWeight="SemiBold" Text="Size" />
+                  <FontIcon x:Name="CoverageSizeSortIcon"
+                            Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+              <Button Grid.Column="3"
+                      Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                      Click="CoverageSortByClassification_Click">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock FontSize="11" FontWeight="SemiBold" Text="Classification" />
+                  <FontIcon x:Name="CoverageClassSortIcon"
+                            Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+              <TextBlock Grid.Column="4" FontSize="11" FontWeight="SemiBold" Text="Context" />
+            </Grid>
+
+            <!--  Gap list  -->
+            <ListView x:Name="CoverageGapListView"
+                      Grid.Row="2"
+                      SelectionChanged="CoverageGapListView_SelectionChanged"
+                      SelectionMode="Single" />
+          </Grid>
+        </Grid>
+      </controls:TabViewItem>
+
+    </controls:TabView>
 
     <!--  Progress Bar (above I/O)  -->
     <ProgressBar
       x:Name="AnalysisProgressBar"
-      Grid.Row="2"
+      Grid.Row="1"
       IsIndeterminate="True"
       Style="{StaticResource TabProgressBarStyle}" />
 
     <!--  Input/Output Section  -->
     <Grid
-      Grid.Row="3"
+      Grid.Row="2"
       Style="{StaticResource IoSectionGridStyle}">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
@@ -312,7 +570,7 @@
 
     <!--  BOTTOM: File Types, Options, and Extract Button  -->
     <Grid
-      Grid.Row="4"
+      Grid.Row="3"
       Margin="0,8,0,0">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />

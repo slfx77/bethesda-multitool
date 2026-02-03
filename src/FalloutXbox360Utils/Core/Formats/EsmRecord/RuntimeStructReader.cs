@@ -889,7 +889,7 @@ public sealed class RuntimeStructReader
         }
 
         var armorRatingRaw = BinaryUtils.ReadUInt16BE(buffer, ArmoRatingOffset);
-        var armorRating = armorRatingRaw / 100;
+        var damageThreshold = armorRatingRaw / 100.0f;
 
         return new ReconstructedArmor
         {
@@ -899,7 +899,7 @@ public sealed class RuntimeStructReader
             Value = value,
             Weight = weight,
             Health = health,
-            ArmorRating = armorRating,
+            DamageThreshold = damageThreshold,
             Offset = offset,
             IsBigEndian = true
         };
@@ -1419,21 +1419,25 @@ public sealed class RuntimeStructReader
 
     // TESObjectCONT PDB inheritance chain (PDB size 156, dump 172 with +16):
     //   +0    TESBoundAnimObject (64 bytes, extends TESBoundObject)
+    //   +48   TESContainer (12 bytes) — vtable at +48, objectList at +52
+    //         tList<ContainerObject*> inline: { data(4), next(4) } at +68/+72 in dump
+    //   +60   TESFullName vtable → +68 pString [overlaps TESContainer due to MI]
     //   +64   TESFullName vtable → +68 pString
     //   +76   TESModel vtable → +80 pString (model path)
-    //   +100  TESWeight vtable → +104 fWeight (float BE)
-    //   +108  TESScriptableForm vtable → +112 pScript
-    //   +120  TESContainer.cContents: tList<ContainerObject*> inline node
-    //         tList inline: { data(4), next(4) } at +120/+124
-    //   +136  TESObjectCONT-specific data (flags, etc.)
+    //   +104  TESWeightForm vtable → +108 fWeight
+    //   +116  TESScriptableForm vtable → +120 pScript
+    //   +140  pOpenSound, +144 pCloseSound, +148 pLoopingSound
+    //   +152  Data (flags, etc.)
     //
-    // Verified via hex dumps of known containers.
+    // PDB: TESContainer at offset 48 within TESObjectCONT (NOT 100 as in TESNPC!)
+    //       objectList (tList) at TESContainer+4 = PDB 52, dump 68.
+    // NPC uses TESContainer at PDB 100 (dump 120) — different inheritance chain.
 
     private const int ContStructSize = 172;
     private const int ContModelPathOffset = 80; // TESModel.cModel BSStringT
-    private const int ContScriptOffset = 116; // TESScriptableForm.pScript (pointer)
-    private const int ContContentsDataOffset = 120; // tList inline first node: data ptr
-    private const int ContContentsNextOffset = 124; // tList inline first node: next ptr
+    private const int ContScriptOffset = 116; // TESScriptableForm vtable area (empirically verified)
+    private const int ContContentsDataOffset = 68; // tList inline first node: data ptr (PDB 52+16)
+    private const int ContContentsNextOffset = 72; // tList inline first node: next ptr (PDB 56+16)
     private const int ContFlagsOffset = 140; // TESObjectCONT flags (byte)
 
     /// <summary>
@@ -1877,6 +1881,607 @@ public sealed class RuntimeStructReader
             MuzzleFlashDuration = muzzleFlashDuration,
             Force = force,
             ModelPath = modelPath
+        };
+    }
+
+    #endregion
+
+    #region TESTopic (DIAL) — PDB 72 bytes, TESForm + TESFullName
+
+    // TESTopic: PDB 72 bytes. Inherits TESForm (24 bytes) + TESFullName (12 bytes).
+    //
+    // PDB layout:
+    //   +0    TESForm base (vtable, cFormType, iFormFlags, iFormID, pSourceFiles) — 24 bytes
+    //   +24   TESFullName vtable (4 bytes)
+    //   +28   TESFullName BSStringT (pString + sLen) — 8 bytes
+    //   +36   m_Data.type (char) — 0=Topic..7=Radio
+    //   +37   m_Data.cFlags (char) — bit0=Rumors, bit1=TopLevel
+    //   +38   padding (2 bytes)
+    //   +40   m_fPriority (float)
+    //   +44   m_listQuestInfo (BSSimpleList<QUEST_INFO*>, 8 bytes)
+    //   +52   cDummyPrompt (BSStringT, 8 bytes)
+    //   +60   m_unk3C (uint32)
+    //   +64   m_unk40 (uint32)
+    //   +68   m_uiTopicCount (uint32)
+    //
+    // Dump shift: TBD — determined empirically by ProbeDialTopicLayout().
+    // TESTopicInfo (also TESForm-derived, no TESBoundObject) has +4 shift.
+    // TESTopic has the same inheritance depth, so +4 is the initial hypothesis.
+
+    // Empirically verified dump shift: +16 (confirmed on early + debug dumps)
+    // TESTopic has extra base class bytes vs PDB, similar to TESBoundObject-derived types.
+    // Verified: FullName="Steal" at +44 (PDB+28+16), type=2 at +52 (PDB+36+16).
+    private const int DialStructSize = 88; // PDB 72 + 16
+    private const int DialFullNameOffset = 44; // PDB+28 + 16 (BSStringT for display name)
+    private const int DialDataTypeOffset = 52; // PDB+36 + 16 (m_Data.type: 0=Topic..7=Radio)
+    private const int DialDataFlagsOffset = 53; // PDB+37 + 16 (m_Data.cFlags: bit0=Rumors, bit1=TopLevel)
+    private const int DialPriorityOffset = 56; // PDB+40 + 16 (m_fPriority: float)
+    private const int DialQuestInfoListOffset = 60; // PDB+44 + 16 (BSSimpleList<QUEST_INFO*>, 8 bytes)
+    private const int DialDummyPromptOffset = 68; // PDB+52 + 16 (cDummyPrompt: BSStringT)
+    private const int DialTopicCountOffset = 84; // PDB+68 + 16 (m_uiTopicCount: uint32)
+
+    /// <summary>
+    ///     Probe a known DIAL runtime struct to determine the correct dump shift.
+    ///     Tries +0, +4, +8, +16 shift hypotheses and logs which one produces valid data.
+    ///     Returns the best shift value, or -1 if none worked.
+    /// </summary>
+    public int ProbeDialTopicLayout(RuntimeEditorIdEntry entry)
+    {
+        if (entry.TesFormOffset == null)
+        {
+            return -1;
+        }
+
+        var offset = entry.TesFormOffset.Value;
+        var readSize = 96; // Read extra bytes to accommodate larger shifts
+        if (offset + readSize > _fileSize)
+        {
+            return -1;
+        }
+
+        var buffer = new byte[readSize];
+        try
+        {
+            _accessor.ReadArray(offset, buffer, 0, readSize);
+        }
+        catch
+        {
+            return -1;
+        }
+
+        // Validate FormID at +12 (no shift — standard TESForm header)
+        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        if (formId != entry.FormId)
+        {
+            return -1;
+        }
+
+        var log = Logger.Instance;
+        log.Info($"  [DIAL Probe] Entry: {entry.EditorId} (FormID 0x{entry.FormId:X8}), TesFormOffset=0x{offset:X}");
+
+        // Try each shift hypothesis
+        int[] shifts = [0, 4, 8, 16];
+        var bestShift = -1;
+        var bestScore = 0;
+
+        foreach (var shift in shifts)
+        {
+            var score = 0;
+            var details = new StringBuilder();
+            details.Append($"    Shift +{shift}: ");
+
+            // Check BSStringT for FullName at PDB+28+shift
+            var bstOff = 28 + shift;
+            if (bstOff + 8 <= buffer.Length)
+            {
+                var pStr = BinaryUtils.ReadUInt32BE(buffer, bstOff);
+                var sLen = BinaryUtils.ReadUInt16BE(buffer, bstOff + 4);
+                var strValid = pStr != 0 && sLen > 0 && sLen < 256 && IsValidPointer(pStr);
+                if (strValid)
+                {
+                    // Try to read the actual string
+                    var name = ReadBSStringT(offset, bstOff);
+                    if (name != null)
+                    {
+                        details.Append($"FullName=\"{name}\" ✓, ");
+                        score += 3;
+                    }
+                    else
+                    {
+                        details.Append("FullName=<ptr valid but string unreadable>, ");
+                        score += 1;
+                    }
+                }
+                else
+                {
+                    details.Append($"FullName=<invalid ptr=0x{pStr:X8} len={sLen}>, ");
+                }
+            }
+
+            // Check m_Data.type at PDB+36+shift (should be 0-7)
+            var typeOff = 36 + shift;
+            if (typeOff < buffer.Length)
+            {
+                var topicType = buffer[typeOff];
+                if (topicType <= 7)
+                {
+                    details.Append($"type={topicType} ✓, ");
+                    score += 2;
+                }
+                else
+                {
+                    details.Append($"type={topicType} ✗, ");
+                }
+            }
+
+            // Check m_Data.cFlags at PDB+37+shift (should be 0-3, only bits 0-1 used)
+            var flagsOff = 37 + shift;
+            if (flagsOff < buffer.Length)
+            {
+                var flags = buffer[flagsOff];
+                if (flags <= 3)
+                {
+                    details.Append($"flags={flags} ✓, ");
+                    score += 1;
+                }
+                else
+                {
+                    details.Append($"flags=0x{flags:X2} ✗, ");
+                }
+            }
+
+            // Check m_fPriority at PDB+40+shift (should be a reasonable float, typically 50.0)
+            var priorityOff = 40 + shift;
+            if (priorityOff + 4 <= buffer.Length)
+            {
+                var priority = BinaryUtils.ReadFloatBE(buffer, priorityOff);
+                if (IsNormalFloat(priority) && priority >= 0 && priority <= 200)
+                {
+                    details.Append($"priority={priority:F1} ✓, ");
+                    score += 2;
+                }
+                else
+                {
+                    details.Append($"priority={priority:F1} ✗, ");
+                }
+            }
+
+            // Check m_uiTopicCount at PDB+68+shift (should be a reasonable count, 0-10000)
+            var countOff = 68 + shift;
+            if (countOff + 4 <= buffer.Length)
+            {
+                var count = BinaryUtils.ReadUInt32BE(buffer, countOff);
+                if (count <= 10000)
+                {
+                    details.Append($"topicCount={count} ✓");
+                    score += 1;
+                }
+                else
+                {
+                    details.Append($"topicCount={count} ✗");
+                }
+            }
+
+            log.Info(details.ToString());
+            log.Info($"      Score: {score}/9");
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestShift = shift;
+            }
+        }
+
+        if (bestShift >= 0)
+        {
+            log.Info($"  [DIAL Probe] Best shift: +{bestShift} (score {bestScore}/9)");
+        }
+
+        return bestShift;
+    }
+
+    /// <summary>
+    ///     Read extended topic data from a runtime TESTopic struct.
+    ///     Returns topic metadata, or null if validation fails.
+    /// </summary>
+    public RuntimeDialogTopicInfo? ReadRuntimeDialogTopic(RuntimeEditorIdEntry entry)
+    {
+        if (entry.TesFormOffset == null)
+        {
+            return null;
+        }
+
+        var offset = entry.TesFormOffset.Value;
+        if (offset + DialStructSize > _fileSize)
+        {
+            return null;
+        }
+
+        var buffer = new byte[DialStructSize];
+        try
+        {
+            _accessor.ReadArray(offset, buffer, 0, DialStructSize);
+        }
+        catch
+        {
+            return null;
+        }
+
+        // Validate: FormID at offset 12 should match
+        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        if (formId != entry.FormId)
+        {
+            return null;
+        }
+
+        // Read topic type and flags
+        var topicType = buffer[DialDataTypeOffset];
+        var flags = buffer[DialDataFlagsOffset];
+
+        // Validate topic type (0-7)
+        if (topicType > 7)
+        {
+            return null;
+        }
+
+        // Read priority
+        var priority = BinaryUtils.ReadFloatBE(buffer, DialPriorityOffset);
+        if (!IsNormalFloat(priority) || priority < 0 || priority > 200)
+        {
+            priority = 0;
+        }
+
+        // Read topic count
+        var topicCount = BinaryUtils.ReadUInt32BE(buffer, DialTopicCountOffset);
+        if (topicCount > 10000)
+        {
+            topicCount = 0;
+        }
+
+        // Read FullName via BSStringT
+        var fullName = entry.DisplayName ?? ReadBSStringT(offset, DialFullNameOffset);
+
+        // Read DummyPrompt via BSStringT
+        var dummyPrompt = ReadBSStringT(offset, DialDummyPromptOffset);
+
+        return new RuntimeDialogTopicInfo
+        {
+            FormId = formId,
+            TopicType = topicType,
+            Flags = flags,
+            Priority = priority,
+            TopicCount = topicCount,
+            FullName = fullName,
+            DummyPrompt = dummyPrompt
+        };
+    }
+
+    /// <summary>
+    ///     Walk the m_listQuestInfo BSSimpleList on a TESTopic struct to extract
+    ///     Quest → INFO mappings. Each list node points to a QUEST_INFO struct
+    ///     (52 bytes) containing pQuest and infoLinkArray.
+    ///     Returns a list of (QuestFormId, [InfoFormIds]) pairs.
+    /// </summary>
+    public List<TopicQuestLink> WalkTopicQuestInfoList(RuntimeEditorIdEntry entry)
+    {
+        var results = new List<TopicQuestLink>();
+
+        if (entry.TesFormOffset == null)
+        {
+            return results;
+        }
+
+        var offset = entry.TesFormOffset.Value;
+        if (offset + DialStructSize > _fileSize)
+        {
+            return results;
+        }
+
+        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext)
+        var listOffset = offset + DialQuestInfoListOffset;
+        var listBuf = ReadBytes(listOffset, 8);
+        if (listBuf == null)
+        {
+            return results;
+        }
+
+        var firstItem = BinaryUtils.ReadUInt32BE(listBuf); // QUEST_INFO* pointer
+        var firstNext = BinaryUtils.ReadUInt32BE(listBuf, 4); // _Node* pointer
+
+        // Process inline first item
+        var firstLink = ReadQuestInfo(firstItem);
+        if (firstLink != null)
+        {
+            results.Add(firstLink);
+        }
+
+        // Follow BSSimpleList chain (same pattern as NPC inventory traversal)
+        var nextVA = firstNext;
+        var visited = new HashSet<uint>();
+        while (nextVA != 0 && results.Count < MaxListItems && !visited.Contains(nextVA))
+        {
+            visited.Add(nextVA);
+            var nodeFileOffset = VaToFileOffset(nextVA);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuf = ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            var dataPtr = BinaryUtils.ReadUInt32BE(nodeBuf); // QUEST_INFO*
+            var nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4); // _Node*
+
+            var link = ReadQuestInfo(dataPtr);
+            if (link != null)
+            {
+                results.Add(link);
+            }
+
+            nextVA = nextPtr;
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    ///     Read a QUEST_INFO struct (52 bytes) to extract Quest FormID and INFO FormIDs.
+    ///     QUEST_INFO layout:
+    ///     +0  pQuest (TESQuest*, 4 bytes)
+    ///     +4  infoArray (TopicInfoArray/NiTLargeArray, 24 bytes) — not used, parallel array
+    ///     +28 infoLinkArray (BSSimpleArray&lt;INFO_LINK_ELEMENT,1024&gt;, 16 bytes)
+    ///     +44 pRemovedQuest (TESQuest*, 4 bytes)
+    ///     +48 bInitialized (bool, 1 byte)
+    /// </summary>
+    private TopicQuestLink? ReadQuestInfo(uint questInfoVA)
+    {
+        if (questInfoVA == 0)
+        {
+            return null;
+        }
+
+        var fileOffset = VaToFileOffset(questInfoVA);
+        if (fileOffset == null)
+        {
+            return null;
+        }
+
+        var buf = ReadBytes(fileOffset.Value, 52);
+        if (buf == null)
+        {
+            return null;
+        }
+
+        // Follow pQuest pointer at +0 → TESQuest FormID
+        var pQuest = BinaryUtils.ReadUInt32BE(buf);
+        var questFormId = FollowPointerVaToFormId(pQuest);
+
+        if (questFormId == null)
+        {
+            return null;
+        }
+
+        // Read infoArray (NiTLargeArray<TESTopicInfo*>) at +4:
+        //   +4:  vtable (4)
+        //   +8:  m_pBase (4) — pointer to TESTopicInfo*[]
+        //   +12: m_uiMaxSize (4)
+        //   +16: m_uiSize (4) — actual number of elements
+        //   +20: m_uiESize (4)
+        //   +24: m_uiGrowBy (4)
+        var pBase = BinaryUtils.ReadUInt32BE(buf, 8);
+        var arraySize = BinaryUtils.ReadUInt32BE(buf, 16);
+
+        var infoEntries = new List<InfoPointerEntry>();
+
+        if (pBase != 0 && arraySize > 0 && arraySize <= 2000)
+        {
+            var baseFileOffset = VaToFileOffset(pBase);
+            if (baseFileOffset != null)
+            {
+                // Each element is a TESTopicInfo* pointer (4 bytes)
+                var elementCount = (int)Math.Min(arraySize, 1024);
+                var elementBytes = ReadBytes(baseFileOffset.Value, elementCount * 4);
+                if (elementBytes != null)
+                {
+                    for (var i = 0; i < elementCount; i++)
+                    {
+                        var pInfo = BinaryUtils.ReadUInt32BE(elementBytes, i * 4);
+                        var infoFormId = FollowPointerVaToFormId(pInfo);
+                        if (infoFormId != null)
+                        {
+                            infoEntries.Add(new InfoPointerEntry(infoFormId.Value, pInfo));
+                        }
+                    }
+                }
+            }
+        }
+
+        return new TopicQuestLink(questFormId.Value, infoEntries);
+    }
+
+    #endregion
+
+    #region TESTopicInfo (INFO) — PDB 80 bytes, TESForm-derived with +4 field shift
+
+    // TESTopicInfo: PDB 80 bytes, records spaced 80 bytes in dump.
+    // TESForm base: vtable(+0), cFormType(+4), iFormFlags(+8), iFormID(+12), pSourceFiles(+16).
+    //
+    // PDB vs dump offset mapping: all TESTopicInfo-specific fields shift +4 from PDB offsets.
+    // Empirically confirmed: cPrompt BSStringT.pString at dump+44 (PDB+40), FormID at dump+12 (PDB+12).
+    //
+    // PDB+24 → dump+28: objConditions (TESCondition, 8 bytes PDB)
+    // PDB+32 → dump+36: iInfoIndex (uint16) — ordering within topic
+    // PDB+34 → dump+38: bSaidOnce (bool)
+    // PDB+35 → dump+39: m_Data (TOPIC_INFO_DATA, 4 bytes: type, nextSpeaker, flags, flagsExt)
+    // PDB+40 → dump+44: cPrompt (BSStringT, 8 bytes) — player-visible prompt text (InfoPromptOffset=44)
+    // PDB+48 → dump+52: m_listAddTopics (BSSimpleList<TESTopic*>, 8 bytes)
+    // PDB+56 → dump+60: m_pConversationData (pointer, 4 bytes)
+    // PDB+60 → dump+64: pSpeaker (TESActorBase*, 4 bytes)
+    // PDB+64 → dump+68: pPerkSkillStat (pointer, 4 bytes)
+    // PDB+68 → dump+72: eDifficulty (uint32)
+    // PDB+72 → dump+76: pOwnerQuest (TESQuest*, 4 bytes)
+
+    private const int InfoStructSize = 80;
+    private const int InfoIndexOffset = 36; // PDB+32, uint16 BE
+    private const int InfoDataOffset = 39; // PDB+35, TOPIC_INFO_DATA (4 bytes)
+    private const int InfoSpeakerPtrOffset = 64; // PDB+60, TESActorBase*
+    private const int InfoDifficultyOffset = 72; // PDB+68, uint32 BE
+    private const int InfoQuestPtrOffset = 76; // PDB+72, TESQuest*
+
+    /// <summary>
+    ///     Read extended dialogue info data from a runtime TESTopicInfo struct.
+    ///     Extracts speaker, quest, flags, difficulty, and info index.
+    ///     Returns null if the struct cannot be read or validation fails.
+    /// </summary>
+    public RuntimeDialogueInfo? ReadRuntimeDialogueInfo(RuntimeEditorIdEntry entry)
+    {
+        if (entry.TesFormOffset == null)
+        {
+            return null;
+        }
+
+        var offset = entry.TesFormOffset.Value;
+        if (offset + InfoStructSize > _fileSize)
+        {
+            return null;
+        }
+
+        var buffer = new byte[InfoStructSize];
+        try
+        {
+            _accessor.ReadArray(offset, buffer, 0, InfoStructSize);
+        }
+        catch
+        {
+            return null;
+        }
+
+        // Validate: FormID at offset 12 should match the hash table entry
+        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        if (formId != entry.FormId)
+        {
+            return null;
+        }
+
+        // Read iInfoIndex (uint16 BE at dump+36)
+        var infoIndex = BinaryUtils.ReadUInt16BE(buffer, InfoIndexOffset);
+
+        // Read TOPIC_INFO_DATA (4 bytes at dump+39): type, nextSpeaker, flags, flagsExt
+        byte dataType = 0;
+        byte dataNextSpeaker = 0;
+        byte dataFlags = 0;
+        byte dataFlagsExt = 0;
+        if (InfoDataOffset + 4 <= buffer.Length)
+        {
+            dataType = buffer[InfoDataOffset];
+            dataNextSpeaker = buffer[InfoDataOffset + 1];
+            dataFlags = buffer[InfoDataOffset + 2];
+            dataFlagsExt = buffer[InfoDataOffset + 3];
+        }
+
+        // Follow pSpeaker pointer at dump+64 → TESActorBase* → get NPC FormID
+        var speakerFormId = FollowPointerToFormId(buffer, InfoSpeakerPtrOffset);
+
+        // Read eDifficulty (uint32 BE at dump+72)
+        var difficulty = BinaryUtils.ReadUInt32BE(buffer, InfoDifficultyOffset);
+        if (difficulty > 10)
+        {
+            difficulty = 0; // Sanity check: difficulty should be 0-5
+        }
+
+        // Follow pOwnerQuest pointer at dump+76 → TESQuest* → get Quest FormID
+        var questFormId = FollowPointerToFormId(buffer, InfoQuestPtrOffset);
+
+        return new RuntimeDialogueInfo
+        {
+            FormId = formId,
+            InfoIndex = infoIndex,
+            TopicType = dataType,
+            NextSpeaker = dataNextSpeaker,
+            InfoFlags = dataFlags,
+            InfoFlagsExt = dataFlagsExt,
+            SpeakerFormId = speakerFormId,
+            Difficulty = difficulty,
+            QuestFormId = questFormId,
+            PromptText = entry.DialogueLine
+        };
+    }
+
+    /// <summary>
+    ///     Read a TESTopicInfo struct from a virtual address (found via topic walk).
+    ///     Similar to ReadRuntimeDialogueInfo but starts from a VA instead of a hash table entry.
+    /// </summary>
+    public RuntimeDialogueInfo? ReadRuntimeDialogueInfoFromVA(uint va)
+    {
+        var fileOffset = VaToFileOffset(va);
+        if (fileOffset == null || fileOffset.Value + InfoStructSize > _fileSize)
+        {
+            return null;
+        }
+
+        var buffer = new byte[InfoStructSize];
+        try
+        {
+            _accessor.ReadArray(fileOffset.Value, buffer, 0, InfoStructSize);
+        }
+        catch
+        {
+            return null;
+        }
+
+        // Read FormID
+        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        if (formId == 0 || formId == 0xFFFFFFFF)
+        {
+            return null;
+        }
+
+        // Read iInfoIndex
+        var infoIndex = BinaryUtils.ReadUInt16BE(buffer, InfoIndexOffset);
+
+        // Read TOPIC_INFO_DATA
+        byte dataType = 0, dataNextSpeaker = 0, dataFlags = 0, dataFlagsExt = 0;
+        if (InfoDataOffset + 4 <= buffer.Length)
+        {
+            dataType = buffer[InfoDataOffset];
+            dataNextSpeaker = buffer[InfoDataOffset + 1];
+            dataFlags = buffer[InfoDataOffset + 2];
+            dataFlagsExt = buffer[InfoDataOffset + 3];
+        }
+
+        // Follow pSpeaker pointer
+        var speakerFormId = FollowPointerToFormId(buffer, InfoSpeakerPtrOffset);
+
+        // Read eDifficulty
+        var difficulty = BinaryUtils.ReadUInt32BE(buffer, InfoDifficultyOffset);
+        if (difficulty > 10)
+        {
+            difficulty = 0;
+        }
+
+        // Follow pOwnerQuest pointer
+        var questFormId = FollowPointerToFormId(buffer, InfoQuestPtrOffset);
+
+        // Read cPrompt BSStringT
+        var promptText = ReadBSStringT(fileOffset.Value, 44); // InfoPromptOffset = 44
+
+        return new RuntimeDialogueInfo
+        {
+            FormId = formId,
+            InfoIndex = infoIndex,
+            TopicType = dataType,
+            NextSpeaker = dataNextSpeaker,
+            InfoFlags = dataFlags,
+            InfoFlagsExt = dataFlagsExt,
+            SpeakerFormId = speakerFormId,
+            Difficulty = difficulty,
+            QuestFormId = questFormId,
+            PromptText = promptText,
+            DumpOffset = fileOffset.Value
         };
     }
 

@@ -47,6 +47,8 @@ public static class Program
 
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
         rootCommand.Subcommands.Add(ModulesCommand.Create());
+        rootCommand.Subcommands.Add(CoverageCommand.Create());
+        rootCommand.Subcommands.Add(BuffersCommand.Create());
         rootCommand.Subcommands.Add(ConvertNifCommand.Create());
         rootCommand.Subcommands.Add(EsmCommand.Create());
         rootCommand.Subcommands.Add(BsaCommand.Create());

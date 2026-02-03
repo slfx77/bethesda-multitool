@@ -28,6 +28,9 @@ public record SemanticReconstructionResult
     /// <summary>Reconstructed Dialogue (INFO) records.</summary>
     public List<ReconstructedDialogue> Dialogues { get; init; } = [];
 
+    /// <summary>Hierarchical dialogue tree: Quest → Topic → INFO chains with cross-topic links.</summary>
+    public DialogueTreeResult? DialogueTree { get; init; }
+
     /// <summary>Reconstructed Note records.</summary>
     public List<ReconstructedNote> Notes { get; init; } = [];
 
@@ -83,6 +86,39 @@ public record SemanticReconstructionResult
     /// <summary>Reconstructed Game Setting (GMST) records.</summary>
     public List<ReconstructedGameSetting> GameSettings { get; init; } = [];
 
+    /// <summary>Reconstructed Global Variable (GLOB) records.</summary>
+    public List<ReconstructedGlobal> Globals { get; init; } = [];
+
+    /// <summary>Reconstructed Enchantment (ENCH) records.</summary>
+    public List<ReconstructedEnchantment> Enchantments { get; init; } = [];
+
+    /// <summary>Reconstructed Base Effect (MGEF) records.</summary>
+    public List<ReconstructedBaseEffect> BaseEffects { get; init; } = [];
+
+    /// <summary>Reconstructed Weapon Mod (IMOD) records.</summary>
+    public List<ReconstructedWeaponMod> WeaponMods { get; init; } = [];
+
+    /// <summary>Reconstructed Recipe (RCPE) records.</summary>
+    public List<ReconstructedRecipe> Recipes { get; init; } = [];
+
+    /// <summary>Reconstructed Challenge (CHAL) records.</summary>
+    public List<ReconstructedChallenge> Challenges { get; init; } = [];
+
+    /// <summary>Reconstructed Reputation (REPU) records.</summary>
+    public List<ReconstructedReputation> Reputations { get; init; } = [];
+
+    /// <summary>Reconstructed Projectile (PROJ) records.</summary>
+    public List<ReconstructedProjectile> Projectiles { get; init; } = [];
+
+    /// <summary>Reconstructed Explosion (EXPL) records.</summary>
+    public List<ReconstructedExplosion> Explosions { get; init; } = [];
+
+    /// <summary>Reconstructed Message (MESG) records.</summary>
+    public List<ReconstructedMessage> Messages { get; init; } = [];
+
+    /// <summary>Reconstructed Class (CLAS) records.</summary>
+    public List<ReconstructedClass> Classes { get; init; } = [];
+
     /// <summary>FormID to Editor ID mapping built during reconstruction.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
@@ -98,7 +134,9 @@ public record SemanticReconstructionResult
         Quests.Count + DialogTopics.Count + Dialogues.Count + Notes.Count + Books.Count + Terminals.Count +
         Weapons.Count + Armor.Count + Ammo.Count + Consumables.Count + MiscItems.Count + Keys.Count + Containers.Count +
         Perks.Count + Spells.Count + Cells.Count + Worldspaces.Count + MapMarkers.Count + LeveledLists.Count +
-        GameSettings.Count;
+        GameSettings.Count + Globals.Count + Enchantments.Count + BaseEffects.Count +
+        WeaponMods.Count + Recipes.Count + Challenges.Count + Reputations.Count +
+        Projectiles.Count + Explosions.Count + Messages.Count + Classes.Count;
 
     /// <summary>
     ///     Counts of record types that were detected but not fully reconstructed.

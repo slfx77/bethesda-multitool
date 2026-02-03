@@ -5,15 +5,6 @@ namespace FalloutXbox360Utils;
 /// </summary>
 internal sealed class DdxFilesSorter
 {
-    public enum SortColumn
-    {
-        None,
-        FilePath,
-        Size,
-        Format,
-        Status
-    }
-
     public SortColumn CurrentColumn { get; private set; } = SortColumn.None;
 
     public bool IsAscending { get; private set; } = true;
@@ -70,5 +61,14 @@ internal sealed class DdxFilesSorter
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
             _ => files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
         };
+    }
+
+    public enum SortColumn
+    {
+        None,
+        FilePath,
+        Size,
+        Format,
+        Status
     }
 }

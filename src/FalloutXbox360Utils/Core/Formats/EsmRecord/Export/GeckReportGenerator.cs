@@ -34,6 +34,7 @@ public static class GeckReportGenerator
     ///     Generate a complete report from semantic reconstruction results.
     /// </summary>
     public static string Generate(SemanticReconstructionResult result,
+        StringPoolSummary? stringPool = null,
         Dictionary<uint, string>? formIdToEditorId = null)
     {
         var sb = new StringBuilder();
@@ -153,6 +154,12 @@ public static class GeckReportGenerator
         if (result.Worldspaces.Count > 0)
         {
             AppendWorldspacesSection(sb, result.Worldspaces, lookup);
+        }
+
+        // String pool data from runtime memory
+        if (stringPool != null)
+        {
+            AppendStringPoolSection(sb, stringPool);
         }
 
         return sb.ToString();
@@ -385,6 +392,106 @@ public static class GeckReportGenerator
         return sb.ToString();
     }
 
+    public static string GenerateGlobalsReport(List<ReconstructedGlobal> globals)
+    {
+        var sb = new StringBuilder();
+        AppendGlobalsSection(sb, globals);
+        return sb.ToString();
+    }
+
+    public static string GenerateEnchantmentsReport(List<ReconstructedEnchantment> enchantments,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendEnchantmentsSection(sb, enchantments, lookup ?? []);
+        return sb.ToString();
+    }
+
+    public static string GenerateBaseEffectsReport(List<ReconstructedBaseEffect> effects,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendBaseEffectsSection(sb, effects, lookup ?? []);
+        return sb.ToString();
+    }
+
+    public static string GenerateWeaponModsReport(List<ReconstructedWeaponMod> mods)
+    {
+        var sb = new StringBuilder();
+        AppendWeaponModsSection(sb, mods);
+        return sb.ToString();
+    }
+
+    public static string GenerateRecipesReport(List<ReconstructedRecipe> recipes,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendRecipesSection(sb, recipes, lookup ?? []);
+        return sb.ToString();
+    }
+
+    public static string GenerateChallengesReport(List<ReconstructedChallenge> challenges,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendChallengesSection(sb, challenges, lookup ?? []);
+        return sb.ToString();
+    }
+
+    public static string GenerateReputationsReport(List<ReconstructedReputation> reputations)
+    {
+        var sb = new StringBuilder();
+        AppendReputationsSection(sb, reputations);
+        return sb.ToString();
+    }
+
+    public static string GenerateProjectilesReport(List<ReconstructedProjectile> projectiles,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendProjectilesSection(sb, projectiles, lookup ?? []);
+        return sb.ToString();
+    }
+
+    public static string GenerateExplosionsReport(List<ReconstructedExplosion> explosions,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendExplosionsSection(sb, explosions, lookup ?? []);
+        return sb.ToString();
+    }
+
+    public static string GenerateMessagesReport(List<ReconstructedMessage> messages,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendMessagesSection(sb, messages, lookup ?? []);
+        return sb.ToString();
+    }
+
+    public static string GenerateClassesReport(List<ReconstructedClass> classes)
+    {
+        var sb = new StringBuilder();
+        AppendClassesSection(sb, classes);
+        return sb.ToString();
+    }
+
+    public static string GenerateMapMarkersReport(List<PlacedReference> markers,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendMapMarkersSection(sb, markers, lookup ?? []);
+        return sb.ToString();
+    }
+
+    public static string GenerateLeveledListsReport(List<ReconstructedLeveledList> lists,
+        Dictionary<uint, string>? lookup = null)
+    {
+        var sb = new StringBuilder();
+        AppendLeveledListsSection(sb, lists, lookup ?? []);
+        return sb.ToString();
+    }
+
     /// <summary>
     ///     Generate a report for runtime Editor IDs extracted via pointer following.
     ///     Lists Editor IDs with FormID associations obtained from TESForm objects.
@@ -593,32 +700,64 @@ public static class GeckReportGenerator
         }
 
         if (result.Creatures.Count > 0)
+        {
             files["creatures.csv"] = CsvReportGenerator.GenerateCreaturesCsv(result.Creatures, lookup);
+            files["creature_report.txt"] = GenerateCreaturesReport(result.Creatures, lookup);
+        }
 
         if (result.Races.Count > 0)
+        {
             files["races.csv"] = CsvReportGenerator.GenerateRacesCsv(result.Races, lookup);
+            files["race_report.txt"] = GenerateRacesReport(result.Races, lookup);
+        }
 
         if (result.Factions.Count > 0)
+        {
             files["factions.csv"] = CsvReportGenerator.GenerateFactionsCsv(result.Factions, lookup);
+            files["faction_report.txt"] = GenerateFactionsReport(result.Factions, lookup);
+        }
 
         // Quests and Dialogue
         if (result.Quests.Count > 0)
+        {
             files["quests.csv"] = CsvReportGenerator.GenerateQuestsCsv(result.Quests, lookup);
+            files["quest_report.txt"] = GenerateQuestsReport(result.Quests, lookup);
+        }
 
         if (result.DialogTopics.Count > 0)
+        {
             files["dialog_topics.csv"] = CsvReportGenerator.GenerateDialogTopicsCsv(result.DialogTopics, lookup);
+            files["dialog_topic_report.txt"] = GenerateDialogTopicsReport(result.DialogTopics, lookup);
+        }
 
         if (result.Notes.Count > 0)
+        {
             files["notes.csv"] = CsvReportGenerator.GenerateNotesCsv(result.Notes);
+            files["note_report.txt"] = GenerateNotesReport(result.Notes);
+        }
 
         if (result.Books.Count > 0)
+        {
             files["books.csv"] = CsvReportGenerator.GenerateBooksCsv(result.Books);
+            files["book_report.txt"] = GenerateBooksReport(result.Books);
+        }
 
         if (result.Terminals.Count > 0)
+        {
             files["terminals.csv"] = CsvReportGenerator.GenerateTerminalsCsv(result.Terminals, lookup);
+            files["terminal_report.txt"] = GenerateTerminalsReport(result.Terminals, lookup);
+        }
 
         if (result.Dialogues.Count > 0)
+        {
             files["dialogue.csv"] = CsvReportGenerator.GenerateDialogueCsv(result.Dialogues, lookup);
+            files["dialogue_report.txt"] = GenerateDialogueReport(result.Dialogues, lookup);
+        }
+
+        if (result.DialogueTree != null)
+        {
+            files["dialogue_tree.txt"] = GenerateDialogueTreeReport(result.DialogueTree, lookup, displayNameLookup);
+        }
 
         // Items
         if (result.Weapons.Count > 0)
@@ -628,46 +767,151 @@ public static class GeckReportGenerator
         }
 
         if (result.Armor.Count > 0)
+        {
             files["armor.csv"] = CsvReportGenerator.GenerateArmorCsv(result.Armor);
+            files["armor_report.txt"] = GenerateArmorReport(result.Armor);
+        }
 
         if (result.Ammo.Count > 0)
+        {
             files["ammo.csv"] = CsvReportGenerator.GenerateAmmoCsv(result.Ammo, lookup);
+            files["ammo_report.txt"] = GenerateAmmoReport(result.Ammo, lookup);
+        }
 
         if (result.Consumables.Count > 0)
+        {
             files["consumables.csv"] = CsvReportGenerator.GenerateConsumablesCsv(result.Consumables, lookup);
+            files["consumable_report.txt"] = GenerateConsumablesReport(result.Consumables, lookup);
+        }
 
         if (result.MiscItems.Count > 0)
+        {
             files["misc_items.csv"] = CsvReportGenerator.GenerateMiscItemsCsv(result.MiscItems);
+            files["misc_item_report.txt"] = GenerateMiscItemsReport(result.MiscItems);
+        }
 
         if (result.Keys.Count > 0)
+        {
             files["keys.csv"] = CsvReportGenerator.GenerateKeysCsv(result.Keys);
+            files["key_report.txt"] = GenerateKeysReport(result.Keys);
+        }
 
         if (result.Containers.Count > 0)
+        {
             files["containers.csv"] = CsvReportGenerator.GenerateContainersCsv(result.Containers, lookup);
+            files["container_report.txt"] = GenerateContainerReport(result.Containers, lookup, displayNameLookup);
+        }
 
         // Abilities
         if (result.Perks.Count > 0)
+        {
             files["perks.csv"] = CsvReportGenerator.GeneratePerksCsv(result.Perks, lookup);
+            files["perk_report.txt"] = GeneratePerksReport(result.Perks, lookup);
+        }
 
         if (result.Spells.Count > 0)
+        {
             files["spells.csv"] = CsvReportGenerator.GenerateSpellsCsv(result.Spells, lookup);
+            files["spell_report.txt"] = GenerateSpellsReport(result.Spells, lookup);
+        }
 
         // World
         if (result.Cells.Count > 0)
+        {
             files["cells.csv"] = CsvReportGenerator.GenerateCellsCsv(result.Cells, lookup);
+            files["cell_report.txt"] = GenerateCellsReport(result.Cells, lookup);
+        }
 
         if (result.Worldspaces.Count > 0)
+        {
             files["worldspaces.csv"] = CsvReportGenerator.GenerateWorldspacesCsv(result.Worldspaces, lookup);
+            files["worldspace_report.txt"] = GenerateWorldspacesReport(result.Worldspaces, lookup);
+        }
 
         if (result.MapMarkers.Count > 0)
+        {
             files["map_markers.csv"] = CsvReportGenerator.GenerateMapMarkersCsv(result.MapMarkers, lookup);
+            files["map_marker_report.txt"] = GenerateMapMarkersReport(result.MapMarkers, lookup);
+        }
 
         if (result.LeveledLists.Count > 0)
+        {
             files["leveled_lists.csv"] = CsvReportGenerator.GenerateLeveledListsCsv(result.LeveledLists, lookup);
+            files["leveled_list_report.txt"] = GenerateLeveledListsReport(result.LeveledLists, lookup);
+        }
 
         // Game Data
         if (result.GameSettings.Count > 0)
+        {
             files["gamesettings.csv"] = CsvReportGenerator.GenerateGameSettingsCsv(result.GameSettings);
+            files["gamesetting_report.txt"] = GenerateGameSettingsReport(result.GameSettings);
+        }
+
+        if (result.Globals.Count > 0)
+        {
+            files["globals.csv"] = CsvReportGenerator.GenerateGlobalsCsv(result.Globals);
+            files["global_report.txt"] = GenerateGlobalsReport(result.Globals);
+        }
+
+        if (result.Enchantments.Count > 0)
+        {
+            files["enchantments.csv"] = CsvReportGenerator.GenerateEnchantmentsCsv(result.Enchantments, lookup);
+            files["enchantment_report.txt"] = GenerateEnchantmentsReport(result.Enchantments, lookup);
+        }
+
+        if (result.BaseEffects.Count > 0)
+        {
+            files["base_effects.csv"] = CsvReportGenerator.GenerateBaseEffectsCsv(result.BaseEffects);
+            files["base_effect_report.txt"] = GenerateBaseEffectsReport(result.BaseEffects, lookup);
+        }
+
+        if (result.WeaponMods.Count > 0)
+        {
+            files["weapon_mods.csv"] = CsvReportGenerator.GenerateWeaponModsCsv(result.WeaponMods);
+            files["weapon_mod_report.txt"] = GenerateWeaponModsReport(result.WeaponMods);
+        }
+
+        if (result.Recipes.Count > 0)
+        {
+            files["recipes.csv"] = CsvReportGenerator.GenerateRecipesCsv(result.Recipes, lookup);
+            files["recipe_report.txt"] = GenerateRecipesReport(result.Recipes, lookup);
+        }
+
+        if (result.Challenges.Count > 0)
+        {
+            files["challenges.csv"] = CsvReportGenerator.GenerateChallengesCsv(result.Challenges);
+            files["challenge_report.txt"] = GenerateChallengesReport(result.Challenges, lookup);
+        }
+
+        if (result.Reputations.Count > 0)
+        {
+            files["reputations.csv"] = CsvReportGenerator.GenerateReputationsCsv(result.Reputations);
+            files["reputation_report.txt"] = GenerateReputationsReport(result.Reputations);
+        }
+
+        if (result.Projectiles.Count > 0)
+        {
+            files["projectiles.csv"] = CsvReportGenerator.GenerateProjectilesCsv(result.Projectiles);
+            files["projectile_report.txt"] = GenerateProjectilesReport(result.Projectiles, lookup);
+        }
+
+        if (result.Explosions.Count > 0)
+        {
+            files["explosions.csv"] = CsvReportGenerator.GenerateExplosionsCsv(result.Explosions);
+            files["explosion_report.txt"] = GenerateExplosionsReport(result.Explosions, lookup);
+        }
+
+        if (result.Messages.Count > 0)
+        {
+            files["messages.csv"] = CsvReportGenerator.GenerateMessagesCsv(result.Messages);
+            files["message_report.txt"] = GenerateMessagesReport(result.Messages, lookup);
+        }
+
+        if (result.Classes.Count > 0)
+        {
+            files["classes.csv"] = CsvReportGenerator.GenerateClassesCsv(result.Classes);
+            files["class_report.txt"] = GenerateClassesReport(result.Classes);
+        }
 
         return files;
     }
@@ -781,10 +1025,27 @@ public static class GeckReportGenerator
         sb.AppendLine("  Abilities:");
         sb.AppendLine($"    Perks:        {result.Perks.Count,6:N0}");
         sb.AppendLine($"    Spells:       {result.Spells.Count,6:N0}");
+        sb.AppendLine($"    Enchantments: {result.Enchantments.Count,6:N0}");
+        sb.AppendLine($"    Base Effects: {result.BaseEffects.Count,6:N0}");
         sb.AppendLine();
         sb.AppendLine("  World:");
         sb.AppendLine($"    Cells:        {result.Cells.Count,6:N0}");
         sb.AppendLine($"    Worldspaces:  {result.Worldspaces.Count,6:N0}");
+        sb.AppendLine();
+        sb.AppendLine("  Gameplay:");
+        sb.AppendLine($"    Globals:      {result.Globals.Count,6:N0}");
+        sb.AppendLine($"    Classes:      {result.Classes.Count,6:N0}");
+        sb.AppendLine($"    Challenges:   {result.Challenges.Count,6:N0}");
+        sb.AppendLine($"    Reputations:  {result.Reputations.Count,6:N0}");
+        sb.AppendLine($"    Messages:     {result.Messages.Count,6:N0}");
+        sb.AppendLine();
+        sb.AppendLine("  Crafting & Mods:");
+        sb.AppendLine($"    Weapon Mods:  {result.WeaponMods.Count,6:N0}");
+        sb.AppendLine($"    Recipes:      {result.Recipes.Count,6:N0}");
+        sb.AppendLine();
+        sb.AppendLine("  Combat:");
+        sb.AppendLine($"    Projectiles:  {result.Projectiles.Count,6:N0}");
+        sb.AppendLine($"    Explosions:   {result.Explosions.Count,6:N0}");
     }
 
     private static void AppendNpcsSection(StringBuilder sb, List<ReconstructedNpc> npcs,
@@ -1007,6 +1268,21 @@ public static class GeckReportGenerator
                 if (dialogue.PreviousInfo.HasValue)
                 {
                     sb.AppendLine($"Previous INFO:  {FormatFormIdWithName(dialogue.PreviousInfo.Value, lookup)}");
+                }
+
+                if (!string.IsNullOrEmpty(dialogue.PromptText))
+                {
+                    sb.AppendLine($"Prompt:         \"{dialogue.PromptText}\"");
+                }
+
+                // Flags
+                var flags = new List<string>();
+                if (dialogue.IsGoodbye) flags.Add("Goodbye");
+                if (dialogue.IsSayOnce) flags.Add("Say Once");
+                if (dialogue.IsSpeechChallenge) flags.Add($"Speech Challenge: {dialogue.DifficultyName}");
+                if (flags.Count > 0)
+                {
+                    sb.AppendLine($"Flags:          {string.Join(", ", flags)}");
                 }
 
                 sb.AppendLine(
@@ -1323,7 +1599,7 @@ public static class GeckReportGenerator
 
             sb.AppendLine();
             sb.AppendLine("Stats:");
-            sb.AppendLine($"  Armor Rating:   {item.ArmorRating}");
+            sb.AppendLine($"  DT:             {item.DamageThreshold:F1}");
             sb.AppendLine($"  Value:          {item.Value} caps");
             sb.AppendLine($"  Weight:         {item.Weight:F1}");
             sb.AppendLine($"  Health:         {item.Health}");
@@ -1832,6 +2108,210 @@ public static class GeckReportGenerator
         }
     }
 
+    // ─────────────────── Dialogue Tree Report ───────────────────
+
+    /// <summary>
+    ///     Generate a standalone GECK-style dialogue tree report from the hierarchical tree result.
+    /// </summary>
+    public static string GenerateDialogueTreeReport(
+        DialogueTreeResult tree,
+        Dictionary<uint, string> lookup,
+        Dictionary<uint, string>? displayNameLookup = null)
+    {
+        var sb = new StringBuilder();
+        var combined = CombineLookups(lookup, displayNameLookup ?? []);
+
+        var totalQuests = tree.QuestTrees.Count;
+        var totalTopics = tree.QuestTrees.Values.Sum(q => q.Topics.Count) + tree.OrphanTopics.Count;
+        var totalInfos = tree.QuestTrees.Values
+            .SelectMany(q => q.Topics)
+            .Sum(t => t.InfoChain.Count) + tree.OrphanTopics.Sum(t => t.InfoChain.Count);
+
+        AppendHeader(sb, "Dialogue Tree");
+        sb.AppendLine();
+        sb.AppendLine($"  Quests:     {totalQuests:N0}");
+        sb.AppendLine($"  Topics:     {totalTopics:N0}");
+        sb.AppendLine($"  Responses:  {totalInfos:N0}");
+        sb.AppendLine();
+
+        // Render quest trees
+        foreach (var (_, questNode) in tree.QuestTrees.OrderBy(q => q.Value.QuestName ?? ""))
+        {
+            RenderQuestTree(sb, questNode, combined);
+        }
+
+        // Render orphan topics
+        if (tree.OrphanTopics.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine(new string('=', SeparatorWidth));
+            sb.AppendLine("  Orphan Topics (no quest link)");
+            sb.AppendLine(new string('=', SeparatorWidth));
+
+            var visited = new HashSet<uint>();
+            foreach (var topic in tree.OrphanTopics)
+            {
+                RenderTopicTree(sb, topic, visited, "  ", combined);
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static void RenderQuestTree(StringBuilder sb, QuestDialogueNode questNode,
+        Dictionary<uint, string> lookup)
+    {
+        sb.AppendLine();
+        var questLabel = questNode.QuestName ?? FormatFormId(questNode.QuestFormId);
+        sb.AppendLine($"{"",3}{new string('=', SeparatorWidth - 6)}");
+        sb.AppendLine($"{"",3}Quest: {questLabel} ({FormatFormId(questNode.QuestFormId)})");
+        sb.AppendLine($"{"",3}{new string('=', SeparatorWidth - 6)}");
+
+        var visited = new HashSet<uint>();
+        for (var i = 0; i < questNode.Topics.Count; i++)
+        {
+            var isLast = i == questNode.Topics.Count - 1;
+            var connector = isLast ? "  +-- " : "  |-- ";
+            var continuation = isLast ? "      " : "  |   ";
+
+            RenderTopicTree(sb, questNode.Topics[i], visited, connector, lookup, continuation);
+        }
+    }
+
+    private static void RenderTopicTree(StringBuilder sb, TopicDialogueNode topic,
+        HashSet<uint> visited, string indent, Dictionary<uint, string> lookup,
+        string? continuationIndent = null)
+    {
+        continuationIndent ??= indent;
+
+        // Deduplication: prevent infinite recursion from circular cross-topic links
+        if (topic.TopicFormId != 0 && !visited.Add(topic.TopicFormId))
+        {
+            sb.AppendLine();
+            sb.AppendLine(
+                $"{indent}Topic: {topic.TopicName ?? FormatFormId(topic.TopicFormId)} (see above)");
+            return;
+        }
+
+        sb.AppendLine();
+
+        // Topic header
+        var topicLabel = topic.TopicName ?? "(unnamed topic)";
+        var topicTypeStr = topic.Topic != null ? $" [{topic.Topic.TopicTypeName}]" : "";
+        var formIdStr = topic.TopicFormId != 0 ? $" ({FormatFormId(topic.TopicFormId)})" : "";
+        sb.AppendLine($"{indent}Topic: {topicLabel}{formIdStr}{topicTypeStr}");
+
+        // Topic metadata
+        if (topic.Topic is { DummyPrompt: not null })
+        {
+            sb.AppendLine($"{continuationIndent}  Prompt: \"{topic.Topic.DummyPrompt}\"");
+        }
+
+        if (topic.Topic is { Priority: not 0f })
+        {
+            sb.AppendLine($"{continuationIndent}  Priority: {topic.Topic.Priority:F1}");
+        }
+
+        // INFO chain
+        for (var i = 0; i < topic.InfoChain.Count; i++)
+        {
+            var infoNode = topic.InfoChain[i];
+
+            sb.AppendLine();
+            RenderInfoNode(sb, infoNode, i + 1, continuationIndent, lookup);
+
+            // Render linked topics recursively
+            for (var j = 0; j < infoNode.LinkedTopics.Count; j++)
+            {
+                var linkedTopic = infoNode.LinkedTopics[j];
+                var linkIndent = continuationIndent + "        ";
+                var linkCont = continuationIndent + "        ";
+                sb.AppendLine($"{continuationIndent}      -> Links to:");
+                RenderTopicTree(sb, linkedTopic, visited, linkIndent, lookup, linkCont);
+            }
+        }
+    }
+
+    private static void RenderInfoNode(StringBuilder sb, InfoDialogueNode infoNode, int index,
+        string indent, Dictionary<uint, string> lookup)
+    {
+        var info = infoNode.Info;
+
+        // Speaker name resolution
+        var speakerStr = "";
+        if (info.SpeakerFormId.HasValue && info.SpeakerFormId.Value != 0)
+        {
+            speakerStr = FormatFormIdWithName(info.SpeakerFormId.Value, lookup) + ": ";
+        }
+
+        // Prompt text (player's line)
+        if (!string.IsNullOrEmpty(info.PromptText))
+        {
+            sb.AppendLine($"{indent}  [{index}] Player: \"{info.PromptText}\"");
+        }
+
+        // Response text (NPC's lines)
+        if (info.Responses.Count > 0)
+        {
+            foreach (var response in info.Responses.OrderBy(r => r.ResponseNumber))
+            {
+                var emotionStr = response.EmotionType != 0 || response.EmotionValue != 0
+                    ? $" [{response.EmotionName}: {response.EmotionValue}]"
+                    : "";
+                if (!string.IsNullOrEmpty(response.Text))
+                {
+                    sb.AppendLine($"{indent}      {speakerStr}\"{response.Text}\"{emotionStr}");
+                }
+            }
+        }
+        else if (string.IsNullOrEmpty(info.PromptText))
+        {
+            // No prompt and no responses — show FormID reference
+            sb.AppendLine($"{indent}  [{index}] {FormatFormId(info.FormId)} (no text recovered)");
+        }
+
+        // Flags line
+        var flags = new List<string>();
+        if (info.IsGoodbye)
+        {
+            flags.Add("Goodbye");
+        }
+
+        if (info.IsSayOnce)
+        {
+            flags.Add("Say Once");
+        }
+
+        if (info.IsSpeechChallenge)
+        {
+            flags.Add($"Speech Challenge: {info.DifficultyName}");
+        }
+
+        if (flags.Count > 0)
+        {
+            sb.AppendLine($"{indent}      [{string.Join("] [", flags)}]");
+        }
+    }
+
+    /// <summary>
+    ///     Combine editor ID and display name lookups into a single dictionary,
+    ///     preferring display names where available.
+    /// </summary>
+    private static Dictionary<uint, string> CombineLookups(
+        Dictionary<uint, string> editorIdLookup,
+        Dictionary<uint, string> displayNameLookup)
+    {
+        var combined = new Dictionary<uint, string>(editorIdLookup);
+        foreach (var (formId, name) in displayNameLookup)
+        {
+            combined[formId] = name; // Display name takes priority
+        }
+
+        return combined;
+    }
+
+    // ─────────────────── End Dialogue Tree ───────────────────
+
     private static void AppendGameSettingsSection(StringBuilder sb, List<ReconstructedGameSetting> settings)
     {
         AppendSectionHeader(sb, $"Game Settings ({settings.Count})");
@@ -1900,6 +2380,761 @@ public static class GeckReportGenerator
                     ? setting.StringValue[..47] + "..."
                     : setting.StringValue;
                 sb.AppendLine($"  {setting.EditorId,-60} = \"{displayValue}\"  [{FormatFormId(setting.FormId)}]");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendGlobalsSection(StringBuilder sb, List<ReconstructedGlobal> globals)
+    {
+        AppendSectionHeader(sb, $"Global Variables ({globals.Count})");
+        sb.AppendLine();
+
+        var byType = globals.GroupBy(g => g.TypeName).OrderBy(g => g.Key).ToList();
+        foreach (var group in byType)
+        {
+            sb.AppendLine($"  {group.Key}: {group.Count():N0}");
+        }
+
+        sb.AppendLine();
+
+        foreach (var group in byType)
+        {
+            sb.AppendLine($"--- {group.Key} Globals ---");
+            foreach (var g in group.OrderBy(x => x.EditorId, StringComparer.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"  {g.EditorId ?? "(none)",-50} = {g.DisplayValue,12}  [{FormatFormId(g.FormId)}]");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendEnchantmentsSection(StringBuilder sb, List<ReconstructedEnchantment> enchantments,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Enchantments ({enchantments.Count})");
+        sb.AppendLine();
+
+        var byType = enchantments.GroupBy(e => e.TypeName).OrderBy(g => g.Key).ToList();
+        sb.AppendLine($"Total Enchantments: {enchantments.Count:N0}");
+        foreach (var group in byType)
+        {
+            sb.AppendLine($"  {group.Key}: {group.Count():N0}");
+        }
+
+        var withEffects = enchantments.Count(e => e.Effects.Count > 0);
+        sb.AppendLine($"  With Effects: {withEffects:N0} ({enchantments.Sum(e => e.Effects.Count):N0} total effects)");
+        sb.AppendLine();
+
+        foreach (var ench in enchantments.OrderBy(e => e.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            var name = ench.FullName ?? ench.EditorId ?? FormatFormId(ench.FormId);
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  ENCHANTMENT: {ench.EditorId ?? "(none)"} \u2014 {ench.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {FormatFormId(ench.FormId)}");
+            sb.AppendLine($"  Type:        {ench.TypeName}");
+            sb.AppendLine($"  Charge:      {ench.ChargeAmount}");
+            sb.AppendLine($"  Cost:        {ench.EnchantCost}");
+            if (ench.Flags != 0)
+            {
+                sb.AppendLine($"  Flags:       0x{ench.Flags:X2}");
+            }
+
+            if (ench.Effects.Count > 0)
+            {
+                sb.AppendLine(
+                    $"  \u2500\u2500 Effects ({ench.Effects.Count}) {new string('\u2500', 80 - 18 - ench.Effects.Count.ToString().Length)}");
+                sb.AppendLine($"  {"Effect",-32} {"Magnitude",10} {"Area",6} {"Duration",10} {"Type",-8}");
+                sb.AppendLine($"  {new string('\u2500', 70)}");
+                foreach (var effect in ench.Effects)
+                {
+                    var effectName = effect.EffectFormId != 0
+                        ? FormatFormIdWithName(effect.EffectFormId, lookup)
+                        : "(none)";
+                    if (effectName.Length > 32)
+                    {
+                        effectName = effectName[..29] + "\u2026";
+                    }
+
+                    var typeName = effect.Type switch
+                    {
+                        0 => "Self",
+                        1 => "Touch",
+                        2 => "Target",
+                        _ => $"#{effect.Type}"
+                    };
+                    sb.AppendLine(
+                        $"  {effectName,-32} {effect.Magnitude,10:F1} {effect.Area,6} {effect.Duration,10} {typeName,-8}");
+                }
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendBaseEffectsSection(StringBuilder sb, List<ReconstructedBaseEffect> effects,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Base Effects ({effects.Count})");
+        sb.AppendLine();
+
+        var byArchetype = effects.GroupBy(e => e.ArchetypeName).OrderByDescending(g => g.Count()).ToList();
+        sb.AppendLine($"Total Base Effects: {effects.Count:N0}");
+        sb.AppendLine("By Archetype:");
+        foreach (var group in byArchetype)
+        {
+            sb.AppendLine($"  {group.Key,-30} {group.Count(),5:N0}");
+        }
+
+        sb.AppendLine();
+
+        foreach (var effect in effects.OrderBy(e => e.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  EFFECT: {effect.EditorId ?? "(none)"} \u2014 {effect.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {FormatFormId(effect.FormId)}");
+            sb.AppendLine($"  Archetype:   {effect.ArchetypeName}");
+            sb.AppendLine($"  Base Cost:   {effect.BaseCost:F2}");
+            if (!string.IsNullOrEmpty(effect.EffectCode))
+            {
+                sb.AppendLine($"  Effect Code: {effect.EffectCode}");
+            }
+
+            if (effect.Flags != 0)
+            {
+                sb.AppendLine($"  Flags:       0x{effect.Flags:X8}");
+            }
+
+            if (effect.ActorValue >= 0)
+            {
+                sb.AppendLine($"  Actor Value: {effect.ActorValue}");
+            }
+
+            if (effect.ResistValue >= 0)
+            {
+                sb.AppendLine($"  Resist Value: {effect.ResistValue}");
+            }
+
+            if (effect.MagicSchool >= 0)
+            {
+                sb.AppendLine($"  Magic School: {effect.MagicSchool}");
+            }
+
+            if (!string.IsNullOrEmpty(effect.Description))
+            {
+                sb.AppendLine($"  Description: {effect.Description}");
+            }
+
+            if (effect.Projectile != 0)
+            {
+                sb.AppendLine($"  Projectile:  {FormatFormIdWithName(effect.Projectile, lookup)}");
+            }
+
+            if (effect.Explosion != 0)
+            {
+                sb.AppendLine($"  Explosion:   {FormatFormIdWithName(effect.Explosion, lookup)}");
+            }
+
+            if (effect.AssociatedItem != 0)
+            {
+                sb.AppendLine($"  Assoc. Item: {FormatFormIdWithName(effect.AssociatedItem, lookup)}");
+            }
+
+            if (!string.IsNullOrEmpty(effect.ModelPath))
+            {
+                sb.AppendLine($"  Model:       {effect.ModelPath}");
+            }
+
+            if (!string.IsNullOrEmpty(effect.Icon))
+            {
+                sb.AppendLine($"  Icon:        {effect.Icon}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendWeaponModsSection(StringBuilder sb, List<ReconstructedWeaponMod> mods)
+    {
+        AppendSectionHeader(sb, $"Weapon Mods ({mods.Count})");
+        sb.AppendLine();
+
+        sb.AppendLine($"Total Weapon Mods: {mods.Count:N0}");
+        var withDesc = mods.Count(m => !string.IsNullOrEmpty(m.Description));
+        var withModel = mods.Count(m => !string.IsNullOrEmpty(m.ModelPath));
+        sb.AppendLine($"  With Description: {withDesc:N0}");
+        sb.AppendLine($"  With Model: {withModel:N0}");
+        sb.AppendLine();
+
+        foreach (var mod in mods.OrderBy(m => m.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  MOD: {mod.EditorId ?? "(none)"} \u2014 {mod.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {FormatFormId(mod.FormId)}");
+            sb.AppendLine($"  Value:       {mod.Value}");
+            sb.AppendLine($"  Weight:      {mod.Weight:F2}");
+            if (!string.IsNullOrEmpty(mod.Description))
+            {
+                sb.AppendLine($"  Description: {mod.Description}");
+            }
+
+            if (!string.IsNullOrEmpty(mod.ModelPath))
+            {
+                sb.AppendLine($"  Model:       {mod.ModelPath}");
+            }
+
+            if (!string.IsNullOrEmpty(mod.Icon))
+            {
+                sb.AppendLine($"  Icon:        {mod.Icon}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendRecipesSection(StringBuilder sb, List<ReconstructedRecipe> recipes,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Recipes ({recipes.Count})");
+        sb.AppendLine();
+
+        sb.AppendLine($"Total Recipes: {recipes.Count:N0}");
+        var withIngredients = recipes.Count(r => r.Ingredients.Count > 0);
+        var withOutputs = recipes.Count(r => r.Outputs.Count > 0);
+        sb.AppendLine($"  With Ingredients: {withIngredients:N0} ({recipes.Sum(r => r.Ingredients.Count):N0} total)");
+        sb.AppendLine($"  With Outputs: {withOutputs:N0} ({recipes.Sum(r => r.Outputs.Count):N0} total)");
+        sb.AppendLine();
+
+        foreach (var recipe in recipes.OrderBy(r => r.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  RECIPE: {recipe.EditorId ?? "(none)"} \u2014 {recipe.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:         {FormatFormId(recipe.FormId)}");
+            if (recipe.RequiredSkill >= 0)
+            {
+                sb.AppendLine($"  Required Skill: {recipe.RequiredSkill} (level {recipe.RequiredSkillLevel})");
+            }
+
+            if (recipe.CategoryFormId != 0)
+            {
+                sb.AppendLine($"  Category:       {FormatFormIdWithName(recipe.CategoryFormId, lookup)}");
+            }
+
+            if (recipe.SubcategoryFormId != 0)
+            {
+                sb.AppendLine($"  Subcategory:    {FormatFormIdWithName(recipe.SubcategoryFormId, lookup)}");
+            }
+
+            if (recipe.Ingredients.Count > 0)
+            {
+                sb.AppendLine(
+                    $"  \u2500\u2500 Ingredients ({recipe.Ingredients.Count}) {new string('\u2500', 80 - 22 - recipe.Ingredients.Count.ToString().Length)}");
+                sb.AppendLine($"  {"Item",-50} {"Count",6}");
+                sb.AppendLine($"  {new string('\u2500', 58)}");
+                foreach (var ing in recipe.Ingredients)
+                {
+                    var itemName = ing.ItemFormId != 0
+                        ? FormatFormIdWithName(ing.ItemFormId, lookup)
+                        : "(none)";
+                    sb.AppendLine($"  {Truncate(itemName, 50),-50} {ing.Count,6}");
+                }
+            }
+
+            if (recipe.Outputs.Count > 0)
+            {
+                sb.AppendLine(
+                    $"  \u2500\u2500 Outputs ({recipe.Outputs.Count}) {new string('\u2500', 80 - 19 - recipe.Outputs.Count.ToString().Length)}");
+                sb.AppendLine($"  {"Item",-50} {"Count",6}");
+                sb.AppendLine($"  {new string('\u2500', 58)}");
+                foreach (var output in recipe.Outputs)
+                {
+                    var itemName = output.ItemFormId != 0
+                        ? FormatFormIdWithName(output.ItemFormId, lookup)
+                        : "(none)";
+                    sb.AppendLine($"  {Truncate(itemName, 50),-50} {output.Count,6}");
+                }
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendChallengesSection(StringBuilder sb, List<ReconstructedChallenge> challenges,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Challenges ({challenges.Count})");
+        sb.AppendLine();
+
+        var byType = challenges.GroupBy(c => c.TypeName).OrderByDescending(g => g.Count()).ToList();
+        sb.AppendLine($"Total Challenges: {challenges.Count:N0}");
+        sb.AppendLine("By Type:");
+        foreach (var group in byType)
+        {
+            sb.AppendLine($"  {group.Key,-30} {group.Count(),5:N0}");
+        }
+
+        sb.AppendLine();
+
+        foreach (var chal in challenges.OrderBy(c => c.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  CHALLENGE: {chal.EditorId ?? "(none)"} \u2014 {chal.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {FormatFormId(chal.FormId)}");
+            sb.AppendLine($"  Type:        {chal.TypeName}");
+            sb.AppendLine($"  Threshold:   {chal.Threshold}");
+            if (chal.Interval != 0)
+            {
+                sb.AppendLine($"  Interval:    {chal.Interval}");
+            }
+
+            if (chal.Flags != 0)
+            {
+                sb.AppendLine($"  Flags:       0x{chal.Flags:X8}");
+            }
+
+            if (!string.IsNullOrEmpty(chal.Description))
+            {
+                sb.AppendLine($"  Description: {chal.Description}");
+            }
+
+            if (chal.Value1 != 0)
+            {
+                sb.AppendLine($"  Value1:      {chal.Value1}");
+            }
+
+            if (chal.Value2 != 0)
+            {
+                sb.AppendLine($"  Value2:      {chal.Value2}");
+            }
+
+            if (chal.Value3 != 0)
+            {
+                sb.AppendLine($"  Value3:      {chal.Value3}");
+            }
+
+            if (chal.Script != 0)
+            {
+                sb.AppendLine($"  Script:      {FormatFormIdWithName(chal.Script, lookup)}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendReputationsSection(StringBuilder sb, List<ReconstructedReputation> reputations)
+    {
+        AppendSectionHeader(sb, $"Reputations ({reputations.Count})");
+        sb.AppendLine();
+
+        sb.AppendLine($"Total Reputations: {reputations.Count:N0}");
+        sb.AppendLine();
+        sb.AppendLine($"  {"Name",-40} {"Positive",10} {"Negative",10}  {"FormID"}");
+        sb.AppendLine($"  {new string('\u2500', 76)}");
+
+        foreach (var rep in reputations.OrderBy(r => r.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            var name = rep.FullName ?? rep.EditorId ?? FormatFormId(rep.FormId);
+            sb.AppendLine(
+                $"  {Truncate(name, 40),-40} {rep.PositiveValue,10:F2} {rep.NegativeValue,10:F2}  [{FormatFormId(rep.FormId)}]");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void AppendProjectilesSection(StringBuilder sb, List<ReconstructedProjectile> projectiles,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Projectiles ({projectiles.Count})");
+        sb.AppendLine();
+
+        var byType = projectiles.GroupBy(p => p.TypeName).OrderByDescending(g => g.Count()).ToList();
+        sb.AppendLine($"Total Projectiles: {projectiles.Count:N0}");
+        sb.AppendLine("By Type:");
+        foreach (var group in byType)
+        {
+            sb.AppendLine($"  {group.Key,-20} {group.Count(),5:N0}");
+        }
+
+        if (projectiles.Count > 0)
+        {
+            sb.AppendLine(
+                $"  Speed Range: {projectiles.Min(p => p.Speed):F0} \u2013 {projectiles.Max(p => p.Speed):F0}");
+        }
+
+        sb.AppendLine();
+
+        foreach (var proj in projectiles.OrderBy(p => p.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  PROJECTILE: {proj.EditorId ?? "(none)"} \u2014 {proj.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:       {FormatFormId(proj.FormId)}");
+            sb.AppendLine($"  Type:         {proj.TypeName}");
+            sb.AppendLine($"  \u2500\u2500 Physics {new string('\u2500', 68)}");
+            sb.AppendLine($"  Speed:        {proj.Speed:F1}");
+            sb.AppendLine($"  Gravity:      {proj.Gravity:F4}");
+            sb.AppendLine($"  Range:        {proj.Range:F1}");
+            sb.AppendLine($"  Impact Force: {proj.ImpactForce:F1}");
+            if (proj.FadeDuration != 0)
+            {
+                sb.AppendLine($"  Fade Duration: {proj.FadeDuration:F2}");
+            }
+
+            if (proj.Timer != 0)
+            {
+                sb.AppendLine($"  Timer:        {proj.Timer:F2}");
+            }
+
+            if (proj.MuzzleFlashDuration != 0 || proj.MuzzleFlashLight != 0)
+            {
+                sb.AppendLine($"  \u2500\u2500 Muzzle Flash {new string('\u2500', 63)}");
+                if (proj.MuzzleFlashDuration != 0)
+                {
+                    sb.AppendLine($"  Flash Duration: {proj.MuzzleFlashDuration:F2}");
+                }
+
+                if (proj.MuzzleFlashLight != 0)
+                {
+                    sb.AppendLine($"  Flash Light:  {FormatFormIdWithName(proj.MuzzleFlashLight, lookup)}");
+                }
+            }
+
+            if (proj.Light != 0)
+            {
+                sb.AppendLine($"  Light:        {FormatFormIdWithName(proj.Light, lookup)}");
+            }
+
+            if (proj.Explosion != 0)
+            {
+                sb.AppendLine($"  Explosion:    {FormatFormIdWithName(proj.Explosion, lookup)}");
+            }
+
+            if (proj.Sound != 0)
+            {
+                sb.AppendLine($"  Sound:        {FormatFormIdWithName(proj.Sound, lookup)}");
+            }
+
+            if (!string.IsNullOrEmpty(proj.ModelPath))
+            {
+                sb.AppendLine($"  Model:        {proj.ModelPath}");
+            }
+
+            if (proj.Flags != 0)
+            {
+                sb.AppendLine($"  Flags:        0x{proj.Flags:X4}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendExplosionsSection(StringBuilder sb, List<ReconstructedExplosion> explosions,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Explosions ({explosions.Count})");
+        sb.AppendLine();
+
+        sb.AppendLine($"Total Explosions: {explosions.Count:N0}");
+        var withEnchantment = explosions.Count(e => e.Enchantment != 0);
+        sb.AppendLine($"  With Enchantment: {withEnchantment:N0}");
+        if (explosions.Count > 0)
+        {
+            sb.AppendLine(
+                $"  Damage Range: {explosions.Min(e => e.Damage):F0} \u2013 {explosions.Max(e => e.Damage):F0}");
+            sb.AppendLine(
+                $"  Radius Range: {explosions.Min(e => e.Radius):F0} \u2013 {explosions.Max(e => e.Radius):F0}");
+        }
+
+        sb.AppendLine();
+
+        foreach (var expl in explosions.OrderBy(e => e.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  EXPLOSION: {expl.EditorId ?? "(none)"} \u2014 {expl.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {FormatFormId(expl.FormId)}");
+            sb.AppendLine($"  \u2500\u2500 Stats {new string('\u2500', 70)}");
+            sb.AppendLine($"  Force:       {expl.Force:F1}");
+            sb.AppendLine($"  Damage:      {expl.Damage:F1}");
+            sb.AppendLine($"  Radius:      {expl.Radius:F1}");
+            sb.AppendLine($"  IS Radius:   {expl.ISRadius:F1}");
+            if (expl.Light != 0)
+            {
+                sb.AppendLine($"  Light:       {FormatFormIdWithName(expl.Light, lookup)}");
+            }
+
+            if (expl.Sound1 != 0)
+            {
+                sb.AppendLine($"  Sound 1:     {FormatFormIdWithName(expl.Sound1, lookup)}");
+            }
+
+            if (expl.Sound2 != 0)
+            {
+                sb.AppendLine($"  Sound 2:     {FormatFormIdWithName(expl.Sound2, lookup)}");
+            }
+
+            if (expl.ImpactDataSet != 0)
+            {
+                sb.AppendLine($"  Impact Data: {FormatFormIdWithName(expl.ImpactDataSet, lookup)}");
+            }
+
+            if (expl.Enchantment != 0)
+            {
+                sb.AppendLine($"  Enchantment: {FormatFormIdWithName(expl.Enchantment, lookup)}");
+            }
+
+            if (!string.IsNullOrEmpty(expl.ModelPath))
+            {
+                sb.AppendLine($"  Model:       {expl.ModelPath}");
+            }
+
+            if (expl.Flags != 0)
+            {
+                sb.AppendLine($"  Flags:       0x{expl.Flags:X8}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendMessagesSection(StringBuilder sb, List<ReconstructedMessage> messages,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Messages ({messages.Count})");
+        sb.AppendLine();
+
+        var messageBoxes = messages.Count(m => m.IsMessageBox);
+        var autoDisplay = messages.Count(m => m.IsAutoDisplay);
+        var withButtons = messages.Count(m => m.Buttons.Count > 0);
+        var withQuest = messages.Count(m => m.QuestFormId != 0);
+        sb.AppendLine($"Total Messages: {messages.Count:N0}");
+        sb.AppendLine($"  Message Boxes:  {messageBoxes:N0}");
+        sb.AppendLine($"  Auto-Display:   {autoDisplay:N0}");
+        sb.AppendLine($"  With Buttons:   {withButtons:N0}");
+        sb.AppendLine($"  With Quest Link: {withQuest:N0}");
+        sb.AppendLine();
+
+        foreach (var msg in messages.OrderBy(m => m.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  MESSAGE: {msg.EditorId ?? "(none)"} \u2014 {msg.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {FormatFormId(msg.FormId)}");
+            var flags = new List<string>();
+            if (msg.IsMessageBox)
+            {
+                flags.Add("MessageBox");
+            }
+
+            if (msg.IsAutoDisplay)
+            {
+                flags.Add("AutoDisplay");
+            }
+
+            if (flags.Count > 0)
+            {
+                sb.AppendLine($"  Flags:       {string.Join(", ", flags)}");
+            }
+
+            if (msg.DisplayTime != 0)
+            {
+                sb.AppendLine($"  Display Time: {msg.DisplayTime}");
+            }
+
+            if (msg.QuestFormId != 0)
+            {
+                sb.AppendLine($"  Quest:       {FormatFormIdWithName(msg.QuestFormId, lookup)}");
+            }
+
+            if (!string.IsNullOrEmpty(msg.Description))
+            {
+                sb.AppendLine($"  Text:        {msg.Description}");
+            }
+
+            if (msg.Buttons.Count > 0)
+            {
+                sb.AppendLine(
+                    $"  \u2500\u2500 Buttons ({msg.Buttons.Count}) {new string('\u2500', 80 - 18 - msg.Buttons.Count.ToString().Length)}");
+                for (var i = 0; i < msg.Buttons.Count; i++)
+                {
+                    sb.AppendLine($"    [{i + 1}] {msg.Buttons[i]}");
+                }
+            }
+
+            if (!string.IsNullOrEmpty(msg.Icon))
+            {
+                sb.AppendLine($"  Icon:        {msg.Icon}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendClassesSection(StringBuilder sb, List<ReconstructedClass> classes)
+    {
+        AppendSectionHeader(sb, $"Classes ({classes.Count})");
+        sb.AppendLine();
+
+        var playable = classes.Count(c => c.IsPlayable);
+        var guards = classes.Count(c => c.IsGuard);
+        sb.AppendLine($"Total Classes: {classes.Count:N0}");
+        sb.AppendLine($"  Playable: {playable:N0}");
+        sb.AppendLine($"  Guard:    {guards:N0}");
+        sb.AppendLine();
+
+        string[] specialNames = ["Strength", "Perception", "Endurance", "Charisma", "Intelligence", "Agility", "Luck"];
+        string[] skillNames =
+        [
+            "Barter", "Big Guns", "Energy Weapons", "Explosives", "Lockpick", "Medicine", "Melee Weapons",
+            "Repair", "Science", "Guns", "Sneak", "Speech", "Survival", "Unarmed"
+        ];
+
+        foreach (var cls in classes.OrderBy(c => c.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  CLASS: {cls.EditorId ?? "(none)"} \u2014 {cls.FullName ?? "(unnamed)"}");
+            sb.AppendLine($"  FormID:      {FormatFormId(cls.FormId)}");
+            var flags = new List<string>();
+            if (cls.IsPlayable)
+            {
+                flags.Add("Playable");
+            }
+
+            if (cls.IsGuard)
+            {
+                flags.Add("Guard");
+            }
+
+            if (flags.Count > 0)
+            {
+                sb.AppendLine($"  Flags:       {string.Join(", ", flags)}");
+            }
+
+            if (!string.IsNullOrEmpty(cls.Description))
+            {
+                sb.AppendLine($"  Description: {cls.Description}");
+            }
+
+            if (cls.TagSkills.Length > 0)
+            {
+                sb.AppendLine($"  \u2500\u2500 Tag Skills {new string('\u2500', 65)}");
+                foreach (var skillIdx in cls.TagSkills)
+                {
+                    var skillName = skillIdx >= 0 && skillIdx < skillNames.Length
+                        ? skillNames[skillIdx]
+                        : $"#{skillIdx}";
+                    sb.AppendLine($"    {skillName}");
+                }
+            }
+
+            if (cls.AttributeWeights.Length > 0)
+            {
+                sb.AppendLine($"  \u2500\u2500 Attribute Weights {new string('\u2500', 58)}");
+                for (var i = 0; i < cls.AttributeWeights.Length && i < specialNames.Length; i++)
+                {
+                    sb.AppendLine($"    {specialNames[i],-15} {cls.AttributeWeights[i],3}");
+                }
+            }
+
+            if (cls.TrainingSkill != 0 || cls.TrainingLevel != 0)
+            {
+                sb.AppendLine($"  Training:    Skill {cls.TrainingSkill}, Level {cls.TrainingLevel}");
+            }
+
+            if (cls.BarterFlags != 0)
+            {
+                sb.AppendLine($"  Barter Flags: 0x{cls.BarterFlags:X8}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static void AppendMapMarkersSection(StringBuilder sb, List<PlacedReference> markers,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Map Markers ({markers.Count})");
+        sb.AppendLine();
+
+        var byType = markers.Where(m => m.MarkerType != null)
+            .GroupBy(m => m.MarkerType!.Value)
+            .OrderByDescending(g => g.Count())
+            .ToList();
+        sb.AppendLine($"Total Map Markers: {markers.Count:N0}");
+        if (byType.Count > 0)
+        {
+            sb.AppendLine("By Type:");
+            foreach (var group in byType)
+            {
+                sb.AppendLine($"  {group.Key,-20} {group.Count(),5:N0}");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine(
+            $"  {"Name",-32} {"Type",-18} {"X",10} {"Y",10} {"Z",8}  {"FormID"}");
+        sb.AppendLine($"  {new string('\u2500', 76)}");
+
+        foreach (var marker in markers
+                     .OrderBy(m => m.MarkerType?.ToString() ?? "")
+                     .ThenBy(m => m.MarkerName, StringComparer.OrdinalIgnoreCase))
+        {
+            var name = marker.MarkerName ?? marker.BaseEditorId ?? FormatFormId(marker.FormId);
+            var typeName = marker.MarkerType?.ToString() ?? "(unknown)";
+            sb.AppendLine(
+                $"  {Truncate(name, 32),-32} {typeName,-18} {marker.X,10:F1} {marker.Y,10:F1} {marker.Z,8:F1}  [{FormatFormId(marker.FormId)}]");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void AppendLeveledListsSection(StringBuilder sb, List<ReconstructedLeveledList> lists,
+        Dictionary<uint, string> lookup)
+    {
+        AppendSectionHeader(sb, $"Leveled Lists ({lists.Count})");
+        sb.AppendLine();
+
+        var byType = lists.GroupBy(l => l.ListType).OrderBy(g => g.Key).ToList();
+        sb.AppendLine($"Total Leveled Lists: {lists.Count:N0}");
+        foreach (var group in byType)
+        {
+            sb.AppendLine($"  {group.Key}: {group.Count():N0}");
+        }
+
+        var totalEntries = lists.Sum(l => l.Entries.Count);
+        sb.AppendLine(
+            $"  Total Entries: {totalEntries:N0} (avg {(lists.Count > 0 ? totalEntries / (double)lists.Count : 0):F1} per list)");
+        sb.AppendLine();
+
+        foreach (var list in lists.OrderBy(l => l.EditorId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(new string('\u2500', 80));
+            sb.AppendLine($"  LIST: {list.EditorId ?? "(none)"}");
+            sb.AppendLine($"  FormID:      {FormatFormId(list.FormId)}");
+            sb.AppendLine($"  Type:        {list.ListType}");
+            sb.AppendLine($"  Chance None: {list.ChanceNone}%");
+            if (!string.IsNullOrEmpty(list.FlagsDescription))
+            {
+                sb.AppendLine($"  Flags:       {list.FlagsDescription}");
+            }
+
+            if (list.GlobalFormId is > 0)
+            {
+                sb.AppendLine($"  Global:      {FormatFormIdWithName(list.GlobalFormId.Value, lookup)}");
+            }
+
+            if (list.Entries.Count > 0)
+            {
+                sb.AppendLine(
+                    $"  \u2500\u2500 Entries ({list.Entries.Count}) {new string('\u2500', 80 - 18 - list.Entries.Count.ToString().Length)}");
+                sb.AppendLine($"  {"Level",7}  {"Item",-50} {"Count",6}");
+                sb.AppendLine($"  {new string('\u2500', 67)}");
+                foreach (var entry in list.Entries.OrderBy(e => e.Level))
+                {
+                    var itemName = entry.FormId != 0
+                        ? FormatFormIdWithName(entry.FormId, lookup)
+                        : "(none)";
+                    sb.AppendLine($"  {entry.Level,7}  {Truncate(itemName, 50),-50} {entry.Count,6}");
+                }
             }
 
             sb.AppendLine();
@@ -2678,6 +3913,151 @@ public static class GeckReportGenerator
 
         // Sounds use EditorID only (TESSound has no TESFullName)
         sb.AppendLine($"  {label,-17} {FormatFormIdWithName(formId.Value, editorIdLookup)}");
+    }
+
+    /// <summary>
+    ///     Generate a structured, human-readable per-container report with aligned tables
+    ///     and display names for all referenced records (contents, scripts).
+    /// </summary>
+    public static string GenerateContainerReport(
+        List<ReconstructedContainer> containers,
+        Dictionary<uint, string> editorIdLookup,
+        Dictionary<uint, string> displayNameLookup)
+    {
+        var sb = new StringBuilder();
+        AppendHeader(sb, $"Container Report ({containers.Count:N0} Containers)");
+        sb.AppendLine();
+        sb.AppendLine($"Total Containers: {containers.Count:N0}");
+        sb.AppendLine();
+
+        var withContents = containers.Count(c => c.Contents.Count > 0);
+        var totalItems = containers.Sum(c => c.Contents.Sum(i => i.Count));
+        var respawning = containers.Count(c => c.Respawns);
+        var withScript = containers.Count(c => c.Script.HasValue);
+        var withModel = containers.Count(c => !string.IsNullOrEmpty(c.ModelPath));
+
+        sb.AppendLine($"With Contents:    {withContents:N0} ({totalItems:N0} total items)");
+        sb.AppendLine($"Respawning:       {respawning:N0}");
+        sb.AppendLine($"With Script:      {withScript:N0}");
+        sb.AppendLine($"With Model Path:  {withModel:N0}");
+
+        foreach (var container in containers.OrderBy(c => c.EditorId ?? ""))
+        {
+            AppendContainerReportEntry(sb, container, editorIdLookup, displayNameLookup);
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendContainerReportEntry(
+        StringBuilder sb,
+        ReconstructedContainer container,
+        Dictionary<uint, string> editorIdLookup,
+        Dictionary<uint, string> displayNameLookup)
+    {
+        sb.AppendLine();
+
+        // Header with both EditorID and display name
+        var title = !string.IsNullOrEmpty(container.FullName)
+            ? $"CONTAINER: {container.EditorId ?? "(unknown)"} \u2014 {container.FullName}"
+            : $"CONTAINER: {container.EditorId ?? "(unknown)"}";
+        sb.AppendLine(new string(SeparatorChar, SeparatorWidth));
+        var padding = (SeparatorWidth - title.Length) / 2;
+        sb.AppendLine(new string(' ', Math.Max(0, padding)) + title);
+        sb.AppendLine(new string(SeparatorChar, SeparatorWidth));
+
+        // Basic info
+        sb.AppendLine($"  FormID:         {FormatFormId(container.FormId)}");
+        sb.AppendLine($"  Editor ID:      {container.EditorId ?? "(none)"}");
+        sb.AppendLine($"  Display Name:   {container.FullName ?? "(none)"}");
+        sb.AppendLine($"  Respawns:       {(container.Respawns ? "Yes" : "No")}");
+
+        // Contents table
+        if (container.Contents.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine(
+                $"  \u2500\u2500 Contents ({container.Contents.Count} items) {new string('\u2500', 56 - container.Contents.Count.ToString().Length)}");
+            sb.AppendLine($"    {"EditorID",-32} {"Name",-32} {"Qty",5}");
+            sb.AppendLine($"    {new string('\u2500', 32)} {new string('\u2500', 32)} {new string('\u2500', 5)}");
+
+            foreach (var item in container.Contents)
+            {
+                var editorId = ResolveEditorId(item.ItemFormId, editorIdLookup);
+                var displayName = ResolveDisplayName(item.ItemFormId, displayNameLookup);
+                sb.AppendLine($"    {Truncate(editorId, 32),-32} {Truncate(displayName, 32),-32} {item.Count,5}");
+            }
+        }
+
+        // Script reference
+        if (container.Script.HasValue)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"  \u2500\u2500 References {new string('\u2500', 67)}");
+            sb.AppendLine(
+                $"  Script:         {FormatWithDisplayName(container.Script.Value, editorIdLookup, displayNameLookup)}");
+        }
+
+        // Model path
+        if (!string.IsNullOrEmpty(container.ModelPath))
+        {
+            sb.AppendLine();
+            sb.AppendLine($"  \u2500\u2500 Model {new string('\u2500', 73)}");
+            sb.AppendLine($"  Path:           {container.ModelPath}");
+        }
+    }
+
+    #endregion
+
+    #region String Pool Section
+
+    private static void AppendStringPoolSection(StringBuilder sb, StringPoolSummary sp)
+    {
+        sb.AppendLine();
+        AppendHeader(sb, "String Pool Data (from Runtime Memory)");
+        sb.AppendLine();
+        sb.AppendLine($"  Total strings:     {sp.TotalStrings,10:N0} ({sp.UniqueStrings:N0} unique)");
+        sb.AppendLine($"  Across:            {sp.RegionCount,10:N0} regions ({FormatPoolSize(sp.TotalBytes)})");
+        sb.AppendLine();
+        sb.AppendLine($"  File paths:        {sp.FilePaths,10:N0}");
+
+        if (sp.MatchedToCarvedFiles > 0)
+        {
+            sb.AppendLine(
+                $"    Matched to carved: {sp.MatchedToCarvedFiles:N0}  |  Unmatched: {sp.UnmatchedFilePaths:N0}");
+        }
+
+        sb.AppendLine($"  EditorIDs:         {sp.EditorIds,10:N0}");
+        sb.AppendLine($"  Dialogue lines:    {sp.DialogueLines,10:N0}");
+        sb.AppendLine($"  Game settings:     {sp.GameSettings,10:N0}");
+        sb.AppendLine($"  Other:             {sp.Other,10:N0}");
+
+        if (sp.SampleDialogue.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("  Sample dialogue/descriptions (from runtime memory, not ESM records):");
+            foreach (var line in sp.SampleDialogue.Take(10))
+            {
+                var display = line.Length > 120 ? line[..117] + "..." : line;
+                sb.AppendLine($"    \"{display}\"");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("  Note: These strings come from runtime memory pools, not ESM records.");
+        sb.AppendLine("  Includes perk descriptions, skill descriptions, loading screen text,");
+        sb.AppendLine("  and other game text not found in the dump's ESM data.");
+        sb.AppendLine("  See string_pool_*.csv files for full datasets.");
+    }
+
+    private static string FormatPoolSize(long bytes)
+    {
+        return bytes switch
+        {
+            >= 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
+            >= 1024 => $"{bytes / 1024.0:F1} KB",
+            _ => $"{bytes} B"
+        };
     }
 
     #endregion

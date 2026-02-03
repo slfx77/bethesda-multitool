@@ -133,6 +133,8 @@ internal sealed class HexMinimapRenderer
         var viewHeightFraction = (double)(viewEndOffset - viewStartOffset) / fileSize;
 
         var minimapHeight = Math.Max(12, viewHeightFraction * canvasHeight);
+        // Canvas may be too small if control hasn't been laid out yet (e.g. inside unrendered tab)
+        if (canvasHeight < minimapHeight) return;
         var minimapTop = viewCenterFraction * canvasHeight - minimapHeight / 2;
         minimapTop = Math.Clamp(minimapTop, 0, canvasHeight - minimapHeight);
 

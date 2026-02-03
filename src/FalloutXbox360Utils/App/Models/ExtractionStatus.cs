@@ -4,5 +4,6 @@ public enum ExtractionStatus
 {
     NotExtracted,
     Extracted,
-    Failed
+    Failed,
+    Skipped
 }

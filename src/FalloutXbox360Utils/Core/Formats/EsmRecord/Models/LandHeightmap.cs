@@ -22,7 +22,7 @@ public record LandHeightmap
     public float[,] CalculateHeights()
     {
         var heights = new float[33, 33];
-        var rowStart = HeightOffset;
+        var rowStart = HeightOffset * 8;
 
         for (var y = 0; y < 33; y++)
         {

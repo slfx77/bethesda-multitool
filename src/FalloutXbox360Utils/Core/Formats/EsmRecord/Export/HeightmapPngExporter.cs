@@ -210,8 +210,12 @@ public static class HeightmapPngExporter
             Array.Fill(compositePixels, (byte)32);
         }
 
-        // Calculate global height range for normalization
-        var allHeights = new List<float>();
+        // Calculate global height range using absolute min/max.
+        // No percentile clamping — preserves true height relationships for comparison
+        // against full-map exports from EsmAnalyzer.
+        var globalMin = float.MaxValue;
+        var globalMax = float.MinValue;
+
         foreach (var kvp in correlatedHeightmaps)
         {
             var heights = kvp.Value.CalculateHeights();
@@ -219,13 +223,25 @@ public static class HeightmapPngExporter
             {
                 for (var x = 0; x < 33; x++)
                 {
-                    allHeights.Add(heights[y, x]);
+                    var h = heights[y, x];
+                    if (h < globalMin)
+                    {
+                        globalMin = h;
+                    }
+
+                    if (h > globalMax)
+                    {
+                        globalMax = h;
+                    }
                 }
             }
         }
 
-        var globalMin = allHeights.Count > 0 ? allHeights.Min() : 0;
-        var globalMax = allHeights.Count > 0 ? allHeights.Max() : 1;
+        if (globalMin >= globalMax)
+        {
+            return;
+        }
+
         var globalRange = globalMax - globalMin;
         if (globalRange < 0.001f)
         {
@@ -248,7 +264,9 @@ public static class HeightmapPngExporter
             {
                 for (var px = 0; px < 33; px++)
                 {
-                    var height = heights[py, px];
+                    // VHGT row 0 = south edge, row 32 = north edge.
+                    // Image py=0 is the top (north), so flip the Y index.
+                    var height = heights[32 - py, px];
                     var normalized = (height - globalMin) / globalRange;
 
                     var imgX = imgCellX * 33 + px;
@@ -301,9 +319,9 @@ public static class HeightmapPngExporter
     {
         var correlatedHeightmaps = new Dictionary<(int x, int y), DetectedVhgtHeightmap>();
 
-        // Primary source: use LAND records which have CellX/CellY from record parsing or runtime
-        // Prefer runtime coordinates (BestCellX/BestCellY) which are more reliable
-        var coveredOffsets = new HashSet<long>();
+        // Primary source: use LAND records that have both cell coordinates and heightmap data.
+        // Build DetectedVhgtHeightmap directly from the LAND record's own decompressed VHGT,
+        // since standalone VHGT detections may be in different memory regions.
         foreach (var land in landRecords)
         {
             if (land.BestCellX.HasValue && land.BestCellY.HasValue && land.Heightmap != null)
@@ -311,28 +329,20 @@ public static class HeightmapPngExporter
                 var key = (land.BestCellX.Value, land.BestCellY.Value);
                 if (!correlatedHeightmaps.ContainsKey(key))
                 {
-                    // Find matching VHGT heightmap by offset proximity to the LAND record
-                    var matchingHeightmap = heightmaps
-                        .Where(h => Math.Abs(h.Offset - land.Header.Offset) < land.Header.DataSize + 200)
-                        .MinBy(h => Math.Abs(h.Offset - land.Header.Offset));
-
-                    if (matchingHeightmap != null)
+                    correlatedHeightmaps[key] = new DetectedVhgtHeightmap
                     {
-                        correlatedHeightmaps[key] = matchingHeightmap;
-                        coveredOffsets.Add(matchingHeightmap.Offset);
-                    }
+                        Offset = land.Heightmap.Offset,
+                        IsBigEndian = land.Header.IsBigEndian,
+                        HeightOffset = land.Heightmap.HeightOffset,
+                        HeightDeltas = land.Heightmap.HeightDeltas
+                    };
                 }
             }
         }
 
-        // Fallback: use XCLC proximity for heightmaps not covered by LAND records
+        // Fallback: use XCLC proximity for standalone VHGT heightmaps not covered by LAND records
         foreach (var heightmap in heightmaps)
         {
-            if (coveredOffsets.Contains(heightmap.Offset))
-            {
-                continue;
-            }
-
             var nearestGrid = FindNearestCellGrid(heightmap.Offset, cellGrids);
             if (nearestGrid != null)
             {

@@ -7,6 +7,8 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Provides color mappings for file types in the UI.
 ///     Wraps the FormatRegistry for WinUI color types.
+///     All categories (file types + gap classifications) share a unified
+///     hue spectrum (S=70%, V=88%) for maximum visual distinction.
 /// </summary>
 public static class FileTypeColors
 {
@@ -17,19 +19,50 @@ public static class FileTypeColors
 
     /// <summary>
     ///     Legend categories for UI display.
+    ///     Order: Header, Module, Texture, PNG, Audio, Model, Script, ESM Data, Xbox/XUI.
     /// </summary>
     public static readonly LegendCategory[] LegendCategories =
     [
+        new("Header", FromArgb(FormatRegistry.CategoryColors[FileCategory.Header])),
+        new("Module", FromArgb(FormatRegistry.CategoryColors[FileCategory.Module])),
         new("Texture", FromArgb(FormatRegistry.CategoryColors[FileCategory.Texture])),
         new("PNG", FromArgb(FormatRegistry.CategoryColors[FileCategory.Image])),
         new("Audio", FromArgb(FormatRegistry.CategoryColors[FileCategory.Audio])),
         new("Model", FromArgb(FormatRegistry.CategoryColors[FileCategory.Model])),
-        new("Module", FromArgb(FormatRegistry.CategoryColors[FileCategory.Module])),
         new("Script", FromArgb(FormatRegistry.CategoryColors[FileCategory.Script])),
-        new("Xbox/XUI", FromArgb(FormatRegistry.CategoryColors[FileCategory.Xbox])),
-        new("Header", FromArgb(FormatRegistry.CategoryColors[FileCategory.Header])),
-        new("ESM Data", FromArgb(FormatRegistry.CategoryColors[FileCategory.EsmData]))
+        new("ESM Data", FromArgb(FormatRegistry.CategoryColors[FileCategory.EsmData])),
+        new("Xbox/XUI", FromArgb(FormatRegistry.CategoryColors[FileCategory.Xbox]))
     ];
+
+    /// <summary>
+    ///     Gap classification colors for coverage analysis.
+    ///     Continues the hue spectrum from file categories (216°–312°).
+    ///     Ordered: ASCII Text, String Pool, Pointer Dense, Asset Mgmt, Binary Data, Zero Fill.
+    /// </summary>
+    public static readonly Dictionary<GapClassification, Color> GapColors = new()
+    {
+        [GapClassification.AsciiText] = FromArgb(0xFF4382E0), // Hue 216° Steel blue
+        [GapClassification.StringPool] = FromArgb(0xFF4343E0), // Hue 240° Blue
+        [GapClassification.PointerDense] = FromArgb(0xFF8243E0), // Hue 264° Violet
+        [GapClassification.AssetManagement] = FromArgb(0xFFC043E0), // Hue 288° Purple
+        [GapClassification.EsmLike] = FromArgb(0xFFE043C0), // Hue 312° Magenta
+        [GapClassification.BinaryData] = FromArgb(0xFFE04382), // Hue 336° Rose
+        [GapClassification.ZeroFill] = FromArgb(0xFF2A2A2A) // Dark (unchanged)
+    };
+
+    /// <summary>
+    ///     Human-readable display names for gap classifications.
+    /// </summary>
+    public static readonly Dictionary<GapClassification, string> GapDisplayNames = new()
+    {
+        [GapClassification.AsciiText] = "ASCII Text",
+        [GapClassification.StringPool] = "String Pool",
+        [GapClassification.PointerDense] = "Pointer Dense",
+        [GapClassification.AssetManagement] = "Asset Mgmt",
+        [GapClassification.EsmLike] = "ESM-like",
+        [GapClassification.BinaryData] = "Binary Data",
+        [GapClassification.ZeroFill] = "Zero Fill"
+    };
 
     /// <summary>
     ///     Get color for a CarvedFileInfo using its Category.

@@ -87,6 +87,7 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
     {
         ExtractionStatus.Extracted => "\uE73E", // Checkmark
         ExtractionStatus.Failed => "\uE711", // X
+        ExtractionStatus.Skipped => "\uE738", // Emdash - ESM record not in report
         _ => "\uE8FB" // More (horizontal dots) - pending/not extracted
     };
 
@@ -94,6 +95,7 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
     {
         ExtractionStatus.Extracted => new SolidColorBrush(Colors.Green),
         ExtractionStatus.Failed => new SolidColorBrush(Colors.Red),
+        ExtractionStatus.Skipped => new SolidColorBrush(Colors.DarkGray),
         _ => new SolidColorBrush(Colors.Gray)
     };
 

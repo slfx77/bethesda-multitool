@@ -116,7 +116,9 @@ public sealed class SemanticReconstructor
             "NPC_", "CREA", "RACE", "FACT",
             "QUST", "DIAL", "INFO", "NOTE", "BOOK", "TERM",
             "WEAP", "ARMO", "AMMO", "ALCH", "MISC", "KEYM", "CONT",
-            "PERK", "SPEL", "CELL", "WRLD", "GMST"
+            "PERK", "SPEL", "CELL", "WRLD", "GMST",
+            "GLOB", "ENCH", "MGEF", "IMOD", "RCPE", "CHAL", "REPU",
+            "PROJ", "EXPL", "MESG", "CLAS"
         };
 
         // Count all record types and compute unreconstructed counts
@@ -128,11 +130,47 @@ public sealed class SemanticReconstructor
             .Where(kvp => !reconstructedTypes.Contains(kvp.Key))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
+        // Enrich LAND records with runtime cell coordinates for heightmap stitching
+        if (_runtimeReader != null)
+        {
+            var runtimeLandData = _runtimeReader.ReadAllRuntimeLandData(_scanResult.RuntimeEditorIds);
+            if (runtimeLandData.Count > 0)
+            {
+                EsmRecordFormat.EnrichLandRecordsWithRuntimeData(_scanResult, runtimeLandData);
+                Logger.Instance.Debug(
+                    $"  [Semantic] Enriched {runtimeLandData.Count} LAND records with runtime cell coordinates");
+            }
+        }
+
         // Build weapons and ammo first, then cross-reference for projectile data
         var weapons = ReconstructWeapons();
         var ammo = ReconstructAmmo();
         EnrichAmmoWithProjectileModels(weapons, ammo);
         EnrichWeaponsWithProjectileData(weapons);
+
+        // Build dialogue data, then construct the tree hierarchy
+        var quests = ReconstructQuests();
+        var dialogTopics = ReconstructDialogTopics();
+        var dialogues = ReconstructDialogue();
+
+        if (_runtimeReader != null)
+        {
+            // Walk TESTopic.m_listQuestInfo to link INFO→Topic→Quest and create new INFO records
+            MergeRuntimeDialogueTopicLinks(dialogues, dialogTopics);
+
+            // Enrich all dialogue records (ESM + new from topic walk) with runtime hash table data
+            // (EditorId, speaker, quest, flags, difficulty, prompt from TESTopicInfo struct).
+            // This runs AFTER the topic walk so new entries get enriched too.
+            MergeRuntimeDialogueData(dialogues);
+        }
+
+        // Propagate topic-level speaker (TNAM from ESM DIAL records) to INFO records without a speaker
+        PropagateTopicSpeakers(dialogues, dialogTopics);
+
+        // EditorID convention matching for remaining unlinked dialogues
+        LinkDialogueByEditorIdConvention(dialogues, quests);
+
+        var dialogueTree = BuildDialogueTrees(dialogues, dialogTopics, quests);
 
         return new SemanticReconstructionResult
         {
@@ -143,9 +181,10 @@ public sealed class SemanticReconstructor
             Factions = ReconstructFactions(),
 
             // Quests and Dialogue
-            Quests = ReconstructQuests(),
-            DialogTopics = ReconstructDialogTopics(),
-            Dialogues = ReconstructDialogue(),
+            Quests = quests,
+            DialogTopics = dialogTopics,
+            Dialogues = dialogues,
+            DialogueTree = dialogueTree,
             Notes = ReconstructNotes(),
             Books = ReconstructBooks(),
             Terminals = ReconstructTerminals(),
@@ -171,6 +210,17 @@ public sealed class SemanticReconstructor
 
             // Game Data
             GameSettings = ReconstructGameSettings(),
+            Globals = ReconstructGlobals(),
+            Enchantments = ReconstructEnchantments(),
+            BaseEffects = ReconstructBaseEffects(),
+            WeaponMods = ReconstructWeaponMods(),
+            Recipes = ReconstructRecipes(),
+            Challenges = ReconstructChallenges(),
+            Reputations = ReconstructReputations(),
+            Projectiles = ReconstructProjectiles(),
+            Explosions = ReconstructExplosions(),
+            Messages = ReconstructMessages(),
+            Classes = ReconstructClasses(),
 
             FormIdToEditorId = new Dictionary<uint, string>(_formIdToEditorId),
             FormIdToDisplayName = BuildFormIdToDisplayNameMap(),
@@ -395,6 +445,555 @@ public sealed class SemanticReconstructor
             .ToList();
 
         return deduped;
+    }
+
+    /// <summary>
+    ///     Enrich dialogue records with runtime TESTopicInfo data from the hash table.
+    ///     Matches dialogue FormIDs against RuntimeEditorIds to find corresponding entries,
+    ///     then reads the TESTopicInfo struct to get speaker, quest, flags, difficulty, and prompt.
+    ///     Only enriches existing records — new entries are created by MergeRuntimeDialogueTopicLinks.
+    /// </summary>
+    private void MergeRuntimeDialogueData(List<ReconstructedDialogue> dialogues)
+    {
+        // Build FormID → runtime entry lookup from hash table
+        var runtimeByFormId = new Dictionary<uint, RuntimeEditorIdEntry>();
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (entry.TesFormOffset.HasValue)
+            {
+                runtimeByFormId.TryAdd(entry.FormId, entry);
+            }
+        }
+
+        var mergedCount = 0;
+
+        for (var i = 0; i < dialogues.Count; i++)
+        {
+            var dialogue = dialogues[i];
+
+            if (!runtimeByFormId.TryGetValue(dialogue.FormId, out var entry))
+            {
+                continue;
+            }
+
+            var runtimeInfo = _runtimeReader!.ReadRuntimeDialogueInfo(entry);
+            if (runtimeInfo == null)
+            {
+                continue;
+            }
+
+            dialogues[i] = dialogue with
+            {
+                EditorId = dialogue.EditorId ?? entry.EditorId,
+                PromptText = runtimeInfo.PromptText ?? dialogue.PromptText,
+                InfoIndex = runtimeInfo.InfoIndex,
+                InfoFlags = runtimeInfo.InfoFlags,
+                InfoFlagsExt = runtimeInfo.InfoFlagsExt,
+                Difficulty = runtimeInfo.Difficulty > 0 ? runtimeInfo.Difficulty : dialogue.Difficulty,
+                SpeakerFormId = runtimeInfo.SpeakerFormId ?? dialogue.SpeakerFormId,
+                QuestFormId = runtimeInfo.QuestFormId ?? dialogue.QuestFormId
+            };
+            mergedCount++;
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] Runtime INFO enrich: {mergedCount}/{dialogues.Count} enriched " +
+            $"(hashEntries={runtimeByFormId.Count})");
+    }
+
+    /// <summary>
+    ///     Walk TESTopic.m_listQuestInfo for each runtime DIAL entry to build
+    ///     Topic → Quest and Topic → [INFO] mappings. Sets TopicFormId and QuestFormId
+    ///     on all linked dialogue records.
+    /// </summary>
+    private void MergeRuntimeDialogueTopicLinks(
+        List<ReconstructedDialogue> dialogues,
+        List<ReconstructedDialogTopic> topics)
+    {
+        // Detect DIAL FormType (same logic as MergeRuntimeDialogTopicData)
+        var knownDialFormIds = new HashSet<uint>(topics.Select(t => t.FormId));
+        byte? dialFormType = null;
+        var formTypeCounts = new Dictionary<byte, int>();
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (knownDialFormIds.Contains(entry.FormId))
+            {
+                formTypeCounts.TryGetValue(entry.FormType, out var count);
+                formTypeCounts[entry.FormType] = count + 1;
+            }
+        }
+
+        if (formTypeCounts.Count > 0)
+        {
+            var best = formTypeCounts.MaxBy(kv => kv.Value);
+            if (best.Value >= 2)
+            {
+                dialFormType = best.Key;
+            }
+        }
+
+        if (!dialFormType.HasValue)
+        {
+            // Fallback: use 0x45 (empirically verified shared DIAL+INFO FormType).
+            // WalkTopicQuestInfoList filters non-DIALs naturally (they won't have valid m_listQuestInfo).
+            const byte candidateFormType = 0x45;
+            var hasEntries = _scanResult.RuntimeEditorIds
+                .Any(e => e.FormType == candidateFormType && e.TesFormOffset.HasValue);
+            if (hasEntries)
+            {
+                dialFormType = candidateFormType;
+            }
+        }
+
+        if (!dialFormType.HasValue)
+        {
+            return;
+        }
+
+        // Build FormID → dialogue index for updating
+        var dialogueByFormId = new Dictionary<uint, int>();
+        for (var i = 0; i < dialogues.Count; i++)
+        {
+            dialogueByFormId.TryAdd(dialogues[i].FormId, i);
+        }
+
+        var topicLinked = 0;
+        var questLinked = 0;
+        var topicsWalked = 0;
+        var totalInfosLinked = 0;
+        var totalInfosFound = 0;
+        var newInfoCount = 0;
+
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType != dialFormType.Value || !entry.TesFormOffset.HasValue)
+            {
+                continue;
+            }
+
+            // Walk this topic's m_listQuestInfo to get Quest→INFO mappings
+            var questLinks = _runtimeReader!.WalkTopicQuestInfoList(entry);
+
+            if (questLinks.Count == 0)
+            {
+                continue;
+            }
+
+            topicsWalked++;
+            totalInfosFound += questLinks.Sum(l => l.InfoEntries.Count);
+
+            foreach (var link in questLinks)
+            {
+                foreach (var infoEntry in link.InfoEntries)
+                {
+                    if (dialogueByFormId.TryGetValue(infoEntry.FormId, out var idx))
+                    {
+                        // Update existing dialogue record
+                        var existing = dialogues[idx];
+                        var updated = existing;
+
+                        if (!existing.TopicFormId.HasValue || existing.TopicFormId.Value == 0)
+                        {
+                            updated = updated with { TopicFormId = entry.FormId };
+                            topicLinked++;
+                        }
+
+                        if (!existing.QuestFormId.HasValue || existing.QuestFormId.Value == 0)
+                        {
+                            updated = updated with { QuestFormId = link.QuestFormId };
+                            questLinked++;
+                        }
+
+                        if (updated != existing)
+                        {
+                            dialogues[idx] = updated;
+                            totalInfosLinked++;
+                        }
+                    }
+                    else
+                    {
+                        // Create new dialogue record from TESTopicInfo pointer
+                        var runtimeInfo = _runtimeReader!.ReadRuntimeDialogueInfoFromVA(infoEntry.VirtualAddress);
+                        if (runtimeInfo != null)
+                        {
+                            var newDialogue = new ReconstructedDialogue
+                            {
+                                FormId = infoEntry.FormId,
+                                TopicFormId = entry.FormId,
+                                QuestFormId = link.QuestFormId,
+                                PromptText = runtimeInfo.PromptText,
+                                InfoIndex = runtimeInfo.InfoIndex,
+                                InfoFlags = runtimeInfo.InfoFlags,
+                                InfoFlagsExt = runtimeInfo.InfoFlagsExt,
+                                Difficulty = runtimeInfo.Difficulty,
+                                SpeakerFormId = runtimeInfo.SpeakerFormId,
+                                Offset = runtimeInfo.DumpOffset,
+                                IsBigEndian = true
+                            };
+                            dialogues.Add(newDialogue);
+                            dialogueByFormId.TryAdd(infoEntry.FormId, dialogues.Count - 1);
+                            newInfoCount++;
+                            topicLinked++;
+                            questLinked++;
+                        }
+                    }
+                }
+            }
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] Topic→Quest walk: {topicsWalked} topics, " +
+            $"{totalInfosFound} INFO ptrs, {totalInfosLinked} existing linked, " +
+            $"{newInfoCount} new INFOs created " +
+            $"(+{topicLinked} TopicFormId, +{questLinked} QuestFormId)");
+    }
+
+    /// <summary>
+    ///     Propagate topic-level speaker (TNAM) to INFO records that lack a speaker.
+    ///     In Fallout NV, the speaker NPC is stored on the DIAL record's TNAM subrecord,
+    ///     not per-INFO. This pass fills in SpeakerFormId for INFOs under topics with TNAM.
+    /// </summary>
+    private static void PropagateTopicSpeakers(
+        List<ReconstructedDialogue> dialogues,
+        List<ReconstructedDialogTopic> dialogTopics)
+    {
+        // Build TopicFormId → SpeakerFormId map from topics that have TNAM
+        var topicSpeakers = new Dictionary<uint, uint>();
+        foreach (var topic in dialogTopics)
+        {
+            if (topic.SpeakerFormId.HasValue && topic.SpeakerFormId.Value != 0)
+            {
+                topicSpeakers.TryAdd(topic.FormId, topic.SpeakerFormId.Value);
+            }
+        }
+
+        if (topicSpeakers.Count == 0)
+        {
+            return;
+        }
+
+        var propagated = 0;
+        for (var i = 0; i < dialogues.Count; i++)
+        {
+            var dialogue = dialogues[i];
+
+            // Skip if already has a speaker
+            if (dialogue.SpeakerFormId.HasValue && dialogue.SpeakerFormId.Value != 0)
+            {
+                continue;
+            }
+
+            // Skip if no topic link
+            if (!dialogue.TopicFormId.HasValue || dialogue.TopicFormId.Value == 0)
+            {
+                continue;
+            }
+
+            // Look up topic-level speaker
+            if (topicSpeakers.TryGetValue(dialogue.TopicFormId.Value, out var speakerFormId))
+            {
+                dialogues[i] = dialogue with { SpeakerFormId = speakerFormId };
+                propagated++;
+            }
+        }
+
+        if (propagated > 0)
+        {
+            Logger.Instance.Debug($"  Propagated topic-level speaker (TNAM) to {propagated:N0} dialogue records");
+        }
+    }
+
+    /// <summary>
+    ///     Link dialogue records to quests by matching EditorID naming conventions.
+    ///     Fallout NV INFO EditorIDs follow patterns like "{QuestPrefix}Topic{NNN}"
+    ///     or "{QuestPrefix}{Speaker}Topic{NNN}". This is a heuristic fallback for
+    ///     records not linked by the precise m_listQuestInfo walking.
+    /// </summary>
+    private void LinkDialogueByEditorIdConvention(
+        List<ReconstructedDialogue> dialogues,
+        List<ReconstructedQuest> quests)
+    {
+        // Build quest EditorID → FormID index from the reconstructed quests list.
+        // Quests already have EditorIDs from ESM scan + runtime merge.
+        var questPrefixes = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+        foreach (var quest in quests)
+        {
+            if (!string.IsNullOrEmpty(quest.EditorId))
+            {
+                questPrefixes.TryAdd(quest.EditorId, quest.FormId);
+            }
+        }
+
+        // Sort quest prefixes by length descending for longest-match-first
+        var sortedPrefixes = questPrefixes
+            .OrderByDescending(kv => kv.Key.Length)
+            .ToList();
+
+        var linked = 0;
+        for (var i = 0; i < dialogues.Count; i++)
+        {
+            var dialogue = dialogues[i];
+
+            // Skip if already has QuestFormId
+            if (dialogue.QuestFormId.HasValue && dialogue.QuestFormId.Value != 0)
+            {
+                continue;
+            }
+
+            // Skip if no EditorID to match
+            if (string.IsNullOrEmpty(dialogue.EditorId))
+            {
+                continue;
+            }
+
+            // Find longest matching quest prefix
+            foreach (var (prefix, questFormId) in sortedPrefixes)
+            {
+                if (dialogue.EditorId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                    && dialogue.EditorId.Length > prefix.Length)
+                {
+                    dialogues[i] = dialogue with { QuestFormId = questFormId };
+                    linked++;
+                    break;
+                }
+            }
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] EditorID convention matching: {linked} dialogues linked to quests " +
+            $"({sortedPrefixes.Count} quest prefixes)");
+    }
+
+    /// <summary>
+    ///     Build hierarchical dialogue trees: Quest → Topic → INFO chains with cross-topic links.
+    ///     Uses TopicFormId (from TPIC subrecord), QuestFormId (from QSTI or runtime), and
+    ///     linking subrecords (TCLT/AddTopics) to build a navigable tree structure.
+    /// </summary>
+    public DialogueTreeResult BuildDialogueTrees(
+        List<ReconstructedDialogue> dialogues,
+        List<ReconstructedDialogTopic> topics,
+        List<ReconstructedQuest> quests)
+    {
+        // 1. Build topicFormId → List<ReconstructedDialogue> index
+        var infosByTopic = new Dictionary<uint, List<ReconstructedDialogue>>();
+        var unlinkedInfos = new List<ReconstructedDialogue>();
+
+        foreach (var d in dialogues)
+        {
+            if (d.TopicFormId.HasValue && d.TopicFormId.Value != 0)
+            {
+                if (!infosByTopic.TryGetValue(d.TopicFormId.Value, out var list))
+                {
+                    list = [];
+                    infosByTopic[d.TopicFormId.Value] = list;
+                }
+
+                list.Add(d);
+            }
+            else
+            {
+                unlinkedInfos.Add(d);
+            }
+        }
+
+        // 2. Build lookups
+        var topicById = topics.ToDictionary(t => t.FormId, t => t);
+        var questById = quests.ToDictionary(q => q.FormId, q => q);
+
+        // 3. Order INFOs within each topic by InfoIndex (runtime), falling back to original order
+        foreach (var (_, infos) in infosByTopic)
+        {
+            infos.Sort((a, b) => a.InfoIndex.CompareTo(b.InfoIndex));
+        }
+
+        // 4. Build TopicDialogueNode for each known topic
+        var topicNodes = new Dictionary<uint, TopicDialogueNode>();
+
+        // Include all topics that have INFOs or ESM DIAL records
+        var allTopicIds = new HashSet<uint>(infosByTopic.Keys);
+        foreach (var t in topics)
+        {
+            allTopicIds.Add(t.FormId);
+        }
+
+        foreach (var topicId in allTopicIds)
+        {
+            topicById.TryGetValue(topicId, out var topic);
+            var topicName = topic?.FullName ?? topic?.EditorId ?? ResolveFormName(topicId);
+
+            var infos = infosByTopic.GetValueOrDefault(topicId, []);
+            var infoNodes = infos.Select(info => new InfoDialogueNode
+            {
+                Info = info,
+                LinkedTopics = []
+            }).ToList();
+
+            topicNodes[topicId] = new TopicDialogueNode
+            {
+                Topic = topic,
+                TopicFormId = topicId,
+                TopicName = topicName,
+                InfoChain = infoNodes
+            };
+        }
+
+        // 5. Cross-link: fill in LinkedTopics for each InfoDialogueNode
+        foreach (var (_, topicNode) in topicNodes)
+        {
+            foreach (var infoNode in topicNode.InfoChain)
+            {
+                var linkedIds = new HashSet<uint>();
+                foreach (var linkId in infoNode.Info.LinkToTopics)
+                {
+                    linkedIds.Add(linkId);
+                }
+
+                foreach (var addId in infoNode.Info.AddTopics)
+                {
+                    linkedIds.Add(addId);
+                }
+
+                foreach (var linkedId in linkedIds)
+                {
+                    if (topicNodes.TryGetValue(linkedId, out var linkedNode))
+                    {
+                        infoNode.LinkedTopics.Add(linkedNode);
+                    }
+                }
+            }
+        }
+
+        // 6. Group topics by quest
+        var questTrees = new Dictionary<uint, QuestDialogueNode>();
+        var orphanTopics = new List<TopicDialogueNode>();
+
+        foreach (var (_, topicNode) in topicNodes)
+        {
+            // Determine quest: from topic's QuestFormId, or from any INFO's QuestFormId
+            var questId = topicNode.Topic?.QuestFormId;
+            if (!questId.HasValue || questId.Value == 0)
+            {
+                questId = topicNode.InfoChain
+                    .Select(i => i.Info.QuestFormId)
+                    .FirstOrDefault(q => q.HasValue && q.Value != 0);
+            }
+
+            if (questId.HasValue && questId.Value != 0)
+            {
+                if (!questTrees.TryGetValue(questId.Value, out var questNode))
+                {
+                    questById.TryGetValue(questId.Value, out var quest);
+                    questNode = new QuestDialogueNode
+                    {
+                        QuestFormId = questId.Value,
+                        QuestName = quest?.FullName ?? quest?.EditorId ?? ResolveFormName(questId.Value),
+                        Topics = []
+                    };
+                    questTrees[questId.Value] = questNode;
+                }
+
+                questNode.Topics.Add(topicNode);
+            }
+            else
+            {
+                orphanTopics.Add(topicNode);
+            }
+        }
+
+        // 7. Create orphan topic nodes for unlinked INFOs (no TopicFormId)
+        if (unlinkedInfos.Count > 0)
+        {
+            // Group unlinked INFOs by quest, create synthetic topic nodes
+            var unlinkedByQuest = unlinkedInfos
+                .GroupBy(d => d.QuestFormId ?? 0)
+                .OrderBy(g => g.Key);
+
+            foreach (var group in unlinkedByQuest)
+            {
+                var infoNodes = group
+                    .OrderBy(d => d.InfoIndex)
+                    .ThenBy(d => d.EditorId ?? "")
+                    .Select(info => new InfoDialogueNode
+                    {
+                        Info = info,
+                        LinkedTopics = []
+                    }).ToList();
+
+                var syntheticTopic = new TopicDialogueNode
+                {
+                    Topic = null,
+                    TopicFormId = 0,
+                    TopicName = "(Unlinked Responses)",
+                    InfoChain = infoNodes
+                };
+
+                if (group.Key != 0)
+                {
+                    if (!questTrees.TryGetValue(group.Key, out var questNode))
+                    {
+                        questById.TryGetValue(group.Key, out var quest);
+                        questNode = new QuestDialogueNode
+                        {
+                            QuestFormId = group.Key,
+                            QuestName = quest?.FullName ?? quest?.EditorId ?? ResolveFormName(group.Key),
+                            Topics = []
+                        };
+                        questTrees[group.Key] = questNode;
+                    }
+
+                    questNode.Topics.Add(syntheticTopic);
+                }
+                else
+                {
+                    orphanTopics.Add(syntheticTopic);
+                }
+            }
+        }
+
+        // Sort topics within each quest by priority (if available) then by name
+        foreach (var (_, questNode) in questTrees)
+        {
+            questNode.Topics.Sort((a, b) =>
+            {
+                var pa = a.Topic?.Priority ?? 0f;
+                var pb = b.Topic?.Priority ?? 0f;
+                var cmp = pb.CompareTo(pa); // Higher priority first
+                return cmp != 0 ? cmp : string.Compare(a.TopicName, b.TopicName, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        return new DialogueTreeResult
+        {
+            QuestTrees = questTrees,
+            OrphanTopics = orphanTopics
+        };
+    }
+
+    /// <summary>
+    ///     Resolve a FormID to EditorID or display name, checking all available sources.
+    /// </summary>
+    private string? ResolveFormName(uint formId)
+    {
+        if (formId == 0)
+        {
+            return null;
+        }
+
+        if (_formIdToEditorId.TryGetValue(formId, out var editorId))
+        {
+            return editorId;
+        }
+
+        // Check runtime display names
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (entry.FormId == formId)
+            {
+                return entry.DisplayName ?? entry.EditorId;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -1519,22 +2118,87 @@ public sealed class SemanticReconstructor
         var containers = new List<ReconstructedContainer>();
         var containerRecords = GetRecordsByType("CONT").ToList();
 
-        foreach (var record in containerRecords)
+        // Track FormIDs from ESM records to avoid duplicates when merging runtime data
+        var esmFormIds = new HashSet<uint>();
+
+        if (_accessor == null)
         {
-            containers.Add(new ReconstructedContainer
+            // Without accessor, use basic reconstruction (no CNTO parsing)
+            foreach (var record in containerRecords)
             {
-                FormId = record.FormId,
-                EditorId = GetEditorId(record.FormId),
-                FullName = FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            });
+                containers.Add(new ReconstructedContainer
+                {
+                    FormId = record.FormId,
+                    EditorId = GetEditorId(record.FormId),
+                    FullName = FindFullNameNear(record.Offset),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+                esmFormIds.Add(record.FormId);
+            }
+        }
+        else
+        {
+            // With accessor, read full record data for CNTO subrecord parsing
+            var buffer = ArrayPool<byte>.Shared.Rent(16384);
+            try
+            {
+                foreach (var record in containerRecords)
+                {
+                    var container = ReconstructContainerFromAccessor(record, buffer);
+                    if (container != null)
+                    {
+                        containers.Add(container);
+                        esmFormIds.Add(container.FormId);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
 
         // Merge containers from runtime struct reading
         if (_runtimeReader != null)
         {
-            var esmFormIds = new HashSet<uint>(containers.Select(c => c.FormId));
+            // Enrich ESM containers with runtime contents (current game state)
+            var runtimeEnrichments = new Dictionary<uint, ReconstructedContainer>();
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x1B || !esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var rtc = _runtimeReader.ReadRuntimeContainer(entry);
+                if (rtc != null && rtc.Contents.Count > 0)
+                {
+                    runtimeEnrichments[entry.FormId] = rtc;
+                }
+            }
+
+            if (runtimeEnrichments.Count > 0)
+            {
+                for (var i = 0; i < containers.Count; i++)
+                {
+                    if (runtimeEnrichments.TryGetValue(containers[i].FormId, out var rtc))
+                    {
+                        containers[i] = containers[i] with
+                        {
+                            Contents = rtc.Contents,
+                            Flags = rtc.Flags,
+                            ModelPath = containers[i].ModelPath ?? rtc.ModelPath,
+                            Script = containers[i].Script ?? rtc.Script
+                        };
+                    }
+                }
+
+                Logger.Instance.Debug(
+                    $"  [Semantic] Enriched {runtimeEnrichments.Count} ESM containers with runtime contents");
+            }
+
+            // Add runtime-only containers (not in ESM)
             var runtimeCount = 0;
             foreach (var entry in _scanResult.RuntimeEditorIds)
             {
@@ -1560,6 +2224,72 @@ public sealed class SemanticReconstructor
         }
 
         return containers;
+    }
+
+    private ReconstructedContainer? ReconstructContainerFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var dataStart = record.Offset + 24;
+        var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+
+        if (dataStart + dataSize > _fileSize)
+        {
+            return new ReconstructedContainer
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        uint? script = null;
+        var contents = new List<InventoryItem>();
+
+        foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+        {
+            var subData = buffer.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = ReadNullTermString(subData);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    script = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "CNTO" when sub.DataLength >= 8:
+                    var itemFormId = ReadFormId(subData[..4], record.IsBigEndian);
+                    var count = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
+                    contents.Add(new InventoryItem(itemFormId, count));
+                    break;
+            }
+        }
+
+        return new ReconstructedContainer
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Script = script,
+            Contents = contents,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
     }
 
     /// <summary>
@@ -1623,18 +2353,20 @@ public sealed class SemanticReconstructor
 
         if (_accessor != null)
         {
-            // Use accessor-based subrecord parsing to find FULL within DIAL record bounds
+            // Use accessor-based subrecord parsing to find FULL and TNAM within DIAL record bounds
             var buffer = ArrayPool<byte>.Shared.Rent(4096);
             try
             {
                 foreach (var record in topicRecords)
                 {
                     var fullName = FindFullNameInRecord(record, buffer);
+                    var speakerFormId = FindFormIdSubrecordInRecord(record, buffer, "TNAM");
                     topics.Add(new ReconstructedDialogTopic
                     {
                         FormId = record.FormId,
                         EditorId = GetEditorId(record.FormId),
                         FullName = fullName,
+                        SpeakerFormId = speakerFormId,
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -1663,16 +2395,162 @@ public sealed class SemanticReconstructor
         }
 
         // Deduplicate by FormID — same DIAL record can appear in both BE and LE memory regions.
-        // Keep the version with the most data (prefer one with FullName and EditorId).
+        // Keep the version with the most data (prefer one with FullName, SpeakerFormId, and EditorId).
         var deduped = topics
             .GroupBy(t => t.FormId)
             .Select(g => g
-                .OrderByDescending(t => t.FullName?.Length ?? 0)
+                .OrderByDescending(t => t.SpeakerFormId.HasValue ? 1 : 0)
+                .ThenByDescending(t => t.FullName?.Length ?? 0)
                 .ThenByDescending(t => t.EditorId?.Length ?? 0)
                 .First())
             .ToList();
 
+        // Probe DIAL runtime struct layout and merge runtime data if reader available
+        if (_runtimeReader != null)
+        {
+            MergeRuntimeDialogTopicData(deduped);
+        }
+
         return deduped;
+    }
+
+    /// <summary>
+    ///     Detect DIAL FormType from RuntimeEditorIds by cross-referencing known ESM DIAL FormIDs,
+    ///     then merge runtime TESTopic struct data (type, flags, priority) into topic records.
+    /// </summary>
+    private void MergeRuntimeDialogTopicData(List<ReconstructedDialogTopic> topics)
+    {
+        // Build set of known DIAL FormIDs from ESM scan
+        var knownDialFormIds = new HashSet<uint>(topics.Select(t => t.FormId));
+
+        // Detect DIAL FormType by finding RuntimeEditorId entries matching known DIAL FormIDs
+        byte? dialFormType = null;
+        var formTypeCounts = new Dictionary<byte, int>();
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (knownDialFormIds.Contains(entry.FormId))
+            {
+                formTypeCounts.TryGetValue(entry.FormType, out var count);
+                formTypeCounts[entry.FormType] = count + 1;
+            }
+        }
+
+        if (formTypeCounts.Count > 0)
+        {
+            var best = formTypeCounts.MaxBy(kv => kv.Value);
+            if (best.Value >= 2)
+            {
+                dialFormType = best.Key;
+            }
+        }
+
+        if (!dialFormType.HasValue)
+        {
+            // Fallback: try FormType 0x45 (empirically verified as DIAL+INFO shared FormType).
+            // Validate by attempting ReadRuntimeDialogTopic on a few candidate entries.
+            const byte candidateFormType = 0x45;
+            var validCount = 0;
+            var testedCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != candidateFormType || !entry.TesFormOffset.HasValue)
+                {
+                    continue;
+                }
+
+                if (++testedCount > 20)
+                {
+                    break;
+                }
+
+                var probe = _runtimeReader!.ReadRuntimeDialogTopic(entry);
+                if (probe != null)
+                {
+                    validCount++;
+                }
+            }
+
+            if (validCount >= 3)
+            {
+                dialFormType = candidateFormType;
+                Logger.Instance.Debug(
+                    $"  [Semantic] DIAL FormType fallback: 0x{candidateFormType:X2} " +
+                    $"({validCount}/{testedCount} passed ReadRuntimeDialogTopic validation)");
+            }
+        }
+
+        if (!dialFormType.HasValue)
+        {
+            Logger.Instance.Debug("  [Semantic] Could not detect DIAL FormType - no runtime topic data");
+            return;
+        }
+
+        Logger.Instance.Debug($"  [Semantic] Detected DIAL FormType: 0x{dialFormType.Value:X2} " +
+                              $"({formTypeCounts.GetValueOrDefault(dialFormType.Value)} matches " +
+                              $"from {knownDialFormIds.Count} known DIALs)");
+
+        // Build FormID → topic index for merging
+        var topicByFormId = new Dictionary<uint, int>();
+        for (var i = 0; i < topics.Count; i++)
+        {
+            topicByFormId.TryAdd(topics[i].FormId, i);
+        }
+
+        var mergedCount = 0;
+        var newCount = 0;
+
+        foreach (var entry in _scanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType != dialFormType.Value || !entry.TesFormOffset.HasValue)
+            {
+                continue;
+            }
+
+            var runtimeTopic = _runtimeReader!.ReadRuntimeDialogTopic(entry);
+            if (runtimeTopic == null)
+            {
+                continue;
+            }
+
+            if (topicByFormId.TryGetValue(entry.FormId, out var idx))
+            {
+                // Merge runtime data into existing ESM topic
+                var existing = topics[idx];
+                topics[idx] = existing with
+                {
+                    EditorId = existing.EditorId ?? entry.EditorId,
+                    FullName = existing.FullName ?? runtimeTopic.FullName,
+                    TopicType = runtimeTopic.TopicType,
+                    Flags = runtimeTopic.Flags,
+                    ResponseCount = (int)runtimeTopic.TopicCount,
+                    Priority = runtimeTopic.Priority,
+                    DummyPrompt = runtimeTopic.DummyPrompt
+                };
+                mergedCount++;
+            }
+            else
+            {
+                // New topic from runtime only
+                topics.Add(new ReconstructedDialogTopic
+                {
+                    FormId = entry.FormId,
+                    EditorId = entry.EditorId,
+                    FullName = runtimeTopic.FullName ?? entry.DisplayName,
+                    TopicType = runtimeTopic.TopicType,
+                    Flags = runtimeTopic.Flags,
+                    ResponseCount = (int)runtimeTopic.TopicCount,
+                    Priority = runtimeTopic.Priority,
+                    DummyPrompt = runtimeTopic.DummyPrompt,
+                    Offset = entry.TesFormOffset.Value,
+                    IsBigEndian = true
+                });
+                newCount++;
+            }
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] Runtime DIAL merge: {mergedCount} merged, {newCount} new " +
+            $"(total: {topics.Count})");
     }
 
     #region Private Reconstruction Methods
@@ -1984,7 +2862,11 @@ public sealed class SemanticReconstructor
         uint? questFormId = null;
         uint? speakerFormId = null;
         uint? previousInfo = null;
+        uint difficulty = 0;
         var responses = new List<DialogueResponse>();
+        var linkToTopics = new List<uint>();
+        var linkFromTopics = new List<uint>();
+        var addTopics = new List<uint>();
 
         // Track current response being built
         string? currentResponseText = null;
@@ -2033,6 +2915,52 @@ public sealed class SemanticReconstructor
                 case "PNAM" when sub.DataLength == 4:
                     previousInfo = ReadFormId(subData, record.IsBigEndian);
                     break;
+                case "ANAM" when sub.DataLength == 4:
+                    speakerFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "TPIC" when sub.DataLength == 4:
+                    topicFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "TCLT" when sub.DataLength == 4:
+                {
+                    var tcltFormId = ReadFormId(subData, record.IsBigEndian);
+                    if (tcltFormId != 0)
+                    {
+                        linkToTopics.Add(tcltFormId);
+                    }
+
+                    break;
+                }
+                case "TCLF" when sub.DataLength == 4:
+                {
+                    var tclfFormId = ReadFormId(subData, record.IsBigEndian);
+                    if (tclfFormId != 0)
+                    {
+                        linkFromTopics.Add(tclfFormId);
+                    }
+
+                    break;
+                }
+                case "NAME" when sub.DataLength == 4:
+                {
+                    var nameFormId = ReadFormId(subData, record.IsBigEndian);
+                    if (nameFormId != 0)
+                    {
+                        addTopics.Add(nameFormId);
+                    }
+
+                    break;
+                }
+                case "DNAM" when sub.DataLength >= 4:
+                    difficulty = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    if (difficulty > 10)
+                    {
+                        difficulty = 0;
+                    }
+
+                    break;
             }
         }
 
@@ -2057,6 +2985,10 @@ public sealed class SemanticReconstructor
             SpeakerFormId = speakerFormId,
             Responses = responses,
             PreviousInfo = previousInfo,
+            Difficulty = difficulty,
+            LinkToTopics = linkToTopics,
+            LinkFromTopics = linkFromTopics,
+            AddTopics = addTopics,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -2382,6 +3314,17 @@ public sealed class SemanticReconstructor
         var criticalChance = 1.0f;
         uint? criticalEffectFormId = null;
 
+        // Sound subrecords
+        uint? pickupSoundFormId = null;
+        uint? putdownSoundFormId = null;
+        uint? fireSound3DFormId = null;
+        uint? fireSoundDistFormId = null;
+        uint? fireSound2DFormId = null;
+        uint? dryFireSoundFormId = null;
+        uint? idleSoundFormId = null;
+        uint? equipSoundFormId = null;
+        uint? unequipSoundFormId = null;
+
         foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
         {
             var subData = buffer.AsSpan(sub.DataOffset, sub.DataLength);
@@ -2434,17 +3377,32 @@ public sealed class SemanticReconstructor
                     spread = record.IsBigEndian
                         ? BinaryPrimitives.ReadSingleBigEndian(subData[24..])
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[24..]);
+                    // DNAM offset 36: Projectile FormID [PROJ]
+                    if (sub.DataLength >= 40)
+                    {
+                        var projId = ReadFormId(subData[36..], record.IsBigEndian);
+                        if (projId != 0)
+                        {
+                            projectileFormId = projId;
+                        }
+                    }
+
                     if (sub.DataLength >= 100)
                     {
+                        // offset 64: Fire Rate (shots/sec), offset 68: AP override
                         shotsPerSec = record.IsBigEndian
                             ? BinaryPrimitives.ReadSingleBigEndian(subData[64..])
                             : BinaryPrimitives.ReadSingleLittleEndian(subData[64..]);
-                        minRange = record.IsBigEndian
+                        actionPoints = record.IsBigEndian
                             ? BinaryPrimitives.ReadSingleBigEndian(subData[68..])
                             : BinaryPrimitives.ReadSingleLittleEndian(subData[68..]);
+                        // offset 44: Min Range, offset 48: Max Range
+                        minRange = record.IsBigEndian
+                            ? BinaryPrimitives.ReadSingleBigEndian(subData[44..])
+                            : BinaryPrimitives.ReadSingleLittleEndian(subData[44..]);
                         maxRange = record.IsBigEndian
-                            ? BinaryPrimitives.ReadSingleBigEndian(subData[72..])
-                            : BinaryPrimitives.ReadSingleLittleEndian(subData[72..]);
+                            ? BinaryPrimitives.ReadSingleBigEndian(subData[48..])
+                            : BinaryPrimitives.ReadSingleLittleEndian(subData[48..]);
                     }
 
                     break;
@@ -2456,6 +3414,37 @@ public sealed class SemanticReconstructor
                         ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
                     criticalEffectFormId = ReadFormId(subData[8..], record.IsBigEndian);
+                    break;
+                // Sound subrecords — each is a single FormID [SOUN]
+                case "YNAM" when sub.DataLength == 4:
+                    pickupSoundFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength == 4:
+                    putdownSoundFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SNAM" when sub.DataLength >= 4:
+                    // SNAM is paired: Shoot 3D FormID + Shoot Dist FormID (8 bytes)
+                    fireSound3DFormId = ReadFormId(subData, record.IsBigEndian);
+                    if (sub.DataLength >= 8)
+                    {
+                        fireSoundDistFormId = ReadFormId(subData[4..], record.IsBigEndian);
+                    }
+
+                    break;
+                case "XNAM" when sub.DataLength == 4:
+                    fireSound2DFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "TNAM" when sub.DataLength == 4:
+                    dryFireSoundFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "UNAM" when sub.DataLength == 4:
+                    idleSoundFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "NAM9" when sub.DataLength == 4:
+                    equipSoundFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "NAM8" when sub.DataLength == 4:
+                    unequipSoundFormId = ReadFormId(subData, record.IsBigEndian);
                     break;
             }
         }
@@ -2492,6 +3481,15 @@ public sealed class SemanticReconstructor
             CriticalDamage = criticalDamage,
             CriticalChance = criticalChance,
             CriticalEffectFormId = criticalEffectFormId,
+            PickupSoundFormId = pickupSoundFormId,
+            PutdownSoundFormId = putdownSoundFormId,
+            FireSound3DFormId = fireSound3DFormId,
+            FireSoundDistFormId = fireSoundDistFormId,
+            FireSound2DFormId = fireSound2DFormId,
+            DryFireSoundFormId = dryFireSoundFormId,
+            IdleSoundFormId = idleSoundFormId,
+            EquipSoundFormId = equipSoundFormId,
+            UnequipSoundFormId = unequipSoundFormId,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -2522,7 +3520,8 @@ public sealed class SemanticReconstructor
         var value = 0;
         var health = 0;
         float weight = 0;
-        var armorRating = 0;
+        float damageThreshold = 0;
+        var damageResistance = 0;
 
         foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
         {
@@ -2550,10 +3549,14 @@ public sealed class SemanticReconstructor
                         ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
                     break;
-                case "DNAM" when sub.DataLength >= 4:
-                    armorRating = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                case "DNAM" when sub.DataLength >= 8:
+                    // DNAM layout: DR (int16) + unused (2) + DT (float) + Flags (uint16) + unused (2)
+                    damageResistance = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt16BigEndian(subData)
+                        : BinaryPrimitives.ReadInt16LittleEndian(subData);
+                    damageThreshold = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
                     break;
             }
         }
@@ -2567,7 +3570,8 @@ public sealed class SemanticReconstructor
             Value = value,
             Health = health,
             Weight = weight,
-            ArmorRating = armorRating,
+            DamageThreshold = damageThreshold,
+            DamageResistance = damageResistance,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -2600,6 +3604,7 @@ public sealed class SemanticReconstructor
         uint value = 0;
         byte clipRounds = 0;
         uint? projectileFormId = null;
+        float weight = 0;
 
         foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
         {
@@ -2626,6 +3631,22 @@ public sealed class SemanticReconstructor
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
                     clipRounds = subData[12];
                     break;
+                case "DAT2" when sub.DataLength >= 8:
+                    // DAT2 layout: ProjectilePerShot (U32), Projectile FormID (U32), Weight (float), ...
+                    var projId = ReadFormId(subData[4..], record.IsBigEndian);
+                    if (projId != 0)
+                    {
+                        projectileFormId = projId;
+                    }
+
+                    if (sub.DataLength >= 12)
+                    {
+                        weight = record.IsBigEndian
+                            ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                            : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                    }
+
+                    break;
             }
         }
 
@@ -2640,6 +3661,7 @@ public sealed class SemanticReconstructor
             Value = value,
             ClipRounds = clipRounds,
             ProjectileFormId = projectileFormId,
+            Weight = weight,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -2693,14 +3715,17 @@ public sealed class SemanticReconstructor
                         ? BinaryPrimitives.ReadSingleBigEndian(subData)
                         : BinaryPrimitives.ReadSingleLittleEndian(subData);
                     break;
-                case "ENIT" when sub.DataLength >= 20:
+                case "ENIT" when sub.DataLength >= 16:
+                    // ENIT layout: Value (S32 @0), Flags (U8 @4), unused (3),
+                    //   Withdrawal Effect [SPEL] (@8), Addiction Chance (float @12),
+                    //   Consume Sound [SOUN] (@16)
                     value = record.IsBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    addictionFormId = ReadFormId(subData[12..], record.IsBigEndian);
+                    addictionFormId = ReadFormId(subData[8..], record.IsBigEndian);
                     addictionChance = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[16..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[16..]);
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[12..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[12..]);
                     break;
                 case "EFID" when sub.DataLength == 4:
                     effectFormIds.Add(ReadFormId(subData, record.IsBigEndian));
@@ -3120,6 +4145,36 @@ public sealed class SemanticReconstructor
     }
 
     /// <summary>
+    ///     Find a 4-byte FormID subrecord within a record's data bounds.
+    ///     Used for TNAM (speaker) and similar FormID-only subrecords.
+    /// </summary>
+    private uint? FindFormIdSubrecordInRecord(DetectedMainRecord record, byte[] buffer, string signature)
+    {
+        var dataStart = record.Offset + 24; // Skip main record header
+        var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+
+        if (dataStart + dataSize > _fileSize)
+        {
+            return null;
+        }
+
+        Array.Clear(buffer, 0, dataSize);
+        _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+        foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+        {
+            if (sub.Signature == signature && sub.DataLength == 4)
+            {
+                return record.IsBigEndian
+                    ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(sub.DataOffset, 4))
+                    : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(sub.DataOffset, 4));
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     ///     Find FULL subrecord strictly within a record's data bounds (no accessor).
     ///     Only accepts FULL offsets between record header and record end.
     /// </summary>
@@ -3382,6 +4437,1243 @@ public sealed class SemanticReconstructor
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    #endregion
+
+    #region New Record Types
+
+    /// <summary>
+    ///     Reconstruct all Global Variable (GLOB) records.
+    /// </summary>
+    public List<ReconstructedGlobal> ReconstructGlobals()
+    {
+        var globals = new List<ReconstructedGlobal>();
+
+        if (_accessor == null)
+        {
+            return globals;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(256);
+        try
+        {
+            foreach (var record in GetRecordsByType("GLOB"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null;
+                var valueType = 'f';
+                float value = 0;
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FNAM" when sub.DataLength >= 1:
+                            valueType = (char)buffer[sub.DataOffset];
+                            break;
+                        case "FLTV" when sub.DataLength >= 4:
+                            value = record.IsBigEndian
+                                ? BinaryPrimitives.ReadSingleBigEndian(buffer.AsSpan(sub.DataOffset))
+                                : BinaryPrimitives.ReadSingleLittleEndian(buffer.AsSpan(sub.DataOffset));
+                            break;
+                    }
+                }
+
+                globals.Add(new ReconstructedGlobal
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    ValueType = valueType,
+                    Value = value,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return globals;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Enchantment (ENCH) records.
+    /// </summary>
+    public List<ReconstructedEnchantment> ReconstructEnchantments()
+    {
+        var enchantments = new List<ReconstructedEnchantment>();
+
+        if (_accessor == null)
+        {
+            return enchantments;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(2048);
+        try
+        {
+            foreach (var record in GetRecordsByType("ENCH"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null;
+                string? fullName = null;
+                uint enchantType = 0, chargeAmount = 0, enchantCost = 0;
+                byte flags = 0;
+                var effects = new List<EnchantmentEffect>();
+                uint currentEffectId = 0;
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "ENIT" when sub.DataLength >= 12:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            if (record.IsBigEndian)
+                            {
+                                enchantType = BinaryPrimitives.ReadUInt32BigEndian(span);
+                                chargeAmount = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
+                                enchantCost = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
+                            }
+                            else
+                            {
+                                enchantType = BinaryPrimitives.ReadUInt32LittleEndian(span);
+                                chargeAmount = BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
+                                enchantCost = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
+                            }
+
+                            if (sub.DataLength >= 13)
+                            {
+                                flags = buffer[sub.DataOffset + 12];
+                            }
+
+                            break;
+                        }
+                        case "EFID" when sub.DataLength >= 4:
+                            currentEffectId = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(sub.DataOffset))
+                                : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(sub.DataOffset));
+                            break;
+                        case "EFIT" when sub.DataLength >= 12:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            float magnitude;
+                            uint area, duration, type;
+                            int actorValue;
+                            if (record.IsBigEndian)
+                            {
+                                magnitude = BinaryPrimitives.ReadSingleBigEndian(span);
+                                area = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
+                                duration = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
+                                type = sub.DataLength >= 16 ? BinaryPrimitives.ReadUInt32BigEndian(span[12..]) : 0;
+                                actorValue = sub.DataLength >= 20
+                                    ? BinaryPrimitives.ReadInt32BigEndian(span[16..])
+                                    : -1;
+                            }
+                            else
+                            {
+                                magnitude = BinaryPrimitives.ReadSingleLittleEndian(span);
+                                area = BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
+                                duration = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
+                                type = sub.DataLength >= 16 ? BinaryPrimitives.ReadUInt32LittleEndian(span[12..]) : 0;
+                                actorValue = sub.DataLength >= 20
+                                    ? BinaryPrimitives.ReadInt32LittleEndian(span[16..])
+                                    : -1;
+                            }
+
+                            effects.Add(new EnchantmentEffect
+                            {
+                                EffectFormId = currentEffectId,
+                                Magnitude = magnitude,
+                                Area = area,
+                                Duration = duration,
+                                Type = type,
+                                ActorValue = actorValue
+                            });
+                            break;
+                        }
+                    }
+                }
+
+                enchantments.Add(new ReconstructedEnchantment
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    EnchantType = enchantType,
+                    ChargeAmount = chargeAmount,
+                    EnchantCost = enchantCost,
+                    Flags = flags,
+                    Effects = effects,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return enchantments;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Base Effect (MGEF) records.
+    /// </summary>
+    public List<ReconstructedBaseEffect> ReconstructBaseEffects()
+    {
+        var effects = new List<ReconstructedBaseEffect>();
+
+        if (_accessor == null)
+        {
+            return effects;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(4096);
+        try
+        {
+            foreach (var record in GetRecordsByType("MGEF"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null, description = null;
+                string? icon = null, modelPath = null;
+                uint flags = 0, associatedItem = 0, archetype = 0, projectile = 0, explosion = 0;
+                float baseCost = 0;
+                int magicSchool = -1, resistValue = -1, actorValue = -1;
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DESC":
+                            description = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "ICON":
+                            icon = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "MODL":
+                            modelPath = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DATA" when sub.DataLength >= 36:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            if (record.IsBigEndian)
+                            {
+                                flags = BinaryPrimitives.ReadUInt32BigEndian(span);
+                                baseCost = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
+                                associatedItem = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
+                                magicSchool = BinaryPrimitives.ReadInt32BigEndian(span[12..]);
+                                resistValue = BinaryPrimitives.ReadInt32BigEndian(span[16..]);
+                                archetype = BinaryPrimitives.ReadUInt32BigEndian(span[24..]);
+                                actorValue = BinaryPrimitives.ReadInt32BigEndian(span[28..]);
+                                if (sub.DataLength >= 44)
+                                {
+                                    projectile = BinaryPrimitives.ReadUInt32BigEndian(span[36..]);
+                                }
+
+                                if (sub.DataLength >= 48)
+                                {
+                                    explosion = BinaryPrimitives.ReadUInt32BigEndian(span[40..]);
+                                }
+                            }
+                            else
+                            {
+                                flags = BinaryPrimitives.ReadUInt32LittleEndian(span);
+                                baseCost = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
+                                associatedItem = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
+                                magicSchool = BinaryPrimitives.ReadInt32LittleEndian(span[12..]);
+                                resistValue = BinaryPrimitives.ReadInt32LittleEndian(span[16..]);
+                                archetype = BinaryPrimitives.ReadUInt32LittleEndian(span[24..]);
+                                actorValue = BinaryPrimitives.ReadInt32LittleEndian(span[28..]);
+                                if (sub.DataLength >= 44)
+                                {
+                                    projectile = BinaryPrimitives.ReadUInt32LittleEndian(span[36..]);
+                                }
+
+                                if (sub.DataLength >= 48)
+                                {
+                                    explosion = BinaryPrimitives.ReadUInt32LittleEndian(span[40..]);
+                                }
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                effects.Add(new ReconstructedBaseEffect
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    Description = description,
+                    Flags = flags,
+                    BaseCost = baseCost,
+                    AssociatedItem = associatedItem,
+                    MagicSchool = magicSchool,
+                    ResistValue = resistValue,
+                    Archetype = archetype,
+                    ActorValue = actorValue,
+                    Projectile = projectile,
+                    Explosion = explosion,
+                    Icon = icon,
+                    ModelPath = modelPath,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Weapon Mod (IMOD) records.
+    /// </summary>
+    public List<ReconstructedWeaponMod> ReconstructWeaponMods()
+    {
+        var mods = new List<ReconstructedWeaponMod>();
+
+        if (_accessor == null)
+        {
+            return mods;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(1024);
+        try
+        {
+            foreach (var record in GetRecordsByType("IMOD"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null, description = null;
+                string? modelPath = null, icon = null;
+                var value = 0;
+                float weight = 0;
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DESC":
+                            description = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "MODL":
+                            modelPath = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "ICON":
+                            icon = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DATA" when sub.DataLength >= 8:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            if (record.IsBigEndian)
+                            {
+                                value = BinaryPrimitives.ReadInt32BigEndian(span);
+                                weight = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
+                            }
+                            else
+                            {
+                                value = BinaryPrimitives.ReadInt32LittleEndian(span);
+                                weight = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                mods.Add(new ReconstructedWeaponMod
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    Description = description,
+                    ModelPath = modelPath,
+                    Icon = icon,
+                    Value = value,
+                    Weight = weight,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return mods;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Recipe (RCPE) records.
+    /// </summary>
+    public List<ReconstructedRecipe> ReconstructRecipes()
+    {
+        var recipes = new List<ReconstructedRecipe>();
+
+        if (_accessor == null)
+        {
+            return recipes;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(2048);
+        try
+        {
+            foreach (var record in GetRecordsByType("RCPE"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null;
+                int requiredSkill = -1, requiredSkillLevel = 0;
+                uint categoryFormId = 0, subcategoryFormId = 0;
+                var ingredients = new List<RecipeIngredient>();
+                var outputs = new List<RecipeOutput>();
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DATA" when sub.DataLength >= 16:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            if (record.IsBigEndian)
+                            {
+                                requiredSkill = BinaryPrimitives.ReadInt32BigEndian(span);
+                                requiredSkillLevel = BinaryPrimitives.ReadInt32BigEndian(span[4..]);
+                                categoryFormId = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
+                                subcategoryFormId = BinaryPrimitives.ReadUInt32BigEndian(span[12..]);
+                            }
+                            else
+                            {
+                                requiredSkill = BinaryPrimitives.ReadInt32LittleEndian(span);
+                                requiredSkillLevel = BinaryPrimitives.ReadInt32LittleEndian(span[4..]);
+                                categoryFormId = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
+                                subcategoryFormId = BinaryPrimitives.ReadUInt32LittleEndian(span[12..]);
+                            }
+
+                            break;
+                        }
+                        case "RCIL" when sub.DataLength >= 8:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            var itemId = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(span)
+                                : BinaryPrimitives.ReadUInt32LittleEndian(span);
+                            var count = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(span[4..])
+                                : BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
+                            ingredients.Add(new RecipeIngredient { ItemFormId = itemId, Count = count });
+                            break;
+                        }
+                        case "RCOD" when sub.DataLength >= 8:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            var itemId = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(span)
+                                : BinaryPrimitives.ReadUInt32LittleEndian(span);
+                            var count = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(span[4..])
+                                : BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
+                            outputs.Add(new RecipeOutput { ItemFormId = itemId, Count = count });
+                            break;
+                        }
+                    }
+                }
+
+                recipes.Add(new ReconstructedRecipe
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    RequiredSkill = requiredSkill,
+                    RequiredSkillLevel = requiredSkillLevel,
+                    CategoryFormId = categoryFormId,
+                    SubcategoryFormId = subcategoryFormId,
+                    Ingredients = ingredients,
+                    Outputs = outputs,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return recipes;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Challenge (CHAL) records.
+    /// </summary>
+    public List<ReconstructedChallenge> ReconstructChallenges()
+    {
+        var challenges = new List<ReconstructedChallenge>();
+
+        if (_accessor == null)
+        {
+            return challenges;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(2048);
+        try
+        {
+            foreach (var record in GetRecordsByType("CHAL"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null, description = null, icon = null;
+                uint challengeType = 0, threshold = 0, flags = 0, interval = 0;
+                uint value1 = 0, value2 = 0, value3 = 0, script = 0;
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DESC":
+                            description = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "ICON":
+                            icon = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "SCRI" when sub.DataLength >= 4:
+                            script = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(sub.DataOffset))
+                                : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(sub.DataOffset));
+                            break;
+                        case "DATA" when sub.DataLength >= 20:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            if (record.IsBigEndian)
+                            {
+                                challengeType = BinaryPrimitives.ReadUInt32BigEndian(span);
+                                threshold = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
+                                flags = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
+                                interval = BinaryPrimitives.ReadUInt32BigEndian(span[12..]);
+                                value1 = sub.DataLength >= 24 ? BinaryPrimitives.ReadUInt32BigEndian(span[16..]) : 0;
+                                value2 = sub.DataLength >= 28 ? BinaryPrimitives.ReadUInt32BigEndian(span[20..]) : 0;
+                                value3 = sub.DataLength >= 32 ? BinaryPrimitives.ReadUInt32BigEndian(span[24..]) : 0;
+                            }
+                            else
+                            {
+                                challengeType = BinaryPrimitives.ReadUInt32LittleEndian(span);
+                                threshold = BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
+                                flags = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
+                                interval = BinaryPrimitives.ReadUInt32LittleEndian(span[12..]);
+                                value1 = sub.DataLength >= 24 ? BinaryPrimitives.ReadUInt32LittleEndian(span[16..]) : 0;
+                                value2 = sub.DataLength >= 28 ? BinaryPrimitives.ReadUInt32LittleEndian(span[20..]) : 0;
+                                value3 = sub.DataLength >= 32 ? BinaryPrimitives.ReadUInt32LittleEndian(span[24..]) : 0;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                challenges.Add(new ReconstructedChallenge
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    Description = description,
+                    Icon = icon,
+                    ChallengeType = challengeType,
+                    Threshold = threshold,
+                    Flags = flags,
+                    Interval = interval,
+                    Value1 = value1,
+                    Value2 = value2,
+                    Value3 = value3,
+                    Script = script,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return challenges;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Reputation (REPU) records.
+    /// </summary>
+    public List<ReconstructedReputation> ReconstructReputations()
+    {
+        var reputations = new List<ReconstructedReputation>();
+
+        if (_accessor == null)
+        {
+            return reputations;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(256);
+        try
+        {
+            foreach (var record in GetRecordsByType("REPU"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null;
+                float positiveValue = 0, negativeValue = 0;
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DATA" when sub.DataLength >= 8:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            if (record.IsBigEndian)
+                            {
+                                positiveValue = BinaryPrimitives.ReadSingleBigEndian(span);
+                                negativeValue = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
+                            }
+                            else
+                            {
+                                positiveValue = BinaryPrimitives.ReadSingleLittleEndian(span);
+                                negativeValue = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                reputations.Add(new ReconstructedReputation
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    PositiveValue = positiveValue,
+                    NegativeValue = negativeValue,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return reputations;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Projectile (PROJ) records.
+    /// </summary>
+    public List<ReconstructedProjectile> ReconstructProjectiles()
+    {
+        var projectiles = new List<ReconstructedProjectile>();
+
+        if (_accessor == null)
+        {
+            return projectiles;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(2048);
+        try
+        {
+            foreach (var record in GetRecordsByType("PROJ"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null, modelPath = null;
+                ushort projFlags = 0, projType = 0;
+                float gravity = 0, speed = 0, range = 0;
+                float muzzleFlashDuration = 0, fadeDuration = 0, impactForce = 0, timer = 0;
+                uint light = 0, muzzleFlashLight = 0, explosion = 0, sound = 0;
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "MODL":
+                            modelPath = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DATA" when sub.DataLength >= 52:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            if (record.IsBigEndian)
+                            {
+                                projFlags = BinaryPrimitives.ReadUInt16BigEndian(span);
+                                projType = BinaryPrimitives.ReadUInt16BigEndian(span[2..]);
+                                gravity = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
+                                speed = BinaryPrimitives.ReadSingleBigEndian(span[8..]);
+                                range = BinaryPrimitives.ReadSingleBigEndian(span[12..]);
+                                light = BinaryPrimitives.ReadUInt32BigEndian(span[16..]);
+                                muzzleFlashLight = BinaryPrimitives.ReadUInt32BigEndian(span[20..]);
+                                muzzleFlashDuration = BinaryPrimitives.ReadSingleBigEndian(span[28..]);
+                                fadeDuration = BinaryPrimitives.ReadSingleBigEndian(span[32..]);
+                                impactForce = BinaryPrimitives.ReadSingleBigEndian(span[36..]);
+                                sound = BinaryPrimitives.ReadUInt32BigEndian(span[40..]);
+                                timer = BinaryPrimitives.ReadSingleBigEndian(span[48..]);
+                                explosion = sub.DataLength >= 56 ? BinaryPrimitives.ReadUInt32BigEndian(span[52..]) : 0;
+                            }
+                            else
+                            {
+                                projFlags = BinaryPrimitives.ReadUInt16LittleEndian(span);
+                                projType = BinaryPrimitives.ReadUInt16LittleEndian(span[2..]);
+                                gravity = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
+                                speed = BinaryPrimitives.ReadSingleLittleEndian(span[8..]);
+                                range = BinaryPrimitives.ReadSingleLittleEndian(span[12..]);
+                                light = BinaryPrimitives.ReadUInt32LittleEndian(span[16..]);
+                                muzzleFlashLight = BinaryPrimitives.ReadUInt32LittleEndian(span[20..]);
+                                muzzleFlashDuration = BinaryPrimitives.ReadSingleLittleEndian(span[28..]);
+                                fadeDuration = BinaryPrimitives.ReadSingleLittleEndian(span[32..]);
+                                impactForce = BinaryPrimitives.ReadSingleLittleEndian(span[36..]);
+                                sound = BinaryPrimitives.ReadUInt32LittleEndian(span[40..]);
+                                timer = BinaryPrimitives.ReadSingleLittleEndian(span[48..]);
+                                explosion = sub.DataLength >= 56
+                                    ? BinaryPrimitives.ReadUInt32LittleEndian(span[52..])
+                                    : 0;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                projectiles.Add(new ReconstructedProjectile
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    ModelPath = modelPath,
+                    Flags = projFlags,
+                    ProjectileType = projType,
+                    Gravity = gravity,
+                    Speed = speed,
+                    Range = range,
+                    Light = light,
+                    MuzzleFlashLight = muzzleFlashLight,
+                    Explosion = explosion,
+                    Sound = sound,
+                    MuzzleFlashDuration = muzzleFlashDuration,
+                    FadeDuration = fadeDuration,
+                    ImpactForce = impactForce,
+                    Timer = timer,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return projectiles;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Explosion (EXPL) records.
+    /// </summary>
+    public List<ReconstructedExplosion> ReconstructExplosions()
+    {
+        var explosions = new List<ReconstructedExplosion>();
+
+        if (_accessor == null)
+        {
+            return explosions;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(2048);
+        try
+        {
+            foreach (var record in GetRecordsByType("EXPL"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null, modelPath = null;
+                float force = 0, damage = 0, radius = 0, isRadius = 0;
+                uint light = 0, sound1 = 0, flags = 0, impactDataSet = 0, sound2 = 0, enchantment = 0;
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "MODL":
+                            modelPath = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "EITM" when sub.DataLength >= 4:
+                            enchantment = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(sub.DataOffset))
+                                : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(sub.DataOffset));
+                            break;
+                        case "DATA" when sub.DataLength >= 36:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            if (record.IsBigEndian)
+                            {
+                                force = BinaryPrimitives.ReadSingleBigEndian(span);
+                                damage = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
+                                radius = BinaryPrimitives.ReadSingleBigEndian(span[8..]);
+                                light = BinaryPrimitives.ReadUInt32BigEndian(span[12..]);
+                                sound1 = BinaryPrimitives.ReadUInt32BigEndian(span[16..]);
+                                flags = BinaryPrimitives.ReadUInt32BigEndian(span[20..]);
+                                isRadius = BinaryPrimitives.ReadSingleBigEndian(span[24..]);
+                                impactDataSet = BinaryPrimitives.ReadUInt32BigEndian(span[28..]);
+                                sound2 = BinaryPrimitives.ReadUInt32BigEndian(span[32..]);
+                            }
+                            else
+                            {
+                                force = BinaryPrimitives.ReadSingleLittleEndian(span);
+                                damage = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
+                                radius = BinaryPrimitives.ReadSingleLittleEndian(span[8..]);
+                                light = BinaryPrimitives.ReadUInt32LittleEndian(span[12..]);
+                                sound1 = BinaryPrimitives.ReadUInt32LittleEndian(span[16..]);
+                                flags = BinaryPrimitives.ReadUInt32LittleEndian(span[20..]);
+                                isRadius = BinaryPrimitives.ReadSingleLittleEndian(span[24..]);
+                                impactDataSet = BinaryPrimitives.ReadUInt32LittleEndian(span[28..]);
+                                sound2 = BinaryPrimitives.ReadUInt32LittleEndian(span[32..]);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                explosions.Add(new ReconstructedExplosion
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    ModelPath = modelPath,
+                    Force = force,
+                    Damage = damage,
+                    Radius = radius,
+                    Light = light,
+                    Sound1 = sound1,
+                    Flags = flags,
+                    ISRadius = isRadius,
+                    ImpactDataSet = impactDataSet,
+                    Sound2 = sound2,
+                    Enchantment = enchantment,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return explosions;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Message (MESG) records.
+    /// </summary>
+    public List<ReconstructedMessage> ReconstructMessages()
+    {
+        var messages = new List<ReconstructedMessage>();
+
+        if (_accessor == null)
+        {
+            return messages;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(2048);
+        try
+        {
+            foreach (var record in GetRecordsByType("MESG"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null, description = null, icon = null;
+                uint questFormId = 0, flags = 0, displayTime = 0;
+                var buttons = new List<string>();
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DESC":
+                            description = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "ICON":
+                            icon = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "QNAM" when sub.DataLength >= 4:
+                            questFormId = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(sub.DataOffset))
+                                : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(sub.DataOffset));
+                            break;
+                        case "DNAM" when sub.DataLength >= 4:
+                            flags = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(sub.DataOffset))
+                                : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(sub.DataOffset));
+                            break;
+                        case "TNAM" when sub.DataLength >= 4:
+                            displayTime = record.IsBigEndian
+                                ? BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(sub.DataOffset))
+                                : BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(sub.DataOffset));
+                            break;
+                        case "ITXT":
+                        {
+                            var btnText = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(btnText))
+                            {
+                                buttons.Add(btnText);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                messages.Add(new ReconstructedMessage
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    Description = description,
+                    Icon = icon,
+                    QuestFormId = questFormId,
+                    Flags = flags,
+                    DisplayTime = displayTime,
+                    Buttons = buttons,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return messages;
+    }
+
+    /// <summary>
+    ///     Reconstruct all Class (CLAS) records.
+    /// </summary>
+    public List<ReconstructedClass> ReconstructClasses()
+    {
+        var classes = new List<ReconstructedClass>();
+
+        if (_accessor == null)
+        {
+            return classes;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(1024);
+        try
+        {
+            foreach (var record in GetRecordsByType("CLAS"))
+            {
+                var dataStart = record.Offset + 24;
+                var dataSize = (int)Math.Min(record.DataSize, buffer.Length);
+                if (dataStart + dataSize > _fileSize)
+                {
+                    continue;
+                }
+
+                Array.Clear(buffer, 0, dataSize);
+                _accessor!.ReadArray(dataStart, buffer, 0, dataSize);
+
+                string? editorId = null, fullName = null, description = null, icon = null;
+                var tagSkills = new List<int>();
+                uint classFlags = 0, barterFlags = 0;
+                byte trainingSkill = 0, trainingLevel = 0;
+                var attributeWeights = Array.Empty<byte>();
+
+                foreach (var sub in IterateSubrecords(buffer, dataSize, record.IsBigEndian))
+                {
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _formIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DESC":
+                            description = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "ICON":
+                            icon = ReadNullTermString(buffer.AsSpan(sub.DataOffset, sub.DataLength));
+                            break;
+                        case "DATA" when sub.DataLength >= 20:
+                        {
+                            var span = buffer.AsSpan(sub.DataOffset);
+                            // DATA: 4 tag skill indices (int32 each) + flags (uint32) + barter flags (uint32)
+                            for (var i = 0; i < 4 && i * 4 + 4 <= sub.DataLength - 8; i++)
+                            {
+                                var skill = record.IsBigEndian
+                                    ? BinaryPrimitives.ReadInt32BigEndian(span[(i * 4)..])
+                                    : BinaryPrimitives.ReadInt32LittleEndian(span[(i * 4)..]);
+                                if (skill >= 0)
+                                {
+                                    tagSkills.Add(skill);
+                                }
+                            }
+
+                            var flagsOffset = sub.DataLength - 8;
+                            if (record.IsBigEndian)
+                            {
+                                classFlags = BinaryPrimitives.ReadUInt32BigEndian(span[flagsOffset..]);
+                                barterFlags = BinaryPrimitives.ReadUInt32BigEndian(span[(flagsOffset + 4)..]);
+                            }
+                            else
+                            {
+                                classFlags = BinaryPrimitives.ReadUInt32LittleEndian(span[flagsOffset..]);
+                                barterFlags = BinaryPrimitives.ReadUInt32LittleEndian(span[(flagsOffset + 4)..]);
+                            }
+
+                            break;
+                        }
+                        case "ATTR" when sub.DataLength >= 2:
+                        {
+                            trainingSkill = buffer[sub.DataOffset];
+                            trainingLevel = buffer[sub.DataOffset + 1];
+                            if (sub.DataLength >= 9)
+                            {
+                                attributeWeights = new byte[7];
+                                Array.Copy(buffer, sub.DataOffset + 2, attributeWeights, 0, 7);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                classes.Add(new ReconstructedClass
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId,
+                    FullName = fullName,
+                    Description = description,
+                    Icon = icon,
+                    TagSkills = tagSkills.ToArray(),
+                    Flags = classFlags,
+                    BarterFlags = barterFlags,
+                    TrainingSkill = trainingSkill,
+                    TrainingLevel = trainingLevel,
+                    AttributeWeights = attributeWeights,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return classes;
     }
 
     #endregion

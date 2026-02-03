@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Text;
+
 namespace FalloutXbox360Utils.Core.Minidump;
 
 /// <summary>
@@ -156,7 +159,7 @@ public class MinidumpInfo
         stream.Seek(fileOffset, SeekOrigin.Begin);
         Span<byte> buf = stackalloc byte[4];
         stream.ReadExactly(buf);
-        return System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(buf);
+        return BinaryPrimitives.ReadUInt32BigEndian(buf);
     }
 
     /// <summary>
@@ -178,7 +181,7 @@ public class MinidumpInfo
         {
             if (bytes[i] == 0)
             {
-                return i == 0 ? null : System.Text.Encoding.ASCII.GetString(bytes, 0, i);
+                return i == 0 ? null : Encoding.ASCII.GetString(bytes, 0, i);
             }
 
             if (bytes[i] < 32 || bytes[i] > 126)

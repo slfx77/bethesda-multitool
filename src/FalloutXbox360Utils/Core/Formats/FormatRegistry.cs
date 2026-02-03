@@ -332,18 +332,23 @@ public static class FormatRegistry
 
     private static FrozenDictionary<FileCategory, uint> BuildCategoryColors()
     {
+        // Evenly-spaced hue spectrum (S=70%, V=88%) for maximum distinction.
+        // 15 total categories (9 file + 6 gap) share a unified rainbow:
+        //   Header(0°), Module(24°), Texture(48°), Image(72°), Audio(96°),
+        //   Model(120°), Script(144°), EsmData(168°), Xbox(192°),
+        //   then gap classifications continue from 216°.
         return new Dictionary<FileCategory, uint>
         {
-            [FileCategory.Texture] = 0xFF2ECC71, // Green
-            [FileCategory.Image] = 0xFF1ABC9C, // Teal/Cyan
-            [FileCategory.Audio] = 0xFFE74C3C, // Red
-            [FileCategory.Video] = 0xFFAA66CC, // Purple-pink (cinematics)
-            [FileCategory.Model] = 0xFFF1C40F, // Yellow
-            [FileCategory.Module] = 0xFF9B59B6, // Purple
-            [FileCategory.Script] = 0xFFE67E22, // Orange
-            [FileCategory.Xbox] = 0xFF3498DB, // Blue
-            [FileCategory.Header] = 0xFF607D8B, // Blue-gray (visible in dark mode)
-            [FileCategory.EsmData] = 0xFF00CED1 // Dark Turquoise
+            [FileCategory.Header] = 0xFFE04343, // Hue   0° Red
+            [FileCategory.Module] = 0xFFE08243, // Hue  24° Orange
+            [FileCategory.Texture] = 0xFFE0C043, // Hue  48° Gold
+            [FileCategory.Image] = 0xFFC0E043, // Hue  72° Yellow-green
+            [FileCategory.Audio] = 0xFF82E043, // Hue  96° Lime
+            [FileCategory.Model] = 0xFF43E043, // Hue 120° Green
+            [FileCategory.Script] = 0xFF43E082, // Hue 144° Spring green
+            [FileCategory.EsmData] = 0xFF43E0C0, // Hue 168° Aquamarine
+            [FileCategory.Xbox] = 0xFF43C0E0, // Hue 192° Sky blue
+            [FileCategory.Video] = 0xFF8243E0 // Hue 264° Violet (rarely used)
         }.ToFrozenDictionary();
     }
 }
