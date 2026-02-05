@@ -1,4 +1,5 @@
 ﻿using System.IO.MemoryMappedFiles;
+using Windows.UI;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
@@ -11,6 +12,8 @@ namespace FalloutXbox360Utils;
 internal sealed class HexDataManager : IDisposable
 {
     private readonly List<FileRegion> _fileRegions = [];
+    private IReadOnlyList<DetectedMainRecord>? _mainRecords;
+    private Color _esmColor;
     private bool _disposed;
     private MemoryMappedFile? _mmf;
     private bool _ownsAccessor = true;
@@ -49,6 +52,7 @@ internal sealed class HexDataManager : IDisposable
         FilePath = null;
         FileSize = 0;
         _fileRegions.Clear();
+        _mainRecords = null;
     }
 
     public bool Load(string filePath, AnalysisResult analysisResult)
@@ -88,24 +92,39 @@ internal sealed class HexDataManager : IDisposable
     /// <summary>
     ///     Adds classified gap regions from coverage analysis to the file region list.
     ///     Call after Load() to color-code unknown areas by their classification.
+    ///     Most gap types are collapsed to a single "Gap" label; only ESM-like and
+    ///     AssetManagement retain distinct labels (they have semantic meaning).
     /// </summary>
     public void AddCoverageGapRegions(CoverageResult coverage)
     {
         foreach (var gap in coverage.Gaps)
         {
-            var color = FileTypeColors.GapColors.GetValueOrDefault(
-                gap.Classification, FileTypeColors.UnknownColor);
+            var color = FileTypeColors.GetMemoryMapGapColor(gap.Classification);
+
+            // Simplified display name for memory map
+            var typeName = gap.Classification switch
+            {
+                GapClassification.EsmLike => $"ESM-like ({FormatGapSize(gap.Size)})",
+                GapClassification.AssetManagement => $"Asset Mgmt ({FormatGapSize(gap.Size)})",
+                _ => $"Gap ({FormatGapSize(gap.Size)})"
+            };
 
             _fileRegions.Add(new FileRegion
             {
                 Start = gap.FileOffset,
                 End = gap.FileOffset + gap.Size,
-                TypeName = $"Gap: {gap.Classification} ({FormatGapSize(gap.Size)})",
-                Color = color
+                TypeName = typeName,
+                Color = color,
+                IsGap = true
             });
         }
 
-        _fileRegions.Sort((a, b) => a.Start.CompareTo(b.Start));
+        // Sort by Start, then by IsGap (file data before gaps at same offset)
+        _fileRegions.Sort((a, b) =>
+        {
+            var startCmp = a.Start.CompareTo(b.Start);
+            return startCmp != 0 ? startCmp : a.IsGap.CompareTo(b.IsGap);
+        });
     }
 
     private static string FormatGapSize(long bytes)
@@ -134,7 +153,7 @@ internal sealed class HexDataManager : IDisposable
 
     public FileRegion? FindRegionForOffset(long offset)
     {
-        if (_fileRegions.Count == 0) return null;
+        if (_fileRegions.Count == 0) return FallbackEsmLookup(offset);
 
         int left = 0, right = _fileRegions.Count - 1;
         while (left <= right)
@@ -146,12 +165,42 @@ internal sealed class HexDataManager : IDisposable
             else left = mid + 1;
         }
 
+        // Binary search didn't find a region - check if offset is within any MainRecord
+        // This handles edge cases where grouped regions might not cover all record offsets
+        return FallbackEsmLookup(offset);
+    }
+
+    /// <summary>
+    ///     Fallback lookup for ESM records when binary search fails.
+    ///     Returns a region if the offset falls within any detected MainRecord.
+    /// </summary>
+    private FileRegion? FallbackEsmLookup(long offset)
+    {
+        if (_mainRecords == null || _mainRecords.Count == 0) return null;
+
+        foreach (var record in _mainRecords)
+        {
+            var start = record.Offset;
+            var end = record.Offset + record.DataSize + 24;
+            if (offset >= start && offset < end)
+            {
+                return new FileRegion
+                {
+                    Start = start,
+                    End = end,
+                    TypeName = $"ESM {record.RecordType}",
+                    Color = _esmColor
+                };
+            }
+        }
+
         return null;
     }
 
     private void BuildFileRegions(AnalysisResult analysisResult)
     {
         _fileRegions.Clear();
+        _mainRecords = null;
 
         var occupiedRanges = new List<(long Start, long End)>();
 
@@ -160,8 +209,11 @@ internal sealed class HexDataManager : IDisposable
         // path strings embedded within ESM records
         if (analysisResult.EsmRecords?.MainRecords != null && analysisResult.EsmRecords.MainRecords.Count > 0)
         {
-            var esmRegions = GroupEsmRecordsIntoRegions(analysisResult.EsmRecords.MainRecords);
-            var esmColor = FileTypeColors.GetColorByCategory(FileCategory.EsmData);
+            // Store MainRecords for fallback lookup (handles edge cases in region grouping)
+            _mainRecords = analysisResult.EsmRecords.MainRecords;
+            _esmColor = FileTypeColors.GetColorByCategory(FileCategory.EsmData);
+
+            var esmRegions = GroupEsmRecordsIntoRegions(_mainRecords);
 
             foreach (var region in esmRegions)
             {
@@ -170,7 +222,7 @@ internal sealed class HexDataManager : IDisposable
                     Start = region.Start,
                     End = region.End,
                     TypeName = $"ESM Data ({region.Count} records)",
-                    Color = esmColor
+                    Color = _esmColor
                 });
                 occupiedRanges.Add((region.Start, region.End));
             }
@@ -202,7 +254,12 @@ internal sealed class HexDataManager : IDisposable
             occupiedRanges.Add((start, end));
         }
 
-        _fileRegions.Sort((a, b) => a.Start.CompareTo(b.Start));
+        // Sort by Start, then by IsGap (file data before gaps at same offset)
+        _fileRegions.Sort((a, b) =>
+        {
+            var startCmp = a.Start.CompareTo(b.Start);
+            return startCmp != 0 ? startCmp : a.IsGap.CompareTo(b.IsGap);
+        });
     }
 
     /// <summary>

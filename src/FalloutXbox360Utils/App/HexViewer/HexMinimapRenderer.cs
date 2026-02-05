@@ -68,7 +68,7 @@ internal sealed class HexMinimapRenderer
 
         Color? currentColor = null;
         double currentStartY = 0;
-        var defaultColor = Color.FromArgb(255, 60, 60, 60);
+        var defaultColor = Color.FromArgb(255, 75, 75, 75); // Lighter gray for unanalyzed areas
 
         for (double y = 0; y < canvasHeight; y++)
         {
