@@ -26,7 +26,7 @@
                       SelectionChanged="SubTabView_SelectionChanged">
 
       <!--  Tab 1: Memory Map  -->
-      <controls:TabViewItem Header="Memory Map" IsClosable="False">
+      <controls:TabViewItem x:Uid="Tab_MemoryMap" IsClosable="False">
         <Grid VerticalAlignment="Stretch"
               HorizontalAlignment="Stretch">
           <Grid.ColumnDefinitions>
@@ -68,7 +68,7 @@
                         Style="{StaticResource SortableColumnHeaderButtonStyle}"
                         Click="SortByOffset_Click">
                   <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock FontWeight="SemiBold" Text="Offset" />
+                    <TextBlock x:Uid="Col_Offset" FontWeight="SemiBold" />
                     <FontIcon x:Name="OffsetSortIcon"
                               Style="{StaticResource SortIconStyle}" />
                   </StackPanel>
@@ -77,7 +77,7 @@
                         Style="{StaticResource SortableColumnHeaderButtonStyle}"
                         Click="SortByLength_Click">
                   <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock FontWeight="SemiBold" Text="Size" />
+                    <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
                     <FontIcon x:Name="LengthSortIcon"
                               Style="{StaticResource SortIconStyle}" />
                   </StackPanel>
@@ -86,7 +86,7 @@
                         Style="{StaticResource SortableColumnHeaderButtonStyle}"
                         Click="SortByType_Click">
                   <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock FontWeight="SemiBold" Text="Type" />
+                    <TextBlock x:Uid="Col_Type" FontWeight="SemiBold" />
                     <FontIcon x:Name="TypeSortIcon"
                               Style="{StaticResource SortIconStyle}" />
                   </StackPanel>
@@ -95,7 +95,7 @@
                         Style="{StaticResource SortableColumnHeaderButtonStyle}"
                         Click="SortByFilename_Click">
                   <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock FontWeight="SemiBold" Text="Filename" />
+                    <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
                     <FontIcon x:Name="FilenameSortIcon"
                               Style="{StaticResource SortIconStyle}" />
                   </StackPanel>
@@ -111,27 +111,27 @@
                         SelectionMode="Single">
                 <ListView.ContextFlyout>
                   <MenuFlyout x:Name="FileListContextMenu">
-                    <MenuFlyoutItem x:Name="GoToStartMenuItem"
-                                    Click="GoToStart_Click" Text="Go to Start">
+                    <MenuFlyoutItem x:Name="GoToStartMenuItem" x:Uid="Menu_GoToStart"
+                                    Click="GoToStart_Click">
                       <MenuFlyoutItem.Icon>
                         <FontIcon Glyph="&#xE76B;" />
                       </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
-                    <MenuFlyoutItem x:Name="GoToEndMenuItem"
-                                    Click="GoToEnd_Click" Text="Go to End">
+                    <MenuFlyoutItem x:Name="GoToEndMenuItem" x:Uid="Menu_GoToEnd"
+                                    Click="GoToEnd_Click">
                       <MenuFlyoutItem.Icon>
                         <FontIcon Glyph="&#xE76C;" />
                       </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
                     <MenuFlyoutSeparator />
-                    <MenuFlyoutItem x:Name="CopyOffsetMenuItem"
-                                    Click="CopyOffset_Click" Text="Copy Offset">
+                    <MenuFlyoutItem x:Name="CopyOffsetMenuItem" x:Uid="Menu_CopyOffset"
+                                    Click="CopyOffset_Click">
                       <MenuFlyoutItem.Icon>
                         <FontIcon Glyph="&#xE8C8;" />
                       </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
-                    <MenuFlyoutItem x:Name="CopyFilenameMenuItem"
-                                    Click="CopyFilename_Click" Text="Copy Filename">
+                    <MenuFlyoutItem x:Name="CopyFilenameMenuItem" x:Uid="Menu_CopyFilename"
+                                    Click="CopyFilename_Click">
                       <MenuFlyoutItem.Icon>
                         <FontIcon Glyph="&#xE8C8;" />
                       </MenuFlyoutItem.Icon>
@@ -174,7 +174,7 @@
       </controls:TabViewItem>
 
       <!--  Tab 2: Data Browser  -->
-      <controls:TabViewItem x:Name="DataBrowserTab" Header="Data Browser"
+      <controls:TabViewItem x:Name="DataBrowserTab" x:Uid="Tab_DataBrowser"
                             IsClosable="False" IsEnabled="False">
         <Grid Padding="0,16,0,0">
           <!--  Placeholder: loading indicator  -->
@@ -184,13 +184,11 @@
             <ProgressRing x:Name="ReconstructProgressRing"
                           Width="32" Height="32"
                           IsActive="False" Visibility="Collapsed" />
-            <TextBlock x:Name="ReconstructStatusText"
+            <TextBlock x:Name="ReconstructStatusText" x:Uid="Empty_RunAnalysis"
                        HorizontalAlignment="Center"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       Text="Run analysis to view ESM records" />
-            <Button x:Name="ReconstructButton"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Button x:Name="ReconstructButton" x:Uid="Button_ReconstructRecords"
                     Click="ReconstructButton_Click"
-                    Content="Reconstruct Records"
                     Visibility="Collapsed"
                     Style="{StaticResource AccentButtonStyle}" />
           </StackPanel>
@@ -211,25 +209,23 @@
               </Grid.RowDefinitions>
 
               <!--  Search bar  -->
-              <TextBox x:Name="EsmSearchBox"
+              <TextBox x:Name="EsmSearchBox" x:Uid="Input_EsmSearch"
                        Grid.Row="0"
                        Margin="0,0,0,8"
-                       PlaceholderText="Search by name, editor ID, or FormID..."
                        TextChanged="EsmSearchBox_TextChanged" />
 
               <!--  Sort controls  -->
               <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
                           Margin="0,0,0,8">
-                <TextBlock VerticalAlignment="Center" FontSize="12"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Text="Sort:" />
+                <TextBlock x:Uid="Label_Sort" VerticalAlignment="Center" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <ComboBox x:Name="EsmSortComboBox"
                           MinWidth="140"
                           SelectedIndex="0"
                           SelectionChanged="EsmSortComboBox_SelectionChanged">
-                  <ComboBoxItem Content="By Name" />
-                  <ComboBoxItem Content="By Editor ID" />
-                  <ComboBoxItem Content="By Form ID" />
+                  <ComboBoxItem x:Uid="Sort_ByName" />
+                  <ComboBoxItem x:Uid="Sort_ByEditorId" />
+                  <ComboBoxItem x:Uid="Sort_ByFormId" />
                 </ComboBox>
               </StackPanel>
 
@@ -265,18 +261,16 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock x:Name="SelectedRecordTitle"
+                <TextBlock x:Name="SelectedRecordTitle" x:Uid="Empty_SelectRecord"
                            Grid.Row="0"
                            Style="{StaticResource SubtitleTextBlockStyle}"
-                           Text="Select a record"
                            TextWrapping="Wrap"
                            MaxLines="2"
                            TextTrimming="CharacterEllipsis" />
-                <Button x:Name="GoToOffsetButton"
+                <Button x:Name="GoToOffsetButton" x:Uid="Button_GoToOffset"
                         Grid.Row="1"
                         Margin="0,8,0,0"
                         Click="GoToRecordOffset_Click"
-                        Content="Go to Offset"
                         Visibility="Collapsed" />
               </Grid>
 
@@ -292,7 +286,7 @@
       </controls:TabViewItem>
 
       <!--  Tab 3: Reports  -->
-      <controls:TabViewItem x:Name="ReportsTab" Header="Reports"
+      <controls:TabViewItem x:Name="ReportsTab" x:Uid="Tab_Reports"
                             IsClosable="False" IsEnabled="False">
         <Grid Padding="16">
           <Grid.RowDefinitions>
@@ -304,32 +298,28 @@
           <!--  Top bar: Generate + Export buttons  -->
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8"
                       Margin="0,0,0,8">
-            <Button x:Name="GenerateReportsButton"
+            <Button x:Name="GenerateReportsButton" x:Uid="Button_GenerateReports"
                     Click="GenerateReportsButton_Click"
-                    Content="Generate Reports"
                     Style="{StaticResource AccentButtonStyle}" />
             <ProgressRing x:Name="ReportsProgressRing"
                           Width="20" Height="20"
                           IsActive="False" Visibility="Collapsed" />
-            <Button x:Name="ExportSelectedReportButton"
+            <Button x:Name="ExportSelectedReportButton" x:Uid="Button_ExportSelected"
                     Click="ExportSelectedReport_Click"
-                    Content="Export Selected"
                     IsEnabled="False" />
-            <Button x:Name="ExportAllReportsButton"
+            <Button x:Name="ExportAllReportsButton" x:Uid="Button_ExportAll"
                     Click="ExportAllReports_Click"
-                    Content="Export All"
                     IsEnabled="False" />
           </StackPanel>
 
           <!--  Search bar  -->
           <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
                       Margin="0,0,0,8">
-            <TextBox x:Name="ReportSearchBox"
+            <TextBox x:Name="ReportSearchBox" x:Uid="Input_ReportSearch"
                      Width="250"
-                     PlaceholderText="Search in report..."
                      KeyDown="ReportSearchBox_KeyDown" />
-            <Button Content="Find Next" Click="ReportSearchNext_Click" />
-            <Button Content="Find Prev" Click="ReportSearchPrev_Click" />
+            <Button x:Uid="Button_FindNext" Click="ReportSearchNext_Click" />
+            <Button x:Uid="Button_FindPrev" Click="ReportSearchPrev_Click" />
             <TextBlock x:Name="ReportSearchStatus"
                        VerticalAlignment="Center"
                        FontSize="12"
@@ -394,7 +384,7 @@
       </controls:TabViewItem>
 
       <!--  Tab 4: Coverage (last)  -->
-      <controls:TabViewItem x:Name="CoverageTab" Header="Coverage"
+      <controls:TabViewItem x:Name="CoverageTab" x:Uid="Tab_Coverage"
                             IsClosable="False" IsEnabled="False">
         <Grid Padding="16">
           <Grid.ColumnDefinitions>
@@ -407,13 +397,12 @@
           <ScrollViewer Grid.Column="0"
                         VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="16">
-              <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Coverage Summary" />
-              <TextBlock x:Name="CoverageSummaryText"
+              <TextBlock x:Uid="Label_CoverageSummary" Style="{StaticResource SubtitleTextBlockStyle}" />
+              <TextBlock x:Name="CoverageSummaryText" x:Uid="Empty_RunCoverage"
                          FontFamily="Consolas" FontSize="12"
-                         TextWrapping="Wrap"
-                         Text="Run analysis to see coverage data." />
+                         TextWrapping="Wrap" />
 
-              <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Gap Classification" />
+              <TextBlock x:Uid="Label_GapClassification" Style="{StaticResource SubtitleTextBlockStyle}" />
               <TextBlock x:Name="CoverageClassificationText"
                          FontFamily="Consolas" FontSize="12"
                          TextWrapping="Wrap" />
@@ -428,9 +417,8 @@
               <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0"
+            <TextBlock x:Uid="Label_GapDetails" Grid.Row="0"
                        Style="{StaticResource SubtitleTextBlockStyle}"
-                       Text="Gap Details"
                        Margin="0,0,0,8" />
 
             <!--  Sortable column headers  -->
@@ -455,7 +443,7 @@
                       Style="{StaticResource SortableColumnHeaderButtonStyle}"
                       Click="CoverageSortByOffset_Click">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock FontSize="11" FontWeight="SemiBold" Text="File Offset" />
+                  <TextBlock x:Uid="Col_FileOffset" FontSize="11" FontWeight="SemiBold" />
                   <FontIcon x:Name="CoverageOffsetSortIcon"
                             Style="{StaticResource SortIconStyle}" />
                 </StackPanel>
@@ -464,7 +452,7 @@
                       Style="{StaticResource SortableColumnHeaderButtonStyle}"
                       Click="CoverageSortBySize_Click">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock FontSize="11" FontWeight="SemiBold" Text="Size" />
+                  <TextBlock x:Uid="Col_Size" FontSize="11" FontWeight="SemiBold" />
                   <FontIcon x:Name="CoverageSizeSortIcon"
                             Style="{StaticResource SortIconStyle}" />
                 </StackPanel>
@@ -473,12 +461,12 @@
                       Style="{StaticResource SortableColumnHeaderButtonStyle}"
                       Click="CoverageSortByClassification_Click">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock FontSize="11" FontWeight="SemiBold" Text="Classification" />
+                  <TextBlock x:Uid="Col_Classification" FontSize="11" FontWeight="SemiBold" />
                   <FontIcon x:Name="CoverageClassSortIcon"
                             Style="{StaticResource SortIconStyle}" />
                 </StackPanel>
               </Button>
-              <TextBlock Grid.Column="4" FontSize="11" FontWeight="SemiBold" Text="Context" />
+              <TextBlock x:Uid="Col_Context" Grid.Column="4" FontSize="11" FontWeight="SemiBold" />
             </Grid>
 
             <!--  Gap list  -->
@@ -515,43 +503,43 @@
 
       <!--  Minidump Path  -->
       <TextBlock
+        x:Uid="Label_MinidumpPath"
         Grid.Row="0"
         Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}"
-        Text="Minidump Path" />
+        Style="{StaticResource IoLabelStyle}" />
       <TextBox
         x:Name="MinidumpPathTextBox"
+        x:Uid="Input_MinidumpPath"
         Grid.Row="0"
         Grid.Column="1"
         Style="{StaticResource IoTextBoxStyle}"
         AllowDrop="True"
-        PlaceholderText="Select or enter a .dmp file path..."
         TextChanged="MinidumpPathTextBox_TextChanged" />
       <Button
+        x:Uid="Button_Browse"
         Grid.Row="0"
         Grid.Column="2"
-        Click="OpenMinidumpButton_Click"
-        Content="Browse..." />
+        Click="OpenMinidumpButton_Click" />
 
       <!--  Output Directory  -->
       <TextBlock
+        x:Uid="Label_OutputDirectory"
         Grid.Row="1"
         Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}"
-        Text="Output Directory" />
+        Style="{StaticResource IoLabelStyle}" />
       <TextBox
         x:Name="OutputPathTextBox"
+        x:Uid="Input_OutputPath"
         Grid.Row="1"
         Grid.Column="1"
         Style="{StaticResource IoTextBoxStyle}"
         AllowDrop="True"
-        PlaceholderText="Select or enter output directory..."
         TextChanged="OutputPathTextBox_TextChanged" />
       <Button
+        x:Uid="Button_Browse"
         Grid.Row="1"
         Grid.Column="2"
-        Click="BrowseOutputButton_Click"
-        Content="Browse..." />
+        Click="BrowseOutputButton_Click" />
     </Grid>
 
     <!--  BOTTOM: File Types, Options, and Extract Button  -->
@@ -565,11 +553,11 @@
 
       <!--  File Type Filters  -->
       <Expander
+        x:Uid="Expander_FileTypes"
         Grid.Row="0"
         Margin="0,0,0,8"
         HorizontalAlignment="Stretch"
-        HorizontalContentAlignment="Stretch"
-        Header="File Types to Extract">
+        HorizontalContentAlignment="Stretch">
         <ctk:WrapPanel
           x:Name="FileTypeCheckboxPanel"
           HorizontalSpacing="16"
@@ -595,14 +583,13 @@
                       Spacing="8">
             <CheckBox
               x:Name="ConvertDdxCheckBox"
+              x:Uid="Checkbox_ConvertFormats"
               MinWidth="0"
-              Content="Convert Formats"
-              ToolTipService.ToolTip="Convert DDX -> DDS textures and XUR -> XUI interfaces"
               IsChecked="True" />
             <CheckBox
               x:Name="SaveAtlasCheckBox"
-              Margin="16,0,0,0"
-              Content="Save Atlas Files" />
+              x:Uid="Checkbox_SaveAtlas"
+              Margin="16,0,0,0" />
           </StackPanel>
 
           <Border Width="1"
@@ -614,9 +601,8 @@
                       Spacing="8">
             <CheckBox
               x:Name="VerboseCheckBox"
-              MinWidth="0"
-              Content="Verbose"
-              ToolTipService.ToolTip="Output detailed progress to the terminal (when launched from command line)" />
+              x:Uid="Checkbox_Verbose"
+              MinWidth="0" />
           </StackPanel>
         </StackPanel>
 
@@ -626,16 +612,16 @@
           Spacing="8">
           <Button
             x:Name="AnalyzeButton"
+            x:Uid="Button_Analyze"
             MinWidth="100"
             Click="AnalyzeButton_Click"
-            Content="Analyze"
             IsEnabled="False"
             Style="{StaticResource AccentButtonStyle}" />
           <Button
             x:Name="ExtractButton"
+            x:Uid="Button_Extract"
             MinWidth="120"
             Click="ExtractButton_Click"
-            Content="Extract Files"
             IsEnabled="False"
             Style="{StaticResource AccentButtonStyle}" />
         </StackPanel>

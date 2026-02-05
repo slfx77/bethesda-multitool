@@ -25,17 +25,17 @@
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
       <TextBlock
-        Style="{StaticResource SubtitleTextBlockStyle}"
-        Text="Minidump Batch Carver" />
+        x:Uid="Header_BatchCarver"
+        Style="{StaticResource SubtitleTextBlockStyle}" />
       <StackPanel
         Grid.Column="1"
         Style="{StaticResource SelectButtonsPanelStyle}">
         <Button
-          Click="SelectAllButton_Click"
-          Content="Select All" />
+          x:Uid="Button_SelectAll"
+          Click="SelectAllButton_Click" />
         <Button
-          Click="SelectNoneButton_Click"
-          Content="Select None" />
+          x:Uid="Button_SelectNone"
+          Click="SelectNoneButton_Click" />
       </StackPanel>
     </Grid>
 
@@ -71,8 +71,7 @@
             Click="SortByFilename_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
-              <TextBlock FontWeight="SemiBold"
-                         Text="Filename" />
+              <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
               <FontIcon
                 x:Name="FilenameSortIcon"
                 Style="{StaticResource SortIconStyle}" />
@@ -84,8 +83,7 @@
             Click="SortBySize_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
-              <TextBlock FontWeight="SemiBold"
-                         Text="Size" />
+              <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
               <FontIcon
                 x:Name="SizeSortIcon"
                 Style="{StaticResource SortIconStyle}" />
@@ -97,8 +95,7 @@
             Click="SortByStatus_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
-              <TextBlock FontWeight="SemiBold"
-                         Text="Status" />
+              <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
               <FontIcon
                 x:Name="StatusSortIcon"
                 Style="{StaticResource SortIconStyle}" />
@@ -174,41 +171,41 @@
 
       <!--  Input Directory  -->
       <TextBlock
+        x:Uid="Label_InputDirectory"
         Grid.Row="0"
         Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}"
-        Text="Input Directory" />
+        Style="{StaticResource IoLabelStyle}" />
       <TextBox
         x:Name="InputDirectoryTextBox"
+        x:Uid="Input_InputDirectory"
         Grid.Row="0"
         Grid.Column="1"
         Style="{StaticResource IoTextBoxStyle}"
-        PlaceholderText="Select or enter a folder containing .dmp files..."
         TextChanged="InputDirectoryTextBox_TextChanged" />
       <Button
+        x:Uid="Button_Browse"
         Grid.Row="0"
         Grid.Column="2"
-        Click="BrowseInputButton_Click"
-        Content="Browse..." />
+        Click="BrowseInputButton_Click" />
 
       <!--  Output Directory  -->
       <TextBlock
+        x:Uid="Label_OutputDirectory"
         Grid.Row="1"
         Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}"
-        Text="Output Directory" />
+        Style="{StaticResource IoLabelStyle}" />
       <TextBox
         x:Name="OutputDirectoryTextBox"
+        x:Uid="Input_OutputPath"
         Grid.Row="1"
         Grid.Column="1"
         Style="{StaticResource IoTextBoxStyle}"
-        PlaceholderText="Select or enter output directory..."
         TextChanged="OutputDirectoryTextBox_TextChanged" />
       <Button
+        x:Uid="Button_Browse"
         Grid.Row="1"
         Grid.Column="2"
-        Click="BrowseOutputButton_Click"
-        Content="Browse..." />
+        Click="BrowseOutputButton_Click" />
     </Grid>
 
     <!--  BOTTOM: File Types, Options, and Process Button  -->
@@ -223,12 +220,12 @@
 
       <!--  File Type Filters  -->
       <Expander
+        x:Uid="Expander_FileTypes"
         Grid.Row="0"
         Margin="0,0,0,8"
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Stretch"
-        CornerRadius="4"
-        Header="File Types to Extract">
+        CornerRadius="4">
         <ctk:WrapPanel
           x:Name="FileTypeCheckboxPanel"
           HorizontalSpacing="16"
@@ -264,14 +261,13 @@
                       Spacing="8">
             <CheckBox
               x:Name="BatchConvertDdxCheckBox"
+              x:Uid="Checkbox_ConvertFormats"
               MinWidth="0"
-              Content="Convert Formats"
-              ToolTipService.ToolTip="Convert DDX -> DDS textures and XUR -> XUI interfaces"
               IsChecked="True" />
             <CheckBox
               x:Name="BatchSaveAtlasCheckBox"
-              Margin="16,0,0,0"
-              Content="Save Atlas Files" />
+              x:Uid="Checkbox_SaveAtlas"
+              Margin="16,0,0,0" />
           </StackPanel>
 
           <Border Width="1"
@@ -282,9 +278,9 @@
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
             <TextBlock
+              x:Uid="Label_Threads"
               Margin="0,0,0,2"
-              VerticalAlignment="Center"
-              Text="Threads:" />
+              VerticalAlignment="Center" />
             <NumberBox
               x:Name="ParallelCountBox"
               MinWidth="50"
@@ -296,14 +292,13 @@
               ValueChanged="ParallelCountBox_ValueChanged" />
             <CheckBox
               x:Name="SkipExistingCheckBox"
+              x:Uid="Checkbox_SkipExisting"
               Margin="16,0,0,0"
-              Content="Skip Existing"
               IsChecked="True" />
             <CheckBox
               x:Name="BatchVerboseCheckBox"
-              MinWidth="0"
-              Content="Verbose"
-              ToolTipService.ToolTip="Output detailed progress to the terminal (when launched from command line)" />
+              x:Uid="Checkbox_Verbose"
+              MinWidth="0" />
           </StackPanel>
         </StackPanel>
 
@@ -313,15 +308,15 @@
           Spacing="8">
           <Button
             x:Name="CancelButton"
+            x:Uid="Button_Cancel"
             MinWidth="80"
             Click="CancelButton_Click"
-            Content="Cancel"
             IsEnabled="False" />
           <Button
             x:Name="ExtractButton"
+            x:Uid="Button_Extract"
             MinWidth="120"
             Click="ExtractButton_Click"
-            Content="Extract Files"
             IsEnabled="False"
             Style="{StaticResource AccentButtonStyle}" />
         </StackPanel>

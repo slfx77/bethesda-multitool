@@ -1,5 +1,6 @@
 using System.CommandLine;
 using NifAnalyzer.Commands;
+using Xbox360MemoryCarver.Tools;
 
 namespace NifAnalyzer;
 
@@ -13,7 +14,7 @@ internal sealed class Program
 
     private static int Main(string[] args)
     {
-        var rootCommand = new RootCommand("NIF Analyzer - Xbox 360 NIF debugging tool");
+        var rootCommand = new RootCommand(CliStrings.Nif_Cmd_Info);
 
         // Register all commands
         rootCommand.Subcommands.Add(InfoCommands.CreateInfoCommand());

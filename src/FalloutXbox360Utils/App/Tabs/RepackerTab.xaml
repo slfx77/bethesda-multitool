@@ -27,21 +27,21 @@
       </Grid.ColumnDefinitions>
       <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
         <TextBlock
-          Style="{StaticResource SubtitleTextBlockStyle}"
-          Text="Xbox 360 Repacker" />
+          x:Uid="Header_Repacker"
+          Style="{StaticResource SubtitleTextBlockStyle}" />
         <TextBlock
-          Style="{StaticResource TabSubtitleStyle}"
-          Text="Convert Xbox 360 Fallout: New Vegas installation to PC format." />
+          x:Uid="Subtitle_Repacker"
+          Style="{StaticResource TabSubtitleStyle}" />
       </StackPanel>
       <StackPanel
         Grid.Column="1"
         Style="{StaticResource SelectButtonsPanelStyle}">
         <Button
-          Click="SelectSourceButton_Click"
-          Content="Select Source..." />
+          x:Uid="Button_SelectSource"
+          Click="SelectSourceButton_Click" />
         <Button
-          Click="SelectOutputButton_Click"
-          Content="Select Output..." />
+          x:Uid="Button_SelectOutput"
+          Click="SelectOutputButton_Click" />
       </StackPanel>
     </Grid>
 
@@ -63,8 +63,8 @@
                     Spacing="4">
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Source:" />
+            <TextBlock x:Uid="Label_Source"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="SourcePathText"
                        Text="-"
                        TextTrimming="CharacterEllipsis"
@@ -72,8 +72,8 @@
           </StackPanel>
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Status:" />
+            <TextBlock x:Uid="Label_Status"
+                       FontWeight="SemiBold" />
             <FontIcon x:Name="ValidationIcon"
                       FontSize="14"
                       Glyph="&#xE73E;"
@@ -90,8 +90,8 @@
                     Spacing="4">
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Output:" />
+            <TextBlock x:Uid="Label_Output"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="OutputPathText"
                        Text="(not selected)"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -100,8 +100,8 @@
           </StackPanel>
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Total Files:" />
+            <TextBlock x:Uid="Label_TotalFiles"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="TotalFilesText"
                        Text="0" />
           </StackPanel>
@@ -111,8 +111,8 @@
                     Spacing="4">
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="FFmpeg:" />
+            <TextBlock x:Uid="Label_FFmpeg"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="FfmpegStatusText"
                        Text="Available"
                        Foreground="Green" />
@@ -147,21 +147,21 @@
             <TextBlock Grid.Column="0"
                        FontWeight="SemiBold"
                        Text="" />
-            <TextBlock Grid.Column="1"
+            <TextBlock x:Uid="Col_Category"
+                       Grid.Column="1"
+                       FontWeight="SemiBold" />
+            <TextBlock x:Uid="Label_Files"
+                       Grid.Column="2"
                        FontWeight="SemiBold"
-                       Text="Category" />
-            <TextBlock Grid.Column="2"
+                       HorizontalAlignment="Right" />
+            <TextBlock x:Uid="Col_Description"
+                       Grid.Column="3"
                        FontWeight="SemiBold"
-                       HorizontalAlignment="Right"
-                       Text="Files" />
-            <TextBlock Grid.Column="3"
+                       Margin="16,0,0,0" />
+            <TextBlock x:Uid="Col_Status"
+                       Grid.Column="4"
                        FontWeight="SemiBold"
-                       Margin="16,0,0,0"
-                       Text="Description" />
-            <TextBlock Grid.Column="4"
-                       FontWeight="SemiBold"
-                       HorizontalAlignment="Right"
-                       Text="Status" />
+                       HorizontalAlignment="Right" />
           </Grid>
 
           <!-- Categories ListView -->
@@ -269,16 +269,16 @@
         <FontIcon FontSize="64"
                   Glyph="&#xE777;"
                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        <TextBlock FontSize="18"
+        <TextBlock x:Uid="EmptyRepacker_Title"
+                   FontSize="18"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                   Text="No Source Folder Selected"
                    TextAlignment="Center" />
-        <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                   Text="Click 'Select Source...' to choose an Xbox 360 Fallout: New Vegas installation"
+        <TextBlock x:Uid="EmptyRepacker_Subtitle"
+                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                    TextAlignment="Center" />
-        <Button HorizontalAlignment="Center"
+        <Button x:Uid="Button_SelectSource"
+                HorizontalAlignment="Center"
                 Click="SelectSourceButton_Click"
-                Content="Select Source..."
                 Style="{StaticResource AccentButtonStyle}" />
       </StackPanel>
     </Border>
@@ -291,8 +291,7 @@
       Visibility="{x:Bind SourceInfoCard.Visibility, Mode=OneWay}">
       <CheckBox
         x:Name="UpdateUserIniCheckbox"
-        Content="Update user Fallout.ini (backup will be created)"
-        ToolTipService.ToolTip="Adds all Xbox BSAs to SArchiveList in your My Games\FalloutNV\Fallout.ini" />
+        x:Uid="Checkbox_UpdateUserIni" />
     </StackPanel>
 
     <!-- Stats Card -->
@@ -350,16 +349,16 @@
 
       <Button
         x:Name="CancelButton"
+        x:Uid="Button_Cancel"
         Grid.Column="1"
         Margin="0,0,8,0"
         Click="CancelButton_Click"
-        Content="Cancel"
         Visibility="Collapsed" />
       <Button
         x:Name="ConvertButton"
+        x:Uid="Button_StartConversion"
         Grid.Column="2"
         Click="ConvertButton_Click"
-        Content="Start Conversion"
         IsEnabled="False"
         Style="{StaticResource AccentButtonStyle}" />
     </Grid>

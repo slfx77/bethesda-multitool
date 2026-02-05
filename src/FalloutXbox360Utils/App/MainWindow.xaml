@@ -26,9 +26,9 @@
           VerticalAlignment="Center"
           Source="Assets/StoreLogo.png" />
         <TextBlock
+          x:Uid="AppTitle"
           VerticalAlignment="Center"
-          FontSize="12"
-          Text="Fallout Xbox 360 Utils" />
+          FontSize="12" />
       </StackPanel>
     </Grid>
 
@@ -49,11 +49,11 @@
       </NavigationView.Resources>
 
       <NavigationView.MenuItems>
-        <NavigationViewItemHeader Content="Minidump" />
+        <NavigationViewItemHeader x:Uid="NavHeader_Minidump" />
 
         <!--  Single File Analysis  -->
         <NavigationViewItem
-          Content="Single File"
+          x:Uid="Nav_SingleFile"
           IsSelected="True"
           Tag="SingleFile">
           <NavigationViewItem.Icon>
@@ -63,7 +63,7 @@
 
         <!--  Batch Mode  -->
         <NavigationViewItem
-          Content="Batch Mode"
+          x:Uid="Nav_BatchMode"
           Tag="BatchMode">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xE8B7;" />
@@ -72,11 +72,11 @@
 
         <NavigationViewItemSeparator />
 
-        <NavigationViewItemHeader Content="Converters" />
+        <NavigationViewItemHeader x:Uid="NavHeader_Converters" />
 
         <!--  NIF Converter  -->
         <NavigationViewItem
-          Content="NIF Converter"
+          x:Uid="Nav_NifConverter"
           Tag="NifConverter">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xF158;" />
@@ -85,7 +85,7 @@
 
         <!--  DDX Converter  -->
         <NavigationViewItem
-          Content="DDX Converter"
+          x:Uid="Nav_DdxConverter"
           Tag="DdxConverter">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xEB9F;" />
@@ -94,7 +94,7 @@
 
         <!--  BSA Extractor  -->
         <NavigationViewItem
-          Content="BSA Extractor"
+          x:Uid="Nav_BsaExtractor"
           Tag="BsaExtractor">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xE7B8;" />
@@ -103,11 +103,11 @@
 
         <NavigationViewItemSeparator />
 
-        <NavigationViewItemHeader Content="Full Game" />
+        <NavigationViewItemHeader x:Uid="NavHeader_FullGame" />
 
         <!--  Xbox 360 Repacker  -->
         <NavigationViewItem
-          Content="Repacker"
+          x:Uid="Nav_Repacker"
           Tag="Repacker">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xE777;" />

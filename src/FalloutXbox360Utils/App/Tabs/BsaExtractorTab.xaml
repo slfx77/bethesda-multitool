@@ -26,18 +26,18 @@
       </Grid.ColumnDefinitions>
       <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
         <TextBlock
-          Style="{StaticResource SubtitleTextBlockStyle}"
-          Text="BSA Extractor" />
+          x:Uid="Header_BsaExtractor"
+          Style="{StaticResource SubtitleTextBlockStyle}" />
         <TextBlock
-          Style="{StaticResource TabSubtitleStyle}"
-          Text="Extract files from Bethesda BSA archives (PC and Xbox 360)." />
+          x:Uid="Subtitle_BsaExtractor"
+          Style="{StaticResource TabSubtitleStyle}" />
       </StackPanel>
       <StackPanel
         Grid.Column="1"
         Style="{StaticResource SelectButtonsPanelStyle}">
         <Button
-          Click="SelectBsaButton_Click"
-          Content="Open BSA..." />
+          x:Uid="Button_OpenBsa"
+          Click="SelectBsaButton_Click" />
       </StackPanel>
     </Grid>
 
@@ -59,15 +59,15 @@
                     Spacing="4">
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Archive:" />
+            <TextBlock x:Uid="Label_Archive"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="ArchiveNameText"
                        Text="-" />
           </StackPanel>
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Platform:" />
+            <TextBlock x:Uid="Label_Platform"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="ArchivePlatformText"
                        Text="-" />
           </StackPanel>
@@ -78,15 +78,15 @@
                     Spacing="4">
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Folders:" />
+            <TextBlock x:Uid="Label_Folders"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="ArchiveFolderCountText"
                        Text="-" />
           </StackPanel>
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Files:" />
+            <TextBlock x:Uid="Label_Files"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="ArchiveFileCountText"
                        Text="-" />
           </StackPanel>
@@ -96,15 +96,15 @@
                     Spacing="4">
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Compressed:" />
+            <TextBlock x:Uid="Label_Compressed"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="ArchiveCompressedText"
                        Text="-" />
           </StackPanel>
           <StackPanel Orientation="Horizontal"
                       Spacing="8">
-            <TextBlock FontWeight="SemiBold"
-                       Text="Content:" />
+            <TextBlock x:Uid="Label_Content"
+                       FontWeight="SemiBold" />
             <TextBlock x:Name="ArchiveContentText"
                        Text="-" />
           </StackPanel>
@@ -132,26 +132,26 @@
         </Grid.ColumnDefinitions>
 
         <ComboBox x:Name="ExtensionFilterCombo"
+                  x:Uid="Filter_ByType"
                   Grid.Column="0"
                   Width="150"
                   Margin="0,0,8,0"
-                  PlaceholderText="Filter by type..."
                   SelectionChanged="ExtensionFilterCombo_SelectionChanged" />
 
         <AutoSuggestBox x:Name="FolderFilterBox"
+                        x:Uid="Filter_ByFolder"
                         Grid.Column="1"
-                        PlaceholderText="Filter by folder path..."
                         QueryIcon="Find"
                         TextChanged="FolderFilterBox_TextChanged" />
 
-        <Button Grid.Column="2"
+        <Button x:Uid="Button_SelectAll"
+                Grid.Column="2"
                 Margin="8,0,0,0"
-                Click="SelectAllButton_Click"
-                Content="Select All" />
-        <Button Grid.Column="3"
+                Click="SelectAllButton_Click" />
+        <Button x:Uid="Button_SelectNone"
+                Grid.Column="3"
                 Margin="8,0,0,0"
-                Click="SelectNoneButton_Click"
-                Content="Select None" />
+                Click="SelectNoneButton_Click" />
       </Grid>
 
       <!-- Files List Card -->
@@ -185,8 +185,7 @@
               Click="SortByPath_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock FontWeight="SemiBold"
-                           Text="File Name" />
+                <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="PathSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -198,8 +197,7 @@
               Click="SortByFolder_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock FontWeight="SemiBold"
-                           Text="Folder" />
+                <TextBlock x:Uid="Col_Folder" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="FolderSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -211,8 +209,7 @@
               Click="SortBySize_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock FontWeight="SemiBold"
-                           Text="Size" />
+                <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="SizeSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -224,8 +221,7 @@
               Click="SortByCompressed_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock FontWeight="SemiBold"
-                           Text="Compressed" />
+                <TextBlock x:Uid="Col_Compressed" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="CompressedSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -237,8 +233,7 @@
               Click="SortByStatus_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock FontWeight="SemiBold"
-                           Text="Status" />
+                <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="StatusSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -310,13 +305,13 @@
             <FontIcon FontSize="48"
                       Glyph="&#xE7B8;"
                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Margin="0,8,0,0"
+            <TextBlock x:Uid="EmptyBsa_Title"
+                       Margin="0,8,0,0"
                        FontSize="16"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       Text="No BSA archive loaded"
                        TextAlignment="Center" />
-            <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                       Text="Click 'Open BSA...' to select an archive"
+            <TextBlock x:Uid="EmptyBsa_Subtitle"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                        TextAlignment="Center" />
           </StackPanel>
         </Grid>
@@ -335,16 +330,16 @@
         <FontIcon FontSize="64"
                   Glyph="&#xE7B8;"
                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        <TextBlock FontSize="18"
+        <TextBlock x:Uid="EmptyBsa_Title"
+                   FontSize="18"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                   Text="No BSA Archive Loaded"
                    TextAlignment="Center" />
-        <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                   Text="Click 'Open BSA...' to select a Bethesda archive file"
+        <TextBlock x:Uid="EmptyBsa_SubtitleAlt"
+                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                    TextAlignment="Center" />
-        <Button HorizontalAlignment="Center"
+        <Button x:Uid="Button_OpenBsa"
+                HorizontalAlignment="Center"
                 Click="SelectBsaButton_Click"
-                Content="Open BSA..."
                 Style="{StaticResource AccentButtonStyle}" />
       </StackPanel>
     </Border>
@@ -401,22 +396,22 @@
                   Orientation="Horizontal"
                   Spacing="8">
         <CheckBox x:Name="ConvertFilesCheckbox"
-                  Content="Convert Xbox 360 files during extraction"
+                  x:Uid="Checkbox_ConvertXbox360"
                   IsChecked="True" />
       </StackPanel>
 
       <Button
         x:Name="CancelButton"
+        x:Uid="Button_Cancel"
         Grid.Column="1"
         Margin="0,0,8,0"
         Click="CancelButton_Click"
-        Content="Cancel"
         Visibility="Collapsed" />
       <Button
         x:Name="ExtractButton"
+        x:Uid="Button_ExtractSelected"
         Grid.Column="2"
         Click="ExtractButton_Click"
-        Content="Extract Selected"
         IsEnabled="False"
         Style="{StaticResource AccentButtonStyle}" />
     </Grid>

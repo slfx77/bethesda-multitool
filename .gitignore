@@ -40,8 +40,11 @@ test_output/
 output/
 TestOutput/
 
-# Tools folder - ignore most but allow NifAnalyzer
+# Tools folder - ignore most but allow specific tools
 tools/*
+!tools/Shared/
+tools/Shared/bin/
+tools/Shared/obj/
 !tools/NifAnalyzer/
 tools/NifAnalyzer/bin/
 tools/NifAnalyzer/obj/
@@ -54,6 +57,9 @@ tools/EsmAnalyzer/obj/
 !tools/MinidumpAnalyzer/
 tools/MinidumpAnalyzer/bin/
 tools/MinidumpAnalyzer/obj/
+!tools/BsaAnalyzer/
+tools/BsaAnalyzer/bin/
+tools/BsaAnalyzer/obj/
 
 # Python remnants (if any)
 .venv/

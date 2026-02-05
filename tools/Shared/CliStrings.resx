@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" msdata:Ordinal="0" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- ===== Common Argument Descriptions ===== -->
+  <data name="Arg_FilePath" xml:space="preserve">
+    <value>Path to the file</value>
+  </data>
+  <data name="Arg_EsmFilePath" xml:space="preserve">
+    <value>Path to the ESM file</value>
+  </data>
+  <data name="Arg_XboxFilePath" xml:space="preserve">
+    <value>Path to Xbox 360 ESM file</value>
+  </data>
+  <data name="Arg_PcFilePath" xml:space="preserve">
+    <value>Path to PC ESM file</value>
+  </data>
+  <data name="Arg_NifFilePath" xml:space="preserve">
+    <value>Path to the NIF file</value>
+  </data>
+  <data name="Arg_BsaFilePath" xml:space="preserve">
+    <value>Path to the BSA archive</value>
+  </data>
+  <data name="Arg_MinidumpPath" xml:space="preserve">
+    <value>Path to the minidump file</value>
+  </data>
+  <data name="Arg_InputDirectory" xml:space="preserve">
+    <value>Input directory path</value>
+  </data>
+  <data name="Arg_OutputDirectory" xml:space="preserve">
+    <value>Output directory path</value>
+  </data>
+
+  <!-- ===== Common Option Descriptions ===== -->
+  <data name="Opt_Output" xml:space="preserve">
+    <value>Output file path</value>
+  </data>
+  <data name="Opt_Verbose" xml:space="preserve">
+    <value>Enable verbose output</value>
+  </data>
+  <data name="Opt_RecordType" xml:space="preserve">
+    <value>Record type to filter by</value>
+  </data>
+  <data name="Opt_FormId" xml:space="preserve">
+    <value>FormID to locate or filter</value>
+  </data>
+  <data name="Opt_Offset" xml:space="preserve">
+    <value>File offset to examine</value>
+  </data>
+  <data name="Opt_Limit" xml:space="preserve">
+    <value>Maximum number of results</value>
+  </data>
+  <data name="Opt_All" xml:space="preserve">
+    <value>Show all results without limit</value>
+  </data>
+  <data name="Opt_Overwrite" xml:space="preserve">
+    <value>Overwrite existing files</value>
+  </data>
+  <data name="Opt_Recursive" xml:space="preserve">
+    <value>Process files recursively</value>
+  </data>
+
+  <!-- ===== Common Table Headers ===== -->
+  <data name="Table_RecordType" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="Table_Count" xml:space="preserve">
+    <value>Count</value>
+  </data>
+  <data name="Table_Size" xml:space="preserve">
+    <value>Size</value>
+  </data>
+  <data name="Table_Offset" xml:space="preserve">
+    <value>Offset</value>
+  </data>
+  <data name="Table_FormId" xml:space="preserve">
+    <value>FormID</value>
+  </data>
+  <data name="Table_EditorId" xml:space="preserve">
+    <value>EditorID</value>
+  </data>
+  <data name="Table_Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Table_Value" xml:space="preserve">
+    <value>Value</value>
+  </data>
+  <data name="Table_Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="Table_Path" xml:space="preserve">
+    <value>Path</value>
+  </data>
+
+  <!-- ===== Common Status Messages ===== -->
+  <data name="Status_Loading" xml:space="preserve">
+    <value>Loading {0}...</value>
+  </data>
+  <data name="Status_Processing" xml:space="preserve">
+    <value>Processing...</value>
+  </data>
+  <data name="Status_Complete" xml:space="preserve">
+    <value>Complete.</value>
+  </data>
+  <data name="Status_Found" xml:space="preserve">
+    <value>Found {0} results.</value>
+  </data>
+  <data name="Status_NoResults" xml:space="preserve">
+    <value>No results found.</value>
+  </data>
+  <data name="Status_WritingOutput" xml:space="preserve">
+    <value>Writing output to {0}...</value>
+  </data>
+  <data name="Status_Scanning" xml:space="preserve">
+    <value>Scanning...</value>
+  </data>
+  <data name="Status_Converting" xml:space="preserve">
+    <value>Converting...</value>
+  </data>
+
+  <!-- ===== Common Error Messages ===== -->
+  <data name="Error_FileNotFound" xml:space="preserve">
+    <value>File not found: {0}</value>
+  </data>
+  <data name="Error_DirectoryNotFound" xml:space="preserve">
+    <value>Directory not found: {0}</value>
+  </data>
+  <data name="Error_InvalidFormId" xml:space="preserve">
+    <value>Invalid FormID format: {0}</value>
+  </data>
+  <data name="Error_InvalidRecordType" xml:space="preserve">
+    <value>Invalid record type: {0}</value>
+  </data>
+  <data name="Error_FailedToLoad" xml:space="preserve">
+    <value>Failed to load file: {0}</value>
+  </data>
+  <data name="Error_FailedToWrite" xml:space="preserve">
+    <value>Failed to write file: {0}</value>
+  </data>
+  <data name="Error_InvalidOffset" xml:space="preserve">
+    <value>Invalid offset: {0}</value>
+  </data>
+  <data name="Error_UnexpectedError" xml:space="preserve">
+    <value>Unexpected error: {0}</value>
+  </data>
+
+  <!-- ===== Common Display Text ===== -->
+  <data name="Display_NotAvailable" xml:space="preserve">
+    <value>N/A</value>
+  </data>
+  <data name="Display_Yes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="Display_No" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="Display_True" xml:space="preserve">
+    <value>True</value>
+  </data>
+  <data name="Display_False" xml:space="preserve">
+    <value>False</value>
+  </data>
+  <data name="Display_Unknown" xml:space="preserve">
+    <value>Unknown</value>
+  </data>
+  <data name="Display_None" xml:space="preserve">
+    <value>(none)</value>
+  </data>
+  <data name="Display_Empty" xml:space="preserve">
+    <value>(empty)</value>
+  </data>
+
+  <!-- ===== EsmAnalyzer Specific ===== -->
+  <data name="Esm_Cmd_Stats" xml:space="preserve">
+    <value>Display record type statistics</value>
+  </data>
+  <data name="Esm_Cmd_Dump" xml:space="preserve">
+    <value>Dump records of a specific type</value>
+  </data>
+  <data name="Esm_Cmd_Trace" xml:space="preserve">
+    <value>Trace structure at file offset</value>
+  </data>
+  <data name="Esm_Cmd_Locate" xml:space="preserve">
+    <value>Locate record by FormID</value>
+  </data>
+  <data name="Esm_Cmd_Convert" xml:space="preserve">
+    <value>Convert Xbox 360 ESM to PC format</value>
+  </data>
+  <data name="Esm_Cmd_Compare" xml:space="preserve">
+    <value>Compare two ESM files</value>
+  </data>
+  <data name="Esm_Cmd_Diff" xml:space="preserve">
+    <value>Show differences by record type</value>
+  </data>
+  <data name="Esm_Cmd_SemanticDiff" xml:space="preserve">
+    <value>Semantic field-by-field comparison</value>
+  </data>
+
+  <!-- ===== NifAnalyzer Specific ===== -->
+  <data name="Nif_Cmd_Info" xml:space="preserve">
+    <value>Display NIF file information</value>
+  </data>
+  <data name="Nif_Cmd_Convert" xml:space="preserve">
+    <value>Convert NIF between platforms</value>
+  </data>
+  <data name="Nif_Cmd_List" xml:space="preserve">
+    <value>List blocks in NIF file</value>
+  </data>
+
+  <!-- ===== BsaAnalyzer Specific ===== -->
+  <data name="Bsa_Cmd_List" xml:space="preserve">
+    <value>List files in BSA archive</value>
+  </data>
+  <data name="Bsa_Cmd_Extract" xml:space="preserve">
+    <value>Extract files from BSA archive</value>
+  </data>
+  <data name="Bsa_Cmd_Info" xml:space="preserve">
+    <value>Display BSA archive information</value>
+  </data>
+
+</root>

@@ -25,21 +25,21 @@
       </Grid.ColumnDefinitions>
       <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
         <TextBlock
-          Style="{StaticResource SubtitleTextBlockStyle}"
-          Text="DDX Converter" />
+          x:Uid="Header_DdxConverter"
+          Style="{StaticResource SubtitleTextBlockStyle}" />
         <TextBlock
-          Style="{StaticResource TabSubtitleStyle}"
-          Text="Uses DDXConv by kran27" />
+          x:Uid="Subtitle_DdxConvBy"
+          Style="{StaticResource TabSubtitleStyle}" />
       </StackPanel>
       <StackPanel
         Grid.Column="1"
         Style="{StaticResource SelectButtonsPanelStyle}">
         <Button
-          Click="SelectAllButton_Click"
-          Content="Select All" />
+          x:Uid="Button_SelectAll"
+          Click="SelectAllButton_Click" />
         <Button
-          Click="SelectNoneButton_Click"
-          Content="Select None" />
+          x:Uid="Button_SelectNone"
+          Click="SelectNoneButton_Click" />
       </StackPanel>
     </Grid>
 
@@ -73,8 +73,7 @@
             Click="SortByFilePath_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
-              <TextBlock FontWeight="SemiBold"
-                         Text="File Path" />
+              <TextBlock x:Uid="Col_FilePath" FontWeight="SemiBold" />
               <FontIcon
                 x:Name="FilePathSortIcon"
                 Style="{StaticResource SortIconStyle}" />
@@ -86,8 +85,7 @@
             Click="SortBySize_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
-              <TextBlock FontWeight="SemiBold"
-                         Text="Size" />
+              <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
               <FontIcon
                 x:Name="SizeSortIcon"
                 Style="{StaticResource SortIconStyle}" />
@@ -99,8 +97,7 @@
             Click="SortByFormat_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
-              <TextBlock FontWeight="SemiBold"
-                         Text="Format" />
+              <TextBlock x:Uid="Col_Format" FontWeight="SemiBold" />
               <FontIcon
                 x:Name="FormatSortIcon"
                 Style="{StaticResource SortIconStyle}" />
@@ -112,8 +109,7 @@
             Click="SortByStatus_Click">
             <StackPanel Orientation="Horizontal"
                         Spacing="4">
-              <TextBlock FontWeight="SemiBold"
-                         Text="Status" />
+              <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
               <FontIcon
                 x:Name="StatusSortIcon"
                 Style="{StaticResource SortIconStyle}" />
@@ -190,41 +186,41 @@
 
       <!-- Input Directory -->
       <TextBlock
+        x:Uid="Label_InputDirectory"
         Grid.Row="0"
         Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}"
-        Text="Input Directory" />
+        Style="{StaticResource IoLabelStyle}" />
       <TextBox
         x:Name="InputDirectoryTextBox"
+        x:Uid="Input_DdxInputDir"
         Grid.Row="0"
         Grid.Column="1"
         Style="{StaticResource IoTextBoxStyle}"
-        PlaceholderText="Select or enter a folder containing Xbox 360 .ddx files..."
         TextChanged="InputDirectoryTextBox_TextChanged" />
       <Button
+        x:Uid="Button_Browse"
         Grid.Row="0"
         Grid.Column="2"
-        Click="BrowseInputButton_Click"
-        Content="Browse..." />
+        Click="BrowseInputButton_Click" />
 
       <!-- Output Directory -->
       <TextBlock
+        x:Uid="Label_OutputDirectory"
         Grid.Row="1"
         Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}"
-        Text="Output Directory" />
+        Style="{StaticResource IoLabelStyle}" />
       <TextBox
         x:Name="OutputDirectoryTextBox"
+        x:Uid="Input_ConvertOutputDir"
         Grid.Row="1"
         Grid.Column="1"
         Style="{StaticResource IoTextBoxStyle}"
-        PlaceholderText="Select or enter output directory for converted files..."
         TextChanged="OutputDirectoryTextBox_TextChanged" />
       <Button
+        x:Uid="Button_Browse"
         Grid.Row="1"
         Grid.Column="2"
-        Click="BrowseOutputButton_Click"
-        Content="Browse..." />
+        Click="BrowseOutputButton_Click" />
     </Grid>
 
     <!-- Bottom Action Bar -->
@@ -243,32 +239,32 @@
       <!-- Options -->
       <CheckBox
         x:Name="PreserveStructureCheckBox"
+        x:Uid="Checkbox_PreserveFolderStructure"
         Grid.Column="0"
-        Content="Preserve folder structure"
         IsChecked="True" />
       <CheckBox
         x:Name="OverwriteExistingCheckBox"
+        x:Uid="Checkbox_OverwriteExisting"
         Grid.Column="1"
-        Content="Overwrite existing files"
         IsChecked="False" />
       <CheckBox
         x:Name="VerboseOutputCheckBox"
+        x:Uid="Checkbox_VerboseOutput"
         Grid.Column="2"
-        Content="Verbose output"
         IsChecked="False" />
 
       <!-- Action buttons -->
       <Button
         x:Name="CancelButton"
+        x:Uid="Button_Cancel"
         Grid.Column="4"
         Click="CancelButton_Click"
-        Content="Cancel"
         IsEnabled="False" />
       <Button
         x:Name="ConvertButton"
+        x:Uid="Button_Convert"
         Grid.Column="5"
         Click="ConvertButton_Click"
-        Content="Convert Selected"
         IsEnabled="False"
         Style="{StaticResource AccentButtonStyle}" />
     </Grid>

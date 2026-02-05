@@ -1,0 +1,681 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" msdata:Ordinal="0" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- ===== Application ===== -->
+  <data name="AppTitle.Text" xml:space="preserve">
+    <value>Fallout Xbox 360 Utils</value>
+    <comment>Main application title shown in title bar TextBlock (via x:Uid)</comment>
+  </data>
+
+  <!-- ===== Navigation Headers ===== -->
+  <data name="NavHeader_Minidump.Content" xml:space="preserve">
+    <value>Minidump</value>
+  </data>
+  <data name="NavHeader_Converters.Content" xml:space="preserve">
+    <value>Converters</value>
+  </data>
+  <data name="NavHeader_FullGame.Content" xml:space="preserve">
+    <value>Full Game</value>
+  </data>
+
+  <!-- ===== Navigation Items ===== -->
+  <data name="Nav_SingleFile.Content" xml:space="preserve">
+    <value>Single File</value>
+  </data>
+  <data name="Nav_BatchMode.Content" xml:space="preserve">
+    <value>Batch Mode</value>
+  </data>
+  <data name="Nav_NifConverter.Content" xml:space="preserve">
+    <value>NIF Converter</value>
+  </data>
+  <data name="Nav_DdxConverter.Content" xml:space="preserve">
+    <value>DDX Converter</value>
+  </data>
+  <data name="Nav_BsaExtractor.Content" xml:space="preserve">
+    <value>BSA Extractor</value>
+  </data>
+  <data name="Nav_Repacker.Content" xml:space="preserve">
+    <value>Repacker</value>
+  </data>
+
+  <!-- ===== Common Buttons ===== -->
+  <data name="Button_Browse.Content" xml:space="preserve">
+    <value>Browse...</value>
+  </data>
+  <data name="Button_SelectAll.Content" xml:space="preserve">
+    <value>Select All</value>
+  </data>
+  <data name="Button_SelectNone.Content" xml:space="preserve">
+    <value>Select None</value>
+  </data>
+  <data name="Button_Cancel.Content" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Button_OK.Content" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Button_Analyze.Content" xml:space="preserve">
+    <value>Analyze</value>
+  </data>
+  <data name="Button_Extract.Content" xml:space="preserve">
+    <value>Extract Files</value>
+  </data>
+  <data name="Button_Convert.Content" xml:space="preserve">
+    <value>Convert Selected</value>
+  </data>
+  <data name="Button_OpenBsa.Content" xml:space="preserve">
+    <value>Open BSA...</value>
+  </data>
+  <data name="Button_StartScan.Content" xml:space="preserve">
+    <value>Start Scan</value>
+  </data>
+
+  <!-- ===== Placeholder Text (code-behind usage) ===== -->
+  <data name="Placeholder_SelectDmpFile" xml:space="preserve">
+    <value>Select or enter a .dmp file path...</value>
+  </data>
+  <data name="Placeholder_SelectOutputDirectory" xml:space="preserve">
+    <value>Select or enter output directory...</value>
+  </data>
+  <data name="Placeholder_SelectInputFolder" xml:space="preserve">
+    <value>Select or enter a folder containing .dmp files...</value>
+  </data>
+  <data name="Placeholder_Search" xml:space="preserve">
+    <value>Search...</value>
+  </data>
+  <data name="Placeholder_SearchByNameEditorIdFormId" xml:space="preserve">
+    <value>Search by name, editor ID, or FormID...</value>
+  </data>
+
+  <!-- ===== Checkbox/Option Labels ===== -->
+  <data name="Checkbox_PreserveFolderStructure.Content" xml:space="preserve">
+    <value>Preserve folder structure</value>
+  </data>
+  <data name="Checkbox_OverwriteExistingFiles.Content" xml:space="preserve">
+    <value>Overwrite existing files</value>
+  </data>
+  <data name="Checkbox_VerboseOutput.Content" xml:space="preserve">
+    <value>Verbose output</value>
+  </data>
+  <data name="Checkbox_ConvertFormats.Content" xml:space="preserve">
+    <value>Convert Formats</value>
+  </data>
+
+  <!-- ===== Empty State Messages (code-behind usage) ===== -->
+  <data name="Empty_NoBsaLoaded" xml:space="preserve">
+    <value>No BSA Archive Loaded</value>
+  </data>
+  <data name="Empty_NoBsaLoaded_Subtitle" xml:space="preserve">
+    <value>Click 'Open BSA...' to select an archive</value>
+  </data>
+  <data name="Empty_RunAnalysisForEsm" xml:space="preserve">
+    <value>Run analysis to view ESM records</value>
+  </data>
+  <data name="Empty_SelectARecord" xml:space="preserve">
+    <value>Select a record</value>
+  </data>
+
+  <!-- ===== Status Messages (parameterized - use with Strings.GetFormat) ===== -->
+  <data name="Status_FoundFiles" xml:space="preserve">
+    <value>Found {0:N0} dump file(s)</value>
+    <comment>{0} = file count (integer)</comment>
+  </data>
+  <data name="Status_ProcessingProgress" xml:space="preserve">
+    <value>Processing {0}/{1}...</value>
+    <comment>{0} = current index, {1} = total count</comment>
+  </data>
+  <data name="Status_ScanningPercent" xml:space="preserve">
+    <value>Scanning ({0}%)... Found {1:N0} files</value>
+    <comment>{0} = percentage, {1} = files found</comment>
+  </data>
+  <data name="Status_AnalysisComplete" xml:space="preserve">
+    <value>Analysis complete. Found {0:N0} files.</value>
+    <comment>{0} = file count</comment>
+  </data>
+  <data name="Status_ScanningRecords" xml:space="preserve">
+    <value>Scanning records... Found {0:N0}</value>
+    <comment>{0} = record count</comment>
+  </data>
+  <data name="Status_ConversionComplete" xml:space="preserve">
+    <value>Conversion complete.</value>
+  </data>
+  <data name="Status_ConversionCancelled" xml:space="preserve">
+    <value>Conversion cancelled.</value>
+  </data>
+  <data name="Status_ExtractionComplete" xml:space="preserve">
+    <value>Extraction complete.</value>
+  </data>
+  <data name="Status_ScanCancelled" xml:space="preserve">
+    <value>Scan cancelled.</value>
+  </data>
+  <data name="Status_Scanning" xml:space="preserve">
+    <value>Scanning...</value>
+  </data>
+  <data name="Status_LoadingFile" xml:space="preserve">
+    <value>Loading file...</value>
+  </data>
+  <data name="Status_ParsingEsmHeader" xml:space="preserve">
+    <value>Parsing ESM header...</value>
+  </data>
+  <data name="Status_BuildingIndex" xml:space="preserve">
+    <value>Building index...</value>
+  </data>
+  <data name="Status_StartingAnalysis" xml:space="preserve">
+    <value>Starting analysis...</value>
+  </data>
+  <data name="Status_StartingEsmAnalysis" xml:space="preserve">
+    <value>Starting ESM analysis...</value>
+  </data>
+  <data name="Status_ExtractingScripts" xml:space="preserve">
+    <value>Extracting SCDA scripts...</value>
+  </data>
+  <data name="Status_ScanningForEsmRecords" xml:space="preserve">
+    <value>Scanning for ESM records...</value>
+  </data>
+  <data name="Status_ScanningForDdxFiles" xml:space="preserve">
+    <value>Scanning for DDX files...</value>
+  </data>
+  <data name="Status_DirectoryNotExist" xml:space="preserve">
+    <value>Directory does not exist.</value>
+  </data>
+  <data name="Status_Converting" xml:space="preserve">
+    <value>Converting {0} files...</value>
+    <comment>{0} = file count</comment>
+  </data>
+  <data name="Status_FilesSelected" xml:space="preserve">
+    <value>{0} of {1} files selected</value>
+    <comment>{0} = selected count, {1} = total count</comment>
+  </data>
+  <data name="Status_RunningCoverageAnalysis" xml:space="preserve">
+    <value>Running coverage analysis...</value>
+  </data>
+  <data name="Status_ReconstructingRecords" xml:space="preserve">
+    <value>Reconstructing ESM records...</value>
+  </data>
+  <data name="Status_BuildingDataBrowserTree" xml:space="preserve">
+    <value>Building data browser tree...</value>
+  </data>
+  <data name="Status_BuildingCategoryTree" xml:space="preserve">
+    <value>Building category tree...</value>
+  </data>
+  <data name="Status_SortingRecords" xml:space="preserve">
+    <value>Sorting records...</value>
+  </data>
+  <data name="Status_BuildingTreeView" xml:space="preserve">
+    <value>Building tree view...</value>
+  </data>
+  <data name="Status_BuildingIndex_Count" xml:space="preserve">
+    <value>Building index ({0:N0} records)...</value>
+    <comment>{0} = record count</comment>
+  </data>
+  <data name="Status_MappingFormIds" xml:space="preserve">
+    <value>Mapping FormIDs...</value>
+  </data>
+  <data name="Status_BuildingMemoryMap" xml:space="preserve">
+    <value>Building memory map...</value>
+  </data>
+  <data name="Status_ParsingMatches" xml:space="preserve">
+    <value>Parsing {0:N0} matches...</value>
+    <comment>{0} = match count</comment>
+  </data>
+  <data name="Status_ScanningEsmRecordsPercent" xml:space="preserve">
+    <value>Scanning ESM records ({0}%)...</value>
+    <comment>{0} = percentage</comment>
+  </data>
+  <data name="Status_ExtractingLandHeightmaps" xml:space="preserve">
+    <value>Extracting LAND heightmaps...</value>
+  </data>
+  <data name="Status_ExtractingRefrPositions" xml:space="preserve">
+    <value>Extracting REFR positions...</value>
+  </data>
+  <data name="Status_ScanningAssetStrings" xml:space="preserve">
+    <value>Scanning for asset strings...</value>
+  </data>
+  <data name="Status_ExtractingRuntimeEditorIds" xml:space="preserve">
+    <value>Extracting runtime Editor IDs...</value>
+  </data>
+  <data name="Status_CorrelatingFormIdNames" xml:space="preserve">
+    <value>Correlating FormID names...</value>
+  </data>
+  <data name="Status_ReconstructedRecords" xml:space="preserve">
+    <value>Reconstructed {0:N0} records.</value>
+    <comment>{0} = record count</comment>
+  </data>
+  <data name="Status_FoundFilesToCarve" xml:space="preserve">
+    <value>Found {0:N0} files to carve. Coverage: {1:F1}%</value>
+    <comment>{0} = file count, {1} = coverage percentage</comment>
+  </data>
+  <data name="Status_CoverageAnalysisFailed" xml:space="preserve">
+    <value>Coverage analysis failed: {0}</value>
+    <comment>{0} = error message</comment>
+  </data>
+
+  <!-- ===== Dialog Titles ===== -->
+  <data name="Dialog_AnalysisFailed_Title" xml:space="preserve">
+    <value>Analysis Failed</value>
+  </data>
+  <data name="Dialog_ExtractionComplete_Title" xml:space="preserve">
+    <value>Extraction Complete</value>
+  </data>
+  <data name="Dialog_ExtractionFailed_Title" xml:space="preserve">
+    <value>Extraction Failed</value>
+  </data>
+  <data name="Dialog_NoFilesSelected_Title" xml:space="preserve">
+    <value>No Files Selected</value>
+  </data>
+  <data name="Dialog_NoFilesSelected_Message" xml:space="preserve">
+    <value>Please select at least one file to convert.</value>
+  </data>
+  <data name="Dialog_DDXConvNotFound_Title" xml:space="preserve">
+    <value>DDXConv Not Found</value>
+  </data>
+  <data name="Dialog_ErrorLoadingBsa_Title" xml:space="preserve">
+    <value>Error Loading BSA</value>
+  </data>
+  <data name="Dialog_ExtractionError_Title" xml:space="preserve">
+    <value>Extraction Error</value>
+  </data>
+  <data name="Dialog_BatchProcessingFailed_Title" xml:space="preserve">
+    <value>Batch Processing Failed</value>
+  </data>
+  <data name="Dialog_LimitedConversionSupport_Title" xml:space="preserve">
+    <value>Limited Conversion Support</value>
+  </data>
+  <data name="Dialog_PartialConversionSupport_Title" xml:space="preserve">
+    <value>Partial Conversion Support</value>
+  </data>
+  <data name="Dialog_ReconstructionFailed_Title" xml:space="preserve">
+    <value>Reconstruction Failed</value>
+  </data>
+
+  <!-- ===== Error Messages ===== -->
+  <data name="Error_FileNotFound" xml:space="preserve">
+    <value>File not found: {0}</value>
+    <comment>{0} = file path</comment>
+  </data>
+  <data name="Error_DirectoryNotFound" xml:space="preserve">
+    <value>Directory not found: {0}</value>
+    <comment>{0} = directory path</comment>
+  </data>
+
+  <!-- ===== Coverage Tab (code-behind usage) ===== -->
+  <data name="Coverage_Summary" xml:space="preserve">
+    <value>Coverage Summary</value>
+  </data>
+  <data name="Coverage_GapClassification" xml:space="preserve">
+    <value>Gap Classification</value>
+  </data>
+  <data name="Coverage_GapDetails" xml:space="preserve">
+    <value>Gap Details</value>
+  </data>
+
+  <!-- ===== File Types ===== -->
+  <data name="FileType_MinidumpHeader" xml:space="preserve">
+    <value>Minidump header</value>
+  </data>
+  <data name="FileType_Modules" xml:space="preserve">
+    <value>Modules</value>
+  </data>
+  <data name="FileType_CarvedFiles" xml:space="preserve">
+    <value>Carved files</value>
+  </data>
+  <data name="FileType_EsmRecords" xml:space="preserve">
+    <value>ESM records</value>
+  </data>
+  <data name="FileType_ScdaScripts" xml:space="preserve">
+    <value>SCDA scripts</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Tab Headers (x:Uid) ===== -->
+  <data name="Tab_MemoryMap.Header" xml:space="preserve">
+    <value>Memory Map</value>
+  </data>
+  <data name="Tab_DataBrowser.Header" xml:space="preserve">
+    <value>Data Browser</value>
+  </data>
+  <data name="Tab_Reports.Header" xml:space="preserve">
+    <value>Reports</value>
+  </data>
+  <data name="Tab_Coverage.Header" xml:space="preserve">
+    <value>Coverage</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Column Headers (x:Uid) ===== -->
+  <data name="Col_Offset.Text" xml:space="preserve">
+    <value>Offset</value>
+  </data>
+  <data name="Col_Size.Text" xml:space="preserve">
+    <value>Size</value>
+  </data>
+  <data name="Col_Type.Text" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="Col_Filename.Text" xml:space="preserve">
+    <value>Filename</value>
+  </data>
+  <data name="Col_FileOffset.Text" xml:space="preserve">
+    <value>File Offset</value>
+  </data>
+  <data name="Col_Classification.Text" xml:space="preserve">
+    <value>Classification</value>
+  </data>
+  <data name="Col_Context.Text" xml:space="preserve">
+    <value>Context</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Context Menu (x:Uid) ===== -->
+  <data name="Menu_GoToStart.Text" xml:space="preserve">
+    <value>Go to Start</value>
+  </data>
+  <data name="Menu_GoToEnd.Text" xml:space="preserve">
+    <value>Go to End</value>
+  </data>
+  <data name="Menu_CopyOffset.Text" xml:space="preserve">
+    <value>Copy Offset</value>
+  </data>
+  <data name="Menu_CopyFilename.Text" xml:space="preserve">
+    <value>Copy Filename</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Labels (x:Uid) ===== -->
+  <data name="Label_MinidumpPath.Text" xml:space="preserve">
+    <value>Minidump Path</value>
+  </data>
+  <data name="Label_OutputDirectory.Text" xml:space="preserve">
+    <value>Output Directory</value>
+  </data>
+  <data name="Label_Sort.Text" xml:space="preserve">
+    <value>Sort:</value>
+  </data>
+  <data name="Label_CoverageSummary.Text" xml:space="preserve">
+    <value>Coverage Summary</value>
+  </data>
+  <data name="Label_GapClassification.Text" xml:space="preserve">
+    <value>Gap Classification</value>
+  </data>
+  <data name="Label_GapDetails.Text" xml:space="preserve">
+    <value>Gap Details</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Placeholder Text (x:Uid) ===== -->
+  <data name="Input_MinidumpPath.PlaceholderText" xml:space="preserve">
+    <value>Select or enter a .dmp file path...</value>
+  </data>
+  <data name="Input_OutputPath.PlaceholderText" xml:space="preserve">
+    <value>Select or enter output directory...</value>
+  </data>
+  <data name="Input_EsmSearch.PlaceholderText" xml:space="preserve">
+    <value>Search by name, editor ID, or FormID...</value>
+  </data>
+  <data name="Input_ReportSearch.PlaceholderText" xml:space="preserve">
+    <value>Search in report...</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Buttons (x:Uid) ===== -->
+  <data name="Button_ReconstructRecords.Content" xml:space="preserve">
+    <value>Reconstruct Records</value>
+  </data>
+  <data name="Button_GoToOffset.Content" xml:space="preserve">
+    <value>Go to Offset</value>
+  </data>
+  <data name="Button_GenerateReports.Content" xml:space="preserve">
+    <value>Generate Reports</value>
+  </data>
+  <data name="Button_ExportSelected.Content" xml:space="preserve">
+    <value>Export Selected</value>
+  </data>
+  <data name="Button_ExportAll.Content" xml:space="preserve">
+    <value>Export All</value>
+  </data>
+  <data name="Button_FindNext.Content" xml:space="preserve">
+    <value>Find Next</value>
+  </data>
+  <data name="Button_FindPrev.Content" xml:space="preserve">
+    <value>Find Prev</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Sort ComboBox Items (x:Uid) ===== -->
+  <data name="Sort_ByName.Content" xml:space="preserve">
+    <value>By Name</value>
+  </data>
+  <data name="Sort_ByEditorId.Content" xml:space="preserve">
+    <value>By Editor ID</value>
+  </data>
+  <data name="Sort_ByFormId.Content" xml:space="preserve">
+    <value>By Form ID</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Expander/Checkbox (x:Uid) ===== -->
+  <data name="Expander_FileTypes.Header" xml:space="preserve">
+    <value>File Types to Extract</value>
+  </data>
+  <data name="Checkbox_ConvertFormats.Content" xml:space="preserve">
+    <value>Convert Formats</value>
+  </data>
+  <data name="Checkbox_ConvertFormats.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Convert DDX -> DDS textures and XUR -> XUI interfaces</value>
+  </data>
+  <data name="Checkbox_SaveAtlas.Content" xml:space="preserve">
+    <value>Save Atlas Files</value>
+  </data>
+  <data name="Checkbox_Verbose.Content" xml:space="preserve">
+    <value>Verbose</value>
+  </data>
+  <data name="Checkbox_Verbose.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Output detailed progress to the terminal (when launched from command line)</value>
+  </data>
+
+  <!-- ===== SingleFileTab: Empty/Placeholder States (x:Uid) ===== -->
+  <data name="Empty_RunAnalysis.Text" xml:space="preserve">
+    <value>Run analysis to view ESM records</value>
+  </data>
+  <data name="Empty_SelectRecord.Text" xml:space="preserve">
+    <value>Select a record</value>
+  </data>
+  <data name="Empty_RunCoverage.Text" xml:space="preserve">
+    <value>Run analysis to see coverage data.</value>
+  </data>
+
+  <!-- ===== BatchModeTab (x:Uid) ===== -->
+  <data name="Header_BatchCarver.Text" xml:space="preserve">
+    <value>Minidump Batch Carver</value>
+  </data>
+
+  <!-- ===== DdxConverterTab (x:Uid) ===== -->
+  <data name="Header_DdxConverter.Text" xml:space="preserve">
+    <value>DDX Converter</value>
+  </data>
+  <data name="Subtitle_DdxConvBy.Text" xml:space="preserve">
+    <value>Uses DDXConv by kran27</value>
+  </data>
+  <data name="Col_FilePath.Text" xml:space="preserve">
+    <value>File Path</value>
+  </data>
+  <data name="Col_Format.Text" xml:space="preserve">
+    <value>Format</value>
+  </data>
+  <data name="Input_DdxInputDir.PlaceholderText" xml:space="preserve">
+    <value>Select or enter a folder containing Xbox 360 .ddx files...</value>
+  </data>
+  <data name="Input_ConvertOutputDir.PlaceholderText" xml:space="preserve">
+    <value>Select or enter output directory for converted files...</value>
+  </data>
+  <data name="Checkbox_PreserveFolderStructure.Content" xml:space="preserve">
+    <value>Preserve folder structure</value>
+  </data>
+  <data name="Checkbox_OverwriteExisting.Content" xml:space="preserve">
+    <value>Overwrite existing files</value>
+  </data>
+  <data name="Checkbox_VerboseOutput.Content" xml:space="preserve">
+    <value>Verbose output</value>
+  </data>
+  <data name="Label_InputDirectory.Text" xml:space="preserve">
+    <value>Input Directory</value>
+  </data>
+  <data name="Input_InputDirectory.PlaceholderText" xml:space="preserve">
+    <value>Select or enter a folder containing .dmp files...</value>
+  </data>
+  <data name="Col_Status.Text" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="Label_Threads.Text" xml:space="preserve">
+    <value>Threads:</value>
+  </data>
+  <data name="Checkbox_SkipExisting.Content" xml:space="preserve">
+    <value>Skip Existing</value>
+  </data>
+
+  <!-- ===== NifConverterTab (x:Uid) ===== -->
+  <data name="Header_NifConverter.Text" xml:space="preserve">
+    <value>NIF Converter</value>
+  </data>
+  <data name="Subtitle_NifConverter.Text" xml:space="preserve">
+    <value>Convert Xbox 360 NIF files to PC format.</value>
+  </data>
+  <data name="Input_NifInputDir.PlaceholderText" xml:space="preserve">
+    <value>Select or enter a folder containing Xbox 360 .nif files...</value>
+  </data>
+
+  <!-- ===== BsaExtractorTab (x:Uid) ===== -->
+  <data name="Header_BsaExtractor.Text" xml:space="preserve">
+    <value>BSA Extractor</value>
+  </data>
+  <data name="Subtitle_BsaExtractor.Text" xml:space="preserve">
+    <value>Extract files from Bethesda BSA archives (PC and Xbox 360).</value>
+  </data>
+  <data name="EmptyBsa_Title.Text" xml:space="preserve">
+    <value>No BSA Archive Loaded</value>
+  </data>
+  <data name="EmptyBsa_Subtitle.Text" xml:space="preserve">
+    <value>Click 'Open BSA...' to select an archive</value>
+  </data>
+  <data name="EmptyBsa_SubtitleAlt.Text" xml:space="preserve">
+    <value>Click 'Open BSA...' to select a Bethesda archive file</value>
+  </data>
+  <data name="Label_Archive.Text" xml:space="preserve">
+    <value>Archive:</value>
+  </data>
+  <data name="Label_Platform.Text" xml:space="preserve">
+    <value>Platform:</value>
+  </data>
+  <data name="Label_Folders.Text" xml:space="preserve">
+    <value>Folders:</value>
+  </data>
+  <data name="Label_Files.Text" xml:space="preserve">
+    <value>Files:</value>
+  </data>
+  <data name="Label_Compressed.Text" xml:space="preserve">
+    <value>Compressed:</value>
+  </data>
+  <data name="Label_Content.Text" xml:space="preserve">
+    <value>Content:</value>
+  </data>
+  <data name="Filter_ByType.PlaceholderText" xml:space="preserve">
+    <value>Filter by type...</value>
+  </data>
+  <data name="Filter_ByFolder.PlaceholderText" xml:space="preserve">
+    <value>Filter by folder path...</value>
+  </data>
+  <data name="Col_Folder.Text" xml:space="preserve">
+    <value>Folder</value>
+  </data>
+  <data name="Col_Compressed.Text" xml:space="preserve">
+    <value>Compressed</value>
+  </data>
+  <data name="Checkbox_ConvertXbox360.Content" xml:space="preserve">
+    <value>Convert Xbox 360 files during extraction</value>
+  </data>
+  <data name="Button_ExtractSelected.Content" xml:space="preserve">
+    <value>Extract Selected</value>
+  </data>
+
+  <!-- ===== RepackerTab (x:Uid) ===== -->
+  <data name="Header_Repacker.Text" xml:space="preserve">
+    <value>Xbox 360 Repacker</value>
+  </data>
+  <data name="Subtitle_Repacker.Text" xml:space="preserve">
+    <value>Convert Xbox 360 Fallout: New Vegas installation to PC format.</value>
+  </data>
+  <data name="Button_SelectSource.Content" xml:space="preserve">
+    <value>Select Source...</value>
+  </data>
+  <data name="Button_SelectOutput.Content" xml:space="preserve">
+    <value>Select Output...</value>
+  </data>
+  <data name="Label_Source.Text" xml:space="preserve">
+    <value>Source:</value>
+  </data>
+  <data name="Label_Status.Text" xml:space="preserve">
+    <value>Status:</value>
+  </data>
+  <data name="Label_Output.Text" xml:space="preserve">
+    <value>Output:</value>
+  </data>
+  <data name="Label_TotalFiles.Text" xml:space="preserve">
+    <value>Total Files:</value>
+  </data>
+  <data name="Label_FFmpeg.Text" xml:space="preserve">
+    <value>FFmpeg:</value>
+  </data>
+  <data name="Col_Category.Text" xml:space="preserve">
+    <value>Category</value>
+  </data>
+  <data name="Col_Description.Text" xml:space="preserve">
+    <value>Description</value>
+  </data>
+  <data name="EmptyRepacker_Title.Text" xml:space="preserve">
+    <value>No Source Folder Selected</value>
+  </data>
+  <data name="EmptyRepacker_Subtitle.Text" xml:space="preserve">
+    <value>Click 'Select Source...' to choose an Xbox 360 Fallout: New Vegas installation</value>
+  </data>
+  <data name="Checkbox_UpdateUserIni.Content" xml:space="preserve">
+    <value>Update user Fallout.ini (backup will be created)</value>
+  </data>
+  <data name="Checkbox_UpdateUserIni.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Adds all Xbox BSAs to SArchiveList in your My Games\FalloutNV\Fallout.ini</value>
+  </data>
+  <data name="Button_StartConversion.Content" xml:space="preserve">
+    <value>Start Conversion</value>
+  </data>
+
+</root>

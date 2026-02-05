@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -126,7 +127,7 @@ public sealed partial class SingleFileTab : UserControl
     {
         var currentPath = MinidumpPathTextBox.Text;
         if (!string.IsNullOrEmpty(currentPath) && currentPath != _lastInputPath &&
-            File.Exists(currentPath) && currentPath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase))
+            File.Exists(currentPath) && FileTypeDetector.IsSupportedExtension(currentPath))
         {
             UpdateOutputPathFromInput(currentPath);
             _lastInputPath = currentPath;
@@ -158,7 +159,7 @@ public sealed partial class SingleFileTab : UserControl
     private void UpdateButtonStates()
     {
         var valid = !string.IsNullOrEmpty(MinidumpPathTextBox.Text) && File.Exists(MinidumpPathTextBox.Text) &&
-                    MinidumpPathTextBox.Text.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase);
+                    FileTypeDetector.IsSupportedExtension(MinidumpPathTextBox.Text);
         AnalyzeButton.IsEnabled = valid;
         ExtractButton.IsEnabled = valid && _analysisResult != null && !string.IsNullOrEmpty(OutputPathTextBox.Text);
     }
@@ -183,14 +184,14 @@ public sealed partial class SingleFileTab : UserControl
         _reportSearchQuery = "";
         DataBrowserPlaceholder.Visibility = Visibility.Visible;
         DataBrowserContent.Visibility = Visibility.Collapsed;
-        ReconstructStatusText.Text = "Run analysis to view ESM records";
+        ReconstructStatusText.Text = Strings.Empty_RunAnalysisForEsm;
         EsmTreeView.RootNodes.Clear();
         _flatListBuilt = false;
         _esmBrowserTree = null;
         _currentSearchQuery = "";
         EsmSearchBox.Text = "";
         PropertyPanel.Children.Clear();
-        SelectedRecordTitle.Text = "Select a record";
+        SelectedRecordTitle.Text = Strings.Empty_SelectARecord;
         GoToOffsetButton.Visibility = Visibility.Collapsed;
         ExportAllReportsButton.IsEnabled = false;
         ExportSelectedReportButton.IsEnabled = false;
@@ -217,6 +218,8 @@ public sealed partial class SingleFileTab : UserControl
     {
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add(".dmp");
+        picker.FileTypeFilter.Add(".esm");
+        picker.FileTypeFilter.Add(".esp");
         InitializeWithWindow.Initialize(picker,
             WindowNative.GetWindowHandle(App.Current.MainWindow));
 
@@ -266,7 +269,17 @@ public sealed partial class SingleFileTab : UserControl
                 return;
             }
 
-            StatusTextBlock.Text = "Starting analysis...";
+            // Detect file type by magic bytes
+            var fileType = FileTypeDetector.Detect(filePath);
+            if (fileType == AnalysisFileType.Unknown)
+            {
+                await ShowDialogAsync("Analysis Failed", $"Unknown file type: {filePath}");
+                return;
+            }
+
+            StatusTextBlock.Text = fileType == AnalysisFileType.EsmFile
+                ? Strings.Status_StartingEsmAnalysis
+                : Strings.Status_StartingAnalysis;
 
             var progress = new Progress<AnalysisProgress>(p => DispatcherQueue.TryEnqueue(() =>
             {
@@ -276,25 +289,41 @@ public sealed partial class SingleFileTab : UserControl
                 // Display phase and progress in status bar
                 var phaseText = p.Phase switch
                 {
+                    // ESM file analysis phases
+                    "Loading" => Strings.Status_LoadingFile,
+                    "Parsing Header" => Strings.Status_ParsingEsmHeader,
+                    "Scanning Records" when p.FilesFound > 0 => Strings.Status_ScanningRecords(p.FilesFound),
+                    "Scanning Records" => Strings.Status_Scanning,
+                    "Building Index" => Strings.Status_BuildingIndex_Count(p.FilesFound),
+                    "Mapping FormIDs" => Strings.Status_MappingFormIds,
+                    "Building Memory Map" => Strings.Status_BuildingMemoryMap,
+                    // Memory dump analysis phases
                     "Scanning" when p.TotalBytes > 0 =>
-                        $"Scanning ({p.BytesProcessed * 100 / p.TotalBytes}%)... Found {p.FilesFound:N0} files",
-                    "Scanning" => $"Scanning... Found {p.FilesFound:N0} files",
-                    "Parsing" => $"Parsing {p.FilesFound:N0} matches...",
-                    "Scripts" => "Extracting SCDA scripts...",
+                        Strings.Status_ScanningPercent((int)(p.BytesProcessed * 100 / p.TotalBytes), p.FilesFound),
+                    "Scanning" => Strings.Status_ScanningPercent(0, p.FilesFound),
+                    "Parsing" => Strings.Status_ParsingMatches(p.FilesFound),
+                    "Scripts" => Strings.Status_ExtractingScripts,
                     "ESM Records" when p.TotalBytes > 0 =>
-                        $"Scanning ESM records ({p.BytesProcessed * 100 / p.TotalBytes}%)...",
-                    "ESM Records" => "Scanning for ESM records...",
-                    "LAND Records" => "Extracting LAND heightmaps...",
-                    "REFR Records" => "Extracting REFR positions...",
-                    "Asset Strings" => "Scanning for asset strings...",
-                    "Runtime EditorIDs" => "Extracting runtime Editor IDs...",
-                    "FormIDs" => "Correlating FormID names...",
-                    "Complete" => $"Analysis complete. Found {p.FilesFound:N0} files.",
+                        Strings.Status_ScanningEsmRecordsPercent((int)(p.BytesProcessed * 100 / p.TotalBytes)),
+                    "ESM Records" => Strings.Status_ScanningForEsmRecords,
+                    "LAND Records" => Strings.Status_ExtractingLandHeightmaps,
+                    "REFR Records" => Strings.Status_ExtractingRefrPositions,
+                    "Asset Strings" => Strings.Status_ScanningAssetStrings,
+                    "Runtime EditorIDs" => Strings.Status_ExtractingRuntimeEditorIds,
+                    "FormIDs" => Strings.Status_CorrelatingFormIdNames,
+                    "Complete" => Strings.Status_AnalysisComplete(p.FilesFound),
                     _ => $"{p.Phase}..."
                 };
                 StatusTextBlock.Text = phaseText;
             }));
-            _analysisResult = await new MemoryDumpAnalyzer().AnalyzeAsync(filePath, progress);
+
+            // Fork based on file type
+            _analysisResult = fileType switch
+            {
+                AnalysisFileType.EsmFile => await new EsmFileAnalyzer().AnalyzeAsync(filePath, progress),
+                AnalysisFileType.Minidump => await new MemoryDumpAnalyzer().AnalyzeAsync(filePath, progress),
+                _ => throw new NotSupportedException($"Unknown file type: {filePath}")
+            };
 
             foreach (var entry in _analysisResult.CarvedFiles)
             {
@@ -339,7 +368,7 @@ public sealed partial class SingleFileTab : UserControl
             UpdateButtonStates();
 
             // Open shared session and load hex viewer with shared accessor
-            _session.Open(filePath, _analysisResult);
+            _session.Open(filePath, _analysisResult, fileType);
             HexViewer.LoadData(filePath, _analysisResult, _session.Accessor!);
 
             // Enable data browser and reports tabs (depends on ESM records, not coverage)
@@ -355,7 +384,7 @@ public sealed partial class SingleFileTab : UserControl
             // Run coverage analysis (best-effort, doesn't block other functionality)
             try
             {
-                StatusTextBlock.Text = "Running coverage analysis...";
+                StatusTextBlock.Text = Strings.Status_RunningCoverageAnalysis;
                 _session.CoverageResult = await Task.Run(() =>
                     new CoverageAnalyzer().Analyze(_session.AnalysisResult!, _session.Accessor!));
 
@@ -367,14 +396,12 @@ public sealed partial class SingleFileTab : UserControl
             }
             catch (Exception coverageEx)
             {
-                StatusTextBlock.Text = $"Coverage analysis failed: {coverageEx.Message}";
+                StatusTextBlock.Text = Strings.Status_CoverageAnalysisFailed(coverageEx.Message);
             }
 
             var fileCount = _allCarvedFiles.Count;
             var coveragePct = _session.CoverageResult?.RecognizedPercent ?? 0;
-            StatusTextBlock.Text = fileCount == 1
-                ? $"Found 1 file to carve. Coverage: {coveragePct:F1}%"
-                : $"Found {fileCount:N0} files to carve. Coverage: {coveragePct:F1}%";
+            StatusTextBlock.Text = Strings.Status_FoundFilesToCarve(fileCount, coveragePct);
         }
         catch (Exception ex)
         {
@@ -740,8 +767,8 @@ public sealed partial class SingleFileTab : UserControl
         ReconstructButton.IsEnabled = false;
         ReconstructProgressRing.IsActive = true;
         ReconstructProgressRing.Visibility = Visibility.Visible;
-        ReconstructStatusText.Text = "Reconstructing ESM records...";
-        StatusTextBlock.Text = "Reconstructing ESM records...";
+        ReconstructStatusText.Text = Strings.Status_ReconstructingRecords;
+        StatusTextBlock.Text = Strings.Status_ReconstructingRecords;
 
         try
         {
@@ -760,12 +787,11 @@ public sealed partial class SingleFileTab : UserControl
                 return reconstructor.ReconstructAll();
             });
 
-            StatusTextBlock.Text =
-                $"Reconstructed {_session.SemanticResult.TotalRecordsReconstructed:N0} records.";
+            StatusTextBlock.Text = Strings.Status_ReconstructedRecords(_session.SemanticResult.TotalRecordsReconstructed);
         }
         catch (Exception ex)
         {
-            await ShowDialogAsync("Reconstruction Failed",
+            await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
                 $"{ex.GetType().Name}: {ex.Message}", true);
         }
         finally
@@ -782,8 +808,8 @@ public sealed partial class SingleFileTab : UserControl
 
         ReconstructProgressRing.IsActive = true;
         ReconstructProgressRing.Visibility = Visibility.Visible;
-        ReconstructStatusText.Text = "Building data browser tree...";
-        StatusTextBlock.Text = "Building data browser tree...";
+        ReconstructStatusText.Text = Strings.Status_BuildingDataBrowserTree;
+        StatusTextBlock.Text = Strings.Status_BuildingDataBrowserTree;
 
         try
         {
@@ -801,10 +827,10 @@ public sealed partial class SingleFileTab : UserControl
             // Build tree on background thread (fast - just category nodes)
             var tree = await Task.Run(() =>
             {
-                ((IProgress<string>)progress).Report("Building category tree...");
+                ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
                 var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, lookup);
 
-                ((IProgress<string>)progress).Report("Sorting records...");
+                ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
                 // Apply default sort (By Name) after building
                 EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
@@ -814,7 +840,7 @@ public sealed partial class SingleFileTab : UserControl
             _esmBrowserTree = tree;
             _flatListBuilt = false;
 
-            StatusTextBlock.Text = "Building tree view...";
+            StatusTextBlock.Text = Strings.Status_BuildingTreeView;
 
             // Add category nodes to tree with chevrons (must be on UI thread)
             EsmTreeView.RootNodes.Clear();
