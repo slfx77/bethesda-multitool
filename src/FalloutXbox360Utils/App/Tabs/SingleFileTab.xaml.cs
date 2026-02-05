@@ -27,8 +27,6 @@ public sealed partial class SingleFileTab : UserControl
     // Coverage gap sorting state
     private List<CoverageGapEntry> _allCoverageGapEntries = [];
 
-    // Data browser search state
-    private List<EsmBrowserNode> _allEsmRecordNodes = [];
     private AnalysisResult? _analysisResult;
     private CarvedFileEntry? _contextMenuTarget;
     private bool _coverageGapSortAscending = true;
@@ -38,6 +36,7 @@ public sealed partial class SingleFileTab : UserControl
     private bool _dependencyCheckDone;
     private ObservableCollection<EsmBrowserNode>? _esmBrowserTree;
     private bool _flatListBuilt;
+    private CancellationTokenSource? _searchDebounceToken;
     private string? _lastInputPath;
     private string _reportFullContent = "";
     private int[] _reportLineOffsets = [];
@@ -186,9 +185,10 @@ public sealed partial class SingleFileTab : UserControl
         DataBrowserContent.Visibility = Visibility.Collapsed;
         ReconstructStatusText.Text = "Run analysis to view ESM records";
         EsmTreeView.RootNodes.Clear();
-        _allEsmRecordNodes = [];
         _flatListBuilt = false;
         _esmBrowserTree = null;
+        _currentSearchQuery = "";
+        EsmSearchBox.Text = "";
         PropertyPanel.Children.Clear();
         SelectedRecordTitle.Text = "Select a record";
         GoToOffsetButton.Visibility = Visibility.Collapsed;
@@ -834,38 +834,8 @@ public sealed partial class SingleFileTab : UserControl
             ReconstructProgressRing.IsActive = false;
             ReconstructProgressRing.Visibility = Visibility.Collapsed;
             ReconstructStatusText.Text = "";
+            StatusTextBlock.Text = "";
         }
-    }
-
-    private static List<EsmBrowserNode> BuildFlatRecordList(
-        ObservableCollection<EsmBrowserNode> tree,
-        Dictionary<uint, string>? lookup = null,
-        IProgress<string>? progress = null)
-    {
-        var result = new List<EsmBrowserNode>();
-        foreach (var categoryNode in tree)
-        {
-            // Ensure category children are loaded
-            if (categoryNode.HasUnrealizedChildren && categoryNode.Children.Count == 0)
-            {
-                EsmBrowserTreeBuilder.LoadCategoryChildren(categoryNode);
-            }
-
-            foreach (var typeNode in categoryNode.Children)
-            {
-                progress?.Report($"Loading {typeNode.ParentTypeName}...");
-
-                // Ensure record children are loaded
-                if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
-                {
-                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, lookup);
-                }
-
-                result.AddRange(typeNode.Children);
-            }
-        }
-
-        return result;
     }
 
     private void EsmTreeView_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
@@ -880,7 +850,10 @@ public sealed partial class SingleFileTab : UserControl
         }
         else if (browserNode.NodeType == "RecordType" && browserNode.Children.Count == 0)
         {
-            EsmBrowserTreeBuilder.LoadRecordTypeChildren(browserNode, _session.AnalysisResult?.FormIdMap);
+            EsmBrowserTreeBuilder.LoadRecordTypeChildren(
+                browserNode,
+                _session.AnalysisResult?.FormIdMap,
+                _session.SemanticResult?.FormIdToDisplayName);
         }
 
         // Add child TreeViewNodes
@@ -907,7 +880,10 @@ public sealed partial class SingleFileTab : UserControl
                     if (browserNode.NodeType == "Category" && browserNode.Children.Count == 0)
                         EsmBrowserTreeBuilder.LoadCategoryChildren(browserNode);
                     else if (browserNode.NodeType == "RecordType" && browserNode.Children.Count == 0)
-                        EsmBrowserTreeBuilder.LoadRecordTypeChildren(browserNode, _session.AnalysisResult?.FormIdMap);
+                        EsmBrowserTreeBuilder.LoadRecordTypeChildren(
+                            browserNode,
+                            _session.AnalysisResult?.FormIdMap,
+                            _session.SemanticResult?.FormIdToDisplayName);
 
                     foreach (var child in browserNode.Children)
                     {
@@ -961,7 +937,25 @@ public sealed partial class SingleFileTab : UserControl
     private void BuildPropertyPanel(List<EsmPropertyEntry> properties)
     {
         PropertyPanel.Children.Clear();
+
+        // Use a single Grid so all rows share the same column widths (dynamic table alignment)
+        // 5 columns: icon, name, value col1 (FullName/EditorID), value col2 (EditorID), value col3 (FormID)
+        var mainGrid = new Grid();
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // icon
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // name
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // value col1
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // value col2
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // value col3
+
+        var currentRow = 0;
+        var propertyRowIndex = 0; // For alternating row colors (excludes category headers)
         string? lastCategory = null;
+
+        // Use theme-aware foreground with low opacity for subtle alternating rows
+        // This adapts to both light and dark modes automatically
+        var foregroundBrush = (Microsoft.UI.Xaml.Media.SolidColorBrush)
+            Application.Current.Resources["TextFillColorPrimaryBrush"];
+        var altRowBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.05 };
 
         foreach (var prop in properties)
         {
@@ -969,147 +963,275 @@ public sealed partial class SingleFileTab : UserControl
             if (prop.Category != null && prop.Category != lastCategory)
             {
                 lastCategory = prop.Category;
-                PropertyPanel.Children.Add(new TextBlock
+                propertyRowIndex = 0; // Reset alternating for each category
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                // Add more visible background for category headers (distinct from row stripes)
+                var categoryBgBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.12 };
+                var categoryBg = new Border { Background = categoryBgBrush };
+                Grid.SetRow(categoryBg, currentRow);
+                Grid.SetColumnSpan(categoryBg, 5); // Spans all 5 columns
+                mainGrid.Children.Add(categoryBg);
+
+                var categoryHeader = new TextBlock
                 {
                     Text = prop.Category,
-                    FontSize = 11,
+                    FontSize = 13,
                     FontWeight = Microsoft.UI.Text.FontWeights.Bold,
                     Foreground =
                         (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-                    Margin = new Thickness(0, PropertyPanel.Children.Count > 0 ? 8 : 0, 0, 4)
-                });
+                    Margin = new Thickness(8, 5, 0, 7) // Vertically centered (up 1px)
+                };
+                Grid.SetRow(categoryHeader, currentRow);
+                Grid.SetColumnSpan(categoryHeader, 5); // Spans all 5 columns
+                mainGrid.Children.Add(categoryHeader);
+                currentRow++;
             }
 
             if (prop.IsExpandable && prop.SubItems?.Count > 0)
             {
-                // Simple expandable entry with ▶/▼ toggle
-                var container = new StackPanel { Spacing = 0 };
+                // Expandable entry - header row
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                // Header row with expand indicator
-                var headerGrid = new Grid { Padding = new Thickness(4, 2, 4, 2) };
-                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
-                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(162) });
-                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                // Add alternating row background
+                if (propertyRowIndex % 2 == 1)
+                {
+                    var bgBorder = new Border { Background = altRowBrush };
+                    Grid.SetRow(bgBorder, currentRow);
+                    Grid.SetColumnSpan(bgBorder, 5);
+                    mainGrid.Children.Add(bgBorder);
+                }
 
                 var expandIcon = new TextBlock
                 {
                     Text = "▶",
                     FontSize = 10,
+                    Width = 18,
+                    Padding = new Thickness(4, 3, 0, 2),
                     VerticalAlignment = VerticalAlignment.Center,
                     Foreground =
                         (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
                 };
+                Grid.SetRow(expandIcon, currentRow);
                 Grid.SetColumn(expandIcon, 0);
-                headerGrid.Children.Add(expandIcon);
+                mainGrid.Children.Add(expandIcon);
 
                 var nameText = new TextBlock
                 {
                     Text = prop.Name,
                     FontSize = 12,
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Padding = new Thickness(0, 3, 16, 2),
+                    IsTextSelectionEnabled = true
                 };
+                Grid.SetRow(nameText, currentRow);
                 Grid.SetColumn(nameText, 1);
-                headerGrid.Children.Add(nameText);
+                mainGrid.Children.Add(nameText);
 
                 var countText = new TextBlock
                 {
                     Text = prop.Value,
                     FontSize = 12,
+                    Padding = new Thickness(0, 3, 4, 2),
                     FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
                     Foreground =
                         (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
                 };
+                Grid.SetRow(countText, currentRow);
                 Grid.SetColumn(countText, 2);
-                headerGrid.Children.Add(countText);
+                Grid.SetColumnSpan(countText, 3); // Spans value columns
+                mainGrid.Children.Add(countText);
 
-                // Sub-items panel (initially collapsed)
-                var subItemsPanel = new StackPanel
-                {
-                    Spacing = 1,
-                    Visibility = Visibility.Collapsed,
-                    Margin = new Thickness(18, 0, 0, 0)
-                };
+                var headerRow = currentRow;
+                currentRow++;
 
+                // Create a separate grid for sub-items (isolates column widths from mainGrid)
+                var subItemsGrid = new Grid { Visibility = Visibility.Collapsed };
+                subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col1: EditorID
+                subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col2: FullName
+                subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col3: FormID
+                subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Col4: Qty
+
+                var subRow = 0;
                 foreach (var sub in prop.SubItems)
                 {
-                    var subGrid = new Grid { Padding = new Thickness(0, 1, 0, 1) };
-                    subGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
-                    subGrid.ColumnDefinitions.Add(new ColumnDefinition
-                        { Width = new GridLength(1, GridUnitType.Star) });
+                    subItemsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                    var idxText = new TextBlock
+                    // 4-column sub-item (Inventory, Factions)
+                    if (sub.Col1 != null || sub.Col2 != null || sub.Col3 != null || sub.Col4 != null)
                     {
-                        Text = sub.Name,
-                        FontSize = 11,
-                        Foreground =
-                            (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorTertiaryBrush"]
-                    };
-                    Grid.SetColumn(idxText, 0);
-                    subGrid.Children.Add(idxText);
+                        var col1Text = new TextBlock
+                        {
+                            Text = sub.Col1 ?? "",
+                            FontSize = 11,
+                            Padding = new Thickness(0, 1, 12, 1),
+                            IsTextSelectionEnabled = true
+                        };
+                        Grid.SetRow(col1Text, subRow);
+                        Grid.SetColumn(col1Text, 0);
+                        subItemsGrid.Children.Add(col1Text);
 
-                    var valText = new TextBlock
+                        var col2Text = new TextBlock
+                        {
+                            Text = sub.Col2 ?? "",
+                            FontSize = 11,
+                            Padding = new Thickness(0, 1, 12, 1),
+                            IsTextSelectionEnabled = true
+                        };
+                        Grid.SetRow(col2Text, subRow);
+                        Grid.SetColumn(col2Text, 1);
+                        subItemsGrid.Children.Add(col2Text);
+
+                        var col3Text = new TextBlock
+                        {
+                            Text = sub.Col3 ?? "",
+                            FontSize = 11,
+                            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                            Padding = new Thickness(0, 1, 12, 1),
+                            IsTextSelectionEnabled = true
+                        };
+                        Grid.SetRow(col3Text, subRow);
+                        Grid.SetColumn(col3Text, 2);
+                        subItemsGrid.Children.Add(col3Text);
+
+                        var col4Text = new TextBlock
+                        {
+                            Text = sub.Col4 ?? "",
+                            FontSize = 11,
+                            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                            Padding = new Thickness(0, 1, 4, 1),
+                            IsTextSelectionEnabled = true
+                        };
+                        Grid.SetRow(col4Text, subRow);
+                        Grid.SetColumn(col4Text, 3);
+                        subItemsGrid.Children.Add(col4Text);
+                    }
+                    else if (string.IsNullOrEmpty(sub.Name))
                     {
-                        Text = sub.Value,
-                        FontSize = 11,
-                        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                        TextWrapping = TextWrapping.Wrap,
-                        IsTextSelectionEnabled = true
-                    };
-                    Grid.SetColumn(valText, 1);
-                    subGrid.Children.Add(valText);
-
-                    subItemsPanel.Children.Add(subGrid);
-                }
-
-                // Click handler to toggle expansion
-                headerGrid.PointerPressed += (_, _) =>
-                {
-                    if (subItemsPanel.Visibility == Visibility.Collapsed)
-                    {
-                        subItemsPanel.Visibility = Visibility.Visible;
-                        expandIcon.Text = "▼";
+                        // Value-only sub-item (FaceGen hex blocks)
+                        var valText = new TextBlock
+                        {
+                            Text = sub.Value,
+                            FontSize = 11,
+                            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                            TextWrapping = TextWrapping.Wrap,
+                            IsTextSelectionEnabled = true,
+                            Padding = new Thickness(0, 1, 0, 1)
+                        };
+                        Grid.SetRow(valText, subRow);
+                        Grid.SetColumnSpan(valText, 4);
+                        subItemsGrid.Children.Add(valText);
                     }
                     else
                     {
-                        subItemsPanel.Visibility = Visibility.Collapsed;
-                        expandIcon.Text = "▶";
-                    }
-                };
+                        // Name + Value sub-item (Skills)
+                        var subNameText = new TextBlock
+                        {
+                            Text = sub.Name,
+                            FontSize = 11,
+                            Padding = new Thickness(0, 1, 16, 1),
+                            IsTextSelectionEnabled = true
+                        };
+                        Grid.SetRow(subNameText, subRow);
+                        Grid.SetColumnSpan(subNameText, 2);
+                        subItemsGrid.Children.Add(subNameText);
 
-                container.Children.Add(headerGrid);
-                container.Children.Add(subItemsPanel);
-                PropertyPanel.Children.Add(container);
+                        var valText = new TextBlock
+                        {
+                            Text = sub.Value,
+                            FontSize = 11,
+                            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                            Padding = new Thickness(0, 1, 4, 1),
+                            IsTextSelectionEnabled = true
+                        };
+                        Grid.SetRow(valText, subRow);
+                        Grid.SetColumn(valText, 2);
+                        Grid.SetColumnSpan(valText, 2);
+                        subItemsGrid.Children.Add(valText);
+                    }
+                    subRow++;
+                }
+
+                // Add sub-items grid as a single row in mainGrid (spans all columns, isolated)
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var subItemsContainer = new Border
+                {
+                    Child = subItemsGrid,
+                    Margin = new Thickness(18, 0, 0, 0) // Indent
+                };
+                Grid.SetRow(subItemsContainer, currentRow);
+                Grid.SetColumn(subItemsContainer, 1);
+                Grid.SetColumnSpan(subItemsContainer, 4);
+                mainGrid.Children.Add(subItemsContainer);
+                currentRow++;
+
+                // Click handler - make header row clickable
+                expandIcon.PointerPressed += (_, _) => ToggleSubItems();
+                nameText.PointerPressed += (_, _) => ToggleSubItems();
+                countText.PointerPressed += (_, _) => ToggleSubItems();
+
+                void ToggleSubItems()
+                {
+                    var isCollapsed = subItemsGrid.Visibility == Visibility.Collapsed;
+                    subItemsGrid.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
+                    expandIcon.Text = isCollapsed ? "▼" : "▶";
+                }
+
+                propertyRowIndex++;
             }
             else
             {
                 // Normal property row
-                var grid = new Grid { Padding = new Thickness(4, 2, 4, 2) };
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                // Add alternating row background
+                if (propertyRowIndex % 2 == 1)
+                {
+                    var bgBorder = new Border { Background = altRowBrush };
+                    Grid.SetRow(bgBorder, currentRow);
+                    Grid.SetColumnSpan(bgBorder, 5);
+                    mainGrid.Children.Add(bgBorder);
+                }
+
+                // Empty spacer for icon column alignment
+                var spacer = new TextBlock { Width = 18, Padding = new Thickness(4, 3, 0, 2) };
+                Grid.SetRow(spacer, currentRow);
+                Grid.SetColumn(spacer, 0);
+                mainGrid.Children.Add(spacer);
 
                 var nameText = new TextBlock
                 {
                     Text = prop.Name,
                     FontSize = 12,
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Padding = new Thickness(0, 3, 16, 2),
+                    IsTextSelectionEnabled = true
                 };
-                Grid.SetColumn(nameText, 0);
-                grid.Children.Add(nameText);
+                Grid.SetRow(nameText, currentRow);
+                Grid.SetColumn(nameText, 1);
+                mainGrid.Children.Add(nameText);
 
+                // Single value column (spans all value columns)
                 var valueText = new TextBlock
                 {
                     Text = prop.Value,
                     FontSize = 12,
+                    Padding = new Thickness(0, 3, 4, 2),
                     FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
                     TextWrapping = TextWrapping.Wrap,
                     IsTextSelectionEnabled = true
                 };
-                Grid.SetColumn(valueText, 1);
-                grid.Children.Add(valueText);
+                Grid.SetRow(valueText, currentRow);
+                Grid.SetColumn(valueText, 2);
+                Grid.SetColumnSpan(valueText, 3);
+                mainGrid.Children.Add(valueText);
 
-                PropertyPanel.Children.Add(grid);
+                propertyRowIndex++;
+                currentRow++;
             }
         }
+
+        PropertyPanel.Children.Add(mainGrid);
     }
 
     private void GoToRecordOffset_Click(object sender, RoutedEventArgs e)
@@ -1121,59 +1243,178 @@ public sealed partial class SingleFileTab : UserControl
         }
     }
 
+    private string _currentSearchQuery = "";
+
     private async void EsmSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         var query = EsmSearchBox.Text?.Trim() ?? "";
-        var previousSelection = EsmSearchResultsListView.SelectedItem as EsmBrowserNode;
 
-        if (string.IsNullOrEmpty(query))
+        if (_esmBrowserTree == null || _esmBrowserTree.Count == 0)
         {
-            // Show tree, hide search results
-            EsmTreeView.Visibility = Visibility.Visible;
-            EsmSearchResultsListView.Visibility = Visibility.Collapsed;
             return;
         }
 
-        // Build flat list on first search (lazy loading optimization)
-        if (!_flatListBuilt && _esmBrowserTree != null)
+        _currentSearchQuery = query;
+
+        // Cancel any pending search
+        _searchDebounceToken?.Cancel();
+        _searchDebounceToken = new CancellationTokenSource();
+        var token = _searchDebounceToken.Token;
+
+        if (string.IsNullOrEmpty(query))
+        {
+            // Restore full tree view immediately (no debounce for clearing)
+            RebuildTreeViewFromSource();
+            StatusTextBlock.Text = "";
+            return;
+        }
+
+        // Debounce: wait 250ms after user stops typing before searching
+        try
+        {
+            await Task.Delay(250, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return; // User typed more, abort this search
+        }
+
+        // Ensure all children are loaded before filtering (lazy loading)
+        if (!_flatListBuilt)
         {
             StatusTextBlock.Text = "Building search index...";
             var lookup = _session.AnalysisResult?.FormIdMap;
+            var displayNameLookup = _session.SemanticResult?.FormIdToDisplayName;
             var tree = _esmBrowserTree;
-            _allEsmRecordNodes = await Task.Run(() => BuildFlatRecordList(tree, lookup));
+            await Task.Run(() => EnsureAllChildrenLoaded(tree, lookup, displayNameLookup));
             _flatListBuilt = true;
-            StatusTextBlock.Text = $"Search index ready ({_allEsmRecordNodes.Count:N0} records).";
         }
 
-        // Filter flat record list, group by parent type for visual categorization
-        var matches = _allEsmRecordNodes
-            .Where(n =>
-                (n.DisplayName?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
-                (n.EditorId?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
-                (n.FormIdHex?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
-            .OrderBy(n => n.ParentTypeName ?? "", StringComparer.OrdinalIgnoreCase)
-            .ThenBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Take(200)
-            .ToList();
-
-        EsmSearchResultsListView.ItemsSource = matches;
-
-        // Preserve selection if it's still in the filtered results
-        if (previousSelection != null && matches.Contains(previousSelection))
-        {
-            EsmSearchResultsListView.SelectedItem = previousSelection;
-        }
-
-        EsmTreeView.Visibility = Visibility.Collapsed;
-        EsmSearchResultsListView.Visibility = Visibility.Visible;
+        // Filter tree and rebuild with only matching records
+        var matchCount = FilterAndRebuildTreeView(query);
+        StatusTextBlock.Text = matchCount > 0
+            ? $"Found {matchCount:N0} matching records"
+            : "No matches found";
     }
 
-    private void EsmSearchResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private static void EnsureAllChildrenLoaded(
+        ObservableCollection<EsmBrowserNode> tree,
+        Dictionary<uint, string>? lookup,
+        Dictionary<uint, string>? displayNameLookup)
     {
-        if (EsmSearchResultsListView.SelectedItem is EsmBrowserNode browserNode)
+        foreach (var categoryNode in tree)
         {
-            SelectBrowserNode(browserNode);
+            if (categoryNode.HasUnrealizedChildren && categoryNode.Children.Count == 0)
+            {
+                EsmBrowserTreeBuilder.LoadCategoryChildren(categoryNode);
+            }
+
+            foreach (var typeNode in categoryNode.Children)
+            {
+                if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
+                {
+                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, lookup, displayNameLookup);
+                }
+            }
         }
+    }
+
+    private void RebuildTreeViewFromSource()
+    {
+        if (_esmBrowserTree == null) return;
+
+        EsmTreeView.RootNodes.Clear();
+        foreach (var node in _esmBrowserTree)
+        {
+            var treeNode = new TreeViewNode { Content = node, HasUnrealizedChildren = node.HasUnrealizedChildren };
+            EsmTreeView.RootNodes.Add(treeNode);
+        }
+    }
+
+    private int FilterAndRebuildTreeView(string query, int maxResults = 200)
+    {
+        if (_esmBrowserTree == null) return 0;
+
+        var totalMatches = 0;
+        EsmTreeView.RootNodes.Clear();
+
+        foreach (var categoryNode in _esmBrowserTree)
+        {
+            if (totalMatches >= maxResults) break; // Stop if limit reached
+
+            var filteredCategoryNode = FilterCategoryNode(categoryNode, query, ref totalMatches, maxResults);
+            if (filteredCategoryNode != null)
+            {
+                EsmTreeView.RootNodes.Add(filteredCategoryNode);
+            }
+        }
+
+        return totalMatches;
+    }
+
+    private static TreeViewNode? FilterCategoryNode(
+        EsmBrowserNode category, string query, ref int totalMatches, int maxResults)
+    {
+        var matchingTypeNodes = new List<TreeViewNode>();
+
+        foreach (var typeNode in category.Children)
+        {
+            if (totalMatches >= maxResults) break; // Stop if limit reached
+
+            // Filter records within this type (preserves existing sort order)
+            // Only take up to remaining limit to avoid processing extra records
+            var matchingRecords = typeNode.Children
+                .Where(r => MatchesSearchQuery(r, query))
+                .Take(maxResults - totalMatches)
+                .ToList();
+
+            if (matchingRecords.Count > 0)
+            {
+                totalMatches += matchingRecords.Count;
+
+                // Create type node with only matching children
+                var typeTreeNode = new TreeViewNode
+                {
+                    Content = typeNode,
+                    HasUnrealizedChildren = false,
+                    IsExpanded = true // Auto-expand to show matches
+                };
+
+                foreach (var record in matchingRecords)
+                {
+                    typeTreeNode.Children.Add(new TreeViewNode { Content = record });
+                }
+
+                matchingTypeNodes.Add(typeTreeNode);
+            }
+        }
+
+        if (matchingTypeNodes.Count > 0)
+        {
+            // Create category node with only types that have matches
+            var categoryTreeNode = new TreeViewNode
+            {
+                Content = category,
+                HasUnrealizedChildren = false,
+                IsExpanded = true // Auto-expand to show matches
+            };
+
+            foreach (var typeNode in matchingTypeNodes)
+            {
+                categoryTreeNode.Children.Add(typeNode);
+            }
+
+            return categoryTreeNode;
+        }
+
+        return null;
+    }
+
+    private static bool MatchesSearchQuery(EsmBrowserNode node, string query)
+    {
+        return (node.DisplayName?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
+               (node.EditorId?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
+               (node.FormIdHex?.Contains(query, StringComparison.OrdinalIgnoreCase) == true);
     }
 
     private void EsmSortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1189,15 +1430,16 @@ public sealed partial class SingleFileTab : UserControl
 
         EsmBrowserTreeBuilder.SortRecordChildren(_esmBrowserTree, mode);
 
-        // Note: We don't rebuild _allEsmRecordNodes - it's only used for search filtering
-        // which doesn't depend on sort order. The tree nodes are rebuilt below.
-
-        // Rebuild tree view nodes to reflect new order
-        EsmTreeView.RootNodes.Clear();
-        foreach (var node in _esmBrowserTree)
+        // Rebuild tree view with new sort order, respecting any active filter
+        if (!string.IsNullOrEmpty(_currentSearchQuery))
         {
-            var treeNode = new TreeViewNode { Content = node, HasUnrealizedChildren = node.HasUnrealizedChildren };
-            EsmTreeView.RootNodes.Add(treeNode);
+            // Re-apply filter with new sort order
+            FilterAndRebuildTreeView(_currentSearchQuery);
+        }
+        else
+        {
+            // No filter - rebuild full tree
+            RebuildTreeViewFromSource();
         }
     }
 

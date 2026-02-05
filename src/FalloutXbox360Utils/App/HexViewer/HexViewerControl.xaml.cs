@@ -22,7 +22,6 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     private readonly HexDataManager _dataManager = new();
     private long _currentTopRow;
     private bool _disposed;
-    private bool _gapLegendAdded;
     private bool _hasData;
     private double _lastMinimapContainerHeight;
     private HexMinimapRenderer? _minimapRenderer;
@@ -167,7 +166,6 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     public void AddCoverageGapRegions(CoverageResult coverage)
     {
         _dataManager.AddCoverageGapRegions(coverage);
-        UpdateLegendWithGapColors(coverage);
         RefreshMinimap();
     }
 
@@ -192,56 +190,6 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         VirtualScrollBar.Value = 0;
         RenderAll();
         DispatcherQueue.TryEnqueue(UpdateMinimapViewport);
-    }
-
-    private void UpdateLegendWithGapColors(CoverageResult coverage)
-    {
-        // Remove previously added gap legend items before re-adding
-        if (_gapLegendAdded)
-        {
-            var baseCount = FileTypeColors.LegendCategories.Length;
-            while (LegendPanel.Children.Count > baseCount)
-            {
-                LegendPanel.Children.RemoveAt(LegendPanel.Children.Count - 1);
-            }
-        }
-
-        // Determine which gap classifications are present in the data
-        var presentClassifications = coverage.Gaps
-            .Select(g => g.Classification)
-            .Distinct()
-            .OrderBy(c => c)
-            .ToList();
-
-        foreach (var classification in presentClassifications)
-        {
-            if (!FileTypeColors.GapColors.TryGetValue(classification, out var color))
-            {
-                continue;
-            }
-
-            var displayName =
-                FileTypeColors.GapDisplayNames.GetValueOrDefault(classification, classification.ToString());
-
-            var itemPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-            itemPanel.Children.Add(new Border
-            {
-                Width = 12,
-                Height = 12,
-                Background = new SolidColorBrush(color),
-                CornerRadius = new CornerRadius(2)
-            });
-            itemPanel.Children.Add(new TextBlock
-            {
-                Text = displayName,
-                FontSize = 10,
-                VerticalAlignment = VerticalAlignment.Center,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 204, 204, 204))
-            });
-            LegendPanel.Children.Add(itemPanel);
-        }
-
-        _gapLegendAdded = true;
     }
 
     private void VirtualScrollBar_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)

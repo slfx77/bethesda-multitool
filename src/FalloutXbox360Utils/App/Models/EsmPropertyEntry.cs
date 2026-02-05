@@ -15,4 +15,10 @@ public sealed class EsmPropertyEntry
 
     /// <summary>Sub-items for expandable entries (list contents).</summary>
     public List<EsmPropertyEntry>? SubItems { get; init; }
+
+    // Additional columns for inventory/faction sub-items (4-column layout)
+    public string? Col1 { get; init; }  // Editor ID
+    public string? Col2 { get; init; }  // Full Name
+    public string? Col3 { get; init; }  // Form ID
+    public string? Col4 { get; init; }  // Quantity/Rank
 }

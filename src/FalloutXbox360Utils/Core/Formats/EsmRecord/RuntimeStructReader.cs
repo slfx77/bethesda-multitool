@@ -1763,13 +1763,26 @@ public sealed partial class RuntimeStructReader
         var dispositionBase = (short)BinaryUtils.ReadUInt16BE(buffer, acbsOffset + 20);
         var templateFlags = BinaryUtils.ReadUInt16BE(buffer, acbsOffset + 22);
 
-        // Basic validation
+        // Basic validation - reject garbage values
         if (fatigueBase > 5000 || barterGold > 50000 || speedMultiplier > 500)
         {
             return null;
         }
 
-        if (!IsNormalFloat(karma))
+        // Level should be reasonable (-127 to 255 for creatures/NPCs)
+        if (level < -127 || level > 255)
+        {
+            return null;
+        }
+
+        // Disposition should be reasonable (-200 to 200)
+        if (dispositionBase < -200 || dispositionBase > 200)
+        {
+            return null;
+        }
+
+        // Karma must be a normal float in reasonable range (-1000 to 1000)
+        if (!IsNormalFloat(karma) || karma < -1000 || karma > 1000)
         {
             return null;
         }

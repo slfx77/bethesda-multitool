@@ -339,7 +339,7 @@ public static class FormatRegistry
         //   then gap classifications continue from 216°.
         return new Dictionary<FileCategory, uint>
         {
-            [FileCategory.Header] = 0xFFE04343, // Hue   0° Red
+            [FileCategory.Header] = 0xFF708090, // Steel gray (minidump header)
             [FileCategory.Module] = 0xFFE08243, // Hue  24° Orange
             [FileCategory.Texture] = 0xFFE0C043, // Hue  48° Gold
             [FileCategory.Image] = 0xFFC0E043, // Hue  72° Yellow-green

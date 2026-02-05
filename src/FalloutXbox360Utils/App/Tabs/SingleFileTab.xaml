@@ -176,7 +176,7 @@
       <!--  Tab 2: Data Browser  -->
       <controls:TabViewItem x:Name="DataBrowserTab" Header="Data Browser"
                             IsClosable="False" IsEnabled="False">
-        <Grid>
+        <Grid Padding="0,16,0,0">
           <!--  Placeholder: loading indicator  -->
           <StackPanel x:Name="DataBrowserPlaceholder"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -251,32 +251,6 @@
                   </DataTemplate>
                 </TreeView.ItemTemplate>
               </TreeView>
-
-              <!--  Search results list (shown during search)  -->
-              <ListView x:Name="EsmSearchResultsListView"
-                        Grid.Row="2"
-                        Visibility="Collapsed"
-                        SelectionChanged="EsmSearchResultsListView_SelectionChanged"
-                        SelectionMode="Single">
-                <ListView.ItemTemplate>
-                  <DataTemplate>
-                    <StackPanel Padding="4,2" Spacing="2">
-                      <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon FontSize="12" Glyph="{Binding ParentIconGlyph}" />
-                        <TextBlock FontSize="12" Text="{Binding DisplayName}" />
-                      </StackPanel>
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock FontSize="11"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Text="{Binding ParentTypeName}" />
-                        <TextBlock FontSize="11" FontFamily="Consolas"
-                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                   Text="{Binding FormIdHex}" />
-                      </StackPanel>
-                    </StackPanel>
-                  </DataTemplate>
-                </ListView.ItemTemplate>
-              </ListView>
             </Grid>
 
             <!--  Property detail panel  -->
@@ -286,20 +260,32 @@
                 <RowDefinition Height="*" />
               </Grid.RowDefinitions>
 
-              <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8"
-                          Margin="0,0,0,8">
+              <Grid Grid.Row="0" Margin="0,0,0,8">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <TextBlock x:Name="SelectedRecordTitle"
+                           Grid.Row="0"
                            Style="{StaticResource SubtitleTextBlockStyle}"
-                           Text="Select a record" />
+                           Text="Select a record"
+                           TextWrapping="Wrap"
+                           MaxLines="2"
+                           TextTrimming="CharacterEllipsis" />
                 <Button x:Name="GoToOffsetButton"
+                        Grid.Row="1"
+                        Margin="0,8,0,0"
                         Click="GoToRecordOffset_Click"
                         Content="Go to Offset"
                         Visibility="Collapsed" />
-              </StackPanel>
+              </Grid>
 
-              <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="PropertyPanel" Spacing="2" />
-              </ScrollViewer>
+              <Border Grid.Row="1" CornerRadius="4"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
+                  <StackPanel x:Name="PropertyPanel" Spacing="2" />
+                </ScrollViewer>
+              </Border>
             </Grid>
           </Grid>
         </Grid>

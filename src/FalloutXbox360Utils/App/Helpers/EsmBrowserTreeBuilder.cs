@@ -25,6 +25,24 @@ internal static partial class EsmBrowserTreeBuilder
     };
 
     /// <summary>
+    ///     Property names to rename for display (e.g., "EyesFormId" -> "Eyes").
+    /// </summary>
+    private static readonly Dictionary<string, string> PropertyDisplayNames = new(StringComparer.Ordinal)
+    {
+        ["EyesFormId"] = "Eyes",
+        ["HairFormId"] = "Hair",
+        ["CombatStyleFormId"] = "Combat Style"
+    };
+
+    /// <summary>
+    ///     Category ordering for property display.
+    /// </summary>
+    private static readonly string[] CategoryOrder =
+    [
+        "Identity", "Attributes", "Derived Stats", "Characteristics", "AI", "Associations", "References", "General", "Metadata"
+    ];
+
+    /// <summary>
     ///     Icons for sub-categories that differ from their parent category.
     ///     Uses Segoe MDL2 Assets glyphs where available.
     /// </summary>
@@ -61,157 +79,6 @@ internal static partial class EsmBrowserTreeBuilder
     ///     Cache for named property lookups - avoids repeated GetProperty(name) calls.
     /// </summary>
     private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> NamedPropertyCache = new();
-
-    /// <summary>
-    ///     FaceGen Geometry Symmetric morph labels from GECK (50 slots).
-    /// </summary>
-    private static readonly string[] FaceGenGeometryLabels =
-    [
-        "Brow Ridge - high / low",
-        "Brow Ridge Inner - up / down",
-        "Brow Ridge Outer - up / down",
-        "Cheekbones - low / high",
-        "Cheekbones - shallow / pronounced",
-        "Cheekbones - thin / wide",
-        "Cheeks - concave / convex",
-        "Cheeks - round / gaunt",
-        "Chin - forward / backward",
-        "Chin - pronounced / recessed",
-        "Chin - retracted / jutting",
-        "Chin - shallow / deep",
-        "Chin - small / large",
-        "Chin - tall / short",
-        "Chin - wide / thin",
-        "Eyes - down / up",
-        "Eyes - small / large",
-        "Eyes - tilt inward / outward",
-        "Eyes - together / apart",
-        "Face - brow-nose-chin ratio",
-        "Face - forehead-sellion-nose ratio",
-        "Face - heavy / light",
-        "Face - round / gaunt",
-        "Face - thin / wide",
-        "Forehead - small / large",
-        "Forehead - tall / short",
-        "Forehead - tilt forward / back",
-        "Jaw - retracted / jutting",
-        "Jaw - wide / thin",
-        "Jaw-Neck slope high / low",
-        "Jawline - concave / convex",
-        "Mouth - drawn / pursed",
-        "Mouth - happy / sad",
-        "Mouth - high / low",
-        "Mouth - Lips deflated / inflated",
-        "Mouth - Lips large / small",
-        "Mouth - lips puckered / retracted",
-        "Mouth - protruding / retracted",
-        "Mouth - tilt up / down",
-        "Mouth - underbite / overbite",
-        "Mouth-Chin distance - short / long",
-        "Nose - bridge shallow / deep",
-        "Nose - bridge short / long",
-        "Nose - down / up",
-        "Nose - flat / pointed",
-        "Nose - nostril tilt down / up",
-        "Nose - nostrils small / large",
-        "Nose - nostrils wide / thin",
-        "Nose - region concave / convex",
-        "Nose - sellion down / up"
-    ];
-
-    /// <summary>
-    ///     FaceGen Geometry Asymmetric morph labels from GECK (30 slots).
-    /// </summary>
-    private static readonly string[] FaceGenAsymmetryLabels =
-    [
-        "Brow Ridge - forward axis twist",
-        "Cheekbones - protrusion asymmetry",
-        "Chin - chin axis twist",
-        "Chin - forward axis twist",
-        "Chin - transverse shift",
-        "Eyes - height disparity",
-        "Eyes - transverse shift",
-        "Face - coronal bend",
-        "Face - coronal shear",
-        "Face - vertical axis twist",
-        "Forehead - forward axis twist",
-        "Mouth - corners transverse shift",
-        "Mouth - forward axis twist",
-        "Mouth - transverse shift",
-        "Mouth - twist and shift",
-        "Mouth-Nose - coronal shear",
-        "Mouth-Nose - transverse shift",
-        "Nose - bridge transverse shift",
-        "Nose - frontal axis twist",
-        "Nose - sellion transverse shift",
-        "Nose - tip transverse shift",
-        "Nose - transverse shift",
-        "Nose - vertical axis twist",
-        "Nose Region - frontal axis twist",
-        "Nostrils - frontal axis twist",
-        "Asymmetric 26",
-        "Asymmetric 27",
-        "Asymmetric 28",
-        "Asymmetric 29",
-        "Asymmetric 30"
-    ];
-
-    /// <summary>
-    ///     FaceGen Texture Symmetric morph labels from GECK (50 slots).
-    /// </summary>
-    private static readonly string[] FaceGenTextureLabels =
-    [
-        "Beard Flushed / Pale",
-        "Beard Light / Dark",
-        "Beard Cheeks Light / Dark",
-        "Beard Circle Light / Dark",
-        "Beard Goatee Light / Dark",
-        "Beard Moustache Light / Dark",
-        "Cheek Blush Light / Red",
-        "Eye Sockets Bruised / Bright",
-        "Eye Sockets Dark / Light",
-        "Eyebrows Dark / Light",
-        "Eyebrows Low / High",
-        "Eyebrows Thick / Thin",
-        "Eyebrows Very Thin / Thick",
-        "Eyebrows Lower Light / Dark",
-        "Eyebrows Outer Light / Dark",
-        "Eyebrows Upper Dark / Light",
-        "Eyelids Light / Dark",
-        "Eyelids Pale / Red",
-        "Eyeliner Light / Dark",
-        "Eyeshadow Light / Dark",
-        "Eyes Dark Brown / Light Blue",
-        "Eyes Whites Dim / Bright",
-        "Lips Flushed / Pale",
-        "Lipstick Dark Red / Light Blue",
-        "Lipstick Dark Blue / Light Red",
-        "Naso Labial Lines Light / Dark",
-        "Nares Small / Large",
-        "Nose Pale / Red",
-        "Skin Flushed / Pale",
-        "Skin Shade Dark / Light",
-        "Skin Tint Orange / Blue",
-        "Skin Tint Purple / Yellow",
-        "Texture 33",
-        "Texture 34",
-        "Texture 35",
-        "Texture 36",
-        "Texture 37",
-        "Texture 38",
-        "Texture 39",
-        "Texture 40",
-        "Texture 41",
-        "Texture 42",
-        "Texture 43",
-        "Texture 44",
-        "Texture 45",
-        "Texture 46",
-        "Texture 47",
-        "Texture 48",
-        "Texture 49",
-        "Texture 50"
-    ];
 
     /// <summary>
     ///     Gets cached PropertyInfo[] for a type.
@@ -351,7 +218,8 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     public static void LoadRecordTypeChildren(
         EsmBrowserNode typeNode,
-        Dictionary<uint, string>? lookup = null)
+        Dictionary<uint, string>? lookup = null,
+        Dictionary<uint, string>? displayNameLookup = null)
     {
         if (typeNode.DataObject is not IList records)
         {
@@ -397,10 +265,18 @@ internal static partial class EsmBrowserTreeBuilder
                 ParentIconGlyph = typeNode.IconGlyph,
                 FileOffset = offset,
                 DataObject = record,
-                Properties = BuildProperties(record, lookup)
+                Properties = BuildProperties(record, lookup, displayNameLookup)
             };
 
             typeNode.Children.Add(recordNode);
+        }
+
+        // Sort children by display name (default sort)
+        var sorted = typeNode.Children.OrderBy(n => n.DisplayName ?? "", StringComparer.OrdinalIgnoreCase).ToList();
+        typeNode.Children.Clear();
+        foreach (var node in sorted)
+        {
+            typeNode.Children.Add(node);
         }
 
         typeNode.HasUnrealizedChildren = false;
@@ -456,10 +332,14 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     public static List<EsmPropertyEntry> BuildProperties(
         object record,
-        Dictionary<uint, string>? lookup = null)
+        Dictionary<uint, string>? lookup = null,
+        Dictionary<uint, string>? displayNameLookup = null)
     {
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
+
+        // Creature-specific properties handled separately (prevent duplication)
+        var isCreature = record is ReconstructedCreature;
 
         foreach (var prop in GetCachedProperties(type))
         {
@@ -468,26 +348,43 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
+            // Skip creature-specific properties in default loop - handled explicitly below
+            if (isCreature && prop.Name is "CreatureType" or "CreatureTypeName"
+                    or "CombatSkill" or "MagicSkill" or "StealthSkill" or "AttackDamage")
+            {
+                continue;
+            }
+
             var value = prop.GetValue(record);
             var displayName = FormatPropertyName(prop.Name);
 
-            // Special handling for ActorBaseSubrecord (Stats)
+            // Special handling for ActorBaseSubrecord - extract into Characteristics and Attributes
+            // NPC and Creature have different relevant fields from ACBS
             if (value is ActorBaseSubrecord stats)
             {
+                var isNpc = record is ReconstructedNpc;
+
+                // Common fields (both NPC and Creature)
                 var gender = (stats.Flags & 1) == 1 ? "Female" : "Male";
-                properties.Add(new EsmPropertyEntry { Name = "Gender", Value = gender, Category = "Stats" });
+                properties.Add(new EsmPropertyEntry { Name = "Gender", Value = gender, Category = "Characteristics" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Level", Value = stats.Level.ToString(), Category = "Stats" });
+                    { Name = "Level", Value = stats.Level.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Fatigue", Value = stats.FatigueBase.ToString(), Category = "Stats" });
+                    { Name = "Fatigue", Value = stats.FatigueBase.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Barter Gold", Value = stats.BarterGold.ToString(), Category = "Stats" });
-                properties.Add(new EsmPropertyEntry
-                    { Name = "Speed Multiplier", Value = $"{stats.SpeedMultiplier}%", Category = "Stats" });
-                properties.Add(new EsmPropertyEntry
-                    { Name = "Karma", Value = $"{stats.KarmaAlignment:F2}", Category = "Stats" });
-                properties.Add(new EsmPropertyEntry
-                    { Name = "Disposition", Value = stats.DispositionBase.ToString(), Category = "Stats" });
+                    { Name = "Speed Multiplier", Value = $"{stats.SpeedMultiplier}%", Category = "Attributes" });
+
+                // NPC-only fields (creatures don't have barter gold, karma, disposition)
+                if (isNpc)
+                {
+                    properties.Add(new EsmPropertyEntry
+                        { Name = "Barter Gold", Value = stats.BarterGold.ToString(), Category = "Attributes" });
+                    properties.Add(new EsmPropertyEntry
+                        { Name = "Karma", Value = $"{stats.KarmaAlignment:F2}", Category = "Attributes" });
+                    properties.Add(new EsmPropertyEntry
+                        { Name = "Disposition", Value = stats.DispositionBase.ToString(), Category = "Attributes" });
+                }
+
                 continue;
             }
 
@@ -517,7 +414,7 @@ internal static partial class EsmBrowserTreeBuilder
                 var total = special.Sum(b => b);
                 var formatted = $"{special[0]} ST, {special[1]} PE, {special[2]} EN, {special[3]} CH, " +
                                 $"{special[4]} IN, {special[5]} AG, {special[6]} LK  (Total: {total})";
-                properties.Add(new EsmPropertyEntry { Name = "S.P.E.C.I.A.L.", Value = formatted, Category = "Stats" });
+                properties.Add(new EsmPropertyEntry { Name = "S.P.E.C.I.A.L.", Value = formatted, Category = "Attributes" });
                 continue;
             }
 
@@ -541,33 +438,42 @@ internal static partial class EsmBrowserTreeBuilder
                 {
                     Name = "Skills",
                     Value = $"{subItems.Count} skills",
-                    Category = "Stats",
+                    Category = "Attributes",
                     IsExpandable = true,
                     SubItems = subItems
                 });
                 continue;
             }
 
-            // Special handling for FaceGen float arrays with GECK morph labels
+            // Special handling for FaceGen float arrays - show raw hex in expandable panel
+            // No offsets, single selectable hex block
             if (prop.Name.StartsWith("FaceGen", StringComparison.Ordinal) && value is float[] morphs &&
                 morphs.Length > 0)
             {
-                var labels = GetFaceGenLabels(prop.Name, morphs.Length);
-                var subItems = new List<EsmPropertyEntry>();
-                for (var i = 0; i < morphs.Length; i++)
+                // Convert floats to raw bytes
+                var rawBytes = new byte[morphs.Length * 4];
+                Buffer.BlockCopy(morphs, 0, rawBytes, 0, rawBytes.Length);
+
+                // Create hex block with 16 bytes per line, no offsets
+                var hexLines = new List<string>();
+                for (var i = 0; i < rawBytes.Length; i += 16)
                 {
-                    subItems.Add(new EsmPropertyEntry
-                    {
-                        Name = labels[i],
-                        Value = $"{morphs[i]:F3}"
-                    });
+                    var lineBytes = rawBytes.Skip(i).Take(16);
+                    hexLines.Add(string.Join(" ", lineBytes.Select(b => b.ToString("X2"))));
                 }
+                var hexBlock = string.Join("\n", hexLines);
+
+                // Single sub-item with the entire hex block (selectable as one)
+                var subItems = new List<EsmPropertyEntry>
+                {
+                    new() { Name = "", Value = hexBlock }
+                };
 
                 properties.Add(new EsmPropertyEntry
                 {
                     Name = displayName,
-                    Value = $"{morphs.Length} morphs",
-                    Category = "FaceGen",
+                    Value = $"{rawBytes.Length} bytes",
+                    Category = "Characteristics",
                     IsExpandable = true,
                     SubItems = subItems
                 });
@@ -585,17 +491,14 @@ internal static partial class EsmBrowserTreeBuilder
                 var subItems = new List<EsmPropertyEntry>();
                 foreach (var item in list)
                 {
-                    subItems.Add(new EsmPropertyEntry
-                    {
-                        Name = $"[{subItems.Count}]",
-                        Value = FormatListItem(item, lookup) ?? item?.ToString() ?? ""
-                    });
+                    // Create table-like entries for Factions and Inventory (with column data)
+                    subItems.Add(CreateListItemEntry(item, lookup, displayNameLookup));
                 }
 
                 properties.Add(new EsmPropertyEntry
                 {
-                    Name = displayName,
-                    Value = $"{list.Count} items",
+                    Name = $"{displayName} ({list.Count} items)",
+                    Value = "",
                     Category = CategorizeProperty(prop.Name),
                     IsExpandable = true,
                     SubItems = subItems
@@ -603,7 +506,27 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
-            var valueStr = FormatPropertyValue(prop.Name, value, prop.PropertyType, lookup);
+            // Check if this is a FormID reference field that should use column layout
+            var isFormIdField = (prop.PropertyType == typeof(uint) || prop.PropertyType == typeof(uint?)) &&
+                                (prop.Name.EndsWith("FormId", StringComparison.Ordinal) ||
+                                 KnownFormIdFields.Contains(prop.Name)) &&
+                                prop.Name != "FormId"; // Exclude the main FormId property
+
+            if (isFormIdField && value is uint formIdVal && formIdVal != 0)
+            {
+                var editorId = lookup?.GetValueOrDefault(formIdVal);
+                var fullName = displayNameLookup?.GetValueOrDefault(formIdVal);
+
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = displayName,
+                    Value = FormatFormIdReference(formIdVal, editorId, fullName),
+                    Category = CategorizeProperty(prop.Name)
+                });
+                continue;
+            }
+
+            var valueStr = FormatPropertyValue(prop.Name, value, prop.PropertyType, lookup, displayNameLookup);
             if (valueStr == null)
             {
                 continue;
@@ -617,16 +540,118 @@ internal static partial class EsmBrowserTreeBuilder
             });
         }
 
-        return properties;
+        // Creature-specific fields (type, skills, damage)
+        if (record is ReconstructedCreature crea)
+        {
+            // Always show creature type (even if 0 = Animal)
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Creature Type",
+                Value = crea.CreatureTypeName,
+                Category = "Characteristics"
+            });
+
+            // Show skills if any are populated
+            if (crea.CombatSkill > 0 || crea.MagicSkill > 0 || crea.StealthSkill > 0)
+            {
+                properties.Add(new EsmPropertyEntry
+                    { Name = "Combat Skill", Value = crea.CombatSkill.ToString(), Category = "Attributes" });
+                properties.Add(new EsmPropertyEntry
+                    { Name = "Magic Skill", Value = crea.MagicSkill.ToString(), Category = "Attributes" });
+                properties.Add(new EsmPropertyEntry
+                    { Name = "Stealth Skill", Value = crea.StealthSkill.ToString(), Category = "Attributes" });
+            }
+
+            // Show attack damage if set
+            if (crea.AttackDamage != 0)
+            {
+                properties.Add(new EsmPropertyEntry
+                    { Name = "Attack Damage", Value = crea.AttackDamage.ToString(), Category = "Attributes" });
+            }
+        }
+
+        // Add Derived Stats section for NPCs (computed from S.P.E.C.I.A.L. and Level)
+        if (record is ReconstructedNpc npc && npc.SpecialStats?.Length >= 7 && npc.Stats != null)
+        {
+            var str = npc.SpecialStats[0];
+            var end = npc.SpecialStats[2];
+            var lck = npc.SpecialStats[6];
+            var level = npc.Stats.Level;
+            var fatigueBase = npc.Stats.FatigueBase;
+
+            // Calculate derived stats (same formulas as GeckReportGenerator)
+            var baseHealth = end * 5 + 50;
+            var calcHealth = baseHealth + level * 10;
+            var calcFatigue = fatigueBase + (str + end) * 10;
+            var critChance = (float)lck;
+            var meleeDamage = str * 0.5f;
+            var unarmedDamage = 0.5f + str * 0.1f;
+            var poisonResist = (end - 1) * 5;
+            var radResist = (end - 1) * 2;
+
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Health",
+                Value = $"{calcHealth} (Base: {baseHealth} + Level×10)",
+                Category = "Derived Stats"
+            });
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Fatigue",
+                Value = $"{calcFatigue} (Base: {fatigueBase} + (STR+END)×10)",
+                Category = "Derived Stats"
+            });
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Critical Chance",
+                Value = $"{critChance:F0}%",
+                Category = "Derived Stats"
+            });
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Melee Damage",
+                Value = $"{meleeDamage:F1}",
+                Category = "Derived Stats"
+            });
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Unarmed Damage",
+                Value = $"{unarmedDamage:F1}",
+                Category = "Derived Stats"
+            });
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Poison Resistance",
+                Value = $"{poisonResist}%",
+                Category = "Derived Stats"
+            });
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Radiation Resistance",
+                Value = $"{radResist}%",
+                Category = "Derived Stats"
+            });
+        }
+
+        // Sort properties by category for consistent grouping
+        return properties.OrderBy(p => Array.IndexOf(CategoryOrder, p.Category ?? "General"))
+            .ThenBy(p => p.Category == "General" ? 1 : 0) // Unknown categories at end
+            .ToList();
     }
 
     /// <summary>
     ///     Converts CamelCase property names to "Title Case" for display,
-    ///     with proper handling of common acronyms.
+    ///     with proper handling of common acronyms and custom renames.
     /// </summary>
     private static string FormatPropertyName(string name)
     {
         if (string.IsNullOrEmpty(name)) return name;
+
+        // Check for custom display name first
+        if (PropertyDisplayNames.TryGetValue(name, out var customName))
+        {
+            return customName;
+        }
 
         var sb = new StringBuilder();
         for (var i = 0; i < name.Length; i++)
@@ -648,39 +673,60 @@ internal static partial class EsmBrowserTreeBuilder
         return result;
     }
 
-    private static string? FormatListItem(object? item, Dictionary<uint, string>? lookup)
+    /// <summary>
+    ///     Creates an EsmPropertyEntry for a list item with column layout for FormID references.
+    /// </summary>
+    private static EsmPropertyEntry CreateListItemEntry(
+        object? item,
+        Dictionary<uint, string>? lookup,
+        Dictionary<uint, string>? displayNameLookup)
     {
         if (item == null)
         {
-            return null;
+            return new EsmPropertyEntry { Name = "", Value = "" };
         }
 
-        // Special handling for FactionMembership
+        // Factions: 4 columns - Editor ID, Full Name, Form ID, Rank
         if (item is FactionMembership faction)
         {
-            var factionName = lookup?.GetValueOrDefault(faction.FactionFormId);
-            return factionName != null
-                ? $"{factionName} — Rank {faction.Rank}"
-                : $"0x{faction.FactionFormId:X8} — Rank {faction.Rank}";
+            var fullName = displayNameLookup?.GetValueOrDefault(faction.FactionFormId);
+            var editorId = lookup?.GetValueOrDefault(faction.FactionFormId);
+            return new EsmPropertyEntry
+            {
+                Col1 = editorId ?? "",
+                Col2 = fullName ?? "",
+                Col3 = $"0x{faction.FactionFormId:X8}",
+                Col4 = $"Rank {faction.Rank}"
+            };
         }
 
-        // Special handling for InventoryItem
+        // Inventory: 4 columns - Quantity, Editor ID, Full Name, Form ID
         if (item is InventoryItem inv)
         {
-            var itemName = lookup?.GetValueOrDefault(inv.ItemFormId);
-            return itemName != null
-                ? $"{itemName} × {inv.Count}"
-                : $"0x{inv.ItemFormId:X8} × {inv.Count}";
+            var fullName = displayNameLookup?.GetValueOrDefault(inv.ItemFormId);
+            var editorId = lookup?.GetValueOrDefault(inv.ItemFormId);
+            return new EsmPropertyEntry
+            {
+                Col1 = $"{inv.Count}×",
+                Col2 = editorId ?? "",
+                Col3 = fullName ?? "",
+                Col4 = $"0x{inv.ItemFormId:X8}"
+            };
         }
 
         // For uint items that might be FormIDs (Spells, Packages, etc.)
         if (item is uint formId && formId != 0)
         {
-            var resolved = lookup?.GetValueOrDefault(formId);
-            return resolved != null ? $"{resolved}" : $"0x{formId:X8}";
+            var fullName = displayNameLookup?.GetValueOrDefault(formId);
+            var editorId = lookup?.GetValueOrDefault(formId);
+            return new EsmPropertyEntry
+            {
+                Name = FormatFormIdReference(formId, editorId, fullName),
+                Value = ""
+            };
         }
 
-        // For complex objects, format their properties inline
+        // For complex objects, format as Name = type, Value = properties
         var type = item.GetType();
         if (!type.IsPrimitive && type != typeof(string) && !type.IsEnum)
         {
@@ -706,10 +752,9 @@ internal static partial class EsmBrowserTreeBuilder
                         (prop.Name.EndsWith("FormId", StringComparison.Ordinal) ||
                          prop.Name == "FormId" || KnownFormIdFields.Contains(prop.Name)))
                     {
-                        var resolved = lookup?.GetValueOrDefault(fid);
-                        parts.Add(resolved != null
-                            ? $"{FormatPropertyName(prop.Name)}: {resolved}"
-                            : $"{FormatPropertyName(prop.Name)}: 0x{fid:X8}");
+                        var dispName = displayNameLookup?.GetValueOrDefault(fid);
+                        var edId = lookup?.GetValueOrDefault(fid);
+                        parts.Add($"{FormatPropertyName(prop.Name)}: {FormatFormIdReference(fid, edId, dispName)}");
                     }
                     else if (val is float f)
                     {
@@ -721,19 +766,27 @@ internal static partial class EsmBrowserTreeBuilder
                     }
                 }
 
-                return string.Join(", ", parts);
+                return new EsmPropertyEntry { Name = "", Value = string.Join(", ", parts) };
             }
         }
 
-        return item.ToString();
+        return new EsmPropertyEntry { Name = "", Value = item.ToString() ?? "" };
     }
 
     private static string? FormatPropertyValue(
         string name,
         object? value,
         Type propertyType,
-        Dictionary<uint, string>? lookup)
+        Dictionary<uint, string>? lookup,
+        Dictionary<uint, string>? displayNameLookup = null)
     {
+        // Show FullName even when empty (important for creatures without display names)
+        if (name == "FullName")
+        {
+            var str = value as string;
+            return string.IsNullOrEmpty(str) ? "—" : str;
+        }
+
         if (value == null)
         {
             return null;
@@ -750,67 +803,27 @@ internal static partial class EsmBrowserTreeBuilder
             return floats.Length > 0 ? $"[{floats.Length} values]" : null;
         }
 
-        // Format FormID references with lookup (named *FormId)
-        if (propertyType == typeof(uint) && name.EndsWith("FormId", StringComparison.Ordinal))
-        {
-            var formId = (uint)value;
-            var resolved = lookup?.GetValueOrDefault(formId);
-            return resolved != null
-                ? $"0x{formId:X8} ({resolved})"
-                : $"0x{formId:X8}";
-        }
-
-        if (propertyType == typeof(uint?) && name.EndsWith("FormId", StringComparison.Ordinal))
-        {
-            var formId = (uint?)value;
-            if (!formId.HasValue)
-            {
-                return null;
-            }
-
-            var resolved = lookup?.GetValueOrDefault(formId.Value);
-            return resolved != null
-                ? $"0x{formId.Value:X8} ({resolved})"
-                : $"0x{formId.Value:X8}";
-        }
-
-        // Format uint as hex for FormId
+        // Format FormId property (just hex, no editor ID - that's shown separately)
         if (name == "FormId" && value is uint fid)
         {
-            var resolved = lookup?.GetValueOrDefault(fid);
-            return resolved != null
-                ? $"0x{fid:X8} ({resolved})"
-                : $"0x{fid:X8}";
+            return $"0x{fid:X8}";
         }
 
-        // Known FormID fields that don't end with "FormId" (non-nullable)
-        if (propertyType == typeof(uint) && KnownFormIdFields.Contains(name))
+        // Handle FormID reference fields - unified format per matrix:
+        // Full Name (Editor ID) [Form ID] | Editor ID [Form ID] | Full Name [Form ID] | Form ID
+        if ((propertyType == typeof(uint) || propertyType == typeof(uint?)) &&
+            (name.EndsWith("FormId", StringComparison.Ordinal) || KnownFormIdFields.Contains(name)))
         {
-            var formId = (uint)value;
+            var formId = value is uint u ? u : ((uint?)value).GetValueOrDefault();
             if (formId == 0)
             {
                 return null;
             }
 
-            var resolved = lookup?.GetValueOrDefault(formId);
-            return resolved != null
-                ? $"0x{formId:X8} ({resolved})"
-                : $"0x{formId:X8}";
-        }
+            var editorId = lookup?.GetValueOrDefault(formId);
+            var displayName = displayNameLookup?.GetValueOrDefault(formId);
 
-        // Known FormID fields that don't end with "FormId" (nullable)
-        if (propertyType == typeof(uint?) && KnownFormIdFields.Contains(name))
-        {
-            var formId = (uint?)value;
-            if (!formId.HasValue || formId.Value == 0)
-            {
-                return null;
-            }
-
-            var resolved = lookup?.GetValueOrDefault(formId.Value);
-            return resolved != null
-                ? $"0x{formId.Value:X8} ({resolved})"
-                : $"0x{formId.Value:X8}";
+            return FormatFormIdReference(formId, editorId, displayName);
         }
 
         // Format offset as hex
@@ -829,46 +842,75 @@ internal static partial class EsmBrowserTreeBuilder
     }
 
     /// <summary>
-    ///     Gets the appropriate FaceGen morph labels based on property name.
+    ///     Formats a FormID reference with inline labels.
+    ///     Format: "DisplayName (Editor ID: EditorID) [0xFormID]"
     /// </summary>
-    private static string[] GetFaceGenLabels(string propertyName, int count)
+    private static string FormatFormIdReference(uint formId, string? editorId, string? displayName)
     {
-        var labels = propertyName switch
+        var hasFormId = formId != 0;
+        var hasEditorId = !string.IsNullOrEmpty(editorId);
+        var hasDisplayName = !string.IsNullOrEmpty(displayName);
+
+        return (hasFormId, hasEditorId, hasDisplayName) switch
         {
-            "FaceGenGeometrySymmetric" => FaceGenGeometryLabels,
-            "FaceGenGeometryAsymmetric" => FaceGenAsymmetryLabels,
-            "FaceGenTextureSymmetric" => FaceGenTextureLabels,
-            _ => null
+            // Display Name + Editor ID + Form ID
+            (true, true, true) => $"{displayName} (Editor ID: {editorId}) [0x{formId:X8}]",
+
+            // Display Name + Form ID (no Editor ID)
+            (true, false, true) => $"{displayName} [0x{formId:X8}]",
+
+            // Display Name + Editor ID (no Form ID)
+            (false, true, true) => $"{displayName} (Editor ID: {editorId})",
+
+            // Display Name only
+            (false, false, true) => displayName!,
+
+            // Editor ID + Form ID (no Display Name)
+            (true, true, false) => $"{editorId} [0x{formId:X8}]",
+
+            // Editor ID only
+            (false, true, false) => editorId!,
+
+            // Form ID only
+            (true, false, false) => $"0x{formId:X8}",
+
+            // Nothing
+            (false, false, false) => "Unknown"
         };
-
-        if (labels == null)
-        {
-            return Enumerable.Range(1, count).Select(i => $"Morph {i}").ToArray();
-        }
-
-        // Return labels up to count, filling any extras with indexed names
-        var result = new string[count];
-        for (var i = 0; i < count; i++)
-        {
-            result[i] = i < labels.Length ? labels[i] : $"Morph {i + 1}";
-        }
-
-        return result;
     }
 
     private static string CategorizeProperty(string name)
     {
         return name switch
         {
+            // Identity (minimal)
             "FormId" or "EditorId" or "FullName" => "Identity",
             "Offset" or "IsBigEndian" => "Metadata",
-            "Weight" or "Value" or "Health" or "Damage" or "Speed" or "Reach" => "Stats",
+
+            // Characteristics (appearance-related)
+            "Gender" or "Race" or "VoiceType" or "Eyes" or "EyesFormId" or "Hair" or "HairFormId" or "HairLength"
+                => "Characteristics",
+            _ when name.StartsWith("FaceGen", StringComparison.Ordinal) => "Characteristics",
+
+            // Attributes (stats and abilities)
+            "Level" or "Fatigue" or "BarterGold" or "SpeedMultiplier" or "Karma" or "Disposition"
+                or "Class" or "Template" or "SpecialStats" or "Skills"
+                or "Weight" or "Value" or "Health" or "Damage" or "Speed" or "Reach"
+                => "Attributes",
+
+            // AI (behavior-related)
+            "Aggression" or "Confidence" or "Mood" or "Assistance" or "EnergyLevel"
+                or "Responsibility" or "CombatStyle" or "CombatStyleFormId"
+                => "AI",
+
+            // Associations (references to other records)
             "Factions" or "Spells" or "Inventory" or "Packages" => "Associations",
-            "HairLength" => "Appearance",
-            _ when name.StartsWith("FaceGen", StringComparison.Ordinal) => "FaceGen",
+
+            // References (other FormID fields)
             _ when name.EndsWith("FormId", StringComparison.Ordinal) => "References",
             _ when KnownFormIdFields.Contains(name) => "References",
-            _ when name.EndsWith("Sound", StringComparison.Ordinal) => "Audio",
+            _ when name.EndsWith("Sound", StringComparison.Ordinal) => "References",
+
             _ => "General"
         };
     }
