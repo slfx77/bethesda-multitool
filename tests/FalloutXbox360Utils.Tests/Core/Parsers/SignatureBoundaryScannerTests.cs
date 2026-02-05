@@ -149,10 +149,11 @@ public class SignatureBoundaryScannerTests
     [InlineData("XUIS")]
     [InlineData("XUIB")]
     [InlineData("XDBF")]
-    [InlineData("TES4")]
     [InlineData("scn ")]
     [InlineData("DDS ")]
     [InlineData("BIKi")] // Bink video
+    // Note: TES4 (ESM header) is not registered as a boundary signature
+    // since EsmRecordFormat scans for record fragments, not whole files
     public void IsKnownSignature_KnownSignatures_ReturnsTrue(string signature)
     {
         // Arrange

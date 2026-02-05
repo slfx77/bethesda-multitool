@@ -10,16 +10,16 @@ namespace FalloutXbox360Utils.Tests.Core.Formats;
 /// </summary>
 public class FileColoringTests
 {
-    // Expected category colors (ARGB format)
-    private const uint TextureColor = 0xFF2ECC71; // Green
-    private const uint ImageColor = 0xFF1ABC9C; // Teal/Cyan
-    private const uint AudioColor = 0xFFE74C3C; // Red
-    private const uint ModelColor = 0xFFF1C40F; // Yellow
-    private const uint ModuleColor = 0xFF9B59B6; // Purple
-    private const uint ScriptColor = 0xFFE67E22; // Orange
-    private const uint XboxColor = 0xFF3498DB; // Blue
-    private const uint HeaderColor = 0xFF607D8B; // Blue-gray
-    private const uint EsmDataColor = 0xFF00CED1; // Dark Turquoise
+    // Expected category colors (ARGB format) - Evenly-spaced hue spectrum from FormatRegistry
+    private const uint TextureColor = 0xFFE0C043; // Hue 48° Gold
+    private const uint ImageColor = 0xFFC0E043; // Hue 72° Yellow-green
+    private const uint AudioColor = 0xFF82E043; // Hue 96° Lime
+    private const uint ModelColor = 0xFF43E043; // Hue 120° Green
+    private const uint ModuleColor = 0xFFE08243; // Hue 24° Orange
+    private const uint ScriptColor = 0xFF43E082; // Hue 144° Spring green
+    private const uint XboxColor = 0xFF43C0E0; // Hue 192° Sky blue
+    private const uint HeaderColor = 0xFF708090; // Steel gray
+    private const uint EsmDataColor = 0xFF43E0C0; // Hue 168° Aquamarine
 
     #region Format Category Tests
 

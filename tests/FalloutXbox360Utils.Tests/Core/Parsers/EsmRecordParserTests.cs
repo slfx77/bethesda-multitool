@@ -101,7 +101,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_InvalidEdid_SingleChar_Skipped()
     {
         // Arrange - EDID with only 1 character (invalid)
-        var data = new byte[20];
+        var data = new byte[32];
         data[0] = (byte)'E';
         data[1] = (byte)'D';
         data[2] = (byte)'I';
@@ -265,7 +265,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_SctxTooShort_Skipped()
     {
         // Arrange - SCTX with length <= 10
-        var data = new byte[20];
+        var data = new byte[32];
         data[0] = (byte)'S';
         data[1] = (byte)'C';
         data[2] = (byte)'T';
@@ -289,7 +289,8 @@ public class EsmRecordParserTests
     public void ScanForRecords_ValidScro_ReturnsFormIdReference()
     {
         // Arrange - SCRO with FormID 0x0012AB34
-        var data = new byte[20];
+        // Note: ScanForRecords requires at least 24 bytes (main record header size)
+        var data = new byte[32];
         data[0] = (byte)'S';
         data[1] = (byte)'C';
         data[2] = (byte)'R';
@@ -313,7 +314,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_ScroWithZeroFormId_Skipped()
     {
         // Arrange
-        var data = new byte[20];
+        var data = new byte[32];
         data[0] = (byte)'S';
         data[1] = (byte)'C';
         data[2] = (byte)'R';
@@ -336,7 +337,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_ScroWithInvalidModIndex_Skipped()
     {
         // Arrange - FormID with mod index > 0x0F (invalid for base game)
-        var data = new byte[20];
+        var data = new byte[32];
         data[0] = (byte)'S';
         data[1] = (byte)'C';
         data[2] = (byte)'R';
@@ -359,7 +360,7 @@ public class EsmRecordParserTests
     public void ScanForRecords_ScroWrongLength_Skipped()
     {
         // Arrange - SCRO with length != 4
-        var data = new byte[20];
+        var data = new byte[32];
         data[0] = (byte)'S';
         data[1] = (byte)'C';
         data[2] = (byte)'R';
