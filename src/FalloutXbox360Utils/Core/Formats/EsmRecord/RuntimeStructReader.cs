@@ -144,6 +144,11 @@ public sealed partial class RuntimeStructReader
     private const int TermDifficultyOffset = 132;
     private const int TermFlagsOffset = 133;
     private const int TermPasswordOffset = 136;
+    private const int TermMenuItemListOffset = 152;
+    private const int MenuItemSize = 120;
+    private const int MenuItemResponseTextOffset = 0;
+    private const int MenuItemResultScriptOffset = 16;
+    private const int MenuItemSubMenuOffset = 112;
 
     private const int CreaStructSize = 440;
     private const int CreaModelPathOffset = 188;

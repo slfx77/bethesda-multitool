@@ -221,16 +221,3 @@ public sealed partial class EsmRecordFormat
 
     #endregion
 }
-
-/// <summary>
-///     Asset category for path classification.
-/// </summary>
-public enum AssetCategory
-{
-    Model,
-    Texture,
-    Sound,
-    Script,
-    Animation,
-    Other
-}

@@ -6914,6 +6914,13 @@
     <member width="1" pos="15" mask="0x8000" name="Unused bit" type="bool" default="false" />
   </bitfield>
 
+  <bitfield name="BSEffectShaderMiscParams" storage="uint" module="BSMain">
+    <member width="8" pos="0" mask="0x000000FF" name="Texture Clamp Mode" type="TexClampModeB" default="WRAP_S_WRAP_T" />
+    <member width="8" pos="8" mask="0x0000FF00" name="Lighting Influence" type="byte" default="255" />
+    <member width="8" pos="16" mask="0x00FF0000" name="Env Map Min LOD" type="byte" />
+    <member width="8" pos="24" mask="0xFF000000" name="Unused" type="byte" />
+  </bitfield>
+
   <struct name="TriangleData" module="BSHavok" versions="#BETHESDA#">
     Bethesda Havok. A triangle
     with extra data used for physics. <field name="Triangle" type="Triangle">The triangle.</field>
@@ -14017,11 +14024,6 @@
       The
       strength of the parallax.
     </field>
-    <!-- TODO: Find where this could have even come from as > 34 doesn't exist for this block. -->
-    <field name="Emissive Color" type="Color4"
-           vercond="#BS_GT_FO3#">
-      Glow color and alpha
-    </field>
   </niobject>
 
   <niobject name="BSEffectShaderPropertyFloatController" inherit="NiFloatInterpController"
@@ -15711,17 +15713,9 @@
     <field name="Unk Float" type="float" vercond="#BS_GTE_STF#" />
     <field
       name="Unk Float 2" type="float" vercond="#BS_GTE_STF#" />
-    <!-- TODO: Next 4 bytes requires bitfield, read as single int -->
-    <field name="Texture Clamp Mode"
-           type="TexClampModeB" default="WRAP_S_WRAP_T" vercond="#NI_BS_LT_STF#">
-      How to handle texture
-      borders.
+    <field name="Shader Misc Params" type="BSEffectShaderMiscParams" vercond="#NI_BS_LT_STF#">
+      Packed bitfield: Texture Clamp Mode, Lighting Influence, Env Map Min LOD, and unused byte.
     </field>
-    <field name="Lighting Influence" type="byte" default="255"
-           vercond="#NI_BS_LT_STF#" />
-    <field name="Env Map Min LOD" type="byte" range="0:16"
-           vercond="#NI_BS_LT_STF#" />
-    <field name="Unused Byte" type="byte" vercond="#NI_BS_LT_STF#" />
     <field
       name="Falloff Start Angle" type="float" default="1.0" range="#F_NRM#">
       At this cosine of angle
@@ -15938,18 +15932,9 @@
            vercond="#NI_BS_LTE_FO4#">
       points to an external texture.
     </field>
-    <!-- TODO: Next 4 bytes requires bitfield, read as single int -->
-    <field
-      name="Texture Clamp Mode" type="TexClampModeB" default="WRAP_S_WRAP_T"
-      vercond="#NI_BS_LTE_FO4#">
-      How to handle texture borders.
+    <field name="Shader Misc Params" type="BSEffectShaderMiscParams" vercond="#NI_BS_LTE_FO4#">
+      Packed bitfield: Texture Clamp Mode, Lighting Influence, Env Map Min LOD, and unused byte.
     </field>
-    <field
-      name="Lighting Influence" type="byte" default="255" vercond="#NI_BS_LTE_FO4#" />
-    <field
-      name="Env Map Min LOD" type="byte" range="0:16" vercond="#NI_BS_LTE_FO4#" />
-    <field
-      name="Unused Byte" type="byte" vercond="#NI_BS_LTE_FO4#" />
     <field name="Falloff Start Angle"
            type="float" default="1.0" range="#F_NRM#" vercond="#NI_BS_LTE_FO4#">
       At this cosine of angle

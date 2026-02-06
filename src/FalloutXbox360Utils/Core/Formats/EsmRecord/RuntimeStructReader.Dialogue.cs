@@ -332,9 +332,8 @@ public sealed partial class RuntimeStructReader
         // Read password (optional)
         var password = ReadBSStringT(offset, TermPasswordOffset);
 
-#pragma warning disable S1135 // Valid TODO for future improvement
-        // TODO: Parse menu items via BSSimpleList at +144 if needed
-#pragma warning restore S1135
+        // Parse menu items from BSSimpleList at +152
+        var menuItems = WalkTerminalMenuItemList(offset);
 
         return new ReconstructedTerminal
         {
@@ -344,6 +343,7 @@ public sealed partial class RuntimeStructReader
             Difficulty = difficulty,
             Flags = flags,
             Password = password,
+            MenuItems = menuItems,
             Offset = offset,
             IsBigEndian = true
         };
@@ -477,6 +477,114 @@ public sealed partial class RuntimeStructReader
         }
 
         return new TopicQuestLink(questFormId.Value, infoEntries);
+    }
+
+    /// <summary>
+    ///     Walk the MenuItemList BSSimpleList on a BGSTerminal struct to extract
+    ///     terminal menu items. Each list node points to a TERMINAL_MENU_ITEM struct
+    ///     (120 bytes) containing ResponseText, ResultScript, and pSubMenu.
+    /// </summary>
+    private List<TerminalMenuItem> WalkTerminalMenuItemList(long terminalOffset)
+    {
+        var results = new List<TerminalMenuItem>();
+
+        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext) at +152
+        var listOffset = terminalOffset + TermMenuItemListOffset;
+        var listBuf = ReadBytes(listOffset, 8);
+        if (listBuf == null)
+        {
+            return results;
+        }
+
+        var firstItem = BinaryUtils.ReadUInt32BE(listBuf); // TERMINAL_MENU_ITEM* pointer
+        var firstNext = BinaryUtils.ReadUInt32BE(listBuf, 4); // _Node* pointer
+
+        // Process inline first item
+        var firstMenuItem = ReadTerminalMenuItem(firstItem);
+        if (firstMenuItem != null)
+        {
+            results.Add(firstMenuItem);
+        }
+
+        // Follow BSSimpleList chain
+        var nextVA = firstNext;
+        var visited = new HashSet<uint>();
+        while (nextVA != 0 && results.Count < MaxListItems && !visited.Contains(nextVA))
+        {
+            visited.Add(nextVA);
+            var nodeFileOffset = VaToFileOffset(nextVA);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuf = ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            var dataPtr = BinaryUtils.ReadUInt32BE(nodeBuf); // TERMINAL_MENU_ITEM*
+            var nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4); // _Node*
+
+            var menuItem = ReadTerminalMenuItem(dataPtr);
+            if (menuItem != null)
+            {
+                results.Add(menuItem);
+            }
+
+            nextVA = nextPtr;
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    ///     Read a single TERMINAL_MENU_ITEM struct (120 bytes) from a virtual address.
+    ///     Extracts ResponseText (+0), ResultScript (+16), and pSubMenu (+112).
+    /// </summary>
+    private TerminalMenuItem? ReadTerminalMenuItem(uint menuItemVA)
+    {
+        if (menuItemVA == 0)
+        {
+            return null;
+        }
+
+        var fileOffset = VaToFileOffset(menuItemVA);
+        if (fileOffset == null)
+        {
+            return null;
+        }
+
+        var buf = ReadBytes(fileOffset.Value, MenuItemSize);
+        if (buf == null)
+        {
+            return null;
+        }
+
+        // Read ResponseText at +0 (BSStringT: 4-byte length pointer + 4-byte data pointer)
+        var text = ReadBSStringT(fileOffset.Value, MenuItemResponseTextOffset);
+
+        // Read ResultScript FormID at +16
+        var scriptPtr = BinaryUtils.ReadUInt32BE(buf, MenuItemResultScriptOffset);
+        var resultScript = FollowPointerVaToFormId(scriptPtr);
+
+        // Read pSubMenu pointer at +112 → follow to BGSTerminal → get FormID
+        var subMenuPtr = BinaryUtils.ReadUInt32BE(buf, MenuItemSubMenuOffset);
+        var subTerminal = FollowPointerVaToFormId(subMenuPtr);
+
+        // Only return if we got at least some data
+        if (text == null && resultScript == null && subTerminal == null)
+        {
+            return null;
+        }
+
+        return new TerminalMenuItem
+        {
+            Text = text,
+            ResultScript = resultScript,
+            SubTerminal = subTerminal
+        };
     }
 
     /// <summary>
