@@ -76,15 +76,7 @@ internal static class EsmEndianHelpers
             }
         }
 
-        foreach (var c in signature)
-        {
-            if (c is not (>= 'A' and <= 'Z' or >= '0' and <= '9' or '_'))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return signature.All(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_');
     }
 
     /// <summary>
@@ -93,12 +85,9 @@ internal static class EsmEndianHelpers
     public static bool IsStringSubrecord(string signature, string recordType)
     {
         // TES4-specific strings (author, description, master file names)
-        if (recordType == "TES4")
+        if (recordType == "TES4" && signature is "CNAM" or "SNAM" or "MAST")
         {
-            if (signature is "CNAM" or "SNAM" or "MAST")
-            {
-                return true;
-            }
+            return true;
         }
 
         // INFO/CHAL RNAM is a prompt/result string, not a FormID

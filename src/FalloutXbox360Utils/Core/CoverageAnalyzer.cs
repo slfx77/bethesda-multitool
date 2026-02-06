@@ -592,7 +592,3 @@ public sealed class CoverageAnalyzer
 
     #endregion
 }
-
-#region Result Models
-
-#endregion

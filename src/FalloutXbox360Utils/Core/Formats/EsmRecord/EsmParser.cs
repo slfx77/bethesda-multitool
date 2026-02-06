@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 using FalloutXbox360Utils.Core.Utils;
@@ -26,6 +28,11 @@ public static class EsmParser
     ///     Subrecord header size (signature + length).
     /// </summary>
     public const int SubrecordHeaderSize = 6;
+
+    /// <summary>
+    ///     Record flags value indicating the record is compressed.
+    /// </summary>
+    public const uint CompressedFlag = 0x00040000;
 
     /// <summary>
     ///     Detect if ESM file is big-endian (Xbox 360).
@@ -313,7 +320,19 @@ public static class EsmParser
     /// </summary>
     public static List<ParsedMainRecord> EnumerateRecords(ReadOnlySpan<byte> data)
     {
-        var results = new List<ParsedMainRecord>();
+        var (records, _) = EnumerateRecordsWithGrups(data);
+        return records;
+    }
+
+    /// <summary>
+    ///     Parse all records in an ESM file, also tracking GRUP header locations.
+    ///     Returns both parsed records and GRUP header info for memory map visualization.
+    /// </summary>
+    public static (List<ParsedMainRecord> Records, List<GrupHeaderInfo> GrupHeaders) EnumerateRecordsWithGrups(
+        ReadOnlySpan<byte> data)
+    {
+        var records = new List<ParsedMainRecord>();
+        var grupHeaders = new List<GrupHeaderInfo>();
 
         // Detect endianness
         var bigEndian = IsBigEndian(data);
@@ -322,90 +341,161 @@ public static class EsmParser
         var tes4Header = ParseRecordHeader(data, bigEndian);
         if (tes4Header == null || tes4Header.Signature != "TES4")
         {
-            return results;
+            return (records, grupHeaders);
         }
 
-        var offset = MainRecordHeaderSize + (int)tes4Header.DataSize;
+        // Use long for offset to support files > 2GB
+        var offset = (long)MainRecordHeaderSize + tes4Header.DataSize;
 
+        // Parse all top-level groups
         while (offset + MainRecordHeaderSize <= data.Length)
         {
-            var sig = ReadSignature(data[offset..], bigEndian);
+            var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")
             {
-                // Parse group header and skip to content
-                var groupHeader = ParseGroupHeader(data[offset..], bigEndian);
+                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, records, grupHeaders);
+
+                // Move to next top-level item - use the maximum of declared size and actual parsed end
+                // (handles Xbox 360 ESM where nested groups may exceed parent boundaries)
+                var groupHeader = ParseGroupHeader(data[(int)offset..], bigEndian);
                 if (groupHeader == null || groupHeader.GroupSize < 24)
                 {
                     break;
                 }
 
-                // Parse records within the group
-                var groupEnd = offset + (int)groupHeader.GroupSize;
-                offset += 24; // Skip group header
-
-                while (offset + MainRecordHeaderSize <= data.Length && offset < groupEnd)
-                {
-                    var innerSig = ReadSignature(data[offset..], bigEndian);
-
-                    if (innerSig == "GRUP")
-                    {
-                        // Nested group - skip for now
-                        var nestedGroup = ParseGroupHeader(data[offset..], bigEndian);
-                        if (nestedGroup == null)
-                        {
-                            break;
-                        }
-
-                        offset += (int)nestedGroup.GroupSize;
-                    }
-                    else
-                    {
-                        // Regular record
-                        var recordHeader = ParseRecordHeader(data[offset..], bigEndian);
-                        if (recordHeader == null)
-                        {
-                            break;
-                        }
-
-                        var recordDataSlice = data.Slice(offset + MainRecordHeaderSize, (int)recordHeader.DataSize);
-                        var subrecords = ParseSubrecords(recordDataSlice, bigEndian);
-
-                        results.Add(new ParsedMainRecord
-                        {
-                            Header = recordHeader,
-                            Offset = offset,
-                            Subrecords = subrecords
-                        });
-
-                        offset += MainRecordHeaderSize + (int)recordHeader.DataSize;
-                    }
-                }
+                var declaredEnd = offset + groupHeader.GroupSize;
+                offset = Math.Max(declaredEnd, actualEnd);
             }
             else
             {
                 // Top-level record (shouldn't happen in normal ESM but handle it)
-                var recordHeader = ParseRecordHeader(data[offset..], bigEndian);
+                var recordHeader = ParseRecordHeader(data[(int)offset..], bigEndian);
                 if (recordHeader == null)
                 {
                     break;
                 }
 
-                var recordDataSlice = data.Slice(offset + MainRecordHeaderSize, (int)recordHeader.DataSize);
-                var subrecords = ParseSubrecords(recordDataSlice, bigEndian);
+                var recordDataSlice = data.Slice((int)offset + MainRecordHeaderSize, (int)recordHeader.DataSize);
 
-                results.Add(new ParsedMainRecord
+                // Decompress if record is compressed
+                List<ParsedSubrecord> subrecords;
+                if ((recordHeader.Flags & CompressedFlag) != 0 && recordDataSlice.Length > 4)
+                {
+                    var decompressed = DecompressRecordData(recordDataSlice, bigEndian);
+                    subrecords = decompressed != null
+                        ? ParseSubrecords(decompressed, bigEndian)
+                        : [];
+                }
+                else
+                {
+                    subrecords = ParseSubrecords(recordDataSlice, bigEndian);
+                }
+
+                records.Add(new ParsedMainRecord
                 {
                     Header = recordHeader,
                     Offset = offset,
                     Subrecords = subrecords
                 });
 
-                offset += MainRecordHeaderSize + (int)recordHeader.DataSize;
+                offset += MainRecordHeaderSize + recordHeader.DataSize;
             }
         }
 
-        return results;
+        return (records, grupHeaders);
+    }
+
+    /// <summary>
+    ///     Recursively parse a GRUP and all its contents (including nested GRUPs).
+    ///     Returns the actual end offset after parsing (which may exceed the declared GroupSize
+    ///     in Xbox 360 ESM files with flattened streaming structures).
+    /// </summary>
+    private static long ParseGroupRecursive(
+        ReadOnlySpan<byte> data,
+        long groupOffset,
+        bool bigEndian,
+        List<ParsedMainRecord> records,
+        List<GrupHeaderInfo> grupHeaders)
+    {
+        var groupHeader = ParseGroupHeader(data[(int)groupOffset..], bigEndian);
+        if (groupHeader == null || groupHeader.GroupSize < 24)
+        {
+            return groupOffset;
+        }
+
+        // Track this GRUP header
+        grupHeaders.Add(new GrupHeaderInfo
+        {
+            Offset = groupOffset,
+            GroupSize = groupHeader.GroupSize,
+            Label = groupHeader.Label,
+            GroupType = groupHeader.GroupType,
+            Stamp = groupHeader.Stamp
+        });
+
+        var groupEnd = groupOffset + groupHeader.GroupSize;
+        var offset = groupOffset + 24; // Skip group header
+
+        while (offset + MainRecordHeaderSize <= data.Length && offset < groupEnd)
+        {
+            var sig = ReadSignature(data[(int)offset..], bigEndian);
+
+            if (sig == "GRUP")
+            {
+                // Recursively parse nested group
+                var nestedEnd = ParseGroupRecursive(data, offset, bigEndian, records, grupHeaders);
+
+                // Move past the nested group - use the actual end offset returned
+                var nestedHeader = ParseGroupHeader(data[(int)offset..], bigEndian);
+                if (nestedHeader == null || nestedHeader.GroupSize < 24)
+                {
+                    break;
+                }
+
+                // Use the maximum of declared size and actual parsed end
+                // (handles Xbox 360 ESM where nested groups may exceed parent boundaries)
+                var declaredEnd = offset + nestedHeader.GroupSize;
+                offset = Math.Max(declaredEnd, nestedEnd);
+            }
+            else
+            {
+                // Regular record
+                var recordHeader = ParseRecordHeader(data[(int)offset..], bigEndian);
+                if (recordHeader == null)
+                {
+                    break;
+                }
+
+                var recordDataSlice = data.Slice((int)offset + MainRecordHeaderSize, (int)recordHeader.DataSize);
+
+                // Decompress if record is compressed
+                List<ParsedSubrecord> subrecords;
+                if ((recordHeader.Flags & CompressedFlag) != 0 && recordDataSlice.Length > 4)
+                {
+                    var decompressed = DecompressRecordData(recordDataSlice, bigEndian);
+                    subrecords = decompressed != null
+                        ? ParseSubrecords(decompressed, bigEndian)
+                        : [];
+                }
+                else
+                {
+                    subrecords = ParseSubrecords(recordDataSlice, bigEndian);
+                }
+
+                records.Add(new ParsedMainRecord
+                {
+                    Header = recordHeader,
+                    Offset = offset,
+                    Subrecords = subrecords
+                });
+
+                offset += MainRecordHeaderSize + recordHeader.DataSize;
+            }
+        }
+
+        // Return the actual end position (may exceed declared groupEnd in Xbox 360 ESMs)
+        return offset;
     }
 
     /// <summary>
@@ -435,37 +525,38 @@ public static class EsmParser
             DataSize = tes4Header.DataSize
         });
 
-        var offset = MainRecordHeaderSize + (int)tes4Header.DataSize;
+        // Use long for offsets to support files > 2GB
+        var offset = (long)MainRecordHeaderSize + tes4Header.DataSize;
 
         while (offset + 24 <= data.Length)
         {
-            var sig = ReadSignature(data[offset..], bigEndian);
+            var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")
             {
-                var groupSize = ReadUInt32(data, offset + 4, bigEndian);
+                var groupSize = ReadUInt32(data, (int)offset + 4, bigEndian);
                 if (groupSize < 24 || offset + groupSize > data.Length)
                 {
                     break;
                 }
 
                 // Scan records within group
-                var groupEnd = offset + (int)groupSize;
+                var groupEnd = offset + groupSize;
                 var innerOffset = offset + 24;
 
                 while (innerOffset + 24 <= data.Length && innerOffset < groupEnd)
                 {
-                    var innerSig = ReadSignature(data[innerOffset..], bigEndian);
+                    var innerSig = ReadSignature(data[(int)innerOffset..], bigEndian);
 
                     if (innerSig == "GRUP")
                     {
-                        var nestedSize = ReadUInt32(data, innerOffset + 4, bigEndian);
+                        var nestedSize = ReadUInt32(data, (int)innerOffset + 4, bigEndian);
                         if (nestedSize < 24)
                         {
                             break;
                         }
 
-                        innerOffset += (int)nestedSize;
+                        innerOffset += nestedSize;
                     }
                     else
                     {
@@ -485,8 +576,8 @@ public static class EsmParser
                             break;
                         }
 
-                        var dataSize = ReadUInt32(data, innerOffset + 4, bigEndian);
-                        var formId = ReadUInt32(data, innerOffset + 12, bigEndian);
+                        var dataSize = ReadUInt32(data, (int)innerOffset + 4, bigEndian);
+                        var formId = ReadUInt32(data, (int)innerOffset + 12, bigEndian);
 
                         if (dataSize > 100_000_000)
                         {
@@ -501,7 +592,7 @@ public static class EsmParser
                             DataSize = dataSize
                         });
 
-                        innerOffset += MainRecordHeaderSize + (int)dataSize;
+                        innerOffset += MainRecordHeaderSize + dataSize;
                     }
                 }
 
@@ -546,5 +637,49 @@ public static class EsmParser
         }
 
         return Encoding.UTF8.GetString(data[..end]);
+    }
+
+    /// <summary>
+    ///     Decompresses zlib-compressed record data.
+    ///     Compressed record format: [4 bytes: decompressed size] [zlib data]
+    /// </summary>
+    /// <param name="compressedData">The compressed record data including the 4-byte size prefix.</param>
+    /// <param name="bigEndian">True for Xbox 360 (BE), false for PC (LE).</param>
+    /// <returns>Decompressed data, or null if decompression fails.</returns>
+    public static byte[]? DecompressRecordData(ReadOnlySpan<byte> compressedData, bool bigEndian)
+    {
+        if (compressedData.Length < 5)
+        {
+            return null;
+        }
+
+        try
+        {
+            // First 4 bytes are the decompressed size
+            var decompressedSize = bigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(compressedData)
+                : BinaryPrimitives.ReadUInt32LittleEndian(compressedData);
+
+            // Sanity check - decompressed size shouldn't be unreasonably large (max 16MB)
+            if (decompressedSize > 16 * 1024 * 1024)
+            {
+                return null;
+            }
+
+            // Remaining bytes are zlib-compressed data
+            var zlibData = compressedData[4..];
+
+            using var inputStream = new MemoryStream(zlibData.ToArray());
+            using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
+            using var outputStream = new MemoryStream((int)decompressedSize);
+
+            zlibStream.CopyTo(outputStream);
+            return outputStream.ToArray();
+        }
+        catch
+        {
+            // Decompression failed
+            return null;
+        }
     }
 }

@@ -39,7 +39,8 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     private static readonly string[] CategoryOrder =
     [
-        "Identity", "Attributes", "Derived Stats", "Characteristics", "AI", "Associations", "References", "General", "Metadata"
+        "Identity", "Attributes", "Derived Stats", "Characteristics", "AI", "Associations", "References", "General",
+        "Metadata"
     ];
 
     /// <summary>
@@ -133,12 +134,7 @@ internal static partial class EsmBrowserTreeBuilder
             ("Base Effects", result.BaseEffects)
         ]);
 
-        AddCategory(root, "World", "\uE774", [
-            ("Cells", result.Cells),
-            ("Worldspaces", result.Worldspaces),
-            ("Map Markers", result.MapMarkers),
-            ("Leveled Lists", result.LeveledLists)
-        ]);
+        AddWorldCategory(root, result.Worldspaces, result.Cells, result.MapMarkers, result.LeveledLists);
 
         AddCategory(root, "Game Data", "\uE8F1", [
             ("Game Settings", result.GameSettings),
@@ -179,10 +175,83 @@ internal static partial class EsmBrowserTreeBuilder
     }
 
     /// <summary>
+    ///     Adds the World category with cells nested under worldspaces.
+    /// </summary>
+    private static void AddWorldCategory(
+        ObservableCollection<EsmBrowserNode> root,
+        IList<ReconstructedWorldspace> worldspaces,
+        IList<ReconstructedCell> cells,
+        IList<PlacedReference> mapMarkers,
+        IList<ReconstructedLeveledList> leveledLists)
+    {
+        // Group cells by worldspace FormID
+        var cellsByWorldspace = cells
+            .Where(c => c.WorldspaceFormId.HasValue)
+            .GroupBy(c => c.WorldspaceFormId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Interior cells = cells without WorldspaceFormId
+        var interiorCells = cells.Where(c => !c.WorldspaceFormId.HasValue).ToList();
+
+        var totalCount = worldspaces.Count + interiorCells.Count + mapMarkers.Count + leveledLists.Count;
+        if (totalCount == 0)
+        {
+            return;
+        }
+
+        // Build record types with special handling for worldspaces
+        var recordTypes =
+            new List<(string Name, IList Records, Dictionary<uint, List<ReconstructedCell>>? CellLookup)>();
+
+        if (worldspaces.Count > 0)
+        {
+            recordTypes.Add(("Worldspaces", (IList)worldspaces, cellsByWorldspace));
+        }
+
+        if (interiorCells.Count > 0)
+        {
+            recordTypes.Add(("Interior Cells", (IList)interiorCells, null));
+        }
+
+        if (mapMarkers.Count > 0)
+        {
+            recordTypes.Add(("Map Markers", (IList)mapMarkers, null));
+        }
+
+        if (leveledLists.Count > 0)
+        {
+            recordTypes.Add(("Leveled Lists", (IList)leveledLists, null));
+        }
+
+        var categoryNode = new EsmBrowserNode
+        {
+            DisplayName = $"World ({totalCount:N0})",
+            NodeType = "Category",
+            IconGlyph = "\uE774",
+            HasUnrealizedChildren = true,
+            DataObject = ("World", recordTypes, cellsByWorldspace)
+        };
+
+        root.Add(categoryNode);
+    }
+
+    /// <summary>
     ///     Populates children for a category node (record type sub-nodes).
     /// </summary>
     public static void LoadCategoryChildren(EsmBrowserNode categoryNode)
     {
+        // Handle World category specially (has cells nested under worldspaces)
+        if (categoryNode.DataObject is
+                ValueTuple<string,
+                    List<(string Name, IList Records, Dictionary<uint, List<ReconstructedCell>>? CellLookup)>,
+                    Dictionary<uint, List<ReconstructedCell>>> worldData
+            && worldData.Item1 == "World")
+        {
+            LoadWorldCategoryChildren(categoryNode, worldData.Item2, worldData.Item3);
+            return;
+        }
+
+        // Standard category handling
         if (categoryNode.DataObject is not (string Name, IList Records)[] recordTypes)
         {
             return;
@@ -214,6 +283,45 @@ internal static partial class EsmBrowserTreeBuilder
     }
 
     /// <summary>
+    ///     Populates children for the World category with worldspaces containing nested cells.
+    /// </summary>
+    private static void LoadWorldCategoryChildren(
+        EsmBrowserNode categoryNode,
+        List<(string Name, IList Records, Dictionary<uint, List<ReconstructedCell>>? CellLookup)> recordTypes,
+        Dictionary<uint, List<ReconstructedCell>> cellsByWorldspace)
+    {
+        foreach (var (name, records, cellLookup) in recordTypes)
+        {
+            if (records.Count == 0)
+            {
+                continue;
+            }
+
+            var typeIcon = SubCategoryIcons.GetValueOrDefault(name, categoryNode.IconGlyph);
+
+            // For Worldspaces, store the cell lookup for later expansion
+            object dataObject = name == "Worldspaces"
+                ? (records, cellsByWorldspace)
+                : records;
+
+            var typeNode = new EsmBrowserNode
+            {
+                DisplayName = $"{name} ({records.Count:N0})",
+                NodeType = "RecordType",
+                IconGlyph = typeIcon,
+                ParentIconGlyph = typeIcon,
+                ParentTypeName = name,
+                HasUnrealizedChildren = true,
+                DataObject = dataObject
+            };
+
+            categoryNode.Children.Add(typeNode);
+        }
+
+        categoryNode.HasUnrealizedChildren = false;
+    }
+
+    /// <summary>
     ///     Populates children for a record type node (individual records).
     /// </summary>
     public static void LoadRecordTypeChildren(
@@ -221,19 +329,30 @@ internal static partial class EsmBrowserTreeBuilder
         Dictionary<uint, string>? lookup = null,
         Dictionary<uint, string>? displayNameLookup = null)
     {
+        // Handle Worldspaces with nested cells
+        if (typeNode.DataObject is
+            (IList worldspaceRecords, Dictionary<uint, List<ReconstructedCell>> cellsByWorldspace))
+        {
+            LoadWorldspacesWithCells(typeNode, worldspaceRecords, cellsByWorldspace, lookup, displayNameLookup);
+            return;
+        }
+
         if (typeNode.DataObject is not IList records)
         {
             return;
         }
+
+        // Build all nodes first (outside of lock for better performance)
+        var recordNodes = new List<EsmBrowserNode>(records.Count);
 
         foreach (var record in records)
         {
             var (formId, editorId, fullName, offset) = ExtractRecordIdentity(record);
             var formIdHex = $"0x{formId:X8}";
 
-            // Build display name: "FullName (EditorId)" if both exist
+            // Build display name: "FullName (EditorId)" if both exist and are different
             string displayName;
-            if (!string.IsNullOrEmpty(fullName) && !string.IsNullOrEmpty(editorId))
+            if (!string.IsNullOrEmpty(fullName) && !string.IsNullOrEmpty(editorId) && fullName != editorId)
             {
                 displayName = $"{fullName} ({editorId})";
             }
@@ -268,18 +387,186 @@ internal static partial class EsmBrowserTreeBuilder
                 Properties = BuildProperties(record, lookup, displayNameLookup)
             };
 
-            typeNode.Children.Add(recordNode);
+            recordNodes.Add(recordNode);
         }
 
-        // Sort children by display name (default sort)
-        var sorted = typeNode.Children.OrderBy(n => n.DisplayName ?? "", StringComparer.OrdinalIgnoreCase).ToList();
-        typeNode.Children.Clear();
-        foreach (var node in sorted)
+        // Sort all nodes
+        var sorted = recordNodes.OrderBy(n => n.DisplayName ?? "", StringComparer.OrdinalIgnoreCase).ToList();
+
+        // Add all sorted nodes under a single lock to prevent concurrent modification
+        lock (typeNode.Children)
         {
-            typeNode.Children.Add(node);
+            typeNode.Children.Clear();
+            foreach (var node in sorted)
+            {
+                typeNode.Children.Add(node);
+            }
         }
 
         typeNode.HasUnrealizedChildren = false;
+    }
+
+    /// <summary>
+    ///     Populates worldspace nodes with their cells as nested children.
+    /// </summary>
+    private static void LoadWorldspacesWithCells(
+        EsmBrowserNode typeNode,
+        IList worldspaceRecords,
+        Dictionary<uint, List<ReconstructedCell>> cellsByWorldspace,
+        Dictionary<uint, string>? lookup,
+        Dictionary<uint, string>? displayNameLookup)
+    {
+        var recordNodes = new List<EsmBrowserNode>(worldspaceRecords.Count);
+
+        foreach (var record in worldspaceRecords)
+        {
+            var (formId, editorId, fullName, offset) = ExtractRecordIdentity(record);
+            var formIdHex = $"0x{formId:X8}";
+
+            // Get cells for this worldspace
+            var worldspaceCells = cellsByWorldspace.GetValueOrDefault(formId) ?? [];
+            var cellCount = worldspaceCells.Count;
+
+            // Build display name with cell count
+            string displayName;
+            var baseName = !string.IsNullOrEmpty(fullName) ? fullName
+                : !string.IsNullOrEmpty(editorId) ? editorId
+                : formIdHex;
+
+            displayName = cellCount > 0
+                ? $"{baseName} ({cellCount:N0} cells)"
+                : baseName;
+
+            var editorIdDisplay = !string.IsNullOrEmpty(editorId) && editorId != baseName
+                ? editorId
+                : null;
+
+            // Prepare DataObject - if has cells, store tuple for lazy loading; otherwise just the record
+            // Use empty dictionaries as fallback to avoid nullable pattern matching issues
+            object dataObj = cellCount > 0
+                ? (record, worldspaceCells, lookup ?? new Dictionary<uint, string>(),
+                    displayNameLookup ?? new Dictionary<uint, string>())
+                : record;
+
+            var recordNode = new EsmBrowserNode
+            {
+                DisplayName = displayName,
+                FormIdHex = formIdHex,
+                EditorId = editorIdDisplay,
+                NodeType = "Record",
+                IconGlyph = typeNode.IconGlyph,
+                ParentTypeName = typeNode.ParentTypeName,
+                ParentIconGlyph = typeNode.IconGlyph,
+                FileOffset = offset,
+                DataObject = dataObj,
+                Properties = BuildProperties(record, lookup, displayNameLookup),
+                // Cells will be loaded as children when expanded
+                HasUnrealizedChildren = cellCount > 0
+            };
+
+            recordNodes.Add(recordNode);
+        }
+
+        // Sort by display name
+        var sorted = recordNodes.OrderBy(n => n.DisplayName ?? "", StringComparer.OrdinalIgnoreCase).ToList();
+
+        lock (typeNode.Children)
+        {
+            typeNode.Children.Clear();
+            foreach (var node in sorted)
+            {
+                typeNode.Children.Add(node);
+            }
+        }
+
+        typeNode.HasUnrealizedChildren = false;
+    }
+
+    /// <summary>
+    ///     Populates cells as children of a worldspace node.
+    /// </summary>
+    public static void LoadWorldspaceCellChildren(
+        EsmBrowserNode worldspaceNode,
+        Dictionary<uint, string>? lookup = null,
+        Dictionary<uint, string>? displayNameLookup = null)
+    {
+        // DataObject is a tuple: (record, cells, lookup, displayNameLookup)
+        if (worldspaceNode.DataObject is not
+            ValueTuple<object, List<ReconstructedCell>, Dictionary<uint, string>, Dictionary<uint, string>> cellData)
+        {
+            return;
+        }
+
+        var record = cellData.Item1;
+        var cells = cellData.Item2;
+
+        // Use stored lookups if available
+        lookup ??= cellData.Item3;
+        displayNameLookup ??= cellData.Item4;
+
+        // Get parent worldspace name for fallback display
+        var (wsFormId, wsEditorId, wsFullName, _) = ExtractRecordIdentity(record);
+        var worldspaceName = !string.IsNullOrEmpty(wsEditorId) ? wsEditorId : $"0x{wsFormId:X8}";
+
+        var cellNodes = new List<EsmBrowserNode>(cells.Count);
+
+        foreach (var cell in cells)
+        {
+            var formIdHex = $"0x{cell.FormId:X8}";
+
+            // Build display name with fallback to "WorldspaceName [GridX, GridY]" or "[FormID]"
+            string displayName;
+            if (!string.IsNullOrEmpty(cell.FullName))
+            {
+                displayName = cell.FullName;
+            }
+            else if (!string.IsNullOrEmpty(cell.EditorId))
+            {
+                displayName = cell.EditorId;
+            }
+            else if (cell.GridX.HasValue && cell.GridY.HasValue)
+            {
+                displayName = $"{worldspaceName} [{cell.GridX}, {cell.GridY}]";
+            }
+            else
+            {
+                displayName = $"{worldspaceName} [{formIdHex}]";
+            }
+
+            var editorIdDisplay = !string.IsNullOrEmpty(cell.EditorId) && cell.EditorId != displayName
+                ? cell.EditorId
+                : null;
+
+            var cellNode = new EsmBrowserNode
+            {
+                DisplayName = displayName,
+                FormIdHex = formIdHex,
+                EditorId = editorIdDisplay,
+                NodeType = "Record",
+                IconGlyph = "\uE707", // MapPin
+                ParentTypeName = "Cells",
+                ParentIconGlyph = "\uE707",
+                FileOffset = cell.Offset,
+                DataObject = cell,
+                Properties = BuildProperties(cell, lookup, displayNameLookup)
+            };
+
+            cellNodes.Add(cellNode);
+        }
+
+        // Sort by display name
+        var sorted = cellNodes.OrderBy(n => n.DisplayName ?? "", StringComparer.OrdinalIgnoreCase).ToList();
+
+        lock (worldspaceNode.Children)
+        {
+            worldspaceNode.Children.Clear();
+            foreach (var node in sorted)
+            {
+                worldspaceNode.Children.Add(node);
+            }
+        }
+
+        worldspaceNode.HasUnrealizedChildren = false;
     }
 
     /// <summary>
@@ -291,25 +578,35 @@ internal static partial class EsmBrowserTreeBuilder
         {
             foreach (var typeNode in categoryNode.Children)
             {
-                if (typeNode.Children.Count == 0)
+                // Take a snapshot to avoid concurrent modification issues
+                EsmBrowserNode[] snapshot;
+                lock (typeNode.Children)
                 {
-                    continue;
+                    if (typeNode.Children.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    snapshot = typeNode.Children.ToArray();
                 }
 
                 var sorted = mode switch
                 {
-                    RecordSortMode.EditorId => typeNode.Children
+                    RecordSortMode.EditorId => snapshot
                         .OrderBy(n => n.EditorId ?? n.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
-                    RecordSortMode.FormId => typeNode.Children
+                    RecordSortMode.FormId => snapshot
                         .OrderBy(n => n.FormIdHex ?? "", StringComparer.OrdinalIgnoreCase).ToList(),
-                    _ => typeNode.Children
+                    _ => snapshot
                         .OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase).ToList()
                 };
 
-                typeNode.Children.Clear();
-                foreach (var node in sorted)
+                lock (typeNode.Children)
                 {
-                    typeNode.Children.Add(node);
+                    typeNode.Children.Clear();
+                    foreach (var node in sorted)
+                    {
+                        typeNode.Children.Add(node);
+                    }
                 }
             }
         }
@@ -414,7 +711,8 @@ internal static partial class EsmBrowserTreeBuilder
                 var total = special.Sum(b => b);
                 var formatted = $"{special[0]} ST, {special[1]} PE, {special[2]} EN, {special[3]} CH, " +
                                 $"{special[4]} IN, {special[5]} AG, {special[6]} LK  (Total: {total})";
-                properties.Add(new EsmPropertyEntry { Name = "S.P.E.C.I.A.L.", Value = formatted, Category = "Attributes" });
+                properties.Add(new EsmPropertyEntry
+                    { Name = "S.P.E.C.I.A.L.", Value = formatted, Category = "Attributes" });
                 continue;
             }
 
@@ -461,6 +759,7 @@ internal static partial class EsmBrowserTreeBuilder
                     var lineBytes = rawBytes.Skip(i).Take(16);
                     hexLines.Add(string.Join(" ", lineBytes.Select(b => b.ToString("X2"))));
                 }
+
                 var hexBlock = string.Join("\n", hexLines);
 
                 // Single sub-item with the entire hex block (selectable as one)
@@ -711,6 +1010,20 @@ internal static partial class EsmBrowserTreeBuilder
                 Col2 = editorId ?? "",
                 Col3 = fullName ?? "",
                 Col4 = $"0x{inv.ItemFormId:X8}"
+            };
+        }
+
+        // Leveled List Entries: 4 columns - Level, Editor ID, Full Name, Form ID + Count
+        if (item is LeveledEntry entry)
+        {
+            var fullName = displayNameLookup?.GetValueOrDefault(entry.FormId);
+            var editorId = lookup?.GetValueOrDefault(entry.FormId);
+            return new EsmPropertyEntry
+            {
+                Col1 = $"Lvl {entry.Level}",
+                Col2 = editorId ?? "",
+                Col3 = fullName ?? "",
+                Col4 = $"0x{entry.FormId:X8} (×{entry.Count})"
             };
         }
 

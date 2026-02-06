@@ -229,7 +229,10 @@
     <value>Running coverage analysis...</value>
   </data>
   <data name="Status_ReconstructingRecords" xml:space="preserve">
-    <value>Reconstructing ESM records...</value>
+    <value>Reconstructing records from memory dump...</value>
+  </data>
+  <data name="Status_ParsingEsmRecords" xml:space="preserve">
+    <value>Parsing ESM records...</value>
   </data>
   <data name="Status_BuildingDataBrowserTree" xml:space="preserve">
     <value>Building data browser tree...</value>
@@ -242,6 +245,12 @@
   </data>
   <data name="Status_BuildingTreeView" xml:space="preserve">
     <value>Building tree view...</value>
+  </data>
+  <data name="Status_DataBrowserReady" xml:space="preserve">
+    <value>Data browser ready</value>
+  </data>
+  <data name="Status_SearchIndexReady" xml:space="preserve">
+    <value>Search index ready</value>
   </data>
   <data name="Status_BuildingIndex_Count" xml:space="preserve">
     <value>Building index ({0:N0} records)...</value>
@@ -278,6 +287,10 @@
   </data>
   <data name="Status_ReconstructedRecords" xml:space="preserve">
     <value>Reconstructed {0:N0} records.</value>
+    <comment>{0} = record count</comment>
+  </data>
+  <data name="Status_ParsedEsmRecords" xml:space="preserve">
+    <value>Parsed {0:N0} records.</value>
     <comment>{0} = record count</comment>
   </data>
   <data name="Status_FoundFilesToCarve" xml:space="preserve">
@@ -418,7 +431,7 @@
 
   <!-- ===== SingleFileTab: Labels (x:Uid) ===== -->
   <data name="Label_MinidumpPath.Text" xml:space="preserve">
-    <value>Minidump Path</value>
+    <value>File Path</value>
   </data>
   <data name="Label_OutputDirectory.Text" xml:space="preserve">
     <value>Output Directory</value>
@@ -438,7 +451,7 @@
 
   <!-- ===== SingleFileTab: Placeholder Text (x:Uid) ===== -->
   <data name="Input_MinidumpPath.PlaceholderText" xml:space="preserve">
-    <value>Select or enter a .dmp file path...</value>
+    <value>Select or enter a .dmp, .esm, or .esp file...</value>
   </data>
   <data name="Input_OutputPath.PlaceholderText" xml:space="preserve">
     <value>Select or enter output directory...</value>
@@ -452,7 +465,7 @@
 
   <!-- ===== SingleFileTab: Buttons (x:Uid) ===== -->
   <data name="Button_ReconstructRecords.Content" xml:space="preserve">
-    <value>Reconstruct Records</value>
+    <value>Load Records</value>
   </data>
   <data name="Button_GoToOffset.Content" xml:space="preserve">
     <value>Go to Offset</value>

@@ -8,7 +8,7 @@ namespace FalloutXbox360Utils.Core.Converters.Esm;
 /// <summary>
 ///     ESM file converter from Xbox 360 (big-endian) to PC (little-endian) format.
 /// </summary>
-public sealed partial class EsmConverter : IDisposable
+public sealed class EsmConverter : IDisposable
 {
     private readonly EsmGrupWriter _grupWriter;
     private readonly byte[] _input;

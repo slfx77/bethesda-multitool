@@ -154,7 +154,19 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\mmc99\\\\source\\\\repos\\\\Xbox360MemoryCarver\\\\src\\\\FalloutXbox360Utils\" -Recurse -Directory)",
       "Bash(ForEach-Object { $_FullName })",
       "Bash(Sort-Object)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(cd:*)",
+      "Bash(git tag -a v1.2.0 -m \"$\\(cat <<''EOF''\nv1.2.0 - ESM Data Browser & Xbox 360 to PC Conversion\n\nMajor Features:\n- In-memory ESM Data Browser with semantic reconstruction and search\n- Xbox 360 to PC ESM conversion \\(GECK compatible\\)\n- BSA extractor with Xbox 360 to PC asset conversion\n- Xbox 360 Repacker tab with integrated ESM conversion GUI\n\nImprovements:\n- Memory map: dynamic rainbow colors, ESM fallback lookup, gap differentiation\n- PC-friendly DDX texture conversion\n- ESM report generation in CLI extraction\n\nInfrastructure:\n- Project renamed to FalloutXbox360Utils\n- Codebase refactoring: folder reorganization, code deduplication\n- Build quality: warnings reduced from 1050+ to ~100\nEOF\n\\)\")",
+      "Bash(git tag:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(1)",
+      "Bash(cut:*)",
+      "Bash(Select-String -Pattern \"S1144|IDE0051\")",
+      "Bash(dir:*)",
+      "Bash(git checkout:*)",
+      "Bash(while read dir)",
+      "Bash(git -C src/DDXConv status)",
+      "Bash(git clean:*)"
     ]
   }
 }

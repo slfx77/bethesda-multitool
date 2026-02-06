@@ -682,7 +682,3 @@ internal sealed partial class PdbGlobalResolver
 
     #endregion
 }
-
-#region Models
-
-#endregion

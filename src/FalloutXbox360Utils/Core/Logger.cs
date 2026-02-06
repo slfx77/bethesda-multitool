@@ -17,6 +17,11 @@ public sealed class Logger
     /// </summary>
     private TextWriter? _customOutput;
 
+    /// <summary>
+    ///     Optional file writer for logging to file (useful for GUI apps).
+    /// </summary>
+    private StreamWriter? _logFileWriter;
+
     private Logger()
     {
     }
@@ -75,6 +80,24 @@ public sealed class Logger
     public void SetOutput(TextWriter writer)
     {
         _customOutput = writer;
+    }
+
+    /// <summary>
+    ///     Enable logging to a file. Useful for GUI apps where console isn't visible.
+    /// </summary>
+    public void SetLogFile(string filePath)
+    {
+        _logFileWriter?.Dispose();
+        _logFileWriter = new StreamWriter(filePath, true) { AutoFlush = true };
+    }
+
+    /// <summary>
+    ///     Disable file logging.
+    /// </summary>
+    public void CloseLogFile()
+    {
+        _logFileWriter?.Dispose();
+        _logFileWriter = null;
     }
 
     /// <summary>
@@ -173,6 +196,13 @@ public sealed class Logger
         if (!IsEnabled(level))
         {
             return;
+        }
+
+        // Always write to file if file logging is enabled
+        if (_logFileWriter != null)
+        {
+            var prefix = BuildPlainPrefix(level);
+            _logFileWriter.WriteLine(prefix + message);
         }
 
         // If custom output is set (for testing), use plain text output

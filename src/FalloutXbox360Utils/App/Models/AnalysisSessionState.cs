@@ -18,6 +18,9 @@ internal sealed class AnalysisSessionState : IDisposable
     public AnalysisResult? AnalysisResult { get; private set; }
     public MemoryMappedViewAccessor? Accessor { get; private set; }
 
+    /// <summary>The type of file being analyzed (ESM file vs memory dump).</summary>
+    public AnalysisFileType FileType { get; private set; }
+
     /// <summary>Coverage analysis result (computed on demand after analysis).</summary>
     public CoverageResult? CoverageResult { get; set; }
 
@@ -28,15 +31,19 @@ internal sealed class AnalysisSessionState : IDisposable
     public bool HasAccessor => Accessor != null;
     public bool HasEsmRecords => AnalysisResult?.EsmRecords != null;
 
+    /// <summary>True if analyzing a standalone ESM/ESP file (not a memory dump).</summary>
+    public bool IsEsmFile => FileType == AnalysisFileType.EsmFile;
+
     /// <summary>
     ///     Opens a new analysis session, disposing any previous one.
     /// </summary>
-    public void Open(string filePath, AnalysisResult result)
+    public void Open(string filePath, AnalysisResult result, AnalysisFileType fileType = AnalysisFileType.Minidump)
     {
         Dispose();
         FilePath = filePath;
         FileSize = new FileInfo(filePath).Length;
         AnalysisResult = result;
+        FileType = fileType;
         _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         Accessor = _mmf.CreateViewAccessor(0, FileSize, MemoryMappedFileAccess.Read);
     }
@@ -52,5 +59,6 @@ internal sealed class AnalysisSessionState : IDisposable
         AnalysisResult = null;
         FilePath = null;
         FileSize = 0;
+        FileType = AnalysisFileType.Unknown;
     }
 }

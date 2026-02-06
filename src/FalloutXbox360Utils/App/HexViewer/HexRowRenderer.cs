@@ -17,9 +17,11 @@ internal sealed class HexRowRenderer
     private static readonly SolidColorBrush TextBrush = new(Color.FromArgb(255, 212, 212, 212));
     private static readonly SolidColorBrush HighlightBrush = new(Color.FromArgb(255, 255, 140, 0)); // Orange
     private readonly TextBlock _asciiTextBlock;
+
+    // Brush cache to avoid repeated allocations during rendering
+    private readonly Dictionary<Color, SolidColorBrush> _brushCache = new();
     private readonly Func<long, FileRegion?> _findRegion;
     private readonly TextBlock _hexTextBlock;
-
     private readonly TextBlock _offsetTextBlock;
 
     public HexRowRenderer(
@@ -83,7 +85,13 @@ internal sealed class HexRowRenderer
 
     private void RenderHexRow(byte[] buffer, int bufferOffset, long rowOffset, int rowBytes)
     {
+        // Find region for start of row (single lookup instead of per-byte)
+        var currentRegion = _findRegion(rowOffset);
+        var currentBrush = GetRegionBrush(currentRegion);
+        var hexBuilder = new StringBuilder();
+
         for (var i = 0; i < BytesPerRow; i++)
+        {
             if (i < rowBytes && bufferOffset + i < buffer.Length)
             {
                 var byteOffset = rowOffset + i;
@@ -92,28 +100,71 @@ internal sealed class HexRowRenderer
                 // Check if this byte is within the highlight range (search result)
                 var isHighlighted = HighlightStart >= 0 && byteOffset >= HighlightStart && byteOffset < HighlightEnd;
 
-                // Determine foreground color: highlighted > region color > default
-                SolidColorBrush foreground;
+                // Check if we've crossed into a new region (only check when not highlighted)
+                if (!isHighlighted && currentRegion != null && byteOffset >= currentRegion.End)
+                {
+                    // Flush accumulated hex text with current brush
+                    if (hexBuilder.Length > 0)
+                    {
+                        _hexTextBlock.Inlines.Add(new Run { Text = hexBuilder.ToString(), Foreground = currentBrush });
+                        hexBuilder.Clear();
+                    }
+
+                    // Find new region
+                    currentRegion = _findRegion(byteOffset);
+                    currentBrush = GetRegionBrush(currentRegion);
+                }
+
+                // If highlighted, flush and use highlight brush
                 if (isHighlighted)
                 {
-                    foreground = HighlightBrush;
+                    if (hexBuilder.Length > 0)
+                    {
+                        _hexTextBlock.Inlines.Add(new Run { Text = hexBuilder.ToString(), Foreground = currentBrush });
+                        hexBuilder.Clear();
+                    }
+
+                    _hexTextBlock.Inlines.Add(new Run { Text = $"{b:X2} ", Foreground = HighlightBrush });
                 }
                 else
                 {
-                    var region = _findRegion(byteOffset);
-                    foreground = region != null ? new SolidColorBrush(region.Color) : TextBrush;
+                    hexBuilder.Append($"{b:X2} ");
                 }
-
-                _hexTextBlock.Inlines.Add(new Run
-                {
-                    Text = $"{b:X2} ",
-                    Foreground = foreground
-                });
             }
             else
             {
+                // Flush current run before adding padding
+                if (hexBuilder.Length > 0)
+                {
+                    _hexTextBlock.Inlines.Add(new Run { Text = hexBuilder.ToString(), Foreground = currentBrush });
+                    hexBuilder.Clear();
+                }
+
                 _hexTextBlock.Inlines.Add(new Run { Text = "   ", Foreground = TextBrush });
             }
+        }
+
+        // Flush any remaining hex text
+        if (hexBuilder.Length > 0)
+        {
+            _hexTextBlock.Inlines.Add(new Run { Text = hexBuilder.ToString(), Foreground = currentBrush });
+        }
+    }
+
+    private SolidColorBrush GetRegionBrush(FileRegion? region)
+    {
+        if (region == null)
+        {
+            return TextBrush;
+        }
+
+        if (!_brushCache.TryGetValue(region.Color, out var brush))
+        {
+            brush = new SolidColorBrush(region.Color);
+            _brushCache[region.Color] = brush;
+        }
+
+        return brush;
     }
 
     private static void RenderAsciiRow(StringBuilder asciiBuilder, byte[] buffer, int bufferOffset, int rowBytes)

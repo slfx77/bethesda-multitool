@@ -7,6 +7,16 @@ namespace FalloutXbox360Utils.Core.Converters.Esm;
 /// </summary>
 internal static class EsmBinary
 {
+    #region ReadUInt16
+
+    /// <summary>
+    ///     Reads a 16-bit unsigned integer from the start of the span.
+    /// </summary>
+    public static ushort ReadUInt16(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadUInt16(data, 0, bigEndian);
+    }
+
     /// <summary>
     ///     Reads a 16-bit unsigned integer from the specified offset.
     /// </summary>
@@ -23,6 +33,18 @@ internal static class EsmBinary
     public static ushort ReadUInt16(byte[] data, int offset, bool bigEndian)
     {
         return ReadUInt16(data.AsSpan(), offset, bigEndian);
+    }
+
+    #endregion
+
+    #region ReadInt16
+
+    /// <summary>
+    ///     Reads a 16-bit signed integer from the start of the span.
+    /// </summary>
+    public static short ReadInt16(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadInt16(data, 0, bigEndian);
     }
 
     /// <summary>
@@ -43,6 +65,18 @@ internal static class EsmBinary
         return ReadInt16(data.AsSpan(), offset, bigEndian);
     }
 
+    #endregion
+
+    #region ReadUInt32
+
+    /// <summary>
+    ///     Reads a 32-bit unsigned integer from the start of the span.
+    /// </summary>
+    public static uint ReadUInt32(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadUInt32(data, 0, bigEndian);
+    }
+
     /// <summary>
     ///     Reads a 32-bit unsigned integer from the specified offset.
     /// </summary>
@@ -59,6 +93,18 @@ internal static class EsmBinary
     public static uint ReadUInt32(byte[] data, int offset, bool bigEndian)
     {
         return ReadUInt32(data.AsSpan(), offset, bigEndian);
+    }
+
+    #endregion
+
+    #region ReadInt32
+
+    /// <summary>
+    ///     Reads a 32-bit signed integer from the start of the span.
+    /// </summary>
+    public static int ReadInt32(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadInt32(data, 0, bigEndian);
     }
 
     /// <summary>
@@ -79,6 +125,18 @@ internal static class EsmBinary
         return ReadInt32(data.AsSpan(), offset, bigEndian);
     }
 
+    #endregion
+
+    #region ReadUInt64
+
+    /// <summary>
+    ///     Reads a 64-bit unsigned integer from the start of the span.
+    /// </summary>
+    public static ulong ReadUInt64(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadUInt64(data, 0, bigEndian);
+    }
+
     /// <summary>
     ///     Reads a 64-bit unsigned integer from the specified offset.
     /// </summary>
@@ -95,6 +153,18 @@ internal static class EsmBinary
     public static ulong ReadUInt64(byte[] data, int offset, bool bigEndian)
     {
         return ReadUInt64(data.AsSpan(), offset, bigEndian);
+    }
+
+    #endregion
+
+    #region ReadInt64
+
+    /// <summary>
+    ///     Reads a 64-bit signed integer from the start of the span.
+    /// </summary>
+    public static long ReadInt64(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadInt64(data, 0, bigEndian);
     }
 
     /// <summary>
@@ -115,6 +185,18 @@ internal static class EsmBinary
         return ReadInt64(data.AsSpan(), offset, bigEndian);
     }
 
+    #endregion
+
+    #region ReadSingle
+
+    /// <summary>
+    ///     Reads a 32-bit floating point value from the start of the span.
+    /// </summary>
+    public static float ReadSingle(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadSingle(data, 0, bigEndian);
+    }
+
     /// <summary>
     ///     Reads a 32-bit floating point value from the specified offset.
     /// </summary>
@@ -132,6 +214,18 @@ internal static class EsmBinary
         return ReadSingle(data.AsSpan(), offset, bigEndian);
     }
 
+    #endregion
+
+    #region ReadDouble
+
+    /// <summary>
+    ///     Reads a 64-bit floating point value from the start of the span.
+    /// </summary>
+    public static double ReadDouble(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return ReadDouble(data, 0, bigEndian);
+    }
+
     /// <summary>
     ///     Reads a 64-bit floating point value from the specified offset.
     /// </summary>
@@ -147,72 +241,6 @@ internal static class EsmBinary
     public static double ReadDouble(byte[] data, int offset, bool bigEndian)
     {
         return ReadDouble(data.AsSpan(), offset, bigEndian);
-    }
-
-    #region Span-First Overloads (read from start of span)
-
-    /// <summary>
-    ///     Reads a 16-bit unsigned integer from the start of the span.
-    /// </summary>
-    public static ushort ReadUInt16(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadUInt16(data, 0, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 32-bit unsigned integer from the start of the span.
-    /// </summary>
-    public static uint ReadUInt32(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadUInt32(data, 0, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 32-bit signed integer from the start of the span.
-    /// </summary>
-    public static int ReadInt32(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadInt32(data, 0, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 16-bit signed integer from the start of the span.
-    /// </summary>
-    public static short ReadInt16(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadInt16(data, 0, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 64-bit unsigned integer from the start of the span.
-    /// </summary>
-    public static ulong ReadUInt64(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadUInt64(data, 0, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 64-bit signed integer from the start of the span.
-    /// </summary>
-    public static long ReadInt64(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadInt64(data, 0, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 32-bit floating point value from the start of the span.
-    /// </summary>
-    public static float ReadSingle(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadSingle(data, 0, bigEndian);
-    }
-
-    /// <summary>
-    ///     Reads a 64-bit floating point value from the start of the span.
-    /// </summary>
-    public static double ReadDouble(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return ReadDouble(data, 0, bigEndian);
     }
 
     #endregion

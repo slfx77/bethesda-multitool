@@ -1,0 +1,252 @@
+using System.Collections.ObjectModel;
+using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Localization;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+
+namespace FalloutXbox360Utils;
+
+/// <summary>
+/// Analysis methods: RunAnalysis*, ProcessPhase*, analysis orchestration
+/// </summary>
+public sealed partial class SingleFileTab
+{
+    #region Semantic Reconstruction
+
+    private async Task RunSemanticReconstructionAsync()
+    {
+        if (_session.SemanticResult != null) return;
+        if (!_session.HasEsmRecords || !_session.HasAccessor) return;
+
+        ReconstructButton.IsEnabled = false;
+        ReconstructProgressRing.IsActive = true;
+        ReconstructProgressRing.Visibility = Visibility.Visible;
+        ReconstructStatusText.Text = Strings.Status_ReconstructingRecords;
+        StatusTextBlock.Text = Strings.Status_ReconstructingRecords;
+
+        try
+        {
+            var result = _session.AnalysisResult!;
+            var accessor = _session.Accessor!;
+            var fileSize = _session.FileSize;
+
+            _session.SemanticResult = await Task.Run(() =>
+            {
+                var reconstructor = new SemanticReconstructor(
+                    result.EsmRecords!,
+                    result.FormIdMap,
+                    accessor,
+                    fileSize,
+                    result.MinidumpInfo);
+                return reconstructor.ReconstructAll();
+            });
+
+            StatusTextBlock.Text = Strings.Status_ReconstructedRecords(_session.SemanticResult.TotalRecordsReconstructed);
+        }
+        catch (Exception ex)
+        {
+            await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
+                $"{ex.GetType().Name}: {ex.Message}", true);
+        }
+        finally
+        {
+            ReconstructProgressRing.IsActive = false;
+            ReconstructProgressRing.Visibility = Visibility.Collapsed;
+            ReconstructButton.IsEnabled = true;
+        }
+    }
+
+    private async Task PopulateDataBrowserAsync()
+    {
+        if (_session.SemanticResult == null) return;
+
+        ReconstructProgressRing.IsActive = true;
+        ReconstructProgressRing.Visibility = Visibility.Visible;
+        ReconstructStatusText.Text = Strings.Status_BuildingDataBrowserTree;
+        StatusTextBlock.Text = Strings.Status_BuildingDataBrowserTree;
+
+        try
+        {
+            var semanticResult = _session.SemanticResult;
+            var lookup = _session.AnalysisResult?.FormIdMap;
+
+            // Progress callback for status updates
+            var progress = new Progress<string>(status =>
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    ReconstructStatusText.Text = status;
+                    StatusTextBlock.Text = status;
+                }));
+
+            // Build tree on background thread (fast - just category nodes)
+            var tree = await Task.Run(() =>
+            {
+                ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
+                var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, lookup);
+
+                ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
+                // Apply default sort (By Name) after building
+                EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
+
+                return builtTree;
+            });
+
+            _esmBrowserTree = tree;
+            _flatListBuilt = false;
+
+            StatusTextBlock.Text = Strings.Status_BuildingTreeView;
+
+            // Add category nodes to tree with chevrons (must be on UI thread)
+            EsmTreeView.RootNodes.Clear();
+            foreach (var node in _esmBrowserTree)
+            {
+                // Always show chevron for categories (they always have children)
+                var treeNode = new TreeViewNode { Content = node, HasUnrealizedChildren = true };
+                EsmTreeView.RootNodes.Add(treeNode);
+            }
+
+            DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
+            DataBrowserContent.Visibility = Visibility.Visible;
+            StatusTextBlock.Text = "Data browser ready. Search will index records on first use.";
+        }
+        finally
+        {
+            ReconstructProgressRing.IsActive = false;
+            ReconstructProgressRing.Visibility = Visibility.Collapsed;
+            ReconstructStatusText.Text = "";
+            StatusTextBlock.Text = "";
+        }
+    }
+
+    #endregion
+
+    #region Dependency Checking
+
+    private async Task CheckDependenciesAsync()
+    {
+        if (DependencyChecker.CarverDependenciesShown) return;
+        await Task.Delay(100);
+        var result = DependencyChecker.CheckCarverDependencies();
+        if (!result.AllAvailable)
+        {
+            DependencyChecker.CarverDependenciesShown = true;
+            await DependencyDialogHelper.ShowIfMissingAsync(result, XamlRoot);
+        }
+    }
+
+    #endregion
+
+    #region Extraction
+
+    private async void ExtractButton_Click(object sender, RoutedEventArgs e)
+    {
+        var filePath = MinidumpPathTextBox.Text;
+        var outputPath = OutputPathTextBox.Text;
+        if (_analysisResult == null || string.IsNullOrEmpty(outputPath)) return;
+        try
+        {
+            ExtractButton.IsEnabled = false;
+            AnalysisProgressBar.Visibility = Visibility.Visible;
+            var types = FileTypeMapping
+                .GetSignatureIds(_fileTypeCheckboxes.Where(kvp => kvp.Value.IsChecked == true).Select(kvp => kvp.Key))
+                .ToList();
+            var opts = new ExtractionOptions
+            {
+                OutputPath = outputPath,
+                ConvertDdx = ConvertDdxCheckBox.IsChecked == true,
+                SaveAtlas = SaveAtlasCheckBox.IsChecked == true,
+                Verbose = VerboseCheckBox.IsChecked == true,
+                FileTypes = types,
+                PcFriendly = true,
+                GenerateEsmReports = true
+            };
+            var progress = new Progress<ExtractionProgress>(p => DispatcherQueue.TryEnqueue(() =>
+            {
+                AnalysisProgressBar.IsIndeterminate = false;
+                AnalysisProgressBar.Value = p.PercentComplete;
+            }));
+            var analysisData = _analysisResult;
+            var summary = await Task.Run(() => MemoryDumpExtractor.Extract(filePath, opts, progress, analysisData));
+
+            foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedOffsets.Contains(x.Offset)))
+            {
+                if (summary.FailedConversionOffsets.Contains(entry.Offset))
+                {
+                    entry.Status = ExtractionStatus.Failed;
+                }
+                else
+                {
+                    entry.Status = ExtractionStatus.Extracted;
+                }
+            }
+
+            foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedModuleOffsets.Contains(x.Offset)))
+            {
+                entry.Status = ExtractionStatus.Extracted;
+            }
+
+            var msg = $"Extraction complete!\n\nFiles extracted: {summary.TotalExtracted}\n";
+            if (summary.ModulesExtracted > 0) msg += $"Modules extracted: {summary.ModulesExtracted}\n";
+            if (summary.ScriptsExtracted > 0)
+            {
+                msg +=
+                    $"Scripts extracted: {summary.ScriptsExtracted} ({summary.ScriptQuestsGrouped} quests grouped)\n";
+            }
+
+            if (summary.DdxConverted > 0 || summary.DdxFailed > 0)
+            {
+                msg += $"\nDDX conversion: {summary.DdxConverted} ok, {summary.DdxFailed} failed (PC-friendly)";
+            }
+
+            if (summary.EsmReportGenerated)
+            {
+                msg += "\nESM report: generated";
+            }
+
+            if (summary.HeightmapsExported > 0)
+            {
+                msg += $"\nHeightmaps: {summary.HeightmapsExported} exported";
+            }
+
+            await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {outputPath}");
+        }
+        catch (Exception ex)
+        {
+            await ShowDialogAsync("Extraction Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
+                true);
+        }
+        finally
+        {
+            ExtractButton.IsEnabled = true;
+            AnalysisProgressBar.Visibility = Visibility.Collapsed;
+            AnalysisProgressBar.IsIndeterminate = true;
+        }
+    }
+
+    #endregion
+
+    #region Helper Methods for Analysis
+
+    private static void CollectReconstructedFormIds(SemanticReconstructionResult result, HashSet<uint> formIds)
+    {
+        // Collect FormIDs from all reconstructed record lists using reflection
+        foreach (var prop in result.GetType().GetProperties())
+        {
+            if (!prop.CanRead) continue;
+            if (prop.GetValue(result) is not System.Collections.IList list) continue;
+
+            foreach (var item in list)
+            {
+                var formIdProp = item.GetType().GetProperty("FormId");
+                if (formIdProp?.GetValue(item) is uint formId && formId != 0)
+                {
+                    formIds.Add(formId);
+                }
+            }
+        }
+    }
+
+    #endregion
+}

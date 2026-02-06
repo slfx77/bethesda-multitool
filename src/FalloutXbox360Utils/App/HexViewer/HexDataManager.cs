@@ -12,9 +12,9 @@ namespace FalloutXbox360Utils;
 internal sealed class HexDataManager : IDisposable
 {
     private readonly List<FileRegion> _fileRegions = [];
-    private IReadOnlyList<DetectedMainRecord>? _mainRecords;
-    private Color _esmColor;
     private bool _disposed;
+    private Color _esmColor;
+    private IReadOnlyList<DetectedMainRecord>? _mainRecords;
     private MemoryMappedFile? _mmf;
     private bool _ownsAccessor = true;
 
