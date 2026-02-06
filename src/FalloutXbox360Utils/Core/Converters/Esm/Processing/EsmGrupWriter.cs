@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Converters.Esm.Schema;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using static FalloutXbox360Utils.Core.Converters.Esm.EsmEndianHelpers;
@@ -380,11 +380,14 @@ public sealed class EsmGrupWriter
 
     private static int GetRank(CellEntry cell, Dictionary<(int x, int y), int> orderMap)
     {
-        return !cell.GridX.HasValue || !cell.GridY.HasValue
-            ? int.MaxValue
-            : orderMap.TryGetValue((cell.GridX.Value, cell.GridY.Value), out var rank)
-                ? rank
-                : int.MaxValue;
+        if (!cell.GridX.HasValue || !cell.GridY.HasValue)
+        {
+            return int.MaxValue;
+        }
+
+        return orderMap.TryGetValue((cell.GridX.Value, cell.GridY.Value), out var rank)
+            ? rank
+            : int.MaxValue;
     }
 
     private static Dictionary<(int x, int y), int>? TryGetWastelandOrderMap(uint worldFormId)

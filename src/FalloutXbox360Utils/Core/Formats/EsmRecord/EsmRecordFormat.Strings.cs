@@ -227,39 +227,6 @@ public sealed partial class EsmRecordFormat
     }
 
     /// <summary>
-    ///     Check if a byte is a valid starting character for an Editor ID.
-    /// </summary>
-    private static bool IsEditorIdStartChar(byte b)
-    {
-        // Editor IDs start with a letter
-        return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z');
-    }
-
-    /// <summary>
-    ///     Find the end of an Editor ID string (null terminator).
-    /// </summary>
-    private static int FindEditorIdEnd(byte[] buffer, int start, int maxEnd)
-    {
-        for (var i = start; i < maxEnd; i++)
-        {
-            if (buffer[i] == 0)
-            {
-                return i;
-            }
-
-            // Editor IDs contain only alphanumeric and underscore
-            var b = buffer[i];
-            if (!((b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') ||
-                  (b >= '0' && b <= '9') || b == '_'))
-            {
-                return -1;
-            }
-        }
-
-        return -1;
-    }
-
-    /// <summary>
     ///     Detect repeated substring patterns (e.g., "katSkatSkatS" repeats "katS").
     /// </summary>
     private static bool HasRepeatedPattern(string s)

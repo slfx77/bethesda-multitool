@@ -220,8 +220,8 @@ public sealed partial class EsmRecordFormat
         // Offset 16: param2 (4 bytes)
         // Offset 20: runOnType (4 bytes) - optional
 
-        byte conditionType = data[offset];
-        byte operatorVal = data[offset + 1];
+        var conditionType = data[offset];
+        var operatorVal = data[offset + 1];
         float compValue;
         ushort functionIndex;
         uint param1;
@@ -254,7 +254,8 @@ public sealed partial class EsmRecordFormat
             return null;
         }
 
-        return new ConditionSubrecord(conditionType, operatorVal, compValue, functionIndex, param1, param2, recordOffset);
+        return new ConditionSubrecord(conditionType, operatorVal, compValue, functionIndex, param1, param2,
+            recordOffset);
     }
 
     #endregion

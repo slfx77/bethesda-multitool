@@ -8,6 +8,107 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 public sealed partial class EsmRecordFormat
 {
+    #region Generic Subrecords
+
+    private static void TryAddGenericSubrecordWithOffset(byte[] data, int i, int dataLength, long baseOffset,
+        List<DetectedSubrecord> records)
+    {
+        if (i + 6 > dataLength)
+        {
+            return;
+        }
+
+        // Check if signature looks valid (4 uppercase ASCII letters or underscore)
+        for (var j = 0; j < 4; j++)
+        {
+            var c = data[i + j];
+            if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
+            {
+                return;
+            }
+        }
+
+        var sig = Encoding.ASCII.GetString(data, i, 4);
+        var len = GetSubrecordLength(data, i + 4, dataLength - i - 6);
+
+        if (len == 0 || len > 65535 || i + 6 + len > dataLength)
+        {
+            return;
+        }
+
+        // Only add if it's a known subrecord signature from the schema
+        if (SchemaSignaturesLE.Value.Contains(sig) || SchemaSignaturesBE.Value.Contains(sig))
+        {
+            records.Add(new DetectedSubrecord { Signature = sig, DataSize = len, Offset = baseOffset + i });
+        }
+    }
+
+    #endregion
+
+    #region Asset String Scanning
+
+    /// <summary>
+    ///     Scan for asset strings in the memory dump.
+    ///     This method scans for model paths, texture paths, and other asset references.
+    /// </summary>
+    public static void ScanForAssetStrings(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        EsmRecordScanResult result,
+        bool verbose)
+    {
+        // Implementation stub - the original implementation was lost during consolidation.
+        // This scans for strings that look like asset paths (e.g., "meshes/", "textures/").
+#pragma warning disable S1135 // Valid TODO for future improvement
+        // TODO: Restore full implementation from version control if needed.
+#pragma warning restore S1135
+
+        const int bufferSize = 64 * 1024;
+        var buffer = new byte[bufferSize];
+        var assetStrings = result.AssetStrings;
+
+        for (long offset = 0; offset < fileSize; offset += bufferSize - 256)
+        {
+            var bytesToRead = (int)Math.Min(bufferSize, fileSize - offset);
+            if (bytesToRead < 16)
+            {
+                break;
+            }
+
+            accessor.ReadArray(offset, buffer, 0, bytesToRead);
+
+#pragma warning disable S127 // Loop counter modified in body - intentional skip-ahead in binary parsing
+            for (var i = 0; i < bytesToRead - 16; i++)
+            {
+                // Look for common asset path prefixes
+                if (!IsPathStartChar(buffer[i]))
+                {
+                    continue;
+                }
+
+                var endPos = FindStringEnd(buffer, i, Math.Min(i + 256, bytesToRead));
+                if (endPos <= i || endPos - i < 8)
+                {
+                    continue;
+                }
+
+                var text = Encoding.ASCII.GetString(buffer, i, endPos - i);
+                if (IsValidPath(text))
+                {
+                    assetStrings.Add(new DetectedAssetString
+                    {
+                        Path = CleanAssetPath(text),
+                        Offset = offset + i
+                    });
+                    i = endPos;
+                }
+            }
+#pragma warning restore S127
+        }
+    }
+
+    #endregion
+
     #region Game Setting Subrecords (GMST)
 
     private static void TryAddGmstRecord(byte[] data, int i, int dataLength, List<GmstRecord> records)
@@ -265,103 +366,6 @@ public sealed partial class EsmRecordFormat
         if (IsValidFormId(formId))
         {
             records.Add(new FormIdSubrecord(subrecordType, formId, baseOffset + i));
-        }
-    }
-
-    #endregion
-
-    #region Generic Subrecords
-
-    private static void TryAddGenericSubrecordWithOffset(byte[] data, int i, int dataLength, long baseOffset,
-        List<DetectedSubrecord> records)
-    {
-        if (i + 6 > dataLength)
-        {
-            return;
-        }
-
-        // Check if signature looks valid (4 uppercase ASCII letters or underscore)
-        for (var j = 0; j < 4; j++)
-        {
-            var c = data[i + j];
-            if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
-            {
-                return;
-            }
-        }
-
-        var sig = Encoding.ASCII.GetString(data, i, 4);
-        var len = GetSubrecordLength(data, i + 4, dataLength - i - 6);
-
-        if (len == 0 || len > 65535 || i + 6 + len > dataLength)
-        {
-            return;
-        }
-
-        // Only add if it's a known subrecord signature from the schema
-        if (SchemaSignaturesLE.Value.Contains(sig) || SchemaSignaturesBE.Value.Contains(sig))
-        {
-            records.Add(new DetectedSubrecord { Signature = sig, DataSize = len, Offset = baseOffset + i });
-        }
-    }
-
-    #endregion
-
-    #region Asset String Scanning
-
-    /// <summary>
-    ///     Scan for asset strings in the memory dump.
-    ///     This method scans for model paths, texture paths, and other asset references.
-    /// </summary>
-    public static void ScanForAssetStrings(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        EsmRecordScanResult result,
-        bool verbose)
-    {
-        // Implementation stub - the original implementation was lost during consolidation.
-        // This scans for strings that look like asset paths (e.g., "meshes/", "textures/").
-        // TODO: Restore full implementation from version control if needed.
-
-        const int bufferSize = 64 * 1024;
-        var buffer = new byte[bufferSize];
-        var assetStrings = result.AssetStrings;
-
-        for (long offset = 0; offset < fileSize; offset += bufferSize - 256)
-        {
-            var bytesToRead = (int)Math.Min(bufferSize, fileSize - offset);
-            if (bytesToRead < 16)
-            {
-                break;
-            }
-
-            accessor.ReadArray(offset, buffer, 0, bytesToRead);
-
-            for (var i = 0; i < bytesToRead - 16; i++)
-            {
-                // Look for common asset path prefixes
-                if (!IsPathStartChar(buffer[i]))
-                {
-                    continue;
-                }
-
-                var endPos = FindStringEnd(buffer, i, Math.Min(i + 256, bytesToRead));
-                if (endPos <= i || endPos - i < 8)
-                {
-                    continue;
-                }
-
-                var text = Encoding.ASCII.GetString(buffer, i, endPos - i);
-                if (IsValidPath(text))
-                {
-                    assetStrings.Add(new DetectedAssetString
-                    {
-                        Path = CleanAssetPath(text),
-                        Offset = offset + i
-                    });
-                    i = endPos;
-                }
-            }
         }
     }
 

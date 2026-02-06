@@ -1,4 +1,4 @@
-﻿using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
 using ImageMagick;
 
@@ -172,6 +172,65 @@ public static class HeightmapPngExporter
     }
 
     /// <summary>
+    ///     Generate a composite worldmap using LAND records as primary positioning source.
+    ///     LAND records contain proper CellX/CellY from record parsing, providing
+    ///     more reliable positioning than XCLC proximity matching.
+    ///     Runtime cell coordinates (RuntimeCellX/RuntimeCellY) are preferred over ESM-derived.
+    /// </summary>
+    public static async Task ExportCompositeWorldmapAsync(
+        List<DetectedVhgtHeightmap> heightmaps,
+        List<CellGridSubrecord> cellGrids,
+        List<ExtractedLandRecord> landRecords,
+        string outputPath,
+        bool useColorGradient = true)
+    {
+        var correlatedHeightmaps = new Dictionary<(int x, int y), DetectedVhgtHeightmap>();
+
+        // Primary source: use LAND records that have both cell coordinates and heightmap data.
+        // Build DetectedVhgtHeightmap directly from the LAND record's own decompressed VHGT,
+        // since standalone VHGT detections may be in different memory regions.
+        foreach (var land in landRecords)
+        {
+            if (land.BestCellX.HasValue && land.BestCellY.HasValue && land.Heightmap != null)
+            {
+                var key = (land.BestCellX.Value, land.BestCellY.Value);
+                if (!correlatedHeightmaps.ContainsKey(key))
+                {
+                    correlatedHeightmaps[key] = new DetectedVhgtHeightmap
+                    {
+                        Offset = land.Heightmap.Offset,
+                        IsBigEndian = land.Header.IsBigEndian,
+                        HeightOffset = land.Heightmap.HeightOffset,
+                        HeightDeltas = land.Heightmap.HeightDeltas
+                    };
+                }
+            }
+        }
+
+        // Fallback: use XCLC proximity for standalone VHGT heightmaps not covered by LAND records
+        foreach (var heightmap in heightmaps)
+        {
+            var nearestGrid = FindNearestCellGrid(heightmap.Offset, cellGrids);
+            if (nearestGrid != null)
+            {
+                var key = (nearestGrid.GridX, nearestGrid.GridY);
+                if (!correlatedHeightmaps.ContainsKey(key))
+                {
+                    correlatedHeightmaps[key] = heightmap;
+                }
+            }
+        }
+
+        if (correlatedHeightmaps.Count == 0)
+        {
+            return;
+        }
+
+        // Delegate to the shared rendering logic
+        await RenderCompositeAsync(correlatedHeightmaps, outputPath, useColorGradient);
+    }
+
+    /// <summary>
     ///     Shared rendering logic for composite worldmaps.
     /// </summary>
     private static async Task RenderCompositeAsync(
@@ -302,65 +361,6 @@ public static class HeightmapPngExporter
                 SaveGrayscale(compositePixels, imgWidth, imgHeight, outputPath);
             }
         });
-    }
-
-    /// <summary>
-    ///     Generate a composite worldmap using LAND records as primary positioning source.
-    ///     LAND records contain proper CellX/CellY from record parsing, providing
-    ///     more reliable positioning than XCLC proximity matching.
-    ///     Runtime cell coordinates (RuntimeCellX/RuntimeCellY) are preferred over ESM-derived.
-    /// </summary>
-    public static async Task ExportCompositeWorldmapAsync(
-        List<DetectedVhgtHeightmap> heightmaps,
-        List<CellGridSubrecord> cellGrids,
-        List<ExtractedLandRecord> landRecords,
-        string outputPath,
-        bool useColorGradient = true)
-    {
-        var correlatedHeightmaps = new Dictionary<(int x, int y), DetectedVhgtHeightmap>();
-
-        // Primary source: use LAND records that have both cell coordinates and heightmap data.
-        // Build DetectedVhgtHeightmap directly from the LAND record's own decompressed VHGT,
-        // since standalone VHGT detections may be in different memory regions.
-        foreach (var land in landRecords)
-        {
-            if (land.BestCellX.HasValue && land.BestCellY.HasValue && land.Heightmap != null)
-            {
-                var key = (land.BestCellX.Value, land.BestCellY.Value);
-                if (!correlatedHeightmaps.ContainsKey(key))
-                {
-                    correlatedHeightmaps[key] = new DetectedVhgtHeightmap
-                    {
-                        Offset = land.Heightmap.Offset,
-                        IsBigEndian = land.Header.IsBigEndian,
-                        HeightOffset = land.Heightmap.HeightOffset,
-                        HeightDeltas = land.Heightmap.HeightDeltas
-                    };
-                }
-            }
-        }
-
-        // Fallback: use XCLC proximity for standalone VHGT heightmaps not covered by LAND records
-        foreach (var heightmap in heightmaps)
-        {
-            var nearestGrid = FindNearestCellGrid(heightmap.Offset, cellGrids);
-            if (nearestGrid != null)
-            {
-                var key = (nearestGrid.GridX, nearestGrid.GridY);
-                if (!correlatedHeightmaps.ContainsKey(key))
-                {
-                    correlatedHeightmaps[key] = heightmap;
-                }
-            }
-        }
-
-        if (correlatedHeightmaps.Count == 0)
-        {
-            return;
-        }
-
-        // Delegate to the shared rendering logic
-        await RenderCompositeAsync(correlatedHeightmaps, outputPath, useColorGradient);
     }
 
     #region Helper Methods
@@ -606,7 +606,22 @@ public static class HeightmapPngExporter
             t -= 1;
         }
 
-        return t < 1f / 6f ? p + (q - p) * 6 * t : t < 1f / 2f ? q : t < 2f / 3f ? p + (q - p) * (2f / 3f - t) * 6 : p;
+        if (t < 1f / 6f)
+        {
+            return p + (q - p) * 6 * t;
+        }
+
+        if (t < 1f / 2f)
+        {
+            return q;
+        }
+
+        if (t < 2f / 3f)
+        {
+            return p + (q - p) * (2f / 3f - t) * 6;
+        }
+
+        return p;
     }
 
     #endregion

@@ -1,4 +1,4 @@
-﻿namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 
 /// <summary>
 ///     Main record header detected in memory dump.

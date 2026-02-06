@@ -8,6 +8,70 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 public sealed partial class SemanticReconstructor
 {
+    #region ReconstructKeys
+
+    /// <summary>
+    ///     Reconstruct all Key records from the scan result.
+    /// </summary>
+    public List<ReconstructedKey> ReconstructKeys()
+    {
+        var keys = new List<ReconstructedKey>();
+        var keyRecords = GetRecordsByType("KEYM").ToList();
+
+        foreach (var record in keyRecords)
+        {
+            keys.Add(new ReconstructedKey
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        // Merge keys from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(keys.Select(k => k.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x2E || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _runtimeReader.ReadRuntimeKey(entry);
+                if (item != null)
+                {
+                    keys.Add(item);
+                    runtimeCount++;
+                }
+            }
+        }
+
+        return keys;
+    }
+
+    #endregion
+
+    #region Private Helper - ReadFormId
+
+    private static uint ReadFormId(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        if (data.Length < 4)
+        {
+            return 0;
+        }
+
+        return bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data)
+            : BinaryPrimitives.ReadUInt32LittleEndian(data);
+    }
+
+    #endregion
+
     #region ReconstructWeapons
 
     /// <summary>
@@ -1059,54 +1123,6 @@ public sealed partial class SemanticReconstructor
 
     #endregion
 
-    #region ReconstructKeys
-
-    /// <summary>
-    ///     Reconstruct all Key records from the scan result.
-    /// </summary>
-    public List<ReconstructedKey> ReconstructKeys()
-    {
-        var keys = new List<ReconstructedKey>();
-        var keyRecords = GetRecordsByType("KEYM").ToList();
-
-        foreach (var record in keyRecords)
-        {
-            keys.Add(new ReconstructedKey
-            {
-                FormId = record.FormId,
-                EditorId = GetEditorId(record.FormId),
-                FullName = FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            });
-        }
-
-        // Merge keys from runtime struct reading
-        if (_runtimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(keys.Select(k => k.FormId));
-            var runtimeCount = 0;
-            foreach (var entry in _scanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x2E || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var item = _runtimeReader.ReadRuntimeKey(entry);
-                if (item != null)
-                {
-                    keys.Add(item);
-                    runtimeCount++;
-                }
-            }
-        }
-
-        return keys;
-    }
-
-    #endregion
-
     #region ReconstructContainers
 
     /// <summary>
@@ -1289,22 +1305,6 @@ public sealed partial class SemanticReconstructor
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
-    }
-
-    #endregion
-
-    #region Private Helper - ReadFormId
-
-    private static uint ReadFormId(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        if (data.Length < 4)
-        {
-            return 0;
-        }
-
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data)
-            : BinaryPrimitives.ReadUInt32LittleEndian(data);
     }
 
     #endregion

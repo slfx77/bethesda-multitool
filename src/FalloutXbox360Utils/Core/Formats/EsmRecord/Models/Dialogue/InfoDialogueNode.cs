@@ -1,4 +1,4 @@
-﻿namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 
 /// <summary>
 ///     An individual INFO response that may link to other topics.

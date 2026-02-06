@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
@@ -414,8 +414,7 @@ public static class AnalyzeCommand
         try
         {
             AnsiConsole.MarkupLine("[blue]Extracting string pool data...[/]");
-            var coverageAnalyzer = new CoverageAnalyzer();
-            var coverage = coverageAnalyzer.Analyze(result, accessor);
+            var coverage = CoverageAnalyzer.Analyze(result, accessor);
             var bufferAnalyzer = new RuntimeBufferAnalyzer(
                 accessor, result.FileSize, result.MinidumpInfo, coverage, null);
             var stringPool = bufferAnalyzer.ExtractStringPoolOnly();

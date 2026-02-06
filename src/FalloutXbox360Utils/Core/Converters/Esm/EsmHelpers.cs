@@ -1,4 +1,4 @@
-﻿using System.IO.Compression;
+using System.IO.Compression;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using FalloutXbox360Utils.Core.Utils;
@@ -131,7 +131,7 @@ public static class EsmHelpers
                     sb.Append("   ");
             }
 
-            sb.Append(" ");
+            sb.Append(' ');
 
             // ASCII representation
             for (var j = 0; j < 16 && i + j < length; j++)

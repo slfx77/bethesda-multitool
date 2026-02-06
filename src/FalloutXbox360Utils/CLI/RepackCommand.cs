@@ -118,8 +118,6 @@ public static class RepackCommand
         };
 
         // Run conversion with progress
-        var repackerService = new RepackerService();
-
         await AnsiConsole.Progress()
             .AutoClear(false)
             .HideCompleted(false)
@@ -165,7 +163,7 @@ public static class RepackCommand
                     }
                 });
 
-                var result = await repackerService.RepackAsync(options, progress, cancellationToken);
+                var result = await RepackerService.RepackAsync(options, progress, cancellationToken);
 
                 currentTask.Value = 100;
 

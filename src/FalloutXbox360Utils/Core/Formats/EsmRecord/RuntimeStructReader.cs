@@ -10,9 +10,17 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 /// </summary>
 public sealed partial class RuntimeStructReader
 {
+    private const int MaxListItems = 50;
     private readonly MemoryMappedViewAccessor _accessor;
     private readonly long _fileSize;
     private readonly MinidumpInfo _minidumpInfo;
+
+    public RuntimeStructReader(MemoryMappedViewAccessor accessor, long fileSize, MinidumpInfo minidumpInfo)
+    {
+        _accessor = accessor;
+        _fileSize = fileSize;
+        _minidumpInfo = minidumpInfo;
+    }
 
     #region NPC Struct Constants
 
@@ -195,15 +203,6 @@ public sealed partial class RuntimeStructReader
     private const int LoadedDataBaseHeightOffset = 160;
 
     #endregion
-
-    private const int MaxListItems = 50;
-
-    public RuntimeStructReader(MemoryMappedViewAccessor accessor, long fileSize, MinidumpInfo minidumpInfo)
-    {
-        _accessor = accessor;
-        _fileSize = fileSize;
-        _minidumpInfo = minidumpInfo;
-    }
 
     #region Core Helper Methods
 

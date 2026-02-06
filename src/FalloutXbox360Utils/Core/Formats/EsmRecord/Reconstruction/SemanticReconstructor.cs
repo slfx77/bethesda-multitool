@@ -1,8 +1,5 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
-using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
 using FalloutXbox360Utils.Core.Minidump;
@@ -15,18 +12,6 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 /// </summary>
 public sealed partial class SemanticReconstructor
 {
-    #region Fields
-
-    private readonly MemoryMappedViewAccessor? _accessor;
-    private readonly Dictionary<string, uint> _editorIdToFormId;
-    private readonly long _fileSize;
-    private readonly Dictionary<uint, string> _formIdToEditorId;
-    private readonly Dictionary<uint, DetectedMainRecord> _recordsByFormId;
-    private readonly RuntimeStructReader? _runtimeReader;
-    private readonly EsmRecordScanResult _scanResult;
-
-    #endregion
-
     #region Constructor
 
     /// <summary>
@@ -206,6 +191,18 @@ public sealed partial class SemanticReconstructor
             UnreconstructedTypeCounts = unreconstructedCounts
         };
     }
+
+    #endregion
+
+    #region Fields
+
+    private readonly MemoryMappedViewAccessor? _accessor;
+    private readonly Dictionary<string, uint> _editorIdToFormId;
+    private readonly long _fileSize;
+    private readonly Dictionary<uint, string> _formIdToEditorId;
+    private readonly Dictionary<uint, DetectedMainRecord> _recordsByFormId;
+    private readonly RuntimeStructReader? _runtimeReader;
+    private readonly EsmRecordScanResult _scanResult;
 
     #endregion
 

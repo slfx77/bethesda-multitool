@@ -18,7 +18,11 @@ public static partial class CsvReportGenerator
             var sk = npc.Skills;
             var ai = npc.AiData;
             // Gender is bit 0 of ACBS flags: 0 = Male, 1 = Female
-            var gender = s != null ? (s.Flags & 1) == 1 ? "Female" : "Male" : "";
+            var gender = "";
+            if (s != null)
+            {
+                gender = (s.Flags & 1) == 1 ? "Female" : "Male";
+            }
 
             // Derived stats (computed from SPECIAL + Level + Fatigue)
             var hasDerived = sp is { Length: 7 } && s != null;
@@ -59,7 +63,7 @@ public static partial class CsvReportGenerator
                 sk is { Length: 14 } ? sk[11].ToString() : "", // Speech
                 sk is { Length: 14 } ? sk[12].ToString() : "", // Survival
                 sk is { Length: 14 } ? sk[13].ToString() : "", // Unarmed
-                // Derived stats
+                                                               // Derived stats
                 baseHealth, calcHealth, calcFatigue,
                 critChance, meleeDmg, unarmedDmg, poisonResist, radResist,
                 // AI Data (with Mood)

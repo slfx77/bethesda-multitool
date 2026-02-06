@@ -7,7 +7,6 @@ using FalloutXbox360Utils.Core.Converters.Esm.Schema;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
-using SubrecordEntry = FalloutXbox360Utils.Core.Utils.ParsedSubrecord;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 

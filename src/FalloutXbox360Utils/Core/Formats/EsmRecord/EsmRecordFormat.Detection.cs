@@ -1,15 +1,35 @@
-using System.Buffers;
-using System.Buffers.Binary;
-using System.IO.MemoryMappedFiles;
-using System.Text;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 public sealed partial class EsmRecordFormat
 {
+    #region Exclusion Range Check
+
+    /// <summary>
+    ///     Checks if the given offset falls within any excluded range (e.g., module memory).
+    ///     Used to skip ESM detection inside executable module regions.
+    /// </summary>
+    private static bool IsInExcludedRange(long offset, List<(long start, long end)>? ranges)
+    {
+        if (ranges == null || ranges.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var (start, end) in ranges)
+        {
+            if (offset >= start && offset < end)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    #endregion
+
     #region Signature Validation
 
     /// <summary>
@@ -27,14 +47,6 @@ public sealed partial class EsmRecordFormat
         // Secondary: allow uppercase-only 4-char for potential unknown types
         // (memory dumps may have record types not in the PC version dictionary)
         return signature.Length == 4 && signature.All(c => c is >= 'A' and <= 'Z' or '_');
-    }
-
-    /// <summary>
-    ///     Check if a byte is a valid signature character (A-Z, 0-9, underscore).
-    /// </summary>
-    private static bool IsValidSignatureChar(byte b)
-    {
-        return (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_';
     }
 
     /// <summary>
@@ -205,56 +217,6 @@ public sealed partial class EsmRecordFormat
         // Return the FormType with the most Topic matches (require at least 5)
         var best = formTypeCounts.MaxBy(kv => kv.Value);
         return best.Value >= 5 ? best.Key : null;
-    }
-
-    /// <summary>
-    ///     Categorize an asset path by its extension.
-    /// </summary>
-    private static AssetCategory CategorizeAssetPath(string path)
-    {
-        var lastDot = path.LastIndexOf('.');
-        if (lastDot < 0)
-        {
-            return AssetCategory.Other;
-        }
-
-        var extension = path[(lastDot + 1)..].ToLowerInvariant();
-
-        return extension switch
-        {
-            "nif" or "egm" or "egt" or "tri" => AssetCategory.Model,
-            "dds" or "ddx" or "tga" or "bmp" => AssetCategory.Texture,
-            "wav" or "mp3" or "ogg" or "lip" => AssetCategory.Sound,
-            "psc" or "pex" => AssetCategory.Script,
-            "kf" or "hkx" => AssetCategory.Animation,
-            _ => AssetCategory.Other
-        };
-    }
-
-    #endregion
-
-    #region Exclusion Range Check
-
-    /// <summary>
-    ///     Checks if the given offset falls within any excluded range (e.g., module memory).
-    ///     Used to skip ESM detection inside executable module regions.
-    /// </summary>
-    private static bool IsInExcludedRange(long offset, List<(long start, long end)>? ranges)
-    {
-        if (ranges == null || ranges.Count == 0)
-        {
-            return false;
-        }
-
-        foreach (var (start, end) in ranges)
-        {
-            if (offset >= start && offset < end)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     #endregion

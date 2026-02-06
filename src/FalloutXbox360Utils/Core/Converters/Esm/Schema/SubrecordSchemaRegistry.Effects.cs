@@ -44,13 +44,13 @@ public static partial class SubrecordSchemaRegistry
 
         // ENIT - ENCH (16 bytes)
         schemas[new SchemaKey("ENIT", "ENCH", 16)] = new SubrecordSchema(
-                F.UInt32("Type"),
-                F.UInt32("ChargeAmount"),
-                F.UInt32("EnchantCost"),
-                F.Bytes("Flags", 4))
-            {
-                Description = "Enchantment Data"
-            };
+            F.UInt32("Type"),
+            F.UInt32("ChargeAmount"),
+            F.UInt32("EnchantCost"),
+            F.Bytes("Flags", 4))
+        {
+            Description = "Enchantment Data"
+        };
 
         // EFIT - Effect Item (20 bytes = 5 x uint32)
         schemas[new SchemaKey("EFIT", null, 20)] = new SubrecordSchema(

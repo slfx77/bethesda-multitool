@@ -8,7 +8,7 @@ namespace FalloutXbox360Utils.Core.Formats.Xma;
 ///     XMA to MP3 conversion using FFmpeg with stdin/stdout pipes.
 ///     PC version of Fallout: New Vegas uses MP3 for Music folder files (192kbps, 48kHz, stereo).
 /// </summary>
-internal sealed class XmaMp3Converter
+internal static class XmaMp3Converter
 {
     /// <summary>
     ///     Default bitrate for music files (192 kbps).
@@ -27,20 +27,7 @@ internal sealed class XmaMp3Converter
 
     private static readonly Logger Log = Logger.Instance;
 
-    public XmaMp3Converter()
-    {
-        if (!FfmpegLocator.IsAvailable)
-        {
-            Log.Debug("[XmaMp3Converter] FFmpeg not found - XMA to MP3 conversion disabled");
-            Log.Debug("[XmaMp3Converter] Install FFmpeg and add to PATH for XMA -> MP3 conversion");
-        }
-        else
-        {
-            Log.Debug($"[XmaMp3Converter] FFmpeg found at: {FfmpegLocator.FfmpegPath}");
-        }
-    }
-
-    public bool IsAvailable => FfmpegLocator.IsAvailable;
+    public static bool IsAvailable => FfmpegLocator.IsAvailable;
 
     /// <summary>
     ///     Convert XMA audio to MP3 format matching PC game music settings.
@@ -51,7 +38,7 @@ internal sealed class XmaMp3Converter
     /// <param name="sampleRate">Target sample rate (default 48000)</param>
     /// <param name="channels">Target number of channels (default 2 = stereo)</param>
     /// <returns>Conversion result with MP3 data</returns>
-    public async Task<ConversionResult> ConvertAsync(
+    public static async Task<ConversionResult> ConvertAsync(
         byte[] xmaData,
         int bitrate = DefaultBitrate,
         int sampleRate = DefaultSampleRate,

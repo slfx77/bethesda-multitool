@@ -332,7 +332,9 @@ public sealed partial class RuntimeStructReader
         // Read password (optional)
         var password = ReadBSStringT(offset, TermPasswordOffset);
 
+#pragma warning disable S1135 // Valid TODO for future improvement
         // TODO: Parse menu items via BSSimpleList at +144 if needed
+#pragma warning restore S1135
 
         return new ReconstructedTerminal
         {

@@ -665,21 +665,21 @@ internal static partial class EsmBrowserTreeBuilder
                 var gender = (stats.Flags & 1) == 1 ? "Female" : "Male";
                 properties.Add(new EsmPropertyEntry { Name = "Gender", Value = gender, Category = "Characteristics" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Level", Value = stats.Level.ToString(), Category = "Attributes" });
+                { Name = "Level", Value = stats.Level.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Fatigue", Value = stats.FatigueBase.ToString(), Category = "Attributes" });
+                { Name = "Fatigue", Value = stats.FatigueBase.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Speed Multiplier", Value = $"{stats.SpeedMultiplier}%", Category = "Attributes" });
+                { Name = "Speed Multiplier", Value = $"{stats.SpeedMultiplier}%", Category = "Attributes" });
 
                 // NPC-only fields (creatures don't have barter gold, karma, disposition)
                 if (isNpc)
                 {
                     properties.Add(new EsmPropertyEntry
-                        { Name = "Barter Gold", Value = stats.BarterGold.ToString(), Category = "Attributes" });
+                    { Name = "Barter Gold", Value = stats.BarterGold.ToString(), Category = "Attributes" });
                     properties.Add(new EsmPropertyEntry
-                        { Name = "Karma", Value = $"{stats.KarmaAlignment:F2}", Category = "Attributes" });
+                    { Name = "Karma", Value = $"{stats.KarmaAlignment:F2}", Category = "Attributes" });
                     properties.Add(new EsmPropertyEntry
-                        { Name = "Disposition", Value = stats.DispositionBase.ToString(), Category = "Attributes" });
+                    { Name = "Disposition", Value = stats.DispositionBase.ToString(), Category = "Attributes" });
                 }
 
                 continue;
@@ -689,18 +689,20 @@ internal static partial class EsmBrowserTreeBuilder
             if (value is NpcAiData ai)
             {
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Aggression", Value = $"{ai.AggressionName} ({ai.Aggression})", Category = "AI" });
+                { Name = "Aggression", Value = $"{ai.AggressionName} ({ai.Aggression})", Category = "AI" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Confidence", Value = $"{ai.ConfidenceName} ({ai.Confidence})", Category = "AI" });
+                { Name = "Confidence", Value = $"{ai.ConfidenceName} ({ai.Confidence})", Category = "AI" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Mood", Value = $"{ai.MoodName} ({ai.Mood})", Category = "AI" });
+                { Name = "Mood", Value = $"{ai.MoodName} ({ai.Mood})", Category = "AI" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Assistance", Value = $"{ai.AssistanceName} ({ai.Assistance})", Category = "AI" });
+                { Name = "Assistance", Value = $"{ai.AssistanceName} ({ai.Assistance})", Category = "AI" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Energy Level", Value = ai.EnergyLevel.ToString(), Category = "AI" });
+                { Name = "Energy Level", Value = ai.EnergyLevel.ToString(), Category = "AI" });
                 properties.Add(new EsmPropertyEntry
                 {
-                    Name = "Responsibility", Value = $"{ai.ResponsibilityName} ({ai.Responsibility})", Category = "AI"
+                    Name = "Responsibility",
+                    Value = $"{ai.ResponsibilityName} ({ai.Responsibility})",
+                    Category = "AI"
                 });
                 continue;
             }
@@ -712,7 +714,7 @@ internal static partial class EsmBrowserTreeBuilder
                 var formatted = $"{special[0]} ST, {special[1]} PE, {special[2]} EN, {special[3]} CH, " +
                                 $"{special[4]} IN, {special[5]} AG, {special[6]} LK  (Total: {total})";
                 properties.Add(new EsmPropertyEntry
-                    { Name = "S.P.E.C.I.A.L.", Value = formatted, Category = "Attributes" });
+                { Name = "S.P.E.C.I.A.L.", Value = formatted, Category = "Attributes" });
                 continue;
             }
 
@@ -854,18 +856,18 @@ internal static partial class EsmBrowserTreeBuilder
             if (crea.CombatSkill > 0 || crea.MagicSkill > 0 || crea.StealthSkill > 0)
             {
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Combat Skill", Value = crea.CombatSkill.ToString(), Category = "Attributes" });
+                { Name = "Combat Skill", Value = crea.CombatSkill.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Magic Skill", Value = crea.MagicSkill.ToString(), Category = "Attributes" });
+                { Name = "Magic Skill", Value = crea.MagicSkill.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Stealth Skill", Value = crea.StealthSkill.ToString(), Category = "Attributes" });
+                { Name = "Stealth Skill", Value = crea.StealthSkill.ToString(), Category = "Attributes" });
             }
 
             // Show attack damage if set
             if (crea.AttackDamage != 0)
             {
                 properties.Add(new EsmPropertyEntry
-                    { Name = "Attack Damage", Value = crea.AttackDamage.ToString(), Category = "Attributes" });
+                { Name = "Attack Damage", Value = crea.AttackDamage.ToString(), Category = "Attributes" });
             }
         }
 

@@ -1,4 +1,4 @@
-﻿using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 

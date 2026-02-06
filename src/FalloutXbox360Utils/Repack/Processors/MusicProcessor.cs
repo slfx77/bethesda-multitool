@@ -44,8 +44,7 @@ public sealed class MusicProcessor : IRepackProcessor
             return 0;
         }
 
-        var converter = new XmaMp3Converter();
-        if (!converter.IsAvailable)
+        if (!XmaMp3Converter.IsAvailable)
         {
             progress.Report(new RepackerProgress
             {
@@ -96,7 +95,7 @@ public sealed class MusicProcessor : IRepackProcessor
                     }
 
                     var xmaData = await File.ReadAllBytesAsync(sourceFile, cancellationToken);
-                    var result = await converter.ConvertAsync(xmaData);
+                    var result = await XmaMp3Converter.ConvertAsync(xmaData);
 
                     if (result.Success && result.OutputData != null)
                     {

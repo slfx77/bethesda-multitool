@@ -8,6 +8,52 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 public sealed partial class SemanticReconstructor
 {
+    #region Map Markers
+
+    /// <summary>
+    ///     Extract map markers from REFR records that have the XMRK subrecord.
+    /// </summary>
+    public List<PlacedReference> ExtractMapMarkers()
+    {
+        var markers = new List<PlacedReference>();
+
+        // Map markers come from REFR records with XMRK subrecord
+        foreach (var refr in _scanResult.RefrRecords)
+        {
+            if (!refr.IsMapMarker)
+            {
+                continue;
+            }
+
+            var marker = new PlacedReference
+            {
+                FormId = refr.Header.FormId,
+                BaseFormId = refr.BaseFormId,
+                BaseEditorId = refr.BaseEditorId ?? GetEditorId(refr.BaseFormId),
+                RecordType = refr.Header.RecordType,
+                X = refr.Position?.X ?? 0,
+                Y = refr.Position?.Y ?? 0,
+                Z = refr.Position?.Z ?? 0,
+                RotX = refr.Position?.RotX ?? 0,
+                RotY = refr.Position?.RotY ?? 0,
+                RotZ = refr.Position?.RotZ ?? 0,
+                Scale = refr.Scale,
+                OwnerFormId = refr.OwnerFormId,
+                IsMapMarker = true,
+                MarkerType = refr.MarkerType.HasValue ? (MapMarkerType)refr.MarkerType.Value : null,
+                MarkerName = refr.MarkerName,
+                Offset = refr.Header.Offset,
+                IsBigEndian = refr.Header.IsBigEndian
+            };
+
+            markers.Add(marker);
+        }
+
+        return markers;
+    }
+
+    #endregion
+
     #region Cells
 
     /// <summary>
@@ -295,52 +341,6 @@ public sealed partial class SemanticReconstructor
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
-    }
-
-    #endregion
-
-    #region Map Markers
-
-    /// <summary>
-    ///     Extract map markers from REFR records that have the XMRK subrecord.
-    /// </summary>
-    public List<PlacedReference> ExtractMapMarkers()
-    {
-        var markers = new List<PlacedReference>();
-
-        // Map markers come from REFR records with XMRK subrecord
-        foreach (var refr in _scanResult.RefrRecords)
-        {
-            if (!refr.IsMapMarker)
-            {
-                continue;
-            }
-
-            var marker = new PlacedReference
-            {
-                FormId = refr.Header.FormId,
-                BaseFormId = refr.BaseFormId,
-                BaseEditorId = refr.BaseEditorId ?? GetEditorId(refr.BaseFormId),
-                RecordType = refr.Header.RecordType,
-                X = refr.Position?.X ?? 0,
-                Y = refr.Position?.Y ?? 0,
-                Z = refr.Position?.Z ?? 0,
-                RotX = refr.Position?.RotX ?? 0,
-                RotY = refr.Position?.RotY ?? 0,
-                RotZ = refr.Position?.RotZ ?? 0,
-                Scale = refr.Scale,
-                OwnerFormId = refr.OwnerFormId,
-                IsMapMarker = true,
-                MarkerType = refr.MarkerType.HasValue ? (MapMarkerType)refr.MarkerType.Value : null,
-                MarkerName = refr.MarkerName,
-                Offset = refr.Header.Offset,
-                IsBigEndian = refr.Header.IsBigEndian
-            };
-
-            markers.Add(marker);
-        }
-
-        return markers;
     }
 
     #endregion

@@ -1,4 +1,4 @@
-﻿namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 
 /// <summary>
 ///     Fully reconstructed dialogue response from INFO record.

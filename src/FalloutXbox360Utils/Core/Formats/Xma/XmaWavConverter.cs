@@ -7,24 +7,11 @@ namespace FalloutXbox360Utils.Core.Formats.Xma;
 /// <summary>
 ///     XMA to WAV conversion using FFmpeg with stdin/stdout pipes.
 /// </summary>
-internal sealed class XmaWavConverter
+internal static class XmaWavConverter
 {
     private static readonly Logger Log = Logger.Instance;
 
-    public XmaWavConverter()
-    {
-        if (!FfmpegLocator.IsAvailable)
-        {
-            Log.Debug("[XmaWavConverter] FFmpeg not found - XMA to WAV conversion disabled");
-            Log.Debug("[XmaWavConverter] Install FFmpeg and add to PATH for XMA -> WAV conversion");
-        }
-        else
-        {
-            Log.Debug($"[XmaWavConverter] FFmpeg found at: {FfmpegLocator.FfmpegPath}");
-        }
-    }
-
-    public bool IsAvailable => FfmpegLocator.IsAvailable;
+    public static bool IsAvailable => FfmpegLocator.IsAvailable;
 
     /// <summary>
     ///     Convert XMA audio to WAV format.
@@ -32,7 +19,7 @@ internal sealed class XmaWavConverter
     /// </summary>
     /// <param name="xmaData">XMA audio data</param>
     /// <returns>Conversion result with WAV data</returns>
-    public async Task<ConversionResult> ConvertAsync(byte[] xmaData)
+    public static async Task<ConversionResult> ConvertAsync(byte[] xmaData)
     {
         if (!FfmpegLocator.IsAvailable)
         {

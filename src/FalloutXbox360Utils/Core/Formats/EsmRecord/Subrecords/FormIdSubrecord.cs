@@ -1,4 +1,4 @@
-﻿namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
 
 /// <summary>
 ///     Generic FormID reference subrecord (SCRI, ENAM, SNAM, QNAM, etc.).

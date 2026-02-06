@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 namespace FalloutXbox360Utils.Core.Converters.Esm;
@@ -335,11 +335,14 @@ internal sealed class EsmInfoMerger
         var hasNam1 = subs.Any(s => s.Signature == "NAM1");
         var hasNam2 = subs.Any(s => s.Signature == "NAM2");
 
-        return hasData || hasQsti || hasCtda || hasTclt || hasPnam
-            ? InfoRecordRole.Base
-            : hasTrdt || hasNam1 || hasNam2
-                ? InfoRecordRole.Response
-                : InfoRecordRole.Unknown;
+        if (hasData || hasQsti || hasCtda || hasTclt || hasPnam)
+        {
+            return InfoRecordRole.Base;
+        }
+
+        return hasTrdt || hasNam1 || hasNam2
+            ? InfoRecordRole.Response
+            : InfoRecordRole.Unknown;
     }
 
     private byte[]? BuildMergedInfoSubrecords(List<AnalyzerSubrecordInfo> baseSubs,

@@ -126,7 +126,6 @@ public sealed class BsaProcessor : IRepackProcessor
         CancellationToken cancellationToken)
     {
         var bsaName = Path.GetFileName(sourceBsaPath);
-        var xmaConverter = new XmaOggConverter();
         DdxSubprocessConverter? ddxConverter = null;
 
         try
@@ -207,7 +206,7 @@ public sealed class BsaProcessor : IRepackProcessor
         }
 
         // Phase 2a: Convert XMA files using batch mode (single FFmpeg script)
-        if (xmaFiles.Count > 0 && xmaConverter.IsAvailable)
+        if (xmaFiles.Count > 0 && XmaOggConverter.IsAvailable)
         {
             progress.Report(new RepackerProgress
             {

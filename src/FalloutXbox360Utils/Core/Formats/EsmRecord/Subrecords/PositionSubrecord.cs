@@ -1,4 +1,4 @@
-﻿namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
 
 /// <summary>
 ///     DATA subrecord with position and rotation.

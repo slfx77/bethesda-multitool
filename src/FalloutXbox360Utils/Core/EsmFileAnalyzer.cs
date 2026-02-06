@@ -11,12 +11,12 @@ namespace FalloutXbox360Utils.Core;
 ///     Analyzes complete ESM/ESP files for the Single File Analysis tab.
 ///     Uses EsmParser directly instead of fragment scanning.
 /// </summary>
-public sealed class EsmFileAnalyzer
+public static class EsmFileAnalyzer
 {
     /// <summary>
     ///     Analyzes an ESM/ESP file and returns results compatible with the existing UI.
     /// </summary>
-    public async Task<AnalysisResult> AnalyzeAsync(
+    public static async Task<AnalysisResult> AnalyzeAsync(
         string filePath,
         IProgress<AnalysisProgress>? progress = null,
         CancellationToken cancellationToken = default)
@@ -371,10 +371,7 @@ public sealed class EsmFileAnalyzer
         }
 
         // Add all GRUP headers (24 bytes each)
-        foreach (var grup in grupHeaders)
-        {
-            allRegions.Add((grup.Offset, grup.Offset + GrupHeaderInfo.HeaderSize, "GRUP", true));
-        }
+        allRegions.AddRange(grupHeaders.Select(grup => (grup.Offset, grup.Offset + GrupHeaderInfo.HeaderSize, "GRUP", true)));
 
         // Group consecutive regions by type to reduce region count
         // This dramatically improves hex viewer scrolling performance

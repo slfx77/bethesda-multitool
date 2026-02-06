@@ -8,24 +8,11 @@ namespace FalloutXbox360Utils.Core.Formats.Xma;
 ///     XMA to OGG Vorbis conversion using FFmpeg with stdin/stdout pipes.
 ///     PC version of Fallout: New Vegas uses OGG Vorbis for audio (mono, 24kHz for dialogue).
 /// </summary>
-internal sealed class XmaOggConverter
+internal static class XmaOggConverter
 {
     private static readonly Logger Log = Logger.Instance;
 
-    public XmaOggConverter()
-    {
-        if (!FfmpegLocator.IsAvailable)
-        {
-            Log.Debug("[XmaOggConverter] FFmpeg not found - XMA to OGG conversion disabled");
-            Log.Debug("[XmaOggConverter] Install FFmpeg and add to PATH for XMA -> OGG conversion");
-        }
-        else
-        {
-            Log.Debug($"[XmaOggConverter] FFmpeg found at: {FfmpegLocator.FfmpegPath}");
-        }
-    }
-
-    public bool IsAvailable => FfmpegLocator.IsAvailable;
+    public static bool IsAvailable => FfmpegLocator.IsAvailable;
 
     /// <summary>
     ///     Convert XMA audio to OGG Vorbis format matching PC game settings.
@@ -35,7 +22,7 @@ internal sealed class XmaOggConverter
     /// <param name="targetSampleRate">Target sample rate (default 0 = preserve original)</param>
     /// <param name="targetBitrate">Target bitrate in kbps (default 0 = quality-based VBR)</param>
     /// <returns>Conversion result with OGG data</returns>
-    public async Task<ConversionResult> ConvertAsync(byte[] xmaData, int targetSampleRate = 0, int targetBitrate = 0)
+    public static async Task<ConversionResult> ConvertAsync(byte[] xmaData, int targetSampleRate = 0, int targetBitrate = 0)
     {
         if (!FfmpegLocator.IsAvailable)
         {

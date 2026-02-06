@@ -1,4 +1,4 @@
-﻿using System.IO.MemoryMappedFiles;
+using System.IO.MemoryMappedFiles;
 using Windows.UI;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats;

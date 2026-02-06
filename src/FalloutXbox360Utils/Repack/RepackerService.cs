@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Repack;
 /// <summary>
 ///     Service that orchestrates the Xbox 360 to PC conversion process.
 /// </summary>
-public sealed class RepackerService
+public static class RepackerService
 {
     /// <summary>
     ///     Validates that the source folder is a valid Xbox 360 FalloutNV installation.
@@ -66,7 +66,7 @@ public sealed class RepackerService
     /// <summary>
     ///     Runs the full repacking process.
     /// </summary>
-    public async Task<RepackResult> RepackAsync(
+    public static async Task<RepackResult> RepackAsync(
         RepackerOptions options,
         IProgress<RepackerProgress> progress,
         CancellationToken cancellationToken = default)

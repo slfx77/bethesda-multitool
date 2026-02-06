@@ -1,10 +1,8 @@
 using System.Buffers;
 using System.Buffers.Binary;
-using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
 using SubrecordEntry = FalloutXbox360Utils.Core.Utils.ParsedSubrecord;
 
@@ -12,6 +10,45 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 public sealed partial class EsmRecordFormat
 {
+    #region Subrecord Iteration
+
+    /// <summary>
+    ///     Iterates through subrecords in a record's data section.
+    ///     Uses the shared utility from EsmSubrecordUtils.
+    /// </summary>
+    private static IEnumerable<SubrecordEntry> IterateSubrecords(byte[] data, int dataSize, bool bigEndian)
+    {
+        return EsmSubrecordUtils.IterateSubrecords(data, dataSize, bigEndian);
+    }
+
+    #endregion
+
+    #region Subrecord Length Helpers
+
+    /// <summary>
+    ///     Get subrecord length, trying both endianness.
+    /// </summary>
+    private static ushort GetSubrecordLength(byte[] data, int offset, int maxLen)
+    {
+        var lenLe = BinaryUtils.ReadUInt16LE(data, offset);
+        var lenBe = BinaryUtils.ReadUInt16BE(data, offset);
+
+        // Prefer LE if it's valid
+        if (lenLe > 0 && lenLe <= maxLen)
+        {
+            return lenLe;
+        }
+
+        if (lenBe > 0 && lenBe <= maxLen)
+        {
+            return lenBe;
+        }
+
+        return 0;
+    }
+
+    #endregion
+
     #region Record Scanning
 
     public static EsmRecordScanResult ScanForRecords(byte[] data)
@@ -157,6 +194,7 @@ public sealed partial class EsmRecordFormat
 
                 // Scan this chunk - optimized with single magic read + switch + smart byte skipping
                 var bufferSpan = buffer.AsSpan(0, toRead);
+#pragma warning disable S127 // Loop counter modified in body - intentional skip-ahead in binary parsing
                 for (var i = 0; i <= searchLimit; i++)
                 {
                     // Skip offsets inside excluded ranges (e.g., module memory)
@@ -276,6 +314,7 @@ public sealed partial class EsmRecordFormat
                             break;
                     }
                 }
+#pragma warning restore S127
 
                 offset += chunkSize;
             }
@@ -286,19 +325,6 @@ public sealed partial class EsmRecordFormat
         }
 
         return result;
-    }
-
-    #endregion
-
-    #region Subrecord Iteration
-
-    /// <summary>
-    ///     Iterates through subrecords in a record's data section.
-    ///     Uses the shared utility from EsmSubrecordUtils.
-    /// </summary>
-    private static IEnumerable<SubrecordEntry> IterateSubrecords(byte[] data, int dataSize, bool bigEndian)
-    {
-        return EsmSubrecordUtils.IterateSubrecords(data, dataSize, bigEndian);
     }
 
     #endregion
@@ -454,32 +480,6 @@ public sealed partial class EsmRecordFormat
                 // Return total record size: 24-byte header + data size
                 return 24 + (int)header.DataSize;
             }
-        }
-
-        return 0;
-    }
-
-    #endregion
-
-    #region Subrecord Length Helpers
-
-    /// <summary>
-    ///     Get subrecord length, trying both endianness.
-    /// </summary>
-    private static ushort GetSubrecordLength(byte[] data, int offset, int maxLen)
-    {
-        var lenLe = BinaryUtils.ReadUInt16LE(data, offset);
-        var lenBe = BinaryUtils.ReadUInt16BE(data, offset);
-
-        // Prefer LE if it's valid
-        if (lenLe > 0 && lenLe <= maxLen)
-        {
-            return lenLe;
-        }
-
-        if (lenBe > 0 && lenBe <= maxLen)
-        {
-            return lenBe;
         }
 
         return 0;

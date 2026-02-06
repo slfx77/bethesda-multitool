@@ -7,7 +7,9 @@ namespace FalloutXbox360Utils.Core;
 ///     Simple logger with verbosity levels. Thread-safe singleton pattern.
 ///     Uses Spectre.Console for output to integrate with CLI formatting.
 /// </summary>
+#pragma warning disable CA1001 // Logger is a singleton that manages its own disposable StreamWriter lifetime
 public sealed class Logger
+#pragma warning restore CA1001
 {
     private static Logger? _instance;
     private static readonly Lock SyncLock = new();

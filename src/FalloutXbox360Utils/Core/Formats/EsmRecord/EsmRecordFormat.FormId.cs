@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;

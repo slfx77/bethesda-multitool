@@ -201,7 +201,7 @@ public class MinidumpInfo
         return Modules.FirstOrDefault(m =>
         {
             var nameLower = m.Name.ToLowerInvariant();
-            return nameLower.Contains("fallout") && nameLower.EndsWith(".exe");
+            return nameLower.Contains("fallout") && nameLower.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
         });
     }
 

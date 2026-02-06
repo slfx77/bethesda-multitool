@@ -56,9 +56,9 @@ public static class EsmStringUtils
         }
 
         var printable = 0;
-        foreach (var b in data)
+        for (var i = 0; i < data.Length; i++)
         {
-            if (b is >= 32 and <= 126 or (byte)'\n' or (byte)'\r' or (byte)'\t')
+            if (data[i] is >= 32 and <= 126 or (byte)'\n' or (byte)'\r' or (byte)'\t')
             {
                 printable++;
             }

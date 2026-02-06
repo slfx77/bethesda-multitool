@@ -182,12 +182,14 @@ public partial class DdxSubprocessConverter
     ///     3-channel DXT5 format with specular in alpha for PC compatibility.
     /// </param>
     /// <returns>Batch conversion result with statistics.</returns>
+#pragma warning disable CA1068 // CancellationToken parameter ordering - reordering would break existing callers
     public async Task<BatchConversionResult> ConvertBatchAsync(
         string inputDir,
         string outputDir,
         BatchProgressCallback? progressCallback = null,
         CancellationToken cancellationToken = default,
         bool pcFriendly = false)
+#pragma warning restore CA1068
     {
         var result = new BatchConversionResult();
 
@@ -250,7 +252,7 @@ public partial class DdxSubprocessConverter
             // Parse "[PROGRESS] DONE converted failed unsupported" line
             var doneMatch = doneRegex.Match(e.Data);
             if (doneMatch.Success)
-                // Final stats from DDXConv (we track our own, but can verify)
+            // Final stats from DDXConv (we track our own, but can verify)
             {
                 return;
             }

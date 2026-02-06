@@ -29,7 +29,7 @@ public class NpcParsingTests
         _output.WriteLine($"First 20 bytes: {BitConverter.ToString(recordData.Take(20).ToArray())}");
 
         // Act - Parse with EsmParser
-        var subrecords = EsmParser.ParseSubrecords(recordData, false);
+        var subrecords = EsmParser.ParseSubrecords(recordData);
 
         // Assert
         _output.WriteLine($"Found {subrecords.Count} subrecords:");

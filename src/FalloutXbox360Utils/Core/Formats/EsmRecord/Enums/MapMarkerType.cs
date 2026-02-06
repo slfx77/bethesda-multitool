@@ -1,4 +1,4 @@
-﻿namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
 
 /// <summary>
 ///     Map marker type enum values from the game.

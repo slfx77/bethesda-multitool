@@ -1,4 +1,4 @@
-﻿using FalloutXbox360Utils.Core.Converters.Esm.Schema;
+using FalloutXbox360Utils.Core.Converters.Esm.Schema;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using FalloutXbox360Utils.Core.Utils;
 

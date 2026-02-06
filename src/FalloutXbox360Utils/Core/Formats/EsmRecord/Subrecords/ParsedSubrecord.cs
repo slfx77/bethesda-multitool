@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;

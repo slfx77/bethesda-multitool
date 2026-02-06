@@ -179,7 +179,7 @@ public sealed partial class SingleFileTab : UserControl
             // Fork based on file type
             _analysisResult = fileType switch
             {
-                AnalysisFileType.EsmFile => await new EsmFileAnalyzer().AnalyzeAsync(filePath, progress),
+                AnalysisFileType.EsmFile => await EsmFileAnalyzer.AnalyzeAsync(filePath, progress),
                 AnalysisFileType.Minidump => await new MemoryDumpAnalyzer().AnalyzeAsync(filePath, progress),
                 _ => throw new NotSupportedException($"Unknown file type: {filePath}")
             };
@@ -245,7 +245,7 @@ public sealed partial class SingleFileTab : UserControl
             {
                 StatusTextBlock.Text = Strings.Status_RunningCoverageAnalysis;
                 _session.CoverageResult = await Task.Run(() =>
-                    new CoverageAnalyzer().Analyze(_session.AnalysisResult!, _session.Accessor!));
+                    CoverageAnalyzer.Analyze(_session.AnalysisResult!, _session.Accessor!));
 
                 if (_session.CoverageResult.Error == null)
                 {

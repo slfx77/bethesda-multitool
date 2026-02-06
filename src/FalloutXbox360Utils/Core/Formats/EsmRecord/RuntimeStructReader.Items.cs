@@ -485,7 +485,7 @@ public sealed partial class RuntimeStructReader
         return (value, health, weight, damage, clipSize);
     }
 
-    private static (WeaponType WeaponType, uint AnimationType, float Speed, float Reach,
+    private static (Enums.WeaponType WeaponType, uint AnimationType, float Speed, float Reach,
         float MinSpread, float Spread, float MinRange, float MaxRange,
         byte VatsChance, float ActionPoints, float ShotsPerSec) ReadWeaponCombatFields(byte[] buffer)
     {

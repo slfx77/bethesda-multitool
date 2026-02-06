@@ -861,5 +861,4 @@ public static partial class FaceGenControls
             0.02983318f, 0.03365415f
         }
     };
-
 }

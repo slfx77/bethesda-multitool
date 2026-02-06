@@ -1,4 +1,4 @@
-﻿namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
 
 /// <summary>
 ///     Categories for main record types.

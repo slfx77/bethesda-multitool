@@ -257,14 +257,7 @@ internal sealed partial class RuntimeBufferAnalyzer
         }
 
         // Path separators - require additional evidence to avoid false positives
-        var separatorCount = 0;
-        foreach (var c in s)
-        {
-            if (c is '\\' or '/')
-            {
-                separatorCount++;
-            }
-        }
+        var separatorCount = s.Count(c => c is '\\' or '/');
 
         if (separatorCount == 0)
         {

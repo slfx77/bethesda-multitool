@@ -29,6 +29,10 @@ dotnet_diagnostic.ca1305.severity = none
 # Suppress CA1720: Domain-specific identifiers (UInt8, Int32, Float) are intentional ESM field type names
 dotnet_diagnostic.ca1720.severity = none
 
+# Suppress CA1711/S2344: [Flags] enums with "Flags" suffix are intentional
+dotnet_diagnostic.CA1711.severity = none
+dotnet_diagnostic.S2344.severity = none
+
 # Unused code detection (enable as warnings)
 dotnet_diagnostic.ide0051.severity = warning # Unused private member
 dotnet_diagnostic.ide0052.severity = warning # Unread private member

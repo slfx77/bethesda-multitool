@@ -27,7 +27,7 @@ public sealed class BsaExtractor : IDisposable
     private bool _verbose;
 
     // XMA needs special handling since it uses XmaOggConverter, not XmaFormat's WAV converter
-    private XmaOggConverter? _xmaOggConverter;
+    private bool _xmaConversionEnabled;
 
     /// <summary>
     ///     Create an extractor for a BSA archive.
@@ -64,7 +64,7 @@ public sealed class BsaExtractor : IDisposable
     public bool DdxConversionEnabled => _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null;
 
     /// <summary>Whether XMA conversion is enabled and available.</summary>
-    public bool XmaConversionEnabled => _enabledExtensions.Contains(".xma") && _xmaOggConverter?.IsAvailable == true;
+    public bool XmaConversionEnabled => _enabledExtensions.Contains(".xma") && XmaOggConverter.IsAvailable;
 
     /// <summary>Whether NIF conversion is enabled and available.</summary>
     public bool NifConversionEnabled => _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null;
@@ -135,12 +135,13 @@ public sealed class BsaExtractor : IDisposable
         }
 
         // XMA uses special XmaOggConverter for OGG output (not the default WAV from XmaFormat)
-        _xmaOggConverter ??= new XmaOggConverter();
-        if (!_xmaOggConverter.IsAvailable)
+        if (!XmaOggConverter.IsAvailable)
         {
-            _xmaOggConverter = null;
+            _xmaConversionEnabled = false;
             return false;
         }
+
+        _xmaConversionEnabled = true;
 
         _enabledExtensions.Add(".xma");
         return true;
@@ -153,12 +154,12 @@ public sealed class BsaExtractor : IDisposable
     /// <returns>Conversion result with OGG data if successful.</returns>
     public async Task<ConversionResult> ConvertXmaAsync(byte[] xmaData)
     {
-        if (_xmaOggConverter == null)
+        if (!_xmaConversionEnabled)
         {
             return new ConversionResult { Success = false, Notes = "XMA converter not initialized" };
         }
 
-        return await _xmaOggConverter.ConvertAsync(xmaData);
+        return await XmaOggConverter.ConvertAsync(xmaData);
     }
 
     /// <summary>
@@ -216,7 +217,7 @@ public sealed class BsaExtractor : IDisposable
 
         var metadata = parseResult.Metadata;
         if (!converter.CanConvert("nif", metadata))
-            // Already little-endian (PC format), no conversion needed
+        // Already little-endian (PC format), no conversion needed
         {
             return new ConversionResult
             {
@@ -326,12 +327,10 @@ public sealed class BsaExtractor : IDisposable
             }
         }
 
-        {
-            // Uncompressed - just read the data
-            var result = new byte[dataSize];
-            accessor.ReadArray(0, result, 0, dataSize);
-            return result;
-        }
+        // Uncompressed - just read the data
+        var uncompressedResult = new byte[dataSize];
+        accessor.ReadArray(0, uncompressedResult, 0, dataSize);
+        return uncompressedResult;
     }
 
     /// <summary>
@@ -419,7 +418,7 @@ public sealed class BsaExtractor : IDisposable
         {
             ".ddx" when _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null
                 => ("DDX->DDS", ".dds"),
-            ".xma" when _enabledExtensions.Contains(".xma") && _xmaOggConverter?.IsAvailable == true
+            ".xma" when _enabledExtensions.Contains(".xma") && XmaOggConverter.IsAvailable
                 => ("XMA->OGG", ".ogg"),
             ".nif" when _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null
                 => ("NIF BE->LE", null), // NIF keeps same extension

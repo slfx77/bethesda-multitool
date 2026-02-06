@@ -90,14 +90,13 @@ public static class CoverageCommand
         using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
         {
-            var coverageAnalyzer = new CoverageAnalyzer();
-            coverage = coverageAnalyzer.Analyze(result, accessor);
+            coverage = CoverageAnalyzer.Analyze(result, accessor);
 
             // Phase 3: PDB-guided analysis (optional)
             if (pdbPath != null)
             {
                 AnsiConsole.MarkupLine("[blue]Running PDB global analysis...[/]");
-                coverage.PdbAnalysis = coverageAnalyzer.AnalyzePdbGlobals(result, accessor, pdbPath);
+                coverage.PdbAnalysis = CoverageAnalyzer.AnalyzePdbGlobals(result, accessor, pdbPath);
             }
         }
 

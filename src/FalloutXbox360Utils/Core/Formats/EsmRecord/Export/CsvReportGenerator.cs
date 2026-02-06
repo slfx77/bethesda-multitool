@@ -1,6 +1,3 @@
-using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
 
 /// <summary>

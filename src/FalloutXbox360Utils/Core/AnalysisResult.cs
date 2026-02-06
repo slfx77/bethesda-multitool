@@ -1,4 +1,4 @@
-﻿using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Minidump;
 

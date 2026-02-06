@@ -126,8 +126,8 @@ public sealed class ScdaFormat : FileFormatBase, IDumpScanner
                 var chunkRecords = ScanChunkForRecords(buffer, toRead, offset);
 
                 foreach (var record in chunkRecords)
-                    // Only add records that start within the main chunk area (not in overlap)
-                    // unless this is the last chunk
+                // Only add records that start within the main chunk area (not in overlap)
+                // unless this is the last chunk
                 {
                     if (record.Offset - offset < chunkSize || offset + chunkSize >= fileSize)
                     {

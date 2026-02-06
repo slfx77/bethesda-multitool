@@ -97,14 +97,14 @@ public static partial class SubrecordSchemaRegistry
 
         // SCHR - Script Header (20 bytes)
         schemas[new SchemaKey("SCHR", null, 20)] = new SubrecordSchema(
-                F.Padding(4),
-                F.UInt32("RefCount"),
-                F.UInt32("CompiledSize"),
-                F.UInt32("VariableCount"),
-                F.Padding(4))
-            {
-                Description = "Script Header"
-            };
+            F.Padding(4),
+            F.UInt32("RefCount"),
+            F.UInt32("CompiledSize"),
+            F.UInt32("VariableCount"),
+            F.Padding(4))
+        {
+            Description = "Script Header"
+        };
 
         // SLSD - Script Local Variable Data (24 bytes)
         schemas[new SchemaKey("SLSD", null, 24)] = new SubrecordSchema(

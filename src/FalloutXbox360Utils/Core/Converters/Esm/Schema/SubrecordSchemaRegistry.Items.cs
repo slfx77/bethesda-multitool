@@ -291,30 +291,30 @@ public static partial class SubrecordSchemaRegistry
 
         // DATA - PROJ (84 bytes)
         schemas[new SchemaKey("DATA", "PROJ", 84)] = new SubrecordSchema(
-                F.UInt32("FlagsAndType"),
-                F.Float("Gravity"),
-                F.Float("Speed"),
-                F.Float("Range"),
-                F.FormIdLittleEndian("Light"),
-                F.FormIdLittleEndian("MuzzleFlashLight"),
-                F.Float("TracerChance"),
-                F.Float("ExplosionAltTriggerProximity"),
-                F.Float("ExplosionAltTriggerTimer"),
-                F.FormIdLittleEndian("Explosion"),
-                F.FormIdLittleEndian("Sound"),
-                F.Float("MuzzleFlashDuration"),
-                F.Float("FadeDuration"),
-                F.Float("ImpactForce"),
-                F.FormIdLittleEndian("SoundCountdown"),
-                F.FormIdLittleEndian("SoundDisable"),
-                F.FormIdLittleEndian("DefaultWeaponSource"),
-                F.Float("RotationX"),
-                F.Float("RotationY"),
-                F.Float("RotationZ"),
-                F.Float("BouncyMult"))
-            {
-                Description = "Projectile Data"
-            };
+            F.UInt32("FlagsAndType"),
+            F.Float("Gravity"),
+            F.Float("Speed"),
+            F.Float("Range"),
+            F.FormIdLittleEndian("Light"),
+            F.FormIdLittleEndian("MuzzleFlashLight"),
+            F.Float("TracerChance"),
+            F.Float("ExplosionAltTriggerProximity"),
+            F.Float("ExplosionAltTriggerTimer"),
+            F.FormIdLittleEndian("Explosion"),
+            F.FormIdLittleEndian("Sound"),
+            F.Float("MuzzleFlashDuration"),
+            F.Float("FadeDuration"),
+            F.Float("ImpactForce"),
+            F.FormIdLittleEndian("SoundCountdown"),
+            F.FormIdLittleEndian("SoundDisable"),
+            F.FormIdLittleEndian("DefaultWeaponSource"),
+            F.Float("RotationX"),
+            F.Float("RotationY"),
+            F.Float("RotationZ"),
+            F.Float("BouncyMult"))
+        {
+            Description = "Projectile Data"
+        };
 
         // NAM2 - Model Info in PROJ
         schemas[new SchemaKey("NAM2", "PROJ")] = SubrecordSchema.ByteArray;

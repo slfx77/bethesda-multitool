@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Converters.Esm.Schema;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using static FalloutXbox360Utils.Core.Converters.Esm.EsmEndianHelpers;
@@ -393,12 +393,10 @@ public sealed class EsmConverter : IDisposable
 
         foreach (var wrld in outputWrlds)
         {
-            if (!indexExteriorCellsByWorld.TryGetValue(wrld.FormId, out var exteriorCells))
+            if (!indexExteriorCellsByWorld.TryGetValue(wrld.FormId, out var exteriorCells)
+                && !outputExteriorCellsByWorld.TryGetValue(wrld.FormId, out exteriorCells))
             {
-                if (!outputExteriorCellsByWorld.TryGetValue(wrld.FormId, out exteriorCells))
-                {
-                    exteriorCells = [];
-                }
+                exteriorCells = [];
             }
 
             if (fallbackExteriorCells.Count == 0 && exteriorCells.Count == 0)
@@ -754,15 +752,7 @@ public sealed class EsmConverter : IDisposable
             return false;
         }
 
-        foreach (var ch in signature)
-        {
-            if (ch is (< 'A' or > 'Z') and (< '0' or > '9'))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return !signature.Any(ch => ch is (< 'A' or > 'Z') and (< '0' or > '9'));
     }
 
     private bool TryResyncToNextGrup(ref int inputOffset)

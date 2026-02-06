@@ -163,35 +163,35 @@ public sealed partial class SemanticReconstructor
                     topicFormId = ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "TCLT" when sub.DataLength == 4:
-                {
-                    var tcltFormId = ReadFormId(subData, record.IsBigEndian);
-                    if (tcltFormId != 0)
                     {
-                        linkToTopics.Add(tcltFormId);
-                    }
+                        var tcltFormId = ReadFormId(subData, record.IsBigEndian);
+                        if (tcltFormId != 0)
+                        {
+                            linkToTopics.Add(tcltFormId);
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 case "TCLF" when sub.DataLength == 4:
-                {
-                    var tclfFormId = ReadFormId(subData, record.IsBigEndian);
-                    if (tclfFormId != 0)
                     {
-                        linkFromTopics.Add(tclfFormId);
-                    }
+                        var tclfFormId = ReadFormId(subData, record.IsBigEndian);
+                        if (tclfFormId != 0)
+                        {
+                            linkFromTopics.Add(tclfFormId);
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 case "NAME" when sub.DataLength == 4:
-                {
-                    var nameFormId = ReadFormId(subData, record.IsBigEndian);
-                    if (nameFormId != 0)
                     {
-                        addTopics.Add(nameFormId);
-                    }
+                        var nameFormId = ReadFormId(subData, record.IsBigEndian);
+                        if (nameFormId != 0)
+                        {
+                            addTopics.Add(nameFormId);
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 case "DNAM" when sub.DataLength >= 4:
                     difficulty = record.IsBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
@@ -322,13 +322,10 @@ public sealed partial class SemanticReconstructor
         // Detect DIAL FormType by finding RuntimeEditorId entries matching known DIAL FormIDs
         byte? dialFormType = null;
         var formTypeCounts = new Dictionary<byte, int>();
-        foreach (var entry in _scanResult.RuntimeEditorIds)
+        foreach (var formType in _scanResult.RuntimeEditorIds.Where(entry => knownDialFormIds.Contains(entry.FormId)).Select(entry => entry.FormType))
         {
-            if (knownDialFormIds.Contains(entry.FormId))
-            {
-                formTypeCounts.TryGetValue(entry.FormType, out var count);
-                formTypeCounts[entry.FormType] = count + 1;
-            }
+            formTypeCounts.TryGetValue(formType, out var count);
+            formTypeCounts[formType] = count + 1;
         }
 
         if (formTypeCounts.Count > 0)
@@ -778,13 +775,10 @@ public sealed partial class SemanticReconstructor
         var knownDialFormIds = new HashSet<uint>(topics.Select(t => t.FormId));
         var formTypeCounts = new Dictionary<byte, int>();
 
-        foreach (var entry in _scanResult.RuntimeEditorIds)
+        foreach (var formType in _scanResult.RuntimeEditorIds.Where(entry => knownDialFormIds.Contains(entry.FormId)).Select(entry => entry.FormType))
         {
-            if (knownDialFormIds.Contains(entry.FormId))
-            {
-                formTypeCounts.TryGetValue(entry.FormType, out var count);
-                formTypeCounts[entry.FormType] = count + 1;
-            }
+            formTypeCounts.TryGetValue(formType, out var count);
+            formTypeCounts[formType] = count + 1;
         }
 
         if (formTypeCounts.Count > 0)
@@ -1036,12 +1030,12 @@ public sealed partial class SemanticReconstructor
     /// </summary>
     private sealed class TopicLinkStats
     {
-        public int TopicLinked;
-        public int QuestLinked;
-        public int TopicsWalked;
-        public int TotalInfosLinked;
-        public int TotalInfosFound;
         public int NewInfoCount;
+        public int QuestLinked;
+        public int TopicLinked;
+        public int TopicsWalked;
+        public int TotalInfosFound;
+        public int TotalInfosLinked;
     }
 
     #endregion
@@ -1076,7 +1070,7 @@ public sealed partial class SemanticReconstructor
         CrossLinkInfoNodes(topicNodes);
 
         // Group topics by quest
-        var (questTrees, orphanTopics) = GroupTopicsByQuest(topicNodes, topicById, questById);
+        var (questTrees, orphanTopics) = GroupTopicsByQuest(topicNodes, questById);
 
         // Create orphan topic nodes for unlinked INFOs (no TopicFormId)
         CreateOrphanTopicNodes(unlinkedInfos, questTrees, orphanTopics, questById);
@@ -1094,7 +1088,7 @@ public sealed partial class SemanticReconstructor
     /// <summary>
     ///     Build an index of dialogues by their TopicFormId.
     /// </summary>
-    private (Dictionary<uint, List<ReconstructedDialogue>> infosByTopic, List<ReconstructedDialogue> unlinkedInfos)
+    private static (Dictionary<uint, List<ReconstructedDialogue>> infosByTopic, List<ReconstructedDialogue> unlinkedInfos)
         BuildInfosByTopicIndex(List<ReconstructedDialogue> dialogues)
     {
         var infosByTopic = new Dictionary<uint, List<ReconstructedDialogue>>();
@@ -1194,7 +1188,6 @@ public sealed partial class SemanticReconstructor
     private (Dictionary<uint, QuestDialogueNode> questTrees, List<TopicDialogueNode> orphanTopics)
         GroupTopicsByQuest(
             Dictionary<uint, TopicDialogueNode> topicNodes,
-            Dictionary<uint, ReconstructedDialogTopic> topicById,
             Dictionary<uint, ReconstructedQuest> questById)
     {
         var questTrees = new Dictionary<uint, QuestDialogueNode>();

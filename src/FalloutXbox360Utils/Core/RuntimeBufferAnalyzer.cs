@@ -1,5 +1,4 @@
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core;
@@ -10,6 +9,31 @@ namespace FalloutXbox360Utils.Core;
 /// </summary>
 internal sealed partial class RuntimeBufferAnalyzer
 {
+    #region Constructor
+
+    public RuntimeBufferAnalyzer(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        CoverageResult coverage,
+        PdbAnalysisResult? pdbAnalysis)
+    {
+        _accessor = accessor;
+        _fileSize = fileSize;
+        _minidumpInfo = minidumpInfo;
+        _coverage = coverage;
+        _pdbAnalysis = pdbAnalysis;
+
+        var gameModule = MemoryDumpAnalyzer.FindGameModule(minidumpInfo);
+        if (gameModule != null)
+        {
+            _moduleStart = gameModule.BaseAddress32;
+            _moduleEnd = (uint)(gameModule.BaseAddress + gameModule.Size);
+        }
+    }
+
+    #endregion
+
     #region Constants
 
     private const int MinStringLength = 4;
@@ -53,31 +77,6 @@ internal sealed partial class RuntimeBufferAnalyzer
     private readonly uint _moduleStart;
 
     private readonly PdbAnalysisResult? _pdbAnalysis;
-
-    #endregion
-
-    #region Constructor
-
-    public RuntimeBufferAnalyzer(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidumpInfo,
-        CoverageResult coverage,
-        PdbAnalysisResult? pdbAnalysis)
-    {
-        _accessor = accessor;
-        _fileSize = fileSize;
-        _minidumpInfo = minidumpInfo;
-        _coverage = coverage;
-        _pdbAnalysis = pdbAnalysis;
-
-        var gameModule = MemoryDumpAnalyzer.FindGameModule(minidumpInfo);
-        if (gameModule != null)
-        {
-            _moduleStart = gameModule.BaseAddress32;
-            _moduleEnd = (uint)(gameModule.BaseAddress + gameModule.Size);
-        }
-    }
 
     #endregion
 
@@ -126,15 +125,12 @@ internal sealed partial class RuntimeBufferAnalyzer
         }
 
         // Build a set of carved file name suffixes for fast lookup
-        var carvedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var carved in carvedFiles)
-        {
-            var name = carved.FileName;
-            if (!string.IsNullOrEmpty(name))
-            {
-                carvedNames.Add(Path.GetFileName(name));
-            }
-        }
+        var carvedNames = new HashSet<string>(
+            carvedFiles
+                .Select(carved => carved.FileName)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Select(name => Path.GetFileName(name!)),
+            StringComparer.OrdinalIgnoreCase);
 
         var matched = 0;
         foreach (var path in summary.AllFilePaths)

@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
@@ -12,6 +12,12 @@ namespace FalloutXbox360Utils.CLI;
 /// </summary>
 public static class EsmCommand
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     public static Command Create()
     {
         var command = new Command("esm", "Analyze ESM/ESP plugin files");
@@ -25,7 +31,7 @@ public static class EsmCommand
         };
         var outputOpt = new Option<string?>("-o", "--output") { Description = "Output file path" };
         var recordTypeOpt = new Option<string?>("-t", "--type")
-            { Description = "Filter by record type (e.g., WEAP, NPC_, CELL)" };
+        { Description = "Filter by record type (e.g., WEAP, NPC_, CELL)" };
         var limitOpt = new Option<int?>("-l", "--limit") { Description = "Limit number of records shown" };
 
         command.Arguments.Add(inputArg);
@@ -109,7 +115,7 @@ public static class EsmCommand
 
         var outputText = format.ToLowerInvariant() switch
         {
-            "md" or "markdown" => FormatMarkdown(result, Path.GetFileName(input), recordType, limit),
+            "md" or "markdown" => FormatMarkdown(result, Path.GetFileName(input), recordType),
             "json" => FormatJson(result),
             _ => FormatText(result, verbose, recordType, limit)
         };
@@ -236,8 +242,7 @@ public static class EsmCommand
         return sb.ToString();
     }
 
-    private static string FormatMarkdown(EsmFileScanResult result, string fileName, string? recordTypeFilter,
-        int? limit)
+    private static string FormatMarkdown(EsmFileScanResult result, string fileName, string? recordTypeFilter)
     {
         var sb = new StringBuilder();
 
@@ -306,12 +311,6 @@ public static class EsmCommand
 
     private static string FormatJson(EsmFileScanResult result)
     {
-        var options = new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
-
         // Create a serializable version
         var jsonObj = new
         {
@@ -331,6 +330,6 @@ public static class EsmCommand
             recordsByCategory = result.RecordsByCategory.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value)
         };
 
-        return JsonSerializer.Serialize(jsonObj, options);
+        return JsonSerializer.Serialize(jsonObj, JsonOptions);
     }
 }

@@ -23,9 +23,7 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
 
     private int _convertedCount;
     private int _failedCount;
-    private XmaOggConverter? _oggConverter;
     private OutputFormat _outputFormat = OutputFormat.Wav;
-    private XmaWavConverter? _wavConverter;
 
     public override string FormatId => "xma";
     public override string DisplayName => "XMA";
@@ -185,7 +183,7 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
     public string TargetFolder => _outputFormat == OutputFormat.Ogg ? "audio_ogg" : "audio_wav";
 
     public bool IsInitialized =>
-        (_outputFormat == OutputFormat.Ogg ? _oggConverter?.IsAvailable : _wavConverter?.IsAvailable) ?? false;
+        _outputFormat == OutputFormat.Ogg ? XmaOggConverter.IsAvailable : XmaWavConverter.IsAvailable;
 
     public int ConvertedCount => _convertedCount;
     public int FailedCount => _failedCount;
@@ -213,12 +211,10 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
 
         if (_outputFormat == OutputFormat.Ogg)
         {
-            _oggConverter = new XmaOggConverter();
-            return _oggConverter.IsAvailable;
+            return XmaOggConverter.IsAvailable;
         }
 
-        _wavConverter = new XmaWavConverter();
-        return _wavConverter.IsAvailable;
+        return XmaWavConverter.IsAvailable;
     }
 
     public bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata)
@@ -254,23 +250,21 @@ public sealed class XmaFormat : FileFormatBase, IFileRepairer, IFileConverter
 
             if (useOgg)
             {
-                _oggConverter ??= new XmaOggConverter();
-                if (!_oggConverter.IsAvailable)
+                if (!XmaOggConverter.IsAvailable)
                 {
                     return new ConversionResult { Success = false, Notes = "FFmpeg not available for OGG conversion" };
                 }
 
-                result = await _oggConverter.ConvertAsync(data);
+                result = await XmaOggConverter.ConvertAsync(data);
             }
             else
             {
-                _wavConverter ??= new XmaWavConverter();
-                if (!_wavConverter.IsAvailable)
+                if (!XmaWavConverter.IsAvailable)
                 {
                     return new ConversionResult { Success = false, Notes = "FFmpeg not available for WAV conversion" };
                 }
 
-                result = await _wavConverter.ConvertAsync(data);
+                result = await XmaWavConverter.ConvertAsync(data);
             }
 
             if (result.Success)

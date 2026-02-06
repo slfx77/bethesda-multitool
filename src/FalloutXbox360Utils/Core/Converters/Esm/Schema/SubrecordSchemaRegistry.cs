@@ -14,19 +14,11 @@ public static partial class SubrecordSchemaRegistry
     private static readonly Dictionary<SchemaKey, SubrecordSchema> _schemas = BuildSchemaRegistry();
 
     private static readonly HashSet<(string Signature, string? RecordType)>
-            _stringSubrecords = BuildStringSubrecords();
+        _stringSubrecords = BuildStringSubrecords();
 
     private static readonly ConcurrentDictionary<(string RecordType, string Subrecord, int DataLength, string
-                FallbackType), int>
-            _fallbackUsage = new();
-
-    /// <summary>
-    ///     Schema key for lookup - combines signature, optional record type, and optional data length.
-    /// </summary>
-    /// <param name="Signature">4-character subrecord signature.</param>
-    /// <param name="RecordType">Parent record type (null for any).</param>
-    /// <param name="DataLength">Data length constraint (null for any, or expected size).</param>
-    public readonly record struct SchemaKey(string Signature, string? RecordType = null, int? DataLength = null);
+            FallbackType), int>
+        _fallbackUsage = new();
 
     /// <summary>
     ///     Whether fallback logging is enabled.
@@ -137,19 +129,19 @@ public static partial class SubrecordSchemaRegistry
     ///     Gets the recorded fallback usage, grouped by type.
     /// </summary>
     public static IEnumerable<(string FallbackType, string RecordType, string Subrecord, int DataLength, int Count)>
-    GetFallbackUsage()
+        GetFallbackUsage()
     {
-    return _fallbackUsage
-        .Select(kvp => (
-            kvp.Key.FallbackType,
-            kvp.Key.RecordType,
-            kvp.Key.Subrecord,
-            kvp.Key.DataLength,
-            Count: kvp.Value))
-        .OrderBy(x => x.FallbackType)
-        .ThenByDescending(x => x.Count)
-        .ThenBy(x => x.RecordType)
-        .ThenBy(x => x.Subrecord);
+        return _fallbackUsage
+            .Select(kvp => (
+                kvp.Key.FallbackType,
+                kvp.Key.RecordType,
+                kvp.Key.Subrecord,
+                kvp.Key.DataLength,
+                Count: kvp.Value))
+            .OrderBy(x => x.FallbackType)
+            .ThenByDescending(x => x.Count)
+            .ThenBy(x => x.RecordType)
+            .ThenBy(x => x.Subrecord);
     }
 
     /// <summary>
@@ -234,23 +226,31 @@ public static partial class SubrecordSchemaRegistry
     ///     Register a simple 4-byte schema.
     /// </summary>
     private static void RegisterSimple4Byte(Dictionary<SchemaKey, SubrecordSchema> schemas, string signature,
-    string description)
+        string description)
     {
-    schemas[new SchemaKey(signature)] = new SubrecordSchema(F.UInt32(description))
-    {
-        Description = description
-    };
+        schemas[new SchemaKey(signature)] = new SubrecordSchema(F.UInt32(description))
+        {
+            Description = description
+        };
     }
 
     /// <summary>
     ///     Register a simple 4-byte FormID schema.
     /// </summary>
     private static void RegisterSimpleFormId(Dictionary<SchemaKey, SubrecordSchema> schemas, string signature,
-    string description)
+        string description)
     {
-    schemas[new SchemaKey(signature)] = new SubrecordSchema(F.FormId(description))
-    {
-        Description = description
-    };
+        schemas[new SchemaKey(signature)] = new SubrecordSchema(F.FormId(description))
+        {
+            Description = description
+        };
     }
+
+    /// <summary>
+    ///     Schema key for lookup - combines signature, optional record type, and optional data length.
+    /// </summary>
+    /// <param name="Signature">4-character subrecord signature.</param>
+    /// <param name="RecordType">Parent record type (null for any).</param>
+    /// <param name="DataLength">Data length constraint (null for any, or expected size).</param>
+    public readonly record struct SchemaKey(string Signature, string? RecordType = null, int? DataLength = null);
 }

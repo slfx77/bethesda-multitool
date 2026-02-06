@@ -11,12 +11,12 @@ namespace FalloutXbox360Utils.Core;
 ///     Analyzes memory dump coverage: what percentage of memory regions contain
 ///     recognized data (carved files, ESM records, SCDA scripts, modules) vs unknown gaps.
 /// </summary>
-public sealed class CoverageAnalyzer
+public static class CoverageAnalyzer
 {
     /// <summary>
     ///     Analyze coverage of an already-analyzed dump.
     /// </summary>
-    public CoverageResult Analyze(
+    public static CoverageResult Analyze(
         AnalysisResult result,
         MemoryMappedViewAccessor accessor)
     {
@@ -72,7 +72,7 @@ public sealed class CoverageAnalyzer
     /// <summary>
     ///     Run PDB-guided analysis on the dump using known global symbols.
     /// </summary>
-    public PdbAnalysisResult? AnalyzePdbGlobals(
+    public static PdbAnalysisResult? AnalyzePdbGlobals(
         AnalysisResult result,
         MemoryMappedViewAccessor accessor,
         string pdbGlobalsPath)
@@ -429,14 +429,7 @@ public sealed class CoverageAnalyzer
         }
 
         // Check ASCII text
-        var printableCount = 0;
-        foreach (var b in buffer)
-        {
-            if (b is >= 0x20 and <= 0x7E or (byte)'\n' or (byte)'\r' or (byte)'\t')
-            {
-                printableCount++;
-            }
-        }
+        var printableCount = buffer.Count(b => b is >= 0x20 and <= 0x7E or (byte)'\n' or (byte)'\r' or (byte)'\t');
 
         if (printableCount > sampleSize * 0.7)
         {

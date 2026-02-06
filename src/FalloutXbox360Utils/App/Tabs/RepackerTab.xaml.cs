@@ -328,8 +328,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable
         try
         {
             var progress = new Progress<RepackerProgress>(OnProgressUpdate);
-            var repackerService = new RepackerService();
-            var result = await repackerService.RepackAsync(options, progress, _cts.Token);
+            var result = await RepackerService.RepackAsync(options, progress, _cts.Token);
 
             // Show result
             var message = result.Success

@@ -1,4 +1,4 @@
-﻿using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
+using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
 

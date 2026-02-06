@@ -1,16 +1,8 @@
-using System.Buffers;
 using System.Buffers.Binary;
-using System.Diagnostics;
-using System.Globalization;
-using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Converters.Esm.Schema;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
@@ -155,14 +147,6 @@ public sealed partial class EsmRecordFormat : FileFormatBase, IDumpScanner
         .GetAllSignatures()
         .Select(SubrecordSchemaRegistry.GetReversedSignature)
         .ToHashSet());
-
-    private static readonly HashSet<string> SpecificSignatures =
-    [
-        "EDID", "GMST", "SCTX", "SCRO", "NAME", "DATA", "ACBS",
-        "NAM1", "TRDT", "FULL", "DESC", "MODL", "ICON", "MICO",
-        "TX00", "TX01", "TX02", "TX03", "TX04", "TX05", "TX06", "TX07",
-        "SCRI", "ENAM", "SNAM", "QNAM", "CTDA", "VHGT", "XCLC"
-    ];
 
     private static readonly string[] KnownFalsePositivePatterns =
     [

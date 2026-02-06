@@ -1,7 +1,5 @@
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
 using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.Scda;
 
 namespace FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
 
@@ -15,17 +13,152 @@ public static partial class GeckReportGenerator
     private const char SeparatorChar = '=';
 
     private static readonly HashSet<string> KnownAssetRoots = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "meshes", "textures", "sound", "music", "interface", "menus",
+        "architecture", "landscape", "characters", "creatures",
+        "armor", "weapons", "clutter", "furniture", "effects",
+        "animobjects", "trees", "vehicles", "pipboy3000", "gore",
+        "dungeons", "scol", "mps", "projectiles", "ammo",
+        "dlc01", "dlc02", "dlc03", "dlc04", "dlc05", "dlcanch",
+        "nvdlc01", "nvdlc02", "nvdlc03", "nvdlc04",
+        "sky", "water", "rocks", "grass", "plants", "lights",
+        "markers", "activators", "static", "misc", "fx"
+    };
+
+    /// <summary>
+    ///     Generate a complete report from semantic reconstruction results.
+    /// </summary>
+    public static string Generate(SemanticReconstructionResult result,
+        StringPoolSummary? stringPool = null,
+        Dictionary<uint, string>? formIdToEditorId = null)
+    {
+        var sb = new StringBuilder();
+        var lookup = formIdToEditorId ?? result.FormIdToEditorId;
+
+        // Header
+        AppendHeader(sb, "ESM Memory Dump Semantic Reconstruction Report");
+        sb.AppendLine();
+        AppendSummary(sb, result);
+        sb.AppendLine();
+
+        // Characters
+        if (result.Npcs.Count > 0)
         {
-            "meshes", "textures", "sound", "music", "interface", "menus",
-            "architecture", "landscape", "characters", "creatures",
-            "armor", "weapons", "clutter", "furniture", "effects",
-            "animobjects", "trees", "vehicles", "pipboy3000", "gore",
-            "dungeons", "scol", "mps", "projectiles", "ammo",
-            "dlc01", "dlc02", "dlc03", "dlc04", "dlc05", "dlcanch",
-            "nvdlc01", "nvdlc02", "nvdlc03", "nvdlc04",
-            "sky", "water", "rocks", "grass", "plants", "lights",
-            "markers", "activators", "static", "misc", "fx"
-        };
+            AppendNpcsSection(sb, result.Npcs, lookup);
+        }
+
+        if (result.Creatures.Count > 0)
+        {
+            AppendCreaturesSection(sb, result.Creatures);
+        }
+
+        if (result.Races.Count > 0)
+        {
+            AppendRacesSection(sb, result.Races, lookup);
+        }
+
+        if (result.Factions.Count > 0)
+        {
+            AppendFactionsSection(sb, result.Factions, lookup);
+        }
+
+        // Quests and Dialogue
+        if (result.Quests.Count > 0)
+        {
+            AppendQuestsSection(sb, result.Quests, lookup);
+        }
+
+        if (result.DialogTopics.Count > 0)
+        {
+            AppendDialogTopicsSection(sb, result.DialogTopics, lookup);
+        }
+
+        if (result.Notes.Count > 0)
+        {
+            AppendNotesSection(sb, result.Notes);
+        }
+
+        if (result.Books.Count > 0)
+        {
+            AppendBooksSection(sb, result.Books);
+        }
+
+        if (result.Terminals.Count > 0)
+        {
+            AppendTerminalsSection(sb, result.Terminals);
+        }
+
+        if (result.Dialogues.Count > 0)
+        {
+            AppendDialogueSection(sb, result.Dialogues, lookup);
+        }
+
+        // Items
+        if (result.Weapons.Count > 0)
+        {
+            AppendWeaponsSection(sb, result.Weapons, lookup);
+        }
+
+        if (result.Armor.Count > 0)
+        {
+            AppendArmorSection(sb, result.Armor);
+        }
+
+        if (result.Ammo.Count > 0)
+        {
+            AppendAmmoSection(sb, result.Ammo, lookup);
+        }
+
+        if (result.Consumables.Count > 0)
+        {
+            AppendConsumablesSection(sb, result.Consumables, lookup);
+        }
+
+        if (result.MiscItems.Count > 0)
+        {
+            AppendMiscItemsSection(sb, result.MiscItems);
+        }
+
+        if (result.Keys.Count > 0)
+        {
+            AppendKeysSection(sb, result.Keys);
+        }
+
+        if (result.Containers.Count > 0)
+        {
+            AppendContainersSection(sb, result.Containers, lookup);
+        }
+
+        // Abilities
+        if (result.Perks.Count > 0)
+        {
+            AppendPerksSection(sb, result.Perks, lookup);
+        }
+
+        if (result.Spells.Count > 0)
+        {
+            AppendSpellsSection(sb, result.Spells, lookup);
+        }
+
+        // World
+        if (result.Cells.Count > 0)
+        {
+            AppendCellsSection(sb, result.Cells);
+        }
+
+        if (result.Worldspaces.Count > 0)
+        {
+            AppendWorldspacesSection(sb, result.Worldspaces, lookup);
+        }
+
+        // String pool data from runtime memory
+        if (stringPool != null)
+        {
+            AppendStringPoolSection(sb, stringPool);
+        }
+
+        return sb.ToString();
+    }
 
     /// <summary>
     ///     Tree node for hierarchical path grouping in asset reports.
@@ -34,141 +167,6 @@ public static partial class GeckReportGenerator
     {
         public Dictionary<string, PathTreeNode> Children { get; } = new(StringComparer.OrdinalIgnoreCase);
         public List<string> Files { get; } = [];
-    }
-
-    /// <summary>
-    ///     Generate a complete report from semantic reconstruction results.
-    /// </summary>
-    public static string Generate(SemanticReconstructionResult result,
-    StringPoolSummary? stringPool = null,
-    Dictionary<uint, string>? formIdToEditorId = null)
-    {
-    var sb = new StringBuilder();
-    var lookup = formIdToEditorId ?? result.FormIdToEditorId;
-
-    // Header
-    AppendHeader(sb, "ESM Memory Dump Semantic Reconstruction Report");
-    sb.AppendLine();
-    AppendSummary(sb, result);
-    sb.AppendLine();
-
-    // Characters
-    if (result.Npcs.Count > 0)
-    {
-        AppendNpcsSection(sb, result.Npcs, lookup);
-    }
-
-    if (result.Creatures.Count > 0)
-    {
-        AppendCreaturesSection(sb, result.Creatures, lookup);
-    }
-
-    if (result.Races.Count > 0)
-    {
-        AppendRacesSection(sb, result.Races, lookup);
-    }
-
-    if (result.Factions.Count > 0)
-    {
-        AppendFactionsSection(sb, result.Factions, lookup);
-    }
-
-    // Quests and Dialogue
-    if (result.Quests.Count > 0)
-    {
-        AppendQuestsSection(sb, result.Quests, lookup);
-    }
-
-    if (result.DialogTopics.Count > 0)
-    {
-        AppendDialogTopicsSection(sb, result.DialogTopics, lookup);
-    }
-
-    if (result.Notes.Count > 0)
-    {
-        AppendNotesSection(sb, result.Notes, lookup);
-    }
-
-    if (result.Books.Count > 0)
-    {
-        AppendBooksSection(sb, result.Books, lookup);
-    }
-
-    if (result.Terminals.Count > 0)
-    {
-        AppendTerminalsSection(sb, result.Terminals);
-    }
-
-    if (result.Dialogues.Count > 0)
-    {
-        AppendDialogueSection(sb, result.Dialogues, lookup);
-    }
-
-    // Items
-    if (result.Weapons.Count > 0)
-    {
-        AppendWeaponsSection(sb, result.Weapons, lookup);
-    }
-
-    if (result.Armor.Count > 0)
-    {
-        AppendArmorSection(sb, result.Armor, lookup);
-    }
-
-    if (result.Ammo.Count > 0)
-    {
-        AppendAmmoSection(sb, result.Ammo, lookup);
-    }
-
-    if (result.Consumables.Count > 0)
-    {
-        AppendConsumablesSection(sb, result.Consumables, lookup);
-    }
-
-    if (result.MiscItems.Count > 0)
-    {
-        AppendMiscItemsSection(sb, result.MiscItems, lookup);
-    }
-
-    if (result.Keys.Count > 0)
-    {
-        AppendKeysSection(sb, result.Keys);
-    }
-
-    if (result.Containers.Count > 0)
-    {
-        AppendContainersSection(sb, result.Containers, lookup);
-    }
-
-    // Abilities
-    if (result.Perks.Count > 0)
-    {
-        AppendPerksSection(sb, result.Perks, lookup);
-    }
-
-    if (result.Spells.Count > 0)
-    {
-        AppendSpellsSection(sb, result.Spells, lookup);
-    }
-
-    // World
-    if (result.Cells.Count > 0)
-    {
-        AppendCellsSection(sb, result.Cells, lookup);
-    }
-
-    if (result.Worldspaces.Count > 0)
-    {
-        AppendWorldspacesSection(sb, result.Worldspaces, lookup);
-    }
-
-    // String pool data from runtime memory
-    if (stringPool != null)
-    {
-        AppendStringPoolSection(sb, stringPool);
-    }
-
-    return sb.ToString();
     }
 
     #region Helpers
@@ -275,29 +273,29 @@ public static partial class GeckReportGenerator
     ///     Format a FormID with both EditorID and display name: "EditorId - Display Name (0xFFFFFFFF)"
     /// </summary>
     private static string FormatWithDisplayName(
-    uint formId,
-    Dictionary<uint, string> editorIdLookup,
-    Dictionary<uint, string> displayNameLookup)
+        uint formId,
+        Dictionary<uint, string> editorIdLookup,
+        Dictionary<uint, string> displayNameLookup)
     {
-    var editorId = editorIdLookup.GetValueOrDefault(formId);
-    var displayName = displayNameLookup.GetValueOrDefault(formId);
+        var editorId = editorIdLookup.GetValueOrDefault(formId);
+        var displayName = displayNameLookup.GetValueOrDefault(formId);
 
-    if (editorId != null && displayName != null)
-    {
-        return $"{editorId} \u2014 {displayName} ({FormatFormId(formId)})";
-    }
+        if (editorId != null && displayName != null)
+        {
+            return $"{editorId} \u2014 {displayName} ({FormatFormId(formId)})";
+        }
 
-    if (editorId != null)
-    {
-        return $"{editorId} ({FormatFormId(formId)})";
-    }
+        if (editorId != null)
+        {
+            return $"{editorId} ({FormatFormId(formId)})";
+        }
 
-    if (displayName != null)
-    {
-        return $"{displayName} ({FormatFormId(formId)})";
-    }
+        if (displayName != null)
+        {
+            return $"{displayName} ({FormatFormId(formId)})";
+        }
 
-    return FormatFormId(formId);
+        return FormatFormId(formId);
     }
 
     private static string FormatModifier(sbyte value)
@@ -357,31 +355,31 @@ public static partial class GeckReportGenerator
     ///     preferring display names where available.
     /// </summary>
     private static Dictionary<uint, string> CombineLookups(
-    Dictionary<uint, string> editorIdLookup,
-    Dictionary<uint, string> displayNameLookup)
+        Dictionary<uint, string> editorIdLookup,
+        Dictionary<uint, string> displayNameLookup)
     {
-    var combined = new Dictionary<uint, string>(editorIdLookup);
-    foreach (var (formId, name) in displayNameLookup)
-    {
-        combined[formId] = name; // Display name takes priority
-    }
+        var combined = new Dictionary<uint, string>(editorIdLookup);
+        foreach (var (formId, name) in displayNameLookup)
+        {
+            combined[formId] = name; // Display name takes priority
+        }
 
-    return combined;
+        return combined;
     }
 
     private static void AppendSoundLine(
-    StringBuilder sb,
-    string label,
-    uint? formId,
-    Dictionary<uint, string> editorIdLookup)
+        StringBuilder sb,
+        string label,
+        uint? formId,
+        Dictionary<uint, string> editorIdLookup)
     {
-    if (!formId.HasValue)
-    {
-        return;
-    }
+        if (!formId.HasValue)
+        {
+            return;
+        }
 
-    // Sounds use EditorID only (TESSound has no TESFullName)
-    sb.AppendLine($"  {label,-17} {FormatFormIdWithName(formId.Value, editorIdLookup)}");
+        // Sounds use EditorID only (TESSound has no TESFullName)
+        sb.AppendLine($"  {label,-17} {FormatFormIdWithName(formId.Value, editorIdLookup)}");
     }
 
     /// <summary>

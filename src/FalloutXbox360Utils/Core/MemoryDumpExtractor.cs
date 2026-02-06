@@ -1,4 +1,4 @@
-﻿using System.IO.MemoryMappedFiles;
+using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Carving;
 using FalloutXbox360Utils.Core.Converters;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;

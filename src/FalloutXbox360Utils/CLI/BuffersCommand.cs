@@ -93,14 +93,13 @@ public static class BuffersCommand
                    MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
         {
-            var coverageAnalyzer = new CoverageAnalyzer();
-            var coverage = coverageAnalyzer.Analyze(result, accessor);
+            var coverage = CoverageAnalyzer.Analyze(result, accessor);
 
             PdbAnalysisResult? pdbAnalysis = null;
             if (pdbPath != null)
             {
                 AnsiConsole.MarkupLine("[blue]Running PDB global analysis...[/]");
-                pdbAnalysis = coverageAnalyzer.AnalyzePdbGlobals(result, accessor, pdbPath);
+                pdbAnalysis = CoverageAnalyzer.AnalyzePdbGlobals(result, accessor, pdbPath);
             }
 
             // Phase 3: Deep buffer exploration

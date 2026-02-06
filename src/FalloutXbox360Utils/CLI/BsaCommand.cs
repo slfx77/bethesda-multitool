@@ -50,7 +50,7 @@ public static class BsaCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
         var filterOption = new Option<string?>("-f", "--filter")
-            { Description = "Filter by extension (e.g., .nif, .dds)" };
+        { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
 
         command.Arguments.Add(inputArg);
@@ -80,11 +80,11 @@ public static class BsaCommand
             Required = true
         };
         var filterOption = new Option<string?>("-f", "--filter")
-            { Description = "Filter by extension (e.g., .nif, .dds)" };
+        { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
         var overwriteOption = new Option<bool>("--overwrite") { Description = "Overwrite existing files" };
         var convertOption = new Option<bool>("-c", "--convert")
-            { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->OGG, NIF endian)" };
+        { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->OGG, NIF endian)" };
         var verboseOption = new Option<bool>("-v", "--verbose") { Description = "Verbose output" };
 
         command.Arguments.Add(inputArg);
@@ -116,7 +116,7 @@ public static class BsaCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
         var keepTempOption = new Option<bool>("--keep-temp")
-            { Description = "Keep temporary files after validation" };
+        { Description = "Keep temporary files after validation" };
         var verboseOption = new Option<bool>("-v", "--verbose") { Description = "Verbose output" };
 
         command.Arguments.Add(inputArg);
@@ -605,12 +605,10 @@ public static class BsaCommand
                         }
                     }
 
-                    if (!string.IsNullOrEmpty(folder))
+                    if (!string.IsNullOrEmpty(folder)
+                        && file.Folder?.Name?.Contains(folder, StringComparison.OrdinalIgnoreCase) != true)
                     {
-                        if (file.Folder?.Name?.Contains(folder, StringComparison.OrdinalIgnoreCase) != true)
-                        {
-                            return false;
-                        }
+                        return false;
                     }
 
                     return true;
@@ -787,11 +785,11 @@ public static class BsaCommand
             AnsiConsole.MarkupLine("[yellow]Step 3:[/] Computing content hashes of extracted files...");
             var extractedHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var result in extractResults.Where(r => r.Success))
+            foreach (var outputPath in extractResults.Where(r => r.Success).Select(result => result.OutputPath))
             {
-                var relativePath = Path.GetRelativePath(extractDir, result.OutputPath)
+                var relativePath = Path.GetRelativePath(extractDir, outputPath)
                     .Replace('/', '\\').ToLowerInvariant();
-                var hash = await ComputeFileHashAsync(result.OutputPath);
+                var hash = await ComputeFileHashAsync(outputPath);
                 extractedHashes[relativePath] = hash;
             }
 
@@ -871,11 +869,11 @@ public static class BsaCommand
             var repackExtractResults = await repackExtractor.ExtractAllAsync(repackExtractDir, true);
 
             var repackedHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var result in repackExtractResults.Where(r => r.Success))
+            foreach (var outputPath in repackExtractResults.Where(r => r.Success).Select(result => result.OutputPath))
             {
-                var relativePath = Path.GetRelativePath(repackExtractDir, result.OutputPath)
+                var relativePath = Path.GetRelativePath(repackExtractDir, outputPath)
                     .Replace('/', '\\').ToLowerInvariant();
-                var hash = await ComputeFileHashAsync(result.OutputPath);
+                var hash = await ComputeFileHashAsync(outputPath);
                 repackedHashes[relativePath] = hash;
             }
 

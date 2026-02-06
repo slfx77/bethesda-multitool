@@ -166,7 +166,10 @@
       "Bash(git checkout:*)",
       "Bash(while read dir)",
       "Bash(git -C src/DDXConv status)",
-      "Bash(git clean:*)"
+      "Bash(git clean:*)",
+      "Bash(git submodule update:*)",
+      "Bash(git submodule status:*)",
+      "Bash(Select-String -Pattern \"warning|error|Build succeeded|Warning|Error\")"
     ]
   }
 }

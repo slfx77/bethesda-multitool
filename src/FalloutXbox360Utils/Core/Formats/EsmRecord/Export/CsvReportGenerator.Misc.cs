@@ -142,7 +142,7 @@ public static partial class CsvReportGenerator
                 FIdN(t.QuestFormId),
                 Resolve(t.QuestFormId ?? 0, lookup),
                 t.ResponseCount.ToString(),
-                t.Priority != 0f ? t.Priority.ToString("F1") : "",
+                t.Priority is not 0f ? t.Priority.ToString("F1") : "",
                 E(t.DummyPrompt),
                 Endian(t.IsBigEndian),
                 t.Offset.ToString()));

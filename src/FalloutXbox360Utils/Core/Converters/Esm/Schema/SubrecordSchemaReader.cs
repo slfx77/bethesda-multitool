@@ -130,11 +130,17 @@ public static class SubrecordSchemaReader
             ? BinaryPrimitives.ReadInt32BigEndian(data[4..])
             : BinaryPrimitives.ReadInt32LittleEndian(data[4..]);
 
-        var flags = data.Length >= 12
-            ? bigEndian
+        uint flags;
+        if (data.Length >= 12)
+        {
+            flags = bigEndian
                 ? BinaryPrimitives.ReadUInt32BigEndian(data[8..])
-                : BinaryPrimitives.ReadUInt32LittleEndian(data[8..])
-            : 0u;
+                : BinaryPrimitives.ReadUInt32LittleEndian(data[8..]);
+        }
+        else
+        {
+            flags = 0u;
+        }
 
         return (gridX, gridY, flags);
     }
@@ -166,14 +172,7 @@ public static class SubrecordSchemaReader
     /// </summary>
     public static uint? ReadNameFormId(ReadOnlySpan<byte> data, bool bigEndian)
     {
-        if (data.Length < 4)
-        {
-            return null;
-        }
-
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data)
-            : BinaryPrimitives.ReadUInt32LittleEndian(data);
+        return ReadUInt32(data, bigEndian);
     }
 
     /// <summary>
@@ -181,14 +180,7 @@ public static class SubrecordSchemaReader
     /// </summary>
     public static float? ReadXsclScale(ReadOnlySpan<byte> data, bool bigEndian)
     {
-        if (data.Length < 4)
-        {
-            return null;
-        }
-
-        return bigEndian
-            ? BinaryPrimitives.ReadSingleBigEndian(data)
-            : BinaryPrimitives.ReadSingleLittleEndian(data);
+        return ReadFloat(data, bigEndian);
     }
 
     #region Primitive Readers
@@ -341,19 +333,7 @@ public static class SubrecordSchemaReader
     private static (float x, float y, float z, float rotX, float rotY, float rotZ)? ReadPosRot(
         ReadOnlySpan<byte> data, bool bigEndian)
     {
-        if (data.Length < 24)
-        {
-            return null;
-        }
-
-        return (
-            ReadFloatAt(data, 0, bigEndian),
-            ReadFloatAt(data, 4, bigEndian),
-            ReadFloatAt(data, 8, bigEndian),
-            ReadFloatAt(data, 12, bigEndian),
-            ReadFloatAt(data, 16, bigEndian),
-            ReadFloatAt(data, 20, bigEndian)
-        );
+        return ReadDataPosition(data, bigEndian);
     }
 
     private static (byte r, byte g, byte b, byte a)? ReadColorRgba(ReadOnlySpan<byte> data)

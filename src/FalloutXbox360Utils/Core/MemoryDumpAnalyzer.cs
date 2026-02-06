@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
@@ -92,7 +92,7 @@ public sealed partial class MemoryDumpAnalyzer
         }
 
         progress?.Report(new AnalysisProgress
-            { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
+        { Phase = "Complete", FilesFound = result.CarvedFiles.Count, PercentComplete = 100 });
 
         stopwatch.Stop();
         result.AnalysisTime = stopwatch.Elapsed;
@@ -303,7 +303,7 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-            { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
+        { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
         log.Debug("Metadata: Phase 3 - SCDA scan");
         await Task.Run(() =>
         {
@@ -320,7 +320,7 @@ public sealed partial class MemoryDumpAnalyzer
         // Phase 4: ESM scan (80-88%) - now using memory-mapped access
         // Pass module ranges to exclude ESM detection inside module memory
         progress?.Report(new AnalysisProgress
-            { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
+        { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });
         log.Debug("Metadata: Phase 4 - ESM scan");
         await Task.Run(() =>
         {
@@ -352,27 +352,27 @@ public sealed partial class MemoryDumpAnalyzer
 
             // Extract full LAND records with heightmaps
             progress?.Report(new AnalysisProgress
-                { Phase = "LAND Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 85 });
+            { Phase = "LAND Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 85 });
             log.Debug("Metadata:   Extracting LAND records...");
             EsmRecordFormat.ExtractLandRecords(accessor, result.FileSize, esmRecords);
 
             // Extract full REFR records with positions
             progress?.Report(new AnalysisProgress
-                { Phase = "REFR Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 86 });
+            { Phase = "REFR Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 86 });
             log.Debug("Metadata:   Extracting REFR records...");
             EsmRecordFormat.ExtractRefrRecords(accessor, result.FileSize, esmRecords);
             log.Debug("Metadata:   REFR complete: {0} records", esmRecords.RefrRecords.Count);
 
             // Scan for runtime asset string pools
             progress?.Report(new AnalysisProgress
-                { Phase = "Asset Strings", FilesFound = result.CarvedFiles.Count, PercentComplete = 87 });
+            { Phase = "Asset Strings", FilesFound = result.CarvedFiles.Count, PercentComplete = 87 });
             log.Debug("Metadata:   Scanning for asset strings...");
             EsmRecordFormat.ScanForAssetStrings(accessor, result.FileSize, esmRecords, verbose);
             log.Debug("Metadata:   Asset strings complete: {0} paths", esmRecords.AssetStrings.Count);
 
             // Extract runtime Editor IDs with FormID associations via pointer following
             progress?.Report(new AnalysisProgress
-                { Phase = "Runtime EditorIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 88 });
+            { Phase = "Runtime EditorIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 88 });
             log.Debug("Metadata:   Extracting runtime EditorIDs...");
             EsmRecordFormat.ExtractRuntimeEditorIds(accessor, result.FileSize, minidumpInfo, esmRecords, verbose);
             log.Debug("Metadata:   EditorIDs complete: {0} IDs", esmRecords.RuntimeEditorIds.Count);
@@ -380,7 +380,7 @@ public sealed partial class MemoryDumpAnalyzer
 
         // Phase 5: FormID mapping (90-100%) - now using memory-mapped access
         progress?.Report(new AnalysisProgress
-            { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
+        { Phase = "FormIDs", FilesFound = result.CarvedFiles.Count, PercentComplete = 90 });
         await Task.Run(
             () =>
             {
@@ -643,7 +643,7 @@ public sealed partial class MemoryDumpAnalyzer
                     }
                     else if (parseResult.Metadata.TryGetValue("texturePath", out var pathObj) &&
                              pathObj is string texturePath)
-                        // Fall back to extracting filename from path
+                    // Fall back to extracting filename from path
                     {
                         fileName = Path.GetFileName(texturePath);
                     }

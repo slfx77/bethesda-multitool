@@ -8,6 +8,165 @@ namespace FalloutXbox360Utils.Core.Formats.EsmRecord;
 
 public sealed partial class SemanticReconstructor
 {
+    #region ReconstructCreatures
+
+    /// <summary>
+    ///     Reconstruct all Creature records from the scan result.
+    /// </summary>
+    public List<ReconstructedCreature> ReconstructCreatures()
+    {
+        var creatures = new List<ReconstructedCreature>();
+        var creatureRecords = GetRecordsByType("CREA").ToList();
+
+        foreach (var record in creatureRecords)
+        {
+            creatures.Add(new ReconstructedCreature
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        // Merge creatures from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(creatures.Select(c => c.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x2B || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var creature = _runtimeReader.ReadRuntimeCreature(entry);
+                if (creature != null)
+                {
+                    creatures.Add(creature);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} creatures from runtime struct reading " +
+                    $"(total: {creatures.Count}, ESM: {esmFormIds.Count})");
+            }
+        }
+
+        return creatures;
+    }
+
+    #endregion
+
+    #region ReconstructFactions
+
+    /// <summary>
+    ///     Reconstruct all Faction records from the scan result.
+    /// </summary>
+    public List<ReconstructedFaction> ReconstructFactions()
+    {
+        var factions = new List<ReconstructedFaction>();
+        var factionRecords = GetRecordsByType("FACT").ToList();
+
+        foreach (var record in factionRecords)
+        {
+            factions.Add(new ReconstructedFaction
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        // Merge factions from runtime struct reading
+        if (_runtimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(factions.Select(f => f.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _scanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x08 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var faction = _runtimeReader.ReadRuntimeFaction(entry);
+                if (faction != null)
+                {
+                    factions.Add(faction);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} factions from runtime struct reading " +
+                    $"(total: {factions.Count}, ESM: {esmFormIds.Count})");
+            }
+        }
+
+        return factions;
+    }
+
+    #endregion
+
+    #region Actor Parsing Helpers
+
+    private static ActorBaseSubrecord? ParseActorBase(ReadOnlySpan<byte> data, long offset, bool bigEndian)
+    {
+        if (data.Length < 24)
+        {
+            return null;
+        }
+
+        uint flags;
+        ushort fatigueBase, barterGold, calcMin, calcMax, speedMultiplier, templateFlags;
+        short level, dispositionBase;
+        float karmaAlignment;
+
+        if (bigEndian)
+        {
+            flags = BinaryPrimitives.ReadUInt32BigEndian(data);
+            fatigueBase = BinaryPrimitives.ReadUInt16BigEndian(data[4..]);
+            barterGold = BinaryPrimitives.ReadUInt16BigEndian(data[6..]);
+            level = BinaryPrimitives.ReadInt16BigEndian(data[8..]);
+            calcMin = BinaryPrimitives.ReadUInt16BigEndian(data[10..]);
+            calcMax = BinaryPrimitives.ReadUInt16BigEndian(data[12..]);
+            speedMultiplier = BinaryPrimitives.ReadUInt16BigEndian(data[14..]);
+            karmaAlignment = BinaryPrimitives.ReadSingleBigEndian(data[16..]);
+            dispositionBase = BinaryPrimitives.ReadInt16BigEndian(data[20..]);
+            templateFlags = BinaryPrimitives.ReadUInt16BigEndian(data[22..]);
+        }
+        else
+        {
+            flags = BinaryPrimitives.ReadUInt32LittleEndian(data);
+            fatigueBase = BinaryPrimitives.ReadUInt16LittleEndian(data[4..]);
+            barterGold = BinaryPrimitives.ReadUInt16LittleEndian(data[6..]);
+            level = BinaryPrimitives.ReadInt16LittleEndian(data[8..]);
+            calcMin = BinaryPrimitives.ReadUInt16LittleEndian(data[10..]);
+            calcMax = BinaryPrimitives.ReadUInt16LittleEndian(data[12..]);
+            speedMultiplier = BinaryPrimitives.ReadUInt16LittleEndian(data[14..]);
+            karmaAlignment = BinaryPrimitives.ReadSingleLittleEndian(data[16..]);
+            dispositionBase = BinaryPrimitives.ReadInt16LittleEndian(data[20..]);
+            templateFlags = BinaryPrimitives.ReadUInt16LittleEndian(data[22..]);
+        }
+
+        return new ActorBaseSubrecord(
+            flags, fatigueBase, barterGold, level, calcMin, calcMax,
+            speedMultiplier, karmaAlignment, dispositionBase, templateFlags,
+            offset, bigEndian);
+    }
+
+    #endregion
+
     #region ReconstructNpcs
 
     /// <summary>
@@ -209,61 +368,6 @@ public sealed partial class SemanticReconstructor
 
     #endregion
 
-    #region ReconstructCreatures
-
-    /// <summary>
-    ///     Reconstruct all Creature records from the scan result.
-    /// </summary>
-    public List<ReconstructedCreature> ReconstructCreatures()
-    {
-        var creatures = new List<ReconstructedCreature>();
-        var creatureRecords = GetRecordsByType("CREA").ToList();
-
-        foreach (var record in creatureRecords)
-        {
-            creatures.Add(new ReconstructedCreature
-            {
-                FormId = record.FormId,
-                EditorId = GetEditorId(record.FormId),
-                FullName = FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            });
-        }
-
-        // Merge creatures from runtime struct reading
-        if (_runtimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(creatures.Select(c => c.FormId));
-            var runtimeCount = 0;
-            foreach (var entry in _scanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x2B || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var creature = _runtimeReader.ReadRuntimeCreature(entry);
-                if (creature != null)
-                {
-                    creatures.Add(creature);
-                    runtimeCount++;
-                }
-            }
-
-            if (runtimeCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} creatures from runtime struct reading " +
-                    $"(total: {creatures.Count}, ESM: {esmFormIds.Count})");
-            }
-        }
-
-        return creatures;
-    }
-
-    #endregion
-
     #region ReconstructRaces
 
     /// <summary>
@@ -420,110 +524,6 @@ public sealed partial class SemanticReconstructor
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
-    }
-
-    #endregion
-
-    #region ReconstructFactions
-
-    /// <summary>
-    ///     Reconstruct all Faction records from the scan result.
-    /// </summary>
-    public List<ReconstructedFaction> ReconstructFactions()
-    {
-        var factions = new List<ReconstructedFaction>();
-        var factionRecords = GetRecordsByType("FACT").ToList();
-
-        foreach (var record in factionRecords)
-        {
-            factions.Add(new ReconstructedFaction
-            {
-                FormId = record.FormId,
-                EditorId = GetEditorId(record.FormId),
-                FullName = FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            });
-        }
-
-        // Merge factions from runtime struct reading
-        if (_runtimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(factions.Select(f => f.FormId));
-            var runtimeCount = 0;
-            foreach (var entry in _scanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x08 || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var faction = _runtimeReader.ReadRuntimeFaction(entry);
-                if (faction != null)
-                {
-                    factions.Add(faction);
-                    runtimeCount++;
-                }
-            }
-
-            if (runtimeCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} factions from runtime struct reading " +
-                    $"(total: {factions.Count}, ESM: {esmFormIds.Count})");
-            }
-        }
-
-        return factions;
-    }
-
-    #endregion
-
-    #region Actor Parsing Helpers
-
-    private static ActorBaseSubrecord? ParseActorBase(ReadOnlySpan<byte> data, long offset, bool bigEndian)
-    {
-        if (data.Length < 24)
-        {
-            return null;
-        }
-
-        uint flags;
-        ushort fatigueBase, barterGold, calcMin, calcMax, speedMultiplier, templateFlags;
-        short level, dispositionBase;
-        float karmaAlignment;
-
-        if (bigEndian)
-        {
-            flags = BinaryPrimitives.ReadUInt32BigEndian(data);
-            fatigueBase = BinaryPrimitives.ReadUInt16BigEndian(data[4..]);
-            barterGold = BinaryPrimitives.ReadUInt16BigEndian(data[6..]);
-            level = BinaryPrimitives.ReadInt16BigEndian(data[8..]);
-            calcMin = BinaryPrimitives.ReadUInt16BigEndian(data[10..]);
-            calcMax = BinaryPrimitives.ReadUInt16BigEndian(data[12..]);
-            speedMultiplier = BinaryPrimitives.ReadUInt16BigEndian(data[14..]);
-            karmaAlignment = BinaryPrimitives.ReadSingleBigEndian(data[16..]);
-            dispositionBase = BinaryPrimitives.ReadInt16BigEndian(data[20..]);
-            templateFlags = BinaryPrimitives.ReadUInt16BigEndian(data[22..]);
-        }
-        else
-        {
-            flags = BinaryPrimitives.ReadUInt32LittleEndian(data);
-            fatigueBase = BinaryPrimitives.ReadUInt16LittleEndian(data[4..]);
-            barterGold = BinaryPrimitives.ReadUInt16LittleEndian(data[6..]);
-            level = BinaryPrimitives.ReadInt16LittleEndian(data[8..]);
-            calcMin = BinaryPrimitives.ReadUInt16LittleEndian(data[10..]);
-            calcMax = BinaryPrimitives.ReadUInt16LittleEndian(data[12..]);
-            speedMultiplier = BinaryPrimitives.ReadUInt16LittleEndian(data[14..]);
-            karmaAlignment = BinaryPrimitives.ReadSingleLittleEndian(data[16..]);
-            dispositionBase = BinaryPrimitives.ReadInt16LittleEndian(data[20..]);
-            templateFlags = BinaryPrimitives.ReadUInt16LittleEndian(data[22..]);
-        }
-
-        return new ActorBaseSubrecord(
-            flags, fatigueBase, barterGold, level, calcMin, calcMax,
-            speedMultiplier, karmaAlignment, dispositionBase, templateFlags,
-            offset, bigEndian);
     }
 
     #endregion

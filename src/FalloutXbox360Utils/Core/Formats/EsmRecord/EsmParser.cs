@@ -615,14 +615,14 @@ public static class EsmParser
         var counts = new Dictionary<string, int>();
         var records = ScanRecords(data);
 
-        foreach (var rec in records)
+        foreach (var signature in records.Select(rec => rec.Signature))
         {
-            if (!counts.TryGetValue(rec.Signature, out var count))
+            if (!counts.TryGetValue(signature, out var count))
             {
                 count = 0;
             }
 
-            counts[rec.Signature] = count + 1;
+            counts[signature] = count + 1;
         }
 
         return counts;

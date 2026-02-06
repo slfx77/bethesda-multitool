@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using FalloutXbox360Utils.Core.Formats.EsmRecord;
@@ -574,9 +574,9 @@ public sealed partial class MemoryDumpAnalyzer
         foreach (var group in byPrefix.Take(30))
         {
             sb.AppendLine(CultureInfo.InvariantCulture, $"--- {group.Key} ({group.Count()} items) ---");
-            foreach (var item in group.Take(10))
+            foreach (var record in group.Take(10).Select(item => item.Record))
             {
-                sb.AppendLine(CultureInfo.InvariantCulture, $"  0x{item.Record.Offset:X8}: {item.Record.Name}");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  0x{record.Offset:X8}: {record.Name}");
             }
 
             if (group.Count() > 10)
