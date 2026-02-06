@@ -1,13 +1,13 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -54,7 +54,7 @@ public static class RecordSchemaCommands
         }
 
         var filter = ParseTypes(typesCsv);
-        var records = EsmHelpers.ScanAllRecords(esm.Data, esm.IsBigEndian);
+        var records = EsmRecordParser.ScanAllRecords(esm.Data, esm.IsBigEndian);
 
         var totalUnknown = 0;
         var totalChecked = 0;
@@ -79,7 +79,7 @@ public static class RecordSchemaCommands
             }
 
             var recordData = EsmHelpers.GetRecordData(esm.Data, record, esm.IsBigEndian);
-            var subrecords = EsmHelpers.ParseSubrecords(recordData, esm.IsBigEndian);
+            var subrecords = EsmRecordParser.ParseSubrecords(recordData, esm.IsBigEndian);
 
             foreach (var sub in subrecords)
             {

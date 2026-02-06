@@ -1,12 +1,12 @@
-﻿using EsmAnalyzer.Core;
+using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 using static EsmAnalyzer.Helpers.DiffHelpers;
 
 namespace EsmAnalyzer.Commands;
@@ -179,13 +179,13 @@ public static partial class DiffCommands
         bool xboxBigEndian, bool convertedBigEndian, bool pcBigEndian,
         string recordType, int limit, int maxBytes, bool showBytes, bool showSemantic, FormIdResolver? resolver)
     {
-        var xboxRecords = EsmHelpers.ScanAllRecords(xboxData, xboxBigEndian)
+        var xboxRecords = EsmRecordParser.ScanAllRecords(xboxData, xboxBigEndian)
             .Where(r => r.Signature == recordType)
             .ToList();
-        var convertedRecords = EsmHelpers.ScanAllRecords(convertedData, convertedBigEndian)
+        var convertedRecords = EsmRecordParser.ScanAllRecords(convertedData, convertedBigEndian)
             .Where(r => r.Signature == recordType)
             .ToList();
-        var pcRecords = EsmHelpers.ScanAllRecords(pcData, pcBigEndian)
+        var pcRecords = EsmRecordParser.ScanAllRecords(pcData, pcBigEndian)
             .Where(r => r.Signature == recordType)
             .ToList();
 
@@ -285,9 +285,9 @@ public static partial class DiffCommands
             var convertedRecordData = EsmHelpers.GetRecordData(convertedData, convertedRec, convertedBigEndian);
             var pcRecordData = EsmHelpers.GetRecordData(pcData, pcRec, pcBigEndian);
 
-            var xboxSubs = EsmHelpers.ParseSubrecords(xboxRecordData, xboxBigEndian);
-            var convertedSubs = EsmHelpers.ParseSubrecords(convertedRecordData, convertedBigEndian);
-            var pcSubs = EsmHelpers.ParseSubrecords(pcRecordData, pcBigEndian);
+            var xboxSubs = EsmRecordParser.ParseSubrecords(xboxRecordData, xboxBigEndian);
+            var convertedSubs = EsmRecordParser.ParseSubrecords(convertedRecordData, convertedBigEndian);
+            var pcSubs = EsmRecordParser.ParseSubrecords(pcRecordData, pcBigEndian);
 
             // Group by signature
             var xboxBySig = xboxSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());

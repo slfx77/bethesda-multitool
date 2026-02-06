@@ -138,7 +138,7 @@ public class FileColoringTests
     [Fact]
     public void CarvedFileInfo_ModuleCategory_GetsPurpleColor()
     {
-        // Arrange - Simulates how MemoryDumpAnalyzer creates module entries
+        // Arrange - Simulates how MinidumpAnalyzer creates module entries
         var dllFile = new CarvedFileInfo
         {
             Offset = 0x0CB176E4,
@@ -160,7 +160,7 @@ public class FileColoringTests
     [Fact]
     public void CarvedFileInfo_XuiCategory_GetsBlueColor()
     {
-        // Arrange - Simulates how MemoryDumpAnalyzer creates XUI entries
+        // Arrange - Simulates how MinidumpAnalyzer creates XUI entries
         var xuiFile = new CarvedFileInfo
         {
             Offset = 0x0CB07B22,
@@ -357,7 +357,7 @@ public class FileColoringTests
     [InlineData("nif", FileCategory.Model)]
     public void GetBySignatureId_ReturnsFormatWithCorrectCategory(string signatureId, FileCategory expectedCategory)
     {
-        // Act - This is exactly what MemoryDumpAnalyzer does
+        // Act - This is exactly what MinidumpAnalyzer does
         var format = FormatRegistry.GetBySignatureId(signatureId);
 
         // Assert

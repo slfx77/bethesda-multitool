@@ -1,12 +1,12 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -145,7 +145,7 @@ public static class HeuristicCommands
 
         var searchModes = ResolveSearchModes(options.Mode, type);
         var records = normalizedScope == ScopeFile && options.Locate
-            ? EsmHelpers.ScanAllRecords(xboxData, xboxHeader.IsBigEndian).OrderBy(r => r.Offset).ToList()
+            ? EsmRecordParser.ScanAllRecords(xboxData, xboxHeader.IsBigEndian).OrderBy(r => r.Offset).ToList()
             : [];
 
         AnsiConsole.MarkupLine($"[cyan]Record:[/] {type} 0x{formId:X8}");
@@ -166,7 +166,7 @@ public static class HeuristicCommands
     private static (AnalyzerRecordInfo? Record, byte[]? RecordData) FindRecord(byte[] data, bool bigEndian,
         string recordType, uint formId)
     {
-        var records = EsmHelpers.ScanForRecordType(data, bigEndian, recordType);
+        var records = EsmRecordParser.ScanForRecordType(data, bigEndian, recordType);
         var match = records.FirstOrDefault(r => r.FormId == formId);
         if (match == null)
         {
@@ -201,7 +201,7 @@ public static class HeuristicCommands
     private static List<AnalyzerSubrecordInfo>? GetCandidateSubrecords(byte[] recordData, bool bigEndian,
         string recordType, string[]? subrecordFilters)
     {
-        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
         var wanted = ResolveSubrecordFilters(recordType, subrecordFilters);
 
         var candidates = subrecords

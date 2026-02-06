@@ -4,7 +4,7 @@
 using System.Buffers;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Converters;
+using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Xma;
 
 namespace FalloutXbox360Utils.Core.Formats.Bsa;

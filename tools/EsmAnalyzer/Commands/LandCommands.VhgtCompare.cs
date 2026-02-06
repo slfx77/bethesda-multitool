@@ -1,13 +1,13 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
-using static FalloutXbox360Utils.Core.Converters.Esm.EsmBinary;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
+using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmBinary;
 
 namespace EsmAnalyzer.Commands;
 
@@ -118,7 +118,7 @@ public static partial class LandCommands
             return false;
         }
 
-        var landRecords = EsmHelpers.ScanForRecordType(data, parsedHeader.IsBigEndian, "LAND");
+        var landRecords = EsmRecordParser.ScanForRecordType(data, parsedHeader.IsBigEndian, "LAND");
         var record = landRecords.FirstOrDefault(r => r.FormId == formId);
         if (record == null)
         {
@@ -126,7 +126,7 @@ public static partial class LandCommands
         }
 
         var recordData = EsmHelpers.GetRecordData(data, record, parsedHeader.IsBigEndian);
-        var subrecords = EsmHelpers.ParseSubrecords(recordData, parsedHeader.IsBigEndian);
+        var subrecords = EsmRecordParser.ParseSubrecords(recordData, parsedHeader.IsBigEndian);
         var vhgt = subrecords.FirstOrDefault(s => s.Signature.Equals("VHGT", StringComparison.OrdinalIgnoreCase));
         if (vhgt == null || vhgt.Data.Length < 5)
         {

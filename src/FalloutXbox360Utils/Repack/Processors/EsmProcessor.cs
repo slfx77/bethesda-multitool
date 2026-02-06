@@ -1,4 +1,4 @@
-using FalloutXbox360Utils.Core.Converters.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 
 namespace FalloutXbox360Utils.Repack.Processors;
 

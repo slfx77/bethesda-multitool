@@ -1,13 +1,13 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -346,7 +346,7 @@ public static class RecordDiffCommands
     private static Dictionary<uint, string> BuildRecordTypeMap(byte[] data, bool bigEndian)
     {
         var dict = new Dictionary<uint, string>();
-        var records = EsmHelpers.ScanAllRecords(data, bigEndian);
+        var records = EsmRecordParser.ScanAllRecords(data, bigEndian);
 
         foreach (var record in records)
         {
@@ -362,7 +362,7 @@ public static class RecordDiffCommands
     private static Dictionary<uint, RecordFullInfo> ScanRecordsWithBaseObject(byte[] data, bool bigEndian, string? typeFilter)
     {
         var dict = new Dictionary<uint, RecordFullInfo>();
-        var records = EsmHelpers.ScanAllRecords(data, bigEndian);
+        var records = EsmRecordParser.ScanAllRecords(data, bigEndian);
 
         foreach (var record in records)
         {
@@ -419,7 +419,7 @@ public static class RecordDiffCommands
         }
 
         // Parse subrecords to find NAME
-        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
         foreach (var sub in subrecords)
         {
             if (sub.Signature == "NAME" && sub.Data.Length >= 4)
@@ -435,7 +435,7 @@ public static class RecordDiffCommands
     private static Dictionary<uint, (string Type, uint Size)> ScanRecordsToDict(byte[] data, bool bigEndian, string? typeFilter)
     {
         var dict = new Dictionary<uint, (string Type, uint Size)>();
-        var records = EsmHelpers.ScanAllRecords(data, bigEndian);
+        var records = EsmRecordParser.ScanAllRecords(data, bigEndian);
 
         foreach (var record in records)
         {

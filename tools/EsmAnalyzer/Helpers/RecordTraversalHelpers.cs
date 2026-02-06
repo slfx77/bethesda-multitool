@@ -1,13 +1,13 @@
-﻿using Spectre.Console;
+using Spectre.Console;
 using System.Buffers.Binary;
 using System.Text;
 using EsmAnalyzer.Core;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Helpers;
 
@@ -159,7 +159,7 @@ public static class RecordTraversalHelpers
                         }
 
                         var recordData = EsmHelpers.GetRecordData(data, recordInfo, bigEndian);
-                        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+                        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
                         subrecordCount += subrecords.Count;
 
                         foreach (var sub in subrecords)

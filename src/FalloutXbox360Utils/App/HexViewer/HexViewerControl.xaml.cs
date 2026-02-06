@@ -3,6 +3,7 @@ using Windows.System;
 using Windows.UI;
 using Windows.UI.Core;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Coverage;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -161,11 +162,30 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
     }
 
     /// <summary>
+    ///     Async version that offloads region building to a background thread.
+    /// </summary>
+    public async Task LoadDataAsync(string filePath, AnalysisResult analysisResult,
+        MemoryMappedViewAccessor accessor)
+    {
+        await _dataManager.LoadAsync(filePath, analysisResult, accessor);
+        InitializeAfterLoad();
+    }
+
+    /// <summary>
     ///     Adds classified gap regions from coverage analysis and refreshes the minimap.
     /// </summary>
     public void AddCoverageGapRegions(CoverageResult coverage)
     {
         _dataManager.AddCoverageGapRegions(coverage);
+        RefreshMinimap();
+    }
+
+    /// <summary>
+    ///     Async version that offloads gap region building to a background thread.
+    /// </summary>
+    public async Task AddCoverageGapRegionsAsync(CoverageResult coverage)
+    {
+        await _dataManager.AddCoverageGapRegionsAsync(coverage);
         RefreshMinimap();
     }
 

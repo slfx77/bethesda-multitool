@@ -1,11 +1,11 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -104,10 +104,10 @@ public static partial class DiffCommands
     {
         // Scan all records
         AnsiConsole.MarkupLine("[bold]Scanning records...[/]");
-        var recordsA = EsmHelpers.ScanAllRecords(dataA, bigEndianA)
+        var recordsA = EsmRecordParser.ScanAllRecords(dataA, bigEndianA)
             .Where(r => r.Signature != "GRUP")
             .ToList();
-        var recordsB = EsmHelpers.ScanAllRecords(dataB, bigEndianB)
+        var recordsB = EsmRecordParser.ScanAllRecords(dataB, bigEndianB)
             .Where(r => r.Signature != "GRUP")
             .ToList();
 

@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Extraction;
+using FalloutXbox360Utils.Core.Minidump;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WinRT.Interop;
@@ -280,7 +282,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable
 
             // Run extraction on background thread to avoid blocking UI
             await Task.Run(
-                async () => await MemoryDumpExtractor.Extract(
+                async () => await MinidumpExtractor.Extract(
                     entry.FilePath,
                     options with { OutputPath = outputSubdir },
                     null),

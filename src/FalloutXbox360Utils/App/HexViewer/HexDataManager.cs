@@ -1,8 +1,9 @@
 using System.IO.MemoryMappedFiles;
 using Windows.UI;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils;
 
@@ -14,7 +15,7 @@ internal sealed class HexDataManager : IDisposable
     private readonly List<FileRegion> _fileRegions = [];
     private bool _disposed;
     private Color _esmColor;
-    private IReadOnlyList<DetectedMainRecord>? _mainRecords;
+    private List<DetectedMainRecord>? _mainRecords;
     private MemoryMappedFile? _mmf;
     private bool _ownsAccessor = true;
 
@@ -90,12 +91,40 @@ internal sealed class HexDataManager : IDisposable
     }
 
     /// <summary>
+    ///     Async version that offloads BuildFileRegions to a background thread.
+    /// </summary>
+    public async Task<bool> LoadAsync(string filePath, AnalysisResult analysisResult,
+        MemoryMappedViewAccessor externalAccessor)
+    {
+        Cleanup();
+        _ownsAccessor = false;
+        FilePath = filePath;
+        FileSize = new FileInfo(filePath).Length;
+        Accessor = externalAccessor;
+        await Task.Run(() => BuildFileRegions(analysisResult));
+        return true;
+    }
+
+    /// <summary>
     ///     Adds classified gap regions from coverage analysis to the file region list.
     ///     Call after Load() to color-code unknown areas by their classification.
     ///     Most gap types are collapsed to a single "Gap" label; only ESM-like and
     ///     AssetManagement retain distinct labels (they have semantic meaning).
     /// </summary>
     public void AddCoverageGapRegions(CoverageResult coverage)
+    {
+        AddCoverageGapRegionsCore(coverage);
+    }
+
+    /// <summary>
+    ///     Async version that offloads gap region building to a background thread.
+    /// </summary>
+    public async Task AddCoverageGapRegionsAsync(CoverageResult coverage)
+    {
+        await Task.Run(() => AddCoverageGapRegionsCore(coverage));
+    }
+
+    private void AddCoverageGapRegionsCore(CoverageResult coverage)
     {
         foreach (var gap in coverage.Gaps)
         {
@@ -267,7 +296,7 @@ internal sealed class HexDataManager : IDisposable
     ///     This reduces visual noise in the memory map.
     /// </summary>
     private static List<(long Start, long End, int Count)> GroupEsmRecordsIntoRegions(
-        IReadOnlyList<DetectedMainRecord> records)
+        List<DetectedMainRecord> records)
     {
         if (records.Count == 0) return [];
 

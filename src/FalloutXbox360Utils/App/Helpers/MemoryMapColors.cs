@@ -1,5 +1,7 @@
+using System.Collections.Frozen;
 using Windows.UI;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats;
 
 namespace FalloutXbox360Utils;
@@ -33,16 +35,17 @@ public static class MemoryMapColors
     /// <summary>
     ///     Human-readable display names for gap classifications (used by coverage tab).
     /// </summary>
-    public static readonly Dictionary<GapClassification, string> GapDisplayNames = new()
-    {
-        [GapClassification.AsciiText] = "ASCII Text",
-        [GapClassification.StringPool] = "String Pool",
-        [GapClassification.PointerDense] = "Pointer Dense",
-        [GapClassification.AssetManagement] = "Asset Mgmt",
-        [GapClassification.EsmLike] = "ESM-like",
-        [GapClassification.BinaryData] = "Binary Data",
-        [GapClassification.ZeroFill] = "Zero Fill"
-    };
+    public static readonly FrozenDictionary<GapClassification, string> GapDisplayNames =
+        new Dictionary<GapClassification, string>
+        {
+            [GapClassification.AsciiText] = "ASCII Text",
+            [GapClassification.StringPool] = "String Pool",
+            [GapClassification.PointerDense] = "Pointer Dense",
+            [GapClassification.AssetManagement] = "Asset Mgmt",
+            [GapClassification.EsmLike] = "ESM-like",
+            [GapClassification.BinaryData] = "Binary Data",
+            [GapClassification.ZeroFill] = "Zero Fill"
+        }.ToFrozenDictionary();
 
     // Lazy-initialized color cache
     private static Color[]? _dynamicColors;
@@ -70,7 +73,8 @@ public static class MemoryMapColors
             FileCategory.Script => GetDynamicColor(5),
             FileCategory.EsmData => GetDynamicColor(6),
             FileCategory.Xbox => GetDynamicColor(7),
-            FileCategory.Video => GapColor // Rarely used (BIK format), not assigned distinct rainbow color
+            FileCategory.Video => GapColor, // Rarely used (BIK format), not assigned distinct rainbow color
+            _ => GapColor
         };
     }
 

@@ -1,5 +1,5 @@
 using Windows.Storage.Pickers;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;

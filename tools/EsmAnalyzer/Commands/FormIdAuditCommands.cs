@@ -1,14 +1,14 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.Security.Cryptography;
 using EsmAnalyzer.Core;
 using EsmAnalyzer.Helpers;
 using Spectre.Console;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -106,7 +106,7 @@ public static class FormIdAuditCommands
 
         AnsiConsole.MarkupLine("[grey]Scanning records for FormID references...[/]");
 
-        var convertedRecords = EsmHelpers.ScanAllRecords(convertedData, convertedBigEndian);
+        var convertedRecords = EsmRecordParser.ScanAllRecords(convertedData, convertedBigEndian);
 
         foreach (var record in convertedRecords)
         {
@@ -146,7 +146,7 @@ public static class FormIdAuditCommands
             }
 
             // Parse subrecords
-            var subrecords = EsmHelpers.ParseSubrecords(recordData, convertedBigEndian);
+            var subrecords = EsmRecordParser.ParseSubrecords(recordData, convertedBigEndian);
 
             foreach (var sub in subrecords)
             {
@@ -409,7 +409,7 @@ public static class FormIdAuditCommands
     private static Dictionary<uint, RecordInfo> BuildRecordInfoMap(byte[] data, bool bigEndian)
     {
         var map = new Dictionary<uint, RecordInfo>();
-        var records = EsmHelpers.ScanAllRecords(data, bigEndian);
+        var records = EsmRecordParser.ScanAllRecords(data, bigEndian);
 
         foreach (var record in records)
         {

@@ -50,7 +50,7 @@ public static class ModulesCommand
             return;
         }
 
-        var buildType = MemoryDumpAnalyzer.DetectBuildType(info) ?? "Unknown";
+        var buildType = MinidumpAnalyzer.DetectBuildType(info) ?? "Unknown";
 
         AnsiConsole.MarkupLine($"[blue]Modules in[/] {Path.GetFileName(input)}");
         AnsiConsole.MarkupLine($"[blue]Build Type:[/] {buildType}");

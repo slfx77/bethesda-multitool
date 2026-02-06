@@ -1,4 +1,4 @@
-using FalloutXbox360Utils.Core.Converters;
+using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif;

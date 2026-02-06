@@ -466,7 +466,7 @@ public static class EsmDisplayHelpers
         }
 
         // Parse and display subrecords
-        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[bold]Subrecords ({subrecords.Count}):[/]");

@@ -1,12 +1,12 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -78,7 +78,7 @@ public static class StatsCommands
 
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
-            .Start("Scanning records...", ctx => { records = EsmHelpers.ScanAllRecords(data, header.IsBigEndian); });
+            .Start("Scanning records...", ctx => { records = EsmRecordParser.ScanAllRecords(data, header.IsBigEndian); });
 
         AnsiConsole.MarkupLine($"[green]Found {records.Count:N0} records[/]");
         AnsiConsole.WriteLine();

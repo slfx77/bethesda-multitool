@@ -1,5 +1,7 @@
+using System.Collections.Frozen;
 using Windows.UI;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats;
 
 namespace FalloutXbox360Utils;
@@ -24,7 +26,7 @@ public static class FileTypeColors
     /// <summary>
     ///     Human-readable display names for gap classifications (used by coverage tab).
     /// </summary>
-    public static Dictionary<GapClassification, string> GapDisplayNames
+    public static FrozenDictionary<GapClassification, string> GapDisplayNames
         => MemoryMapColors.GapDisplayNames;
 
     /// <summary>

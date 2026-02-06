@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Extraction;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -168,7 +170,7 @@ public sealed partial class SingleFileTab
                 AnalysisProgressBar.Value = p.PercentComplete;
             }));
             var analysisData = _analysisResult;
-            var summary = await Task.Run(() => MemoryDumpExtractor.Extract(filePath, opts, progress, analysisData));
+            var summary = await Task.Run(() => MinidumpExtractor.Extract(filePath, opts, progress, analysisData));
 
             foreach (var entry in _allCarvedFiles.Where(x => summary.ExtractedOffsets.Contains(x.Offset)))
             {
@@ -222,29 +224,6 @@ public sealed partial class SingleFileTab
             ExtractButton.IsEnabled = true;
             AnalysisProgressBar.Visibility = Visibility.Collapsed;
             AnalysisProgressBar.IsIndeterminate = true;
-        }
-    }
-
-    #endregion
-
-    #region Helper Methods for Analysis
-
-    private static void CollectReconstructedFormIds(SemanticReconstructionResult result, HashSet<uint> formIds)
-    {
-        // Collect FormIDs from all reconstructed record lists using reflection
-        foreach (var prop in result.GetType().GetProperties())
-        {
-            if (!prop.CanRead) continue;
-            if (prop.GetValue(result) is not System.Collections.IList list) continue;
-
-            foreach (var item in list)
-            {
-                var formIdProp = item.GetType().GetProperty("FormId");
-                if (formIdProp?.GetValue(item) is uint formId && formId != 0)
-                {
-                    formIds.Add(formId);
-                }
-            }
         }
     }
 

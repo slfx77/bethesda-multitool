@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -98,8 +98,11 @@ public sealed partial class SingleFileTab
 
         _currentSearchQuery = query;
 
-        // Cancel any pending search
+        // Cancel and dispose any pending search
+#pragma warning disable S6966 // Awaiting CancelAsync not feasible in synchronous event handler
         _searchDebounceToken?.Cancel();
+#pragma warning restore S6966
+        _searchDebounceToken?.Dispose();
         _searchDebounceToken = new CancellationTokenSource();
         var token = _searchDebounceToken.Token;
 
@@ -128,7 +131,7 @@ public sealed partial class SingleFileTab
             var lookup = _session.AnalysisResult?.FormIdMap;
             var displayNameLookup = _session.SemanticResult?.FormIdToDisplayName;
             var tree = _esmBrowserTree;
-            await Task.Run(() => EnsureAllChildrenLoaded(tree, lookup, displayNameLookup));
+            await Task.Run(() => EnsureAllChildrenLoaded(tree, lookup, displayNameLookup), token);
             _flatListBuilt = true;
         }
 
@@ -174,14 +177,18 @@ public sealed partial class SingleFileTab
         Dictionary<uint, string>? lookup,
         Dictionary<uint, string>? displayNameLookup)
     {
-        foreach (var categoryNode in tree)
+        // Snapshot collections before iterating — UI thread may modify Children
+        // concurrently through tree expansion (EsmTreeView_Expanding)
+        var categories = tree.ToList();
+        foreach (var categoryNode in categories)
         {
             if (categoryNode.HasUnrealizedChildren && categoryNode.Children.Count == 0)
             {
                 EsmBrowserTreeBuilder.LoadCategoryChildren(categoryNode);
             }
 
-            foreach (var typeNode in categoryNode.Children)
+            var typeNodes = categoryNode.Children.ToList();
+            foreach (var typeNode in typeNodes)
             {
                 if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
                 {

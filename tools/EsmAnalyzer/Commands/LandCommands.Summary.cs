@@ -23,7 +23,7 @@ public static partial class LandCommands
             return 1;
         }
 
-        var landRecords = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "LAND");
+        var landRecords = EsmRecordParser.ScanForRecordType(esm.Data, esm.IsBigEndian, "LAND");
         var record = landRecords.FirstOrDefault(r => r.FormId == formId.Value);
         if (record == null)
         {
@@ -32,7 +32,7 @@ public static partial class LandCommands
         }
 
         var recordData = EsmHelpers.GetRecordData(esm.Data, record, esm.IsBigEndian);
-        var subrecords = EsmHelpers.ParseSubrecords(recordData, esm.IsBigEndian);
+        var subrecords = EsmRecordParser.ParseSubrecords(recordData, esm.IsBigEndian);
 
         AnsiConsole.MarkupLine(
             $"[cyan]File:[/] {Path.GetFileName(filePath)} ({(esm.IsBigEndian ? "Big-endian" : "Little-endian")})");

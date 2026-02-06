@@ -50,11 +50,11 @@ public static partial class CompareCommands
             return 1;
         }
 
-        var leftCells = EsmHelpers.ScanForRecordType(left.Data, left.IsBigEndian, "CELL")
+        var leftCells = EsmRecordParser.ScanForRecordType(left.Data, left.IsBigEndian, "CELL")
             .GroupBy(r => r.FormId)
             .Select(g => g.First())
             .ToList();
-        var rightCells = EsmHelpers.ScanForRecordType(right.Data, right.IsBigEndian, "CELL")
+        var rightCells = EsmRecordParser.ScanForRecordType(right.Data, right.IsBigEndian, "CELL")
             .GroupBy(r => r.FormId)
             .Select(g => g.First())
             .ToList();
@@ -117,7 +117,7 @@ public static partial class CompareCommands
         try
         {
             var data = EsmHelpers.GetRecordData(file.Data, record, file.IsBigEndian);
-            var subrecords = EsmHelpers.ParseSubrecords(data, file.IsBigEndian);
+            var subrecords = EsmRecordParser.ParseSubrecords(data, file.IsBigEndian);
             var edid = TryDecodeString(subrecords.FirstOrDefault(s => s.Signature == "EDID")?.Data);
             var full = TryDecodeString(subrecords.FirstOrDefault(s => s.Signature == "FULL")?.Data);
             return (edid, full);

@@ -1,13 +1,13 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.Buffers.Binary;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
@@ -249,7 +249,7 @@ public static partial class CompareCommands
                     try
                     {
                         var recordData = EsmHelpers.GetRecordData(data, cell, bigEndian);
-                        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+                        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
 
                         // Check for EDID (editor ID)
                         var edid = subrecords.FirstOrDefault(s => s.Signature == "EDID");
@@ -319,7 +319,7 @@ public static partial class CompareCommands
                         try
                         {
                             var recordData = EsmHelpers.GetRecordData(data, land, bigEndian);
-                            var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+                            var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
 
                             var vhgt = subrecords.FirstOrDefault(s => s.Signature == "VHGT");
                             if (vhgt != null && vhgt.Data.Length >= 4 + EsmConstants.LandGridArea)

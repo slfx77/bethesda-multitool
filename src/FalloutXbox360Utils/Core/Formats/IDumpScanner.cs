@@ -4,7 +4,7 @@ namespace FalloutXbox360Utils.Core.Formats;
 
 /// <summary>
 ///     Optional interface for formats that can scan entire dumps for records.
-///     Used by MemoryDumpAnalyzer to gather format-specific information.
+///     Used by MinidumpAnalyzer to gather format-specific information.
 /// </summary>
 public interface IDumpScanner
 {

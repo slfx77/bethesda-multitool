@@ -1,14 +1,14 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -311,7 +311,7 @@ public static partial class DumpCommands
             .Spinner(Spinner.Known.Dots)
             .Start("Scanning records...", ctx =>
             {
-                var allOfType = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, type.ToUpperInvariant());
+                var allOfType = EsmRecordParser.ScanForRecordType(esm.Data, esm.IsBigEndian, type.ToUpperInvariant());
                 filtered = limit > 0 ? allOfType.Take(limit).ToList() : allOfType;
             });
 
@@ -356,12 +356,12 @@ public static partial class DumpCommands
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start("Scanning CELL records...",
-                _ => { cells = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "CELL"); });
+                _ => { cells = EsmRecordParser.ScanForRecordType(esm.Data, esm.IsBigEndian, "CELL"); });
 
         foreach (var cell in cells)
         {
             var recordData = EsmHelpers.GetRecordData(esm.Data, cell, esm.IsBigEndian);
-            var subs = EsmHelpers.ParseSubrecords(recordData, esm.IsBigEndian);
+            var subs = EsmRecordParser.ParseSubrecords(recordData, esm.IsBigEndian);
 
             var edid = GetStringSubrecord(subs, "EDID");
             var full = GetStringSubrecord(subs, "FULL");
@@ -419,12 +419,12 @@ public static partial class DumpCommands
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start("Scanning CELL records...",
-                _ => { cells = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "CELL"); });
+                _ => { cells = EsmRecordParser.ScanForRecordType(esm.Data, esm.IsBigEndian, "CELL"); });
 
         foreach (var cell in cells)
         {
             var recordData = EsmHelpers.GetRecordData(esm.Data, cell, esm.IsBigEndian);
-            var subs = EsmHelpers.ParseSubrecords(recordData, esm.IsBigEndian);
+            var subs = EsmRecordParser.ParseSubrecords(recordData, esm.IsBigEndian);
 
             var gridText = GetCellGridText(subs, esm.IsBigEndian);
             if (string.IsNullOrEmpty(gridText))
@@ -646,7 +646,7 @@ public static partial class DumpCommands
             try
             {
                 var data = EsmHelpers.GetRecordData(primaryEsm.Data, primary, primaryEsm.IsBigEndian);
-                primarySubs = EsmHelpers.ParseSubrecords(data, primaryEsm.IsBigEndian);
+                primarySubs = EsmRecordParser.ParseSubrecords(data, primaryEsm.IsBigEndian);
             }
             catch (Exception ex)
             {
@@ -659,7 +659,7 @@ public static partial class DumpCommands
             try
             {
                 var data = EsmHelpers.GetRecordData(compareEsm.Data, compare, compareEsm.IsBigEndian);
-                compareSubs = EsmHelpers.ParseSubrecords(data, compareEsm.IsBigEndian);
+                compareSubs = EsmRecordParser.ParseSubrecords(data, compareEsm.IsBigEndian);
             }
             catch (Exception ex)
             {

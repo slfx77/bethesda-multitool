@@ -39,10 +39,10 @@ public static partial class CompareCommands
             .Start("Scanning for LAND records...", ctx =>
             {
                 _ = ctx.Status("Scanning Xbox 360 file...");
-                xboxLands = EsmHelpers.ScanForRecordType(xbox.Data, xbox.IsBigEndian, "LAND");
+                xboxLands = EsmRecordParser.ScanForRecordType(xbox.Data, xbox.IsBigEndian, "LAND");
 
                 _ = ctx.Status("Scanning PC file...");
-                pcLands = EsmHelpers.ScanForRecordType(pc.Data, pc.IsBigEndian, "LAND");
+                pcLands = EsmRecordParser.ScanForRecordType(pc.Data, pc.IsBigEndian, "LAND");
             });
 
         AnsiConsole.MarkupLine($"Xbox 360 LAND records: [cyan]{xboxLands.Count:N0}[/]");
@@ -84,8 +84,8 @@ public static partial class CompareCommands
             AnsiConsole.MarkupLine($"  PC:       {pcRec.DataSize} bytes (compressed) → {pcRecordData.Length} bytes");
 
             // Parse subrecords
-            var xboxSubs = EsmHelpers.ParseSubrecords(xboxRecordData, xbox.IsBigEndian);
-            var pcSubs = EsmHelpers.ParseSubrecords(pcRecordData, pc.IsBigEndian);
+            var xboxSubs = EsmRecordParser.ParseSubrecords(xboxRecordData, xbox.IsBigEndian);
+            var pcSubs = EsmRecordParser.ParseSubrecords(pcRecordData, pc.IsBigEndian);
 
             AnsiConsole.MarkupLine($"  Xbox 360 subrecords: {xboxSubs.Count}");
             AnsiConsole.MarkupLine($"  PC subrecords: {pcSubs.Count}");

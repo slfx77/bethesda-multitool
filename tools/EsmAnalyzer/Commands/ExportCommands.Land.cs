@@ -44,7 +44,7 @@ public static partial class ExportCommands
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start("Scanning for LAND records...",
-                ctx => { landRecordList = EsmHelpers.ScanForRecordType(esm.Data, esm.IsBigEndian, "LAND"); });
+                ctx => { landRecordList = EsmRecordParser.ScanForRecordType(esm.Data, esm.IsBigEndian, "LAND"); });
 
         IEnumerable<AnalyzerRecordInfo> landRecords = landRecordList;
 
@@ -108,7 +108,7 @@ public static partial class ExportCommands
     private static void ExportLandRecord(byte[] data, AnalyzerRecordInfo rec, bool bigEndian, string outputDir)
     {
         var recordData = EsmHelpers.GetRecordData(data, rec, bigEndian);
-        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
 
         // Create LAND data structure
         var landData = new LandExportData

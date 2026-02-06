@@ -1,5 +1,3 @@
-using FalloutXbox360Utils.Core.Converters;
-
 namespace FalloutXbox360Utils.Core.Formats;
 
 /// <summary>

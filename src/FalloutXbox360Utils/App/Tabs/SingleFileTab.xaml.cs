@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -22,7 +24,7 @@ namespace FalloutXbox360Utils;
 /// - SingleFileTab.TreeBuilder.cs: ESM browser tree building and filtering
 /// - SingleFileTab.Helpers.cs: Helper/utility methods
 /// </summary>
-public sealed partial class SingleFileTab : UserControl
+public sealed partial class SingleFileTab : UserControl, IDisposable
 {
     #region Fields
 
@@ -58,7 +60,9 @@ public sealed partial class SingleFileTab : UserControl
 
     #region Properties
 
+#pragma warning disable CA1822, S2325
     private StatusTextHelper StatusTextBlock => new();
+#pragma warning restore CA1822, S2325
 
     #endregion
 
@@ -73,6 +77,16 @@ public sealed partial class SingleFileTab : UserControl
         SetupTextBoxContextMenus();
         Loaded += SingleFileTab_Loaded;
         Unloaded += SingleFileTab_Unloaded;
+    }
+
+    #endregion
+
+    #region IDisposable
+
+    public void Dispose()
+    {
+        _searchDebounceToken?.Dispose();
+        _session.Dispose();
     }
 
     #endregion
@@ -180,7 +194,7 @@ public sealed partial class SingleFileTab : UserControl
             _analysisResult = fileType switch
             {
                 AnalysisFileType.EsmFile => await EsmFileAnalyzer.AnalyzeAsync(filePath, progress),
-                AnalysisFileType.Minidump => await new MemoryDumpAnalyzer().AnalyzeAsync(filePath, progress),
+                AnalysisFileType.Minidump => await new MinidumpAnalyzer().AnalyzeAsync(filePath, progress),
                 _ => throw new NotSupportedException($"Unknown file type: {filePath}")
             };
 
@@ -228,7 +242,7 @@ public sealed partial class SingleFileTab : UserControl
 
             // Open shared session and load hex viewer with shared accessor
             _session.Open(filePath, _analysisResult, fileType);
-            HexViewer.LoadData(filePath, _analysisResult, _session.Accessor!);
+            await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
 
             // Enable data browser and reports tabs (depends on ESM records, not coverage)
             DataBrowserTab.IsEnabled = _session.HasEsmRecords;
@@ -249,7 +263,7 @@ public sealed partial class SingleFileTab : UserControl
 
                 if (_session.CoverageResult.Error == null)
                 {
-                    HexViewer.AddCoverageGapRegions(_session.CoverageResult);
+                    await HexViewer.AddCoverageGapRegionsAsync(_session.CoverageResult);
                     CoverageTab.IsEnabled = true;
                 }
             }

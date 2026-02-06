@@ -1,4 +1,4 @@
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -23,7 +23,7 @@ public class EsmCoverageTests
         Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Sample", "ESM", "360_proto",
             "FalloutNV.esm"));
 
-    [Fact(Skip = "Requires local sample file")]
+    [Fact]
     public void EsmCoverage_Xbox360Esm_ShouldCoverEntireFile()
     {
         // Skip if file doesn't exist

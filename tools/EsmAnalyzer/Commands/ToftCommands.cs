@@ -1,15 +1,15 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -104,7 +104,7 @@ public static class ToftCommands
         var data = esm.Data;
         var bigEndian = esm.IsBigEndian;
 
-        var toftRecord = EsmHelpers.ScanForRecordType(data, bigEndian, "TOFT")
+        var toftRecord = EsmRecordParser.ScanForRecordType(data, bigEndian, "TOFT")
             .OrderBy(r => r.Offset)
             .FirstOrDefault();
 
@@ -114,7 +114,7 @@ public static class ToftCommands
             return 1;
         }
 
-        var preToftRecords = EsmHelpers.ScanAllRecords(data, bigEndian)
+        var preToftRecords = EsmRecordParser.ScanAllRecords(data, bigEndian)
             .Where(r => r.Offset < toftRecord.Offset)
             .ToList();
 
@@ -184,8 +184,8 @@ public static class ToftCommands
         var primaryData = EsmHelpers.GetRecordData(data, primary, bigEndian);
         var toftData = EsmHelpers.GetRecordData(data, toftRecord, bigEndian);
 
-        var primarySubs = EsmHelpers.ParseSubrecords(primaryData, bigEndian);
-        var toftSubs = EsmHelpers.ParseSubrecords(toftData, bigEndian);
+        var primarySubs = EsmRecordParser.ParseSubrecords(primaryData, bigEndian);
+        var toftSubs = EsmRecordParser.ParseSubrecords(toftData, bigEndian);
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[cyan]INFO detail:[/] FormID 0x{formId:X8}");
@@ -662,11 +662,11 @@ public static class ToftCommands
         var primaryData = EsmHelpers.GetRecordData(context.Data, primary, context.BigEndian);
         var toftData = EsmHelpers.GetRecordData(context.Data, toftRecord, context.BigEndian);
 
-        var primaryStrings = ExtractStringSubrecords(EsmHelpers.ParseSubrecords(primaryData, context.BigEndian))
+        var primaryStrings = ExtractStringSubrecords(EsmRecordParser.ParseSubrecords(primaryData, context.BigEndian))
             .Values
             .Distinct()
             .ToList();
-        var toftStrings = ExtractStringSubrecords(EsmHelpers.ParseSubrecords(toftData, context.BigEndian))
+        var toftStrings = ExtractStringSubrecords(EsmRecordParser.ParseSubrecords(toftData, context.BigEndian))
             .Values
             .Distinct()
             .ToList();

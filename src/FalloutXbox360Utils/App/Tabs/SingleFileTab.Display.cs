@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -148,7 +149,7 @@ public sealed partial class SingleFileTab
 
         // Classification summary - use friendly display names
         var totalGap = coverage.TotalGapBytes;
-        var classText = "";
+        string classText;
         if (totalGap > 0)
         {
             var byClass = coverage.Gaps
@@ -156,14 +157,16 @@ public sealed partial class SingleFileTab
                 .Select(g => new { Classification = g.Key, TotalBytes = g.Sum(x => x.Size), Count = g.Count() })
                 .OrderByDescending(x => x.TotalBytes);
 
+            var sb = new System.Text.StringBuilder();
             foreach (var entry in byClass)
             {
                 var pct = totalGap > 0 ? entry.TotalBytes * 100.0 / totalGap : 0;
                 var displayName = FileTypeColors.GapDisplayNames.GetValueOrDefault(
                     entry.Classification, entry.Classification.ToString());
-                classText +=
-                    $"{displayName + ":",-18}{entry.TotalBytes,15:N0} bytes  ({pct,5:F1}%)  - {entry.Count:N0} regions\n";
+                sb.Append($"{displayName + ":",-18}{entry.TotalBytes,15:N0} bytes  ({pct,5:F1}%)  - {entry.Count:N0} regions\n");
             }
+
+            classText = sb.ToString();
         }
         else
         {
@@ -422,7 +425,6 @@ public sealed partial class SingleFileTab
                 Grid.SetColumnSpan(countText, 3); // Spans value columns
                 mainGrid.Children.Add(countText);
 
-                var headerRow = currentRow;
                 currentRow++;
 
                 // Create a separate grid for sub-items (isolates column widths from mainGrid)

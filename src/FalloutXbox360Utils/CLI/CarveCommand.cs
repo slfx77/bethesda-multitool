@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats;
+using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -124,7 +126,7 @@ public static class CarveCommand
                         analysisTask.Description = $"[yellow]{p.Phase}[/]";
                     });
 
-                    var analyzer = new MemoryDumpAnalyzer();
+                    var analyzer = new MinidumpAnalyzer();
                     analysisResult = await analyzer.AnalyzeAsync(file, analysisProgress, true, verbose);
                     analysisTask.Value = 100;
                     analysisTask.Description = "[green]Analysis complete[/]";
@@ -138,7 +140,7 @@ public static class CarveCommand
                     extractTask.Description = $"[yellow]{p.CurrentOperation}[/]";
                 });
 
-                summary = await MemoryDumpExtractor.Extract(file, options, extractProgress, analysisResult);
+                summary = await MinidumpExtractor.Extract(file, options, extractProgress, analysisResult);
                 extractTask.Value = 100;
                 extractTask.Description = "[green]Complete[/]";
             });

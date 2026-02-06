@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils;
 

@@ -1,3 +1,4 @@
+#pragma warning disable CA1707 // Identifiers should not contain underscores - localization key names match resource entries
 using Microsoft.Windows.ApplicationModel.Resources;
 
 namespace FalloutXbox360Utils.Localization;

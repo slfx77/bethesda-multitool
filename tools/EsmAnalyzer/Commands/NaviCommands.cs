@@ -164,11 +164,11 @@ public static class NaviCommands
     {
         var map = new Dictionary<uint, byte[]>();
 
-        var naviRecords = EsmHelpers.ScanForRecordType(fileData, bigEndian, "NAVI");
+        var naviRecords = EsmRecordParser.ScanForRecordType(fileData, bigEndian, "NAVI");
         foreach (var navi in naviRecords)
         {
             var recordData = EsmHelpers.GetRecordData(fileData, navi, bigEndian);
-            var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+            var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
 
             foreach (var sub in subrecords)
             {

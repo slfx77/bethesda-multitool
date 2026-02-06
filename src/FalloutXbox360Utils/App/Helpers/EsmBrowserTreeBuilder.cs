@@ -3,8 +3,8 @@ using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
 namespace FalloutXbox360Utils;
 
@@ -179,10 +179,10 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     private static void AddWorldCategory(
         ObservableCollection<EsmBrowserNode> root,
-        IList<ReconstructedWorldspace> worldspaces,
+        List<ReconstructedWorldspace> worldspaces,
         IList<ReconstructedCell> cells,
-        IList<PlacedReference> mapMarkers,
-        IList<ReconstructedLeveledList> leveledLists)
+        List<PlacedReference> mapMarkers,
+        List<ReconstructedLeveledList> leveledLists)
     {
         // Group cells by worldspace FormID
         var cellsByWorldspace = cells
@@ -290,7 +290,7 @@ internal static partial class EsmBrowserTreeBuilder
         List<(string Name, IList Records, Dictionary<uint, List<ReconstructedCell>>? CellLookup)> recordTypes,
         Dictionary<uint, List<ReconstructedCell>> cellsByWorldspace)
     {
-        foreach (var (name, records, cellLookup) in recordTypes)
+        foreach (var (name, records, _) in recordTypes)
         {
             if (records.Count == 0)
             {
@@ -429,9 +429,19 @@ internal static partial class EsmBrowserTreeBuilder
 
             // Build display name with cell count
             string displayName;
-            var baseName = !string.IsNullOrEmpty(fullName) ? fullName
-                : !string.IsNullOrEmpty(editorId) ? editorId
-                : formIdHex;
+            string baseName;
+            if (!string.IsNullOrEmpty(fullName))
+            {
+                baseName = fullName;
+            }
+            else if (!string.IsNullOrEmpty(editorId))
+            {
+                baseName = editorId;
+            }
+            else
+            {
+                baseName = formIdHex;
+            }
 
             displayName = cellCount > 0
                 ? $"{baseName} ({cellCount:N0} cells)"
@@ -505,7 +515,7 @@ internal static partial class EsmBrowserTreeBuilder
         displayNameLookup ??= cellData.Item4;
 
         // Get parent worldspace name for fallback display
-        var (wsFormId, wsEditorId, wsFullName, _) = ExtractRecordIdentity(record);
+        var (wsFormId, wsEditorId, _, _) = ExtractRecordIdentity(record);
         var worldspaceName = !string.IsNullOrEmpty(wsEditorId) ? wsEditorId : $"0x{wsFormId:X8}";
 
         var cellNodes = new List<EsmBrowserNode>(cells.Count);
@@ -574,39 +584,38 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     public static void SortRecordChildren(ObservableCollection<EsmBrowserNode> root, RecordSortMode mode)
     {
-        foreach (var categoryNode in root)
+#pragma warning disable S3267 // Loop body has lock/continue that makes LINQ impractical
+        foreach (var typeNode in root.SelectMany(c => c.Children))
+#pragma warning restore S3267
         {
-            foreach (var typeNode in categoryNode.Children)
+            // Take a snapshot to avoid concurrent modification issues
+            EsmBrowserNode[] snapshot;
+            lock (typeNode.Children)
             {
-                // Take a snapshot to avoid concurrent modification issues
-                EsmBrowserNode[] snapshot;
-                lock (typeNode.Children)
+                if (typeNode.Children.Count == 0)
                 {
-                    if (typeNode.Children.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    snapshot = typeNode.Children.ToArray();
+                    continue;
                 }
 
-                var sorted = mode switch
-                {
-                    RecordSortMode.EditorId => snapshot
-                        .OrderBy(n => n.EditorId ?? n.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
-                    RecordSortMode.FormId => snapshot
-                        .OrderBy(n => n.FormIdHex ?? "", StringComparer.OrdinalIgnoreCase).ToList(),
-                    _ => snapshot
-                        .OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase).ToList()
-                };
+                snapshot = typeNode.Children.ToArray();
+            }
 
-                lock (typeNode.Children)
+            var sorted = mode switch
+            {
+                RecordSortMode.EditorId => snapshot
+                    .OrderBy(n => n.EditorId ?? n.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
+                RecordSortMode.FormId => snapshot
+                    .OrderBy(n => n.FormIdHex ?? "", StringComparer.OrdinalIgnoreCase).ToList(),
+                _ => snapshot
+                    .OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase).ToList()
+            };
+
+            lock (typeNode.Children)
+            {
+                typeNode.Children.Clear();
+                foreach (var node in sorted)
                 {
-                    typeNode.Children.Clear();
-                    foreach (var node in sorted)
-                    {
-                        typeNode.Children.Add(node);
-                    }
+                    typeNode.Children.Add(node);
                 }
             }
         }

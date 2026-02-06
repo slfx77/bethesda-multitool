@@ -2,11 +2,15 @@ using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
+using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Json;
+using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
+using FalloutXbox360Utils.Core.Strings;
 using Spectre.Console;
 using static FalloutXbox360Utils.Core.LogLevel;
 
@@ -75,7 +79,7 @@ public static class AnalyzeCommand
         AnsiConsole.MarkupLine($"[blue]Analyzing:[/] {Path.GetFileName(input)}");
         AnsiConsole.WriteLine();
 
-        var analyzer = new MemoryDumpAnalyzer();
+        var analyzer = new MinidumpAnalyzer();
         AnalysisResult result = null!;
 
         // Run analysis with progress bar
@@ -106,9 +110,9 @@ public static class AnalyzeCommand
 
         var report = format.ToLowerInvariant() switch
         {
-            "md" or "markdown" => MemoryDumpAnalyzer.GenerateReport(result),
+            "md" or "markdown" => MinidumpAnalyzer.GenerateReport(result),
             "json" => SerializeResultToJson(result),
-            _ => MemoryDumpAnalyzer.GenerateSummary(result)
+            _ => MinidumpAnalyzer.GenerateSummary(result)
         };
 
         if (!string.IsNullOrEmpty(output))

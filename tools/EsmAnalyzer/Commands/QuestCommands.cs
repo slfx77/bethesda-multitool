@@ -163,8 +163,8 @@ public static class QuestCommands
 
     private static Dictionary<uint, QuestLinkInfo> LoadQuestLinks(EsmFileLoadResult file)
     {
-        var quests = EsmHelpers.ScanForRecordType(file.Data, file.IsBigEndian, "QUST");
-        var recordIndex = EsmHelpers.ScanAllRecords(file.Data, file.IsBigEndian)
+        var quests = EsmRecordParser.ScanForRecordType(file.Data, file.IsBigEndian, "QUST");
+        var recordIndex = EsmRecordParser.ScanAllRecords(file.Data, file.IsBigEndian)
             .GroupBy(r => r.FormId)
             .ToDictionary(g => g.Key, g => g.First());
 
@@ -172,7 +172,7 @@ public static class QuestCommands
         foreach (var quest in quests)
         {
             var data = EsmHelpers.GetRecordData(file.Data, quest, file.IsBigEndian);
-            var subs = EsmHelpers.ParseSubrecords(data, file.IsBigEndian);
+            var subs = EsmRecordParser.ParseSubrecords(data, file.IsBigEndian);
 
             var edid = TryDecodeString(subs.FirstOrDefault(s => s.Signature == "EDID")?.Data);
             var scriSub = subs.FirstOrDefault(s => s.Signature == "SCRI");
@@ -223,7 +223,7 @@ public static class QuestCommands
         try
         {
             var data = EsmHelpers.GetRecordData(file.Data, record, file.IsBigEndian);
-            var subs = EsmHelpers.ParseSubrecords(data, file.IsBigEndian);
+            var subs = EsmRecordParser.ParseSubrecords(data, file.IsBigEndian);
             edid = TryDecodeString(subs.FirstOrDefault(s => s.Signature == "EDID")?.Data);
         }
         catch

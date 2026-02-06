@@ -1,11 +1,11 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 using static EsmAnalyzer.Helpers.DiffHelpers;
 
 namespace EsmAnalyzer.Commands;
@@ -95,22 +95,22 @@ public static partial class DiffCommands
         string labelA = "Xbox 360", string labelB = "PC")
     {
         // Prefer GRUP-based scanning to avoid false positives from signature search
-        var recordsA = EsmHelpers.ScanAllRecords(dataA, bigEndianA)
+        var recordsA = EsmRecordParser.ScanAllRecords(dataA, bigEndianA)
             .Where(r => r.Signature == recordType)
             .ToList();
-        var recordsB = EsmHelpers.ScanAllRecords(dataB, bigEndianB)
+        var recordsB = EsmRecordParser.ScanAllRecords(dataB, bigEndianB)
             .Where(r => r.Signature == recordType)
             .ToList();
 
         // Fallback to raw signature scan if nothing found (some rare cases)
         if (recordsA.Count == 0)
         {
-            recordsA = EsmHelpers.ScanForRecordType(dataA, bigEndianA, recordType);
+            recordsA = EsmRecordParser.ScanForRecordType(dataA, bigEndianA, recordType);
         }
 
         if (recordsB.Count == 0)
         {
-            recordsB = EsmHelpers.ScanForRecordType(dataB, bigEndianB, recordType);
+            recordsB = EsmRecordParser.ScanForRecordType(dataB, bigEndianB, recordType);
         }
 
         AnsiConsole.MarkupLine($"Found [cyan]{recordsA.Count}[/] {recordType} records in {labelA} file");
@@ -179,8 +179,8 @@ public static partial class DiffCommands
             var recordDataA = EsmHelpers.GetRecordData(dataA, recA, bigEndianA);
             var recordDataB = EsmHelpers.GetRecordData(dataB, recB, bigEndianB);
 
-            var subsA = EsmHelpers.ParseSubrecords(recordDataA, bigEndianA);
-            var subsB = EsmHelpers.ParseSubrecords(recordDataB, bigEndianB);
+            var subsA = EsmRecordParser.ParseSubrecords(recordDataA, bigEndianA);
+            var subsB = EsmRecordParser.ParseSubrecords(recordDataB, bigEndianB);
 
             // Group by signature
             var bySigA = subsA.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());

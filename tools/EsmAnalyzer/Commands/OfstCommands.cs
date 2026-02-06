@@ -1,15 +1,15 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -1281,7 +1281,7 @@ public static class OfstCommands
             return 1;
         }
 
-        var records = EsmHelpers.ScanAllRecords(esm.Data, esm.IsBigEndian)
+        var records = EsmRecordParser.ScanAllRecords(esm.Data, esm.IsBigEndian)
             .OrderBy(r => r.Offset)
             .ToList();
 
@@ -1360,7 +1360,7 @@ public static class OfstCommands
             return 1;
         }
 
-        var records = EsmHelpers.ScanAllRecords(esm.Data, esm.IsBigEndian)
+        var records = EsmRecordParser.ScanAllRecords(esm.Data, esm.IsBigEndian)
             .OrderBy(r => r.Offset)
             .ToList();
 
@@ -1388,7 +1388,7 @@ public static class OfstCommands
             return 1;
         }
 
-        var records = EsmHelpers.ScanAllRecords(esm.Data, esm.IsBigEndian)
+        var records = EsmRecordParser.ScanAllRecords(esm.Data, esm.IsBigEndian)
             .OrderBy(r => r.Offset)
             .ToList();
 
@@ -1415,7 +1415,7 @@ public static class OfstCommands
     private static (AnalyzerRecordInfo? Record, byte[]? RecordData) FindWorldspaceRecord(byte[] data, bool bigEndian,
         uint formId)
     {
-        var records = EsmHelpers.ScanForRecordType(data, bigEndian, "WRLD");
+        var records = EsmRecordParser.ScanForRecordType(data, bigEndian, "WRLD");
         var match = records.FirstOrDefault(r => r.FormId == formId);
         if (match == null)
         {
@@ -1437,7 +1437,7 @@ public static class OfstCommands
 
     private static byte[]? GetOfstData(byte[] recordData, bool bigEndian)
     {
-        var subrecords = EsmHelpers.ParseSubrecords(recordData, bigEndian);
+        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
         var ofst = subrecords.FirstOrDefault(s => s.Signature == "OFST");
         return ofst?.Data;
     }
@@ -1601,7 +1601,7 @@ public static class OfstCommands
             return false;
         }
 
-        var subs = EsmHelpers.ParseSubrecords(wrldData, bigEndian);
+        var subs = EsmRecordParser.ParseSubrecords(wrldData, bigEndian);
         if (!TryGetWorldBounds(subs, bigEndian, out var minX, out var maxX, out var minY, out var maxY))
         {
             AnsiConsole.MarkupLine(ErrorReadBounds);
@@ -1628,7 +1628,7 @@ public static class OfstCommands
         gridX = 0;
         gridY = 0;
 
-        var cellRecord = EsmHelpers.ScanForRecordType(data, bigEndian, "CELL")
+        var cellRecord = EsmRecordParser.ScanForRecordType(data, bigEndian, "CELL")
             .FirstOrDefault(r => r.FormId == cellFormId);
         if (cellRecord == null)
         {
@@ -1637,7 +1637,7 @@ public static class OfstCommands
         }
 
         var cellData = EsmHelpers.GetRecordData(data, cellRecord, bigEndian);
-        var cellSubs = EsmHelpers.ParseSubrecords(cellData, bigEndian);
+        var cellSubs = EsmRecordParser.ParseSubrecords(cellData, bigEndian);
         if (!TryGetCellGrid(cellSubs, bigEndian, out gridX, out gridY))
         {
             AnsiConsole.MarkupLine("[red]ERROR:[/] CELL has no XCLC grid data");
@@ -1704,7 +1704,7 @@ public static class OfstCommands
 
         resolvedLabel = $"CELL 0x{match.FormId:X8}";
         var cellData = EsmHelpers.GetRecordData(data, match, bigEndian);
-        var cellSubs = EsmHelpers.ParseSubrecords(cellData, bigEndian);
+        var cellSubs = EsmRecordParser.ParseSubrecords(cellData, bigEndian);
         if (!TryGetCellGrid(cellSubs, bigEndian, out var cellX, out var cellY))
         {
             issue = "Missing XCLC";
@@ -2015,7 +2015,7 @@ public static class OfstCommands
 
     private static List<OfstLayoutEntry> BuildOfstEntries(WorldContext context, byte[] data, bool bigEndian)
     {
-        var records = EsmHelpers.ScanAllRecords(data, bigEndian)
+        var records = EsmRecordParser.ScanAllRecords(data, bigEndian)
             .OrderBy(r => r.Offset)
             .ToList();
 

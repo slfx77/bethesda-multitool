@@ -1,5 +1,5 @@
-using FalloutXbox360Utils.Core.Converters.Esm;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
+using FalloutXbox360Utils.Core.Formats.Esm;
 
 namespace EsmAnalyzer.Helpers;
 
@@ -33,8 +33,8 @@ public static class RecordComparisonHelpers
             result.OnlySizeDiffers = xboxData.Length != pcData.Length;
 
             // Parse and compare subrecords
-            var xboxSubs = EsmHelpers.ParseSubrecords(xboxData, xboxBigEndian);
-            var pcSubs = EsmHelpers.ParseSubrecords(pcData, pcBigEndian);
+            var xboxSubs = EsmRecordParser.ParseSubrecords(xboxData, xboxBigEndian);
+            var pcSubs = EsmRecordParser.ParseSubrecords(pcData, pcBigEndian);
 
             var xboxSubsBySig = xboxSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());
             var pcSubsBySig = pcSubs.GroupBy(s => s.Signature).ToDictionary(g => g.Key, g => g.ToList());

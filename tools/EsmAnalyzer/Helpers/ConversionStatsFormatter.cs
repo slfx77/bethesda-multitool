@@ -1,7 +1,7 @@
 using System.Globalization;
-using FalloutXbox360Utils.Core.Converters.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using Spectre.Console;
-using static FalloutXbox360Utils.Core.Converters.Esm.EsmEndianHelpers;
+using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 
 namespace EsmAnalyzer.Helpers;
 

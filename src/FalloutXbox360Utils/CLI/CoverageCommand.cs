@@ -2,6 +2,10 @@ using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Pdb;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -55,7 +59,7 @@ public static class CoverageCommand
         AnsiConsole.WriteLine();
 
         // Phase 1: Run the standard analysis pipeline
-        var analyzer = new MemoryDumpAnalyzer();
+        var analyzer = new MinidumpAnalyzer();
         AnalysisResult result = null!;
 
         await AnsiConsole.Progress()

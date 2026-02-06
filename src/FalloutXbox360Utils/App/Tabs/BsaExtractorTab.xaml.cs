@@ -6,7 +6,8 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Threading.Channels;
 using Windows.Storage.Pickers;
-using FalloutXbox360Utils.Core.Converters;
+using FalloutXbox360Utils.Core.Formats;
+using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -25,7 +26,6 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
     private readonly ObservableCollection<BsaFileEntry> _filteredFiles = [];
 
     private BsaArchive? _archive;
-    private string? _bsaFilePath;
     private CancellationTokenSource? _cts;
 
     private string _currentSortColumn = "Path";
@@ -95,7 +95,6 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
             // Clean up previous extractor
             _extractor?.Dispose();
 
-            _bsaFilePath = path;
             _archive = BsaParser.Parse(path);
             _extractor = new BsaExtractor(_archive, File.OpenRead(path));
 
@@ -481,7 +480,19 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                                     /* ignore UI errors */
                                 }
                             });
-                            var conversionType = needsDdxConversion ? "ddx" : needsXmaConversion ? "xma" : "nif";
+                            string conversionType;
+                            if (needsDdxConversion)
+                            {
+                                conversionType = "ddx";
+                            }
+                            else if (needsXmaConversion)
+                            {
+                                conversionType = "xma";
+                            }
+                            else
+                            {
+                                conversionType = "nif";
+                            }
                             await conversionChannel.Writer.WriteAsync((entry, data, outputPath, conversionType),
                                 _cts.Token);
                             // Note: conversion worker will set final status

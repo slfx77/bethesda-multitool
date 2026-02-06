@@ -1,15 +1,15 @@
-﻿using EsmAnalyzer.Helpers;
+using EsmAnalyzer.Helpers;
 using Spectre.Console;
 using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.EsmRecord;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Models;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Subrecords;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Enums;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Export;
-using FalloutXbox360Utils.Core.Formats.EsmRecord.Schema;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 
 namespace EsmAnalyzer.Commands;
 
@@ -93,7 +93,7 @@ public static class CellCommands
             return 0;
         }
 
-        var records = EsmHelpers.ScanAllRecords(esm.Data, esm.IsBigEndian)
+        var records = EsmRecordParser.ScanAllRecords(esm.Data, esm.IsBigEndian)
             .OrderBy(r => r.Offset)
             .ToList();
 
@@ -221,7 +221,7 @@ public static class CellCommands
             return new Dictionary<string, int>(StringComparer.Ordinal);
         }
 
-        var records = EsmHelpers.ScanAllRecords(data, bigEndian)
+        var records = EsmRecordParser.ScanAllRecords(data, bigEndian)
             .OrderBy(r => r.Offset)
             .ToList();
 

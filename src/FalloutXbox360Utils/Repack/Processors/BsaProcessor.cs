@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using FalloutXbox360Utils.Core.Converters;
+using FalloutXbox360Utils.Core.Formats;
+using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;

@@ -169,7 +169,9 @@
       "Bash(git clean:*)",
       "Bash(git submodule update:*)",
       "Bash(git submodule status:*)",
-      "Bash(Select-String -Pattern \"warning|error|Build succeeded|Warning|Error\")"
+      "Bash(Select-String -Pattern \"warning|error|Build succeeded|Warning|Error\")",
+      "Bash(git ls-tree:*)",
+      "Bash(Select-String -Pattern \"passed|failed|total tests\")"
     ]
   }
 }
