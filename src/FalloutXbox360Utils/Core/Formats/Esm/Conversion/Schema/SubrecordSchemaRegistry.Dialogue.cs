@@ -95,25 +95,29 @@ public static partial class SubrecordSchemaRegistry
         // SCRIPT SCHEMAS (SCPT)
         // ========================================================================
 
-        // SCHR - Script Header (20 bytes)
+        // SCHR - Script Header (20 bytes) - matches PDB SCRIPT_HEADER struct
         schemas[new SchemaKey("SCHR", null, 20)] = new SubrecordSchema(
-            F.Padding(4),
-            F.UInt32("RefCount"),
-            F.UInt32("CompiledSize"),
             F.UInt32("VariableCount"),
-            F.Padding(4))
+            F.UInt32("RefObjectCount"),
+            F.UInt32("CompiledSize"),
+            F.UInt32("LastVariableId"),
+            F.UInt8("IsQuestScript"),
+            F.UInt8("IsMagicEffectScript"),
+            F.UInt8("IsCompiled"),
+            F.Padding(1))
         {
-            Description = "Script Header"
+            Description = "Script Header (SCRIPT_HEADER)"
         };
 
-        // SLSD - Script Local Variable Data (24 bytes)
+        // SLSD - Script Local Variable Data (24 bytes) - matches PDB SCRIPT_LOCAL struct
+        // Layout: uiID(4) + fValue(double, 8) + bIsInteger(4) + padding(8)
         schemas[new SchemaKey("SLSD", null, 24)] = new SubrecordSchema(
             F.UInt32("Index"),
-            F.Bytes("Unused", 12),
-            F.UInt8("Type"),
-            F.Bytes("Unused2", 7))
+            F.Bytes("Value", 8),
+            F.UInt32("IsInteger"),
+            F.Bytes("Padding", 8))
         {
-            Description = "Script Local Variable Data"
+            Description = "Script Local Variable Data (SCRIPT_LOCAL)"
         };
 
         schemas[new SchemaKey("SCDA")] = SubrecordSchema.ByteArray;

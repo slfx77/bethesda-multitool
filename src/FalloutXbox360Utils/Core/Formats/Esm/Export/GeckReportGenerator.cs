@@ -94,6 +94,12 @@ public static partial class GeckReportGenerator
             AppendDialogueSection(sb, result.Dialogues, lookup);
         }
 
+        // Scripts
+        if (result.Scripts.Count > 0)
+        {
+            AppendScriptsSection(sb, result.Scripts, lookup);
+        }
+
         // Items
         if (result.Weapons.Count > 0)
         {
@@ -209,6 +215,7 @@ public static partial class GeckReportGenerator
         sb.AppendLine($"    Notes:        {result.Notes.Count,6:N0}");
         sb.AppendLine($"    Books:        {result.Books.Count,6:N0}");
         sb.AppendLine($"    Terminals:    {result.Terminals.Count,6:N0}");
+        sb.AppendLine($"    Scripts:      {result.Scripts.Count,6:N0}");
         sb.AppendLine();
         sb.AppendLine("  Items:");
         sb.AppendLine($"    Weapons:      {result.Weapons.Count,6:N0}");

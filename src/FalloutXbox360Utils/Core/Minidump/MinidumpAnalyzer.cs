@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core.Minidump;
@@ -301,23 +300,7 @@ public sealed partial class MinidumpAnalyzer
         var log = Logger.Instance;
         log.Debug("Metadata: Starting extraction...");
 
-        // Phase 3: SCDA scan (70-80%) - now using memory-mapped access
-        progress?.Report(new AnalysisProgress
-        { Phase = "Scripts", FilesFound = result.CarvedFiles.Count, PercentComplete = 70 });
-        log.Debug("Metadata: Phase 3 - SCDA scan");
-        await Task.Run(() =>
-        {
-            var scdaScanResult = ScdaFormat.ScanForRecordsMemoryMapped(accessor, result.FileSize);
-            foreach (var record in scdaScanResult.Records)
-            {
-                record.ScriptName = ScdaExtractor.ExtractScriptNameFromSourcePublic(record.SourceText);
-            }
-
-            result.ScdaRecords = scdaScanResult.Records;
-        }, cancellationToken);
-        log.Debug("Metadata: Phase 3 complete - {0} SCDA records", result.ScdaRecords?.Count ?? 0);
-
-        // Phase 4: ESM scan (80-88%) - now using memory-mapped access
+        // Phase 3: ESM scan (70-88%) - now using memory-mapped access
         // Pass module ranges to exclude ESM detection inside module memory
         progress?.Report(new AnalysisProgress
         { Phase = "ESM Records", FilesFound = result.CarvedFiles.Count, PercentComplete = 80 });

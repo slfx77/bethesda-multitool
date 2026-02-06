@@ -6,7 +6,6 @@ using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Json;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
@@ -170,8 +169,8 @@ public static class AnalyzeCommand
 
         AnsiConsole.MarkupLine($"[green]Semantic report saved to:[/] {outputPath}");
         AnsiConsole.MarkupLine($"  NPCs: {semanticResult.Npcs.Count}, Quests: {semanticResult.Quests.Count}, " +
-                               $"Notes: {semanticResult.Notes.Count}, Dialogue: {semanticResult.Dialogues.Count}, " +
-                               $"Cells: {semanticResult.Cells.Count}");
+                               $"Scripts: {semanticResult.Scripts.Count}, Notes: {semanticResult.Notes.Count}, " +
+                               $"Dialogue: {semanticResult.Dialogues.Count}, Cells: {semanticResult.Cells.Count}");
     }
 
     /// <summary>
@@ -246,12 +245,6 @@ public static class AnalyzeCommand
                         .ToDictionary(g => g.Key, g => g.Count())
                 }
                 : null,
-            ScdaRecords = result.ScdaRecords.Select(sr => new JsonScdaRecordInfo
-            {
-                Offset = sr.Offset,
-                BytecodeLength = sr.BytecodeLength,
-                ScriptName = sr.ScriptName
-            }).ToList(),
             FormIdMap = result.FormIdMap
         };
 
@@ -389,18 +382,6 @@ public static class AnalyzeCommand
             }
         }
 
-        if (result.ScdaRecords.Count > 0)
-        {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[blue]Extracting compiled scripts (SCDA)...[/]");
-            var dumpData = await File.ReadAllBytesAsync(input);
-            var scriptsDir = Path.Combine(extractEsm, "scripts");
-            var scriptProgress =
-                verbose ? new Progress<string>(msg => AnsiConsole.MarkupLine($"  [grey]{msg}[/]")) : null;
-            var scriptResult = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, scriptProgress);
-            AnsiConsole.MarkupLine(
-                $"[green]Scripts extracted:[/] {scriptResult.TotalRecords} records ({scriptResult.GroupedQuests} quests, {scriptResult.UngroupedScripts} ungrouped)");
-        }
     }
 
     /// <summary>

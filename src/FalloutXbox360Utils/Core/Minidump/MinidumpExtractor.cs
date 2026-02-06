@@ -5,7 +5,6 @@ using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core.Minidump;
@@ -98,26 +97,20 @@ public static class MinidumpExtractor
             }
         }
 
-        // Extract compiled scripts if requested
-        var scriptResult = new ScdaExtractionResult();
-        if (options.ExtractScripts)
-        {
-            scriptResult = await ExtractScriptsAsync(filePath, options, progress, analysisResult);
-        }
-
         // Generate ESM reports and heightmaps if requested and analysis data is available
         var esmReportGenerated = false;
         var heightmapsExported = 0;
+        var scriptsExtracted = 0;
         if (options.GenerateEsmReports && analysisResult?.EsmRecords != null)
         {
-            (esmReportGenerated, heightmapsExported) = await GenerateEsmOutputsAsync(
-                analysisResult, filePath, extractDir, progress, scriptResult);
+            (esmReportGenerated, heightmapsExported, scriptsExtracted) = await GenerateEsmOutputsAsync(
+                analysisResult, filePath, extractDir, progress);
         }
 
         // Return summary
         return new ExtractionSummary
         {
-            TotalExtracted = entries.Count + moduleCount + scriptResult.GroupedQuests + scriptResult.UngroupedScripts,
+            TotalExtracted = entries.Count + moduleCount,
             DdxConverted = ddxConverted,
             DdxFailed = ddxFailed,
             XurConverted = carver.XurConvertedCount,
@@ -127,59 +120,10 @@ public static class MinidumpExtractor
             FailedConversionOffsets = failedConversionOffsets,
             ExtractedModuleOffsets = moduleOffsets,
             ModulesExtracted = moduleCount,
-            ScriptsExtracted = scriptResult.TotalRecords,
-            ScriptQuestsGrouped = scriptResult.GroupedQuests,
             EsmReportGenerated = esmReportGenerated,
-            HeightmapsExported = heightmapsExported
+            HeightmapsExported = heightmapsExported,
+            ScriptsExtracted = scriptsExtracted
         };
-    }
-
-    /// <summary>
-    ///     Extract compiled scripts (SCDA records) from the dump.
-    /// </summary>
-    private static async Task<ScdaExtractionResult> ExtractScriptsAsync(
-        string filePath,
-        ExtractionOptions options,
-        IProgress<ExtractionProgress>? progress,
-        AnalysisResult? analysisResult = null)
-    {
-        progress?.Report(new ExtractionProgress
-        {
-            PercentComplete = 85,
-            CurrentOperation = "Scanning for compiled scripts..."
-        });
-
-        // Set FormID map for SCRO resolution in script output
-        if (analysisResult?.FormIdMap != null && analysisResult.FormIdMap.Count > 0)
-        {
-            ScdaFormatter.FormIdMap = analysisResult.FormIdMap;
-        }
-
-        // Read the entire dump for SCDA scanning
-        var dumpData = await File.ReadAllBytesAsync(filePath);
-
-        // Create scripts output directory
-        var dumpName = Path.GetFileNameWithoutExtension(filePath);
-        var sanitizedName = SanitizeFilename(dumpName);
-        var scriptsDir = Path.Combine(options.OutputPath, sanitizedName, "scripts");
-
-        var stringProgress = progress != null
-            ? new Progress<string>(msg => progress.Report(new ExtractionProgress
-            {
-                PercentComplete = 90,
-                CurrentOperation = msg
-            }))
-            : null;
-
-        var result = await ScdaExtractor.ExtractGroupedAsync(dumpData, scriptsDir, stringProgress);
-
-        progress?.Report(new ExtractionProgress
-        {
-            PercentComplete = 100,
-            CurrentOperation = $"Extracted {result.TotalRecords} scripts ({result.GroupedQuests} quests)"
-        });
-
-        return result;
     }
 
     /// <summary>
@@ -347,19 +291,19 @@ public static class MinidumpExtractor
     /// <summary>
     ///     Generate ESM semantic report and heightmap images.
     /// </summary>
-    private static async Task<(bool reportGenerated, int heightmapsExported)> GenerateEsmOutputsAsync(
+    private static async Task<(bool reportGenerated, int heightmapsExported, int scriptsExtracted)> GenerateEsmOutputsAsync(
         AnalysisResult analysisResult,
         string filePath,
         string extractDir,
-        IProgress<ExtractionProgress>? progress,
-        ScdaExtractionResult? scriptResult = null)
+        IProgress<ExtractionProgress>? progress)
     {
         var reportGenerated = false;
         var heightmapsExported = 0;
+        var scriptsExtracted = 0;
 
         if (analysisResult.EsmRecords == null)
         {
-            return (reportGenerated, heightmapsExported);
+            return (reportGenerated, heightmapsExported, scriptsExtracted);
         }
 
         progress?.Report(new ExtractionProgress
@@ -398,6 +342,14 @@ public static class MinidumpExtractor
                 await File.WriteAllTextAsync(reportPath, content);
             }
 
+            // Export individual script files (source + decompiled bytecode)
+            if (semanticResult.Scripts.Count > 0)
+            {
+                await EsmRecordExporter.ExportReconstructedScriptsAsync(
+                    semanticResult.Scripts, analysisResult.FormIdMap, esmDir);
+                scriptsExtracted = semanticResult.Scripts.Count;
+            }
+
             // Generate asset list report from runtime string pools
             if (analysisResult.EsmRecords.AssetStrings.Count > 0)
             {
@@ -411,13 +363,6 @@ public static class MinidumpExtractor
                 var runtimeEdidReport =
                     GeckReportGenerator.GenerateRuntimeEditorIdsReport(analysisResult.EsmRecords.RuntimeEditorIds);
                 await File.WriteAllTextAsync(Path.Combine(esmDir, "runtime_editorids.csv"), runtimeEdidReport);
-            }
-
-            // Generate scripts summary report if SCDA extraction was done
-            if (scriptResult != null && scriptResult.TotalRecords > 0)
-            {
-                var scriptsSummary = GeckReportGenerator.GenerateScriptsSummaryReport(scriptResult);
-                await File.WriteAllTextAsync(Path.Combine(esmDir, "scripts_summary.txt"), scriptsSummary);
             }
 
             reportGenerated = splitReports.Count > 0;
@@ -477,7 +422,7 @@ public static class MinidumpExtractor
             Console.WriteLine($"[ESM] Report generation failed: {ex.Message}");
         }
 
-        return (reportGenerated, heightmapsExported);
+        return (reportGenerated, heightmapsExported, scriptsExtracted);
     }
 
     /// <summary>

@@ -56,6 +56,7 @@ internal static partial class EsmBrowserTreeBuilder
         ["Notes"] = "\uE8A5", // Page
         ["Books"] = "\uE736", // Library
         ["Terminals"] = "\uE7F4", // TVMonitor
+        ["Scripts"] = "\uE8E5", // Code/DeveloperTools
 
         // Items sub-categories
         ["Weapons"] = "\uEC5A", // BarcodeScanner (looks like C4 detonator)
@@ -114,7 +115,8 @@ internal static partial class EsmBrowserTreeBuilder
             ("Notes", result.Notes),
             ("Books", result.Books),
             ("Terminals", result.Terminals),
-            ("Messages", result.Messages)
+            ("Messages", result.Messages),
+            ("Scripts", result.Scripts)
         ]);
 
         AddCategory(root, "Items", "\uE7BF", [
@@ -784,6 +786,27 @@ internal static partial class EsmBrowserTreeBuilder
                     Name = displayName,
                     Value = $"{rawBytes.Length} bytes",
                     Category = "Characteristics",
+                    IsExpandable = true,
+                    SubItems = subItems
+                });
+                continue;
+            }
+
+            // Special handling for multi-line script text (SourceText, DecompiledText)
+            if (prop.Name is "SourceText" or "DecompiledText" && value is string textContent &&
+                !string.IsNullOrEmpty(textContent))
+            {
+                var lines = textContent.Split('\n');
+                var subItems = new List<EsmPropertyEntry>
+                {
+                    new() { Name = "", Value = textContent }
+                };
+
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = displayName,
+                    Value = $"{lines.Length} lines",
+                    Category = "General",
                     IsExpandable = true,
                     SubItems = subItems
                 });

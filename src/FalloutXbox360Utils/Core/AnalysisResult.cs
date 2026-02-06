@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core;
@@ -22,9 +21,6 @@ public class AnalysisResult
     // Minidump metadata
     public MinidumpInfo? MinidumpInfo { get; set; }
     public string? BuildType { get; set; }
-
-    // Script data (SCDA records)
-    public List<ScdaRecord> ScdaRecords { get; set; } = [];
 
     // ESM record data
     public EsmRecordScanResult? EsmRecords { get; set; }

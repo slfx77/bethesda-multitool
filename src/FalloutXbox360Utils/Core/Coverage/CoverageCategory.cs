@@ -6,6 +6,5 @@ public enum CoverageCategory
     Module,
     CarvedFile,
     EsmRecord,
-    ScdaScript,
     Region // internal use only
 }

@@ -59,6 +59,10 @@ public sealed partial class SemanticReconstructor
             }
         }
 
+        // Inject well-known engine FormIDs (hardcoded in executable, not in ESM/hash table)
+        _formIdToEditorId.TryAdd(0x00000007, "PlayerRef");
+        _formIdToEditorId.TryAdd(0x00000014, "Player");
+
         _editorIdToFormId = _formIdToEditorId
             .GroupBy(kv => kv.Value)
             .ToDictionary(g => g.Key, g => g.First().Key);
@@ -77,7 +81,7 @@ public sealed partial class SemanticReconstructor
         var reconstructedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "NPC_", "CREA", "RACE", "FACT",
-            "QUST", "DIAL", "INFO", "NOTE", "BOOK", "TERM",
+            "QUST", "DIAL", "INFO", "NOTE", "BOOK", "TERM", "SCPT",
             "WEAP", "ARMO", "AMMO", "ALCH", "MISC", "KEYM", "CONT",
             "PERK", "SPEL", "CELL", "WRLD", "GMST",
             "GLOB", "ENCH", "MGEF", "IMOD", "RCPE", "CHAL", "REPU",
@@ -151,6 +155,7 @@ public sealed partial class SemanticReconstructor
             Notes = ReconstructNotes(),
             Books = ReconstructBooks(),
             Terminals = ReconstructTerminals(),
+            Scripts = ReconstructScripts(),
 
             // Items
             Weapons = weapons,

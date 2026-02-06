@@ -149,16 +149,6 @@ public static class CoverageAnalyzer
             }
         }
 
-        // SCDA records: 4-byte magic + 2-byte size field + bytecode
-        if (result.ScdaRecords != null)
-        {
-            foreach (var scda in result.ScdaRecords)
-            {
-                var end = scda.Offset + 6 + scda.BytecodeSize;
-                intervals.Add(new CoverageInterval(scda.Offset, end, CoverageCategory.ScdaScript));
-            }
-        }
-
         return intervals;
     }
 
@@ -217,18 +207,6 @@ public static class CoverageAnalyzer
             }
 
             byCategory[CoverageCategory.EsmRecord] = esmList;
-        }
-
-        if (result.ScdaRecords is { Count: > 0 })
-        {
-            var scdaList = new List<CoverageInterval>();
-            foreach (var scda in result.ScdaRecords)
-            {
-                scdaList.Add(new CoverageInterval(scda.Offset, scda.Offset + 6 + scda.BytecodeSize,
-                    CoverageCategory.ScdaScript));
-            }
-
-            byCategory[CoverageCategory.ScdaScript] = scdaList;
         }
 
         // For each category, merge intervals then compute overlap with memory regions

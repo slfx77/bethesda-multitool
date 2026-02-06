@@ -40,6 +40,9 @@ public record SemanticReconstructionResult
     /// <summary>Reconstructed Terminal records.</summary>
     public List<ReconstructedTerminal> Terminals { get; init; } = [];
 
+    /// <summary>Reconstructed Script (SCPT) records.</summary>
+    public List<ReconstructedScript> Scripts { get; init; } = [];
+
     // Items
     /// <summary>Reconstructed Weapon records.</summary>
     public List<ReconstructedWeapon> Weapons { get; init; } = [];
@@ -131,7 +134,7 @@ public record SemanticReconstructionResult
     /// <summary>Number of records successfully reconstructed.</summary>
     public int TotalRecordsReconstructed =>
         Npcs.Count + Creatures.Count + Races.Count + Factions.Count +
-        Quests.Count + DialogTopics.Count + Dialogues.Count + Notes.Count + Books.Count + Terminals.Count +
+        Quests.Count + DialogTopics.Count + Dialogues.Count + Notes.Count + Books.Count + Terminals.Count + Scripts.Count +
         Weapons.Count + Armor.Count + Ammo.Count + Consumables.Count + MiscItems.Count + Keys.Count + Containers.Count +
         Perks.Count + Spells.Count + Cells.Count + Worldspaces.Count + MapMarkers.Count + LeveledLists.Count +
         GameSettings.Count + Globals.Count + Enchantments.Count + BaseEffects.Count +

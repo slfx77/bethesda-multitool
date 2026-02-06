@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -66,6 +67,94 @@ public static class EsmRecordExporter
         }
 
         Log.Debug($"  [ESM] Exported {scriptSources.Count} script sources to script_sources/");
+    }
+
+    /// <summary>
+    ///     Export reconstructed scripts as individual text files.
+    ///     Each file contains header info, source text (SCTX), decompiled bytecode, variables, and references.
+    /// </summary>
+    public static async Task ExportReconstructedScriptsAsync(
+        List<ReconstructedScript> scripts,
+        Dictionary<uint, string>? formIdMap,
+        string outputDir)
+    {
+        if (scripts.Count == 0)
+        {
+            return;
+        }
+
+        var scriptsDir = Path.Combine(outputDir, "scripts");
+        Directory.CreateDirectory(scriptsDir);
+
+        foreach (var script in scripts)
+        {
+            var name = script.EditorId ?? $"0x{script.FormId:X8}";
+            var safeName = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+            var filename = $"{safeName}.txt";
+            var content = FormatScriptExport(script, name, formIdMap);
+            await File.WriteAllTextAsync(Path.Combine(scriptsDir, filename), content);
+        }
+
+        Log.Debug($"  [ESM] Exported {scripts.Count} reconstructed scripts to scripts/");
+    }
+
+    private static string FormatScriptExport(
+        ReconstructedScript script, string name, Dictionary<uint, string>? formIdMap)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"; Script: {name}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"; FormID: 0x{script.FormId:X8}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"; Type: {script.ScriptType}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"; Variables: {script.VariableCount}, Refs: {script.RefObjectCount}, Compiled: {script.CompiledSize:N0} bytes");
+        sb.AppendLine();
+
+        AppendScriptSource(sb, script);
+        AppendScriptDecompiled(sb, script);
+        AppendScriptVariables(sb, script);
+        AppendScriptReferences(sb, script, formIdMap);
+
+        return sb.ToString();
+    }
+
+    private static void AppendScriptSource(StringBuilder sb, ReconstructedScript script)
+    {
+        if (!script.HasSource) { return; }
+        sb.AppendLine("; === Source Text (SCTX) ===");
+        sb.AppendLine(script.SourceText);
+        sb.AppendLine();
+    }
+
+    private static void AppendScriptDecompiled(StringBuilder sb, ReconstructedScript script)
+    {
+        if (string.IsNullOrEmpty(script.DecompiledText)) { return; }
+        sb.AppendLine("; === Decompiled Bytecode (SCDA) ===");
+        sb.AppendLine(script.DecompiledText);
+        sb.AppendLine();
+    }
+
+    private static void AppendScriptVariables(StringBuilder sb, ReconstructedScript script)
+    {
+        if (script.Variables.Count == 0) { return; }
+        sb.AppendLine("; === Variables ===");
+        foreach (var v in script.Variables)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"; [{v.Index}] {v.TypeName} {v.Name ?? "(unnamed)"}");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void AppendScriptReferences(
+        StringBuilder sb, ReconstructedScript script, Dictionary<uint, string>? formIdMap)
+    {
+        if (script.ReferencedObjects.Count == 0) { return; }
+        sb.AppendLine("; === Referenced Objects ===");
+        foreach (var refId in script.ReferencedObjects)
+        {
+            var editorId = formIdMap?.GetValueOrDefault(refId);
+            var display = editorId != null ? $"{editorId} [0x{refId:X8}]" : $"0x{refId:X8}";
+            sb.AppendLine(CultureInfo.InvariantCulture, $"; {display}");
+        }
     }
 
     /// <summary>

@@ -1,7 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Scda;
 using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -71,44 +70,6 @@ public static partial class GeckReportGenerator
             var offset = entry.TesFormOffset?.ToString() ?? "";
 
             sb.AppendLine($"{CsvEscape(entry.EditorId)},{formId},{formType},{displayName},{dialogueLine},{offset}");
-        }
-
-        return sb.ToString();
-    }
-
-    #endregion
-
-    #region ScriptsSummary Methods
-
-    /// <summary>
-    ///     Generate a summary report of SCDA/SCTX script extraction results.
-    /// </summary>
-    public static string GenerateScriptsSummaryReport(ScdaExtractionResult scriptResult)
-    {
-        var sb = new StringBuilder();
-        AppendHeader(sb, "Compiled Script Summary (SCDA/SCTX/SCRO)");
-        sb.AppendLine();
-        sb.AppendLine($"Total Records:     {scriptResult.TotalRecords:N0}");
-        sb.AppendLine($"Grouped Quests:    {scriptResult.GroupedQuests:N0}");
-        sb.AppendLine($"Ungrouped Scripts: {scriptResult.UngroupedScripts:N0}");
-        sb.AppendLine($"With Source (SCTX): {scriptResult.RecordsWithSource:N0}");
-        sb.AppendLine($"Total Bytecode:    {scriptResult.TotalBytecodeBytes:N0} bytes");
-        sb.AppendLine();
-
-        if (scriptResult.Scripts.Count > 0)
-        {
-            sb.AppendLine(new string('-', SeparatorWidth));
-            sb.AppendLine("  Extracted Scripts");
-            sb.AppendLine(new string('-', SeparatorWidth));
-
-            foreach (var script in scriptResult.Scripts.OrderBy(s => s.QuestName ?? s.ScriptName ?? ""))
-            {
-                var label = script.QuestName != null
-                    ? $"{script.QuestName} / {script.ScriptName ?? "unknown"}"
-                    : script.ScriptName ?? $"0x{script.Offset:X8}";
-                var source = script.HasSource ? " [SCTX]" : "";
-                sb.AppendLine($"  {label} ({script.BytecodeSize:N0} bytes){source}");
-            }
         }
 
         return sb.ToString();
@@ -254,6 +215,11 @@ public static partial class GeckReportGenerator
         {
             files["dialogue.csv"] = CsvReportGenerator.GenerateDialogueCsv(result.Dialogues, lookup);
             files["dialogue_report.txt"] = GenerateDialogueReport(result.Dialogues, lookup);
+        }
+
+        if (result.Scripts.Count > 0)
+        {
+            files["script_report.txt"] = GenerateScriptsReport(result.Scripts, lookup);
         }
 
         if (result.DialogueTree != null)

@@ -112,16 +112,28 @@ Located in `Fallout New Vegas (July 21, 2010)/FalloutNV/`:
 - PDB symbol files for debug, release beta, and memory debug builds
 - Corresponding executables (both .exe and .xex formats)
 
-### Extracted PDB Symbols (in `tools/`)
+### Extracted PDB Symbols (in `Sample/PDB/`)
 
-Pre-extracted symbol data from the debug PDB for quick reference:
+Pre-extracted symbol data organized by source PDB file:
 
-| File                 | Description                                   | Use Case                                         |
-| -------------------- | --------------------------------------------- | ------------------------------------------------ |
-| `pdb_types_full.txt` | Complete type definitions (~730K lines)       | Struct layouts, class hierarchies, field offsets |
-| `pdb_globals.txt`    | Global symbols, functions, constants (~14 MB) | Function names, static variables, enum values    |
-| `pdb_publics.txt`    | Public symbols                                | Exported functions                               |
-| `opcode_table.csv`   | Script opcodes (829 commands)                 | Script disassembly                               |
+```
+Sample/PDB/
+├── Fallout_Debug/            # From Fallout.pdb (debug build - most complete)
+│   ├── types_full.txt        # Complete type definitions (~730K lines)
+│   └── globals.txt           # Global symbols, functions, constants
+├── Fallout_Release_Beta/     # From Fallout_Release_Beta.pdb
+│   ├── types_full.txt
+│   └── globals.txt
+└── Fallout_Release_MemDebug/ # From Fallout_Release_MemDebug.pdb
+    ├── types_full.txt
+    └── globals.txt
+```
+
+| File              | Description                                   | Use Case                                         |
+| ----------------- | --------------------------------------------- | ------------------------------------------------ |
+| `types_full.txt`  | Complete type definitions                     | Struct layouts, class hierarchies, field offsets |
+| `globals.txt`     | Global symbols, functions, constants          | Function names, static variables, enum values    |
+| `opcode_table.csv`| Script opcodes (829 commands) (in `tools/`)   | Script disassembly                               |
 
 **Key constants found in PDB:**
 
@@ -130,7 +142,7 @@ Pre-extracted symbol data from the debug PDB for quick reference:
 - `VHGT_ID = 0x54484756` - VHGT subrecord signature
 - `BLOCKSPERLAND = 4` - Texture blocks per land cell
 
-**To regenerate globals:** `cvdump.exe -g Fallout.pdb > pdb_globals.txt`
+**To regenerate:** `tools/microsoft-pdb/cvdump/cvdump.exe -t <pdb> > types_full.txt` and `-g <pdb> > globals.txt`
 
 ## GUI Features (WinUI 3, Windows only)
 

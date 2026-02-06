@@ -3,12 +3,9 @@ using FalloutXbox360Utils.Core.Formats.Bik;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.FaceGen;
 using FalloutXbox360Utils.Core.Formats.Lip;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Png;
-using FalloutXbox360Utils.Core.Formats.Scda;
-using FalloutXbox360Utils.Core.Formats.Script;
 using FalloutXbox360Utils.Core.Formats.Xdbf;
 using FalloutXbox360Utils.Core.Formats.Xma;
 using FalloutXbox360Utils.Core.Formats.Xui;
@@ -283,12 +280,9 @@ public static class FormatRegistry
             new DdsFormat(),
             new DdxFormat(),
             new EsmRecordFormat(),
-            new FaceGenFormat(),
             new LipFormat(),
             new NifFormat(),
             new PngFormat(),
-            new ScdaFormat(),
-            new ScriptFormat(),
             new XdbfFormat(),
             new XmaFormat(),
             new XuiFormat()

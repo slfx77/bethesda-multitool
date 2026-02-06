@@ -138,7 +138,6 @@ public sealed partial class SingleFileTab
                 CoverageCategory.Module => "Modules",
                 CoverageCategory.CarvedFile => "Carved files",
                 CoverageCategory.EsmRecord => "ESM records",
-                CoverageCategory.ScdaScript => "SCDA scripts",
                 _ => cat.ToString()
             };
             summary += $"  {label + ":",-19}{bytes,15:N0} bytes  ({pct,5:F1}%)\n";

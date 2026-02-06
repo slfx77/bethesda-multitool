@@ -118,7 +118,7 @@ diff --xbox ... --converted ... --pc ... -f 0x0017B37C --semantic
 
 ### Reference Materials
 - **TES5Edit source**: `TES5Edit/` at repo root (for ESM research)
-- **PDB symbols**: `tools/pdb_types_full.txt`, `tools/pdb_globals.txt`
+- **PDB symbols**: `Sample/PDB/Fallout_Debug/types_full.txt`, `Sample/PDB/Fallout_Debug/globals.txt` (also `Fallout_Release_Beta/` and `Fallout_Release_MemDebug/`)
 
 ## Code Style
 

@@ -19,7 +19,6 @@ public sealed partial class MinidumpAnalyzer
         AppendHeader(sb, result);
         AppendCarvedFilesSection(sb, result);
         AppendModuleSection(sb, result);
-        AppendScriptSection(sb, result);
         AppendEsmSection(sb, result);
         AppendFormIdSection(sb, result);
 
@@ -52,16 +51,6 @@ public sealed partial class MinidumpAnalyzer
         if (result.CarvedFiles.Count > 0)
         {
             sb.AppendLine(CultureInfo.InvariantCulture, $"Carved Files: {result.CarvedFiles.Count}");
-        }
-
-        if (result.ScdaRecords.Count > 0)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"SCDA Records: {result.ScdaRecords.Count}");
-            var withSource = result.ScdaRecords.Count(s => s.HasAssociatedSctx);
-            if (withSource > 0)
-            {
-                sb.AppendLine(CultureInfo.InvariantCulture, $"With Source: {withSource}");
-            }
         }
 
         if (result.EsmRecords != null)
@@ -187,42 +176,6 @@ public sealed partial class MinidumpAnalyzer
         sb.AppendLine(CultureInfo.InvariantCulture, $"**Memory Regions**: {info.MemoryRegions.Count}");
         sb.AppendLine(CultureInfo.InvariantCulture,
             $"**Total Captured**: {totalMemory:N0} bytes ({totalMemory / (1024.0 * 1024.0):F2} MB)");
-        sb.AppendLine();
-    }
-
-    private static void AppendScriptSection(StringBuilder sb, AnalysisResult result)
-    {
-        sb.AppendLine("## Compiled Scripts (SCDA)");
-        sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**Total SCDA Records**: {result.ScdaRecords.Count}");
-
-        var withSource = result.ScdaRecords.Count(s => s.HasAssociatedSctx);
-        var withNames = result.ScdaRecords.Count(s => !string.IsNullOrEmpty(s.ScriptName));
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**With Source (SCTX)**: {withSource}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"**With Script Names**: {withNames}");
-        sb.AppendLine();
-
-        if (result.ScdaRecords.Count == 0)
-        {
-            return;
-        }
-
-        sb.AppendLine("| Offset | Script Name | Bytecode Size | Has Source |");
-        sb.AppendLine("|--------|-------------|--------------|------------|");
-
-        foreach (var scda in result.ScdaRecords.Take(30))
-        {
-            var name = !string.IsNullOrEmpty(scda.ScriptName) ? scda.ScriptName : "-";
-            sb.AppendLine(CultureInfo.InvariantCulture,
-                $"| 0x{scda.Offset:X8} | {name} | {scda.BytecodeLength} bytes | {(scda.HasAssociatedSctx ? "Yes" : "No")} |");
-        }
-
-        if (result.ScdaRecords.Count > 30)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture,
-                $"| ... | ... | ({result.ScdaRecords.Count - 30} more) | ... |");
-        }
-
         sb.AppendLine();
     }
 

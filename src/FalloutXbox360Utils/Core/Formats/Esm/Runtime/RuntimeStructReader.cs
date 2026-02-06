@@ -209,6 +209,36 @@ public sealed partial class RuntimeStructReader
 
     #endregion
 
+    #region Script Struct Constants
+
+    // PDB Script class: 84 bytes, Runtime (TESForm +16): 100 bytes, FormType: 0x11
+    private const int ScptStructSize = 100;
+    private const int ScptVarCountOffset = 40;
+    private const int ScptRefCountOffset = 44;
+    private const int ScptDataSizeOffset = 48;
+    private const int ScptLastVarIdOffset = 52;
+    private const int ScptIsQuestOffset = 56;
+    private const int ScptIsMagicEffectOffset = 57;
+    private const int ScptIsCompiledOffset = 58;
+    private const int ScptTextPtrOffset = 60;         // m_text: char* -> SCTX source
+    private const int ScptDataPtrOffset = 64;         // m_data: char* -> SCDA bytecode
+    private const int ScptQuestDelayOffset = 72;
+    private const int ScptOwnerQuestOffset = 80;      // pOwnerQuest: TESQuest*
+    private const int ScptRefObjectsListOffset = 84;  // BSSimpleList<SCRIPT_REFERENCED_OBJECT*>
+    private const int ScptVariablesListOffset = 92;   // BSSimpleList<ScriptVariable*>
+
+    // SCRIPT_REFERENCED_OBJECT: 16 bytes (cEditorID BSStringT + pForm TESForm* + uiVariableID)
+    private const int ScroFormPtrOffset = 8;
+    private const int ScroStructSize = 16;
+
+    // ScriptVariable: 32 bytes (SCRIPT_LOCAL data 24 bytes + cName BSStringT 8 bytes)
+    private const int SvarIndexOffset = 0;            // uiID within SCRIPT_LOCAL
+    private const int SvarIsIntegerOffset = 12;       // bIsInteger within SCRIPT_LOCAL
+    private const int SvarNameOffset = 24;            // BSStringT cName
+    private const int SvarStructSize = 32;
+
+    #endregion
+
     #region Core Helper Methods
 
     /// <summary>

@@ -32,8 +32,6 @@ public class FileColoringTests
     [InlineData("xma", FileCategory.Audio)]
     [InlineData("lip", FileCategory.Audio)]
     [InlineData("nif", FileCategory.Model)]
-    [InlineData("script", FileCategory.Script)]
-    [InlineData("scda", FileCategory.Script)]
     public void Format_HasCorrectCategory(string formatId, FileCategory expectedCategory)
     {
         // Act
@@ -55,9 +53,6 @@ public class FileColoringTests
     [InlineData("xma", FileCategory.Audio)]
     [InlineData("lip", FileCategory.Audio)]
     [InlineData("nif", FileCategory.Model)]
-    [InlineData("script_scn", FileCategory.Script)]
-    [InlineData("script_scriptname", FileCategory.Script)]
-    [InlineData("scda", FileCategory.Script)]
     public void SignatureId_ResolvesToCorrectCategory(string signatureId, FileCategory expectedCategory)
     {
         // Act
@@ -213,7 +208,6 @@ public class FileColoringTests
     [InlineData("png", ImageColor)]
     [InlineData("xma", AudioColor)]
     [InlineData("nif", ModelColor)]
-    [InlineData("script_scn", ScriptColor)]
     public void GetColor_BySignatureId_ReturnsCorrectColor(string signatureId, uint expectedColor)
     {
         // Act

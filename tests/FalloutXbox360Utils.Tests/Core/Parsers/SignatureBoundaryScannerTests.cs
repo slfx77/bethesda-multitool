@@ -149,7 +149,6 @@ public class SignatureBoundaryScannerTests
     [InlineData("XUIS")]
     [InlineData("XUIB")]
     [InlineData("XDBF")]
-    [InlineData("scn ")]
     [InlineData("DDS ")]
     [InlineData("BIKi")] // Bink video
     // Note: TES4 (ESM header) is not registered as a boundary signature
@@ -158,23 +157,6 @@ public class SignatureBoundaryScannerTests
     {
         // Arrange
         var data = new byte[4];
-        Encoding.ASCII.GetBytes(signature).CopyTo(data, 0);
-
-        // Act
-        var result = SignatureBoundaryScanner.IsKnownSignature(data, 0);
-
-        // Assert
-        Assert.True(result);
-    }
-
-    [Theory]
-    [InlineData("FREGM")] // FaceGen morph (.egm)
-    [InlineData("FREGT")] // FaceGen tint (.egt)
-    [InlineData("FRTRI")] // FaceGen triangle (.tri)
-    public void IsKnownSignature_FaceGenSignatures_ReturnsTrue(string signature)
-    {
-        // Arrange - FaceGen signatures are 5 bytes
-        var data = new byte[5];
         Encoding.ASCII.GetBytes(signature).CopyTo(data, 0);
 
         // Act

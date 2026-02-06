@@ -25,11 +25,16 @@ The `microsoft-pdb` submodule contains tools for PDB analysis:
 - `cvdump` - Dump PDB contents
 - `pdbdump` - PDB file dumper
 
-### Extracted Symbols (in `tools/`)
+### Extracted Symbols (in `Sample/PDB/`)
 
-- `pdb_types_full.txt` - Complete type definitions from debug PDB
-- `pdb_publics.txt` - Public symbols
-- `pdb_globals.txt` - Global symbols
+Organized by source PDB file, each containing `types_full.txt` and `globals.txt`:
+
+- `Sample/PDB/Fallout_Debug/` - From debug PDB (most complete type info)
+- `Sample/PDB/Fallout_Release_Beta/` - From release beta PDB
+- `Sample/PDB/Fallout_Release_MemDebug/` - From release memory debug PDB
+
+### Script Constants (in `tools/`)
+
 - `script_function_constants.txt` - FUNCTION\_\* opcode constants
 - `script_param_constants.txt` - SCRIPT*PARAM*\* type constants
 - `script_block_constants.txt` - SCRIPT*BLOCK*\* type constants

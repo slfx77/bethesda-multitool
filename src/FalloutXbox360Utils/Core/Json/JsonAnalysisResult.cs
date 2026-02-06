@@ -14,6 +14,5 @@ public sealed class JsonAnalysisResult
     public int MemoryRegionCount { get; set; }
     public List<JsonCarvedFileInfo> CarvedFiles { get; set; } = [];
     public JsonEsmRecordSummary? EsmRecords { get; set; }
-    public List<JsonScdaRecordInfo> ScdaRecords { get; set; } = [];
     public Dictionary<uint, string> FormIdMap { get; set; } = [];
 }
