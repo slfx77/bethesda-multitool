@@ -26,7 +26,7 @@ public sealed class BsaExtractor : IDisposable
     private bool _disposed;
     private bool _verbose;
 
-    // XMA needs special handling since it uses XmaOggConverter, not XmaFormat's WAV converter
+    // XMA needs special handling since it uses XmaWavConverter
     private bool _xmaConversionEnabled;
 
     /// <summary>
@@ -64,7 +64,7 @@ public sealed class BsaExtractor : IDisposable
     public bool DdxConversionEnabled => _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null;
 
     /// <summary>Whether XMA conversion is enabled and available.</summary>
-    public bool XmaConversionEnabled => _enabledExtensions.Contains(".xma") && XmaOggConverter.IsAvailable;
+    public bool XmaConversionEnabled => _enabledExtensions.Contains(".xma") && XmaWavConverter.IsAvailable;
 
     /// <summary>Whether NIF conversion is enabled and available.</summary>
     public bool NifConversionEnabled => _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null;
@@ -121,7 +121,7 @@ public sealed class BsaExtractor : IDisposable
     }
 
     /// <summary>
-    ///     Enable XMA to OGG conversion during extraction.
+    ///     Enable XMA to WAV conversion during extraction.
     ///     Requires FFmpeg to be installed and in PATH.
     /// </summary>
     /// <param name="enable">Whether to enable conversion.</param>
@@ -134,8 +134,7 @@ public sealed class BsaExtractor : IDisposable
             return true;
         }
 
-        // XMA uses special XmaOggConverter for OGG output (not the default WAV from XmaFormat)
-        if (!XmaOggConverter.IsAvailable)
+        if (!XmaWavConverter.IsAvailable)
         {
             _xmaConversionEnabled = false;
             return false;
@@ -148,10 +147,10 @@ public sealed class BsaExtractor : IDisposable
     }
 
     /// <summary>
-    ///     Convert XMA data to OGG Vorbis (PC format).
+    ///     Convert XMA data to WAV (PC format).
     /// </summary>
     /// <param name="xmaData">The XMA file data.</param>
-    /// <returns>Conversion result with OGG data if successful.</returns>
+    /// <returns>Conversion result with WAV data if successful.</returns>
     public async Task<ConversionResult> ConvertXmaAsync(byte[] xmaData)
     {
         if (!_xmaConversionEnabled)
@@ -159,7 +158,7 @@ public sealed class BsaExtractor : IDisposable
             return new ConversionResult { Success = false, Notes = "XMA converter not initialized" };
         }
 
-        return await XmaOggConverter.ConvertAsync(xmaData);
+        return await XmaWavConverter.ConvertAsync(xmaData);
     }
 
     /// <summary>
@@ -335,7 +334,7 @@ public sealed class BsaExtractor : IDisposable
 
     /// <summary>
     ///     Extract a single file to disk, optionally converting Xbox 360 formats to PC.
-    ///     Supports: DDX->DDS, XMA->OGG, NIF (big-endian to little-endian).
+    ///     Supports: DDX->DDS, XMA->WAV, NIF (big-endian to little-endian).
     /// </summary>
     public async Task<BsaExtractResult> ExtractFileToDiskAsync(BsaFileRecord file, string outputDir,
         bool overwrite = false)
@@ -418,8 +417,8 @@ public sealed class BsaExtractor : IDisposable
         {
             ".ddx" when _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null
                 => ("DDX->DDS", ".dds"),
-            ".xma" when _enabledExtensions.Contains(".xma") && XmaOggConverter.IsAvailable
-                => ("XMA->OGG", ".ogg"),
+            ".xma" when _enabledExtensions.Contains(".xma") && XmaWavConverter.IsAvailable
+                => ("XMA->WAV", ".wav"),
             ".nif" when _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null
                 => ("NIF BE->LE", null), // NIF keeps same extension
             _ => (null, null)
@@ -440,7 +439,7 @@ public sealed class BsaExtractor : IDisposable
         var conversionResult = conversionType switch
         {
             "DDX->DDS" => await ConvertDdxAsync(data),
-            "XMA->OGG" => await ConvertXmaAsync(data),
+            "XMA->WAV" => await ConvertXmaAsync(data),
             "NIF BE->LE" => await ConvertNifAsync(data),
             _ => new ConversionResult { Success = false, Notes = "Unknown conversion type" }
         };

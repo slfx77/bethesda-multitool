@@ -259,11 +259,58 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region File Info Card
+
+    private void UpdateFileInfoCard()
+    {
+        if (_session.AnalysisResult == null)
+        {
+            return;
+        }
+
+        var result = _session.AnalysisResult;
+        var fileInfo = new FileInfo(result.FilePath);
+
+        InfoFileName.Text = fileInfo.Name;
+        InfoFileSize.Text = FormatSize(fileInfo.Length);
+
+        if (_session.IsEsmFile)
+        {
+            InfoFormat.Text = "ESM (Elder Scrolls Master)";
+            var isBE = result.EsmRecords?.MainRecords.FirstOrDefault()?.IsBigEndian ?? false;
+            InfoEndianness.Text = isBE ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)";
+            InfoBuildPanel.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            InfoFormat.Text = "Minidump (Xbox 360)";
+            InfoEndianness.Text = "Big-Endian (PowerPC)";
+
+            var gameModule = result.MinidumpInfo?.FindGameModule();
+            if (gameModule != null)
+            {
+                InfoModuleName.Text = gameModule.Name;
+                var compileDate = DateTimeOffset.FromUnixTimeSeconds(gameModule.TimeDateStamp);
+                InfoCompileDate.Text = compileDate.ToString("yyyy-MM-dd HH:mm:ss UTC");
+                InfoBuildPanel.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                InfoBuildPanel.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        FileInfoCard.Visibility = Visibility.Visible;
+    }
+
+    #endregion
+
     #region Reset/Initialize
 
     private void ResetSubTabs()
     {
         _session.Dispose();
+        FileInfoCard.Visibility = Visibility.Collapsed;
         CoverageTab.IsEnabled = false;
         DataBrowserTab.IsEnabled = false;
         ReportsTab.IsEnabled = false;

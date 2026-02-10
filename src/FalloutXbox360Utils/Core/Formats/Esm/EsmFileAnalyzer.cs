@@ -305,8 +305,9 @@ public static class EsmFileAnalyzer
                 continue;
             }
 
-            // Prefer FULL (display name) over EDID (editor ID)
-            var fullName = record.Subrecords.FirstOrDefault(s => s.Signature == "FULL")?.DataAsString;
+            // Use EDID (editor ID) only — this map is passed to SemanticReconstructor as
+            // formIdCorrelations which populates _formIdToEditorId. Using FULL (display name)
+            // here would cause EditorId == FullName on reconstructed records.
             var editorId = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
 
             // Track NPC_ records specifically
@@ -314,16 +315,15 @@ public static class EsmFileAnalyzer
             {
                 npcCount++;
                 npcSubrecordTotal += record.Subrecords.Count;
-                if (!string.IsNullOrEmpty(fullName) || !string.IsNullOrEmpty(editorId))
+                if (!string.IsNullOrEmpty(editorId))
                 {
                     npcWithName++;
                 }
             }
 
-            var displayName = !string.IsNullOrEmpty(fullName) ? fullName : editorId;
-            if (!string.IsNullOrEmpty(displayName))
+            if (!string.IsNullOrEmpty(editorId))
             {
-                map[formId] = displayName;
+                map[formId] = editorId;
             }
         }
 

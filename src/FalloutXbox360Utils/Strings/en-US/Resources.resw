@@ -231,6 +231,9 @@
   <data name="Status_ReconstructingRecords" xml:space="preserve">
     <value>Reconstructing records from memory dump...</value>
   </data>
+  <data name="Status_LoadingEsmRecords" xml:space="preserve">
+    <value>Loading ESM records...</value>
+  </data>
   <data name="Status_ParsingEsmRecords" xml:space="preserve">
     <value>Parsing ESM records...</value>
   </data>

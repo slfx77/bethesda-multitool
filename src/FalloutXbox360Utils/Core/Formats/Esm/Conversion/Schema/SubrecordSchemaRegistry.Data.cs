@@ -390,14 +390,17 @@ public static partial class SubrecordSchemaRegistry
         schemas[new SchemaKey("DATA", "ACRE", 24)] = new SubrecordSchema(F.PosRot("PosRot"));
         schemas[new SchemaKey("DATA", "PGRE", 24)] = SubrecordSchema.FloatArray;
 
-        // XTEL - Door Teleport (32 bytes)
+        // XTEL - Door Teleport (32 bytes) — PDB: DoorTeleportData
+        // pLinkedDoor(FormID) + position(NiPoint3) + rotation(NiPoint3) + cFlags(uchar) + pad(3)
+        // Disasm confirms: Save uses stb for cFlags (single byte), buffer memset pads bytes 29-31 to 0.
         schemas[new SchemaKey("XTEL", null, 32)] = new SubrecordSchema(
             F.FormId("DestinationDoor"),
             F.Float("PosX"), F.Float("PosY"), F.Float("PosZ"),
             F.Float("RotX"), F.Float("RotY"), F.Float("RotZ"),
-            F.UInt32("Flags"))
+            F.UInt8("Flags"),
+            F.Padding(3))
         {
-            Description = "Door Teleport Destination"
+            Description = "Door Teleport Destination (DoorTeleportData)"
         };
 
         // XLKR - Linked Reference (8 bytes)
@@ -417,12 +420,17 @@ public static partial class SubrecordSchemaRegistry
         };
 
         // XLOC - Lock Information (20 bytes)
+        // PDB: REFR_LOCK { cBaseLevel(uint8,+0), pKey(FormID,+4), cFlags(char,+8),
+        //   uiNumTries(uint32,+12), uiTimesUnlocked(uint32,+16) }
+        // Endian() swaps pKey, uiNumTries, uiTimesUnlocked. Single bytes don't swap.
         schemas[new SchemaKey("XLOC", null, 20)] = new SubrecordSchema(
             F.UInt8("Level"),
             F.Padding(3),
             F.FormId("Key"),
-            F.UInt32("Flags"),
-            F.Padding(8))
+            F.UInt8("Flags"),
+            F.Padding(3),
+            F.UInt32("NumTries"),
+            F.UInt32("TimesUnlocked"))
         {
             Description = "Lock Information"
         };
@@ -985,6 +993,13 @@ public static partial class SubrecordSchemaRegistry
         schemas[new SchemaKey("DATA", "REPU", 4)] = new SubrecordSchema(F.Float("Value"))
         {
             Description = "Reputation Value"
+        };
+
+        // DATA - REPU (8 bytes = 2 floats)
+        schemas[new SchemaKey("DATA", "REPU", 8)] = new SubrecordSchema(
+            F.Float("PositiveValue"), F.Float("NegativeValue"))
+        {
+            Description = "Reputation Data"
         };
 
         // DATA - CMNY (4 bytes)

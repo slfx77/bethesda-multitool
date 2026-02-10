@@ -124,12 +124,15 @@ public static partial class SubrecordSchemaRegistry
         // ARMO-SPECIFIC SCHEMAS
         // ========================================================================
 
-        // DNAM - ARMO (12 bytes)
-        schemas[new SchemaKey("DNAM", "ARMO", 12)] =
-            new SubrecordSchema(F.Float("AR"), F.Float("Weight"), F.Float("Health"))
-            {
-                Description = "ARMO Data"
-            };
+        // DNAM - ARMO (12 bytes): DR (Int16) + Pad(2) + DT (Float) + unknown (4)
+        schemas[new SchemaKey("DNAM", "ARMO", 12)] = new SubrecordSchema(
+            F.Int16("DamageResistance"),
+            F.Padding(2),
+            F.Float("DamageThreshold"),
+            F.Bytes("Unknown", 4))
+        {
+            Description = "ARMO Defense Data"
+        };
 
         // DATA - ARMO (12 bytes)
         schemas[new SchemaKey("DATA", "ARMO", 12)] = new SubrecordSchema(
@@ -418,6 +421,20 @@ public static partial class SubrecordSchemaRegistry
 
         // DATA - RCCT (1 byte) - Recipe Category Flags
         schemas[new SchemaKey("DATA", "RCCT", 1)] = SubrecordSchema.ByteArray;
+
+        // RCIL - Recipe Ingredient (8 bytes) - override generic 4-byte FormID
+        schemas[new SchemaKey("RCIL", null, 8)] = new SubrecordSchema(
+            F.FormId("Item"), F.UInt32("Count"))
+        {
+            Description = "Recipe Ingredient"
+        };
+
+        // RCOD - Recipe Output (8 bytes) - override generic 4-byte FormID
+        schemas[new SchemaKey("RCOD", null, 8)] = new SubrecordSchema(
+            F.FormId("Item"), F.UInt32("Count"))
+        {
+            Description = "Recipe Output"
+        };
 
         // ========================================================================
         // LIGHT SCHEMAS (LIGH)

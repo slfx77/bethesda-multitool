@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
@@ -138,48 +139,41 @@ public sealed partial class SemanticReconstructor
                         case "ICON":
                             icon = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             break;
-                        case "DATA" when sub.DataLength >= 20:
+                        case "DATA" when sub.DataLength >= 28:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                // DATA: 4 tag skill indices (int32 each) + flags (uint32) + barter flags (uint32)
-                                for (var i = 0; i < 4 && i * 4 + 4 <= sub.DataLength - 8; i++)
+                                var fields = SubrecordDataReader.ReadFields("DATA", "CLAS",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    var skill = record.IsBigEndian
-                                        ? BinaryPrimitives.ReadInt32BigEndian(span[(i * 4)..])
-                                        : BinaryPrimitives.ReadInt32LittleEndian(span[(i * 4)..]);
-                                    if (skill >= 0)
-                                    {
-                                        tagSkills.Add(skill);
-                                    }
-                                }
+                                    var skill1 = SubrecordDataReader.GetInt32(fields, "TagSkill1");
+                                    var skill2 = SubrecordDataReader.GetInt32(fields, "TagSkill2");
+                                    var skill3 = SubrecordDataReader.GetInt32(fields, "TagSkill3");
+                                    var skill4 = SubrecordDataReader.GetInt32(fields, "TagSkill4");
+                                    if (skill1 >= 0) tagSkills.Add(skill1);
+                                    if (skill2 >= 0) tagSkills.Add(skill2);
+                                    if (skill3 >= 0) tagSkills.Add(skill3);
+                                    if (skill4 >= 0) tagSkills.Add(skill4);
 
-                                var flagsOffset = sub.DataLength - 8;
-                                if (record.IsBigEndian)
-                                {
-                                    classFlags = BinaryPrimitives.ReadUInt32BigEndian(span[flagsOffset..]);
-                                    barterFlags = BinaryPrimitives.ReadUInt32BigEndian(span[(flagsOffset + 4)..]);
-                                }
-                                else
-                                {
-                                    classFlags = BinaryPrimitives.ReadUInt32LittleEndian(span[flagsOffset..]);
-                                    barterFlags = BinaryPrimitives.ReadUInt32LittleEndian(span[(flagsOffset + 4)..]);
+                                    classFlags = SubrecordDataReader.GetUInt32(fields, "Flags");
+                                    barterFlags = SubrecordDataReader.GetUInt32(fields, "BuysServices");
+                                    trainingSkill = (byte)SubrecordDataReader.GetSByte(fields, "Teaches");
+                                    trainingLevel = SubrecordDataReader.GetByte(fields, "MaxTrainingLevel");
                                 }
 
                                 break;
                             }
-                        case "ATTR" when sub.DataLength >= 2:
+                        case "ATTR" when sub.DataLength >= 7:
                             {
-                                trainingSkill = data[sub.DataOffset];
-                                trainingLevel = data[sub.DataOffset + 1];
-                                if (sub.DataLength >= 9)
-                                {
-                                    attributeWeights = new byte[7];
-                                    Array.Copy(data, sub.DataOffset + 2, attributeWeights, 0, 7);
-                                }
-
+                                attributeWeights = new byte[7];
+                                Array.Copy(data, sub.DataOffset, attributeWeights, 0, 7);
                                 break;
                             }
                     }
+                }
+
+                if (!string.IsNullOrEmpty(fullName))
+                {
+                    _formIdToFullName.TryAdd(record.FormId, fullName);
                 }
 
                 classes.Add(new ReconstructedClass
@@ -264,32 +258,21 @@ public sealed partial class SemanticReconstructor
                             icon = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             break;
                         case "SCRI" when sub.DataLength >= 4:
-                            script = record.IsBigEndian
-                                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset))
-                                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset));
+                            script = ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
                             break;
-                        case "DATA" when sub.DataLength >= 20:
+                        case "DATA" when sub.DataLength >= 24:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("DATA", "CHAL",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    challengeType = BinaryPrimitives.ReadUInt32BigEndian(span);
-                                    threshold = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
-                                    flags = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
-                                    interval = BinaryPrimitives.ReadUInt32BigEndian(span[12..]);
-                                    value1 = sub.DataLength >= 24 ? BinaryPrimitives.ReadUInt32BigEndian(span[16..]) : 0;
-                                    value2 = sub.DataLength >= 28 ? BinaryPrimitives.ReadUInt32BigEndian(span[20..]) : 0;
-                                    value3 = sub.DataLength >= 32 ? BinaryPrimitives.ReadUInt32BigEndian(span[24..]) : 0;
-                                }
-                                else
-                                {
-                                    challengeType = BinaryPrimitives.ReadUInt32LittleEndian(span);
-                                    threshold = BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
-                                    flags = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
-                                    interval = BinaryPrimitives.ReadUInt32LittleEndian(span[12..]);
-                                    value1 = sub.DataLength >= 24 ? BinaryPrimitives.ReadUInt32LittleEndian(span[16..]) : 0;
-                                    value2 = sub.DataLength >= 28 ? BinaryPrimitives.ReadUInt32LittleEndian(span[20..]) : 0;
-                                    value3 = sub.DataLength >= 32 ? BinaryPrimitives.ReadUInt32LittleEndian(span[24..]) : 0;
+                                    challengeType = SubrecordDataReader.GetUInt32(fields, "Type");
+                                    threshold = SubrecordDataReader.GetUInt32(fields, "Threshold");
+                                    flags = SubrecordDataReader.GetUInt16(fields, "Flags");
+                                    interval = SubrecordDataReader.GetUInt16(fields, "Interval");
+                                    value1 = SubrecordDataReader.GetUInt32(fields, "Value1");
+                                    value2 = SubrecordDataReader.GetUInt16(fields, "Value2");
+                                    value3 = SubrecordDataReader.GetUInt16(fields, "Value3");
                                 }
 
                                 break;
@@ -374,16 +357,12 @@ public sealed partial class SemanticReconstructor
                             break;
                         case "DATA" when sub.DataLength >= 8:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("DATA", "REPU",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    positiveValue = BinaryPrimitives.ReadSingleBigEndian(span);
-                                    negativeValue = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
-                                }
-                                else
-                                {
-                                    positiveValue = BinaryPrimitives.ReadSingleLittleEndian(span);
-                                    negativeValue = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
+                                    positiveValue = SubrecordDataReader.GetFloat(fields, "PositiveValue");
+                                    negativeValue = SubrecordDataReader.GetFloat(fields, "NegativeValue");
                                 }
 
                                 break;
@@ -473,16 +452,12 @@ public sealed partial class SemanticReconstructor
                             break;
                         case "DATA" when sub.DataLength >= 8:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("DATA", "IMOD",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    value = BinaryPrimitives.ReadInt32BigEndian(span);
-                                    weight = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
-                                }
-                                else
-                                {
-                                    value = BinaryPrimitives.ReadInt32LittleEndian(span);
-                                    weight = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
+                                    value = (int)SubrecordDataReader.GetUInt32(fields, "Value");
+                                    weight = SubrecordDataReader.GetFloat(fields, "Weight");
                                 }
 
                                 break;
@@ -565,46 +540,42 @@ public sealed partial class SemanticReconstructor
                             break;
                         case "DATA" when sub.DataLength >= 16:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("DATA", "RCPE",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    requiredSkill = BinaryPrimitives.ReadInt32BigEndian(span);
-                                    requiredSkillLevel = BinaryPrimitives.ReadInt32BigEndian(span[4..]);
-                                    categoryFormId = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
-                                    subcategoryFormId = BinaryPrimitives.ReadUInt32BigEndian(span[12..]);
-                                }
-                                else
-                                {
-                                    requiredSkill = BinaryPrimitives.ReadInt32LittleEndian(span);
-                                    requiredSkillLevel = BinaryPrimitives.ReadInt32LittleEndian(span[4..]);
-                                    categoryFormId = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
-                                    subcategoryFormId = BinaryPrimitives.ReadUInt32LittleEndian(span[12..]);
+                                    requiredSkill = SubrecordDataReader.GetInt32(fields, "Skill");
+                                    requiredSkillLevel = (int)SubrecordDataReader.GetUInt32(fields, "Level");
+                                    categoryFormId = SubrecordDataReader.GetUInt32(fields, "Category");
+                                    subcategoryFormId = SubrecordDataReader.GetUInt32(fields, "SubCategory");
                                 }
 
                                 break;
                             }
                         case "RCIL" when sub.DataLength >= 8:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                var itemId = record.IsBigEndian
-                                    ? BinaryPrimitives.ReadUInt32BigEndian(span)
-                                    : BinaryPrimitives.ReadUInt32LittleEndian(span);
-                                var count = record.IsBigEndian
-                                    ? BinaryPrimitives.ReadUInt32BigEndian(span[4..])
-                                    : BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
-                                ingredients.Add(new RecipeIngredient { ItemFormId = itemId, Count = count });
+                                var fields = SubrecordDataReader.ReadFields("RCIL", null,
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
+                                {
+                                    var itemId = SubrecordDataReader.GetUInt32(fields, "Item");
+                                    var count = SubrecordDataReader.GetUInt32(fields, "Count");
+                                    ingredients.Add(new RecipeIngredient { ItemFormId = itemId, Count = count });
+                                }
+
                                 break;
                             }
                         case "RCOD" when sub.DataLength >= 8:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                var itemId = record.IsBigEndian
-                                    ? BinaryPrimitives.ReadUInt32BigEndian(span)
-                                    : BinaryPrimitives.ReadUInt32LittleEndian(span);
-                                var count = record.IsBigEndian
-                                    ? BinaryPrimitives.ReadUInt32BigEndian(span[4..])
-                                    : BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
-                                outputs.Add(new RecipeOutput { ItemFormId = itemId, Count = count });
+                                var fields = SubrecordDataReader.ReadFields("RCOD", null,
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
+                                {
+                                    var itemId = SubrecordDataReader.GetUInt32(fields, "Item");
+                                    var count = SubrecordDataReader.GetUInt32(fields, "Count");
+                                    outputs.Add(new RecipeOutput { ItemFormId = itemId, Count = count });
+                                }
+
                                 break;
                             }
                     }
@@ -855,24 +826,21 @@ public sealed partial class SemanticReconstructor
                     break;
 
                 case "LVLG" when sub.DataLength == 4:
-                    globalFormId = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    globalFormId = ReadFormId(subData, record.IsBigEndian);
                     break;
 
                 case "LVLO" when sub.DataLength == 12:
-                    // LVLO: level (u16) + pad (u16) + FormID (u32) + count (u16) + pad (u16)
-                    var level = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt16BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt16LittleEndian(subData);
-                    var formId = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
-                    var count = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt16BigEndian(subData[8..])
-                        : BinaryPrimitives.ReadUInt16LittleEndian(subData[8..]);
+                    {
+                        var fields = SubrecordDataReader.ReadFields("LVLO", null, subData, record.IsBigEndian);
+                        if (fields.Count > 0)
+                        {
+                            var level = SubrecordDataReader.GetUInt16(fields, "Level");
+                            var formId = SubrecordDataReader.GetUInt32(fields, "Entry");
+                            var count = SubrecordDataReader.GetUInt16(fields, "Count");
+                            entries.Add(new LeveledEntry(level, formId, count));
+                        }
+                    }
 
-                    entries.Add(new LeveledEntry(level, formId, count));
                     break;
             }
         }

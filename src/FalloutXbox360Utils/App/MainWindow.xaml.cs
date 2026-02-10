@@ -127,11 +127,38 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
     }
 
+    private void NavView_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItemContainer is NavigationViewItem { Tag: "Settings" })
+        {
+            GetActiveSettingsDrawerTab()?.ToggleSettingsDrawer();
+        }
+    }
+
+    private IHasSettingsDrawer? GetActiveSettingsDrawerTab()
+    {
+        if (SingleFileTabContent.Visibility == Visibility.Visible) return SingleFileTabContent;
+        if (BatchModeTabContent.Visibility == Visibility.Visible) return BatchModeTabContent;
+        if (NifConverterTabContent.Visibility == Visibility.Visible) return NifConverterTabContent;
+        if (DdxConverterTabContent.Visibility == Visibility.Visible) return DdxConverterTabContent;
+        if (BsaExtractorTabContent.Visibility == Visibility.Visible) return BsaExtractorTabContent;
+        if (RepackerTabContent.Visibility == Visibility.Visible) return RepackerTabContent;
+        return null;
+    }
+
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is NavigationViewItem selectedItem)
         {
             var tag = selectedItem.Tag?.ToString();
+
+            // Close any open settings drawers before switching tabs
+            SingleFileTabContent.CloseSettingsDrawer();
+            BatchModeTabContent.CloseSettingsDrawer();
+            NifConverterTabContent.CloseSettingsDrawer();
+            DdxConverterTabContent.CloseSettingsDrawer();
+            BsaExtractorTabContent.CloseSettingsDrawer();
+            RepackerTabContent.CloseSettingsDrawer();
 
             // Hide all content
             SingleFileTabContent.Visibility = Visibility.Collapsed;

@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
@@ -138,15 +137,27 @@ public sealed partial class SemanticReconstructor
                     stats = ParseActorBase(subData, record.Offset + 24 + sub.DataOffset, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 8:
-                    // CREA DATA: Type(1), Combat(1), Magic(1), Stealth(1), AttackDamage(4), ...
-                    creatureType = subData[0];
-                    combatSkill = subData[1];
-                    magicSkill = subData[2];
-                    stealthSkill = subData[3];
-                    attackDamage = (short)(record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]));
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "CREA", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        creatureType = SubrecordDataReader.GetByte(fields, "CreatureType");
+                        combatSkill = SubrecordDataReader.GetByte(fields, "CombatSkill");
+                        magicSkill = SubrecordDataReader.GetByte(fields, "MagicSkill");
+                        stealthSkill = SubrecordDataReader.GetByte(fields, "StealthSkill");
+                        attackDamage = (short)SubrecordDataReader.GetInt32(fields, "AttackDamage");
+                    }
+                    else
+                    {
+                        // Fallback for non-standard sizes without a matching schema
+                        creatureType = subData[0];
+                        combatSkill = subData[1];
+                        magicSkill = subData[2];
+                        stealthSkill = subData[3];
+                    }
+
                     break;
+                }
                 case "SCRI" when sub.DataLength == 4:
                     script = ReadFormId(subData, record.IsBigEndian);
                     break;
@@ -162,6 +173,12 @@ public sealed partial class SemanticReconstructor
                     spells.Add(ReadFormId(subData, record.IsBigEndian));
                     break;
             }
+        }
+
+        // Track FullName for display name map
+        if (!string.IsNullOrEmpty(fullName))
+        {
+            _formIdToFullName.TryAdd(record.FormId, fullName);
         }
 
         return new ReconstructedCreature
@@ -197,16 +214,38 @@ public sealed partial class SemanticReconstructor
         var factions = new List<ReconstructedFaction>();
         var factionRecords = GetRecordsByType("FACT").ToList();
 
-        foreach (var record in factionRecords)
+        if (_accessor == null)
         {
-            factions.Add(new ReconstructedFaction
+            foreach (var record in factionRecords)
             {
-                FormId = record.FormId,
-                EditorId = GetEditorId(record.FormId),
-                FullName = FindFullNameNear(record.Offset),
-                Offset = record.Offset,
-                IsBigEndian = record.IsBigEndian
-            });
+                factions.Add(new ReconstructedFaction
+                {
+                    FormId = record.FormId,
+                    EditorId = GetEditorId(record.FormId),
+                    FullName = FindFullNameInRecordBounds(record),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(4096);
+            try
+            {
+                foreach (var record in factionRecords)
+                {
+                    var faction = ReconstructFactionFromAccessor(record, buffer);
+                    if (faction != null)
+                    {
+                        factions.Add(faction);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
 
         // Merge factions from runtime struct reading
@@ -240,6 +279,131 @@ public sealed partial class SemanticReconstructor
         return factions;
     }
 
+    private ReconstructedFaction? ReconstructFactionFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new ReconstructedFaction
+            {
+                FormId = record.FormId,
+                EditorId = GetEditorId(record.FormId),
+                FullName = FindFullNameInRecordBounds(record),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        uint flags = 0;
+        float crimeGoldMultiplier = 0;
+        var relations = new List<FactionRelation>();
+        var ranks = new List<FactionRank>();
+
+        // Track current rank being built (RNAM groups MNAM/FNAM/INAM that follow)
+        int? currentRankNumber = null;
+        string? currentMaleTitle = null;
+        string? currentFemaleTitle = null;
+        string? currentInsignia = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "DATA" when sub.DataLength >= 4:
+                    // FACT DATA: 2 flag bytes + 2 unused
+                    flags = (uint)(subData[0] | (subData[1] << 8));
+                    break;
+                case "XNAM" when sub.DataLength == 12:
+                {
+                    var fields = SubrecordDataReader.ReadFields("XNAM", "FACT", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        var factionFormId = SubrecordDataReader.GetUInt32(fields, "Faction");
+                        var modifier = SubrecordDataReader.GetInt32(fields, "Modifier");
+                        var combatReaction = SubrecordDataReader.GetUInt32(fields, "CombatReaction");
+                        relations.Add(new FactionRelation(factionFormId, modifier, combatReaction));
+                    }
+
+                    break;
+                }
+                case "RNAM" when sub.DataLength == 4:
+                {
+                    // Flush previous rank if any
+                    if (currentRankNumber.HasValue)
+                    {
+                        ranks.Add(new FactionRank(currentRankNumber.Value, currentMaleTitle, currentFemaleTitle,
+                            currentInsignia));
+                    }
+
+                    var fields = SubrecordDataReader.ReadFields("RNAM", "FACT", subData, record.IsBigEndian);
+                    currentRankNumber = fields.Count > 0
+                        ? SubrecordDataReader.GetInt32(fields, "RankNumber")
+                        : 0;
+                    currentMaleTitle = null;
+                    currentFemaleTitle = null;
+                    currentInsignia = null;
+                    break;
+                }
+                case "MNAM" when sub.DataLength > 0 && currentRankNumber.HasValue:
+                    currentMaleTitle = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FNAM" when sub.DataLength > 0 && currentRankNumber.HasValue:
+                    currentFemaleTitle = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "INAM" when sub.DataLength > 0 && currentRankNumber.HasValue:
+                    currentInsignia = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "CRVA" when sub.DataLength >= 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("CRVA", "FACT", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        crimeGoldMultiplier = SubrecordDataReader.GetFloat(fields, "CrimeGoldMultiplier");
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        // Flush last rank
+        if (currentRankNumber.HasValue)
+        {
+            ranks.Add(new FactionRank(currentRankNumber.Value, currentMaleTitle, currentFemaleTitle, currentInsignia));
+        }
+
+        // Track FullName for display name map
+        if (!string.IsNullOrEmpty(fullName))
+        {
+            _formIdToFullName.TryAdd(record.FormId, fullName);
+        }
+
+        return new ReconstructedFaction
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? GetEditorId(record.FormId),
+            FullName = fullName,
+            Flags = flags,
+            CrimeGoldMultiplier = crimeGoldMultiplier,
+            Relations = relations,
+            Ranks = ranks,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
     #endregion
 
     #region Actor Parsing Helpers
@@ -251,41 +415,23 @@ public sealed partial class SemanticReconstructor
             return null;
         }
 
-        uint flags;
-        ushort fatigueBase, barterGold, calcMin, calcMax, speedMultiplier, templateFlags;
-        short level, dispositionBase;
-        float karmaAlignment;
-
-        if (bigEndian)
+        var fields = SubrecordDataReader.ReadFields("ACBS", null, data, bigEndian);
+        if (fields.Count == 0)
         {
-            flags = BinaryPrimitives.ReadUInt32BigEndian(data);
-            fatigueBase = BinaryPrimitives.ReadUInt16BigEndian(data[4..]);
-            barterGold = BinaryPrimitives.ReadUInt16BigEndian(data[6..]);
-            level = BinaryPrimitives.ReadInt16BigEndian(data[8..]);
-            calcMin = BinaryPrimitives.ReadUInt16BigEndian(data[10..]);
-            calcMax = BinaryPrimitives.ReadUInt16BigEndian(data[12..]);
-            speedMultiplier = BinaryPrimitives.ReadUInt16BigEndian(data[14..]);
-            karmaAlignment = BinaryPrimitives.ReadSingleBigEndian(data[16..]);
-            dispositionBase = BinaryPrimitives.ReadInt16BigEndian(data[20..]);
-            templateFlags = BinaryPrimitives.ReadUInt16BigEndian(data[22..]);
-        }
-        else
-        {
-            flags = BinaryPrimitives.ReadUInt32LittleEndian(data);
-            fatigueBase = BinaryPrimitives.ReadUInt16LittleEndian(data[4..]);
-            barterGold = BinaryPrimitives.ReadUInt16LittleEndian(data[6..]);
-            level = BinaryPrimitives.ReadInt16LittleEndian(data[8..]);
-            calcMin = BinaryPrimitives.ReadUInt16LittleEndian(data[10..]);
-            calcMax = BinaryPrimitives.ReadUInt16LittleEndian(data[12..]);
-            speedMultiplier = BinaryPrimitives.ReadUInt16LittleEndian(data[14..]);
-            karmaAlignment = BinaryPrimitives.ReadSingleLittleEndian(data[16..]);
-            dispositionBase = BinaryPrimitives.ReadInt16LittleEndian(data[20..]);
-            templateFlags = BinaryPrimitives.ReadUInt16LittleEndian(data[22..]);
+            return null;
         }
 
         return new ActorBaseSubrecord(
-            flags, fatigueBase, barterGold, level, calcMin, calcMax,
-            speedMultiplier, karmaAlignment, dispositionBase, templateFlags,
+            SubrecordDataReader.GetUInt32(fields, "Flags"),
+            SubrecordDataReader.GetUInt16(fields, "Fatigue"),
+            SubrecordDataReader.GetUInt16(fields, "BarterGold"),
+            SubrecordDataReader.GetInt16(fields, "Level"),
+            SubrecordDataReader.GetUInt16(fields, "CalcMin"),
+            SubrecordDataReader.GetUInt16(fields, "CalcMax"),
+            SubrecordDataReader.GetUInt16(fields, "SpeedMult"),
+            SubrecordDataReader.GetFloat(fields, "KarmaAlignment"),
+            SubrecordDataReader.GetInt16(fields, "Disposition"),
+            SubrecordDataReader.GetUInt16(fields, "TemplateFlags"),
             offset, bigEndian);
     }
 
@@ -408,6 +554,9 @@ public sealed partial class SemanticReconstructor
         uint? deathItem = null;
         uint? voiceType = null;
         uint? template = null;
+        uint? hairFormId = null;
+        float? hairLength = null;
+        uint? eyesFormId = null;
         var factions = new List<FactionMembership>();
         var spells = new List<uint>();
         var inventory = new List<InventoryItem>();
@@ -446,6 +595,22 @@ public sealed partial class SemanticReconstructor
                 case "TPLT" when sub.DataLength == 4:
                     template = ReadFormId(subData, record.IsBigEndian);
                     break;
+                case "HNAM" when sub.DataLength == 4:
+                    hairFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "LNAM" when sub.DataLength == 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("LNAM", "NPC_", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        hairLength = SubrecordDataReader.GetFloat(fields, "HairLength");
+                    }
+
+                    break;
+                }
+                case "ENAM" when sub.DataLength == 4:
+                    eyesFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
                 case "SNAM" when sub.DataLength >= 5:
                     var factionFormId = ReadFormId(subData[..4], record.IsBigEndian);
                     var rank = (sbyte)subData[4];
@@ -455,16 +620,27 @@ public sealed partial class SemanticReconstructor
                     spells.Add(ReadFormId(subData, record.IsBigEndian));
                     break;
                 case "CNTO" when sub.DataLength >= 8:
-                    var itemFormId = ReadFormId(subData[..4], record.IsBigEndian);
-                    var count = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
-                    inventory.Add(new InventoryItem(itemFormId, count));
+                {
+                    var fields = SubrecordDataReader.ReadFields("CNTO", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        var itemFormId = SubrecordDataReader.GetUInt32(fields, "Item");
+                        var count = SubrecordDataReader.GetInt32(fields, "Count");
+                        inventory.Add(new InventoryItem(itemFormId, count));
+                    }
+
                     break;
+                }
                 case "PKID" when sub.DataLength == 4:
                     packages.Add(ReadFormId(subData, record.IsBigEndian));
                     break;
             }
+        }
+
+        // Track FullName for display name map
+        if (!string.IsNullOrEmpty(fullName))
+        {
+            _formIdToFullName.TryAdd(record.FormId, fullName);
         }
 
         return new ReconstructedNpc
@@ -479,6 +655,9 @@ public sealed partial class SemanticReconstructor
             DeathItem = deathItem,
             VoiceType = voiceType,
             Template = template,
+            HairFormId = hairFormId,
+            HairLength = hairLength,
+            EyesFormId = eyesFormId,
             Factions = factions,
             Spells = spells,
             Inventory = inventory,
@@ -558,13 +737,16 @@ public sealed partial class SemanticReconstructor
         string? fullName = null;
         string? description = null;
 
-        // S.P.E.C.I.A.L. modifiers
+        // S.P.E.C.I.A.L. modifiers (from DATA bytes 0-6)
         sbyte strength = 0, perception = 0, endurance = 0, charisma = 0;
         sbyte intelligence = 0, agility = 0, luck = 0;
 
-        // Heights
+        // Heights and weights (from DATA)
         var maleHeight = 1.0f;
         var femaleHeight = 1.0f;
+        var maleWeight = 1.0f;
+        var femaleWeight = 1.0f;
+        uint dataFlags = 0;
 
         // Related FormIDs
         uint? olderRace = null;
@@ -572,6 +754,17 @@ public sealed partial class SemanticReconstructor
         uint? maleVoice = null;
         uint? femaleVoice = null;
         var abilityFormIds = new List<uint>();
+
+        // Hair/Eyes
+        uint? defaultHairMale = null;
+        uint? defaultHairFemale = null;
+        uint? defaultHairColor = null;
+        var hairStyleFormIds = new List<uint>();
+        var eyeColorFormIds = new List<uint>();
+
+        // FaceGen
+        float faceGenMainClamp = 0;
+        float faceGenFaceClamp = 0;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -589,7 +782,8 @@ public sealed partial class SemanticReconstructor
                     description = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "DATA" when sub.DataLength >= 36:
-                    // S.P.E.C.I.A.L. bonuses at offsets 0-6
+                {
+                    // S.P.E.C.I.A.L. are individual bytes within the SkillBoosts blob
                     strength = (sbyte)subData[0];
                     perception = (sbyte)subData[1];
                     endurance = (sbyte)subData[2];
@@ -597,14 +791,63 @@ public sealed partial class SemanticReconstructor
                     intelligence = (sbyte)subData[4];
                     agility = (sbyte)subData[5];
                     luck = (sbyte)subData[6];
-                    // Heights at offsets 20-27
-                    maleHeight = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[20..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[20..]);
-                    femaleHeight = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[24..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[24..]);
+
+                    var fields = SubrecordDataReader.ReadFields("DATA", "RACE", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        maleHeight = SubrecordDataReader.GetFloat(fields, "MaleHeight");
+                        femaleHeight = SubrecordDataReader.GetFloat(fields, "FemaleHeight");
+                        maleWeight = SubrecordDataReader.GetFloat(fields, "MaleWeight");
+                        femaleWeight = SubrecordDataReader.GetFloat(fields, "FemaleWeight");
+                        dataFlags = SubrecordDataReader.GetUInt32(fields, "Flags");
+                    }
+
                     break;
+                }
+                case "DNAM" when sub.DataLength == 8:
+                    // Default hair styles (Male FormID + Female FormID)
+                    defaultHairMale = ReadFormId(subData[..4], record.IsBigEndian);
+                    defaultHairFemale = ReadFormId(subData[4..], record.IsBigEndian);
+                    break;
+                case "HNAM" when sub.DataLength >= 4:
+                    // Hair style FormID array
+                    for (var i = 0; i + 4 <= sub.DataLength; i += 4)
+                    {
+                        hairStyleFormIds.Add(ReadFormId(subData[i..], record.IsBigEndian));
+                    }
+
+                    break;
+                case "ENAM" when sub.DataLength >= 4:
+                    // Eye color FormID array
+                    for (var i = 0; i + 4 <= sub.DataLength; i += 4)
+                    {
+                        eyeColorFormIds.Add(ReadFormId(subData[i..], record.IsBigEndian));
+                    }
+
+                    break;
+                case "CNAM" when sub.DataLength >= 1:
+                    defaultHairColor = subData[0];
+                    break;
+                case "PNAM" when sub.DataLength == 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("PNAM", "RACE", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        faceGenMainClamp = SubrecordDataReader.GetFloat(fields, "FaceGenMainClamp");
+                    }
+
+                    break;
+                }
+                case "UNAM" when sub.DataLength == 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("UNAM", "RACE", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        faceGenFaceClamp = SubrecordDataReader.GetFloat(fields, "FaceGenFaceClamp");
+                    }
+
+                    break;
+                }
                 case "ONAM" when sub.DataLength == 4:
                     olderRace = ReadFormId(subData, record.IsBigEndian);
                     break;
@@ -619,6 +862,12 @@ public sealed partial class SemanticReconstructor
                     abilityFormIds.Add(ReadFormId(subData, record.IsBigEndian));
                     break;
             }
+        }
+
+        // Track FullName for display name map
+        if (!string.IsNullOrEmpty(fullName))
+        {
+            _formIdToFullName.TryAdd(record.FormId, fullName);
         }
 
         return new ReconstructedRace
@@ -636,6 +885,16 @@ public sealed partial class SemanticReconstructor
             Luck = luck,
             MaleHeight = maleHeight,
             FemaleHeight = femaleHeight,
+            MaleWeight = maleWeight,
+            FemaleWeight = femaleWeight,
+            DataFlags = dataFlags,
+            DefaultHairMaleFormId = defaultHairMale != 0 ? defaultHairMale : null,
+            DefaultHairFemaleFormId = defaultHairFemale != 0 ? defaultHairFemale : null,
+            DefaultHairColorFormId = defaultHairColor,
+            HairStyleFormIds = hairStyleFormIds,
+            EyeColorFormIds = eyeColorFormIds,
+            FaceGenMainClamp = faceGenMainClamp,
+            FaceGenFaceClamp = faceGenFaceClamp,
             OlderRaceFormId = olderRace != 0 ? olderRace : null,
             YoungerRaceFormId = youngerRace != 0 ? youngerRace : null,
             MaleVoiceFormId = maleVoice != 0 ? maleVoice : null,

@@ -207,7 +207,7 @@ public sealed class BsaProcessor : IRepackProcessor
         }
 
         // Phase 2a: Convert XMA files using batch mode (single FFmpeg script)
-        if (xmaFiles.Count > 0 && XmaOggConverter.IsAvailable)
+        if (xmaFiles.Count > 0 && XmaWavConverter.IsAvailable)
         {
             progress.Report(new RepackerProgress
             {
@@ -250,8 +250,8 @@ $outputDir = '{tempOutputDir.Replace("'", "''")}'
 $ffmpeg = '{ffmpegPath.Replace("'", "''")}'
 Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
     $in = $_.FullName
-    $out = Join-Path '{tempOutputDir.Replace("'", "''")}' ($_.BaseName + '.ogg')
-    & '{ffmpegPath.Replace("'", "''")}' -y -hide_banner -loglevel error -i $in -c:a libvorbis -q:a 2 $out 2>$null
+    $out = Join-Path '{tempOutputDir.Replace("'", "''")}' ($_.BaseName + '.wav')
+    & '{ffmpegPath.Replace("'", "''")}' -y -hide_banner -loglevel error -i $in -c:a pcm_s16le $out 2>$null
     Write-Output $_.Name
 }} -ThrottleLimit {AudioEncodingThreads}
 ";
@@ -293,15 +293,15 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
                 foreach (var (tempInputPath, (index, relativePath)) in fileMapping)
                 {
                     var tempFileName = Path.GetFileNameWithoutExtension(Path.GetFileName(tempInputPath));
-                    var tempOutputPath = Path.Combine(tempOutputDir, tempFileName + ".ogg");
+                    var tempOutputPath = Path.Combine(tempOutputDir, tempFileName + ".wav");
 
                     if (File.Exists(tempOutputPath))
                     {
-                        var oggData = await File.ReadAllBytesAsync(tempOutputPath, cancellationToken);
-                        if (oggData.Length > 0)
+                        var wavData = await File.ReadAllBytesAsync(tempOutputPath, cancellationToken);
+                        if (wavData.Length > 0)
                         {
-                            var newPath = Path.ChangeExtension(relativePath, ".ogg");
-                            allFiles[index] = (newPath, oggData);
+                            var newPath = Path.ChangeExtension(relativePath, ".wav");
+                            allFiles[index] = (newPath, wavData);
                             continue;
                         }
                     }

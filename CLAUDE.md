@@ -52,11 +52,13 @@ semdiff <file1> <file2> -f 0x12345678 --all
 ### Hybrid Endianness
 
 Xbox 360 ESM uses mixed endianness:
+
 - Record/subrecord headers: Big-endian
 - Most data: Big-endian (FormIDs, floats, integers)
 - Some fields: Already little-endian (e.g., INDX quest stage indices)
 
 The `SubrecordSchemaRegistry` defines field types:
+
 - `UInt16` / `UInt32` / `Float` - Big-endian, byte-swapped
 - `UInt16LittleEndian` / `FormIdLittleEndian` - Preserved as-is
 
@@ -67,6 +69,7 @@ The `SubrecordSchemaRegistry` defines field types:
 ### Known Content Differences (NOT conversion bugs)
 
 Many records differ between Xbox and PC due to genuine content differences, not conversion issues:
+
 - **LVLO padding bytes**: Xbox has `FA 06`, PC has `15 06` - both are valid, semantically equivalent
 - **AIDT unused bytes**: Xbox has zeros, PC has non-zero values - likely PC-only data
 - **Various counts**: Xbox has more/fewer records in some categories (REFR +2369, etc.)
@@ -98,6 +101,7 @@ tools/EsmAnalyzer/
 ## Standard File Paths
 
 ### ESM Conversion Testing
+
 - **Xbox 360 source**: `Sample/ESM/360_final/FalloutNV.esm`
 - **Converted output**: `TestOutput/FalloutNV.pc.esm` (standard location, overwritten during testing)
 - **PC reference**: `Sample/ESM/pc_final/FalloutNV.esm`
@@ -117,8 +121,8 @@ diff --xbox ... --converted ... --pc ... -f 0x0017B37C --semantic
 ```
 
 ### Reference Materials
-- **TES5Edit source**: `TES5Edit/` at repo root (for ESM research)
-- **PDB symbols**: `Sample/PDB/Fallout_Debug/types_full.txt`, `Sample/PDB/Fallout_Debug/globals.txt` (also `Fallout_Release_Beta/` and `Fallout_Release_MemDebug/`)
+
+- **PDB symbols**: `Sample/PDB/`
 
 ## Code Style
 

@@ -237,77 +237,57 @@ public sealed partial class SemanticReconstructor
                     ammoFormId = ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 15:
-                    value = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
-                    health = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
-                    weight = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
-                    damage = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt16BigEndian(subData[12..])
-                        : BinaryPrimitives.ReadInt16LittleEndian(subData[12..]);
-                    clipSize = subData[14];
-                    break;
-                case "DNAM" when sub.DataLength >= 64:
-                    // Parse key DNAM fields
-                    animationType = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    speed = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
-                    reach = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
-                    // Animation type (DNAM byte 0, already read as uint32) is the weapon type
-                    weaponType = (WeaponType)(animationType <= 11 ? animationType : 0);
-                    minSpread = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[20..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[20..]);
-                    spread = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[24..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[24..]);
-                    // DNAM offset 36: Projectile FormID [PROJ]
-                    if (sub.DataLength >= 40)
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "WEAP", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        var projId = ReadFormId(subData[36..], record.IsBigEndian);
+                        value = SubrecordDataReader.GetInt32(fields, "Value");
+                        health = SubrecordDataReader.GetInt32(fields, "Health");
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                        damage = SubrecordDataReader.GetInt16(fields, "Damage");
+                        clipSize = SubrecordDataReader.GetByte(fields, "ClipSize");
+                    }
+
+                    break;
+                }
+                case "DNAM" when sub.DataLength >= 64:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DNAM", "WEAP", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        var wt = SubrecordDataReader.GetByte(fields, "WeaponType");
+                        animationType = wt;
+                        weaponType = (WeaponType)(wt <= 11 ? wt : 0);
+                        speed = SubrecordDataReader.GetFloat(fields, "Speed");
+                        reach = SubrecordDataReader.GetFloat(fields, "Reach");
+                        minSpread = SubrecordDataReader.GetFloat(fields, "MinSpread");
+                        spread = SubrecordDataReader.GetFloat(fields, "Spread");
+                        var projId = SubrecordDataReader.GetUInt32(fields, "Projectile");
                         if (projId != 0)
                         {
                             projectileFormId = projId;
                         }
+
+                        shotsPerSec = SubrecordDataReader.GetFloat(fields, "ShotsPerSec");
+                        actionPoints = SubrecordDataReader.GetFloat(fields, "ActionPoints");
+                        minRange = SubrecordDataReader.GetFloat(fields, "MinRange");
+                        maxRange = SubrecordDataReader.GetFloat(fields, "MaxRange");
                     }
 
-                    if (sub.DataLength >= 100)
+                    break;
+                }
+                case "CRDT" when sub.DataLength >= 16:
+                {
+                    var fields = SubrecordDataReader.ReadFields("CRDT", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        // offset 64: Fire Rate (shots/sec), offset 68: AP override
-                        shotsPerSec = record.IsBigEndian
-                            ? BinaryPrimitives.ReadSingleBigEndian(subData[64..])
-                            : BinaryPrimitives.ReadSingleLittleEndian(subData[64..]);
-                        actionPoints = record.IsBigEndian
-                            ? BinaryPrimitives.ReadSingleBigEndian(subData[68..])
-                            : BinaryPrimitives.ReadSingleLittleEndian(subData[68..]);
-                        // offset 44: Min Range, offset 48: Max Range
-                        minRange = record.IsBigEndian
-                            ? BinaryPrimitives.ReadSingleBigEndian(subData[44..])
-                            : BinaryPrimitives.ReadSingleLittleEndian(subData[44..]);
-                        maxRange = record.IsBigEndian
-                            ? BinaryPrimitives.ReadSingleBigEndian(subData[48..])
-                            : BinaryPrimitives.ReadSingleLittleEndian(subData[48..]);
+                        criticalDamage = SubrecordDataReader.GetInt16(fields, "CriticalDamage");
+                        criticalChance = SubrecordDataReader.GetFloat(fields, "CriticalChanceMult");
+                        criticalEffectFormId = SubrecordDataReader.GetUInt32(fields, "CriticalEffect");
                     }
 
                     break;
-                case "CRDT" when sub.DataLength >= 12:
-                    criticalDamage = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt16BigEndian(subData)
-                        : BinaryPrimitives.ReadInt16LittleEndian(subData);
-                    criticalChance = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
-                    criticalEffectFormId = ReadFormId(subData[8..], record.IsBigEndian);
-                    break;
+                }
                 // Sound subrecords - each is a single FormID [SOUN]
                 case "YNAM" when sub.DataLength == 4:
                     pickupSoundFormId = ReadFormId(subData, record.IsBigEndian);
@@ -558,25 +538,28 @@ public sealed partial class SemanticReconstructor
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "DATA" when sub.DataLength >= 12:
-                    value = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
-                    health = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
-                    weight = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "ARMO", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        value = SubrecordDataReader.GetInt32(fields, "Value");
+                        health = SubrecordDataReader.GetInt32(fields, "Health");
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                    }
+
                     break;
+                }
                 case "DNAM" when sub.DataLength >= 8:
-                    // DNAM layout: DR (int16) + unused (2) + DT (float) + Flags (uint16) + unused (2)
-                    damageResistance = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt16BigEndian(subData)
-                        : BinaryPrimitives.ReadInt16LittleEndian(subData);
-                    damageThreshold = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
+                {
+                    var fields = SubrecordDataReader.ReadFields("DNAM", "ARMO", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        damageResistance = SubrecordDataReader.GetInt16(fields, "DamageResistance");
+                        damageThreshold = SubrecordDataReader.GetFloat(fields, "DamageThreshold");
+                    }
+
                     break;
+                }
             }
         }
 
@@ -709,15 +692,18 @@ public sealed partial class SemanticReconstructor
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "DATA" when sub.DataLength >= 13:
-                    speed = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
-                    flags = subData[4];
-                    value = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[8..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
-                    clipRounds = subData[12];
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "AMMO", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        speed = SubrecordDataReader.GetFloat(fields, "Speed");
+                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                        value = SubrecordDataReader.GetUInt32(fields, "Value");
+                        clipRounds = SubrecordDataReader.GetByte(fields, "ClipRounds");
+                    }
+
                     break;
+                }
                 case "DAT2" when sub.DataLength >= 8:
                     // DAT2 layout: ProjectilePerShot (U32), Projectile FormID (U32), Weight (float), ...
                     var projId = ReadFormId(subData[4..], record.IsBigEndian);
@@ -941,22 +927,27 @@ public sealed partial class SemanticReconstructor
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "DATA" when sub.DataLength >= 4:
-                    weight = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "ALCH", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                    }
+
                     break;
+                }
                 case "ENIT" when sub.DataLength >= 16:
-                    // ENIT layout: Value (S32 @0), Flags (U8 @4), unused (3),
-                    //   Withdrawal Effect [SPEL] (@8), Addiction Chance (float @12),
-                    //   Consume Sound [SOUN] (@16)
-                    value = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    addictionFormId = ReadFormId(subData[8..], record.IsBigEndian);
-                    addictionChance = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[12..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[12..]);
+                {
+                    var fields = SubrecordDataReader.ReadFields("ENIT", "ALCH", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        value = SubrecordDataReader.GetUInt32(fields, "Value");
+                        addictionFormId = SubrecordDataReader.GetUInt32(fields, "Addiction");
+                        addictionChance = SubrecordDataReader.GetFloat(fields, "AddictionChance");
+                    }
+
                     break;
+                }
                 case "EFID" when sub.DataLength == 4:
                     effectFormIds.Add(ReadFormId(subData, record.IsBigEndian));
                     break;
@@ -1088,13 +1079,16 @@ public sealed partial class SemanticReconstructor
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "DATA" when sub.DataLength >= 8:
-                    value = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
-                    weight = record.IsBigEndian
-                        ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
-                        : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "MISC", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        value = SubrecordDataReader.GetInt32(fields, "Value");
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                    }
+
                     break;
+                }
             }
         }
 
@@ -1273,12 +1267,17 @@ public sealed partial class SemanticReconstructor
                     script = ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "CNTO" when sub.DataLength >= 8:
-                    var itemFormId = ReadFormId(subData[..4], record.IsBigEndian);
-                    var count = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
-                    contents.Add(new InventoryItem(itemFormId, count));
+                {
+                    var fields = SubrecordDataReader.ReadFields("CNTO", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        var itemFormId = SubrecordDataReader.GetUInt32(fields, "Item");
+                        var count = SubrecordDataReader.GetInt32(fields, "Count");
+                        contents.Add(new InventoryItem(itemFormId, count));
+                    }
+
                     break;
+                }
             }
         }
 

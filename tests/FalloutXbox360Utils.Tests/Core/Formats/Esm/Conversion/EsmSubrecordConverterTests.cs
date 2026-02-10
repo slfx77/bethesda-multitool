@@ -382,14 +382,16 @@ public class EsmSubrecordConverterTests
     #region NVDP NavMesh Door Links
 
     [Fact]
-    public void ConvertSubrecordData_Nvdp_SwapsFormIdAndUInt16s()
+    public void ConvertSubrecordData_Nvdp_SwapsFormIdAndTriangleOnly()
     {
-        // NVDP: 8 bytes per entry: FormID(4) + Triangle(2) + Unknown(2)
+        // NVDP: 8 bytes per entry: FormID(4) + Triangle(2) + Padding(2)
+        // PDB: NavMeshTriangleDoorPortal has only pDoorForm(uint32,+0) and iOwningTriangleIndex(uint16,+4)
+        // Disassembly confirms Endian() does NOT swap bytes +6-7 (struct padding)
         byte[] data =
         [
             0x00, 0x12, 0x34, 0x56, // FormID BE
             0x00, 0x0A, // Triangle BE
-            0x00, 0x05 // Unknown BE
+            0x00, 0x05 // Padding (not swapped)
         ];
         var result = EsmSubrecordConverter.ConvertSubrecordData("NVDP", data, "NAVM");
         // FormID swapped
@@ -400,9 +402,9 @@ public class EsmSubrecordConverterTests
         // Triangle swapped
         Assert.Equal(0x0A, result[4]);
         Assert.Equal(0x00, result[5]);
-        // Unknown swapped
-        Assert.Equal(0x05, result[6]);
-        Assert.Equal(0x00, result[7]);
+        // Padding preserved as-is (not swapped)
+        Assert.Equal(0x00, result[6]);
+        Assert.Equal(0x05, result[7]);
     }
 
     #endregion

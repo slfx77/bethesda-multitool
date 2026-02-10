@@ -40,18 +40,19 @@ public static partial class SubrecordSchemaRegistry
         // INFO SCHEMAS (Dialog Response)
         // ========================================================================
 
-        // TRDT - INFO Response Data (24 bytes)
+        // TRDT - INFO Response Data (24 bytes) — PDB: RESPONSE_DATA
+        // Disassembly confirms swap32 at offsets 0, 4, 8, 16
         schemas[new SchemaKey("TRDT", null, 24)] = new SubrecordSchema(
             F.UInt32("EmotionType"),
             F.Int32("EmotionValue"),
-            F.Padding(4),
+            F.FormId("ConversationTopic"),
             F.UInt8("ResponseNumber"),
             F.Padding(3),
             F.FormId("Sound"),
             F.UInt8("UseEmotionAnim"),
             F.Padding(3))
         {
-            Description = "INFO Response Data"
+            Description = "INFO Response Data (RESPONSE_DATA)"
         };
 
         // DATA - INFO (4 bytes)
@@ -82,7 +83,8 @@ public static partial class SubrecordSchemaRegistry
         // ========================================================================
 
         schemas[new SchemaKey("ANAM", "TERM", 1)] = SubrecordSchema.ByteArray;
-        schemas[new SchemaKey("DNAM", "TERM", 4)] = SubrecordSchema.Simple4Byte();
+        // DNAM - TERM (4 bytes) - PDB: TERMINAL_DATA (4 individual bytes: cDifficulty, cFlags, cServerType, cUnused)
+        schemas[new SchemaKey("DNAM", "TERM", 4)] = SubrecordSchema.ByteArray;
         schemas[new SchemaKey("SNAM", "TERM", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
 
         // ========================================================================
@@ -109,13 +111,15 @@ public static partial class SubrecordSchemaRegistry
             Description = "Script Header (SCRIPT_HEADER)"
         };
 
-        // SLSD - Script Local Variable Data (24 bytes) - matches PDB SCRIPT_LOCAL struct
-        // Layout: uiID(4) + fValue(double, 8) + bIsInteger(4) + padding(8)
+        // SLSD - Script Local Variable Data (24 bytes) — PDB: SCRIPT_LOCAL
+        // Disassembly confirms: swap32 at offset 0 (uiID), swap64 at offset 8 (fValue double)
+        // Layout: uiID(4) + padding(4) + fValue(double,8) + bIsInteger(bool,1) + padding(7)
         schemas[new SchemaKey("SLSD", null, 24)] = new SubrecordSchema(
             F.UInt32("Index"),
-            F.Bytes("Value", 8),
-            F.UInt32("IsInteger"),
-            F.Bytes("Padding", 8))
+            F.Padding(4),
+            F.Double("Value"),
+            F.UInt8("IsInteger"),
+            F.Padding(7))
         {
             Description = "Script Local Variable Data (SCRIPT_LOCAL)"
         };
@@ -126,35 +130,39 @@ public static partial class SubrecordSchemaRegistry
         // CONDITION SCHEMAS
         // ========================================================================
 
-        // CTDA - Condition (28 bytes)
+        // CTDA - Condition (28 bytes) — PDB: CONDITION_ITEM_DATA
+        // Disassembly confirms: swap32 at offsets 4, 20, 24; FUNCTION_DATA::Endian at offset 8
+        // FUNCTION_DATA::Endian: swap16 at +0, swap32 at +4, swap32 at +8
+        // Bytes 10-11 are padding within FUNCTION_DATA (between iFunction and pParam)
         schemas[new SchemaKey("CTDA", null, 28)] = new SubrecordSchema(
-            F.Padding(4),
+            F.UInt8("Type"),
+            F.Padding(3),
             F.Float("ComparisonValue"),
-            F.UInt16("ComparisonType"),
             F.UInt16("FunctionIndex"),
+            F.Padding(2),
             F.FormId("Parameter1"),
             F.UInt32("Parameter2"),
             F.UInt32("RunOn"),
             F.FormId("Reference"))
         {
-            Description = "Condition Data"
+            Description = "Condition Data (CONDITION_ITEM_DATA)"
         };
 
         // ========================================================================
         // CHALLENGE SCHEMAS (CHAL)
         // ========================================================================
 
-        // DATA - CHAL (24 bytes)
+        // DATA - CHAL (24 bytes) — PDB: CHALLENGE_DATA
         schemas[new SchemaKey("DATA", "CHAL", 24)] = new SubrecordSchema(
-            F.UInt32("Type"),
-            F.UInt32("Threshold"),
+            F.Int32("ChallengeType"),
+            F.Int32("Threshold"),
             F.UInt16("Flags"),
-            F.UInt16("Interval"),
-            F.UInt32("Value1"),
-            F.UInt16("Value2"),
-            F.UInt16("Value3"),
-            F.UInt16("Value4"),
-            F.UInt16("Value5"));
+            F.Padding(2),
+            F.Int32("Interval"),
+            F.UInt16("SpecialDataOne"),
+            F.UInt16("SpecialDataTwo"),
+            F.UInt16("SpecialDataThree"),
+            F.Padding(2));
 
         schemas[new SchemaKey("SNAM", "CHAL", 4)] = SubrecordSchema.Simple4Byte("Challenge Sound");
 
@@ -240,14 +248,15 @@ public static partial class SubrecordSchemaRegistry
             Description = "Package Target 2"
         };
 
-        // PKDD - Package Dialogue Data (24 bytes)
+        // PKDD - Package Dialogue Data (24 bytes) - PDB: PACK_DIALOGUE_DATA
+        // Offsets 8-10 are individual bools, NOT a uint32. Offset 12 is a float, NOT padding.
         schemas[new SchemaKey("PKDD", null, 24)] = new SubrecordSchema(
             F.Float("FOV"),
-            F.FormId("Topic"),
-            F.UInt32("Flags"),
-            F.Padding(4),
-            F.UInt32("DialogueType"),
-            F.UInt32("Unknown"))
+            F.FormId("TopicID"),
+            F.Padding(4),                        // 3 bools (NOHeadtracking, DoNotControlTarget, SpeakerMoveTalk) + 1 pad
+            F.Float("DistanceStartTalking"),
+            F.Padding(4),                        // 1 bool (SayTo) + 3 pad
+            F.UInt32("TriggerType"))
         {
             Description = "Package Dialogue Data"
         };
@@ -270,23 +279,23 @@ public static partial class SubrecordSchemaRegistry
             Description = "Package Location 2"
         };
 
-        // PKW3 - Package Use Weapon Data (24 bytes)
+        // PKW3 - Package Use Weapon Data (24 bytes) - PDB: PACK_USE_WEAPON_DATA_PKW3
+        // Offsets 0-5 are individual bools, NOT a uint32+bytes. Offset 20 is a uint32, NOT padding.
         schemas[new SchemaKey("PKW3", null, 24)] = new SubrecordSchema(
-            F.UInt32("Flags"),
-            F.UInt8("FireRate"),
-            F.UInt8("FireCount"),
-            F.UInt16("NumBursts"),
-            F.UInt16("MinShoots"),
-            F.UInt16("MaxShoots"),
-            F.Float("MinPause"),
-            F.Float("MaxPause"),
-            F.Padding(4))
+            F.Padding(6),                        // 6 bools (AlwaysHit, DoNoDamage, Crouch, HoldFire, VolleyFire, RepeatFire)
+            F.UInt16("BurstCount"),
+            F.UInt16("VolleyShotsMin"),
+            F.UInt16("VolleyShotsMax"),
+            F.Float("VolleyWaitMin"),
+            F.Float("VolleyWaitMax"),
+            F.UInt32("Weapon"))
         {
             Description = "Package Use Weapon Data"
         };
 
         schemas[new SchemaKey("CNAM", "PACK", 4)] = SubrecordSchema.Simple4Byte("Combat Style FormID");
-        schemas[new SchemaKey("PKPT", "PACK", 2)] = SubrecordSchema.Simple2Byte("Package PT");
+        // PKPT - PDB: PACK_PATROL_DATA (2 individual bools: bRepeatable, bStartingLocationAtLinkedRef)
+        schemas[new SchemaKey("PKPT", "PACK", 2)] = SubrecordSchema.ByteArray;
         schemas[new SchemaKey("PKAM", "PACK", 0)] = SubrecordSchema.ByteArray;
         schemas[new SchemaKey("PKED", "PACK", 0)] = SubrecordSchema.ByteArray;
         schemas[new SchemaKey("POBA", "PACK", 0)] = SubrecordSchema.ByteArray;

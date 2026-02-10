@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
@@ -59,68 +58,38 @@ public sealed partial class SemanticReconstructor
                             break;
                         case "ENIT" when sub.DataLength >= 12:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("ENIT", "ENCH",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    enchantType = BinaryPrimitives.ReadUInt32BigEndian(span);
-                                    chargeAmount = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
-                                    enchantCost = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
-                                }
-                                else
-                                {
-                                    enchantType = BinaryPrimitives.ReadUInt32LittleEndian(span);
-                                    chargeAmount = BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
-                                    enchantCost = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
-                                }
-
-                                if (sub.DataLength >= 13)
-                                {
-                                    flags = data[sub.DataOffset + 12];
+                                    enchantType = SubrecordDataReader.GetUInt32(fields, "Type");
+                                    chargeAmount = SubrecordDataReader.GetUInt32(fields, "ChargeAmount");
+                                    enchantCost = SubrecordDataReader.GetUInt32(fields, "EnchantCost");
+                                    flags = SubrecordDataReader.GetByte(fields, "Flags");
                                 }
 
                                 break;
                             }
                         case "EFID" when sub.DataLength >= 4:
-                            currentEffectId = record.IsBigEndian
-                                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset))
-                                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset));
+                            currentEffectId = ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
                             break;
                         case "EFIT" when sub.DataLength >= 12:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                float magnitude;
-                                uint area, duration, type;
-                                int actorValue;
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("EFIT", null,
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    magnitude = BinaryPrimitives.ReadSingleBigEndian(span);
-                                    area = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
-                                    duration = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
-                                    type = sub.DataLength >= 16 ? BinaryPrimitives.ReadUInt32BigEndian(span[12..]) : 0;
-                                    actorValue = sub.DataLength >= 20
-                                        ? BinaryPrimitives.ReadInt32BigEndian(span[16..])
-                                        : -1;
-                                }
-                                else
-                                {
-                                    magnitude = BinaryPrimitives.ReadSingleLittleEndian(span);
-                                    area = BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
-                                    duration = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
-                                    type = sub.DataLength >= 16 ? BinaryPrimitives.ReadUInt32LittleEndian(span[12..]) : 0;
-                                    actorValue = sub.DataLength >= 20
-                                        ? BinaryPrimitives.ReadInt32LittleEndian(span[16..])
-                                        : -1;
+                                    effects.Add(new EnchantmentEffect
+                                    {
+                                        EffectFormId = currentEffectId,
+                                        Magnitude = SubrecordDataReader.GetFloat(fields, "Magnitude"),
+                                        Area = SubrecordDataReader.GetUInt32(fields, "Area"),
+                                        Duration = SubrecordDataReader.GetUInt32(fields, "Duration"),
+                                        Type = SubrecordDataReader.GetUInt32(fields, "Type"),
+                                        ActorValue = SubrecordDataReader.GetInt32(fields, "ActorValue", -1)
+                                    });
                                 }
 
-                                effects.Add(new EnchantmentEffect
-                                {
-                                    EffectFormId = currentEffectId,
-                                    Magnitude = magnitude,
-                                    Area = area,
-                                    Duration = duration,
-                                    Type = type,
-                                    ActorValue = actorValue
-                                });
                                 break;
                             }
                     }
@@ -212,44 +181,17 @@ public sealed partial class SemanticReconstructor
                             break;
                         case "DATA" when sub.DataLength >= 36:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("DATA", "MGEF",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    flags = BinaryPrimitives.ReadUInt32BigEndian(span);
-                                    baseCost = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
-                                    associatedItem = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
-                                    magicSchool = BinaryPrimitives.ReadInt32BigEndian(span[12..]);
-                                    resistValue = BinaryPrimitives.ReadInt32BigEndian(span[16..]);
-                                    archetype = BinaryPrimitives.ReadUInt32BigEndian(span[24..]);
-                                    actorValue = BinaryPrimitives.ReadInt32BigEndian(span[28..]);
-                                    if (sub.DataLength >= 44)
-                                    {
-                                        projectile = BinaryPrimitives.ReadUInt32BigEndian(span[36..]);
-                                    }
-
-                                    if (sub.DataLength >= 48)
-                                    {
-                                        explosion = BinaryPrimitives.ReadUInt32BigEndian(span[40..]);
-                                    }
-                                }
-                                else
-                                {
-                                    flags = BinaryPrimitives.ReadUInt32LittleEndian(span);
-                                    baseCost = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
-                                    associatedItem = BinaryPrimitives.ReadUInt32LittleEndian(span[8..]);
-                                    magicSchool = BinaryPrimitives.ReadInt32LittleEndian(span[12..]);
-                                    resistValue = BinaryPrimitives.ReadInt32LittleEndian(span[16..]);
-                                    archetype = BinaryPrimitives.ReadUInt32LittleEndian(span[24..]);
-                                    actorValue = BinaryPrimitives.ReadInt32LittleEndian(span[28..]);
-                                    if (sub.DataLength >= 44)
-                                    {
-                                        projectile = BinaryPrimitives.ReadUInt32LittleEndian(span[36..]);
-                                    }
-
-                                    if (sub.DataLength >= 48)
-                                    {
-                                        explosion = BinaryPrimitives.ReadUInt32LittleEndian(span[40..]);
-                                    }
+                                    flags = SubrecordDataReader.GetUInt32(fields, "Flags");
+                                    baseCost = SubrecordDataReader.GetFloat(fields, "BaseCost");
+                                    associatedItem = SubrecordDataReader.GetUInt32(fields, "AssocItem");
+                                    magicSchool = SubrecordDataReader.GetInt32(fields, "MagicSchool");
+                                    resistValue = SubrecordDataReader.GetInt32(fields, "ResistanceValue");
+                                    archetype = SubrecordDataReader.GetUInt32(fields, "Archtype");
+                                    actorValue = SubrecordDataReader.GetInt32(fields, "ActorValue");
                                 }
 
                                 break;
@@ -343,40 +285,24 @@ public sealed partial class SemanticReconstructor
                             break;
                         case "DATA" when sub.DataLength >= 52:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("DATA", "PROJ",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    projFlags = BinaryPrimitives.ReadUInt16BigEndian(span);
-                                    projType = BinaryPrimitives.ReadUInt16BigEndian(span[2..]);
-                                    gravity = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
-                                    speed = BinaryPrimitives.ReadSingleBigEndian(span[8..]);
-                                    range = BinaryPrimitives.ReadSingleBigEndian(span[12..]);
-                                    light = BinaryPrimitives.ReadUInt32BigEndian(span[16..]);
-                                    muzzleFlashLight = BinaryPrimitives.ReadUInt32BigEndian(span[20..]);
-                                    muzzleFlashDuration = BinaryPrimitives.ReadSingleBigEndian(span[28..]);
-                                    fadeDuration = BinaryPrimitives.ReadSingleBigEndian(span[32..]);
-                                    impactForce = BinaryPrimitives.ReadSingleBigEndian(span[36..]);
-                                    sound = BinaryPrimitives.ReadUInt32BigEndian(span[40..]);
-                                    timer = BinaryPrimitives.ReadSingleBigEndian(span[48..]);
-                                    explosion = sub.DataLength >= 56 ? BinaryPrimitives.ReadUInt32BigEndian(span[52..]) : 0;
-                                }
-                                else
-                                {
-                                    projFlags = BinaryPrimitives.ReadUInt16LittleEndian(span);
-                                    projType = BinaryPrimitives.ReadUInt16LittleEndian(span[2..]);
-                                    gravity = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
-                                    speed = BinaryPrimitives.ReadSingleLittleEndian(span[8..]);
-                                    range = BinaryPrimitives.ReadSingleLittleEndian(span[12..]);
-                                    light = BinaryPrimitives.ReadUInt32LittleEndian(span[16..]);
-                                    muzzleFlashLight = BinaryPrimitives.ReadUInt32LittleEndian(span[20..]);
-                                    muzzleFlashDuration = BinaryPrimitives.ReadSingleLittleEndian(span[28..]);
-                                    fadeDuration = BinaryPrimitives.ReadSingleLittleEndian(span[32..]);
-                                    impactForce = BinaryPrimitives.ReadSingleLittleEndian(span[36..]);
-                                    sound = BinaryPrimitives.ReadUInt32LittleEndian(span[40..]);
-                                    timer = BinaryPrimitives.ReadSingleLittleEndian(span[48..]);
-                                    explosion = sub.DataLength >= 56
-                                        ? BinaryPrimitives.ReadUInt32LittleEndian(span[52..])
-                                        : 0;
+                                    var flagsAndType = SubrecordDataReader.GetUInt32(fields, "FlagsAndType");
+                                    projFlags = (ushort)(flagsAndType & 0xFFFF);
+                                    projType = (ushort)((flagsAndType >> 16) & 0xFFFF);
+                                    gravity = SubrecordDataReader.GetFloat(fields, "Gravity");
+                                    speed = SubrecordDataReader.GetFloat(fields, "Speed");
+                                    range = SubrecordDataReader.GetFloat(fields, "Range");
+                                    light = SubrecordDataReader.GetUInt32(fields, "Light");
+                                    muzzleFlashLight = SubrecordDataReader.GetUInt32(fields, "MuzzleFlashLight");
+                                    explosion = SubrecordDataReader.GetUInt32(fields, "Explosion");
+                                    sound = SubrecordDataReader.GetUInt32(fields, "Sound");
+                                    muzzleFlashDuration = SubrecordDataReader.GetFloat(fields, "MuzzleFlashDuration");
+                                    fadeDuration = SubrecordDataReader.GetFloat(fields, "FadeDuration");
+                                    impactForce = SubrecordDataReader.GetFloat(fields, "ImpactForce");
+                                    timer = SubrecordDataReader.GetFloat(fields, "ExplosionAltTriggerTimer");
                                 }
 
                                 break;
@@ -469,36 +395,23 @@ public sealed partial class SemanticReconstructor
                                 sub.DataLength));
                             break;
                         case "EITM" when sub.DataLength >= 4:
-                            enchantment = record.IsBigEndian
-                                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset))
-                                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset));
+                            enchantment = ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
                             break;
                         case "DATA" when sub.DataLength >= 36:
                             {
-                                var span = data.AsSpan(sub.DataOffset);
-                                if (record.IsBigEndian)
+                                var fields = SubrecordDataReader.ReadFields("DATA", "EXPL",
+                                    data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                                if (fields.Count > 0)
                                 {
-                                    force = BinaryPrimitives.ReadSingleBigEndian(span);
-                                    damage = BinaryPrimitives.ReadSingleBigEndian(span[4..]);
-                                    radius = BinaryPrimitives.ReadSingleBigEndian(span[8..]);
-                                    light = BinaryPrimitives.ReadUInt32BigEndian(span[12..]);
-                                    sound1 = BinaryPrimitives.ReadUInt32BigEndian(span[16..]);
-                                    flags = BinaryPrimitives.ReadUInt32BigEndian(span[20..]);
-                                    isRadius = BinaryPrimitives.ReadSingleBigEndian(span[24..]);
-                                    impactDataSet = BinaryPrimitives.ReadUInt32BigEndian(span[28..]);
-                                    sound2 = BinaryPrimitives.ReadUInt32BigEndian(span[32..]);
-                                }
-                                else
-                                {
-                                    force = BinaryPrimitives.ReadSingleLittleEndian(span);
-                                    damage = BinaryPrimitives.ReadSingleLittleEndian(span[4..]);
-                                    radius = BinaryPrimitives.ReadSingleLittleEndian(span[8..]);
-                                    light = BinaryPrimitives.ReadUInt32LittleEndian(span[12..]);
-                                    sound1 = BinaryPrimitives.ReadUInt32LittleEndian(span[16..]);
-                                    flags = BinaryPrimitives.ReadUInt32LittleEndian(span[20..]);
-                                    isRadius = BinaryPrimitives.ReadSingleLittleEndian(span[24..]);
-                                    impactDataSet = BinaryPrimitives.ReadUInt32LittleEndian(span[28..]);
-                                    sound2 = BinaryPrimitives.ReadUInt32LittleEndian(span[32..]);
+                                    force = SubrecordDataReader.GetFloat(fields, "Force");
+                                    damage = SubrecordDataReader.GetFloat(fields, "Damage");
+                                    radius = SubrecordDataReader.GetFloat(fields, "Radius");
+                                    light = SubrecordDataReader.GetUInt32(fields, "Light");
+                                    sound1 = SubrecordDataReader.GetUInt32(fields, "Sound1");
+                                    flags = SubrecordDataReader.GetUInt32(fields, "Flags");
+                                    isRadius = SubrecordDataReader.GetFloat(fields, "ISRadius");
+                                    impactDataSet = SubrecordDataReader.GetUInt32(fields, "ImpactDataSet");
+                                    sound2 = SubrecordDataReader.GetUInt32(fields, "Sound2");
                                 }
 
                                 break;
@@ -763,17 +676,18 @@ public sealed partial class SemanticReconstructor
                     fullName = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "SPIT" when sub.DataLength >= 16:
-                    type = (SpellType)(record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData));
-                    cost = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
-                    level = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[8..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
-                    flags = subData[12];
+                {
+                    var fields = SubrecordDataReader.ReadFields("SPIT", "SPEL", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        type = (SpellType)SubrecordDataReader.GetUInt32(fields, "Type");
+                        cost = SubrecordDataReader.GetUInt32(fields, "Cost");
+                        level = SubrecordDataReader.GetUInt32(fields, "Level");
+                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                    }
+
                     break;
+                }
                 case "EFID" when sub.DataLength == 4:
                     effectFormIds.Add(ReadFormId(subData, record.IsBigEndian));
                     break;

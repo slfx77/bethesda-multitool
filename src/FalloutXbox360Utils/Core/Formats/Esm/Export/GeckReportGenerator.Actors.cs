@@ -759,7 +759,10 @@ public static partial class GeckReportGenerator
 
             if (cls.TrainingSkill != 0 || cls.TrainingLevel != 0)
             {
-                sb.AppendLine($"  Training:    Skill {cls.TrainingSkill}, Level {cls.TrainingLevel}");
+                var trainingName = cls.TrainingSkill < skillNames.Length
+                    ? skillNames[cls.TrainingSkill]
+                    : $"#{cls.TrainingSkill}";
+                sb.AppendLine($"  Training:    {trainingName}, Level {cls.TrainingLevel}");
             }
 
             if (cls.BarterFlags != 0)

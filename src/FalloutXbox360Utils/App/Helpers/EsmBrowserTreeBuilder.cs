@@ -73,6 +73,16 @@ internal static partial class EsmBrowserTreeBuilder
     };
 
     /// <summary>
+    ///     Fallout NV skill names indexed by skill ID.
+    /// </summary>
+    private static readonly string[] SkillNames =
+    [
+        "Barter", "Big Guns", "Energy Weapons", "Explosives", "Lockpick",
+        "Medicine", "Melee Weapons", "Repair", "Science", "Guns",
+        "Sneak", "Speech", "Survival", "Unarmed"
+    ];
+
+    /// <summary>
     ///     Cache for PropertyInfo[] by type - avoids repeated GetProperties() calls.
     /// </summary>
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertyCache = new();
@@ -352,34 +362,43 @@ internal static partial class EsmBrowserTreeBuilder
             var (formId, editorId, fullName, offset) = ExtractRecordIdentity(record);
             var formIdHex = $"0x{formId:X8}";
 
-            // Build display name: "FullName (EditorId)" if both exist and are different
+            // Build display name and detail (shown as secondary text in tree)
             string displayName;
-            if (!string.IsNullOrEmpty(fullName) && !string.IsNullOrEmpty(editorId) && fullName != editorId)
+            string? detail;
+
+            if (record is ReconstructedDialogue dialogue)
             {
-                displayName = $"{fullName} ({editorId})";
+                // Dialogue records: show response text with quest/topic context
+                displayName = BuildDialogueDisplayName(dialogue, formIdHex, lookup, displayNameLookup);
+                detail = BuildDialogueDetail(dialogue, formIdHex, lookup);
+            }
+            else if (!string.IsNullOrEmpty(fullName) && !string.IsNullOrEmpty(editorId))
+            {
+                displayName = fullName;
+                detail = $"({editorId})";
             }
             else if (!string.IsNullOrEmpty(fullName))
             {
                 displayName = fullName;
+                detail = formIdHex;
             }
             else if (!string.IsNullOrEmpty(editorId))
             {
                 displayName = editorId;
+                detail = formIdHex;
             }
             else
             {
                 displayName = formIdHex;
+                detail = null;
             }
-
-            var editorIdDisplay = !string.IsNullOrEmpty(editorId) && editorId != displayName
-                ? editorId
-                : null;
 
             var recordNode = new EsmBrowserNode
             {
                 DisplayName = displayName,
+                Detail = detail,
                 FormIdHex = formIdHex,
-                EditorId = editorIdDisplay,
+                EditorId = editorId,
                 NodeType = "Record",
                 IconGlyph = typeNode.IconGlyph,
                 ParentTypeName = typeNode.ParentTypeName,
@@ -406,6 +425,86 @@ internal static partial class EsmBrowserTreeBuilder
         }
 
         typeNode.HasUnrealizedChildren = false;
+    }
+
+    /// <summary>
+    ///     Builds display name for dialogue (INFO) records.
+    ///     Priority: response text > prompt text > quest-topic names > FormID.
+    /// </summary>
+    private static string BuildDialogueDisplayName(
+        ReconstructedDialogue dialogue,
+        string formIdHex,
+        Dictionary<uint, string>? editorIdLookup,
+        Dictionary<uint, string>? displayNameLookup)
+    {
+        // Try first response text
+        var responseText = dialogue.Responses.FirstOrDefault()?.Text;
+        if (!string.IsNullOrEmpty(responseText))
+        {
+            return responseText;
+        }
+
+        // Try prompt text
+        if (!string.IsNullOrEmpty(dialogue.PromptText))
+        {
+            return dialogue.PromptText;
+        }
+
+        // Fallback: Quest - Topic names
+        var questName = ResolveEditorIdOrName(dialogue.QuestFormId, editorIdLookup, displayNameLookup);
+        var topicName = ResolveEditorIdOrName(dialogue.TopicFormId, editorIdLookup, displayNameLookup);
+        if (questName != null || topicName != null)
+        {
+            var parts = new[] { questName, topicName }.Where(p => p != null);
+            return string.Join(" - ", parts);
+        }
+
+        return formIdHex;
+    }
+
+    /// <summary>
+    ///     Builds detail text for dialogue (INFO) records.
+    ///     Format: "(QuestEditorId - TopicEditorId)" or FormID fallback.
+    /// </summary>
+    private static string? BuildDialogueDetail(
+        ReconstructedDialogue dialogue,
+        string formIdHex,
+        Dictionary<uint, string>? editorIdLookup)
+    {
+        // Only show quest/topic context when display name is response or prompt text.
+        // When display is already quest/topic (no response/prompt), showing it again is redundant.
+        var hasTextContent = dialogue.Responses.Any(r => !string.IsNullOrEmpty(r.Text))
+                             || !string.IsNullOrEmpty(dialogue.PromptText);
+
+        if (!hasTextContent)
+        {
+            return formIdHex;
+        }
+
+        var questId = dialogue.QuestFormId is > 0
+            ? editorIdLookup?.GetValueOrDefault(dialogue.QuestFormId.Value)
+            : null;
+        var topicId = dialogue.TopicFormId is > 0
+            ? editorIdLookup?.GetValueOrDefault(dialogue.TopicFormId.Value)
+            : null;
+
+        if (questId != null || topicId != null)
+        {
+            var parts = new[] { questId, topicId }.Where(p => p != null);
+            return $"({string.Join(" - ", parts)})";
+        }
+
+        return formIdHex;
+    }
+
+    private static string? ResolveEditorIdOrName(
+        uint? formId,
+        Dictionary<uint, string>? editorIdLookup,
+        Dictionary<uint, string>? displayNameLookup)
+    {
+        if (formId is not > 0) return null;
+        return editorIdLookup?.GetValueOrDefault(formId.Value)
+            ?? displayNameLookup?.GetValueOrDefault(formId.Value);
     }
 
     /// <summary>
@@ -449,8 +548,8 @@ internal static partial class EsmBrowserTreeBuilder
                 ? $"{baseName} ({cellCount:N0} cells)"
                 : baseName;
 
-            var editorIdDisplay = !string.IsNullOrEmpty(editorId) && editorId != baseName
-                ? editorId
+            var detail = !string.IsNullOrEmpty(editorId) && editorId != baseName
+                ? $"({editorId})"
                 : null;
 
             // Prepare DataObject - if has cells, store tuple for lazy loading; otherwise just the record
@@ -463,8 +562,9 @@ internal static partial class EsmBrowserTreeBuilder
             var recordNode = new EsmBrowserNode
             {
                 DisplayName = displayName,
+                Detail = detail,
                 FormIdHex = formIdHex,
-                EditorId = editorIdDisplay,
+                EditorId = editorId,
                 NodeType = "Record",
                 IconGlyph = typeNode.IconGlyph,
                 ParentTypeName = typeNode.ParentTypeName,
@@ -545,15 +645,16 @@ internal static partial class EsmBrowserTreeBuilder
                 displayName = $"{worldspaceName} [{formIdHex}]";
             }
 
-            var editorIdDisplay = !string.IsNullOrEmpty(cell.EditorId) && cell.EditorId != displayName
-                ? cell.EditorId
-                : null;
+            var detail = !string.IsNullOrEmpty(cell.EditorId) && cell.EditorId != displayName
+                ? $"({cell.EditorId})"
+                : formIdHex;
 
             var cellNode = new EsmBrowserNode
             {
                 DisplayName = displayName,
+                Detail = detail,
                 FormIdHex = formIdHex,
-                EditorId = editorIdDisplay,
+                EditorId = cell.EditorId,
                 NodeType = "Record",
                 IconGlyph = "\uE707", // MapPin
                 ParentTypeName = "Cells",
@@ -646,8 +747,9 @@ internal static partial class EsmBrowserTreeBuilder
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
 
-        // Creature-specific properties handled separately (prevent duplication)
+        // Record-type flags for special handling
         var isCreature = record is ReconstructedCreature;
+        var isRace = record is ReconstructedRace;
 
         foreach (var prop in GetCachedProperties(type))
         {
@@ -659,6 +761,13 @@ internal static partial class EsmBrowserTreeBuilder
             // Skip creature-specific properties in default loop - handled explicitly below
             if (isCreature && prop.Name is "CreatureType" or "CreatureTypeName"
                     or "CombatSkill" or "MagicSkill" or "StealthSkill" or "AttackDamage")
+            {
+                continue;
+            }
+
+            // Skip race SPECIAL attributes (combined into single line below) and raw DataFlags
+            if (isRace && prop.Name is "Strength" or "Perception" or "Endurance" or "Charisma"
+                    or "Intelligence" or "Agility" or "Luck" or "DataFlags")
             {
                 continue;
             }
@@ -732,17 +841,11 @@ internal static partial class EsmBrowserTreeBuilder
             // Special handling for Skills (byte[14])
             if (prop.Name == "Skills" && value is byte[] skills && skills.Length >= 13)
             {
-                var skillNames = new[]
-                {
-                    "Barter", "Big Guns", "Energy Weapons", "Explosives", "Lockpick",
-                    "Medicine", "Melee Weapons", "Repair", "Science", "Guns",
-                    "Sneak", "Speech", "Survival", "Unarmed"
-                };
                 var subItems = new List<EsmPropertyEntry>();
-                for (var i = 0; i < skills.Length && i < skillNames.Length; i++)
+                for (var i = 0; i < skills.Length && i < SkillNames.Length; i++)
                 {
                     if (i == 1) continue; // Skip BigGuns (index 1) - unused in Fallout NV
-                    subItems.Add(new EsmPropertyEntry { Name = skillNames[i], Value = skills[i].ToString() });
+                    subItems.Add(new EsmPropertyEntry { Name = SkillNames[i], Value = skills[i].ToString() });
                 }
 
                 properties.Add(new EsmPropertyEntry
@@ -809,6 +912,122 @@ internal static partial class EsmBrowserTreeBuilder
                     Category = "General",
                     IsExpandable = true,
                     SubItems = subItems
+                });
+                continue;
+            }
+
+            // Special handling for CompiledData (SCDA bytecode) - show hex in expandable panel
+            if (prop.Name == "CompiledData" && value is byte[] compiledBytes && compiledBytes.Length > 0)
+            {
+                var hexLines = new List<string>();
+                for (var i = 0; i < compiledBytes.Length; i += 16)
+                {
+                    var lineBytes = compiledBytes.Skip(i).Take(16);
+                    hexLines.Add(string.Join(" ", lineBytes.Select(b => b.ToString("X2"))));
+                }
+
+                var hexBlock = string.Join("\n", hexLines);
+                var subItems = new List<EsmPropertyEntry>
+                {
+                    new() { Name = "", Value = hexBlock }
+                };
+
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = displayName,
+                    Value = $"{compiledBytes.Length} bytes",
+                    Category = CategorizeProperty(prop.Name),
+                    IsExpandable = true,
+                    SubItems = subItems
+                });
+                continue;
+            }
+
+            // Class-specific: Tag Skills as names instead of raw indices
+            if (prop.Name == "TagSkills" && value is int[] tagSkillIndices)
+            {
+                var names = tagSkillIndices
+                    .Where(i => i >= 0 && i < SkillNames.Length)
+                    .Select(i => SkillNames[i]);
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Tag Skills",
+                    Value = string.Join(", ", names),
+                    Category = "Attributes"
+                });
+                continue;
+            }
+
+            // Class-specific: Training Skill as name
+            if (prop.Name == "TrainingSkill" && value is byte trainingIdx)
+            {
+                var skillName = trainingIdx < SkillNames.Length
+                    ? SkillNames[trainingIdx]
+                    : $"Unknown ({trainingIdx})";
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Training Skill",
+                    Value = skillName,
+                    Category = "Attributes"
+                });
+                continue;
+            }
+
+            // Class-specific: Barter/Service flags as named list
+            if (prop.Name == "BarterFlags" && value is uint barterFlags && barterFlags != 0)
+            {
+                var flagNames = new List<string>();
+                if ((barterFlags & 0x0001) != 0) flagNames.Add("Weapons");
+                if ((barterFlags & 0x0002) != 0) flagNames.Add("Armor");
+                if ((barterFlags & 0x0004) != 0) flagNames.Add("Alcohol");
+                if ((barterFlags & 0x0008) != 0) flagNames.Add("Food");
+                if ((barterFlags & 0x0010) != 0) flagNames.Add("Chems");
+                if ((barterFlags & 0x0020) != 0) flagNames.Add("Stimpacks");
+                if ((barterFlags & 0x0040) != 0) flagNames.Add("Lights");
+                if ((barterFlags & 0x0100) != 0) flagNames.Add("Misc");
+                if ((barterFlags & 0x0400) != 0) flagNames.Add("Magic Items");
+                if ((barterFlags & 0x0800) != 0) flagNames.Add("Potions");
+                if ((barterFlags & 0x1000) != 0) flagNames.Add("Training");
+                if ((barterFlags & 0x2000) != 0) flagNames.Add("Recharge");
+                if ((barterFlags & 0x4000) != 0) flagNames.Add("Repair");
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Buys/Sells",
+                    Value = string.Join(", ", flagNames),
+                    Category = "Attributes"
+                });
+                continue;
+            }
+
+            // Class-specific: Attribute Weights as S.P.E.C.I.A.L.
+            if (prop.Name == "AttributeWeights" && value is byte[] attrWeights && attrWeights.Length == 7)
+            {
+                var formatted =
+                    $"{attrWeights[0]} ST, {attrWeights[1]} PE, {attrWeights[2]} EN, {attrWeights[3]} CH, " +
+                    $"{attrWeights[4]} IN, {attrWeights[5]} AG, {attrWeights[6]} LK";
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Attribute Weights",
+                    Value = formatted,
+                    Category = "Attributes"
+                });
+                continue;
+            }
+
+            // Faction-specific: Decode flags as named booleans
+            if (record is ReconstructedFaction && prop.Name == "Flags" && value is uint factionFlags)
+            {
+                var flagNames = new List<string>();
+                if ((factionFlags & 0x01) != 0) flagNames.Add("Hidden from PC");
+                if ((factionFlags & 0x02) != 0) flagNames.Add("Evil");
+                if ((factionFlags & 0x04) != 0) flagNames.Add("Special Combat");
+                if ((factionFlags & 0x40) != 0) flagNames.Add("Track Crime");
+                if ((factionFlags & 0x4000) != 0) flagNames.Add("Vendor");
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Flags",
+                    Value = flagNames.Count > 0 ? string.Join(", ", flagNames) : "None",
+                    Category = "General"
                 });
                 continue;
             }
@@ -966,6 +1185,21 @@ internal static partial class EsmBrowserTreeBuilder
             });
         }
 
+        // Race-specific: Combine S.P.E.C.I.A.L. modifiers into single line
+        if (record is ReconstructedRace raceRecord)
+        {
+            var formatted =
+                $"{raceRecord.Strength} ST, {raceRecord.Perception} PE, {raceRecord.Endurance} EN, " +
+                $"{raceRecord.Charisma} CH, {raceRecord.Intelligence} IN, {raceRecord.Agility} AG, " +
+                $"{raceRecord.Luck} LK";
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "S.P.E.C.I.A.L. Modifiers",
+                Value = formatted,
+                Category = "Attributes"
+            });
+        }
+
         // Sort properties by category for consistent grouping
         return properties.OrderBy(p => Array.IndexOf(CategoryOrder, p.Category ?? "General"))
             .ThenBy(p => p.Category == "General" ? 1 : 0) // Unknown categories at end
@@ -1030,6 +1264,32 @@ internal static partial class EsmBrowserTreeBuilder
                 Col2 = fullName ?? "",
                 Col3 = $"0x{faction.FactionFormId:X8}",
                 Col4 = $"Rank {faction.Rank}"
+            };
+        }
+
+        // Faction Ranks: Rank Number, Male Title, Female Title
+        if (item is FactionRank rank)
+        {
+            return new EsmPropertyEntry
+            {
+                Col1 = $"Rank {rank.RankNumber}",
+                Col2 = rank.MaleTitle ?? "",
+                Col3 = rank.FemaleTitle ?? "",
+                Col4 = rank.Insignia ?? ""
+            };
+        }
+
+        // Faction Relations: Editor ID/Name, Full Name, Modifier, Combat Reaction
+        if (item is FactionRelation relation)
+        {
+            var fullName = displayNameLookup?.GetValueOrDefault(relation.FactionFormId);
+            var editorId = lookup?.GetValueOrDefault(relation.FactionFormId);
+            return new EsmPropertyEntry
+            {
+                Col1 = editorId ?? $"0x{relation.FactionFormId:X8}",
+                Col2 = fullName ?? "",
+                Col3 = $"Modifier: {relation.Modifier}",
+                Col4 = $"Combat: {relation.CombatFlags}"
             };
         }
 
@@ -1236,6 +1496,8 @@ internal static partial class EsmBrowserTreeBuilder
 
             // Characteristics (appearance-related)
             "Gender" or "Race" or "VoiceType" or "Eyes" or "EyesFormId" or "Hair" or "HairFormId" or "HairLength"
+                or "MaleHeight" or "FemaleHeight" or "MaleWeight" or "FemaleWeight"
+                or "IsPlayable" or "IsChild"
                 => "Characteristics",
             _ when name.StartsWith("FaceGen", StringComparison.Ordinal) => "Characteristics",
 
@@ -1251,7 +1513,9 @@ internal static partial class EsmBrowserTreeBuilder
                 => "AI",
 
             // Associations (references to other records)
-            "Factions" or "Spells" or "Inventory" or "Packages" => "Associations",
+            "Factions" or "Spells" or "Inventory" or "Packages" or "Ranks" or "Relations"
+                or "AbilityFormIds" or "HairStyleFormIds" or "EyeColorFormIds"
+                => "Associations",
 
             // References (other FormID fields)
             _ when name.EndsWith("FormId", StringComparison.Ordinal) => "References",

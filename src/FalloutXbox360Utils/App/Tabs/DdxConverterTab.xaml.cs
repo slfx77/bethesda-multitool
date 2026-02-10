@@ -11,8 +11,11 @@ namespace FalloutXbox360Utils;
 ///     Tab for batch converting Xbox 360 DDX texture files to DDS format.
 ///     Uses DDXConv by kran27 for conversion.
 /// </summary>
-public sealed partial class DdxConverterTab : UserControl, IDisposable
+public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSettingsDrawer
 {
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
+
     private readonly List<DdxFileEntry> _allDdxFiles = [];
     private readonly DdxFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;

@@ -364,15 +364,13 @@ public class NpcParsingTests
             _output.WriteLine(
                 $"MainRecords: {mainRecords.Count}, EditorIds: {editorIds.Count}, FullNames: {fullNames.Count}");
 
-            // Build FormID map (like EsmFileAnalyzer does)
+            // Build FormID map (like EsmFileAnalyzer does — EDID only)
             var formIdMap = new Dictionary<uint, string>();
             foreach (var record in parsedRecords)
             {
-                var full = record.Subrecords.FirstOrDefault(s => s.Signature == "FULL")?.DataAsString;
                 var edid = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
-                var displayName = !string.IsNullOrEmpty(full) ? full : edid;
-                if (!string.IsNullOrEmpty(displayName) && record.Header.FormId != 0)
-                    formIdMap[record.Header.FormId] = displayName;
+                if (!string.IsNullOrEmpty(edid) && record.Header.FormId != 0)
+                    formIdMap[record.Header.FormId] = edid;
             }
 
             _output.WriteLine($"FormIdMap: {formIdMap.Count} entries");

@@ -6,15 +6,44 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:FalloutXbox360Utils">
 
-  <Grid Padding="16"
-        VerticalAlignment="Stretch">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
+  <Grid VerticalAlignment="Stretch">
+    <!--  Settings drawer  -->
+    <Border
+      x:Name="SettingsDrawer"
+      Style="{StaticResource SettingsDrawerBorderStyle}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Settings" Style="{StaticResource SubtitleTextBlockStyle}" />
+          <StackPanel Spacing="4">
+            <TextBlock Text="Output" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <CheckBox
+              x:Name="PreserveStructureCheckBox"
+              x:Uid="Checkbox_PreserveFolderStructure"
+              MinWidth="0"
+              IsChecked="True" />
+            <CheckBox
+              x:Name="OverwriteExistingCheckBox"
+              x:Uid="Checkbox_OverwriteExisting"
+              MinWidth="0" />
+            <CheckBox
+              x:Name="VerboseOutputCheckBox"
+              x:Uid="Checkbox_VerboseOutput"
+              MinWidth="0" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <!--  Main content  -->
+    <Grid Padding="16"
+          VerticalAlignment="Stretch">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
 
     <!-- Header row: Title + Select buttons (outside card) -->
     <Grid Grid.Row="0"
@@ -182,6 +211,7 @@
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
 
       <!-- Input Directory -->
@@ -202,6 +232,16 @@
         Grid.Row="0"
         Grid.Column="2"
         Click="BrowseInputButton_Click" />
+      <Button
+        x:Name="ConvertButton"
+        x:Uid="Button_Convert"
+        Grid.Row="0"
+        Grid.Column="3"
+        MinWidth="120"
+        Margin="8,0,0,0"
+        Click="ConvertButton_Click"
+        IsEnabled="False"
+        Style="{StaticResource AccentButtonStyle}" />
 
       <!-- Output Directory -->
       <TextBlock
@@ -221,52 +261,16 @@
         Grid.Row="1"
         Grid.Column="2"
         Click="BrowseOutputButton_Click" />
-    </Grid>
-
-    <!-- Bottom Action Bar -->
-    <Grid
-      Grid.Row="4"
-      Style="{StaticResource ActionBarGridStyle}">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-
-      <!-- Options -->
-      <CheckBox
-        x:Name="PreserveStructureCheckBox"
-        x:Uid="Checkbox_PreserveFolderStructure"
-        Grid.Column="0"
-        IsChecked="True" />
-      <CheckBox
-        x:Name="OverwriteExistingCheckBox"
-        x:Uid="Checkbox_OverwriteExisting"
-        Grid.Column="1"
-        IsChecked="False" />
-      <CheckBox
-        x:Name="VerboseOutputCheckBox"
-        x:Uid="Checkbox_VerboseOutput"
-        Grid.Column="2"
-        IsChecked="False" />
-
-      <!-- Action buttons -->
       <Button
         x:Name="CancelButton"
         x:Uid="Button_Cancel"
-        Grid.Column="4"
+        Grid.Row="1"
+        Grid.Column="3"
+        Margin="8,0,0,0"
+        HorizontalAlignment="Stretch"
         Click="CancelButton_Click"
         IsEnabled="False" />
-      <Button
-        x:Name="ConvertButton"
-        x:Uid="Button_Convert"
-        Grid.Column="5"
-        Click="ConvertButton_Click"
-        IsEnabled="False"
-        Style="{StaticResource AccentButtonStyle}" />
+    </Grid>
     </Grid>
   </Grid>
 </UserControl>

@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -44,7 +43,9 @@ public sealed partial class SemanticReconstructor
             .GroupBy(r => r.FormId)
             .ToDictionary(g => g.Key, g => g.First());
 
-        // Build EditorID lookups from ESM EDID subrecords
+        // Build EditorID lookups from ESM EDID subrecords or pre-built correlations.
+        // Note: formIdCorrelations MUST contain EditorIDs (not display names/FullNames).
+        // If display names leak in here, EditorId == FullName on reconstructed records.
         _formIdToEditorId = formIdCorrelations != null
             ? new Dictionary<uint, string>(formIdCorrelations)
             : BuildFormIdToEditorIdMap(scanResult);
@@ -205,6 +206,7 @@ public sealed partial class SemanticReconstructor
     private readonly Dictionary<string, uint> _editorIdToFormId;
     private readonly long _fileSize;
     private readonly Dictionary<uint, string> _formIdToEditorId;
+    private readonly Dictionary<uint, string> _formIdToFullName = new();
     private readonly Dictionary<uint, DetectedMainRecord> _recordsByFormId;
     private readonly RuntimeStructReader? _runtimeReader;
     private readonly EsmRecordScanResult _scanResult;
@@ -277,8 +279,11 @@ public sealed partial class SemanticReconstructor
     /// </summary>
     private Dictionary<uint, string> BuildFormIdToDisplayNameMap()
     {
-        var map = new Dictionary<uint, string>();
+        // Start with FullNames collected during ESM subrecord parsing
+        var map = new Dictionary<uint, string>(_formIdToFullName);
 
+        // Overlay runtime display names (from hash table walk) — these may be more
+        // up-to-date for memory dumps but are empty for standalone ESM files
         foreach (var entry in _scanResult.RuntimeEditorIds)
         {
             if (entry.FormId != 0 && !string.IsNullOrEmpty(entry.DisplayName))
@@ -387,9 +392,7 @@ public sealed partial class SemanticReconstructor
         {
             if (sub.Signature == signature && sub.DataLength == 4)
             {
-                return record.IsBigEndian
-                    ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset, 4))
-                    : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset, 4));
+                return ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
             }
         }
 

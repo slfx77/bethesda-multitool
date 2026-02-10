@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -139,19 +138,13 @@ public sealed partial class SemanticReconstructor
                             icon = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             break;
                         case "QNAM" when sub.DataLength >= 4:
-                            questFormId = record.IsBigEndian
-                                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset))
-                                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset));
+                            questFormId = ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
                             break;
                         case "DNAM" when sub.DataLength >= 4:
-                            flags = record.IsBigEndian
-                                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset))
-                                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset));
+                            flags = ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
                             break;
                         case "TNAM" when sub.DataLength >= 4:
-                            displayTime = record.IsBigEndian
-                                ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset))
-                                : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset));
+                            displayTime = ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
                             break;
                         case "ITXT":
                             {

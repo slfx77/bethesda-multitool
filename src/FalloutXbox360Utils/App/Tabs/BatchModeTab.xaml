@@ -7,258 +7,31 @@
   xmlns:ctk="using:CommunityToolkit.WinUI.Controls"
   xmlns:local="using:FalloutXbox360Utils">
 
-  <Grid Padding="16"
-        VerticalAlignment="Stretch">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-
-    <!--  Header row: Title + Select buttons (outside card)  -->
-    <Grid Grid.Row="0"
-          Margin="0,0,0,8">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <TextBlock
-        x:Uid="Header_BatchCarver"
-        Style="{StaticResource SubtitleTextBlockStyle}" />
-      <StackPanel
-        Grid.Column="1"
-        Style="{StaticResource SelectButtonsPanelStyle}">
-        <Button
-          x:Uid="Button_SelectAll"
-          Click="SelectAllButton_Click" />
-        <Button
-          x:Uid="Button_SelectNone"
-          Click="SelectNoneButton_Click" />
-      </StackPanel>
-    </Grid>
-
-    <!--  Dump Files List Card  -->
+  <Grid VerticalAlignment="Stretch">
+    <!--  Settings drawer (hamburger-style, overlays from left)  -->
     <Border
-      Grid.Row="1"
-      VerticalAlignment="Stretch"
-      Style="{StaticResource CardBorderStyle}">
-      <Grid VerticalAlignment="Stretch">
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+      x:Name="SettingsDrawer"
+      Style="{StaticResource SettingsDrawerBorderStyle}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Settings" Style="{StaticResource SubtitleTextBlockStyle}" />
 
-        <!--  Sortable column headers  -->
-        <Grid
-          Grid.Row="0"
-          Style="{StaticResource ColumnHeaderGridStyle}">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="40" />
-            <ColumnDefinition Width="*"
-                              MinWidth="150" />
-            <ColumnDefinition Width="80" />
-            <ColumnDefinition Width="200" />
-          </Grid.ColumnDefinitions>
-          <TextBlock
-            Grid.Column="0"
-            FontWeight="SemiBold"
-            Text="" />
-          <Button
-            Grid.Column="1"
-            Style="{StaticResource SortableColumnHeaderButtonStyle}"
-            Click="SortByFilename_Click">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="4">
-              <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
-              <FontIcon
-                x:Name="FilenameSortIcon"
-                Style="{StaticResource SortIconStyle}" />
-            </StackPanel>
-          </Button>
-          <Button
-            Grid.Column="2"
-            Style="{StaticResource SortableColumnHeaderButtonStyle}"
-            Click="SortBySize_Click">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="4">
-              <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
-              <FontIcon
-                x:Name="SizeSortIcon"
-                Style="{StaticResource SortIconStyle}" />
-            </StackPanel>
-          </Button>
-          <Button
-            Grid.Column="3"
-            Style="{StaticResource SortableColumnHeaderButtonStyle}"
-            Click="SortByStatus_Click">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="4">
-              <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
-              <FontIcon
-                x:Name="StatusSortIcon"
-                Style="{StaticResource SortIconStyle}" />
-            </StackPanel>
-          </Button>
-        </Grid>
+          <!--  File Type Filters  -->
+          <StackPanel Spacing="4">
+            <TextBlock Text="File Types" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <ctk:WrapPanel
+              x:Name="FileTypeCheckboxPanel"
+              HorizontalSpacing="16"
+              VerticalSpacing="8">
+              <!--  Checkboxes will be generated dynamically  -->
+            </ctk:WrapPanel>
+          </StackPanel>
 
-        <ListView
-          x:Name="DumpFilesListView"
-          Grid.Row="1"
-          Style="{StaticResource FileListViewStyle}">
-          <ListView.ItemTemplate>
-            <DataTemplate x:DataType="local:DumpFileEntry">
-              <Grid Padding="8,4">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="40" />
-                  <ColumnDefinition Width="*"
-                                    MinWidth="150" />
-                  <ColumnDefinition Width="80" />
-                  <ColumnDefinition Width="200" />
-                </Grid.ColumnDefinitions>
-                <CheckBox
-                  Grid.Column="0"
-                  MinWidth="0"
-                  IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
-                <TextBlock
-                  Grid.Column="1"
-                  VerticalAlignment="Center"
-                  FontSize="11"
-                  Text="{x:Bind FileName}"
-                  TextTrimming="CharacterEllipsis"
-                  ToolTipService.ToolTip="{x:Bind FilePath}" />
-                <TextBlock
-                  Grid.Column="2"
-                  VerticalAlignment="Center"
-                  FontSize="11"
-                  Text="{x:Bind SizeFormatted}" />
-                <TextBlock
-                  Grid.Column="3"
-                  VerticalAlignment="Center"
-                  FontSize="11"
-                  Foreground="{x:Bind StatusColor, Mode=OneWay}"
-                  Text="{x:Bind Status, Mode=OneWay}"
-                  TextTrimming="CharacterEllipsis"
-                  TextWrapping="NoWrap"
-                  ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}" />
-              </Grid>
-            </DataTemplate>
-          </ListView.ItemTemplate>
-        </ListView>
-      </Grid>
-    </Border>
-
-    <!--  Progress Bar (above I/O)  -->
-    <ProgressBar
-      x:Name="BatchProgressBar"
-      Grid.Row="2"
-      Style="{StaticResource TabProgressBarStyle}" />
-
-    <!--  Input/Output Section  -->
-    <Grid
-      Grid.Row="3"
-      Style="{StaticResource IoSectionGridStyle}">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-
-      <!--  Input Directory  -->
-      <TextBlock
-        x:Uid="Label_InputDirectory"
-        Grid.Row="0"
-        Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}" />
-      <TextBox
-        x:Name="InputDirectoryTextBox"
-        x:Uid="Input_InputDirectory"
-        Grid.Row="0"
-        Grid.Column="1"
-        Style="{StaticResource IoTextBoxStyle}"
-        TextChanged="InputDirectoryTextBox_TextChanged" />
-      <Button
-        x:Uid="Button_Browse"
-        Grid.Row="0"
-        Grid.Column="2"
-        Click="BrowseInputButton_Click" />
-
-      <!--  Output Directory  -->
-      <TextBlock
-        x:Uid="Label_OutputDirectory"
-        Grid.Row="1"
-        Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}" />
-      <TextBox
-        x:Name="OutputDirectoryTextBox"
-        x:Uid="Input_OutputPath"
-        Grid.Row="1"
-        Grid.Column="1"
-        Style="{StaticResource IoTextBoxStyle}"
-        TextChanged="OutputDirectoryTextBox_TextChanged" />
-      <Button
-        x:Uid="Button_Browse"
-        Grid.Row="1"
-        Grid.Column="2"
-        Click="BrowseOutputButton_Click" />
-    </Grid>
-
-    <!--  BOTTOM: File Types, Options, and Process Button  -->
-    <Grid
-      Grid.Row="4"
-      Margin="0,8,0,0">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-
-      <!--  File Type Filters  -->
-      <Expander
-        x:Uid="Expander_FileTypes"
-        Grid.Row="0"
-        Margin="0,0,0,8"
-        HorizontalAlignment="Stretch"
-        HorizontalContentAlignment="Stretch"
-        CornerRadius="4">
-        <ctk:WrapPanel
-          x:Name="FileTypeCheckboxPanel"
-          HorizontalSpacing="16"
-          VerticalSpacing="8">
-          <!--  Checkboxes will be generated dynamically  -->
-        </ctk:WrapPanel>
-      </Expander>
-
-      <!--  Progress Text  -->
-      <TextBlock
-        x:Name="ProgressTextBlock"
-        Grid.Row="1"
-        Margin="0,0,0,8"
-        FontSize="12"
-        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-        Text=""
-        Visibility="Collapsed" />
-
-      <!--  Options and Action Buttons  -->
-      <Grid Grid.Row="2">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-
-        <StackPanel
-          Grid.Column="0"
-          VerticalAlignment="Center"
-          Orientation="Horizontal"
-          Spacing="16">
           <!--  Conversion Options  -->
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
+          <StackPanel Spacing="4">
+            <TextBlock Text="Conversion" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <CheckBox
               x:Name="BatchConvertDdxCheckBox"
               x:Uid="Checkbox_ConvertFormats"
@@ -267,33 +40,30 @@
             <CheckBox
               x:Name="BatchSaveAtlasCheckBox"
               x:Uid="Checkbox_SaveAtlas"
-              Margin="16,0,0,0" />
+              MinWidth="0" />
           </StackPanel>
 
-          <Border Width="1"
-                  Height="20"
-                  Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
-
-          <!--  Batch Options  -->
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
-            <TextBlock
-              x:Uid="Label_Threads"
-              Margin="0,0,0,2"
-              VerticalAlignment="Center" />
-            <NumberBox
-              x:Name="ParallelCountBox"
-              MinWidth="50"
-              Margin="-4,0,0,0"
-              VerticalAlignment="Center"
-              Minimum="1"
-              SpinButtonPlacementMode="Hidden"
-              Value="2"
-              ValueChanged="ParallelCountBox_ValueChanged" />
+          <!--  Processing Options  -->
+          <StackPanel Spacing="4">
+            <TextBlock Text="Processing" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock
+                x:Uid="Label_Threads"
+                VerticalAlignment="Center" />
+              <NumberBox
+                x:Name="ParallelCountBox"
+                MinWidth="50"
+                VerticalAlignment="Center"
+                Minimum="1"
+                SpinButtonPlacementMode="Hidden"
+                Value="2"
+                ValueChanged="ParallelCountBox_ValueChanged" />
+            </StackPanel>
             <CheckBox
               x:Name="SkipExistingCheckBox"
               x:Uid="Checkbox_SkipExisting"
-              Margin="16,0,0,0"
+              MinWidth="0"
               IsChecked="True" />
             <CheckBox
               x:Name="BatchVerboseCheckBox"
@@ -301,26 +71,240 @@
               MinWidth="0" />
           </StackPanel>
         </StackPanel>
+      </ScrollViewer>
+    </Border>
 
+    <!--  Main content  -->
+    <Grid Padding="16"
+          VerticalAlignment="Stretch">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <!--  Header row: Title + Select buttons (outside card)  -->
+      <Grid Grid.Row="0"
+            Margin="0,0,0,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock
+          x:Uid="Header_BatchCarver"
+          Style="{StaticResource SubtitleTextBlockStyle}" />
         <StackPanel
           Grid.Column="1"
-          Orientation="Horizontal"
-          Spacing="8">
+          Style="{StaticResource SelectButtonsPanelStyle}">
           <Button
-            x:Name="CancelButton"
-            x:Uid="Button_Cancel"
-            MinWidth="80"
-            Click="CancelButton_Click"
-            IsEnabled="False" />
+            x:Uid="Button_SelectAll"
+            Click="SelectAllButton_Click" />
           <Button
-            x:Name="ExtractButton"
-            x:Uid="Button_Extract"
-            MinWidth="120"
-            Click="ExtractButton_Click"
-            IsEnabled="False"
-            Style="{StaticResource AccentButtonStyle}" />
+            x:Uid="Button_SelectNone"
+            Click="SelectNoneButton_Click" />
         </StackPanel>
       </Grid>
+
+      <!--  Dump Files List Card  -->
+      <Border
+        Grid.Row="1"
+        VerticalAlignment="Stretch"
+        Style="{StaticResource CardBorderStyle}">
+        <Grid VerticalAlignment="Stretch">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+          </Grid.RowDefinitions>
+
+          <!--  Sortable column headers  -->
+          <Grid
+            Grid.Row="0"
+            Style="{StaticResource ColumnHeaderGridStyle}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="40" />
+              <ColumnDefinition Width="*"
+                                MinWidth="150" />
+              <ColumnDefinition Width="80" />
+              <ColumnDefinition Width="200" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+              Grid.Column="0"
+              FontWeight="SemiBold"
+              Text="" />
+            <Button
+              Grid.Column="1"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByFilename_Click">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="4">
+                <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
+                <FontIcon
+                  x:Name="FilenameSortIcon"
+                  Style="{StaticResource SortIconStyle}" />
+              </StackPanel>
+            </Button>
+            <Button
+              Grid.Column="2"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortBySize_Click">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="4">
+                <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
+                <FontIcon
+                  x:Name="SizeSortIcon"
+                  Style="{StaticResource SortIconStyle}" />
+              </StackPanel>
+            </Button>
+            <Button
+              Grid.Column="3"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByStatus_Click">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="4">
+                <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
+                <FontIcon
+                  x:Name="StatusSortIcon"
+                  Style="{StaticResource SortIconStyle}" />
+              </StackPanel>
+            </Button>
+          </Grid>
+
+          <ListView
+            x:Name="DumpFilesListView"
+            Grid.Row="1"
+            Style="{StaticResource FileListViewStyle}">
+            <ListView.ItemTemplate>
+              <DataTemplate x:DataType="local:DumpFileEntry">
+                <Grid Padding="8,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="40" />
+                    <ColumnDefinition Width="*"
+                                      MinWidth="150" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="200" />
+                  </Grid.ColumnDefinitions>
+                  <CheckBox
+                    Grid.Column="0"
+                    MinWidth="0"
+                    IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
+                  <TextBlock
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    FontSize="11"
+                    Text="{x:Bind FileName}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind FilePath}" />
+                  <TextBlock
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    FontSize="11"
+                    Text="{x:Bind SizeFormatted}" />
+                  <TextBlock
+                    Grid.Column="3"
+                    VerticalAlignment="Center"
+                    FontSize="11"
+                    Foreground="{x:Bind StatusColor, Mode=OneWay}"
+                    Text="{x:Bind Status, Mode=OneWay}"
+                    TextTrimming="CharacterEllipsis"
+                    TextWrapping="NoWrap"
+                    ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}" />
+                </Grid>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+          </ListView>
+        </Grid>
+      </Border>
+
+      <!--  Progress Bar (above I/O)  -->
+      <ProgressBar
+        x:Name="BatchProgressBar"
+        Grid.Row="2"
+        Style="{StaticResource TabProgressBarStyle}" />
+
+      <!--  Input/Output Section  -->
+      <Grid
+        Grid.Row="3"
+        Style="{StaticResource IoSectionGridStyle}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!--  Input Directory  -->
+        <TextBlock
+          x:Uid="Label_InputDirectory"
+          Grid.Row="0"
+          Grid.Column="0"
+          Style="{StaticResource IoLabelStyle}" />
+        <TextBox
+          x:Name="InputDirectoryTextBox"
+          x:Uid="Input_InputDirectory"
+          Grid.Row="0"
+          Grid.Column="1"
+          Style="{StaticResource IoTextBoxStyle}"
+          TextChanged="InputDirectoryTextBox_TextChanged" />
+        <Button
+          x:Uid="Button_Browse"
+          Grid.Row="0"
+          Grid.Column="2"
+          Click="BrowseInputButton_Click" />
+        <Button
+          x:Name="ExtractButton"
+          x:Uid="Button_Extract"
+          Grid.Row="0"
+          Grid.Column="3"
+          MinWidth="120"
+          Margin="8,0,0,0"
+          Click="ExtractButton_Click"
+          IsEnabled="False"
+          Style="{StaticResource AccentButtonStyle}" />
+
+        <!--  Output Directory  -->
+        <TextBlock
+          x:Uid="Label_OutputDirectory"
+          Grid.Row="1"
+          Grid.Column="0"
+          Style="{StaticResource IoLabelStyle}" />
+        <TextBox
+          x:Name="OutputDirectoryTextBox"
+          x:Uid="Input_OutputPath"
+          Grid.Row="1"
+          Grid.Column="1"
+          Style="{StaticResource IoTextBoxStyle}"
+          TextChanged="OutputDirectoryTextBox_TextChanged" />
+        <Button
+          x:Uid="Button_Browse"
+          Grid.Row="1"
+          Grid.Column="2"
+          Click="BrowseOutputButton_Click" />
+        <Button
+          x:Name="CancelButton"
+          x:Uid="Button_Cancel"
+          Grid.Row="1"
+          Grid.Column="3"
+          Margin="8,0,0,0"
+          HorizontalAlignment="Stretch"
+          Click="CancelButton_Click"
+          IsEnabled="False" />
+      </Grid>
+
+      <!--  Progress Text  -->
+      <TextBlock
+        x:Name="ProgressTextBlock"
+        Grid.Row="4"
+        Margin="0,8,0,0"
+        FontSize="12"
+        Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+        Text=""
+        Visibility="Collapsed" />
     </Grid>
   </Grid>
 </UserControl>

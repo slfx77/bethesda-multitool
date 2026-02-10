@@ -44,6 +44,8 @@ internal sealed class Program
         rootCommand.Subcommands.Add(OfstCommands.CreateOfstCommand());   // "ofst" at root
         rootCommand.Subcommands.Add(OfstCommands.CreateOfstCompareCommand()); // "ofst-compare" at root
         rootCommand.Subcommands.Add(OfstCommands.CreateOfstImageCommand()); // "ofst-image" at root
+        rootCommand.Subcommands.Add(NaviCommands.CreateCompareNaviCommand());  // "compare-navi" at root
+        rootCommand.Subcommands.Add(NaviCommands.CreateDumpNvmiCommand());     // "dump-nvmi" at root (NAVI navmesh info)
 
         // ===== compare subcommands =====
         var compareCommand = new Command("compare", "Compare ESM files (land, cells, heightmaps)");

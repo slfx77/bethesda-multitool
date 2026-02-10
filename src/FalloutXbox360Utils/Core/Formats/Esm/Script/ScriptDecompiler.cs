@@ -10,6 +10,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Script;
 public sealed class ScriptDecompiler
 {
     private readonly Func<uint, string?> _resolveFormName;
+    private readonly Func<uint, ushort, string?>? _resolveExternalVariable;
     private readonly List<uint> _referencedObjects;
     private readonly List<ScriptVariableInfo> _variables;
     private readonly bool _isBigEndian;
@@ -30,18 +31,24 @@ public sealed class ScriptDecompiler
     /// <param name="resolveFormName">Callback to resolve FormID to editor ID string.</param>
     /// <param name="isBigEndian">True for Xbox 360 bytecode, false for PC.</param>
     /// <param name="scriptName">Optional script name for the ScriptName line.</param>
+    /// <param name="resolveExternalVariable">
+    ///     Optional callback to resolve cross-script variable references.
+    ///     Parameters: (FormID of referenced object, variable index) → variable name.
+    /// </param>
     public ScriptDecompiler(
         List<ScriptVariableInfo> variables,
         List<uint> referencedObjects,
         Func<uint, string?> resolveFormName,
         bool isBigEndian = false,
-        string? scriptName = null)
+        string? scriptName = null,
+        Func<uint, ushort, string?>? resolveExternalVariable = null)
     {
         _variables = variables;
         _referencedObjects = referencedObjects;
         _resolveFormName = resolveFormName;
         _isBigEndian = isBigEndian;
         _scriptName = scriptName;
+        _resolveExternalVariable = resolveExternalVariable;
     }
 
     /// <summary>
@@ -656,7 +663,7 @@ public sealed class ScriptDecompiler
 
             case ScriptOpcodes.ExprDoubleLiteral: // 0x7A 'z' — double literal (8 bytes)
                 _reader.ReadByte();
-                return ReadDoubleLiteral();
+                return ReadDoubleLiteral(expectedType);
         }
 
         // No recognized marker — decode based on expected type (strings, etc.)
@@ -750,7 +757,7 @@ public sealed class ScriptDecompiler
         }
 
         var dval = _reader.ReadDouble();
-        return TryResolveDoubleAsFormId(dval) ?? FormatDouble(dval);
+        return FormatDouble(dval);
     }
 
     private string DecodeScriptVarParam()
@@ -838,7 +845,21 @@ public sealed class ScriptDecompiler
             }
 
             var varIndex = _reader.ReadUInt16();
-            // Variable index belongs to the referenced object's script, not ours
+
+            // Try to resolve from the referenced object's script variable list
+            if (_resolveExternalVariable != null)
+            {
+                var refFormId = GetScroFormId(refIndex);
+                if (refFormId.HasValue)
+                {
+                    var resolvedName = _resolveExternalVariable(refFormId.Value, varIndex);
+                    if (!string.IsNullOrEmpty(resolvedName))
+                    {
+                        return $"{refName}.{resolvedName}";
+                    }
+                }
+            }
+
             return $"{refName}.var{varIndex}";
         }
 
@@ -909,7 +930,7 @@ public sealed class ScriptDecompiler
         return new string(chars.ToArray());
     }
 
-    private string ReadDoubleLiteral()
+    private string ReadDoubleLiteral(ScriptParamType? expectedType = null)
     {
         if (!_reader.CanRead(8))
         {
@@ -917,6 +938,15 @@ public sealed class ScriptDecompiler
         }
 
         var value = _reader.ReadDouble();
+
+        // Only try FormID resolution when the parameter is NOT a known numeric type.
+        // Float/Int params are plain numbers; reference types may encode FormIDs in doubles
+        // via Script::PutNumericIDInDouble.
+        if (expectedType is ScriptParamType.Float or ScriptParamType.Int or ScriptParamType.VatsValueData)
+        {
+            return FormatDouble(value);
+        }
+
         return TryResolveDoubleAsFormId(value) ?? FormatDouble(value);
     }
 
@@ -994,6 +1024,20 @@ public sealed class ScriptDecompiler
     }
 
     /// <summary>
+    ///     Get the FormID for a 1-based SCRO index without resolving to a name.
+    /// </summary>
+    private uint? GetScroFormId(ushort index)
+    {
+        if (index == 0)
+        {
+            return null;
+        }
+
+        var listIndex = index - 1;
+        return listIndex < _referencedObjects.Count ? _referencedObjects[listIndex] : null;
+    }
+
+    /// <summary>
     ///     Check if a double value might be a packed FormID (PutNumericIDInDouble).
     /// </summary>
     private string? TryResolveDoubleAsFormId(double value)
@@ -1053,39 +1097,47 @@ public sealed class ScriptDecompiler
 
     private static string GetBlockTypeName(ushort blockType)
     {
-        // Block type IDs from GECK wiki / xEdit wbDefinitionsFNV
+        // Block type IDs from GECK wiki: https://geckwiki.com/index.php/Begin
         return blockType switch
         {
-            0x0000 => "GameMode",
-            0x0001 => "MenuMode",
-            0x0002 => "OnActivate",
-            0x0003 => "OnAdd",
-            0x0004 => "OnEquip",
-            0x0005 => "OnUnequip",
-            0x0006 => "OnDrop",
-            0x0007 => "SayToDone",
-            0x0008 => "OnHit",
-            0x0009 => "OnHitWith",
-            0x000A => "OnDeath",
-            0x000B => "OnMurder",
-            0x000C => "OnCombatEnd",
-            0x000D => "OnPackageStart",
-            0x000E => "OnPackageDone",
-            0x000F => "OnPackageChange",
-            0x0010 => "OnLoad",
-            0x0011 => "OnMagicEffectHit",
-            0x0012 => "OnSell",
-            0x0013 => "OnStartCombat",
-            0x0014 => "OnOpen",
-            0x0015 => "OnClose",
-            0x0016 => "OnActorEquip",
-            0x0017 => "OnActorUnequip",
-            0x0018 => "OnFire",
-            0x0019 => "OnTrigger",
-            0x001A => "OnTriggerEnter",
-            0x001B => "OnTriggerLeave",
-            0x001C => "OnReset",
-            _ => $"BlockType:{blockType:X4}"
+            0  => "GameMode",
+            1  => "MenuMode",
+            2  => "OnActivate",
+            3  => "OnAdd",
+            4  => "OnEquip",
+            5  => "OnUnequip",
+            6  => "OnDrop",
+            7  => "SayToDone",
+            8  => "OnHit",
+            9  => "OnHitWith",
+            10 => "OnDeath",
+            11 => "OnMurder",
+            12 => "OnCombatEnd",
+            13 => "Function",
+            15 => "OnPackageStart",
+            16 => "OnPackageDone",
+            17 => "ScriptEffectStart",
+            18 => "ScriptEffectFinish",
+            19 => "ScriptEffectUpdate",
+            20 => "OnPackageChange",
+            21 => "OnLoad",
+            22 => "OnMagicEffectHit",
+            23 => "OnSell",
+            24 => "OnTrigger",
+            25 => "OnStartCombat",
+            26 => "OnTriggerEnter",
+            27 => "OnTriggerLeave",
+            28 => "OnActorEquip",
+            29 => "OnActorUnequip",
+            30 => "OnReset",
+            31 => "OnOpen",
+            32 => "OnClose",
+            33 => "OnGrab",
+            34 => "OnRelease",
+            35 => "OnDestructionStageChange",
+            36 => "OnFire",
+            37 => "OnNPCActivate",
+            _  => $"BlockType:{blockType:X4}"
         };
     }
 

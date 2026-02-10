@@ -3,6 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace FalloutXbox360Utils;
 
@@ -11,6 +12,14 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    private const int TreeNodeBatchSize = 200;
+
+    /// <summary>Tracks expanded nodes that have more children to load on scroll.</summary>
+    private readonly Dictionary<TreeViewNode, (ObservableCollection<EsmBrowserNode> AllChildren, int LoadedCount)>
+        _pendingTreeLoads = new();
+
+    private ScrollViewer? _treeScrollViewer;
+
     #region TreeView Events
 
     private void EsmTreeView_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
@@ -31,12 +40,9 @@ public sealed partial class SingleFileTab
                 _session.SemanticResult?.FormIdToDisplayName);
         }
 
-        // Add child TreeViewNodes
-        foreach (var child in browserNode.Children)
-        {
-            var childNode = new TreeViewNode { Content = child, HasUnrealizedChildren = child.HasUnrealizedChildren };
-            args.Node.Children.Add(childNode);
-        }
+        // Add child TreeViewNodes with progressive loading for large sets
+        AddChildNodesProgressively(args.Node, browserNode.Children);
+        EnsureTreeScrollViewerHooked();
     }
 
     private void EsmTreeView_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
@@ -60,16 +66,8 @@ public sealed partial class SingleFileTab
                             _session.AnalysisResult?.FormIdMap,
                             _session.SemanticResult?.FormIdToDisplayName);
 
-                    foreach (var child in browserNode.Children)
-                    {
-                        var childNode = new TreeViewNode
-                        {
-                            Content = child,
-                            HasUnrealizedChildren = child.HasUnrealizedChildren ||
-                                                    child.NodeType is "Category" or "RecordType"
-                        };
-                        treeNode.Children.Add(childNode);
-                    }
+                    AddChildNodesProgressively(treeNode, browserNode.Children);
+                    EnsureTreeScrollViewerHooked();
                 }
 
                 treeNode.IsExpanded = true;
@@ -81,6 +79,126 @@ public sealed partial class SingleFileTab
         }
 
         SelectBrowserNode(browserNode);
+    }
+
+    #endregion
+
+    #region Progressive Loading (scroll-based)
+
+    /// <summary>
+    ///     Adds child nodes to the tree with progressive loading for large sets.
+    ///     Loads the first batch immediately; remaining items load automatically as the user scrolls.
+    /// </summary>
+    private void AddChildNodesProgressively(
+        TreeViewNode parentNode,
+        ObservableCollection<EsmBrowserNode> children)
+    {
+        var total = children.Count;
+        var batchEnd = Math.Min(TreeNodeBatchSize, total);
+
+        for (var i = 0; i < batchEnd; i++)
+        {
+            var child = children[i];
+            var childNode = new TreeViewNode
+            {
+                Content = child,
+                HasUnrealizedChildren = child.HasUnrealizedChildren ||
+                                        child.NodeType is "Category" or "RecordType"
+            };
+            parentNode.Children.Add(childNode);
+        }
+
+        // Track remaining items for scroll-based loading
+        if (batchEnd < total)
+        {
+            _pendingTreeLoads[parentNode] = (children, batchEnd);
+        }
+    }
+
+    /// <summary>
+    ///     Finds and hooks the TreeView's internal ScrollViewer to detect scroll position.
+    /// </summary>
+    private void EnsureTreeScrollViewerHooked()
+    {
+        if (_treeScrollViewer is not null) return;
+
+        _treeScrollViewer = FindDescendant<ScrollViewer>(EsmTreeView);
+        if (_treeScrollViewer is not null)
+        {
+            _treeScrollViewer.ViewChanged += TreeScrollViewer_ViewChanged;
+        }
+    }
+
+    private void TreeScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
+    {
+        if (_pendingTreeLoads.Count == 0 || _treeScrollViewer is null) return;
+
+        // Load more when within 2x viewport height of the bottom
+        var remaining = _treeScrollViewer.ExtentHeight
+                        - _treeScrollViewer.VerticalOffset
+                        - _treeScrollViewer.ViewportHeight;
+        var threshold = _treeScrollViewer.ViewportHeight * 2;
+
+        if (remaining <= threshold)
+        {
+            LoadNextPendingBatches();
+        }
+    }
+
+    private void LoadNextPendingBatches()
+    {
+        var completed = new List<TreeViewNode>();
+
+        foreach (var (parentNode, (allChildren, loadedCount)) in _pendingTreeLoads)
+        {
+            // Skip collapsed nodes — they aren't contributing to scroll extent
+            if (!parentNode.IsExpanded)
+            {
+                continue;
+            }
+
+            var batchEnd = Math.Min(loadedCount + TreeNodeBatchSize, allChildren.Count);
+
+            for (var i = loadedCount; i < batchEnd; i++)
+            {
+                var child = allChildren[i];
+                var childNode = new TreeViewNode
+                {
+                    Content = child,
+                    HasUnrealizedChildren = child.HasUnrealizedChildren ||
+                                            child.NodeType is "Category" or "RecordType"
+                };
+                parentNode.Children.Add(childNode);
+            }
+
+            if (batchEnd >= allChildren.Count)
+            {
+                completed.Add(parentNode);
+            }
+            else
+            {
+                _pendingTreeLoads[parentNode] = (allChildren, batchEnd);
+            }
+        }
+
+        foreach (var key in completed)
+        {
+            _pendingTreeLoads.Remove(key);
+        }
+    }
+
+    private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match) return match;
+            var descendant = FindDescendant<T>(child);
+            if (descendant is not null) return descendant;
+        }
+
+        return null;
     }
 
     #endregion
@@ -178,10 +296,13 @@ public sealed partial class SingleFileTab
         Dictionary<uint, string>? displayNameLookup)
     {
         // Snapshot collections before iterating — UI thread may modify Children
-        // concurrently through tree expansion (EsmTreeView_Expanding)
+        // concurrently through tree expansion (EsmTreeView_Expanding).
+        // Null-check nodes defensively since concurrent modification can produce nulls.
         var categories = tree.ToList();
         foreach (var categoryNode in categories)
         {
+            if (categoryNode?.Children == null) continue;
+
             if (categoryNode.HasUnrealizedChildren && categoryNode.Children.Count == 0)
             {
                 EsmBrowserTreeBuilder.LoadCategoryChildren(categoryNode);
@@ -190,6 +311,8 @@ public sealed partial class SingleFileTab
             var typeNodes = categoryNode.Children.ToList();
             foreach (var typeNode in typeNodes)
             {
+                if (typeNode?.Children == null) continue;
+
                 if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
                 {
                     EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, lookup, displayNameLookup);
@@ -201,6 +324,8 @@ public sealed partial class SingleFileTab
     private int FilterAndRebuildTreeView(string query, int maxResults = 200)
     {
         if (_esmBrowserTree == null) return 0;
+
+        _pendingTreeLoads.Clear(); // Stale refs after rebuild
 
         var totalMatches = 0;
         EsmTreeView.RootNodes.Clear();
@@ -223,6 +348,7 @@ public sealed partial class SingleFileTab
         EsmBrowserNode category, string query, ref int totalMatches, int maxResults)
     {
         var matchingTypeNodes = new List<TreeViewNode>();
+        var categoryMatchCount = 0;
 
         foreach (var typeNode in category.Children)
         {
@@ -238,11 +364,22 @@ public sealed partial class SingleFileTab
             if (matchingRecords.Count > 0)
             {
                 totalMatches += matchingRecords.Count;
+                categoryMatchCount += matchingRecords.Count;
 
-                // Create type node with only matching children
+                // Create type wrapper with filtered count in display name
+                var baseName = typeNode.DisplayName.Contains('(')
+                    ? typeNode.DisplayName[..typeNode.DisplayName.LastIndexOf('(')].TrimEnd()
+                    : typeNode.DisplayName;
+                var filteredTypeNode = new EsmBrowserNode
+                {
+                    DisplayName = $"{baseName} ({matchingRecords.Count:N0})",
+                    IconGlyph = typeNode.IconGlyph,
+                    NodeType = typeNode.NodeType
+                };
+
                 var typeTreeNode = new TreeViewNode
                 {
-                    Content = typeNode,
+                    Content = filteredTypeNode,
                     HasUnrealizedChildren = false,
                     IsExpanded = true // Auto-expand to show matches
                 };
@@ -258,10 +395,20 @@ public sealed partial class SingleFileTab
 
         if (matchingTypeNodes.Count > 0)
         {
-            // Create category node with only types that have matches
+            // Create category wrapper with filtered count in display name
+            var baseName = category.DisplayName.Contains('(')
+                ? category.DisplayName[..category.DisplayName.LastIndexOf('(')].TrimEnd()
+                : category.DisplayName;
+            var filteredCategory = new EsmBrowserNode
+            {
+                DisplayName = $"{baseName} ({categoryMatchCount:N0})",
+                IconGlyph = category.IconGlyph,
+                NodeType = category.NodeType
+            };
+
             var categoryTreeNode = new TreeViewNode
             {
-                Content = category,
+                Content = filteredCategory,
                 HasUnrealizedChildren = false,
                 IsExpanded = true // Auto-expand to show matches
             };
@@ -281,12 +428,15 @@ public sealed partial class SingleFileTab
     {
         return (node.DisplayName?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
                (node.EditorId?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
-               (node.FormIdHex?.Contains(query, StringComparison.OrdinalIgnoreCase) == true);
+               (node.FormIdHex?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
+               (node.Detail?.Contains(query, StringComparison.OrdinalIgnoreCase) == true);
     }
 
     private void RebuildTreeViewFromSource()
     {
         if (_esmBrowserTree == null) return;
+
+        _pendingTreeLoads.Clear(); // Stale refs after rebuild
 
         EsmTreeView.RootNodes.Clear();
         foreach (var node in _esmBrowserTree)

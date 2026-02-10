@@ -42,6 +42,7 @@
       IsTitleBarAutoPaddingEnabled="True"
       OpenPaneLength="200"
       PaneDisplayMode="LeftCompact"
+      ItemInvoked="NavView_ItemInvoked"
       SelectionChanged="NavView_SelectionChanged">
 
       <!--  Make NavigationView content area transparent so Mica shows in title bar  -->
@@ -114,6 +115,18 @@
           </NavigationViewItem.Icon>
         </NavigationViewItem>
       </NavigationView.MenuItems>
+
+      <NavigationView.FooterMenuItems>
+        <NavigationViewItem
+          x:Name="SettingsNavItem"
+          Content="Settings"
+          SelectsOnInvoked="False"
+          Tag="Settings">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE713;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+      </NavigationView.FooterMenuItems>
 
       <!--  Main content area  -->
       <Grid Background="Transparent">

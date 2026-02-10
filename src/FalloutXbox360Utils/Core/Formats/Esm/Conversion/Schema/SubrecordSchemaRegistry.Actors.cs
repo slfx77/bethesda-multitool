@@ -20,9 +20,9 @@ public static partial class SubrecordSchemaRegistry
             F.UInt16("CalcMin"),
             F.UInt16("CalcMax"),
             F.UInt16("SpeedMult"),
-            F.UInt32("TemplateFlags"),
-            F.UInt16("Disposition"),
-            F.UInt16("Unknown"))
+            F.Float("KarmaAlignment"),
+            F.Int16("Disposition"),
+            F.UInt16("TemplateFlags"))
         {
             Description = "Actor Base Stats"
         };
@@ -30,16 +30,20 @@ public static partial class SubrecordSchemaRegistry
         // ========================================================================
         // AIDT - AI Data (20 bytes)
         // ========================================================================
+        // PDB: AIDATA struct (type 0x1AA0D) — 20 bytes with Endian() method
         schemas[new SchemaKey("AIDT", null, 20)] = new SubrecordSchema(
             F.UInt8("Aggression"),
             F.UInt8("Confidence"),
             F.UInt8("Energy"),
-            F.UInt8("Morality"),
+            F.UInt8("Responsibility"),
             F.UInt8("Mood"),
             F.Padding(3),
             F.UInt32("ServiceFlags"),
-            F.Int32("TrainSkill"),
-            F.Int32("TrainLevel"))
+            F.UInt8("TrainingSkill"),
+            F.UInt8("TrainingLevel"),
+            F.UInt8("Assistance"),
+            F.UInt8("AggroRadiusBehavior"),
+            F.UInt32("AggroRadius"))
         {
             Description = "AI Data"
         };
@@ -99,9 +103,36 @@ public static partial class SubrecordSchemaRegistry
         schemas[new SchemaKey("CNAM", "RACE", 2)] = SubrecordSchema.Simple2Byte("Color Index");
         schemas[new SchemaKey("SNAM", "RACE", 2)] = SubrecordSchema.Simple2Byte();
 
+        // PNAM - RACE FaceGen Main Clamp (4 bytes = float)
+        schemas[new SchemaKey("PNAM", "RACE", 4)] =
+            new SubrecordSchema(F.Float("FaceGenMainClamp"))
+            {
+                Description = "RACE FaceGen Main Clamp"
+            };
+
+        // UNAM - RACE FaceGen Face Clamp (4 bytes = float)
+        schemas[new SchemaKey("UNAM", "RACE", 4)] =
+            new SubrecordSchema(F.Float("FaceGenFaceClamp"))
+            {
+                Description = "RACE FaceGen Face Clamp"
+            };
+
         // ========================================================================
         // NPC_-SPECIFIC SCHEMAS
         // ========================================================================
+
+        // HNAM - NPC_ Hair FormID (4 bytes)
+        schemas[new SchemaKey("HNAM", "NPC_", 4)] = SubrecordSchema.Simple4Byte("Hair FormID");
+
+        // LNAM - NPC_ Hair Length (4 bytes = float)
+        schemas[new SchemaKey("LNAM", "NPC_", 4)] =
+            new SubrecordSchema(F.Float("HairLength"))
+            {
+                Description = "NPC Hair Length"
+            };
+
+        // ENAM - NPC_ Eyes FormID (4 bytes)
+        schemas[new SchemaKey("ENAM", "NPC_", 4)] = SubrecordSchema.Simple4Byte("Eyes FormID");
 
         // DATA - NPC_ (11 bytes)
         schemas[new SchemaKey("DATA", "NPC_", 11)] = new SubrecordSchema(
@@ -170,8 +201,23 @@ public static partial class SubrecordSchemaRegistry
             Description = "Faction Relation"
         };
 
-        // DATA - FACT (4 bytes) - Faction Data (NOT floats - it's 2 UInt8 + 2 unused)
-        schemas[new SchemaKey("DATA", "FACT", 4)] = SubrecordSchema.ByteArray;
+        // DATA - FACT (4 bytes) - Faction Flags
+        // PDB: TESFaction.flags = uint32 BE at offset 52
+        schemas[new SchemaKey("DATA", "FACT", 4)] = SubrecordSchema.Simple4Byte("Faction Flags");
+
+        // RNAM - FACT Rank Number (4 bytes) - override generic FormID version
+        schemas[new SchemaKey("RNAM", "FACT", 4)] = new SubrecordSchema(F.Int32("RankNumber"))
+        {
+            Description = "Faction Rank Number"
+        };
+
+        // CRVA - FACT Crime Values (20 bytes)
+        schemas[new SchemaKey("CRVA", "FACT", 20)] = new SubrecordSchema(
+            F.Float("CrimeGoldMultiplier"),
+            F.Bytes("Remaining", 16))
+        {
+            Description = "Faction Crime Values"
+        };
 
         // ========================================================================
         // CLAS-SPECIFIC SCHEMAS

@@ -24,31 +24,13 @@ public class ScriptDecompilerIntegrationTests
         _output = output;
     }
 
-    private static string GetFullEsmPath()
-    {
-        // Walk up from test bin directory to repo root
-        var dir = AppContext.BaseDirectory;
-        for (var i = 0; i < 8; i++)
-        {
-            var candidate = Path.Combine(dir, Xbox360EsmPath);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = Path.GetDirectoryName(dir)!;
-        }
-
-        return Path.GetFullPath(Xbox360EsmPath);
-    }
-
     [Fact]
     public void Decompile_AllScptRecords_NoExceptions()
     {
-        var esmPath = GetFullEsmPath();
-        if (!File.Exists(esmPath))
+        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
+        if (esmPath == null)
         {
-            _output.WriteLine($"SKIPPED: ESM file not found at {esmPath}");
+            _output.WriteLine("SKIPPED: ESM file not found");
             return;
         }
 
@@ -89,7 +71,8 @@ public class ScriptDecompilerIntegrationTests
                 errorCount++;
                 if (errorCount <= 5)
                 {
-                    _output.WriteLine($"  ERROR in {editorId ?? $"0x{record.FormId:X8}"}: {GetFirstErrorLine(result)}");
+                    _output.WriteLine(
+                        $"  ERROR in {editorId ?? $"0x{record.FormId:X8}"}: {ScriptTestHelpers.GetFirstErrorLine(result)}");
                 }
             }
             else
@@ -109,10 +92,10 @@ public class ScriptDecompilerIntegrationTests
     [Fact]
     public void Decompile_ScptRecords_StructurallyCorrect()
     {
-        var esmPath = GetFullEsmPath();
-        if (!File.Exists(esmPath))
+        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
+        if (esmPath == null)
         {
-            _output.WriteLine($"SKIPPED: ESM file not found at {esmPath}");
+            _output.WriteLine("SKIPPED: ESM file not found");
             return;
         }
 
@@ -145,12 +128,10 @@ public class ScriptDecompilerIntegrationTests
 
             var decompiled = decompiler.Decompile(compiledData);
 
-            // Structural comparison: check that Begin/End, If/EndIf, While/EndWhile are balanced
-            // and that the same keywords appear in both source and decompiled output
-            var sourceStructure = ExtractStructuralKeywords(sourceText);
-            var decompiledStructure = ExtractStructuralKeywords(decompiled);
+            var sourceStructure = ScriptTestHelpers.ExtractStructuralKeywords(sourceText);
+            var decompiledStructure = ScriptTestHelpers.ExtractStructuralKeywords(decompiled);
 
-            if (StructurallyEquivalent(sourceStructure, decompiledStructure))
+            if (ScriptTestHelpers.StructurallyEquivalent(sourceStructure, decompiledStructure))
             {
                 structuralMatches++;
             }
@@ -179,10 +160,10 @@ public class ScriptDecompilerIntegrationTests
     [Fact]
     public void Decompile_SampleScripts_DetailedComparison()
     {
-        var esmPath = GetFullEsmPath();
-        if (!File.Exists(esmPath))
+        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
+        if (esmPath == null)
         {
-            _output.WriteLine($"SKIPPED: ESM file not found at {esmPath}");
+            _output.WriteLine("SKIPPED: ESM file not found");
             return;
         }
 
@@ -219,8 +200,10 @@ public class ScriptDecompilerIntegrationTests
             var decompiled = decompiler.Decompile(compiledData);
 
             _output.WriteLine($"\n{'=',-60}");
-            _output.WriteLine($"Script: {editorId ?? $"0x{record.FormId:X8}"}  (FormID: 0x{record.FormId:X8})");
-            _output.WriteLine($"Variables: {variables.Count}, References: {referencedObjects.Count}, SCDA size: {compiledData.Length}");
+            _output.WriteLine(
+                $"Script: {editorId ?? $"0x{record.FormId:X8}"}  (FormID: 0x{record.FormId:X8})");
+            _output.WriteLine(
+                $"Variables: {variables.Count}, References: {referencedObjects.Count}, SCDA size: {compiledData.Length}");
 
             // Hex dump first 64 bytes of SCDA for format analysis
             var dumpLen = Math.Min(64, compiledData.Length);
@@ -259,10 +242,10 @@ public class ScriptDecompilerIntegrationTests
     [Fact]
     public void Decompile_DiagnoseMismatches()
     {
-        var esmPath = GetFullEsmPath();
-        if (!File.Exists(esmPath))
+        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
+        if (esmPath == null)
         {
-            _output.WriteLine($"SKIPPED: ESM file not found at {esmPath}");
+            _output.WriteLine("SKIPPED: ESM file not found");
             return;
         }
 
@@ -293,9 +276,9 @@ public class ScriptDecompilerIntegrationTests
             var decompiled = decompiler.Decompile(compiledData);
 
             string[] blockKeywords = ["Begin", "End", "If", "ElseIf", "Else", "EndIf", "While", "EndWhile"];
-            var sourceBlocks = ExtractStructuralKeywords(sourceText)
+            var sourceBlocks = ScriptTestHelpers.ExtractStructuralKeywords(sourceText)
                 .Where(k => blockKeywords.Contains(k)).ToList();
-            var decompiledBlocks = ExtractStructuralKeywords(decompiled)
+            var decompiledBlocks = ScriptTestHelpers.ExtractStructuralKeywords(decompiled)
                 .Where(k => blockKeywords.Contains(k)).ToList();
 
             if (sourceBlocks.SequenceEqual(decompiledBlocks))
@@ -328,7 +311,8 @@ public class ScriptDecompilerIntegrationTests
                 _output.WriteLine($"\n=== MISMATCH #{diagnosed}: {editorId} (0x{record.FormId:X8}) ===");
                 _output.WriteLine($"Source blocks:     [{string.Join(", ", sourceBlocks)}]");
                 _output.WriteLine($"Decompiled blocks: [{string.Join(", ", decompiledBlocks)}]");
-                _output.WriteLine($"SCDA size: {compiledData.Length}, Vars: {variables.Count}, Refs: {referencedObjects.Count}");
+                _output.WriteLine(
+                    $"SCDA size: {compiledData.Length}, Vars: {variables.Count}, Refs: {referencedObjects.Count}");
 
                 // Full hex dump of SCDA with offset annotations
                 _output.WriteLine("--- SCDA hex dump ---");
@@ -359,6 +343,9 @@ public class ScriptDecompilerIntegrationTests
         _output.WriteLine($"  Unknown opcode: {unknownOpcodeCount}");
         _output.WriteLine($"  Error decoding: {errorDecodingCount}");
         _output.WriteLine($"  Clean (no error comments): {cleanMismatchCount}");
+
+        // Diagnostic test — mismatches are informational, not failures
+        Assert.True(true, "Diagnostic test completed");
     }
 
     #region Helpers
@@ -366,7 +353,7 @@ public class ScriptDecompilerIntegrationTests
     /// <summary>
     ///     Extract script subrecords from SCPT record data (same pattern as SemanticReconstructor.Scripts.cs).
     /// </summary>
-    private static (List<ScriptVariableInfo> Variables, List<uint> ReferencedObjects,
+    internal static (List<ScriptVariableInfo> Variables, List<uint> ReferencedObjects,
         byte[]? CompiledData, string? SourceText, string? EditorId)
         ExtractScriptSubrecords(byte[] recordData, bool isBigEndian)
     {
@@ -433,86 +420,6 @@ public class ScriptDecompilerIntegrationTests
         }
 
         return (variables, referencedObjects, compiledData, sourceText, editorId);
-    }
-
-    /// <summary>
-    ///     Extract flow-control keywords from script text for structural comparison.
-    /// </summary>
-    private static List<string> ExtractStructuralKeywords(string scriptText)
-    {
-        var keywords = new List<string>();
-        string[] structuralKeywords = ["ScriptName", "Begin", "End", "If", "ElseIf", "Else", "EndIf", "While", "EndWhile", "Return"];
-
-        foreach (var rawLine in scriptText.Split('\n'))
-        {
-            var line = rawLine.Trim().TrimEnd('\r');
-
-            // Skip comments and empty lines
-            if (string.IsNullOrEmpty(line) || line.StartsWith(';'))
-            {
-                continue;
-            }
-
-            // Extract the first word
-            var firstSpace = line.IndexOf(' ');
-            var firstParen = line.IndexOf('(');
-            var endIdx = firstSpace >= 0 ? firstSpace : line.Length;
-            if (firstParen >= 0 && firstParen < endIdx)
-            {
-                endIdx = firstParen;
-            }
-
-            var keyword = line[..endIdx];
-
-            if (structuralKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase))
-            {
-                keywords.Add(keyword.ToLowerInvariant() switch
-                {
-                    "scriptname" => "ScriptName",
-                    "begin" => "Begin",
-                    "end" => "End",
-                    "if" => "If",
-                    "elseif" => "ElseIf",
-                    "else" => "Else",
-                    "endif" => "EndIf",
-                    "while" => "While",
-                    "endwhile" => "EndWhile",
-                    "return" => "Return",
-                    _ => keyword
-                });
-            }
-        }
-
-        return keywords;
-    }
-
-    /// <summary>
-    ///     Check if two keyword lists represent equivalent structure.
-    ///     Allows differences in ScriptName (may be resolved vs unresolved) and Return placement.
-    /// </summary>
-    private static bool StructurallyEquivalent(List<string> source, List<string> decompiled)
-    {
-        // Filter to just block-level structure: Begin/End, If/ElseIf/Else/EndIf, While/EndWhile
-        string[] blockKeywords = ["Begin", "End", "If", "ElseIf", "Else", "EndIf", "While", "EndWhile"];
-
-        var sourceBlocks = source.Where(k => blockKeywords.Contains(k)).ToList();
-        var decompiledBlocks = decompiled.Where(k => blockKeywords.Contains(k)).ToList();
-
-        return sourceBlocks.SequenceEqual(decompiledBlocks);
-    }
-
-    private static string GetFirstErrorLine(string result)
-    {
-        foreach (var line in result.Split('\n'))
-        {
-            var trimmed = line.Trim();
-            if (trimmed.StartsWith("; Decompilation error", StringComparison.Ordinal) || trimmed.StartsWith("; Error decoding", StringComparison.Ordinal))
-            {
-                return trimmed.Length > 120 ? trimmed[..120] + "..." : trimmed;
-            }
-        }
-
-        return "(no error line found)";
     }
 
     #endregion

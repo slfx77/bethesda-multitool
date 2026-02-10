@@ -1,5 +1,5 @@
 using System.Buffers;
-using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
@@ -133,13 +133,16 @@ public sealed partial class SemanticReconstructor
                 case "DATA" when sub.DataLength >= 1:
                     flags = subData[0];
                     break;
-                case "XCLC" when sub.DataLength >= 8:
-                    gridX = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
-                    gridY = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
+                case "XCLC" when sub.DataLength >= 12:
+                    {
+                        var fields = SubrecordDataReader.ReadFields("XCLC", null, subData, record.IsBigEndian);
+                        if (fields.Count > 0)
+                        {
+                            gridX = SubrecordDataReader.GetInt32(fields, "X");
+                            gridY = SubrecordDataReader.GetInt32(fields, "Y");
+                        }
+                    }
+
                     break;
             }
         }

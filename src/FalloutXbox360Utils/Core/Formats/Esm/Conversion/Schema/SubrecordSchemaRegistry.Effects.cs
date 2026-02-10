@@ -47,15 +47,17 @@ public static partial class SubrecordSchemaRegistry
             F.UInt32("Type"),
             F.UInt32("ChargeAmount"),
             F.UInt32("EnchantCost"),
-            F.Bytes("Flags", 4))
+            F.UInt8("Flags"),
+            F.Padding(3))
         {
             Description = "Enchantment Data"
         };
 
-        // EFIT - Effect Item (20 bytes = 5 x uint32)
+        // EFIT - Effect Item (20 bytes)
+        // PDB: EffectItemData struct — all five fields are T_INT4
         schemas[new SchemaKey("EFIT", null, 20)] = new SubrecordSchema(
-            F.UInt32("Magnitude"), F.UInt32("Area"), F.UInt32("Duration"),
-            F.UInt32("Type"), F.UInt32("ActorValue"))
+            F.Int32("Magnitude"), F.UInt32("Area"), F.UInt32("Duration"),
+            F.UInt32("Type"), F.Int32("ActorValue"))
         {
             Description = "Effect Item"
         };
@@ -79,12 +81,14 @@ public static partial class SubrecordSchemaRegistry
         // INGREDIENT SCHEMAS (INGR)
         // ========================================================================
 
-        // ENIT - INGR (8 bytes)
+        // ENIT - INGR (8 bytes) — PDB: IngredientItemData
+        // iCostOverride(int32) + iFlags(uchar) + padding(3)
         schemas[new SchemaKey("ENIT", "INGR", 8)] = new SubrecordSchema(
-            F.UInt32("Value"),
-            F.UInt32("Flags"))
+            F.Int32("CostOverride"),
+            F.UInt8("Flags"),
+            F.Padding(3))
         {
-            Description = "Ingredient Data"
+            Description = "Ingredient Data (IngredientItemData)"
         };
 
         // DATA - INGR (4 bytes)

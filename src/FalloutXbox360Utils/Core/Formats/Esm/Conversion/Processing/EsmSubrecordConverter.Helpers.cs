@@ -23,8 +23,7 @@ internal static partial class EsmSubrecordConverter
         var flags = BitConverter.ToUInt32(data, 0);
         Swap4Bytes(data, 4); // Navmesh FormID
         Swap4Bytes(data, 8); // Location FormID
-        Swap2Bytes(data, 12); // Grid Y
-        Swap2Bytes(data, 14); // Grid X
+        Swap4Bytes(data, 12); // Grid Y (int16) + Grid X (int16) — packed as iCellKey (uint32) per PDB
         Swap4Bytes(data, 16); // Approx X
         Swap4Bytes(data, 20); // Approx Y
         Swap4Bytes(data, 24); // Approx Z

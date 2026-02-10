@@ -13,8 +13,11 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Batch processing tab for multiple dump files.
 /// </summary>
-public sealed partial class BatchModeTab : UserControl, IDisposable
+public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSettingsDrawer
 {
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
+
     private readonly ObservableCollection<DumpFileEntry> _dumpFiles = [];
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
     private CancellationTokenSource? _cts;

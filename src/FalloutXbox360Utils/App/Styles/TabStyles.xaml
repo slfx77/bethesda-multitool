@@ -68,13 +68,28 @@
             Value="Collapsed" />
   </Style>
 
-  <!-- Standard progress bar style (collapsed by default, positioned above I/O) -->
+  <!-- Standard progress bar style (collapsed by default, positioned below file info card) -->
   <Style x:Key="TabProgressBarStyle"
          TargetType="ProgressBar">
     <Setter Property="Margin"
-            Value="0,12,0,0" />
+            Value="0,4,0,0" />
     <Setter Property="Visibility"
             Value="Collapsed" />
+  </Style>
+
+  <!-- Settings drawer overlay style (hamburger-style, overlays from left) -->
+  <Style x:Key="SettingsDrawerBorderStyle"
+         TargetType="Border">
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="Width" Value="280" />
+    <Setter Property="Padding" Value="16" />
+    <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+    <Setter Property="Canvas.ZIndex" Value="10" />
+    <Setter Property="CornerRadius" Value="8,0,0,8" />
+    <Setter Property="Visibility" Value="Collapsed" />
   </Style>
 
   <!-- I/O section container style -->

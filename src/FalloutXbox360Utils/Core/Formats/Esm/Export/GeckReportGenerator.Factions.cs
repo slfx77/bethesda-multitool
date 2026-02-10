@@ -31,13 +31,14 @@ public static partial class GeckReportGenerator
                 if (faction.AllowsSpecialCombat) sb.AppendLine("  - Allows Special Combat");
             }
 
-            if (faction.RankNames.Count > 0)
+            if (faction.Ranks.Count > 0)
             {
                 sb.AppendLine();
                 sb.AppendLine("Ranks:");
-                for (var i = 0; i < faction.RankNames.Count; i++)
+                foreach (var rank in faction.Ranks)
                 {
-                    sb.AppendLine($"  [{i}] {faction.RankNames[i]}");
+                    var title = rank.MaleTitle ?? rank.FemaleTitle ?? "(unnamed)";
+                    sb.AppendLine($"  [{rank.RankNumber}] {title}");
                 }
             }
 

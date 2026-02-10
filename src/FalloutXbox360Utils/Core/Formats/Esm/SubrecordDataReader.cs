@@ -150,6 +150,50 @@ public static class SubrecordDataReader
     }
 
     /// <summary>
+    ///     Gets an int field, with fallback to default if not found or wrong type.
+    /// </summary>
+    public static int GetInt32(Dictionary<string, object?> fields, string fieldName, int defaultValue = 0)
+    {
+        if (fields.TryGetValue(fieldName, out var value))
+        {
+            return value switch
+            {
+                int i => i,
+                uint u => (int)u,
+                short s => s,
+                ushort us => us,
+                byte b => b,
+                sbyte sb => sb,
+                _ => defaultValue
+            };
+        }
+
+        return defaultValue;
+    }
+
+    /// <summary>
+    ///     Gets an sbyte field, with fallback to default if not found or wrong type.
+    /// </summary>
+    public static sbyte GetSByte(Dictionary<string, object?> fields, string fieldName, sbyte defaultValue = 0)
+    {
+        if (fields.TryGetValue(fieldName, out var value))
+        {
+            return value switch
+            {
+                sbyte sb => sb,
+                byte b => (sbyte)b,
+                short s => (sbyte)s,
+                ushort us => (sbyte)us,
+                int i => (sbyte)i,
+                uint u => (sbyte)u,
+                _ => defaultValue
+            };
+        }
+
+        return defaultValue;
+    }
+
+    /// <summary>
     ///     Gets a float field, with fallback to default if not found or wrong type.
     /// </summary>
     public static float GetFloat(Dictionary<string, object?> fields, string fieldName, float defaultValue = 0f)

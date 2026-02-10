@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Repack.Processors;
 ///     Processor for generating hybrid INI files.
 ///     Takes Xbox 360 INI settings and converts references for PC compatibility:
 ///     - DDX → DDS (textures)
-///     - XMA → MP3 (loose Music folder) or OGG (BSA content)
+///     - XMA → MP3 (loose Music folder) or WAV (BSA content)
 ///     - Fixes known Xbox-specific settings
 /// </summary>
 public sealed partial class IniProcessor : IRepackProcessor
@@ -388,7 +388,7 @@ public sealed partial class IniProcessor : IRepackProcessor
         value = DdxExtensionRegex().Replace(value, ".dds");
 
         // Replace XMA → MP3 for Music folder references
-        // XMA → OGG for BSA content references
+        // XMA → WAV for BSA content references
         // Heuristic: Music folder paths typically contain "Music\" or "music\"
         if (value.Contains("Music", StringComparison.OrdinalIgnoreCase) ||
             value.Contains(@"\Music\", StringComparison.OrdinalIgnoreCase))
@@ -397,10 +397,10 @@ public sealed partial class IniProcessor : IRepackProcessor
         }
         else
         {
-            // For general audio references (BSA content), use OGG
+            // For general audio references (BSA content), use WAV
             // However, most BSA audio is WAV which doesn't need conversion
-            // Only XMA files get converted to OGG
-            value = XmaExtensionRegex().Replace(value, ".ogg");
+            // Only XMA files get converted to WAV
+            value = XmaExtensionRegex().Replace(value, ".wav");
         }
 
         return value;

@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -140,14 +141,17 @@ public sealed partial class SemanticReconstructor
                     currentEmotionType = 0;
                     currentEmotionValue = 0;
                     break;
-                case "TRDT" when sub.DataLength >= 20:
-                    currentEmotionType = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    currentEmotionValue = record.IsBigEndian
-                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
-                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
-                    currentResponseNumber = subData[12];
+                case "TRDT" when sub.DataLength >= 24:
+                    {
+                        var fields = SubrecordDataReader.ReadFields("TRDT", null, subData, record.IsBigEndian);
+                        if (fields.Count > 0)
+                        {
+                            currentEmotionType = SubrecordDataReader.GetUInt32(fields, "EmotionType");
+                            currentEmotionValue = SubrecordDataReader.GetInt32(fields, "EmotionValue");
+                            currentResponseNumber = SubrecordDataReader.GetByte(fields, "ResponseNumber");
+                        }
+                    }
+
                     break;
                 case "PNAM" when sub.DataLength == 4:
                     previousInfo = ReadFormId(subData, record.IsBigEndian);
@@ -189,9 +193,7 @@ public sealed partial class SemanticReconstructor
                         break;
                     }
                 case "DNAM" when sub.DataLength >= 4:
-                    difficulty = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    difficulty = ReadFormId(subData, record.IsBigEndian);
                     if (difficulty > 10)
                     {
                         difficulty = 0;

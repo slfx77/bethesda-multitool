@@ -9,6 +9,7 @@ using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+
 using Microsoft.UI.Xaml.Input;
 using WinRT.Interop;
 
@@ -24,7 +25,7 @@ namespace FalloutXbox360Utils;
 /// - SingleFileTab.TreeBuilder.cs: ESM browser tree building and filtering
 /// - SingleFileTab.Helpers.cs: Helper/utility methods
 /// </summary>
-public sealed partial class SingleFileTab : UserControl, IDisposable
+public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettingsDrawer
 {
     #region Fields
 
@@ -53,6 +54,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable
     private List<int> _reportSearchMatches = [];
     private string _reportSearchQuery = "";
     private int _reportViewportLineCount = 50;
+    private double _measuredLineHeight;
     private EsmBrowserNode? _selectedBrowserNode;
     private string _currentSearchQuery = "";
 
@@ -134,6 +136,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable
             _allCarvedFiles.Clear();
             _sorter.Reset();
             UpdateSortIcons();
+            HexViewer.Clear();
             ResetSubTabs();
 
             if (!File.Exists(filePath))
@@ -242,6 +245,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable
 
             // Open shared session and load hex viewer with shared accessor
             _session.Open(filePath, _analysisResult, fileType);
+            UpdateFileInfoCard();
             await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
 
             // Enable data browser and reports tabs (depends on ESM records, not coverage)
@@ -252,6 +256,12 @@ public sealed partial class SingleFileTab : UserControl, IDisposable
             if (_session.HasEsmRecords && ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
             {
                 ReconstructButton_Click(sender, e);
+            }
+
+            // If already on Reports tab, auto-generate reports
+            if (_session.HasEsmRecords && ReferenceEquals(SubTabView.SelectedItem, ReportsTab))
+            {
+                await GenerateReportsAsync();
             }
 
             // Run coverage analysis (best-effort, doesn't block other functionality)
@@ -360,9 +370,16 @@ public sealed partial class SingleFileTab : UserControl, IDisposable
             _reportEntries.Count == 0 &&
             _session.HasEsmRecords)
         {
-            GenerateReportsButton_Click(sender, new RoutedEventArgs());
+            _ = GenerateReportsAsync();
         }
     }
+
+    #endregion
+
+    #region Settings Drawer
+
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
 
     #endregion
 

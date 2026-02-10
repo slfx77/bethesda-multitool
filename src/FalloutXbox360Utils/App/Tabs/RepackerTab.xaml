@@ -6,17 +6,37 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:FalloutXbox360Utils">
 
-  <Grid Padding="16"
-        VerticalAlignment="Stretch">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
+  <Grid VerticalAlignment="Stretch">
+    <!--  Settings drawer  -->
+    <Border
+      x:Name="SettingsDrawer"
+      Style="{StaticResource SettingsDrawerBorderStyle}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Settings" Style="{StaticResource SubtitleTextBlockStyle}" />
+          <StackPanel Spacing="4">
+            <TextBlock Text="Configuration" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <CheckBox
+              x:Name="UpdateUserIniCheckbox"
+              x:Uid="Checkbox_UpdateUserIni"
+              MinWidth="0" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <!--  Main content  -->
+    <Grid Padding="16"
+          VerticalAlignment="Stretch">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
 
     <!-- Header row -->
     <Grid Grid.Row="0"
@@ -283,21 +303,10 @@
       </StackPanel>
     </Border>
 
-    <!-- Options -->
-    <StackPanel
-      Grid.Row="3"
-      Margin="0,8,0,0"
-      Orientation="Horizontal"
-      Visibility="{x:Bind SourceInfoCard.Visibility, Mode=OneWay}">
-      <CheckBox
-        x:Name="UpdateUserIniCheckbox"
-        x:Uid="Checkbox_UpdateUserIni" />
-    </StackPanel>
-
     <!-- Stats Card -->
     <Border
       x:Name="StatsCard"
-      Grid.Row="4"
+      Grid.Row="3"
       Margin="0,8,0,0"
       Style="{StaticResource CardBorderStyle}"
       Visibility="Collapsed">
@@ -327,13 +336,13 @@
     <!-- Progress Bar -->
     <ProgressBar
       x:Name="ConversionProgress"
-      Grid.Row="5"
+      Grid.Row="4"
       Margin="0,8,0,0"
       Maximum="100"
       Visibility="Collapsed" />
 
     <!-- Action Buttons -->
-    <Grid Grid.Row="6"
+    <Grid Grid.Row="5"
           Margin="0,8,0,0">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
@@ -361,6 +370,7 @@
         Click="ConvertButton_Click"
         IsEnabled="False"
         Style="{StaticResource AccentButtonStyle}" />
+    </Grid>
     </Grid>
   </Grid>
 </UserControl>

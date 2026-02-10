@@ -25,8 +25,11 @@ public sealed partial class SingleFileTab
         ReconstructButton.IsEnabled = false;
         ReconstructProgressRing.IsActive = true;
         ReconstructProgressRing.Visibility = Visibility.Visible;
-        ReconstructStatusText.Text = Strings.Status_ReconstructingRecords;
-        StatusTextBlock.Text = Strings.Status_ReconstructingRecords;
+        var loadingMsg = _session.IsEsmFile
+            ? Strings.Status_LoadingEsmRecords
+            : Strings.Status_ReconstructingRecords;
+        ReconstructStatusText.Text = loadingMsg;
+        StatusTextBlock.Text = loadingMsg;
 
         try
         {

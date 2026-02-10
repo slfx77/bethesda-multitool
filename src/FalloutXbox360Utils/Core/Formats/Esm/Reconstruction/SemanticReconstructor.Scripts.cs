@@ -12,7 +12,8 @@ public sealed partial class SemanticReconstructor
 
     /// <summary>
     ///     Reconstruct all Script (SCPT) records from the scan result.
-    ///     Parses SCHR header, SCTX source text, SCDA bytecode, SLSD+SCVR variables, and SCRO references.
+    ///     Uses a two-pass approach: first parses all scripts to build a cross-script variable
+    ///     database, then decompiles with full context for proper name resolution.
     /// </summary>
     public List<ReconstructedScript> ReconstructScripts()
     {
@@ -35,12 +36,13 @@ public sealed partial class SemanticReconstructor
             return scripts;
         }
 
+        // PASS 1: Parse all scripts — collect variables, refs, compiled data (no decompilation)
         var buffer = ArrayPool<byte>.Shared.Rent(65536); // Scripts can be large
         try
         {
             foreach (var record in GetRecordsByType("SCPT"))
             {
-                var script = ReconstructScriptFromAccessor(record, buffer);
+                var script = ParseScriptFromAccessor(record, buffer);
                 if (script != null)
                 {
                     scripts.Add(script);
@@ -53,18 +55,112 @@ public sealed partial class SemanticReconstructor
         }
 
         // Merge runtime struct data (Script C++ objects from hash table walk)
+        // Runtime merging also skips decompilation — that happens in pass 2
         if (_runtimeReader != null)
         {
             MergeRuntimeScriptData(scripts);
+        }
+
+        // Build cross-script variable database: FormID → variable list
+        // This enables resolving ref.varN to ref.actualVarName during decompilation
+        var variableDb = new Dictionary<uint, List<ScriptVariableInfo>>();
+        foreach (var script in scripts)
+        {
+            if (script.Variables.Count > 0)
+            {
+                variableDb.TryAdd(script.FormId, script.Variables);
+            }
+
+            // Also map quest FormIDs to their script's variable lists.
+            // When a script references vSomeQuest.fTimer, the SCRO points to the quest FormID,
+            // not the quest's script FormID. OwnerQuestFormId links scripts to their owning quest.
+            if (script.OwnerQuestFormId.HasValue && script.Variables.Count > 0)
+            {
+                variableDb.TryAdd(script.OwnerQuestFormId.Value, script.Variables);
+            }
+        }
+
+        // PASS 2: Decompile all scripts with the full cross-script variable database
+        var resolvedCount = 0;
+        for (var i = 0; i < scripts.Count; i++)
+        {
+            if (scripts[i].CompiledData is not { Length: > 0 })
+            {
+                continue;
+            }
+
+            var (decompiled, crossRefResolved) = DecompileScript(scripts[i], variableDb);
+            scripts[i] = decompiled;
+            resolvedCount += crossRefResolved;
+        }
+
+        if (resolvedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Scripts: resolved {resolvedCount} cross-script variable references to names");
         }
 
         return scripts;
     }
 
     /// <summary>
+    ///     Decompile a single script using the full cross-script variable database.
+    ///     Returns the updated script and the count of cross-script variable references resolved.
+    /// </summary>
+    private (ReconstructedScript Script, int CrossRefsResolved) DecompileScript(
+        ReconstructedScript script,
+        Dictionary<uint, List<ScriptVariableInfo>> variableDb)
+    {
+        if (script.CompiledData is not { Length: > 0 })
+        {
+            return (script, 0);
+        }
+
+        var crossRefsResolved = 0;
+
+        string? ResolveExternalVariable(uint formId, ushort varIndex)
+        {
+            if (!variableDb.TryGetValue(formId, out var vars))
+            {
+                return null;
+            }
+
+            var variable = vars.FirstOrDefault(v => v.Index == varIndex);
+            if (variable?.Name != null)
+            {
+                crossRefsResolved++;
+                return variable.Name;
+            }
+
+            return null;
+        }
+
+        string? decompiledText;
+        try
+        {
+            // ESM SCDA bytecode is always little-endian (compiled by PC GECK).
+            // Runtime bytecode (from memory dumps) is big-endian (byte-swapped at load time).
+            var isBigEndian = script.FromRuntime;
+            var decompiler = new ScriptDecompiler(
+                script.Variables, script.ReferencedObjects, ResolveFormName,
+                isBigEndian: isBigEndian,
+                scriptName: script.EditorId,
+                resolveExternalVariable: ResolveExternalVariable);
+            decompiledText = decompiler.Decompile(script.CompiledData);
+        }
+        catch (Exception ex)
+        {
+            decompiledText = $"; Decompilation failed: {ex.Message}";
+        }
+
+        return (script with { DecompiledText = decompiledText }, crossRefsResolved);
+    }
+
+    /// <summary>
     ///     Merge runtime Script struct data into existing scripts or create new entries.
     ///     Scripts found via runtime hash table walk (FormType 0x11) may have source text
     ///     and compiled bytecode that ESM fragments don't contain (game discards ESM records at load time).
+    ///     Decompilation is deferred to pass 2.
     /// </summary>
     private void MergeRuntimeScriptData(List<ReconstructedScript> scripts)
     {
@@ -113,13 +209,12 @@ public sealed partial class SemanticReconstructor
         }
     }
 
-    private ReconstructedScript EnrichScriptWithRuntimeData(
+    private static ReconstructedScript EnrichScriptWithRuntimeData(
         ReconstructedScript existing, RuntimeScriptData runtime)
     {
         var needsUpdate = false;
         var sourceText = existing.SourceText;
         var compiledData = existing.CompiledData;
-        var decompiledText = existing.DecompiledText;
         var variables = existing.Variables;
         var referencedObjects = existing.ReferencedObjects;
 
@@ -156,54 +251,33 @@ public sealed partial class SemanticReconstructor
             return existing;
         }
 
-        // Decompile newly-acquired bytecode (runtime data is always big-endian)
-        if (compiledData is { Length: > 0 } && string.IsNullOrEmpty(decompiledText))
-        {
-            try
-            {
-                var decompiler = new ScriptDecompiler(variables, referencedObjects, ResolveFormName,
-                    isBigEndian: true);
-                decompiledText = decompiler.Decompile(compiledData);
-            }
-            catch (Exception ex)
-            {
-                decompiledText = $"; Decompilation failed: {ex.Message}";
-            }
-        }
-
+        // Decompilation is deferred to pass 2 in ReconstructScripts()
         return existing with
         {
+            EditorId = !string.IsNullOrEmpty(existing.EditorId) ? existing.EditorId : runtime.EditorId,
+            VariableCount = existing.VariableCount > 0 ? existing.VariableCount : runtime.VariableCount,
+            RefObjectCount = existing.RefObjectCount > 0 ? existing.RefObjectCount : runtime.RefObjectCount,
+            CompiledSize = existing.CompiledSize > 0 ? existing.CompiledSize : runtime.DataSize,
+            LastVariableId = existing.LastVariableId > 0 ? existing.LastVariableId : runtime.LastVariableId,
+            IsQuestScript = existing.IsQuestScript || runtime.IsQuestScript,
+            IsMagicEffectScript = existing.IsMagicEffectScript || runtime.IsMagicEffectScript,
+            IsCompiled = existing.IsCompiled || runtime.IsCompiled,
             SourceText = sourceText,
             CompiledData = compiledData,
-            DecompiledText = decompiledText,
             Variables = variables,
             ReferencedObjects = referencedObjects,
             OwnerQuestFormId = runtime.OwnerQuestFormId ?? existing.OwnerQuestFormId,
-            QuestScriptDelay = runtime.QuestScriptDelay
+            QuestScriptDelay = runtime.QuestScriptDelay,
+            FromRuntime = true
         };
     }
 
-    private ReconstructedScript CreateScriptFromRuntimeData(RuntimeScriptData runtime)
+    private static ReconstructedScript CreateScriptFromRuntimeData(RuntimeScriptData runtime)
     {
         var variables = runtime.Variables;
         var referencedObjects = runtime.ReferencedObjects.Select(r => r.FormId).ToList();
 
-        // Decompile bytecode if available (runtime data is always big-endian)
-        string? decompiledText = null;
-        if (runtime.CompiledData is { Length: > 0 })
-        {
-            try
-            {
-                var decompiler = new ScriptDecompiler(variables, referencedObjects, ResolveFormName,
-                    isBigEndian: true);
-                decompiledText = decompiler.Decompile(runtime.CompiledData);
-            }
-            catch (Exception ex)
-            {
-                decompiledText = $"; Decompilation failed: {ex.Message}";
-            }
-        }
-
+        // Decompilation is deferred to pass 2 in ReconstructScripts()
         return new ReconstructedScript
         {
             FormId = runtime.FormId,
@@ -217,7 +291,6 @@ public sealed partial class SemanticReconstructor
             IsCompiled = runtime.IsCompiled,
             SourceText = runtime.SourceText,
             CompiledData = runtime.CompiledData,
-            DecompiledText = decompiledText,
             Variables = variables,
             ReferencedObjects = referencedObjects,
             OwnerQuestFormId = runtime.OwnerQuestFormId,
@@ -228,7 +301,7 @@ public sealed partial class SemanticReconstructor
         };
     }
 
-    private ReconstructedScript? ReconstructScriptFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private ReconstructedScript? ParseScriptFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = ReadRecordData(record, buffer);
         if (recordData == null)
@@ -346,24 +419,7 @@ public sealed partial class SemanticReconstructor
             variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, null, pendingSlsdType));
         }
 
-        // Decompile bytecode if available
-        string? decompiledText = null;
-        if (compiledData is { Length: > 0 })
-        {
-            try
-            {
-                // SCDA bytecode is always little-endian — compiled by PC-based GECK, stored verbatim in ESM.
-                // The game byte-swaps at runtime via ScriptRunner::Endian() on Xbox 360.
-                var decompiler = new ScriptDecompiler(variables, referencedObjects, ResolveFormName,
-                    isBigEndian: false);
-                decompiledText = decompiler.Decompile(compiledData);
-            }
-            catch (Exception ex)
-            {
-                decompiledText = $"; Decompilation failed: {ex.Message}";
-            }
-        }
-
+        // Decompilation is deferred to pass 2 in ReconstructScripts()
         return new ReconstructedScript
         {
             FormId = record.FormId,
@@ -377,7 +433,6 @@ public sealed partial class SemanticReconstructor
             IsCompiled = isCompiled,
             SourceText = sourceText,
             CompiledData = compiledData,
-            DecompiledText = decompiledText,
             Variables = variables,
             ReferencedObjects = referencedObjects,
             Offset = record.Offset,

@@ -18,8 +18,11 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Repacker tab for converting Xbox 360 Fallout: New Vegas to PC format.
 /// </summary>
-public sealed partial class RepackerTab : UserControl, IDisposable
+public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettingsDrawer
 {
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
+
     private readonly ObservableCollection<RepackCategory> _categories = [];
     private CancellationTokenSource? _cts;
     private string? _outputPath;

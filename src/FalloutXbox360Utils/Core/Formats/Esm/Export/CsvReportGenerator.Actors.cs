@@ -251,15 +251,15 @@ public static partial class CsvReportGenerator
                 f.Offset.ToString(),
                 "", "", ""));
 
-            for (var i = 0; i < f.RankNames.Count; i++)
+            foreach (var rank in f.Ranks)
             {
                 sb.AppendLine(string.Join(",",
                     "RANK",
                     FId(f.FormId),
                     "", "", "", "", "", "",
                     "", "",
-                    i.ToString(),
-                    E(f.RankNames[i]),
+                    rank.RankNumber.ToString(),
+                    E(rank.MaleTitle ?? rank.FemaleTitle ?? ""),
                     ""));
             }
 

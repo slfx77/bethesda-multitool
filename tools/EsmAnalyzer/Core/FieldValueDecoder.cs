@@ -37,7 +37,7 @@ public static class FieldValueDecoder
                 SubrecordFieldType.ColorArgb => FormatColorArgb(data),
                 SubrecordFieldType.String => Encoding.ASCII.GetString(data).TrimEnd('\0'),
                 SubrecordFieldType.ByteArray => FormatBytes(data),
-                SubrecordFieldType.Padding => $"[{data.Length} bytes padding]",
+                SubrecordFieldType.Padding => $"Pad:{FormatBytes(data)}",
                 _ => FormatBytes(data)
             };
         }

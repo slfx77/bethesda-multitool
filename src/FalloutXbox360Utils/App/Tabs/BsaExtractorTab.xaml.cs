@@ -20,8 +20,11 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     BSA Extractor tab for extracting files from Bethesda archives.
 /// </summary>
-public sealed partial class BsaExtractorTab : UserControl, IDisposable
+public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSettingsDrawer
 {
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
+
     private readonly ObservableCollection<BsaFileEntry> _allFiles = [];
     private readonly ObservableCollection<BsaFileEntry> _filteredFiles = [];
 
@@ -345,7 +348,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
             // Check what's unavailable (NIF is always available as it's built-in)
             var unavailable = new List<string>();
             if (!ddxConversionAvailable) unavailable.Add("DDX->DDS (DDXConv not found)");
-            if (!xmaConversionAvailable) unavailable.Add("XMA->OGG (FFmpeg not found)");
+            if (!xmaConversionAvailable) unavailable.Add("XMA->WAV (FFmpeg not found)");
 
             if (unavailable.Count == 2)
             {
@@ -459,7 +462,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
                         }
                         else if (needsXmaConversion)
                         {
-                            outputPath = Path.ChangeExtension(outputPath, ".ogg");
+                            outputPath = Path.ChangeExtension(outputPath, ".wav");
                         }
                         // NIF keeps same extension
 
@@ -566,7 +569,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable
             var message = $"Successfully extracted {succeeded:N0} files ({FormatSize(totalSize)})";
             if (converted > 0)
             {
-                message += $"\n{converted:N0} files converted (DDX->DDS, XMA->OGG, NIF endian swap).";
+                message += $"\n{converted:N0} files converted (DDX->DDS, XMA->WAV, NIF endian swap).";
             }
 
             if (failed > 0)

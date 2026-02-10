@@ -10,8 +10,11 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Tab for batch converting Xbox 360 NIF files to PC format.
 /// </summary>
-public sealed partial class NifConverterTab : UserControl, IDisposable
+public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSettingsDrawer
 {
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
+
     private readonly List<NifFileEntry> _allNifFiles = [];
     private readonly NifFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;

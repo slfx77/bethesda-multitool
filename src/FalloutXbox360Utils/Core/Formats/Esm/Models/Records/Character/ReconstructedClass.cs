@@ -23,10 +23,10 @@ public record ReconstructedClass
     /// <summary>Barter/services flags from DATA.</summary>
     public uint BarterFlags { get; init; }
 
-    /// <summary>Training skill index from ATTR subrecord.</summary>
+    /// <summary>Training skill index from DATA subrecord (Teaches field).</summary>
     public byte TrainingSkill { get; init; }
 
-    /// <summary>Training max level from ATTR subrecord.</summary>
+    /// <summary>Training max level from DATA subrecord.</summary>
     public byte TrainingLevel { get; init; }
 
     /// <summary>SPECIAL attribute weights (7 values) from ATTR subrecord.</summary>

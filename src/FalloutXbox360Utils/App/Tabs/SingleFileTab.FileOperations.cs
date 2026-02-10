@@ -15,9 +15,8 @@ public sealed partial class SingleFileTab
 {
     #region Report Generation
 
-    private async void GenerateReportsButton_Click(object sender, RoutedEventArgs e)
+    private async Task GenerateReportsAsync()
     {
-        GenerateReportsButton.IsEnabled = false;
         ReportsProgressRing.IsActive = true;
         ReportsProgressRing.Visibility = Visibility.Visible;
 
@@ -55,7 +54,6 @@ public sealed partial class SingleFileTab
         }
         finally
         {
-            GenerateReportsButton.IsEnabled = true;
             ReportsProgressRing.IsActive = false;
             ReportsProgressRing.Visibility = Visibility.Collapsed;
         }
@@ -181,8 +179,20 @@ public sealed partial class SingleFileTab
     {
         if (e.NewSize.Height <= 0) return;
 
-        const double lineHeight = 15.0; // Approximate for Consolas 11pt
-        _reportViewportLineCount = Math.Max(10, (int)(e.NewSize.Height / lineHeight) - 2);
+        // Measure actual line height from font metrics (cached after first call)
+        if (_measuredLineHeight <= 0)
+        {
+            var measure = new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                FontSize = 11,
+                Text = "Xg" // Characters with ascenders and descenders
+            };
+            measure.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+            _measuredLineHeight = measure.DesiredSize.Height;
+        }
+
+        _reportViewportLineCount = Math.Max(10, (int)(e.NewSize.Height / _measuredLineHeight) - 1);
 
         // Update scrollbar to reflect new viewport size
         var maxTop = Math.Max(0, _reportLines.Length - _reportViewportLineCount);

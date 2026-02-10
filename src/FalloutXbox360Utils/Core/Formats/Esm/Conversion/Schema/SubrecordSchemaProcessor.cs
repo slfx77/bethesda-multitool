@@ -40,13 +40,15 @@ public static class SubrecordSchemaProcessor
         }
 
         // IDLE DATA differs between Xbox 360 and PC:
-        // - Xbox: DATA(8) = 4 byte-sized fields + a 4-byte trailing value (observed as 0x0000000F)
-        // - PC:   DATA(6) = the same first 6 bytes as Xbox (no endian swapping needed)
-        // The first 4 bytes are not a 32-bit integer and must NOT be byte-swapped.
-        // Emit PC-compatible size by dropping the trailing 2 bytes.
+        // - Xbox: DATA(8) = cAnimData(1) + cLoopMin(1) + cLoopMax(1) + pad(1) + sReplayDelay(2 BE) + cFlagsEx(1) + pad(1)
+        // - PC:   DATA(6) = same first 6 bytes with sReplayDelay in LE
+        // PDB: IDLE_DATA — Endian() swaps uint16 at offset 4 (sReplayDelay)
+        // Emit PC-compatible size by swapping the uint16 and dropping trailing 2 bytes.
         if (recordType == "IDLE" && signature == "DATA" && data.Length == 8)
         {
-            return data[..6].ToArray();
+            var idle = data[..6].ToArray();
+            Swap2Bytes(idle, 4); // sReplayDelay: BE → LE
+            return idle;
         }
 
         // IMAD DNAM (244 bytes) structure:
@@ -146,9 +148,9 @@ public static class SubrecordSchemaProcessor
             return nvtr;
         }
 
-        // NVDP (NavMesh Door Links) - Each 8-byte entry: FormID(4), Triangle(2), Unknown(2)
-        // The last 2 bytes are marked as wbUnused(2) in xEdit but they contain data that must be preserved!
-        // Previously we zeroed them thinking they were Xbox-specific, but PC files have non-zero values.
+        // NVDP (NavMesh Door Links) - Each 8-byte entry: FormID(4), Triangle(2), Padding(2)
+        // PDB: NavMeshTriangleDoorPortal is { pDoorForm(uint32, +0), iOwningTriangleIndex(uint16, +4) }
+        // Disassembly confirms Endian() only swaps +0 (swap32) and +4 (swap16). Bytes +6-7 are struct padding.
         if (signature == "NVDP" && recordType == "NAVM" && data.Length % 8 == 0)
         {
             var nvdp = data.ToArray();
@@ -160,8 +162,7 @@ public static class SubrecordSchemaProcessor
                 Swap4Bytes(nvdp, baseOffset);
                 // Swap Triangle index (2 bytes)
                 Swap2Bytes(nvdp, baseOffset + 4);
-                // Swap Unknown bytes 6-7 (preserve the data, just fix endianness)
-                Swap2Bytes(nvdp, baseOffset + 6);
+                // Bytes +6-7 are struct padding — do NOT swap
             }
 
             return nvdp;
@@ -224,12 +225,9 @@ public static class SubrecordSchemaProcessor
             return result;
         }
 
-        // Handle ATXT/BTXT special case (platform flag conversion)
-        if ((signature == "ATXT" || signature == "BTXT") && data.Length == 8)
-        {
-            ConvertAtxtBtxt(result);
-            return result;
-        }
+        // ATXT/BTXT: The schema handles these correctly — FormID swap at offset 0,
+        // Quadrant (uint8) and PlatformFlag (uint8) preserved as-is, Layer (uint16) swap at offset 6.
+        // No special handler needed; the previous code was incorrectly hardcoding byte 5 to 0x88.
 
         // NOTE: AIDT was previously zeroing bytes 5-7 thinking they were Xbox-specific,
         // but Xbox and PC have the same values there (e.g., 64 D8 23). The schema handles
@@ -458,16 +456,6 @@ public static class SubrecordSchemaProcessor
         Swap2Bytes(data, 1); // Flags2
         Swap2Bytes(data, 6); // FalloutBehaviorFlags
         Swap2Bytes(data, 8); // TypeSpecificFlags
-    }
-
-    /// <summary>
-    ///     Converts ATXT/BTXT with platform flag.
-    /// </summary>
-    private static void ConvertAtxtBtxt(byte[] data)
-    {
-        Swap4Bytes(data, 0); // FormID
-        data[5] = 0x88; // Platform flag - set to PC value
-        Swap2Bytes(data, 6); // Layer
     }
 
     /// <summary>
