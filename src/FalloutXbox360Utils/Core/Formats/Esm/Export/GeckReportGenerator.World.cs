@@ -32,7 +32,7 @@ public static partial class GeckReportGenerator
 
     #region Cell Methods
 
-    private static void AppendCellsSection(StringBuilder sb, List<ReconstructedCell> cells)
+    private static void AppendCellsSection(StringBuilder sb, List<CellRecord> cells)
     {
         AppendSectionHeader(sb, $"Cells ({cells.Count})");
 
@@ -93,7 +93,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Cells only.
     /// </summary>
-    public static string GenerateCellsReport(List<ReconstructedCell> cells, Dictionary<uint, string>? lookup = null)
+    public static string GenerateCellsReport(List<CellRecord> cells, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendCellsSection(sb, cells);
@@ -104,7 +104,7 @@ public static partial class GeckReportGenerator
 
     #region Worldspace Methods
 
-    private static void AppendWorldspacesSection(StringBuilder sb, List<ReconstructedWorldspace> worldspaces,
+    private static void AppendWorldspacesSection(StringBuilder sb, List<WorldspaceRecord> worldspaces,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Worldspaces ({worldspaces.Count})");
@@ -145,7 +145,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Worldspaces only.
     /// </summary>
-    public static string GenerateWorldspacesReport(List<ReconstructedWorldspace> worldspaces,
+    public static string GenerateWorldspacesReport(List<WorldspaceRecord> worldspaces,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -206,7 +206,7 @@ public static partial class GeckReportGenerator
 
     #region Explosion Methods
 
-    private static void AppendExplosionsSection(StringBuilder sb, List<ReconstructedExplosion> explosions,
+    private static void AppendExplosionsSection(StringBuilder sb, List<ExplosionRecord> explosions,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Explosions ({explosions.Count})");
@@ -274,7 +274,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateExplosionsReport(List<ReconstructedExplosion> explosions,
+    public static string GenerateExplosionsReport(List<ExplosionRecord> explosions,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -286,7 +286,7 @@ public static partial class GeckReportGenerator
 
     #region Projectile Methods
 
-    private static void AppendProjectilesSection(StringBuilder sb, List<ReconstructedProjectile> projectiles,
+    private static void AppendProjectilesSection(StringBuilder sb, List<ProjectileRecord> projectiles,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Projectiles ({projectiles.Count})");
@@ -372,7 +372,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateProjectilesReport(List<ReconstructedProjectile> projectiles,
+    public static string GenerateProjectilesReport(List<ProjectileRecord> projectiles,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();

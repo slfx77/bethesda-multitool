@@ -105,7 +105,7 @@ internal static partial class EsmBrowserTreeBuilder
         NamedPropertyCache.GetOrAdd((type, name), key => key.Item1.GetProperty(key.Item2));
 
     public static ObservableCollection<EsmBrowserNode> BuildTree(
-        SemanticReconstructionResult result,
+        RecordCollection result,
         Dictionary<uint, string>? lookup = null)
     {
         var root = new ObservableCollection<EsmBrowserNode>();
@@ -191,10 +191,10 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     private static void AddWorldCategory(
         ObservableCollection<EsmBrowserNode> root,
-        List<ReconstructedWorldspace> worldspaces,
-        IList<ReconstructedCell> cells,
+        List<WorldspaceRecord> worldspaces,
+        IList<CellRecord> cells,
         List<PlacedReference> mapMarkers,
-        List<ReconstructedLeveledList> leveledLists)
+        List<LeveledListRecord> leveledLists)
     {
         // Group cells by worldspace FormID
         var cellsByWorldspace = cells
@@ -213,7 +213,7 @@ internal static partial class EsmBrowserTreeBuilder
 
         // Build record types with special handling for worldspaces
         var recordTypes =
-            new List<(string Name, IList Records, Dictionary<uint, List<ReconstructedCell>>? CellLookup)>();
+            new List<(string Name, IList Records, Dictionary<uint, List<CellRecord>>? CellLookup)>();
 
         if (worldspaces.Count > 0)
         {
@@ -255,8 +255,8 @@ internal static partial class EsmBrowserTreeBuilder
         // Handle World category specially (has cells nested under worldspaces)
         if (categoryNode.DataObject is
                 ValueTuple<string,
-                    List<(string Name, IList Records, Dictionary<uint, List<ReconstructedCell>>? CellLookup)>,
-                    Dictionary<uint, List<ReconstructedCell>>> worldData
+                    List<(string Name, IList Records, Dictionary<uint, List<CellRecord>>? CellLookup)>,
+                    Dictionary<uint, List<CellRecord>>> worldData
             && worldData.Item1 == "World")
         {
             LoadWorldCategoryChildren(categoryNode, worldData.Item2, worldData.Item3);
@@ -299,8 +299,8 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     private static void LoadWorldCategoryChildren(
         EsmBrowserNode categoryNode,
-        List<(string Name, IList Records, Dictionary<uint, List<ReconstructedCell>>? CellLookup)> recordTypes,
-        Dictionary<uint, List<ReconstructedCell>> cellsByWorldspace)
+        List<(string Name, IList Records, Dictionary<uint, List<CellRecord>>? CellLookup)> recordTypes,
+        Dictionary<uint, List<CellRecord>> cellsByWorldspace)
     {
         foreach (var (name, records, _) in recordTypes)
         {
@@ -343,7 +343,7 @@ internal static partial class EsmBrowserTreeBuilder
     {
         // Handle Worldspaces with nested cells
         if (typeNode.DataObject is
-            (IList worldspaceRecords, Dictionary<uint, List<ReconstructedCell>> cellsByWorldspace))
+            (IList worldspaceRecords, Dictionary<uint, List<CellRecord>> cellsByWorldspace))
         {
             LoadWorldspacesWithCells(typeNode, worldspaceRecords, cellsByWorldspace, lookup, displayNameLookup);
             return;
@@ -366,7 +366,7 @@ internal static partial class EsmBrowserTreeBuilder
             string displayName;
             string? detail;
 
-            if (record is ReconstructedDialogue dialogue)
+            if (record is DialogueRecord dialogue)
             {
                 // Dialogue records: show response text with quest/topic context
                 displayName = BuildDialogueDisplayName(dialogue, formIdHex, lookup, displayNameLookup);
@@ -432,7 +432,7 @@ internal static partial class EsmBrowserTreeBuilder
     ///     Priority: response text > prompt text > quest-topic names > FormID.
     /// </summary>
     private static string BuildDialogueDisplayName(
-        ReconstructedDialogue dialogue,
+        DialogueRecord dialogue,
         string formIdHex,
         Dictionary<uint, string>? editorIdLookup,
         Dictionary<uint, string>? displayNameLookup)
@@ -467,7 +467,7 @@ internal static partial class EsmBrowserTreeBuilder
     ///     Format: "(QuestEditorId - TopicEditorId)" or FormID fallback.
     /// </summary>
     private static string? BuildDialogueDetail(
-        ReconstructedDialogue dialogue,
+        DialogueRecord dialogue,
         string formIdHex,
         Dictionary<uint, string>? editorIdLookup)
     {
@@ -513,7 +513,7 @@ internal static partial class EsmBrowserTreeBuilder
     private static void LoadWorldspacesWithCells(
         EsmBrowserNode typeNode,
         IList worldspaceRecords,
-        Dictionary<uint, List<ReconstructedCell>> cellsByWorldspace,
+        Dictionary<uint, List<CellRecord>> cellsByWorldspace,
         Dictionary<uint, string>? lookup,
         Dictionary<uint, string>? displayNameLookup)
     {
@@ -604,7 +604,7 @@ internal static partial class EsmBrowserTreeBuilder
     {
         // DataObject is a tuple: (record, cells, lookup, displayNameLookup)
         if (worldspaceNode.DataObject is not
-            ValueTuple<object, List<ReconstructedCell>, Dictionary<uint, string>, Dictionary<uint, string>> cellData)
+            ValueTuple<object, List<CellRecord>, Dictionary<uint, string>, Dictionary<uint, string>> cellData)
         {
             return;
         }
@@ -748,8 +748,8 @@ internal static partial class EsmBrowserTreeBuilder
         var type = record.GetType();
 
         // Record-type flags for special handling
-        var isCreature = record is ReconstructedCreature;
-        var isRace = record is ReconstructedRace;
+        var isCreature = record is CreatureRecord;
+        var isRace = record is RaceRecord;
 
         foreach (var prop in GetCachedProperties(type))
         {
@@ -779,7 +779,7 @@ internal static partial class EsmBrowserTreeBuilder
             // NPC and Creature have different relevant fields from ACBS
             if (value is ActorBaseSubrecord stats)
             {
-                var isNpc = record is ReconstructedNpc;
+                var isNpc = record is NpcRecord;
 
                 // Common fields (both NPC and Creature)
                 var gender = (stats.Flags & 1) == 1 ? "Female" : "Male";
@@ -1015,7 +1015,7 @@ internal static partial class EsmBrowserTreeBuilder
             }
 
             // Faction-specific: Decode flags as named booleans
-            if (record is ReconstructedFaction && prop.Name == "Flags" && value is uint factionFlags)
+            if (record is FactionRecord && prop.Name == "Flags" && value is uint factionFlags)
             {
                 var flagNames = new List<string>();
                 if ((factionFlags & 0x01) != 0) flagNames.Add("Hidden from PC");
@@ -1093,7 +1093,7 @@ internal static partial class EsmBrowserTreeBuilder
         }
 
         // Creature-specific fields (type, skills, damage)
-        if (record is ReconstructedCreature crea)
+        if (record is CreatureRecord crea)
         {
             // Always show creature type (even if 0 = Animal)
             properties.Add(new EsmPropertyEntry
@@ -1123,7 +1123,7 @@ internal static partial class EsmBrowserTreeBuilder
         }
 
         // Add Derived Stats section for NPCs (computed from S.P.E.C.I.A.L. and Level)
-        if (record is ReconstructedNpc npc && npc.SpecialStats?.Length >= 7 && npc.Stats != null)
+        if (record is NpcRecord npc && npc.SpecialStats?.Length >= 7 && npc.Stats != null)
         {
             var str = npc.SpecialStats[0];
             var end = npc.SpecialStats[2];
@@ -1186,7 +1186,7 @@ internal static partial class EsmBrowserTreeBuilder
         }
 
         // Race-specific: Combine S.P.E.C.I.A.L. modifiers into single line
-        if (record is ReconstructedRace raceRecord)
+        if (record is RaceRecord raceRecord)
         {
             var formatted =
                 $"{raceRecord.Strength} ST, {raceRecord.Perception} PE, {raceRecord.Endurance} EN, " +

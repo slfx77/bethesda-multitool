@@ -351,7 +351,7 @@ public class ScriptDecompilerIntegrationTests
     #region Helpers
 
     /// <summary>
-    ///     Extract script subrecords from SCPT record data (same pattern as SemanticReconstructor.Scripts.cs).
+    ///     Extract script subrecords from SCPT record data (same pattern as RecordParser.Scripts.cs).
     /// </summary>
     internal static (List<ScriptVariableInfo> Variables, List<uint> ReferencedObjects,
         byte[]? CompiledData, string? SourceText, string? EditorId)

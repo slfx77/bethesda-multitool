@@ -19,8 +19,8 @@ public static class EsmRecordExporter
         EsmRecordScanResult records,
         Dictionary<uint, string> formIdMap,
         string outputDir,
-        List<ReconstructedCell>? cells = null,
-        List<ReconstructedWorldspace>? worldspaces = null)
+        List<CellRecord>? cells = null,
+        List<WorldspaceRecord>? worldspaces = null)
     {
         Directory.CreateDirectory(outputDir);
 
@@ -74,7 +74,7 @@ public static class EsmRecordExporter
     ///     Each file contains header info, source text (SCTX), decompiled bytecode, variables, and references.
     /// </summary>
     public static async Task ExportReconstructedScriptsAsync(
-        List<ReconstructedScript> scripts,
+        List<ScriptRecord> scripts,
         Dictionary<uint, string>? formIdMap,
         string outputDir)
     {
@@ -99,7 +99,7 @@ public static class EsmRecordExporter
     }
 
     private static string FormatScriptExport(
-        ReconstructedScript script, string name, Dictionary<uint, string>? formIdMap)
+        ScriptRecord script, string name, Dictionary<uint, string>? formIdMap)
     {
         var sb = new StringBuilder();
         sb.AppendLine(CultureInfo.InvariantCulture, $"; Script: {name}");
@@ -116,7 +116,7 @@ public static class EsmRecordExporter
         return sb.ToString();
     }
 
-    private static void AppendScriptSource(StringBuilder sb, ReconstructedScript script)
+    private static void AppendScriptSource(StringBuilder sb, ScriptRecord script)
     {
         if (!script.HasSource) { return; }
         sb.AppendLine("; === Source Text (SCTX) ===");
@@ -124,7 +124,7 @@ public static class EsmRecordExporter
         sb.AppendLine();
     }
 
-    private static void AppendScriptDecompiled(StringBuilder sb, ReconstructedScript script)
+    private static void AppendScriptDecompiled(StringBuilder sb, ScriptRecord script)
     {
         if (string.IsNullOrEmpty(script.DecompiledText)) { return; }
         sb.AppendLine("; === Decompiled Bytecode (SCDA) ===");
@@ -132,7 +132,7 @@ public static class EsmRecordExporter
         sb.AppendLine();
     }
 
-    private static void AppendScriptVariables(StringBuilder sb, ReconstructedScript script)
+    private static void AppendScriptVariables(StringBuilder sb, ScriptRecord script)
     {
         if (script.Variables.Count == 0) { return; }
         sb.AppendLine("; === Variables ===");
@@ -145,7 +145,7 @@ public static class EsmRecordExporter
     }
 
     private static void AppendScriptReferences(
-        StringBuilder sb, ReconstructedScript script, Dictionary<uint, string>? formIdMap)
+        StringBuilder sb, ScriptRecord script, Dictionary<uint, string>? formIdMap)
     {
         if (script.ReferencedObjects.Count == 0) { return; }
         sb.AppendLine("; === Referenced Objects ===");
@@ -163,8 +163,8 @@ public static class EsmRecordExporter
     ///     worldspace association, heightmap status, and placed object count.
     /// </summary>
     private static async Task ExportCellInfoAsync(
-        List<ReconstructedCell>? cells,
-        List<ReconstructedWorldspace>? worldspaces,
+        List<CellRecord>? cells,
+        List<WorldspaceRecord>? worldspaces,
         Dictionary<uint, string> formIdMap,
         string outputDir)
     {

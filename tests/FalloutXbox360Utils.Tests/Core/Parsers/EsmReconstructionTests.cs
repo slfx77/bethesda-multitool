@@ -63,7 +63,7 @@ public class EsmReconstructionTests
             MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
 
-        var reconstructor = new SemanticReconstructor(scanResult, accessor: accessor, fileSize: fileData.Length);
+        var reconstructor = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
         var npcs = reconstructor.ReconstructNpcs();
         _output.WriteLine($"Reconstructed {npcs.Count:N0} NPCs");
 
@@ -95,7 +95,7 @@ public class EsmReconstructionTests
             MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
 
-        var reconstructor = new SemanticReconstructor(scanResult, accessor: accessor, fileSize: fileData.Length);
+        var reconstructor = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
         var creatures = reconstructor.ReconstructCreatures();
         _output.WriteLine($"Reconstructed {creatures.Count:N0} creatures");
 

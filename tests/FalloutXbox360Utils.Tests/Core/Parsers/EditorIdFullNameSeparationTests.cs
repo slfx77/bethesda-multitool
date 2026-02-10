@@ -9,9 +9,9 @@ using Xunit.Abstractions;
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
 /// <summary>
-///     Tests that the SemanticReconstructor keeps EditorId and FullName as separate fields.
+///     Tests that the RecordParser keeps EditorId and FullName as separate fields.
 ///     Regression test for a bug where BuildFormIdMap preferred FULL over EDID, causing
-///     the formIdCorrelations passed to SemanticReconstructor to contain display names
+///     the formIdCorrelations passed to RecordParser to contain display names
 ///     instead of editor IDs, which then leaked into _formIdToEditorId.
 /// </summary>
 public class EditorIdFullNameSeparationTests
@@ -63,7 +63,7 @@ public class EditorIdFullNameSeparationTests
                 MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new SemanticReconstructor(
+            var reconstructor = new RecordParser(
                 scanResult, edidOnlyMap, accessor, esmData.Length);
 
             // Assert: GetEditorId returns EDID values
@@ -144,7 +144,7 @@ public class EditorIdFullNameSeparationTests
                 MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new SemanticReconstructor(
+            var reconstructor = new RecordParser(
                 scanResult, buggyMap, accessor, esmData.Length);
 
             // With the buggy map, GetEditorId returns the FullName instead of EditorId

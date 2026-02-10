@@ -127,7 +127,7 @@ public static partial class GeckReportGenerator
     ///     Returns a dictionary mapping filename to content.
     /// </summary>
     public static Dictionary<string, string> GenerateSplit(
-        SemanticReconstructionResult result,
+        RecordCollection result,
         Dictionary<uint, string>? formIdToEditorId = null)
     {
         var files = new Dictionary<string, string>();
@@ -388,7 +388,7 @@ public static partial class GeckReportGenerator
 
     #region Global Methods
 
-    private static void AppendGlobalsSection(StringBuilder sb, List<ReconstructedGlobal> globals)
+    private static void AppendGlobalsSection(StringBuilder sb, List<GlobalRecord> globals)
     {
         AppendSectionHeader(sb, $"Global Variables ({globals.Count})");
         sb.AppendLine();
@@ -413,7 +413,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateGlobalsReport(List<ReconstructedGlobal> globals)
+    public static string GenerateGlobalsReport(List<GlobalRecord> globals)
     {
         var sb = new StringBuilder();
         AppendGlobalsSection(sb, globals);
@@ -424,7 +424,7 @@ public static partial class GeckReportGenerator
 
     #region GameSetting Methods
 
-    private static void AppendGameSettingsSection(StringBuilder sb, List<ReconstructedGameSetting> settings)
+    private static void AppendGameSettingsSection(StringBuilder sb, List<GameSettingRecord> settings)
     {
         AppendSectionHeader(sb, $"Game Settings ({settings.Count})");
 
@@ -498,7 +498,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateGameSettingsReport(List<ReconstructedGameSetting> settings)
+    public static string GenerateGameSettingsReport(List<GameSettingRecord> settings)
     {
         var sb = new StringBuilder();
         AppendGameSettingsSection(sb, settings);
@@ -509,7 +509,7 @@ public static partial class GeckReportGenerator
 
     #region LeveledList Methods
 
-    private static void AppendLeveledListsSection(StringBuilder sb, List<ReconstructedLeveledList> lists,
+    private static void AppendLeveledListsSection(StringBuilder sb, List<LeveledListRecord> lists,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Leveled Lists ({lists.Count})");
@@ -563,7 +563,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateLeveledListsReport(List<ReconstructedLeveledList> lists,
+    public static string GenerateLeveledListsReport(List<LeveledListRecord> lists,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();

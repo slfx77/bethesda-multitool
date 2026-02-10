@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 public record TopicDialogueNode
 {
     /// <summary>The reconstructed topic record (may be null for runtime-only topics).</summary>
-    public ReconstructedDialogTopic? Topic { get; init; }
+    public DialogTopicRecord? Topic { get; init; }
 
     /// <summary>Topic FormID (always present even if Topic record is null).</summary>
     public uint TopicFormId { get; init; }

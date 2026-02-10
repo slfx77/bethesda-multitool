@@ -29,7 +29,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a complete report from semantic reconstruction results.
     /// </summary>
-    public static string Generate(SemanticReconstructionResult result,
+    public static string Generate(RecordCollection result,
         StringPoolSummary? stringPool = null,
         Dictionary<uint, string>? formIdToEditorId = null)
     {
@@ -196,7 +196,7 @@ public static partial class GeckReportGenerator
         sb.AppendLine(new string(SeparatorChar, SeparatorWidth));
     }
 
-    private static void AppendSummary(StringBuilder sb, SemanticReconstructionResult result)
+    private static void AppendSummary(StringBuilder sb, RecordCollection result)
     {
         sb.AppendLine("Summary:");
         sb.AppendLine($"  Total Records Processed:     {result.TotalRecordsProcessed:N0}");

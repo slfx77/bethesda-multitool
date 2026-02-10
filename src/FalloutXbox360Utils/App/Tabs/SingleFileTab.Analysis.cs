@@ -39,7 +39,7 @@ public sealed partial class SingleFileTab
 
             _session.SemanticResult = await Task.Run(() =>
             {
-                var reconstructor = new SemanticReconstructor(
+                var reconstructor = new RecordParser(
                     result.EsmRecords!,
                     result.FormIdMap,
                     accessor,

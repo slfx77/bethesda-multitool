@@ -375,12 +375,12 @@ public class NpcParsingTests
 
             _output.WriteLine($"FormIdMap: {formIdMap.Count} entries");
 
-            // Create SemanticReconstructor with memory-mapped accessor (like SingleFileTab does)
+            // Create RecordParser with memory-mapped accessor (like SingleFileTab does)
             using var mmf =
                 MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new SemanticReconstructor(
+            var reconstructor = new RecordParser(
                 scanResult,
                 formIdMap,
                 accessor,
@@ -477,12 +477,12 @@ public class NpcParsingTests
 
             _output.WriteLine($"FormIdMap: {formIdMap.Count} entries");
 
-            // Create SemanticReconstructor with memory-mapped accessor
+            // Create RecordParser with memory-mapped accessor
             using var mmf =
                 MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new SemanticReconstructor(
+            var reconstructor = new RecordParser(
                 scanResult,
                 formIdMap,
                 accessor,

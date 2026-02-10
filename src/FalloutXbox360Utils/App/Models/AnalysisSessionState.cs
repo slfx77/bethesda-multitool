@@ -26,7 +26,7 @@ internal sealed class AnalysisSessionState : IDisposable
     public CoverageResult? CoverageResult { get; set; }
 
     /// <summary>Semantic reconstruction result (computed on demand for reports/data browser).</summary>
-    public SemanticReconstructionResult? SemanticResult { get; set; }
+    public RecordCollection? SemanticResult { get; set; }
 
     public bool IsAnalyzed => AnalysisResult != null;
     public bool HasAccessor => Accessor != null;

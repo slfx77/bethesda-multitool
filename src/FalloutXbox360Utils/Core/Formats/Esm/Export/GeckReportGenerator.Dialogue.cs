@@ -7,7 +7,7 @@ public static partial class GeckReportGenerator
 {
     #region Quest Methods
 
-    private static void AppendQuestsSection(StringBuilder sb, List<ReconstructedQuest> quests,
+    private static void AppendQuestsSection(StringBuilder sb, List<QuestRecord> quests,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Quests ({quests.Count})");
@@ -61,7 +61,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Quests only.
     /// </summary>
-    public static string GenerateQuestsReport(List<ReconstructedQuest> quests, Dictionary<uint, string>? lookup = null)
+    public static string GenerateQuestsReport(List<QuestRecord> quests, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendQuestsSection(sb, quests, lookup ?? []);
@@ -72,7 +72,7 @@ public static partial class GeckReportGenerator
 
     #region DialogTopic Methods
 
-    private static void AppendDialogTopicsSection(StringBuilder sb, List<ReconstructedDialogTopic> topics,
+    private static void AppendDialogTopicsSection(StringBuilder sb, List<DialogTopicRecord> topics,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Dialog Topics ({topics.Count})");
@@ -103,7 +103,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Dialog Topics only.
     /// </summary>
-    public static string GenerateDialogTopicsReport(List<ReconstructedDialogTopic> topics,
+    public static string GenerateDialogTopicsReport(List<DialogTopicRecord> topics,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -115,7 +115,7 @@ public static partial class GeckReportGenerator
 
     #region Dialogue Methods
 
-    private static void AppendDialogueSection(StringBuilder sb, List<ReconstructedDialogue> dialogues,
+    private static void AppendDialogueSection(StringBuilder sb, List<DialogueRecord> dialogues,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Dialogue Responses ({dialogues.Count})");
@@ -202,7 +202,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Dialogue only.
     /// </summary>
-    public static string GenerateDialogueReport(List<ReconstructedDialogue> dialogues,
+    public static string GenerateDialogueReport(List<DialogueRecord> dialogues,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -401,7 +401,7 @@ public static partial class GeckReportGenerator
 
     #region Note Methods
 
-    private static void AppendNotesSection(StringBuilder sb, List<ReconstructedNote> notes)
+    private static void AppendNotesSection(StringBuilder sb, List<NoteRecord> notes)
     {
         AppendSectionHeader(sb, $"Notes ({notes.Count})");
 
@@ -432,7 +432,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Notes only.
     /// </summary>
-    public static string GenerateNotesReport(List<ReconstructedNote> notes, Dictionary<uint, string>? lookup = null)
+    public static string GenerateNotesReport(List<NoteRecord> notes, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendNotesSection(sb, notes);
@@ -443,7 +443,7 @@ public static partial class GeckReportGenerator
 
     #region Book Methods
 
-    private static void AppendBooksSection(StringBuilder sb, List<ReconstructedBook> books)
+    private static void AppendBooksSection(StringBuilder sb, List<BookRecord> books)
     {
         AppendSectionHeader(sb, $"Books ({books.Count})");
 
@@ -479,7 +479,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Books only.
     /// </summary>
-    public static string GenerateBooksReport(List<ReconstructedBook> books, Dictionary<uint, string>? lookup = null)
+    public static string GenerateBooksReport(List<BookRecord> books, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendBooksSection(sb, books);
@@ -490,7 +490,7 @@ public static partial class GeckReportGenerator
 
     #region Terminal Methods
 
-    private static void AppendTerminalsSection(StringBuilder sb, List<ReconstructedTerminal> terminals)
+    private static void AppendTerminalsSection(StringBuilder sb, List<TerminalRecord> terminals)
     {
         AppendSectionHeader(sb, $"Terminals ({terminals.Count})");
 
@@ -530,7 +530,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Terminals only.
     /// </summary>
-    public static string GenerateTerminalsReport(List<ReconstructedTerminal> terminals,
+    public static string GenerateTerminalsReport(List<TerminalRecord> terminals,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -542,7 +542,7 @@ public static partial class GeckReportGenerator
 
     #region Message Methods
 
-    private static void AppendMessagesSection(StringBuilder sb, List<ReconstructedMessage> messages,
+    private static void AppendMessagesSection(StringBuilder sb, List<MessageRecord> messages,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Messages ({messages.Count})");
@@ -614,7 +614,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateMessagesReport(List<ReconstructedMessage> messages,
+    public static string GenerateMessagesReport(List<MessageRecord> messages,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();

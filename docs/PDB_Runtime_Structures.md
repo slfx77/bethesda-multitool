@@ -3,7 +3,7 @@
 Comprehensive documentation of all C++ runtime structures identified from the Fallout: New Vegas Xbox 360 PDB symbols (`Sample/PDB/Fallout_Debug/types_full.txt`) and implemented in the memory dump analyzer.
 
 **PDB Source:** Microsoft (R) Debugging Information Dumper — Fallout New Vegas Xbox 360 executable
-**Key Files:** `RuntimeStructReader.cs`, `SemanticReconstructor.cs`, `Models/`
+**Key Files:** `RuntimeStructReader.cs`, `RecordParser.cs`, `Models/`
 
 ---
 
@@ -150,8 +150,8 @@ The primary non-player character definition. Contains appearance, stats, AI, inv
 | 468        | 484         | ptr         | pCombatStyle     | Combat style (TESCombatStyle\*)      |
 
 **PDB Type:** `0x0E14B` — PDB Size: 492 — Dump Size: 508 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeNpc()` → `Models/ReconstructedNpc.cs`
-**Called from:** `SemanticReconstructor.ReconstructNpcs()`
+**Code:** `RuntimeStructReader.ReadRuntimeNpc()` → `Models/NpcRecord.cs`
+**Called from:** `RecordParser.ReconstructNpcs()`
 
 #### ACBS (Actor Base Stats) — Embedded at NPC +68
 
@@ -198,7 +198,7 @@ Non-humanoid actors. Similar layout to NPC but with creature-specific fields.
 | 220        | 236         | uint8         | creatureType   | Type (0=Animal..5=Robot) |
 
 **PDB Type:** `0x0D868` — PDB Size: 352 — Dump Size: 440 (+16 shift, but larger due to additional data)
-**Code:** `RuntimeStructReader.ReadRuntimeCreature()` → `Models/ReconstructedCreature.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeCreature()` → `Models/CreatureRecord.cs`
 
 ---
 
@@ -243,7 +243,7 @@ Weapon definitions with extensive combat data.
 | —          | 584         | ptr           | impactDataSet | Impact data set (BGSImpactDataSet\*) |
 
 **PDB Type:** `0x1FF61` — PDB Size: 908 — Dump Size: 924 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeWeapon()` → `Models/ReconstructedWeapon.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeWeapon()` → `Models/WeaponRecord.cs`
 
 ### TESObjectARMO (ARMO — FormType 0x1A)
 
@@ -258,7 +258,7 @@ Armor and clothing items.
 | 376        | 392         | uint16 BE | armorRating | AR (×100, divide by 100 for display) |
 
 **PDB Type:** `0x144F3` — PDB Size: 400 — Dump Size: 416 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeArmor()` → `Models/ReconstructedArmor.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeArmor()` → `Models/ArmorRecord.cs`
 
 ### TESObjectAMMO (AMMO — FormType 0x29)
 
@@ -270,7 +270,7 @@ Ammunition items.
 | 124        | 140         | int32 BE | iValue  | Item value (caps) |
 
 **Dump Size:** 236 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeAmmo()` → `Models/ReconstructedAmmo.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeAmmo()` → `Models/AmmoRecord.cs`
 
 ### TESObjectALCH (ALCH — FormType 0x2F)
 
@@ -283,7 +283,7 @@ Consumable items (food, chems, medicine).
 | 184        | 200         | int32 BE | iValue  | Item value (caps) |
 
 **Dump Size:** 232 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeConsumable()` → `Models/ReconstructedConsumable.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeConsumable()` → `Models/ConsumableRecord.cs`
 
 ### TESObjectMISC / TESKey (MISC 0x1F / KEYM)
 
@@ -297,7 +297,7 @@ Miscellaneous items and keys share the same struct layout.
 
 **PDB Type (MISC):** `0x1657A` — Size: 172 — Dump Size: 188 (+16 shift)
 **PDB Type (Key):** `0x1BC5E` — Size: 172 — Dump Size: 188 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeMiscItem()` / `ReadRuntimeKey()` → `Models/ReconstructedMiscItem.cs` / `ReconstructedKey.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeMiscItem()` / `ReadRuntimeKey()` → `Models/MiscItemRecord.cs` / `KeyRecord.cs`
 
 ### BGSNote (NOTE)
 
@@ -311,7 +311,7 @@ Holotape and paper note items.
 | 124        | 140         | uint8         | cNoteType | Type (0=Sound, 1=Text, 2=Image, 3=Voice) |
 
 **PDB Type:** `0x27E40` — Size: 128 — Dump Size: 160 (+16 shift, with additional data)
-**Code:** `RuntimeStructReader.ReadRuntimeNote()` → `Models/ReconstructedNote.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeNote()` → `Models/NoteRecord.cs`
 
 ---
 
@@ -335,7 +335,7 @@ Container objects (desks, lockers, safes).
 The objectList tList is at TESContainer+4, so CONT uses dump+68 while NPC uses dump+120.
 
 **PDB Type:** `0x1D9E4` — Size: 156 — Dump Size: 172 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeContainer()` → `Models/ReconstructedContainer.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeContainer()` → `Models/ContainerRecord.cs`
 
 ### BGSTerminal (TERM — FormType 0x17)
 
@@ -349,7 +349,7 @@ Computer terminal objects.
 | 120        | 136         | BSStringT (8) | password   | Terminal password                        |
 
 **PDB Type:** `0x28035` — Size: 168 — Dump Size: 184 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeTerminal()` → `Models/ReconstructedTerminal.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeTerminal()` → `Models/TerminalRecord.cs`
 
 ### BGSProjectile (PROJ)
 
@@ -418,7 +418,7 @@ Dialog topic containers. Each topic belongs to a quest and contains INFO records
 
 **PDB Type:** `0x1887F` — PDB Size: 72 — Dump Size: 88 (+16 shift)
 **Code:** `RuntimeStructReader.ReadRuntimeDialogTopic()` → `Models/RuntimeDialogTopicInfo.cs`
-**Called from:** `SemanticReconstructor.MergeRuntimeDialogTopicData()`
+**Called from:** `RecordParser.MergeRuntimeDialogTopicData()`
 
 #### DIALOGUE_DATA — Embedded at TESTopic +52 (dump)
 
@@ -452,7 +452,7 @@ Individual dialogue response entries. Each belongs to a TESTopic.
 **PDB Type:** `0x214D7` — Size: 80 bytes
 **Shift Note:** Fields after TESForm base (+24) are shifted by +4 in the dump, not +16.
 **Code:** `RuntimeStructReader.ReadRuntimeDialogueInfo()` / `ReadRuntimeDialogueInfoFromVA()` → `Models/RuntimeDialogueInfo.cs`
-**Called from:** `SemanticReconstructor.MergeRuntimeDialogueData()`, `MergeRuntimeDialogueTopicLinks()`
+**Called from:** `RecordParser.MergeRuntimeDialogueData()`, `MergeRuntimeDialogueTopicLinks()`
 
 #### TOPIC_INFO_DATA — Embedded at TESTopicInfo +39 (dump)
 
@@ -479,7 +479,7 @@ Links a quest to its INFO records within a topic. Walked via pointer following f
 
 **PDB Type:** `0x135BD` — Size: 52 bytes
 **Walking:** The m_listQuestInfo BSSimpleList is traversed node-by-node. For each QUEST_INFO node, the infoArray (NiTLargeArray) buffer pointer at +4 is followed, and each TESTopicInfo\* entry's FormID is read at +12.
-**Code:** `RuntimeStructReader` via `SemanticReconstructor.MergeRuntimeDialogueTopicLinks()`
+**Code:** `RuntimeStructReader` via `RecordParser.MergeRuntimeDialogueTopicLinks()`
 
 ### INFO_LINK_ELEMENT — In QUEST_INFO.infoLinkArray
 
@@ -543,7 +543,7 @@ Faction definitions with reputation and service flags.
 | 52         | 68          | uint32 BE     | flags     | Faction flags bitmask |
 
 **PDB Type:** `0x2236C` — PDB Size: 76 — Dump Size: 108 (+16 shift, but struct appears larger in practice)
-**Code:** `RuntimeStructReader.ReadRuntimeFaction()` → `Models/ReconstructedFaction.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeFaction()` → `Models/FactionRecord.cs`
 
 ### TESQuest (QUST)
 
@@ -557,28 +557,28 @@ Quest definitions with stages and objectives.
 | 61         | 77          | uint8         | priority  | Quest priority (0-255)                         |
 
 **PDB Type:** `0x13B82` — PDB Size: 108 — Dump Size: 140 (+16 shift)
-**Code:** `RuntimeStructReader.ReadRuntimeQuest()` → `Models/ReconstructedQuest.cs`
+**Code:** `RuntimeStructReader.ReadRuntimeQuest()` → `Models/QuestRecord.cs`
 
 ---
 
 ## Implementation Cross-Reference
 
-| PDB Struct    | PDB Size | Dump Size | RuntimeStructReader Method  | Model File                                          | SemanticReconstructor Integration   |
+| PDB Struct    | PDB Size | Dump Size | RuntimeStructReader Method  | Model File                                          | RecordParser Integration   |
 | ------------- | -------- | --------- | --------------------------- | --------------------------------------------------- | ----------------------------------- |
-| TESNPC        | 492      | 508       | `ReadRuntimeNpc()`          | `ReconstructedNpc.cs`                               | `ReconstructNpcs()`                 |
-| TESCreature   | 352      | 440       | `ReadRuntimeCreature()`     | `ReconstructedCreature.cs`                          | `ReconstructCreatures()`            |
-| TESObjectWEAP | 908      | 924       | `ReadRuntimeWeapon()`       | `ReconstructedWeapon.cs`                            | `ReconstructWeapons()`              |
-| TESObjectARMO | 400      | 416       | `ReadRuntimeArmor()`        | `ReconstructedArmor.cs`                             | `ReconstructArmor()`                |
-| TESObjectAMMO | —        | 236       | `ReadRuntimeAmmo()`         | `ReconstructedAmmo.cs`                              | `ReconstructAmmo()`                 |
-| TESObjectALCH | —        | 232       | `ReadRuntimeConsumable()`   | `ReconstructedConsumable.cs`                        | `ReconstructConsumables()`          |
-| TESObjectMISC | 172      | 188       | `ReadRuntimeMiscItem()`     | `ReconstructedMiscItem.cs`                          | `ReconstructMiscItems()`            |
-| TESKey        | 172      | 188       | `ReadRuntimeKey()`          | `ReconstructedKey.cs`                               | `ReconstructKeys()`                 |
-| BGSNote       | 128      | 160       | `ReadRuntimeNote()`         | `ReconstructedNote.cs`                              | `ReconstructNotes()`                |
-| TESObjectCONT | 156      | 172       | `ReadRuntimeContainer()`    | `ReconstructedContainer.cs`                         | `ReconstructContainers()`           |
-| BGSTerminal   | 168      | 184       | `ReadRuntimeTerminal()`     | `ReconstructedTerminal.cs`                          | `ReconstructTerminals()`            |
-| BGSProjectile | 208      | 224       | `ReadProjectilePhysics()`   | `ProjectilePhysicsData` (in ReconstructedWeapon.cs) | `EnrichWeaponsWithProjectileData()` |
-| TESFaction    | 76       | 108       | `ReadRuntimeFaction()`      | `ReconstructedFaction.cs`                           | `ReconstructFactions()`             |
-| TESQuest      | 108      | 140       | `ReadRuntimeQuest()`        | `ReconstructedQuest.cs`                             | `ReconstructQuests()`               |
+| TESNPC        | 492      | 508       | `ReadRuntimeNpc()`          | `NpcRecord.cs`                               | `ReconstructNpcs()`                 |
+| TESCreature   | 352      | 440       | `ReadRuntimeCreature()`     | `CreatureRecord.cs`                          | `ReconstructCreatures()`            |
+| TESObjectWEAP | 908      | 924       | `ReadRuntimeWeapon()`       | `WeaponRecord.cs`                            | `ReconstructWeapons()`              |
+| TESObjectARMO | 400      | 416       | `ReadRuntimeArmor()`        | `ArmorRecord.cs`                             | `ReconstructArmor()`                |
+| TESObjectAMMO | —        | 236       | `ReadRuntimeAmmo()`         | `AmmoRecord.cs`                              | `ReconstructAmmo()`                 |
+| TESObjectALCH | —        | 232       | `ReadRuntimeConsumable()`   | `ConsumableRecord.cs`                        | `ReconstructConsumables()`          |
+| TESObjectMISC | 172      | 188       | `ReadRuntimeMiscItem()`     | `MiscItemRecord.cs`                          | `ReconstructMiscItems()`            |
+| TESKey        | 172      | 188       | `ReadRuntimeKey()`          | `KeyRecord.cs`                               | `ReconstructKeys()`                 |
+| BGSNote       | 128      | 160       | `ReadRuntimeNote()`         | `NoteRecord.cs`                              | `ReconstructNotes()`                |
+| TESObjectCONT | 156      | 172       | `ReadRuntimeContainer()`    | `ContainerRecord.cs`                         | `ReconstructContainers()`           |
+| BGSTerminal   | 168      | 184       | `ReadRuntimeTerminal()`     | `TerminalRecord.cs`                          | `ReconstructTerminals()`            |
+| BGSProjectile | 208      | 224       | `ReadProjectilePhysics()`   | `ProjectilePhysicsData` (in WeaponRecord.cs) | `EnrichWeaponsWithProjectileData()` |
+| TESFaction    | 76       | 108       | `ReadRuntimeFaction()`      | `FactionRecord.cs`                           | `ReconstructFactions()`             |
+| TESQuest      | 108      | 140       | `ReadRuntimeQuest()`        | `QuestRecord.cs`                             | `ReconstructQuests()`               |
 | TESTopic      | 72       | 88        | `ReadRuntimeDialogTopic()`  | `RuntimeDialogTopicInfo.cs`                         | `MergeRuntimeDialogTopicData()`     |
 | TESTopicInfo  | 80       | 80        | `ReadRuntimeDialogueInfo()` | `RuntimeDialogueInfo.cs`                            | `MergeRuntimeDialogueData()`        |
 | TESObjectLAND | 44       | 60        | `ReadRuntimeLandData()`     | `RuntimeLoadedLandData.cs`                          | `ReadAllRuntimeLandData()`          |

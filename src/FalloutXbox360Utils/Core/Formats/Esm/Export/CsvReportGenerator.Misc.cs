@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
 public static partial class CsvReportGenerator
 {
-    public static string GenerateQuestsCsv(List<ReconstructedQuest> quests, Dictionary<uint, string> lookup)
+    public static string GenerateQuestsCsv(List<QuestRecord> quests, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -56,7 +56,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateDialogueCsv(List<ReconstructedDialogue> dialogues, Dictionary<uint, string> lookup)
+    public static string GenerateDialogueCsv(List<DialogueRecord> dialogues, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -122,7 +122,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateDialogTopicsCsv(List<ReconstructedDialogTopic> topics, Dictionary<uint, string> lookup)
+    public static string GenerateDialogTopicsCsv(List<DialogTopicRecord> topics, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -152,7 +152,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateCellsCsv(List<ReconstructedCell> cells, Dictionary<uint, string> lookup)
+    public static string GenerateCellsCsv(List<CellRecord> cells, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -202,7 +202,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateWorldspacesCsv(List<ReconstructedWorldspace> worldspaces,
+    public static string GenerateWorldspacesCsv(List<WorldspaceRecord> worldspaces,
         Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
@@ -227,7 +227,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GeneratePerksCsv(List<ReconstructedPerk> perks, Dictionary<uint, string> lookup)
+    public static string GeneratePerksCsv(List<PerkRecord> perks, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -269,7 +269,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateSpellsCsv(List<ReconstructedSpell> spells, Dictionary<uint, string> lookup)
+    public static string GenerateSpellsCsv(List<SpellRecord> spells, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -306,7 +306,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateEnchantmentsCsv(List<ReconstructedEnchantment> enchantments,
+    public static string GenerateEnchantmentsCsv(List<EnchantmentRecord> enchantments,
         Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
@@ -330,7 +330,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateBaseEffectsCsv(List<ReconstructedBaseEffect> effects)
+    public static string GenerateBaseEffectsCsv(List<BaseEffectRecord> effects)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,FormID,EditorID,Name,Archetype,BaseCost,ActorValue,ResistValue,Endianness,Offset");
@@ -353,7 +353,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateChallengesCsv(List<ReconstructedChallenge> challenges)
+    public static string GenerateChallengesCsv(List<ChallengeRecord> challenges)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,FormID,EditorID,Name,Type,Threshold,Interval,Description,Endianness,Offset");
@@ -376,7 +376,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateExplosionsCsv(List<ReconstructedExplosion> explosions)
+    public static string GenerateExplosionsCsv(List<ExplosionRecord> explosions)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,FormID,EditorID,Name,Force,Damage,Radius,Endianness,Offset");
@@ -398,7 +398,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateGameSettingsCsv(List<ReconstructedGameSetting> settings)
+    public static string GenerateGameSettingsCsv(List<GameSettingRecord> settings)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,EditorID,FormID,ValueType,Value,Endianness,Offset");
@@ -418,7 +418,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateGlobalsCsv(List<ReconstructedGlobal> globals)
+    public static string GenerateGlobalsCsv(List<GlobalRecord> globals)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,EditorID,FormID,ValueType,Value,Endianness,Offset");
@@ -438,7 +438,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateLeveledListsCsv(List<ReconstructedLeveledList> lists, Dictionary<uint, string> lookup)
+    public static string GenerateLeveledListsCsv(List<LeveledListRecord> lists, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -504,7 +504,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateMessagesCsv(List<ReconstructedMessage> messages)
+    public static string GenerateMessagesCsv(List<MessageRecord> messages)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -528,7 +528,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateNotesCsv(List<ReconstructedNote> notes)
+    public static string GenerateNotesCsv(List<NoteRecord> notes)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,FormID,EditorID,Name,NoteType,NoteTypeName,Text,ModelPath,Endianness,Offset");
@@ -551,7 +551,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateProjectilesCsv(List<ReconstructedProjectile> projectiles)
+    public static string GenerateProjectilesCsv(List<ProjectileRecord> projectiles)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -577,7 +577,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateReputationsCsv(List<ReconstructedReputation> reputations)
+    public static string GenerateReputationsCsv(List<ReputationRecord> reputations)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,FormID,EditorID,Name,PositiveValue,NegativeValue,Endianness,Offset");
@@ -670,7 +670,7 @@ public static partial class CsvReportGenerator
         return files;
     }
 
-    public static string GenerateTerminalsCsv(List<ReconstructedTerminal> terminals, Dictionary<uint, string> lookup)
+    public static string GenerateTerminalsCsv(List<TerminalRecord> terminals, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(

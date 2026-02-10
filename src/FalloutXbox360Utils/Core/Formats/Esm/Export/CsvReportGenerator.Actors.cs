@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
 public static partial class CsvReportGenerator
 {
-    public static string GenerateNpcsCsv(List<ReconstructedNpc> npcs, Dictionary<uint, string> lookup)
+    public static string GenerateNpcsCsv(List<NpcRecord> npcs, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -129,7 +129,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateCreaturesCsv(List<ReconstructedCreature> creatures, Dictionary<uint, string> lookup)
+    public static string GenerateCreaturesCsv(List<CreatureRecord> creatures, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -184,7 +184,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateRacesCsv(List<ReconstructedRace> races, Dictionary<uint, string> lookup)
+    public static string GenerateRacesCsv(List<RaceRecord> races, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -230,7 +230,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateFactionsCsv(List<ReconstructedFaction> factions, Dictionary<uint, string> lookup)
+    public static string GenerateFactionsCsv(List<FactionRecord> factions, Dictionary<uint, string> lookup)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -279,7 +279,7 @@ public static partial class CsvReportGenerator
         return sb.ToString();
     }
 
-    public static string GenerateClassesCsv(List<ReconstructedClass> classes)
+    public static string GenerateClassesCsv(List<ClassRecord> classes)
     {
         var sb = new StringBuilder();
         sb.AppendLine(

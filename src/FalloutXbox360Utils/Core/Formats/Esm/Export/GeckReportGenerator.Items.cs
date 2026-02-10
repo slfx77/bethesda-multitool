@@ -7,7 +7,7 @@ public static partial class GeckReportGenerator
 {
     #region Weapon Methods
 
-    private static void AppendWeaponsSection(StringBuilder sb, List<ReconstructedWeapon> weapons,
+    private static void AppendWeaponsSection(StringBuilder sb, List<WeaponRecord> weapons,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Weapons ({weapons.Count})");
@@ -163,7 +163,7 @@ public static partial class GeckReportGenerator
 
     private static void AppendWeaponReportEntry(
         StringBuilder sb,
-        ReconstructedWeapon weapon,
+        WeaponRecord weapon,
         Dictionary<uint, string> editorIdLookup,
         Dictionary<uint, string> displayNameLookup)
     {
@@ -353,7 +353,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Weapons only.
     /// </summary>
-    public static string GenerateWeaponsReport(List<ReconstructedWeapon> weapons,
+    public static string GenerateWeaponsReport(List<WeaponRecord> weapons,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -366,7 +366,7 @@ public static partial class GeckReportGenerator
     ///     and display names for all referenced records (ammo, projectile, sounds, criticals).
     /// </summary>
     public static string GenerateWeaponReport(
-        List<ReconstructedWeapon> weapons,
+        List<WeaponRecord> weapons,
         Dictionary<uint, string> editorIdLookup,
         Dictionary<uint, string> displayNameLookup)
     {
@@ -410,7 +410,7 @@ public static partial class GeckReportGenerator
 
     #region Armor Methods
 
-    private static void AppendArmorSection(StringBuilder sb, List<ReconstructedArmor> armor)
+    private static void AppendArmorSection(StringBuilder sb, List<ArmorRecord> armor)
     {
         AppendSectionHeader(sb, $"Armor ({armor.Count})");
 
@@ -441,7 +441,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Armor only.
     /// </summary>
-    public static string GenerateArmorReport(List<ReconstructedArmor> armor, Dictionary<uint, string>? lookup = null)
+    public static string GenerateArmorReport(List<ArmorRecord> armor, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendArmorSection(sb, armor);
@@ -452,7 +452,7 @@ public static partial class GeckReportGenerator
 
     #region Ammo Methods
 
-    private static void AppendAmmoSection(StringBuilder sb, List<ReconstructedAmmo> ammo,
+    private static void AppendAmmoSection(StringBuilder sb, List<AmmoRecord> ammo,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Ammunition ({ammo.Count})");
@@ -489,7 +489,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Ammo only.
     /// </summary>
-    public static string GenerateAmmoReport(List<ReconstructedAmmo> ammo, Dictionary<uint, string>? lookup = null)
+    public static string GenerateAmmoReport(List<AmmoRecord> ammo, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendAmmoSection(sb, ammo, lookup ?? []);
@@ -500,7 +500,7 @@ public static partial class GeckReportGenerator
 
     #region Consumable Methods
 
-    private static void AppendConsumablesSection(StringBuilder sb, List<ReconstructedConsumable> consumables,
+    private static void AppendConsumablesSection(StringBuilder sb, List<ConsumableRecord> consumables,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Consumables ({consumables.Count})");
@@ -546,7 +546,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Consumables only.
     /// </summary>
-    public static string GenerateConsumablesReport(List<ReconstructedConsumable> consumables,
+    public static string GenerateConsumablesReport(List<ConsumableRecord> consumables,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -558,7 +558,7 @@ public static partial class GeckReportGenerator
 
     #region MiscItem Methods
 
-    private static void AppendMiscItemsSection(StringBuilder sb, List<ReconstructedMiscItem> miscItems)
+    private static void AppendMiscItemsSection(StringBuilder sb, List<MiscItemRecord> miscItems)
     {
         AppendSectionHeader(sb, $"Miscellaneous Items ({miscItems.Count})");
 
@@ -587,7 +587,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Misc Items only.
     /// </summary>
-    public static string GenerateMiscItemsReport(List<ReconstructedMiscItem> miscItems,
+    public static string GenerateMiscItemsReport(List<MiscItemRecord> miscItems,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -599,7 +599,7 @@ public static partial class GeckReportGenerator
 
     #region Key Methods
 
-    private static void AppendKeysSection(StringBuilder sb, List<ReconstructedKey> keys)
+    private static void AppendKeysSection(StringBuilder sb, List<KeyRecord> keys)
     {
         AppendSectionHeader(sb, $"Keys ({keys.Count})");
 
@@ -620,7 +620,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Keys only.
     /// </summary>
-    public static string GenerateKeysReport(List<ReconstructedKey> keys, Dictionary<uint, string>? lookup = null)
+    public static string GenerateKeysReport(List<KeyRecord> keys, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendKeysSection(sb, keys);
@@ -631,7 +631,7 @@ public static partial class GeckReportGenerator
 
     #region Container Methods
 
-    private static void AppendContainersSection(StringBuilder sb, List<ReconstructedContainer> containers,
+    private static void AppendContainersSection(StringBuilder sb, List<ContainerRecord> containers,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Containers ({containers.Count})");
@@ -662,7 +662,7 @@ public static partial class GeckReportGenerator
 
     private static void AppendContainerReportEntry(
         StringBuilder sb,
-        ReconstructedContainer container,
+        ContainerRecord container,
         Dictionary<uint, string> editorIdLookup,
         Dictionary<uint, string> displayNameLookup)
     {
@@ -721,7 +721,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Containers only.
     /// </summary>
-    public static string GenerateContainersReport(List<ReconstructedContainer> containers,
+    public static string GenerateContainersReport(List<ContainerRecord> containers,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -734,7 +734,7 @@ public static partial class GeckReportGenerator
     ///     and display names for all referenced records (contents, scripts).
     /// </summary>
     public static string GenerateContainerReport(
-        List<ReconstructedContainer> containers,
+        List<ContainerRecord> containers,
         Dictionary<uint, string> editorIdLookup,
         Dictionary<uint, string> displayNameLookup)
     {
@@ -767,7 +767,7 @@ public static partial class GeckReportGenerator
 
     #region Recipe Methods
 
-    private static void AppendRecipesSection(StringBuilder sb, List<ReconstructedRecipe> recipes,
+    private static void AppendRecipesSection(StringBuilder sb, List<RecipeRecord> recipes,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Recipes ({recipes.Count})");
@@ -834,7 +834,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateRecipesReport(List<ReconstructedRecipe> recipes,
+    public static string GenerateRecipesReport(List<RecipeRecord> recipes,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -846,7 +846,7 @@ public static partial class GeckReportGenerator
 
     #region WeaponMod Methods
 
-    private static void AppendWeaponModsSection(StringBuilder sb, List<ReconstructedWeaponMod> mods)
+    private static void AppendWeaponModsSection(StringBuilder sb, List<WeaponModRecord> mods)
     {
         AppendSectionHeader(sb, $"Weapon Mods ({mods.Count})");
         sb.AppendLine();
@@ -884,7 +884,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateWeaponModsReport(List<ReconstructedWeaponMod> mods)
+    public static string GenerateWeaponModsReport(List<WeaponModRecord> mods)
     {
         var sb = new StringBuilder();
         AppendWeaponModsSection(sb, mods);

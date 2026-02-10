@@ -8,9 +8,9 @@ public sealed partial class RuntimeStructReader
 {
     /// <summary>
     ///     Read extended weapon data from a runtime TESObjectWEAP struct.
-    ///     Returns a ReconstructedWeapon with combat stats, or null if validation fails.
+    ///     Returns a WeaponRecord with combat stats, or null if validation fails.
     /// </summary>
-    public ReconstructedWeapon? ReadRuntimeWeapon(RuntimeEditorIdEntry entry)
+    public WeaponRecord? ReadRuntimeWeapon(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x28)
         {
@@ -63,7 +63,7 @@ public sealed partial class RuntimeStructReader
         var unequipSound = FollowPointerToFormId(buffer, WeapUnequipSoundOffset);
         var impactDataSet = FollowPointerToFormId(buffer, WeapImpactDataSetOffset);
 
-        return new ReconstructedWeapon
+        return new WeaponRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -106,9 +106,9 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended armor data from a runtime TESObjectARMO struct.
-    ///     Returns a ReconstructedArmor with Value/Weight/Health/AR, or null if validation fails.
+    ///     Returns a ArmorRecord with Value/Weight/Health/AR, or null if validation fails.
     /// </summary>
-    public ReconstructedArmor? ReadRuntimeArmor(RuntimeEditorIdEntry entry)
+    public ArmorRecord? ReadRuntimeArmor(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x18)
         {
@@ -154,7 +154,7 @@ public sealed partial class RuntimeStructReader
         var armorRatingRaw = BinaryUtils.ReadUInt16BE(buffer, ArmoRatingOffset);
         var damageThreshold = armorRatingRaw / 100.0f;
 
-        return new ReconstructedArmor
+        return new ArmorRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -170,9 +170,9 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended ammo data from a runtime TESObjectAMMO struct.
-    ///     Returns a ReconstructedAmmo with Value, or null if validation fails.
+    ///     Returns a AmmoRecord with Value, or null if validation fails.
     /// </summary>
-    public ReconstructedAmmo? ReadRuntimeAmmo(RuntimeEditorIdEntry entry)
+    public AmmoRecord? ReadRuntimeAmmo(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x29)
         {
@@ -210,7 +210,7 @@ public sealed partial class RuntimeStructReader
         // Read world model path via BSStringT at TESModel offset (+80)
         var modelPath = ReadBSStringT(offset, WeapModelPathOffset);
 
-        return new ReconstructedAmmo
+        return new AmmoRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -224,9 +224,9 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended misc item data from a runtime TESObjectMISC struct.
-    ///     Returns a ReconstructedMiscItem with Value/Weight, or null if validation fails.
+    ///     Returns a MiscItemRecord with Value/Weight, or null if validation fails.
     /// </summary>
-    public ReconstructedMiscItem? ReadRuntimeMiscItem(RuntimeEditorIdEntry entry)
+    public MiscItemRecord? ReadRuntimeMiscItem(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x1F)
         {
@@ -266,7 +266,7 @@ public sealed partial class RuntimeStructReader
         // Read model path via BSStringT at TESModel offset (+80)
         var modelPath = ReadBSStringT(offset, WeapModelPathOffset);
 
-        return new ReconstructedMiscItem
+        return new MiscItemRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -282,9 +282,9 @@ public sealed partial class RuntimeStructReader
     /// <summary>
     ///     Read extended key data from a runtime TESKey struct.
     ///     TESKey inherits TESObjectMISC — same layout, same offsets.
-    ///     Returns a ReconstructedKey with Value/Weight, or null if validation fails.
+    ///     Returns a KeyRecord with Value/Weight, or null if validation fails.
     /// </summary>
-    public ReconstructedKey? ReadRuntimeKey(RuntimeEditorIdEntry entry)
+    public KeyRecord? ReadRuntimeKey(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x2E)
         {
@@ -324,7 +324,7 @@ public sealed partial class RuntimeStructReader
         // Read model path via BSStringT at TESModel offset (+80)
         var modelPath = ReadBSStringT(offset, WeapModelPathOffset);
 
-        return new ReconstructedKey
+        return new KeyRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -339,9 +339,9 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended container data from a runtime TESObjectCONT struct.
-    ///     Returns a ReconstructedContainer with weight, contents, and flags.
+    ///     Returns a ContainerRecord with weight, contents, and flags.
     /// </summary>
-    public ReconstructedContainer? ReadRuntimeContainer(RuntimeEditorIdEntry entry)
+    public ContainerRecord? ReadRuntimeContainer(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x1B)
         {
@@ -384,7 +384,7 @@ public sealed partial class RuntimeStructReader
         // Read container contents using same pattern as NPC inventory
         var contents = ReadContainerContents(buffer);
 
-        return new ReconstructedContainer
+        return new ContainerRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -400,9 +400,9 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended consumable data from a runtime TESObjectALCH struct.
-    ///     Returns a ReconstructedConsumable with Value/Weight, or null if validation fails.
+    ///     Returns a ConsumableRecord with Value/Weight, or null if validation fails.
     /// </summary>
-    public ReconstructedConsumable? ReadRuntimeConsumable(RuntimeEditorIdEntry entry)
+    public ConsumableRecord? ReadRuntimeConsumable(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x2F)
         {
@@ -439,7 +439,7 @@ public sealed partial class RuntimeStructReader
             value = 0;
         }
 
-        return new ReconstructedConsumable
+        return new ConsumableRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,

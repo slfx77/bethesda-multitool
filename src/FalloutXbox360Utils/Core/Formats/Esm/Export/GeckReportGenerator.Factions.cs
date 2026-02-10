@@ -7,7 +7,7 @@ public static partial class GeckReportGenerator
 {
     #region Faction Methods
 
-    private static void AppendFactionsSection(StringBuilder sb, List<ReconstructedFaction> factions,
+    private static void AppendFactionsSection(StringBuilder sb, List<FactionRecord> factions,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Factions ({factions.Count})");
@@ -57,7 +57,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Factions only.
     /// </summary>
-    public static string GenerateFactionsReport(List<ReconstructedFaction> factions,
+    public static string GenerateFactionsReport(List<FactionRecord> factions,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -69,7 +69,7 @@ public static partial class GeckReportGenerator
 
     #region Reputation Methods
 
-    private static void AppendReputationsSection(StringBuilder sb, List<ReconstructedReputation> reputations)
+    private static void AppendReputationsSection(StringBuilder sb, List<ReputationRecord> reputations)
     {
         AppendSectionHeader(sb, $"Reputations ({reputations.Count})");
         sb.AppendLine();
@@ -89,7 +89,7 @@ public static partial class GeckReportGenerator
         sb.AppendLine();
     }
 
-    public static string GenerateReputationsReport(List<ReconstructedReputation> reputations)
+    public static string GenerateReputationsReport(List<ReputationRecord> reputations)
     {
         var sb = new StringBuilder();
         AppendReputationsSection(sb, reputations);
@@ -100,7 +100,7 @@ public static partial class GeckReportGenerator
 
     #region Challenge Methods
 
-    private static void AppendChallengesSection(StringBuilder sb, List<ReconstructedChallenge> challenges,
+    private static void AppendChallengesSection(StringBuilder sb, List<ChallengeRecord> challenges,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Challenges ({challenges.Count})");
@@ -162,7 +162,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateChallengesReport(List<ReconstructedChallenge> challenges,
+    public static string GenerateChallengesReport(List<ChallengeRecord> challenges,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();

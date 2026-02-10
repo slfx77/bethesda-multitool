@@ -7,7 +7,7 @@ public static partial class GeckReportGenerator
 {
     #region Perk Methods
 
-    private static void AppendPerksSection(StringBuilder sb, List<ReconstructedPerk> perks,
+    private static void AppendPerksSection(StringBuilder sb, List<PerkRecord> perks,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Perks ({perks.Count})");
@@ -62,7 +62,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Perks only.
     /// </summary>
-    public static string GeneratePerksReport(List<ReconstructedPerk> perks, Dictionary<uint, string>? lookup = null)
+    public static string GeneratePerksReport(List<PerkRecord> perks, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendPerksSection(sb, perks, lookup ?? []);
@@ -73,7 +73,7 @@ public static partial class GeckReportGenerator
 
     #region Spell Methods
 
-    private static void AppendSpellsSection(StringBuilder sb, List<ReconstructedSpell> spells,
+    private static void AppendSpellsSection(StringBuilder sb, List<SpellRecord> spells,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Spells/Abilities ({spells.Count})");
@@ -110,7 +110,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Spells only.
     /// </summary>
-    public static string GenerateSpellsReport(List<ReconstructedSpell> spells, Dictionary<uint, string>? lookup = null)
+    public static string GenerateSpellsReport(List<SpellRecord> spells, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendSpellsSection(sb, spells, lookup ?? []);
@@ -121,7 +121,7 @@ public static partial class GeckReportGenerator
 
     #region Enchantment Methods
 
-    private static void AppendEnchantmentsSection(StringBuilder sb, List<ReconstructedEnchantment> enchantments,
+    private static void AppendEnchantmentsSection(StringBuilder sb, List<EnchantmentRecord> enchantments,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Enchantments ({enchantments.Count})");
@@ -183,7 +183,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateEnchantmentsReport(List<ReconstructedEnchantment> enchantments,
+    public static string GenerateEnchantmentsReport(List<EnchantmentRecord> enchantments,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -195,7 +195,7 @@ public static partial class GeckReportGenerator
 
     #region BaseEffect Methods
 
-    private static void AppendBaseEffectsSection(StringBuilder sb, List<ReconstructedBaseEffect> effects,
+    private static void AppendBaseEffectsSection(StringBuilder sb, List<BaseEffectRecord> effects,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Base Effects ({effects.Count})");
@@ -277,7 +277,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateBaseEffectsReport(List<ReconstructedBaseEffect> effects,
+    public static string GenerateBaseEffectsReport(List<BaseEffectRecord> effects,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();

@@ -236,10 +236,10 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended quest data from a runtime TESQuest struct.
-    ///     Returns a ReconstructedQuest with Flags/Priority, or null if validation fails.
+    ///     Returns a QuestRecord with Flags/Priority, or null if validation fails.
     ///     Note: Stage and Objective lists require BSSimpleList traversal (Phase 5D).
     /// </summary>
-    public ReconstructedQuest? ReadRuntimeQuest(RuntimeEditorIdEntry entry)
+    public QuestRecord? ReadRuntimeQuest(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x47)
         {
@@ -274,7 +274,7 @@ public sealed partial class RuntimeStructReader
         // Try to read quest display name from BSStringT at +68
         var fullName = ReadBSStringT(offset, QustFullNameOffset);
 
-        return new ReconstructedQuest
+        return new QuestRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -288,9 +288,9 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended terminal data from a runtime BGSTerminal struct.
-    ///     Returns a ReconstructedTerminal with difficulty, flags, and password.
+    ///     Returns a TerminalRecord with difficulty, flags, and password.
     /// </summary>
-    public ReconstructedTerminal? ReadRuntimeTerminal(RuntimeEditorIdEntry entry)
+    public TerminalRecord? ReadRuntimeTerminal(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x17)
         {
@@ -335,7 +335,7 @@ public sealed partial class RuntimeStructReader
         // Parse menu items from BSSimpleList at +152
         var menuItems = WalkTerminalMenuItemList(offset);
 
-        return new ReconstructedTerminal
+        return new TerminalRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -351,9 +351,9 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended note data from a runtime BGSNote struct.
-    ///     Returns a ReconstructedNote with NoteType and FullName, or null if validation fails.
+    ///     Returns a NoteRecord with NoteType and FullName, or null if validation fails.
     /// </summary>
-    public ReconstructedNote? ReadRuntimeNote(RuntimeEditorIdEntry entry)
+    public NoteRecord? ReadRuntimeNote(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x31)
         {
@@ -392,7 +392,7 @@ public sealed partial class RuntimeStructReader
         var fullName = entry.DisplayName ?? ReadBSStringT(offset, NoteFullNameOffset);
         var modelPath = ReadBSStringT(offset, NoteModelPathOffset);
 
-        return new ReconstructedNote
+        return new NoteRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,

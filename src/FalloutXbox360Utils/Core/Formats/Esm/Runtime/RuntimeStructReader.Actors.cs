@@ -8,10 +8,10 @@ public sealed partial class RuntimeStructReader
 {
     /// <summary>
     ///     Read extended NPC data from a runtime TESNPC struct.
-    ///     Returns a ReconstructedNpc populated with stats, race, class, etc.
+    ///     Returns a NpcRecord populated with stats, race, class, etc.
     ///     Returns null if the struct cannot be read or validation fails.
     /// </summary>
-    public ReconstructedNpc? ReadRuntimeNpc(RuntimeEditorIdEntry entry)
+    public NpcRecord? ReadRuntimeNpc(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x2A)
         {
@@ -79,7 +79,7 @@ public sealed partial class RuntimeStructReader
         var fgga = ReadFaceGenMorphArray(buffer, NpcFggaPointerOffset, NpcFggaCountOffset);
         var fgts = ReadFaceGenMorphArray(buffer, NpcFgtsPointerOffset, NpcFgtsCountOffset);
 
-        return new ReconstructedNpc
+        return new NpcRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -109,9 +109,9 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended creature data from a runtime TESCreature struct.
-    ///     Returns a ReconstructedCreature with skills, type, and model path.
+    ///     Returns a CreatureRecord with skills, type, and model path.
     /// </summary>
-    public ReconstructedCreature? ReadRuntimeCreature(RuntimeEditorIdEntry entry)
+    public CreatureRecord? ReadRuntimeCreature(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x2B)
         {
@@ -162,7 +162,7 @@ public sealed partial class RuntimeStructReader
         // Read ACBS (actor base stats) at +24, same structure as NPC
         var stats = ReadCreatureActorBaseStats(buffer, CreaAcbsOffset, offset);
 
-        return new ReconstructedCreature
+        return new CreatureRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -182,10 +182,10 @@ public sealed partial class RuntimeStructReader
 
     /// <summary>
     ///     Read extended faction data from a runtime TESFaction struct.
-    ///     Returns a ReconstructedFaction with Flags, or null if validation fails.
+    ///     Returns a FactionRecord with Flags, or null if validation fails.
     ///     Note: Rank and Relation lists require BSSimpleList traversal (Phase 5D).
     /// </summary>
-    public ReconstructedFaction? ReadRuntimeFaction(RuntimeEditorIdEntry entry)
+    public FactionRecord? ReadRuntimeFaction(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x08)
         {
@@ -219,7 +219,7 @@ public sealed partial class RuntimeStructReader
         // Read display name — hash table already has it from FullNameOffset=44
         var fullName = entry.DisplayName ?? ReadBSStringT(offset, FactFullNameOffset);
 
-        return new ReconstructedFaction
+        return new FactionRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
@@ -683,9 +683,9 @@ public sealed partial class RuntimeStructReader
     /// <summary>
     ///     Creates a minimal NPC record using only hash table data (no struct reading).
     /// </summary>
-    private static ReconstructedNpc CreateMinimalNpc(RuntimeEditorIdEntry entry, long offset)
+    private static NpcRecord CreateMinimalNpc(RuntimeEditorIdEntry entry, long offset)
     {
-        return new ReconstructedNpc
+        return new NpcRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,

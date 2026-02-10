@@ -144,6 +144,6 @@ dotnet run --project tools/EsmAnalyzer -c Release -- <command> <args>
 # Build main project
 dotnet build -c Release
 
-# Run tests
-dotnet test
+# Run tests (coverage collection hangs - must disable it)
+dotnet test -p:CollectCoverage=false
 ```

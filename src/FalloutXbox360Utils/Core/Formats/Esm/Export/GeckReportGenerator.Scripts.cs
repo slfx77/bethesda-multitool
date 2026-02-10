@@ -7,7 +7,7 @@ public static partial class GeckReportGenerator
 {
     #region Script Methods
 
-    private static void AppendScriptsSection(StringBuilder sb, List<ReconstructedScript> scripts,
+    private static void AppendScriptsSection(StringBuilder sb, List<ScriptRecord> scripts,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Scripts ({scripts.Count})");
@@ -150,7 +150,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Scripts only.
     /// </summary>
-    public static string GenerateScriptsReport(List<ReconstructedScript> scripts,
+    public static string GenerateScriptsReport(List<ScriptRecord> scripts,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();

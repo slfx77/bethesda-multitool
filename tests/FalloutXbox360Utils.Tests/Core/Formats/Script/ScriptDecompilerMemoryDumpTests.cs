@@ -259,22 +259,22 @@ public class ScriptDecompilerMemoryDumpTests
 /// </summary>
 internal static class DumpAnalysisHelper
 {
-    private static readonly ConcurrentDictionary<string, Lazy<Task<List<ReconstructedScript>?>>> Cache = new();
+    private static readonly ConcurrentDictionary<string, Lazy<Task<List<ScriptRecord>?>>> Cache = new();
 
-    internal static Task<List<ReconstructedScript>?> AnalyzeDumpAsync(string relativePath)
+    internal static Task<List<ScriptRecord>?> AnalyzeDumpAsync(string relativePath)
     {
         var path = ScriptTestHelpers.FindSamplePath(relativePath);
         if (path == null)
         {
-            return Task.FromResult<List<ReconstructedScript>?>(null);
+            return Task.FromResult<List<ScriptRecord>?>(null);
         }
 
-        var lazy = Cache.GetOrAdd(path, p => new Lazy<Task<List<ReconstructedScript>?>>(
+        var lazy = Cache.GetOrAdd(path, p => new Lazy<Task<List<ScriptRecord>?>>(
             () => Task.Run(() => RunAnalysis(p))));
         return lazy.Value;
     }
 
-    private static async Task<List<ReconstructedScript>?> RunAnalysis(string path)
+    private static async Task<List<ScriptRecord>?> RunAnalysis(string path)
     {
         // Ensure no SynchronizationContext leaks from xUnit into Progress<T> callbacks
         SynchronizationContext.SetSynchronizationContext(null);
@@ -295,7 +295,7 @@ internal static class DumpAnalysisHelper
                 path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new SemanticReconstructor(
+            var reconstructor = new RecordParser(
                 analysisResult.EsmRecords,
                 analysisResult.FormIdMap,
                 accessor,

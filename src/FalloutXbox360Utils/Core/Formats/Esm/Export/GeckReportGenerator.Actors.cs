@@ -7,7 +7,7 @@ public static partial class GeckReportGenerator
 {
     #region NPC Methods
 
-    private static void AppendNpcsSection(StringBuilder sb, List<ReconstructedNpc> npcs,
+    private static void AppendNpcsSection(StringBuilder sb, List<NpcRecord> npcs,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"NPCs ({npcs.Count})");
@@ -106,7 +106,7 @@ public static partial class GeckReportGenerator
 
     private static void AppendNpcReportEntry(
         StringBuilder sb,
-        ReconstructedNpc npc,
+        NpcRecord npc,
         Dictionary<uint, string> editorIdLookup,
         Dictionary<uint, string> displayNameLookup)
     {
@@ -382,7 +382,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for NPCs only.
     /// </summary>
-    public static string GenerateNpcsReport(List<ReconstructedNpc> npcs, Dictionary<uint, string>? lookup = null)
+    public static string GenerateNpcsReport(List<NpcRecord> npcs, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendNpcsSection(sb, npcs, lookup ?? []);
@@ -394,7 +394,7 @@ public static partial class GeckReportGenerator
     ///     and display names for all referenced records (factions, inventory, spells, packages).
     /// </summary>
     public static string GenerateNpcReport(
-        List<ReconstructedNpc> npcs,
+        List<NpcRecord> npcs,
         Dictionary<uint, string> editorIdLookup,
         Dictionary<uint, string> displayNameLookup)
     {
@@ -550,7 +550,7 @@ public static partial class GeckReportGenerator
 
     #region Creature Methods
 
-    private static void AppendCreaturesSection(StringBuilder sb, List<ReconstructedCreature> creatures)
+    private static void AppendCreaturesSection(StringBuilder sb, List<CreatureRecord> creatures)
     {
         AppendSectionHeader(sb, $"Creatures ({creatures.Count})");
 
@@ -583,7 +583,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Creatures only.
     /// </summary>
-    public static string GenerateCreaturesReport(List<ReconstructedCreature> creatures,
+    public static string GenerateCreaturesReport(List<CreatureRecord> creatures,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -595,7 +595,7 @@ public static partial class GeckReportGenerator
 
     #region Race Methods
 
-    private static void AppendRacesSection(StringBuilder sb, List<ReconstructedRace> races,
+    private static void AppendRacesSection(StringBuilder sb, List<RaceRecord> races,
         Dictionary<uint, string> lookup)
     {
         AppendSectionHeader(sb, $"Races ({races.Count})");
@@ -680,7 +680,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Races only.
     /// </summary>
-    public static string GenerateRacesReport(List<ReconstructedRace> races, Dictionary<uint, string>? lookup = null)
+    public static string GenerateRacesReport(List<RaceRecord> races, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendRacesSection(sb, races, lookup ?? []);
@@ -691,7 +691,7 @@ public static partial class GeckReportGenerator
 
     #region Class Methods
 
-    private static void AppendClassesSection(StringBuilder sb, List<ReconstructedClass> classes)
+    private static void AppendClassesSection(StringBuilder sb, List<ClassRecord> classes)
     {
         AppendSectionHeader(sb, $"Classes ({classes.Count})");
         sb.AppendLine();
@@ -774,7 +774,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateClassesReport(List<ReconstructedClass> classes)
+    public static string GenerateClassesReport(List<ClassRecord> classes)
     {
         var sb = new StringBuilder();
         AppendClassesSection(sb, classes);

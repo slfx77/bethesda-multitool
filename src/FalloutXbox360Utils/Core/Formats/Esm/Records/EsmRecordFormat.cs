@@ -233,8 +233,8 @@ public sealed partial class EsmRecordFormat : FileFormatBase, IDumpScanner
         EsmRecordScanResult records,
         Dictionary<uint, string> formIdMap,
         string outputDir,
-        List<ReconstructedCell>? cells = null,
-        List<ReconstructedWorldspace>? worldspaces = null)
+        List<CellRecord>? cells = null,
+        List<WorldspaceRecord>? worldspaces = null)
     {
         return EsmRecordExporter.ExportRecordsAsync(records, formIdMap, outputDir, cells, worldspaces);
     }

@@ -322,7 +322,7 @@ public static class MinidumpExtractor
 
             // Generate semantic reconstruction with accessor for full data access
             // Pass MinidumpInfo to enable runtime C++ struct reading for types with poor ESM coverage
-            var reconstructor = new SemanticReconstructor(
+            var reconstructor = new RecordParser(
                 analysisResult.EsmRecords,
                 analysisResult.FormIdMap,
                 accessor,

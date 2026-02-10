@@ -148,13 +148,13 @@ public static class AnalyzeCommand
 
         // Create the semantic reconstructor with memory-mapped access for full data extraction
         // This enables runtime C++ struct reading for types with poor ESM coverage (NPC, WEAP, etc.)
-        SemanticReconstructionResult semanticResult;
+        RecordCollection semanticResult;
         StringPoolSummary? stringPool = null;
         using (var mmf = MemoryMappedFile.CreateFromFile(result.FilePath, FileMode.Open, null, 0,
                    MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
         {
-            var reconstructor = new SemanticReconstructor(
+            var reconstructor = new RecordParser(
                 result.EsmRecords!, result.FormIdMap, accessor, result.FileSize, result.MinidumpInfo);
             semanticResult = reconstructor.ReconstructAll();
 
@@ -266,13 +266,13 @@ public static class AnalyzeCommand
 
         // Run full semantic reconstruction with memory-mapped file access
         // This enables runtime C++ struct reading for types with poor ESM coverage
-        SemanticReconstructionResult semanticResult;
+        RecordCollection semanticResult;
         StringPoolSummary? stringPool = null;
         var fileSize = new FileInfo(input).Length;
         using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            var reconstructor = new SemanticReconstructor(
+            var reconstructor = new RecordParser(
                 result.EsmRecords!, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
             semanticResult = reconstructor.ReconstructAll();
 
