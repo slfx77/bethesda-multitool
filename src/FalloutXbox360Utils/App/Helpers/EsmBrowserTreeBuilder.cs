@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
@@ -70,6 +71,31 @@ internal static partial class EsmBrowserTreeBuilder
         // World sub-categories
         ["Cells"] = "\uE707", // MapPin
         ["Map Markers"] = "\uE707" // MapPin
+    };
+
+    /// <summary>
+    ///     Maps (model type, property name) to flag bit definitions for centralized flag decoding.
+    /// </summary>
+    private static readonly Dictionary<(Type, string), FlagBit[]> FlagLookup = new()
+    {
+        [(typeof(FactionRecord), "Flags")] = FlagRegistry.FactionFlags,
+        [(typeof(ClassRecord), "Flags")] = FlagRegistry.ClassFlags,
+        [(typeof(ClassRecord), "BarterFlags")] = FlagRegistry.BarterFlags,
+        [(typeof(RaceRecord), "DataFlags")] = FlagRegistry.RaceDataFlags,
+        [(typeof(ChallengeRecord), "Flags")] = FlagRegistry.ChallengeFlags,
+        [(typeof(BaseEffectRecord), "Flags")] = FlagRegistry.BaseEffectFlags,
+        [(typeof(ExplosionRecord), "Flags")] = FlagRegistry.ExplosionFlags,
+        [(typeof(ProjectileRecord), "Flags")] = FlagRegistry.ProjectileFlags,
+        [(typeof(SpellRecord), "Flags")] = FlagRegistry.SpellFlags,
+        [(typeof(EnchantmentRecord), "Flags")] = FlagRegistry.EnchantmentFlags,
+        [(typeof(MessageRecord), "Flags")] = FlagRegistry.MessageFlags,
+        [(typeof(QuestRecord), "Flags")] = FlagRegistry.QuestFlags,
+        [(typeof(CellRecord), "Flags")] = FlagRegistry.CellFlags,
+        [(typeof(ContainerRecord), "Flags")] = FlagRegistry.ContainerFlags,
+        [(typeof(BookRecord), "Flags")] = FlagRegistry.BookFlags,
+        [(typeof(AmmoRecord), "Flags")] = FlagRegistry.AmmoFlags,
+        [(typeof(LeveledListRecord), "Flags")] = FlagRegistry.LeveledListFlags,
+        [(typeof(TerminalRecord), "Flags")] = FlagRegistry.TerminalFlags,
     };
 
     /// <summary>
@@ -765,9 +791,9 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
-            // Skip race SPECIAL attributes (combined into single line below) and raw DataFlags
+            // Skip race SPECIAL attributes (combined into single line below)
             if (isRace && prop.Name is "Strength" or "Perception" or "Endurance" or "Charisma"
-                    or "Intelligence" or "Agility" or "Luck" or "DataFlags")
+                    or "Intelligence" or "Agility" or "Luck")
             {
                 continue;
             }
@@ -785,7 +811,17 @@ internal static partial class EsmBrowserTreeBuilder
                 var gender = (stats.Flags & 1) == 1 ? "Female" : "Male";
                 properties.Add(new EsmPropertyEntry { Name = "Gender", Value = gender, Category = "Characteristics" });
                 properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Actor Flags",
+                    Value = FlagRegistry.DecodeFlagNamesWithHex(stats.Flags, FlagRegistry.ActorBaseFlags),
+                    Category = "Characteristics"
+                });
+                properties.Add(new EsmPropertyEntry
                 { Name = "Level", Value = stats.Level.ToString(), Category = "Attributes" });
+                properties.Add(new EsmPropertyEntry
+                { Name = "Calc Min Level", Value = stats.CalcMin.ToString(), Category = "Attributes" });
+                properties.Add(new EsmPropertyEntry
+                { Name = "Calc Max Level", Value = stats.CalcMax.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
                 { Name = "Fatigue", Value = stats.FatigueBase.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
@@ -800,6 +836,16 @@ internal static partial class EsmBrowserTreeBuilder
                     { Name = "Karma", Value = $"{stats.KarmaAlignment:F2}", Category = "Attributes" });
                     properties.Add(new EsmPropertyEntry
                     { Name = "Disposition", Value = stats.DispositionBase.ToString(), Category = "Attributes" });
+                }
+
+                if (stats.TemplateFlags != 0)
+                {
+                    properties.Add(new EsmPropertyEntry
+                    {
+                        Name = "Template Flags",
+                        Value = FlagRegistry.DecodeFlagNamesWithHex(stats.TemplateFlags, FlagRegistry.TemplateUseFlags),
+                        Category = "Characteristics"
+                    });
                 }
 
                 continue;
@@ -973,28 +1019,15 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
-            // Class-specific: Barter/Service flags as named list
-            if (prop.Name == "BarterFlags" && value is uint barterFlags && barterFlags != 0)
+            // Centralized flag decoding: check FlagLookup for any recognized (type, property) pair
+            if (FlagLookup.TryGetValue((type, prop.Name), out var flagDefs))
             {
-                var flagNames = new List<string>();
-                if ((barterFlags & 0x0001) != 0) flagNames.Add("Weapons");
-                if ((barterFlags & 0x0002) != 0) flagNames.Add("Armor");
-                if ((barterFlags & 0x0004) != 0) flagNames.Add("Alcohol");
-                if ((barterFlags & 0x0008) != 0) flagNames.Add("Food");
-                if ((barterFlags & 0x0010) != 0) flagNames.Add("Chems");
-                if ((barterFlags & 0x0020) != 0) flagNames.Add("Stimpacks");
-                if ((barterFlags & 0x0040) != 0) flagNames.Add("Lights");
-                if ((barterFlags & 0x0100) != 0) flagNames.Add("Misc");
-                if ((barterFlags & 0x0400) != 0) flagNames.Add("Magic Items");
-                if ((barterFlags & 0x0800) != 0) flagNames.Add("Potions");
-                if ((barterFlags & 0x1000) != 0) flagNames.Add("Training");
-                if ((barterFlags & 0x2000) != 0) flagNames.Add("Recharge");
-                if ((barterFlags & 0x4000) != 0) flagNames.Add("Repair");
+                var flagValue = Convert.ToUInt32(value);
                 properties.Add(new EsmPropertyEntry
                 {
-                    Name = "Buys/Sells",
-                    Value = string.Join(", ", flagNames),
-                    Category = "Attributes"
+                    Name = displayName,
+                    Value = FlagRegistry.DecodeFlagNamesWithHex(flagValue, flagDefs),
+                    Category = CategorizeProperty(prop.Name)
                 });
                 continue;
             }
@@ -1010,24 +1043,6 @@ internal static partial class EsmBrowserTreeBuilder
                     Name = "Attribute Weights",
                     Value = formatted,
                     Category = "Attributes"
-                });
-                continue;
-            }
-
-            // Faction-specific: Decode flags as named booleans
-            if (record is FactionRecord && prop.Name == "Flags" && value is uint factionFlags)
-            {
-                var flagNames = new List<string>();
-                if ((factionFlags & 0x01) != 0) flagNames.Add("Hidden from PC");
-                if ((factionFlags & 0x02) != 0) flagNames.Add("Evil");
-                if ((factionFlags & 0x04) != 0) flagNames.Add("Special Combat");
-                if ((factionFlags & 0x40) != 0) flagNames.Add("Track Crime");
-                if ((factionFlags & 0x4000) != 0) flagNames.Add("Vendor");
-                properties.Add(new EsmPropertyEntry
-                {
-                    Name = "Flags",
-                    Value = flagNames.Count > 0 ? string.Join(", ", flagNames) : "None",
-                    Category = "General"
                 });
                 continue;
             }
