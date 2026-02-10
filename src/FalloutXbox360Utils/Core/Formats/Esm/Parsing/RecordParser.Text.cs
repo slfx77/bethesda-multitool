@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -16,19 +18,122 @@ public sealed partial class RecordParser
         var books = new List<BookRecord>();
         var bookRecords = GetRecordsByType("BOOK").ToList();
 
-        foreach (var record in bookRecords)
+        if (_accessor == null)
         {
-            books.Add(new BookRecord
+            foreach (var record in bookRecords)
+            {
+                books.Add(new BookRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = GetEditorId(record.FormId),
+                    FullName = FindFullNameNear(record.Offset),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(16384);
+            try
+            {
+                foreach (var record in bookRecords)
+                {
+                    var book = ReconstructBookFromAccessor(record, buffer);
+                    if (book != null)
+                    {
+                        books.Add(book);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        return books;
+    }
+
+    private BookRecord? ReconstructBookFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new BookRecord
             {
                 FormId = record.FormId,
                 EditorId = GetEditorId(record.FormId),
                 FullName = FindFullNameNear(record.Offset),
                 Offset = record.Offset,
                 IsBigEndian = record.IsBigEndian
-            });
+            };
         }
 
-        return books;
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? text = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        byte flags = 0;
+        byte skillTaught = 0;
+        var value = 0;
+        float weight = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "DESC":
+                    text = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 10:
+                {
+                    // BOOK DATA: Flags(1) + SkillTaught(1) + Value(int32) + Weight(float)
+                    flags = subData[0];
+                    skillTaught = subData[1];
+                    value = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData[2..])
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData[2..]);
+                    weight = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[6..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[6..]);
+                    break;
+                }
+            }
+        }
+
+        return new BookRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? GetEditorId(record.FormId),
+            FullName = fullName,
+            Text = text,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Flags = flags,
+            SkillTaught = skillTaught,
+            Value = value,
+            Weight = weight,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
     }
 
     #endregion

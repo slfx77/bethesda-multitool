@@ -33,6 +33,21 @@ public record CellRecord
     /// <summary>Whether this cell has water.</summary>
     public bool HasWater => (Flags & 0x02) != 0;
 
+    /// <summary>Water height (XCLW subrecord, interior cells).</summary>
+    public float? WaterHeight { get; init; }
+
+    /// <summary>Encounter zone FormID (XEZN subrecord).</summary>
+    public uint? EncounterZoneFormId { get; init; }
+
+    /// <summary>Music type FormID (XCMO subrecord).</summary>
+    public uint? MusicTypeFormId { get; init; }
+
+    /// <summary>Acoustic space FormID (XCAS subrecord).</summary>
+    public uint? AcousticSpaceFormId { get; init; }
+
+    /// <summary>Image space FormID (XCIM subrecord).</summary>
+    public uint? ImageSpaceFormId { get; init; }
+
     /// <summary>Placed objects in this cell (REFR, ACHR, ACRE records).</summary>
     public List<PlacedReference> PlacedObjects { get; init; } = [];
 

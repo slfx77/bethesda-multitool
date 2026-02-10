@@ -86,7 +86,8 @@ public sealed partial class RecordParser
             "WEAP", "ARMO", "AMMO", "ALCH", "MISC", "KEYM", "CONT",
             "PERK", "SPEL", "CELL", "WRLD", "GMST",
             "GLOB", "ENCH", "MGEF", "IMOD", "RCPE", "CHAL", "REPU",
-            "PROJ", "EXPL", "MESG", "CLAS"
+            "PROJ", "EXPL", "MESG", "CLAS",
+            "FLST", "ACTI", "LIGH", "DOOR", "STAT", "FURN"
         };
 
         // Count all record types and compute unreconstructed counts
@@ -190,6 +191,12 @@ public sealed partial class RecordParser
             Explosions = ReconstructExplosions(),
             Messages = ReconstructMessages(),
             Classes = ReconstructClasses(),
+            FormLists = ReconstructFormLists(),
+            Activators = ReconstructActivators(),
+            Lights = ReconstructLights(),
+            Doors = ReconstructDoors(),
+            Statics = ReconstructStatics(),
+            Furniture = ReconstructFurniture(),
 
             FormIdToEditorId = new Dictionary<uint, string>(_formIdToEditorId),
             FormIdToDisplayName = BuildFormIdToDisplayNameMap(),

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -117,6 +118,11 @@ public sealed partial class RecordParser
         int? gridX = null;
         int? gridY = null;
         byte flags = 0;
+        float? waterHeight = null;
+        uint? encounterZoneFormId = null;
+        uint? musicTypeFormId = null;
+        uint? acousticSpaceFormId = null;
+        uint? imageSpaceFormId = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -143,6 +149,23 @@ public sealed partial class RecordParser
                         }
                     }
 
+                    break;
+                case "XCLW" when sub.DataLength >= 4:
+                    waterHeight = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    break;
+                case "XEZN" when sub.DataLength == 4:
+                    encounterZoneFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "XCMO" when sub.DataLength == 4:
+                    musicTypeFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "XCAS" when sub.DataLength == 4:
+                    acousticSpaceFormId = ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "XCIM" when sub.DataLength == 4:
+                    imageSpaceFormId = ReadFormId(subData, record.IsBigEndian);
                     break;
             }
         }
@@ -182,6 +205,11 @@ public sealed partial class RecordParser
             GridX = gridX,
             GridY = gridY,
             Flags = flags,
+            WaterHeight = waterHeight,
+            EncounterZoneFormId = encounterZoneFormId,
+            MusicTypeFormId = musicTypeFormId,
+            AcousticSpaceFormId = acousticSpaceFormId,
+            ImageSpaceFormId = imageSpaceFormId,
             PlacedObjects = nearbyRefs,
             Heightmap = heightmap,
             Offset = record.Offset,

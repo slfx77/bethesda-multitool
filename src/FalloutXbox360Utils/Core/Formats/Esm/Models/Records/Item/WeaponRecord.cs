@@ -47,8 +47,17 @@ public record WeaponRecord
     /// <summary>Melee reach distance.</summary>
     public float Reach { get; init; }
 
+    /// <summary>Weapon flags (DNAM byte 16).</summary>
+    public byte Flags { get; init; }
+
+    /// <summary>Hand grip animation type (DNAM byte 17).</summary>
+    public HandGripAnimation HandGrip { get; init; }
+
     /// <summary>Ammo consumed per shot.</summary>
     public byte AmmoPerShot { get; init; }
+
+    /// <summary>Reload animation type (DNAM byte 19).</summary>
+    public ReloadAnimation ReloadAnim { get; init; }
 
     /// <summary>Minimum spread (accuracy).</summary>
     public float MinSpread { get; init; }
@@ -58,6 +67,9 @@ public record WeaponRecord
 
     /// <summary>Sight/sway drift.</summary>
     public float Drift { get; init; }
+
+    /// <summary>Iron sight FOV zoom.</summary>
+    public float IronSightFov { get; init; }
 
     /// <summary>Ammo type FormID (ENAM subrecord).</summary>
     public uint? AmmoFormId { get; init; }
@@ -71,6 +83,9 @@ public record WeaponRecord
     /// <summary>VATS to-hit chance bonus.</summary>
     public byte VatsToHitChance { get; init; }
 
+    /// <summary>Attack animation type (DNAM byte 34).</summary>
+    public AttackAnimation AttackAnim { get; init; }
+
     /// <summary>Number of projectiles per shot.</summary>
     public byte NumProjectiles { get; init; }
 
@@ -80,17 +95,50 @@ public record WeaponRecord
     /// <summary>Maximum effective range.</summary>
     public float MaxRange { get; init; }
 
+    /// <summary>On-hit behavior (dismemberment/explosion).</summary>
+    public OnHitBehavior OnHit { get; init; }
+
+    /// <summary>Extended weapon flags (DNAM FlagsEx uint32).</summary>
+    public uint FlagsEx { get; init; }
+
+    /// <summary>Attack damage multiplier.</summary>
+    public float AttackMultiplier { get; init; }
+
     /// <summary>Shots per second (fire rate).</summary>
     public float ShotsPerSec { get; init; }
 
     /// <summary>Action point cost in VATS.</summary>
     public float ActionPoints { get; init; }
 
+    /// <summary>Aim arc (accuracy cone).</summary>
+    public float AimArc { get; init; }
+
+    /// <summary>Limb damage multiplier.</summary>
+    public float LimbDamageMult { get; init; }
+
     /// <summary>Strength requirement to use effectively.</summary>
     public uint StrengthRequirement { get; init; }
 
     /// <summary>Skill requirement to use effectively.</summary>
     public uint SkillRequirement { get; init; }
+
+    // ETYP subrecord (4 bytes)
+    /// <summary>Equipment type — determines hotkey icon category.</summary>
+    public EquipmentType EquipmentType { get; init; } = EquipmentType.None;
+
+    /// <summary>Human-readable equipment type name.</summary>
+    public string EquipmentTypeName => EquipmentType switch
+    {
+        EquipmentType.None => "None",
+        EquipmentType.BigGuns => "Big Guns",
+        EquipmentType.EnergyWeapons => "Energy Weapons",
+        EquipmentType.SmallGuns => "Small Guns",
+        EquipmentType.MeleeWeapons => "Melee Weapons",
+        EquipmentType.UnarmedWeapon => "Unarmed Weapon",
+        EquipmentType.ThrownWeapons => "Thrown Weapons",
+        EquipmentType.Mine => "Mine",
+        _ => $"Unknown ({(int)EquipmentType})"
+    };
 
     // CRDT subrecord (critical data)
     /// <summary>Critical hit bonus damage.</summary>
@@ -138,6 +186,9 @@ public record WeaponRecord
     /// <summary>Projectile physics data, if a projectile is assigned and readable.</summary>
     public ProjectilePhysicsData? ProjectileData { get; init; }
 
+    /// <summary>Object bounds (OBND subrecord).</summary>
+    public ObjectBounds? Bounds { get; init; }
+
     // Computed
     /// <summary>Calculated damage per second.</summary>
     public float DamagePerSecond => Damage * ShotsPerSec;
@@ -164,5 +215,58 @@ public record WeaponRecord
         WeaponType.LandMine => "Land Mine",
         WeaponType.MinePlacement => "Mine Placement",
         _ => $"Unknown ({(byte)WeaponType})"
+    };
+
+    /// <summary>Human-readable hand grip animation name.</summary>
+    public string HandGripName => HandGrip switch
+    {
+        HandGripAnimation.HandGrip1 => "HandGrip1",
+        HandGripAnimation.HandGrip2 => "HandGrip2",
+        HandGripAnimation.HandGrip3 => "HandGrip3",
+        HandGripAnimation.Default => "Default",
+        _ => $"Unknown ({(byte)HandGrip})"
+    };
+
+    /// <summary>Human-readable reload animation name.</summary>
+    public string ReloadAnimName => ReloadAnim switch
+    {
+        >= ReloadAnimation.ReloadA and <= ReloadAnimation.ReloadK =>
+            $"Reload{(char)('A' + (byte)ReloadAnim)}",
+        _ => $"Unknown ({(byte)ReloadAnim})"
+    };
+
+    /// <summary>Human-readable attack animation name.</summary>
+    public string AttackAnimName => AttackAnim switch
+    {
+        AttackAnimation.AttackLeft => "AttackLeft",
+        AttackAnimation.AttackRight => "AttackRight",
+        AttackAnimation.Attack3 => "Attack3",
+        AttackAnimation.Attack4 => "Attack4",
+        AttackAnimation.Attack5 => "Attack5",
+        AttackAnimation.Attack6 => "Attack6",
+        AttackAnimation.Attack7 => "Attack7",
+        AttackAnimation.Attack8 => "Attack8",
+        AttackAnimation.AttackLoop => "AttackLoop",
+        AttackAnimation.AttackSpin => "AttackSpin",
+        AttackAnimation.AttackSpin2 => "AttackSpin2",
+        AttackAnimation.PlaceMine => "PlaceMine",
+        AttackAnimation.PlaceMine2 => "PlaceMine2",
+        AttackAnimation.AttackThrow => "AttackThrow",
+        AttackAnimation.AttackThrow2 => "AttackThrow2",
+        AttackAnimation.AttackThrow3 => "AttackThrow3",
+        AttackAnimation.AttackThrow4 => "AttackThrow4",
+        AttackAnimation.AttackThrow5 => "AttackThrow5",
+        AttackAnimation.Default => "Default",
+        _ => $"Unknown ({(byte)AttackAnim})"
+    };
+
+    /// <summary>Human-readable on-hit behavior name.</summary>
+    public string OnHitName => OnHit switch
+    {
+        OnHitBehavior.Normal => "Normal",
+        OnHitBehavior.DismemberOnly => "Dismember Only",
+        OnHitBehavior.ExplodeOnly => "Explode Only",
+        OnHitBehavior.NoDismemberOrExplode => "No Dismember/Explode",
+        _ => $"Unknown ({(uint)OnHit})"
     };
 }

@@ -122,6 +122,24 @@ public record RecordCollection
     /// <summary>Reconstructed Class (CLAS) records.</summary>
     public List<ClassRecord> Classes { get; init; } = [];
 
+    /// <summary>Reconstructed Form ID List (FLST) records.</summary>
+    public List<FormListRecord> FormLists { get; init; } = [];
+
+    /// <summary>Reconstructed Activator (ACTI) records.</summary>
+    public List<ActivatorRecord> Activators { get; init; } = [];
+
+    /// <summary>Reconstructed Light (LIGH) records.</summary>
+    public List<LightRecord> Lights { get; init; } = [];
+
+    /// <summary>Reconstructed Door (DOOR) records.</summary>
+    public List<DoorRecord> Doors { get; init; } = [];
+
+    /// <summary>Reconstructed Static (STAT) records.</summary>
+    public List<StaticRecord> Statics { get; init; } = [];
+
+    /// <summary>Reconstructed Furniture (FURN) records.</summary>
+    public List<FurnitureRecord> Furniture { get; init; } = [];
+
     /// <summary>FormID to Editor ID mapping built during reconstruction.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
@@ -139,7 +157,9 @@ public record RecordCollection
         Perks.Count + Spells.Count + Cells.Count + Worldspaces.Count + MapMarkers.Count + LeveledLists.Count +
         GameSettings.Count + Globals.Count + Enchantments.Count + BaseEffects.Count +
         WeaponMods.Count + Recipes.Count + Challenges.Count + Reputations.Count +
-        Projectiles.Count + Explosions.Count + Messages.Count + Classes.Count;
+        Projectiles.Count + Explosions.Count + Messages.Count + Classes.Count +
+        FormLists.Count + Activators.Count +
+        Lights.Count + Doors.Count + Statics.Count + Furniture.Count;
 
     /// <summary>
     ///     Counts of record types that were detected but not fully reconstructed.

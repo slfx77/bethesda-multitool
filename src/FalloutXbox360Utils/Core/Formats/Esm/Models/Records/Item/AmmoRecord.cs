@@ -41,6 +41,9 @@ public record AmmoRecord
     /// <summary>Model file path of the associated projectile (BGSProjectile.TESModel.cModel).</summary>
     public string? ProjectileModelPath { get; init; }
 
+    /// <summary>Object bounds (OBND subrecord).</summary>
+    public ObjectBounds? Bounds { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

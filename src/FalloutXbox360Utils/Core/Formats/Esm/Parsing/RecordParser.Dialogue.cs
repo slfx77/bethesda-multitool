@@ -543,6 +543,7 @@ public sealed partial class RecordParser
         string? fullName = null;
         byte flags = 0;
         byte priority = 0;
+        float questDelay = 0;
         uint? script = null;
         var stages = new List<QuestStage>();
         var objectives = new List<QuestObjective>();
@@ -568,6 +569,13 @@ public sealed partial class RecordParser
                 case "DATA" when sub.DataLength >= 2:
                     flags = subData[0];
                     priority = subData[1];
+                    if (sub.DataLength >= 8)
+                    {
+                        questDelay = record.IsBigEndian
+                            ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
+                            : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
+                    }
+
                     break;
                 case "SCRI" when sub.DataLength == 4:
                     script = ReadFormId(subData, record.IsBigEndian);
@@ -653,6 +661,7 @@ public sealed partial class RecordParser
             FullName = fullName,
             Flags = flags,
             Priority = priority,
+            QuestDelay = questDelay,
             Script = script,
             Stages = stages.OrderBy(s => s.Index).ToList(),
             Objectives = objectives.OrderBy(o => o.Index).ToList(),

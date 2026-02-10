@@ -96,6 +96,14 @@ internal static partial class EsmBrowserTreeBuilder
         [(typeof(AmmoRecord), "Flags")] = FlagRegistry.AmmoFlags,
         [(typeof(LeveledListRecord), "Flags")] = FlagRegistry.LeveledListFlags,
         [(typeof(TerminalRecord), "Flags")] = FlagRegistry.TerminalFlags,
+        [(typeof(ConsumableRecord), "Flags")] = FlagRegistry.ConsumableFlags,
+        [(typeof(ArmorRecord), "BipedFlags")] = FlagRegistry.ArmorBipedFlags,
+        [(typeof(ArmorRecord), "GeneralFlags")] = FlagRegistry.ArmorGeneralFlags,
+        [(typeof(WeaponRecord), "Flags")] = FlagRegistry.WeaponFlags,
+        [(typeof(WeaponRecord), "FlagsEx")] = FlagRegistry.WeaponFlagsEx,
+        [(typeof(LightRecord), "Flags")] = FlagRegistry.LightFlags,
+        [(typeof(DoorRecord), "Flags")] = FlagRegistry.DoorFlags,
+        [(typeof(FurnitureRecord), "MarkerFlags")] = FlagRegistry.FurnitureMarkerFlags,
     };
 
     /// <summary>
@@ -172,11 +180,13 @@ internal static partial class EsmBrowserTreeBuilder
             ("Base Effects", result.BaseEffects)
         ]);
 
-        AddWorldCategory(root, result.Worldspaces, result.Cells, result.MapMarkers, result.LeveledLists);
+        AddWorldCategory(root, result.Worldspaces, result.Cells, result.MapMarkers, result.LeveledLists,
+            result.Activators, result.Lights, result.Doors, result.Statics, result.Furniture);
 
         AddCategory(root, "Game Data", "\uE8F1", [
             ("Game Settings", result.GameSettings),
             ("Globals", result.Globals),
+            ("Form Lists", result.FormLists),
             ("Weapon Mods", result.WeaponMods),
             ("Recipes", result.Recipes),
             ("Challenges", result.Challenges),
@@ -220,7 +230,12 @@ internal static partial class EsmBrowserTreeBuilder
         List<WorldspaceRecord> worldspaces,
         IList<CellRecord> cells,
         List<PlacedReference> mapMarkers,
-        List<LeveledListRecord> leveledLists)
+        List<LeveledListRecord> leveledLists,
+        List<ActivatorRecord> activators,
+        List<LightRecord> lights,
+        List<DoorRecord> doors,
+        List<StaticRecord> statics,
+        List<FurnitureRecord> furniture)
     {
         // Group cells by worldspace FormID
         var cellsByWorldspace = cells
@@ -231,7 +246,8 @@ internal static partial class EsmBrowserTreeBuilder
         // Interior cells = cells without WorldspaceFormId
         var interiorCells = cells.Where(c => !c.WorldspaceFormId.HasValue).ToList();
 
-        var totalCount = worldspaces.Count + interiorCells.Count + mapMarkers.Count + leveledLists.Count;
+        var totalCount = worldspaces.Count + interiorCells.Count + mapMarkers.Count + leveledLists.Count +
+                         activators.Count + lights.Count + doors.Count + statics.Count + furniture.Count;
         if (totalCount == 0)
         {
             return;
@@ -259,6 +275,31 @@ internal static partial class EsmBrowserTreeBuilder
         if (leveledLists.Count > 0)
         {
             recordTypes.Add(("Leveled Lists", (IList)leveledLists, null));
+        }
+
+        if (activators.Count > 0)
+        {
+            recordTypes.Add(("Activators", (IList)activators, null));
+        }
+
+        if (lights.Count > 0)
+        {
+            recordTypes.Add(("Lights", (IList)lights, null));
+        }
+
+        if (doors.Count > 0)
+        {
+            recordTypes.Add(("Doors", (IList)doors, null));
+        }
+
+        if (statics.Count > 0)
+        {
+            recordTypes.Add(("Statics", (IList)statics, null));
+        }
+
+        if (furniture.Count > 0)
+        {
+            recordTypes.Add(("Furniture", (IList)furniture, null));
         }
 
         var categoryNode = new EsmBrowserNode
@@ -1520,6 +1561,12 @@ internal static partial class EsmBrowserTreeBuilder
             "Level" or "Fatigue" or "BarterGold" or "SpeedMultiplier" or "Karma" or "Disposition"
                 or "Class" or "Template" or "SpecialStats" or "Skills"
                 or "Weight" or "Value" or "Health" or "Damage" or "Speed" or "Reach"
+                or "DamageThreshold" or "DamageResistance"
+                or "ClipSize" or "MinSpread" or "Spread" or "Drift" or "ShotsPerSec" or "ActionPoints"
+                or "DamagePerSecond" or "AttackMultiplier" or "LimbDamageMult" or "AimArc"
+                or "CriticalDamage" or "CriticalChance" or "AmmoPerShot" or "NumProjectiles"
+                or "VatsToHitChance" or "StrengthRequirement" or "SkillRequirement"
+                or "IronSightFov" or "MinRange" or "MaxRange"
                 => "Attributes",
 
             // AI (behavior-related)

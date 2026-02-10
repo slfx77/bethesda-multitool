@@ -1,12 +1,12 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Misc Item from memory dump.
-///     Aggregates data from MISC main record header, DATA (8 bytes).
+///     Door (DOOR) record.
+///     Defines a door with open/close sounds and flags.
 /// </summary>
-public record MiscItemRecord
+public record DoorRecord
 {
-    /// <summary>FormID of the misc item record.</summary>
+    /// <summary>FormID of the door record.</summary>
     public uint FormId { get; init; }
 
     /// <summary>Editor ID.</summary>
@@ -15,18 +15,26 @@ public record MiscItemRecord
     /// <summary>Display name.</summary>
     public string? FullName { get; init; }
 
-    // DATA subrecord (8 bytes)
-    /// <summary>Base value in caps.</summary>
-    public int Value { get; init; }
-
-    /// <summary>Weight in units.</summary>
-    public float Weight { get; init; }
-
     /// <summary>Model file path (MODL subrecord).</summary>
     public string? ModelPath { get; init; }
 
     /// <summary>Object bounds (OBND subrecord).</summary>
     public ObjectBounds? Bounds { get; init; }
+
+    /// <summary>Script FormID (SCRI subrecord).</summary>
+    public uint? Script { get; init; }
+
+    /// <summary>Open sound FormID (SNAM subrecord).</summary>
+    public uint? OpenSoundFormId { get; init; }
+
+    /// <summary>Close sound FormID (ANAM subrecord).</summary>
+    public uint? CloseSoundFormId { get; init; }
+
+    /// <summary>Looping sound FormID (BNAM subrecord).</summary>
+    public uint? LoopSoundFormId { get; init; }
+
+    /// <summary>Door flags (FNAM subrecord).</summary>
+    public byte Flags { get; init; }
 
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }

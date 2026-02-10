@@ -21,6 +21,9 @@ public record QuestRecord
     /// <summary>Quest priority from DATA subrecord.</summary>
     public byte Priority { get; init; }
 
+    /// <summary>Quest delay in game hours between repeated stages (DATA bytes 4-7).</summary>
+    public float QuestDelay { get; init; }
+
     /// <summary>Quest script FormID (SCRI subrecord).</summary>
     public uint? Script { get; init; }
 

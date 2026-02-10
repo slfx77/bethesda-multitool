@@ -33,6 +33,9 @@ public record BookRecord
     /// <summary>Model path.</summary>
     public string? ModelPath { get; init; }
 
+    /// <summary>Object bounds (OBND subrecord).</summary>
+    public ObjectBounds? Bounds { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

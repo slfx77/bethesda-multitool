@@ -347,4 +347,133 @@ public static class FlagRegistry
         new(0x04, "Alternate Colors"),
         new(0x08, "Force Redraw"),
     ];
+
+    // ================================================================
+    // ARMO - BMDT Biped Slot Flags
+    // ================================================================
+
+    public static readonly FlagBit[] ArmorBipedFlags =
+    [
+        new(0x00000001, "Head"),
+        new(0x00000002, "Hair"),
+        new(0x00000004, "Upper Body"),
+        new(0x00000008, "Left Hand"),
+        new(0x00000010, "Right Hand"),
+        new(0x00000020, "Weapon"),
+        new(0x00000040, "PipBoy"),
+        new(0x00000080, "Backpack"),
+        new(0x00000100, "Necklace"),
+        new(0x00000200, "Headband"),
+        new(0x00000400, "Hat"),
+        new(0x00000800, "Eye Glasses"),
+        new(0x00001000, "Nose Ring"),
+        new(0x00002000, "Earrings"),
+        new(0x00004000, "Mask"),
+        new(0x00008000, "Choker"),
+        new(0x00010000, "Mouth Object"),
+        new(0x00020000, "Body AddOn 1"),
+        new(0x00040000, "Body AddOn 2"),
+        new(0x00080000, "Body AddOn 3"),
+    ];
+
+    // ================================================================
+    // ARMO - BMDT General Flags
+    // ================================================================
+
+    public static readonly FlagBit[] ArmorGeneralFlags =
+    [
+        new(0x20, "Power Armor"),
+        new(0x40, "Non-Playable"),
+        new(0x80, "Heavy"),
+    ];
+
+    // ================================================================
+    // ALCH - Consumable Flags (ENIT bytes 4-7)
+    // ================================================================
+
+    public static readonly FlagBit[] ConsumableFlags =
+    [
+        new(0x01, "No Auto-Calc"),
+        new(0x02, "Food Item"),
+        new(0x04, "Medicine"),
+    ];
+
+    // ================================================================
+    // WEAP - DNAM Flags (byte)
+    // ================================================================
+
+    public static readonly FlagBit[] WeaponFlags =
+    [
+        new(0x01, "Ignores Normal Weapon Resistance"),
+        new(0x02, "Is Automatic"),
+        new(0x04, "Has Scope"),
+        new(0x08, "Can't Drop"),
+        new(0x10, "Hide Backpack"),
+        new(0x20, "Embedded Weapon"),
+        new(0x40, "Don't Use 1st Person IS Anim"),
+        new(0x80, "Non-Playable"),
+    ];
+
+    // ================================================================
+    // WEAP - DNAM Extended Flags (uint32)
+    // ================================================================
+
+    public static readonly FlagBit[] WeaponFlagsEx =
+    [
+        new(0x00000001, "Player Only"),
+        new(0x00000002, "NPCs Use Ammo"),
+        new(0x00000004, "No Jam After Reload"),
+        new(0x00000008, "Override - Action Points"),
+        new(0x00000010, "Minor Crime"),
+        new(0x00000020, "Range - Fixed"),
+        new(0x00000040, "Not Used In Normal Combat"),
+        new(0x00000080, "Override - Damage to Weapon Mult"),
+        new(0x00000100, "Don't Use 3rd Person IS Anim"),
+        new(0x00000200, "Short Burst"),
+        new(0x00000400, "Rumble Alternate"),
+        new(0x00000800, "Long Burst"),
+    ];
+
+    // ================================================================
+    // LIGH - Light Flags (DATA bytes 16-19)
+    // ================================================================
+
+    public static readonly FlagBit[] LightFlags =
+    [
+        new(0x00000001, "Dynamic"),
+        new(0x00000002, "Can Be Carried"),
+        new(0x00000004, "Negative"),
+        new(0x00000008, "Flicker"),
+        new(0x00000020, "Off By Default"),
+        new(0x00000040, "Flicker Slow"),
+        new(0x00000080, "Pulse"),
+        new(0x00000100, "Pulse Slow"),
+        new(0x00000200, "Spot Light"),
+        new(0x00000400, "Spot Shadow"),
+    ];
+
+    // ================================================================
+    // DOOR - Door Flags (FNAM byte)
+    // ================================================================
+
+    public static readonly FlagBit[] DoorFlags =
+    [
+        new(0x01, "Automatic"),
+        new(0x02, "Hidden"),
+        new(0x04, "Minimal Use"),
+        new(0x08, "Sliding"),
+    ];
+
+    // ================================================================
+    // FURN - Furniture Marker Flags (MNAM uint32)
+    // ================================================================
+
+    public static readonly FlagBit[] FurnitureMarkerFlags =
+    [
+        new(0x00000001, "Front"),
+        new(0x00000002, "Behind"),
+        new(0x00000004, "Right"),
+        new(0x00000008, "Left"),
+        new(0x00000010, "Up"),
+    ];
 }

@@ -148,7 +148,8 @@ public static partial class SubrecordSchemaRegistry
         // BMDT - Biped Model Data (8 bytes)
         schemas[new SchemaKey("BMDT", null, 8)] = new SubrecordSchema(
             F.UInt32("BipedFlags"),
-            F.Padding(4))
+            F.UInt8("GeneralFlags"),
+            F.Padding(3))
         {
             Description = "Biped Model Data"
         };

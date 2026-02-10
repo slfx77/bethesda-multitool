@@ -56,7 +56,7 @@ public sealed partial class RecordParser
 
     #endregion
 
-    #region Private Helper - ReadFormId
+    #region Private Helpers
 
     private static uint ReadFormId(ReadOnlySpan<byte> data, bool bigEndian)
     {
@@ -68,6 +68,32 @@ public sealed partial class RecordParser
         return bigEndian
             ? BinaryPrimitives.ReadUInt32BigEndian(data)
             : BinaryPrimitives.ReadUInt32LittleEndian(data);
+    }
+
+    private static ObjectBounds ReadObjectBounds(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        if (bigEndian)
+        {
+            return new ObjectBounds
+            {
+                X1 = BinaryPrimitives.ReadInt16BigEndian(data),
+                Y1 = BinaryPrimitives.ReadInt16BigEndian(data[2..]),
+                Z1 = BinaryPrimitives.ReadInt16BigEndian(data[4..]),
+                X2 = BinaryPrimitives.ReadInt16BigEndian(data[6..]),
+                Y2 = BinaryPrimitives.ReadInt16BigEndian(data[8..]),
+                Z2 = BinaryPrimitives.ReadInt16BigEndian(data[10..])
+            };
+        }
+
+        return new ObjectBounds
+        {
+            X1 = BinaryPrimitives.ReadInt16LittleEndian(data),
+            Y1 = BinaryPrimitives.ReadInt16LittleEndian(data[2..]),
+            Z1 = BinaryPrimitives.ReadInt16LittleEndian(data[4..]),
+            X2 = BinaryPrimitives.ReadInt16LittleEndian(data[6..]),
+            Y2 = BinaryPrimitives.ReadInt16LittleEndian(data[8..]),
+            Z2 = BinaryPrimitives.ReadInt16LittleEndian(data[10..])
+        };
     }
 
     #endregion
@@ -174,6 +200,7 @@ public sealed partial class RecordParser
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        ObjectBounds? bounds = null;
 
         // DATA subrecord (15 bytes)
         var value = 0;
@@ -187,20 +214,31 @@ public sealed partial class RecordParser
         uint animationType = 0;
         var speed = 1.0f;
         float reach = 0;
+        byte flags = 0;
+        var handGrip = HandGripAnimation.Default;
         byte ammoPerShot = 1;
+        var reloadAnim = ReloadAnimation.ReloadA;
         float minSpread = 0;
         float spread = 0;
         float drift = 0;
+        float ironSightFov = 0;
         uint? ammoFormId = null;
         uint? projectileFormId = null;
         byte vatsToHitChance = 0;
+        var attackAnim = AttackAnimation.Default;
         byte numProjectiles = 1;
         float minRange = 0;
         float maxRange = 0;
+        var onHit = OnHitBehavior.Normal;
+        uint flagsEx = 0;
+        float attackMultiplier = 1;
         float shotsPerSec = 1;
         float actionPoints = 0;
+        float aimArc = 0;
+        float limbDamageMult = 1;
         uint strengthRequirement = 0;
         uint skillRequirement = 0;
+        var equipmentType = EquipmentType.None;
 
         // CRDT subrecord
         short criticalDamage = 0;
@@ -233,6 +271,9 @@ public sealed partial class RecordParser
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
                 case "ENAM" when sub.DataLength == 4:
                     ammoFormId = ReadFormId(subData, record.IsBigEndian);
                     break;
@@ -260,18 +301,55 @@ public sealed partial class RecordParser
                         weaponType = (WeaponType)(wt <= 11 ? wt : 0);
                         speed = SubrecordDataReader.GetFloat(fields, "Speed");
                         reach = SubrecordDataReader.GetFloat(fields, "Reach");
+                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                        var grip = SubrecordDataReader.GetByte(fields, "HandGripAnim");
+                        handGrip = Enum.IsDefined(typeof(HandGripAnimation), grip)
+                            ? (HandGripAnimation)grip
+                            : HandGripAnimation.Default;
+                        ammoPerShot = SubrecordDataReader.GetByte(fields, "AmmoPerShot");
+                        var reload = SubrecordDataReader.GetByte(fields, "ReloadAnim");
+                        reloadAnim = reload <= 10
+                            ? (ReloadAnimation)reload
+                            : ReloadAnimation.ReloadA;
                         minSpread = SubrecordDataReader.GetFloat(fields, "MinSpread");
                         spread = SubrecordDataReader.GetFloat(fields, "Spread");
+                        drift = SubrecordDataReader.GetFloat(fields, "Drift");
+                        ironSightFov = SubrecordDataReader.GetFloat(fields, "IronFov");
                         var projId = SubrecordDataReader.GetUInt32(fields, "Projectile");
                         if (projId != 0)
                         {
                             projectileFormId = projId;
                         }
 
-                        shotsPerSec = SubrecordDataReader.GetFloat(fields, "ShotsPerSec");
-                        actionPoints = SubrecordDataReader.GetFloat(fields, "ActionPoints");
+                        vatsToHitChance = SubrecordDataReader.GetByte(fields, "VatToHitChance");
+                        var attack = SubrecordDataReader.GetByte(fields, "AttackAnim");
+                        attackAnim = Enum.IsDefined(typeof(AttackAnimation), attack)
+                            ? (AttackAnimation)attack
+                            : AttackAnimation.Default;
+                        numProjectiles = SubrecordDataReader.GetByte(fields, "NumProjectiles");
                         minRange = SubrecordDataReader.GetFloat(fields, "MinRange");
                         maxRange = SubrecordDataReader.GetFloat(fields, "MaxRange");
+                        onHit = (OnHitBehavior)SubrecordDataReader.GetUInt32(fields, "HitBehavior");
+                        flagsEx = SubrecordDataReader.GetUInt32(fields, "FlagsEx");
+                        attackMultiplier = SubrecordDataReader.GetFloat(fields, "AttackMult");
+                        shotsPerSec = SubrecordDataReader.GetFloat(fields, "ShotsPerSec");
+                        actionPoints = SubrecordDataReader.GetFloat(fields, "ActionPoints");
+                        aimArc = SubrecordDataReader.GetFloat(fields, "AimArc");
+                        limbDamageMult = SubrecordDataReader.GetFloat(fields, "LimbDamageMult");
+                        strengthRequirement = SubrecordDataReader.GetUInt32(fields, "StrengthRequirement");
+                        skillRequirement = SubrecordDataReader.GetUInt32(fields, "SkillRequirement");
+                    }
+
+                    break;
+                }
+                case "ETYP" when sub.DataLength == 4:
+                {
+                    var etypValue = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    if (etypValue >= -1 && etypValue <= 13)
+                    {
+                        equipmentType = (EquipmentType)etypValue;
                     }
 
                     break;
@@ -328,6 +406,7 @@ public sealed partial class RecordParser
             EditorId = editorId ?? GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            Bounds = bounds,
             Value = value,
             Health = health,
             Weight = weight,
@@ -337,20 +416,31 @@ public sealed partial class RecordParser
             AnimationType = animationType,
             Speed = speed,
             Reach = reach,
+            Flags = flags,
+            HandGrip = handGrip,
             AmmoPerShot = ammoPerShot,
+            ReloadAnim = reloadAnim,
             MinSpread = minSpread,
             Spread = spread,
             Drift = drift,
+            IronSightFov = ironSightFov,
             AmmoFormId = ammoFormId,
             ProjectileFormId = projectileFormId,
             VatsToHitChance = vatsToHitChance,
+            AttackAnim = attackAnim,
             NumProjectiles = numProjectiles,
             MinRange = minRange,
             MaxRange = maxRange,
+            OnHit = onHit,
+            FlagsEx = flagsEx,
+            AttackMultiplier = attackMultiplier,
             ShotsPerSec = shotsPerSec,
             ActionPoints = actionPoints,
+            AimArc = aimArc,
+            LimbDamageMult = limbDamageMult,
             StrengthRequirement = strengthRequirement,
             SkillRequirement = skillRequirement,
+            EquipmentType = equipmentType,
             CriticalDamage = criticalDamage,
             CriticalChance = criticalChance,
             CriticalEffectFormId = criticalEffectFormId,
@@ -516,11 +606,15 @@ public sealed partial class RecordParser
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        ObjectBounds? bounds = null;
         var value = 0;
         var health = 0;
         float weight = 0;
         float damageThreshold = 0;
         var damageResistance = 0;
+        uint bipedFlags = 0;
+        byte generalFlags = 0;
+        var equipmentType = EquipmentType.None;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -536,6 +630,9 @@ public sealed partial class RecordParser
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = ReadObjectBounds(subData, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 12:
                 {
@@ -560,6 +657,29 @@ public sealed partial class RecordParser
 
                     break;
                 }
+                case "BMDT" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("BMDT", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        bipedFlags = SubrecordDataReader.GetUInt32(fields, "BipedFlags");
+                        generalFlags = SubrecordDataReader.GetByte(fields, "GeneralFlags");
+                    }
+
+                    break;
+                }
+                case "ETYP" when sub.DataLength == 4:
+                {
+                    var etypValue = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    if (etypValue >= -1 && etypValue <= 13)
+                    {
+                        equipmentType = (EquipmentType)etypValue;
+                    }
+
+                    break;
+                }
             }
         }
 
@@ -569,11 +689,15 @@ public sealed partial class RecordParser
             EditorId = editorId ?? GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            Bounds = bounds,
             Value = value,
             Health = health,
             Weight = weight,
             DamageThreshold = damageThreshold,
             DamageResistance = damageResistance,
+            BipedFlags = bipedFlags,
+            GeneralFlags = generalFlags,
+            EquipmentType = equipmentType,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -669,6 +793,7 @@ public sealed partial class RecordParser
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        ObjectBounds? bounds = null;
         float speed = 0;
         byte flags = 0;
         uint value = 0;
@@ -690,6 +815,9 @@ public sealed partial class RecordParser
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = ReadObjectBounds(subData, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 13:
                 {
@@ -729,6 +857,7 @@ public sealed partial class RecordParser
             EditorId = editorId ?? GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            Bounds = bounds,
             Speed = speed,
             Flags = flags,
             Value = value,
@@ -905,10 +1034,13 @@ public sealed partial class RecordParser
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        ObjectBounds? bounds = null;
         float weight = 0;
         uint value = 0;
+        uint flags = 0;
         uint? addictionFormId = null;
         float addictionChance = 0;
+        uint? withdrawalEffectFormId = null;
         var effectFormIds = new List<uint>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -925,6 +1057,9 @@ public sealed partial class RecordParser
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = ReadObjectBounds(subData, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 4:
                 {
@@ -946,6 +1081,24 @@ public sealed partial class RecordParser
                         addictionChance = SubrecordDataReader.GetFloat(fields, "AddictionChance");
                     }
 
+                    // Flags are at bytes 4-7 (stored as raw Bytes in schema, read directly)
+                    if (sub.DataLength >= 8)
+                    {
+                        flags = record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                            : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    }
+
+                    // WithdrawalEffect/UseSound at bytes 16-19
+                    if (sub.DataLength >= 20)
+                    {
+                        var weFormId = ReadFormId(subData[16..], record.IsBigEndian);
+                        if (weFormId != 0)
+                        {
+                            withdrawalEffectFormId = weFormId;
+                        }
+                    }
+
                     break;
                 }
                 case "EFID" when sub.DataLength == 4:
@@ -960,10 +1113,13 @@ public sealed partial class RecordParser
             EditorId = editorId ?? GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            Bounds = bounds,
             Weight = weight,
             Value = value,
+            Flags = flags,
             AddictionFormId = addictionFormId != 0 ? addictionFormId : null,
             AddictionChance = addictionChance,
+            WithdrawalEffectFormId = withdrawalEffectFormId,
             EffectFormIds = effectFormIds,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
@@ -1060,6 +1216,7 @@ public sealed partial class RecordParser
         string? editorId = null;
         string? fullName = null;
         string? modelPath = null;
+        ObjectBounds? bounds = null;
         var value = 0;
         float weight = 0;
 
@@ -1077,6 +1234,9 @@ public sealed partial class RecordParser
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = ReadObjectBounds(subData, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
@@ -1098,6 +1258,7 @@ public sealed partial class RecordParser
             EditorId = editorId ?? GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,
+            Bounds = bounds,
             Value = value,
             Weight = weight,
             Offset = record.Offset,
