@@ -127,16 +127,7 @@ public sealed class BsaProcessor : IRepackProcessor
         CancellationToken cancellationToken)
     {
         var bsaName = Path.GetFileName(sourceBsaPath);
-        DdxSubprocessConverter? ddxConverter = null;
-
-        try
-        {
-            ddxConverter = new DdxSubprocessConverter();
-        }
-        catch
-        {
-            // DDXConv not available
-        }
+        var ddxConverter = new DdxSubprocessConverter();
 
         // Phase 1: Extract all files from BSA
         progress.Report(new RepackerProgress
@@ -529,7 +520,7 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
             Message = $"{bsaName}: Writing {allFiles.Count} files..."
         });
 
-        using var writer = new BsaWriter();
+        using var writer = BsaWriter.CreateWithAutoFlags(allFiles.Select(f => f.RelativePath));
 
         var writeIndex = 0;
         foreach (var (relativePath, data) in allFiles)

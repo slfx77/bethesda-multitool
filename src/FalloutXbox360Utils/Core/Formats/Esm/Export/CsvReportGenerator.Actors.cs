@@ -188,23 +188,20 @@ public static partial class CsvReportGenerator
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Description,Strength,Perception,Endurance,Charisma,Intelligence,Agility,Luck,MaleHeight,FemaleHeight,MaleVoiceFormID,FemaleVoiceFormID,OlderRaceFormID,YoungerRaceFormID,Endianness,Offset,AbilityFormID,AbilityName");
+            "RowType,FormID,EditorID,Name,Description,SkillBoosts,MaleHeight,FemaleHeight,MaleVoiceFormID,FemaleVoiceFormID,OlderRaceFormID,YoungerRaceFormID,Endianness,Offset,AbilityFormID,AbilityName");
 
         foreach (var r in races.OrderBy(r => r.EditorId ?? ""))
         {
+            var boosts = r.SkillBoosts.Count > 0
+                ? string.Join("; ", r.SkillBoosts.Select(b => $"AV{b.SkillIndex}:{b.Boost:+#;-#;0}"))
+                : "";
             sb.AppendLine(string.Join(",",
                 "RACE",
                 FId(r.FormId),
                 E(r.EditorId),
                 E(r.FullName),
                 E(r.Description),
-                r.Strength.ToString(),
-                r.Perception.ToString(),
-                r.Endurance.ToString(),
-                r.Charisma.ToString(),
-                r.Intelligence.ToString(),
-                r.Agility.ToString(),
-                r.Luck.ToString(),
+                E(boosts),
                 r.MaleHeight.ToString("F4"),
                 r.FemaleHeight.ToString("F4"),
                 FIdN(r.MaleVoiceFormId),
@@ -220,7 +217,7 @@ public static partial class CsvReportGenerator
                 sb.AppendLine(string.Join(",",
                     "ABILITY",
                     FId(r.FormId),
-                    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+                    "", "", "", "", "", "", "", "", "", "",
                     "", "",
                     FId(abilityId),
                     Resolve(abilityId, lookup)));

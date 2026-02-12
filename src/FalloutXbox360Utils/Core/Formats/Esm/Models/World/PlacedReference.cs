@@ -46,6 +46,9 @@ public record PlacedReference
     /// <summary>Enable parent FormID (XESP subrecord).</summary>
     public uint? EnableParentFormId { get; init; }
 
+    /// <summary>Destination door FormID from XTEL (for door references).</summary>
+    public uint? DestinationDoorFormId { get; init; }
+
     /// <summary>Whether this is a map marker (has XMRK subrecord).</summary>
     public bool IsMapMarker { get; init; }
 

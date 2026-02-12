@@ -117,6 +117,7 @@ public sealed partial class RecordParser
         uint? deathItem = null;
         var factions = new List<FactionMembership>();
         var spells = new List<uint>();
+        var packages = new List<uint>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -172,6 +173,9 @@ public sealed partial class RecordParser
                 case "SPLO" when sub.DataLength == 4:
                     spells.Add(ReadFormId(subData, record.IsBigEndian));
                     break;
+                case "PKID" when sub.DataLength == 4:
+                    packages.Add(ReadFormId(subData, record.IsBigEndian));
+                    break;
             }
         }
 
@@ -197,6 +201,7 @@ public sealed partial class RecordParser
             ModelPath = modelPath,
             Factions = factions,
             Spells = spells,
+            Packages = packages,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -548,6 +553,8 @@ public sealed partial class RecordParser
         string? editorId = null;
         string? fullName = null;
         ActorBaseSubrecord? stats = null;
+        byte[]? specialStats = null;
+        byte[]? skills = null;
         uint? race = null;
         uint? script = null;
         uint? classFormId = null;
@@ -631,6 +638,23 @@ public sealed partial class RecordParser
 
                     break;
                 }
+                case "DATA" when sub.DataLength == 11:
+                {
+                    // NPC_ DATA: Int32 BaseHealth + 7 UInt8 SPECIAL (ST, PE, EN, CH, IN, AG, LK)
+                    specialStats = [subData[4], subData[5], subData[6], subData[7], subData[8], subData[9], subData[10]];
+                    break;
+                }
+                case "DNAM" when sub.DataLength == 28:
+                {
+                    // NPC_ DNAM: 14 skill base values (each 2 bytes: base + modifier)
+                    skills = new byte[14];
+                    for (var i = 0; i < 14; i++)
+                    {
+                        skills[i] = subData[i * 2]; // Base value (skip modifier byte)
+                    }
+
+                    break;
+                }
                 case "PKID" when sub.DataLength == 4:
                     packages.Add(ReadFormId(subData, record.IsBigEndian));
                     break;
@@ -649,6 +673,8 @@ public sealed partial class RecordParser
             EditorId = editorId ?? GetEditorId(record.FormId),
             FullName = fullName,
             Stats = stats,
+            SpecialStats = specialStats,
+            Skills = skills,
             Race = race,
             Script = script,
             Class = classFormId,
@@ -737,9 +763,8 @@ public sealed partial class RecordParser
         string? fullName = null;
         string? description = null;
 
-        // S.P.E.C.I.A.L. modifiers (from DATA bytes 0-6)
-        sbyte strength = 0, perception = 0, endurance = 0, charisma = 0;
-        sbyte intelligence = 0, agility = 0, luck = 0;
+        // Skill Boosts from DATA (7 pairs of AV code + boost value)
+        var skillBoosts = new List<(int SkillIndex, sbyte Boost)>();
 
         // Heights and weights (from DATA)
         var maleHeight = 1.0f;
@@ -758,7 +783,7 @@ public sealed partial class RecordParser
         // Hair/Eyes
         uint? defaultHairMale = null;
         uint? defaultHairFemale = null;
-        uint? defaultHairColor = null;
+        byte? defaultHairColor = null;
         var hairStyleFormIds = new List<uint>();
         var eyeColorFormIds = new List<uint>();
 
@@ -783,14 +808,16 @@ public sealed partial class RecordParser
                     break;
                 case "DATA" when sub.DataLength >= 36:
                 {
-                    // S.P.E.C.I.A.L. are individual bytes within the SkillBoosts blob
-                    strength = (sbyte)subData[0];
-                    perception = (sbyte)subData[1];
-                    endurance = (sbyte)subData[2];
-                    charisma = (sbyte)subData[3];
-                    intelligence = (sbyte)subData[4];
-                    agility = (sbyte)subData[5];
-                    luck = (sbyte)subData[6];
+                    // Skill Boosts: 7 pairs of (Skill AV code, Boost value)
+                    for (var i = 0; i < 14; i += 2)
+                    {
+                        var avCode = (sbyte)subData[i];
+                        var boost = (sbyte)subData[i + 1];
+                        if (avCode >= 0 && boost != 0)
+                        {
+                            skillBoosts.Add((avCode, boost));
+                        }
+                    }
 
                     var fields = SubrecordDataReader.ReadFields("DATA", "RACE", subData, record.IsBigEndian);
                     if (fields.Count > 0)
@@ -876,13 +903,7 @@ public sealed partial class RecordParser
             EditorId = editorId ?? GetEditorId(record.FormId),
             FullName = fullName,
             Description = description,
-            Strength = strength,
-            Perception = perception,
-            Endurance = endurance,
-            Charisma = charisma,
-            Intelligence = intelligence,
-            Agility = agility,
-            Luck = luck,
+            SkillBoosts = skillBoosts,
             MaleHeight = maleHeight,
             FemaleHeight = femaleHeight,
             MaleWeight = maleWeight,
@@ -890,7 +911,7 @@ public sealed partial class RecordParser
             DataFlags = dataFlags,
             DefaultHairMaleFormId = defaultHairMale != 0 ? defaultHairMale : null,
             DefaultHairFemaleFormId = defaultHairFemale != 0 ? defaultHairFemale : null,
-            DefaultHairColorFormId = defaultHairColor,
+            DefaultHairColor = defaultHairColor,
             HairStyleFormIds = hairStyleFormIds,
             EyeColorFormIds = eyeColorFormIds,
             FaceGenMainClamp = faceGenMainClamp,

@@ -50,6 +50,9 @@ public record CreatureRecord
     /// <summary>Spell/ability FormIDs.</summary>
     public List<uint> Spells { get; init; } = [];
 
+    /// <summary>AI package FormIDs (PKID subrecords).</summary>
+    public List<uint> Packages { get; init; } = [];
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

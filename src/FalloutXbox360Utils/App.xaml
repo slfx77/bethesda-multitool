@@ -50,6 +50,15 @@
                            Color="#FFAAAAAA" />
           <SolidColorBrush x:Key="HexPositionForegroundBrush"
                            Color="#FFCCCCCC" />
+          <!--  HyperlinkButton overrides for readable links on dark backgrounds  -->
+          <SolidColorBrush x:Key="HyperlinkButtonForeground"
+                           Color="#FF75BEFF" />
+          <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver"
+                           Color="#FF9DD2FF" />
+          <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed"
+                           Color="#FF5090CC" />
+          <SolidColorBrush x:Key="HyperlinkButtonForegroundDisabled"
+                           Color="#FF808080" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Light">
           <!--  Accent button overrides  -->
@@ -87,6 +96,15 @@
                            Color="#FF555555" />
           <SolidColorBrush x:Key="HexPositionForegroundBrush"
                            Color="#FF333333" />
+          <!--  HyperlinkButton overrides for readable links on light backgrounds  -->
+          <SolidColorBrush x:Key="HyperlinkButtonForeground"
+                           Color="#FF0066CC" />
+          <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver"
+                           Color="#FF0055AA" />
+          <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed"
+                           Color="#FF003D7A" />
+          <SolidColorBrush x:Key="HyperlinkButtonForegroundDisabled"
+                           Color="#FF808080" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>

@@ -19,8 +19,20 @@ public record DialogueRecord
     /// <summary>Parent quest FormID (QSTI subrecord or runtime pOwnerQuest).</summary>
     public uint? QuestFormId { get; init; }
 
-    /// <summary>Speaker NPC FormID (runtime pSpeaker pointer).</summary>
+    /// <summary>Speaker NPC FormID (from ANAM subrecord or CTDA GetIsID condition).</summary>
     public uint? SpeakerFormId { get; init; }
+
+    /// <summary>Speaker faction FormID (from CTDA GetInFaction condition — shared/generic dialogue).</summary>
+    public uint? SpeakerFactionFormId { get; init; }
+
+    /// <summary>Speaker race FormID (from CTDA GetIsRace condition — creature/race dialogue).</summary>
+    public uint? SpeakerRaceFormId { get; init; }
+
+    /// <summary>Speaker voice type FormID (from CTDA GetIsVoiceType condition — generic dialogue).</summary>
+    public uint? SpeakerVoiceTypeFormId { get; init; }
+
+    /// <summary>All CTDA condition function indices found on this INFO (for diagnostics).</summary>
+    public List<ushort> ConditionFunctions { get; init; } = [];
 
     /// <summary>Response entries (each INFO can have multiple responses).</summary>
     public List<DialogueResponse> Responses { get; init; } = [];

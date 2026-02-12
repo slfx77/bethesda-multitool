@@ -371,6 +371,29 @@ public static class EsmParser
                 var declaredEnd = offset + groupHeader.GroupSize;
                 offset = Math.Max(declaredEnd, actualEnd);
             }
+            else if (sig == "TOFT")
+            {
+                // Xbox 360 TOFT sentinel — container that holds nested INFO records
+                var toftHeader = ParseRecordHeader(data[(int)offset..], bigEndian);
+                if (toftHeader == null)
+                {
+                    break;
+                }
+
+                if (toftHeader.DataSize > 0)
+                {
+                    // TOFT sentinel (FormID=0xFFFFFFFE): scan inside for nested records
+                    ScanToftBlock(data, offset + MainRecordHeaderSize,
+                        offset + MainRecordHeaderSize + toftHeader.DataSize,
+                        bigEndian, records);
+                    offset += MainRecordHeaderSize + toftHeader.DataSize;
+                }
+                else
+                {
+                    // TOFT end marker (FormID=0xFFFFFFFF, DataSize=0)
+                    offset += MainRecordHeaderSize;
+                }
+            }
             else
             {
                 // Top-level record (shouldn't happen in normal ESM but handle it)
@@ -462,6 +485,29 @@ public static class EsmParser
                 var declaredEnd = offset + nestedHeader.GroupSize;
                 offset = Math.Max(declaredEnd, nestedEnd);
             }
+            else if (sig == "TOFT")
+            {
+                // Xbox 360 TOFT record inside a GRUP
+                var toftHeader = ParseRecordHeader(data[(int)offset..], bigEndian);
+                if (toftHeader == null)
+                {
+                    break;
+                }
+
+                if (toftHeader.DataSize > 0)
+                {
+                    // TOFT sentinel with nested records
+                    ScanToftBlock(data, offset + MainRecordHeaderSize,
+                        offset + MainRecordHeaderSize + toftHeader.DataSize,
+                        bigEndian, records);
+                    offset += MainRecordHeaderSize + toftHeader.DataSize;
+                }
+                else
+                {
+                    // TOFT marker (DataSize=0) — just skip the header
+                    offset += MainRecordHeaderSize;
+                }
+            }
             else
             {
                 // Regular record
@@ -500,6 +546,71 @@ public static class EsmParser
 
         // Return the actual end position (may exceed declared groupEnd in Xbox 360 ESMs)
         return offset;
+    }
+
+    /// <summary>
+    ///     Scan inside a TOFT data block for nested records (Xbox 360 streaming cache).
+    ///     TOFT sentinels contain complete records (typically INFO) in their data payload.
+    /// </summary>
+    private static void ScanToftBlock(
+        ReadOnlySpan<byte> data,
+        long start,
+        long end,
+        bool bigEndian,
+        List<ParsedMainRecord> records)
+    {
+        var offset = start;
+
+        while (offset + MainRecordHeaderSize <= end)
+        {
+            var sig = ReadSignature(data[(int)offset..], bigEndian);
+            if (sig == "GRUP")
+            {
+                break;
+            }
+
+            var header = ParseRecordHeader(data[(int)offset..], bigEndian);
+            if (header == null)
+            {
+                break;
+            }
+
+            // Nested TOFT sentinel — recurse into its data
+            if (sig == "TOFT")
+            {
+                if (header.DataSize > 0)
+                {
+                    ScanToftBlock(data, offset + MainRecordHeaderSize,
+                        offset + MainRecordHeaderSize + header.DataSize,
+                        bigEndian, records);
+                    offset += MainRecordHeaderSize + header.DataSize;
+                }
+                else
+                {
+                    offset += MainRecordHeaderSize;
+                }
+
+                continue;
+            }
+
+            var recordEnd = offset + MainRecordHeaderSize + header.DataSize;
+            if (recordEnd <= offset || recordEnd > end)
+            {
+                break;
+            }
+
+            var recordDataSlice = data.Slice((int)offset + MainRecordHeaderSize, (int)header.DataSize);
+            var subrecords = ParseSubrecords(recordDataSlice, bigEndian);
+
+            records.Add(new ParsedMainRecord
+            {
+                Header = header,
+                Offset = offset,
+                Subrecords = subrecords
+            });
+
+            offset = recordEnd;
+        }
     }
 
     /// <summary>

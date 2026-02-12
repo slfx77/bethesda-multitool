@@ -15,14 +15,9 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
 ///     release builds (which only have compiled bytecode).
 ///     These tests are skipped when sample dump files are not present.
 /// </summary>
-public class ScriptDecompilerMemoryDumpTests
+public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
+    private readonly ITestOutputHelper _output = output;
 
     [Fact]
     [Trait("Category", "Slow")]

@@ -8,14 +8,9 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 ///     Builds the conversion index from the input ESM file.
 ///     The index tracks WRLD, CELL, and child GRUP positions for reconstruction.
 /// </summary>
-internal sealed class EsmConversionIndexBuilder
+internal sealed class EsmConversionIndexBuilder(byte[] input)
 {
-    private readonly byte[] _input;
-
-    public EsmConversionIndexBuilder(byte[] input)
-    {
-        _input = input;
-    }
+    private readonly byte[] _input = input;
 
     /// <summary>
     ///     Builds the conversion index by scanning the input file.

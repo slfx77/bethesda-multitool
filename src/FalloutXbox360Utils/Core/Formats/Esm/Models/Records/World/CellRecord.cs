@@ -51,6 +51,9 @@ public record CellRecord
     /// <summary>Placed objects in this cell (REFR, ACHR, ACRE records).</summary>
     public List<PlacedReference> PlacedObjects { get; init; } = [];
 
+    /// <summary>FormIDs of cells reachable via doors in this cell.</summary>
+    public List<uint> LinkedCellFormIds { get; init; } = [];
+
     /// <summary>Associated LAND record heightmap (if found).</summary>
     public LandHeightmap? Heightmap { get; init; }
 

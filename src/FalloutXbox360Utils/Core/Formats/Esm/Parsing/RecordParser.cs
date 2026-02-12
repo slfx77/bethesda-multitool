@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -76,8 +77,11 @@ public sealed partial class RecordParser
     /// <summary>
     ///     Perform full semantic reconstruction of all supported record types.
     /// </summary>
-    public RecordCollection ReconstructAll()
+    public RecordCollection ReconstructAll(IProgress<(int percent, string phase)>? progress = null)
     {
+        var totalSw = Stopwatch.StartNew();
+        var phaseSw = Stopwatch.StartNew();
+
         // Reconstructed record types
         var reconstructedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -87,7 +91,8 @@ public sealed partial class RecordParser
             "PERK", "SPEL", "CELL", "WRLD", "GMST",
             "GLOB", "ENCH", "MGEF", "IMOD", "RCPE", "CHAL", "REPU",
             "PROJ", "EXPL", "MESG", "CLAS",
-            "FLST", "ACTI", "LIGH", "DOOR", "STAT", "FURN"
+            "FLST", "ACTI", "LIGH", "DOOR", "STAT", "FURN",
+            "PACK"
         };
 
         // Count all record types and compute unreconstructed counts
@@ -111,13 +116,38 @@ public sealed partial class RecordParser
             }
         }
 
+        // Pre-scan all records for FULL subrecords (display names) so that
+        // unreconstructed types (HAIR, EYES, CSTY, etc.) have names available for display
+        progress?.Report((2, "Scanning display names..."));
+        phaseSw.Restart();
+        CaptureAllFullNames();
+        Logger.Instance.Debug($"  [Semantic] Display names: {phaseSw.Elapsed} ({_formIdToFullName.Count} names captured)");
+
         // Build weapons and ammo first, then cross-reference for projectile data
+        progress?.Report((5, "Reconstructing characters..."));
+        phaseSw.Restart();
+        var npcs = ReconstructNpcs();
+        var creatures = ReconstructCreatures();
+        var races = ReconstructRaces();
+        var factions = ReconstructFactions();
+        Logger.Instance.Debug($"  [Semantic] Characters: {phaseSw.Elapsed} (NPCs: {npcs.Count}, Creatures: {creatures.Count}, Races: {races.Count}, Factions: {factions.Count})");
+
+        progress?.Report((15, "Reconstructing items..."));
+        phaseSw.Restart();
         var weapons = ReconstructWeapons();
         var ammo = ReconstructAmmo();
         EnrichAmmoWithProjectileModels(weapons, ammo);
         EnrichWeaponsWithProjectileData(weapons);
+        var armor = ReconstructArmor();
+        var consumables = ReconstructConsumables();
+        var miscItems = ReconstructMiscItems();
+        var keys = ReconstructKeys();
+        var containers = ReconstructContainers();
+        Logger.Instance.Debug($"  [Semantic] Items: {phaseSw.Elapsed} (Weapons: {weapons.Count}, Armor: {armor.Count}, Ammo: {ammo.Count}, Consumables: {consumables.Count}, Misc: {miscItems.Count}, Keys: {keys.Count}, Containers: {containers.Count})");
 
         // Build dialogue data, then construct the tree hierarchy
+        progress?.Report((30, "Reconstructing dialogue..."));
+        phaseSw.Restart();
         var quests = ReconstructQuests();
         var dialogTopics = ReconstructDialogTopics();
         var dialogues = ReconstructDialogue();
@@ -132,77 +162,147 @@ public sealed partial class RecordParser
             // This runs AFTER the topic walk so new entries get enriched too.
             MergeRuntimeDialogueData(dialogues);
         }
+        else if (_accessor != null)
+        {
+            // Pure ESM files: link INFO→DIAL by file offset ordering (GROUP nesting).
+            // In ESM files, INFO records follow their parent DIAL in the GRUP structure.
+            // Runtime dumps use MergeRuntimeDialogueTopicLinks instead.
+            LinkInfoToTopicsByGroupOrder(dialogues, dialogTopics);
+        }
 
         // Propagate topic-level speaker (TNAM from ESM DIAL records) to INFO records without a speaker
         PropagateTopicSpeakers(dialogues, dialogTopics);
 
+        // Propagate from attributed siblings within same topic, then quest-level
+        PropagateTopicSiblingSpeakers(dialogues);
+        PropagateQuestSpeakers(dialogues);
+
         // EditorID convention matching for remaining unlinked dialogues
         LinkDialogueByEditorIdConvention(dialogues, quests);
+        Logger.Instance.Debug($"  [Semantic] Dialogue: {phaseSw.Elapsed} (Quests: {quests.Count}, Topics: {dialogTopics.Count}, Dialogues: {dialogues.Count})");
 
+        progress?.Report((45, "Building dialogue trees..."));
+        phaseSw.Restart();
         var dialogueTree = BuildDialogueTrees(dialogues, dialogTopics, quests);
+        var notes = ReconstructNotes();
+        var books = ReconstructBooks();
+        var terminals = ReconstructTerminals();
+        var scripts = ReconstructScripts();
+        Logger.Instance.Debug($"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
 
-        return new RecordCollection
+        progress?.Report((55, "Reconstructing abilities..."));
+        phaseSw.Restart();
+        var perks = ReconstructPerks();
+        var spells = ReconstructSpells();
+        Logger.Instance.Debug($"  [Semantic] Abilities: {phaseSw.Elapsed} (Perks: {perks.Count}, Spells: {spells.Count})");
+
+        progress?.Report((60, "Reconstructing world data..."));
+        phaseSw.Restart();
+        var cells = ReconstructCells();
+        var cellTime = phaseSw.Elapsed;
+        var worldspaces = ReconstructWorldspaces();
+        LinkCellsToWorldspaces(cells, worldspaces);
+        var packages = ReconstructPackages();
+        var resolvedCount = SpawnPositionResolver.ResolveSpawnPositions(cells, packages, npcs, creatures);
+        var mapMarkers = ExtractMapMarkers();
+        var leveledLists = ReconstructLeveledLists();
+        Logger.Instance.Debug($"  [Semantic] World: {phaseSw.Elapsed} (Cells: {cells.Count} in {cellTime}, Worldspaces: {worldspaces.Count}, Packages: {packages.Count}, SpawnResolved: {resolvedCount}, MapMarkers: {mapMarkers.Count}, LeveledLists: {leveledLists.Count})");
+
+        progress?.Report((80, "Reconstructing game data..."));
+        phaseSw.Restart();
+        var gameSettings = ReconstructGameSettings();
+        var globals = ReconstructGlobals();
+        var enchantments = ReconstructEnchantments();
+        var baseEffects = ReconstructBaseEffects();
+        var weaponMods = ReconstructWeaponMods();
+        var recipes = ReconstructRecipes();
+        var challenges = ReconstructChallenges();
+        var reputations = ReconstructReputations();
+        var projectiles = ReconstructProjectiles();
+        var explosions = ReconstructExplosions();
+        var messages = ReconstructMessages();
+        var classes = ReconstructClasses();
+        var formLists = ReconstructFormLists();
+        var activators = ReconstructActivators();
+        var lights = ReconstructLights();
+        var doors = ReconstructDoors();
+        var statics = ReconstructStatics();
+        var furniture = ReconstructFurniture();
+        Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
+
+        progress?.Report((95, "Building lookup tables..."));
+
+        var result = new RecordCollection
         {
             // Characters
-            Npcs = ReconstructNpcs(),
-            Creatures = ReconstructCreatures(),
-            Races = ReconstructRaces(),
-            Factions = ReconstructFactions(),
+            Npcs = npcs,
+            Creatures = creatures,
+            Races = races,
+            Factions = factions,
 
             // Quests and Dialogue
             Quests = quests,
             DialogTopics = dialogTopics,
             Dialogues = dialogues,
             DialogueTree = dialogueTree,
-            Notes = ReconstructNotes(),
-            Books = ReconstructBooks(),
-            Terminals = ReconstructTerminals(),
-            Scripts = ReconstructScripts(),
+            Notes = notes,
+            Books = books,
+            Terminals = terminals,
+            Scripts = scripts,
 
             // Items
             Weapons = weapons,
-            Armor = ReconstructArmor(),
+            Armor = armor,
             Ammo = ammo,
-            Consumables = ReconstructConsumables(),
-            MiscItems = ReconstructMiscItems(),
-            Keys = ReconstructKeys(),
-            Containers = ReconstructContainers(),
+            Consumables = consumables,
+            MiscItems = miscItems,
+            Keys = keys,
+            Containers = containers,
 
             // Abilities
-            Perks = ReconstructPerks(),
-            Spells = ReconstructSpells(),
+            Perks = perks,
+            Spells = spells,
 
             // World
-            Cells = ReconstructCells(),
-            Worldspaces = ReconstructWorldspaces(),
-            MapMarkers = ExtractMapMarkers(),
-            LeveledLists = ReconstructLeveledLists(),
+            Cells = cells,
+            Worldspaces = worldspaces,
+            MapMarkers = mapMarkers,
+            LeveledLists = leveledLists,
 
             // Game Data
-            GameSettings = ReconstructGameSettings(),
-            Globals = ReconstructGlobals(),
-            Enchantments = ReconstructEnchantments(),
-            BaseEffects = ReconstructBaseEffects(),
-            WeaponMods = ReconstructWeaponMods(),
-            Recipes = ReconstructRecipes(),
-            Challenges = ReconstructChallenges(),
-            Reputations = ReconstructReputations(),
-            Projectiles = ReconstructProjectiles(),
-            Explosions = ReconstructExplosions(),
-            Messages = ReconstructMessages(),
-            Classes = ReconstructClasses(),
-            FormLists = ReconstructFormLists(),
-            Activators = ReconstructActivators(),
-            Lights = ReconstructLights(),
-            Doors = ReconstructDoors(),
-            Statics = ReconstructStatics(),
-            Furniture = ReconstructFurniture(),
+            GameSettings = gameSettings,
+            Globals = globals,
+            Enchantments = enchantments,
+            BaseEffects = baseEffects,
+            WeaponMods = weaponMods,
+            Recipes = recipes,
+            Challenges = challenges,
+            Reputations = reputations,
+            Projectiles = projectiles,
+            Explosions = explosions,
+            Messages = messages,
+            Classes = classes,
+            FormLists = formLists,
+            Activators = activators,
+            Lights = lights,
+            Doors = doors,
+            Statics = statics,
+            Furniture = furniture,
+
+            // AI
+            Packages = packages,
 
             FormIdToEditorId = new Dictionary<uint, string>(_formIdToEditorId),
             FormIdToDisplayName = BuildFormIdToDisplayNameMap(),
             TotalRecordsProcessed = _scanResult.MainRecords.Count,
             UnreconstructedTypeCounts = unreconstructedCounts
         };
+
+        totalSw.Stop();
+        Logger.Instance.Info($"[Semantic Reconstruction] Complete. Time: {totalSw.Elapsed}, Records: {result.TotalRecordsReconstructed}");
+
+        progress?.Report((100, "Complete"));
+        return result;
     }
 
     #endregion
@@ -281,6 +381,59 @@ public sealed partial class RecordParser
     }
 
     /// <summary>
+    ///     Pre-scan all records for FULL subrecords, capturing display names
+    ///     for types that are not individually reconstructed (HAIR, EYES, CSTY, etc.).
+    ///     Runs once before specific reconstruction methods, so those methods can
+    ///     override entries with more accurate data if needed.
+    /// </summary>
+    private void CaptureAllFullNames()
+    {
+        if (_accessor == null)
+        {
+            return;
+        }
+
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(8192);
+        try
+        {
+            foreach (var record in _scanResult.MainRecords)
+            {
+                if (_formIdToFullName.ContainsKey(record.FormId))
+                {
+                    continue;
+                }
+
+                var recordData = ReadRecordData(record, buffer);
+                if (recordData == null)
+                {
+                    continue;
+                }
+
+                var (data, dataSize) = recordData.Value;
+
+                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                {
+                    if (sub.Signature == "FULL" && sub.DataLength > 0)
+                    {
+                        var name = EsmStringUtils.ReadNullTermString(
+                            data.AsSpan(sub.DataOffset, sub.DataLength));
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            _formIdToFullName.TryAdd(record.FormId, name);
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    /// <summary>
     ///     Build a FormID to display name (FullName) mapping from runtime hash table entries.
     ///     These display names come from TESFullName.cFullName read during the hash table walk.
     /// </summary>
@@ -354,56 +507,6 @@ public sealed partial class RecordParser
             .Where(f => f.Offset >= dataStart && f.Offset < dataEnd)
             .OrderBy(f => f.Offset)
             .FirstOrDefault()?.Text;
-    }
-
-    /// <summary>
-    ///     Find FULL subrecord by parsing the record's data using the accessor.
-    ///     Only finds FULL subrecords within the record's own data bounds.
-    /// </summary>
-    private string? FindFullNameInRecord(DetectedMainRecord record, byte[] buffer)
-    {
-        var recordData = ReadRecordData(record, buffer);
-        if (recordData == null)
-        {
-            return FindFullNameInRecordBounds(record);
-        }
-
-        var (data, dataSize) = recordData.Value;
-
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-        {
-            if (sub.Signature == "FULL")
-            {
-                return EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    ///     Find a 4-byte FormID subrecord within a record's data bounds.
-    ///     Used for TNAM (speaker) and similar FormID-only subrecords.
-    /// </summary>
-    private uint? FindFormIdSubrecordInRecord(DetectedMainRecord record, byte[] buffer, string signature)
-    {
-        var recordData = ReadRecordData(record, buffer);
-        if (recordData == null)
-        {
-            return null;
-        }
-
-        var (data, dataSize) = recordData.Value;
-
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
-        {
-            if (sub.Signature == signature && sub.DataLength == 4)
-            {
-                return ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
-            }
-        }
-
-        return null;
     }
 
     private ActorBaseSubrecord? FindActorBaseNear(long recordOffset)

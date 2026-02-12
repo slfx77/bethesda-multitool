@@ -90,18 +90,8 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
     {
         var saveAtlas = options?.TryGetValue("saveAtlas", out var saveAtlasObj) == true && saveAtlasObj is true;
-
-        try
-        {
-            _converter = new DdxSubprocessConverter(verbose, saveAtlas: saveAtlas);
-            return true;
-        }
-        catch (FileNotFoundException ex)
-        {
-            Logger.Instance.Debug($"Warning: {ex.Message}");
-
-            return false;
-        }
+        _converter = new DdxSubprocessConverter(verbose, saveAtlas: saveAtlas);
+        return true;
     }
 
     public bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata)

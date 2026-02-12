@@ -51,15 +51,37 @@ public sealed partial class SingleFileTab
 
     #region Dialog Helpers
 
+    private bool _isDialogOpen;
+
     private async Task ShowDialogAsync(string title, string message, bool isError = false)
     {
-        if (isError)
+        if (XamlRoot == null)
         {
-            await ErrorDialogHelper.ShowErrorAsync(title, message, XamlRoot);
+            System.Diagnostics.Debug.WriteLine($"[UI] Cannot show dialog (no XamlRoot): {title} — {message}");
+            return;
         }
-        else
+
+        if (_isDialogOpen)
         {
-            await ErrorDialogHelper.ShowInfoAsync(title, message, XamlRoot);
+            System.Diagnostics.Debug.WriteLine($"[UI] Dialog already open, skipping: {title} — {message}");
+            return;
+        }
+
+        _isDialogOpen = true;
+        try
+        {
+            if (isError)
+            {
+                await ErrorDialogHelper.ShowErrorAsync(title, message, XamlRoot);
+            }
+            else
+            {
+                await ErrorDialogHelper.ShowInfoAsync(title, message, XamlRoot);
+            }
+        }
+        finally
+        {
+            _isDialogOpen = false;
         }
     }
 

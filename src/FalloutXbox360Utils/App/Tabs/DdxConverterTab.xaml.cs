@@ -351,29 +351,12 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
             return;
         }
 
-        // Check if DDXConv is available
-        if (!DdxSubprocessConverter.IsAvailable())
-        {
-            await ShowDialogAsync("DDXConv Not Found",
-                "DDXConv.exe was not found. Please ensure it is built and available in the expected location.");
-            return;
-        }
-
         var outputDir = OutputDirectoryTextBox.Text;
         var inputDir = InputDirectoryTextBox.Text;
         var preserveStructure = PreserveStructureCheckBox.IsChecked == true;
         var overwrite = OverwriteExistingCheckBox.IsChecked == true;
 
-        DdxSubprocessConverter converter;
-        try
-        {
-            converter = new DdxSubprocessConverter();
-        }
-        catch (FileNotFoundException ex)
-        {
-            await ShowDialogAsync("DDXConv Not Found", ex.Message);
-            return;
-        }
+        var converter = new DdxSubprocessConverter();
 
         _cts = new CancellationTokenSource();
         UpdateButtonStates();

@@ -8,18 +8,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 /// <summary>
 ///     Handles writing GRUP structures for world and cell hierarchies.
 /// </summary>
-public sealed class EsmGrupWriter
+public sealed class EsmGrupWriter(byte[] input, EsmRecordWriter recordWriter, EsmConversionStats stats)
 {
-    private readonly byte[] _input;
-    private readonly EsmRecordWriter _recordWriter;
-    private readonly EsmConversionStats _stats;
-
-    public EsmGrupWriter(byte[] input, EsmRecordWriter recordWriter, EsmConversionStats stats)
-    {
-        _input = input;
-        _recordWriter = recordWriter;
-        _stats = stats;
-    }
+    private readonly byte[] _input = input;
+    private readonly EsmRecordWriter _recordWriter = recordWriter;
+    private readonly EsmConversionStats _stats = stats;
 
     /// <summary>
     ///     Writes the contents of the WRLD top-level group with proper hierarchy.

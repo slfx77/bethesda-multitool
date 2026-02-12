@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using FalloutXbox360Utils.Core.Utils;
-using Microsoft.Win32;
 
 namespace FalloutXbox360Utils;
 
@@ -11,19 +10,12 @@ namespace FalloutXbox360Utils;
 public static class DependencyChecker
 {
     /// <summary>
-    ///     Microsoft XNA Framework 4.0 download URL.
-    /// </summary>
-    public const string XnaFrameworkUrl = "https://www.microsoft.com/en-us/download/details.aspx?id=20914";
-
-    /// <summary>
     ///     FFmpeg download URL.
     /// </summary>
     public const string FfmpegUrl = "https://www.ffmpeg.org/download.html";
 
     // Cache dependency status to avoid repeated checks
-    private static DependencyStatus? _xnaStatus;
     private static DependencyStatus? _ffmpegStatus;
-    private static DependencyStatus? _ddxConvStatus;
     private static DependencyStatus? _xuiHelperStatus;
 
     // Track which dependency sets have been shown to user
@@ -37,31 +29,6 @@ public static class DependencyChecker
     ///     Returns true if the DDX converter dependencies dialog has already been shown this session.
     /// </summary>
     public static bool DdxConverterDependenciesShown { get; set; }
-
-    /// <summary>
-    ///     Checks if Microsoft XNA Framework 4.0 (XnaNative.dll) is available.
-    ///     Required for DDX -> DDS texture conversion.
-    /// </summary>
-    public static DependencyStatus CheckXnaNative(bool forceRecheck = false)
-    {
-        if (_xnaStatus != null && !forceRecheck) return _xnaStatus;
-
-        var (isAvailable, version, path) = FindXnaNative();
-
-        _xnaStatus = new DependencyStatus
-        {
-            Name = "Microsoft XNA Framework 4.0",
-            Description = "Required for DDX texture decompression (LZX algorithm)",
-            IsAvailable = isAvailable,
-            Version = version,
-            Path = path,
-            DownloadUrl = XnaFrameworkUrl,
-            InstallInstructions = "Install the Microsoft XNA Framework Redistributable 4.0 from the download link. " +
-                                  "After installation, restart this application."
-        };
-
-        return _xnaStatus;
-    }
 
     /// <summary>
     ///     Checks if FFmpeg is available in PATH or common locations.
@@ -87,30 +54,6 @@ public static class DependencyChecker
         };
 
         return _ffmpegStatus;
-    }
-
-    /// <summary>
-    ///     Checks if DDXConv executable is available.
-    ///     This is a built-in tool but requires XnaNative.dll to function.
-    /// </summary>
-    public static DependencyStatus CheckDdxConv(bool forceRecheck = false)
-    {
-        if (_ddxConvStatus != null && !forceRecheck) return _ddxConvStatus;
-
-        var (isAvailable, path) = FindDdxConv();
-
-        _ddxConvStatus = new DependencyStatus
-        {
-            Name = "DDXConv",
-            Description = "Built-in DDX to DDS converter",
-            IsAvailable = isAvailable,
-            Path = path,
-            DownloadUrl = null,
-            InstallInstructions = "DDXConv should be included with this application. " +
-                                  "Try rebuilding the solution or check that all projects compiled successfully."
-        };
-
-        return _ddxConvStatus;
     }
 
     /// <summary>
@@ -147,7 +90,6 @@ public static class DependencyChecker
             TabName = "Memory Carver",
             Dependencies =
             [
-                CheckXnaNative(),
                 CheckFfmpeg(),
                 CheckXuiHelper()
             ]
@@ -156,17 +98,14 @@ public static class DependencyChecker
 
     /// <summary>
     ///     Checks all dependencies required by the DDX Converter tab.
+    ///     DDXConv is now compiled-in, so no external dependencies are needed.
     /// </summary>
     public static TabDependencyResult CheckDdxConverterDependencies()
     {
         return new TabDependencyResult
         {
             TabName = "DDX Converter",
-            Dependencies =
-            [
-                CheckDdxConv(),
-                CheckXnaNative()
-            ]
+            Dependencies = [] // DDXConv is compiled-in, no external dependencies
         };
     }
 
@@ -188,9 +127,7 @@ public static class DependencyChecker
     /// </summary>
     public static void ResetCache()
     {
-        _xnaStatus = null;
         _ffmpegStatus = null;
-        _ddxConvStatus = null;
         _xuiHelperStatus = null;
     }
 
@@ -205,35 +142,6 @@ public static class DependencyChecker
     }
 
     #region Private Detection Methods
-
-    private static (bool isAvailable, string? version, string? path) FindXnaNative()
-    {
-        try
-        {
-            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32);
-            var versions = new[] { "v4.0", "v3.1", "v3.0" };
-
-            foreach (var version in versions)
-            {
-                var subKeyName = @"SOFTWARE\Microsoft\XNA\Framework\" + version;
-                using var subKey = baseKey.OpenSubKey(subKeyName);
-
-                if (subKey == null) continue;
-
-                var nativeLibPath = subKey.GetValue("NativeLibraryPath", null) as string;
-                if (string.IsNullOrEmpty(nativeLibPath)) continue;
-
-                var dllPath = Path.GetFullPath(Path.Combine(nativeLibPath, "XnaNative.dll"));
-                if (File.Exists(dllPath)) return (true, version, dllPath);
-            }
-        }
-        catch
-        {
-            // Registry access failed - XNA not installed
-        }
-
-        return (false, null, null);
-    }
 
     private static (bool isAvailable, string? version, string? path) FindFfmpeg()
     {
@@ -315,40 +223,6 @@ public static class DependencyChecker
         }
 
         return "unknown";
-    }
-
-    private static (bool isAvailable, string? path) FindDdxConv()
-    {
-        const string exeName = "DDXConv.exe";
-        const string folderName = "DDXConv";
-        const string targetFramework = "net10.0";
-
-        var assemblyDir = AppContext.BaseDirectory;
-
-        // Try common locations
-        var candidates = new List<string>
-        {
-            Path.Combine(assemblyDir, exeName),
-            Path.Combine(assemblyDir, "..", folderName, exeName)
-        };
-
-        // Add workspace-relative paths
-        var workspaceRoot = ToolPathFinder.FindWorkspaceRoot(assemblyDir);
-        if (!string.IsNullOrEmpty(workspaceRoot))
-        {
-            candidates.Add(Path.Combine(workspaceRoot, "src", folderName, folderName, "bin", "Release",
-                targetFramework, exeName));
-            candidates.Add(Path.Combine(workspaceRoot, "src", folderName, folderName, "bin", "Debug",
-                targetFramework, exeName));
-        }
-
-        foreach (var candidate in candidates)
-        {
-            var fullPath = Path.GetFullPath(candidate);
-            if (File.Exists(fullPath)) return (true, fullPath);
-        }
-
-        return (false, null);
     }
 
     private static (bool isAvailable, string? path) FindXuiHelper()

@@ -6,18 +6,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 /// <summary>
 ///     Handles writing converted records to output streams.
 /// </summary>
-public sealed class EsmRecordWriter
+public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
 {
-    private readonly EsmInfoMerger _infoMerger;
-    private readonly byte[] _input;
-    private readonly EsmConversionStats _stats;
-
-    public EsmRecordWriter(byte[] input, EsmConversionStats stats)
-    {
-        _input = input;
-        _stats = stats;
-        _infoMerger = new EsmInfoMerger(input, stats);
-    }
+    private readonly EsmInfoMerger _infoMerger = new EsmInfoMerger(input, stats);
+    private readonly byte[] _input = input;
+    private readonly EsmConversionStats _stats = stats;
 
     public void SetToftInfoIndex(IReadOnlyDictionary<uint, int> toftInfoOffsetsByFormId)
     {

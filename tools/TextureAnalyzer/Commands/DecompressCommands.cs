@@ -2,7 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using Spectre.Console;
 using TextureAnalyzer.Parsers;
-using XCompression;
+using DDXConv.Compression;
 using static TextureAnalyzer.Utils.BinaryHelpers;
 
 namespace TextureAnalyzer.Commands;
@@ -210,14 +210,14 @@ internal static class DecompressCommands
         {
             try
             {
-                using var context = new DecompressionContext();
+                using var context = new LzxDecompressor();
                 var decompressedData = new byte[size];
                 var inputCount = compressedData.Length;
                 var outputCount = (int)size;
 
                 var result = context.Decompress(compressedData, 0, ref inputCount, decompressedData, 0, ref outputCount);
 
-                if (result == ErrorCode.None && outputCount > 0)
+                if (result == 0 && outputCount > 0)
                 {
                     bytesConsumed = inputCount;
                     if (outputCount < decompressedData.Length)

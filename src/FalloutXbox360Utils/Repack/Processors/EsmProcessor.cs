@@ -5,19 +5,12 @@ namespace FalloutXbox360Utils.Repack.Processors;
 /// <summary>
 ///     Processor for ESM/ESP files - converts from Xbox 360 big-endian to PC little-endian.
 /// </summary>
-public sealed class EsmProcessor : IRepackProcessor
+public sealed class EsmProcessor(bool isEsp = false) : IRepackProcessor
 {
-    private readonly string _extension;
-    private readonly RepackPhase _phase;
+    private readonly string _extension = isEsp ? "*.esp" : "*.esm";
+    private readonly RepackPhase _phase = isEsp ? RepackPhase.Esp : RepackPhase.Esm;
 
-    public EsmProcessor(bool isEsp = false)
-    {
-        _phase = isEsp ? RepackPhase.Esp : RepackPhase.Esm;
-        _extension = isEsp ? "*.esp" : "*.esm";
-        Name = isEsp ? "ESP" : "ESM";
-    }
-
-    public string Name { get; }
+    public string Name { get; } = isEsp ? "ESP" : "ESM";
 
     public async Task<int> ProcessAsync(
         RepackerOptions options,

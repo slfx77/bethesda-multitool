@@ -1,13 +1,11 @@
-using System.Diagnostics;
-using System.Text.RegularExpressions;
-using FalloutXbox360Utils.Core.Utils;
+using DDXConv;
 
 namespace FalloutXbox360Utils.Core.Formats.Ddx;
 
 /// <summary>
-///     Converts DDX files by invoking DDXConv as a subprocess.
+///     Converts DDX files using DDXConv as a compiled-in library.
 /// </summary>
-public partial class DdxSubprocessConverter
+public class DdxSubprocessConverter(bool verbose = false, bool saveAtlas = false)
 {
     /// <summary>
     ///     Callback for batch conversion progress updates.
@@ -17,160 +15,69 @@ public partial class DdxSubprocessConverter
     /// <param name="error">Error message if conversion failed.</param>
     public delegate void BatchProgressCallback(string inputPath, string status, string? error);
 
-    private const string DdxConvExeName = "DDXConv.exe";
-    private const string DdxConvFolderName = "DDXConv";
-    private const string TargetFramework = "net10.0";
-    private readonly bool _saveAtlas;
-
-    private readonly bool _verbose;
-
-    public DdxSubprocessConverter(bool verbose = false, string? ddxConvPath = null, bool saveAtlas = false)
-    {
-        _verbose = verbose;
-        _saveAtlas = saveAtlas;
-        DdxConvPath = ddxConvPath ?? FindDdxConvPath();
-
-        if (string.IsNullOrEmpty(DdxConvPath) || !File.Exists(DdxConvPath))
-        {
-            throw new FileNotFoundException($"{DdxConvExeName} not found.", DdxConvExeName);
-        }
-    }
+    private readonly bool _saveAtlas = saveAtlas;
+    private readonly bool _verbose = verbose;
 
     public int Processed { get; private set; }
     public int Succeeded { get; private set; }
     public int Failed { get; private set; }
-    public string DdxConvPath { get; }
 
-    private static string FindDdxConvPath()
-    {
-        var envPath = Environment.GetEnvironmentVariable("DDXCONV_PATH");
-        if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath))
-        {
-            return envPath;
-        }
 
-        var assemblyDir = AppContext.BaseDirectory;
-        var workspaceRoot = ToolPathFinder.FindWorkspaceRoot(assemblyDir);
-
-        foreach (var path in BuildCandidatePaths(assemblyDir, workspaceRoot))
-        {
-            var fullPath = Path.GetFullPath(path);
-            if (File.Exists(fullPath))
-            {
-                return fullPath;
-            }
-        }
-
-        return string.Empty;
-    }
-
-    private static List<string> BuildCandidatePaths(string assemblyDir, string? workspaceRoot)
-    {
-        var candidates = new List<string>
-        {
-            Path.Combine(assemblyDir, DdxConvExeName),
-            Path.Combine(assemblyDir, "..", DdxConvFolderName, DdxConvExeName)
-        };
-
-        if (!string.IsNullOrEmpty(workspaceRoot))
-        {
-            candidates.Add(Path.Combine(workspaceRoot, "src", DdxConvFolderName, DdxConvFolderName, "bin", "Release",
-                TargetFramework, DdxConvExeName));
-            candidates.Add(Path.Combine(workspaceRoot, "src", DdxConvFolderName, DdxConvFolderName, "bin", "Debug",
-                TargetFramework, DdxConvExeName));
-        }
-
-        candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "..", DdxConvFolderName, DdxConvFolderName,
-            "bin", "Release", TargetFramework, DdxConvExeName));
-        candidates.Add(Path.Combine(assemblyDir, "..", "..", "..", "..", "..", DdxConvFolderName, DdxConvFolderName,
-            "bin", "Debug", TargetFramework, DdxConvExeName));
-        return candidates;
-    }
-
-    public static bool IsAvailable()
-    {
-        try
-        {
-            _ = new DdxSubprocessConverter();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     public bool ConvertFile(string inputPath, string outputPath)
     {
         Processed++;
         try
         {
-            var args = BuildConversionArguments(inputPath, outputPath);
-            using var process = StartDdxConvProcess(args);
-            if (process == null)
-            {
-                Failed++;
-                return false;
-            }
-
-            var stdout = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-
-            if (_verbose && !string.IsNullOrEmpty(stdout))
-            {
-                Console.WriteLine(stdout);
-            }
-
-            if (process.ExitCode != 0 || !File.Exists(outputPath))
-            {
-                Failed++;
-                return false;
-            }
-
+            var parser = new DdxParser(_verbose);
+            parser.ConvertDdxToDds(inputPath, outputPath, new ConversionOptions { SaveAtlas = _saveAtlas });
             Succeeded++;
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[DdxConverter] Exception converting {inputPath}: {ex.GetType().Name}: {ex.Message}");
+            if (_verbose)
+            {
+                Console.WriteLine($"[DdxConverter] Exception converting {inputPath}: {ex.GetType().Name}: {ex.Message}");
+            }
+
             Failed++;
             return false;
         }
     }
 
-    private string BuildConversionArguments(string inputPath, string outputPath)
+    public ConversionResult ConvertFromMemoryWithResult(byte[] ddxData)
     {
-        var args = $"\"{inputPath}\" \"{outputPath}\"";
-        if (_verbose)
+        Processed++;
+        try
         {
-            args += " --verbose";
+            var parser = new MemoryTextureParser(_verbose);
+            var ddxResult = parser.ConvertFromMemory(ddxData, _saveAtlas);
+
+            if (!ddxResult.Success)
+            {
+                Failed++;
+                return ConversionResult.Failure(ddxResult.Error ?? "DDXConv conversion failed");
+            }
+
+            Succeeded++;
+            return new ConversionResult
+            {
+                Success = true,
+                OutputData = ddxResult.DdsData,
+                AtlasData = ddxResult.AtlasData,
+                Notes = ddxResult.Notes
+            };
         }
-
-        if (_saveAtlas)
+        catch (Exception ex)
         {
-            args += " --atlas";
+            Failed++;
+            return ConversionResult.Failure($"Exception: {ex.Message}");
         }
-
-        return args;
-    }
-
-    private Process? StartDdxConvProcess(string args)
-    {
-        return Process.Start(new ProcessStartInfo
-        {
-            FileName = DdxConvPath,
-            Arguments = args,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        });
     }
 
     /// <summary>
-    ///     Converts all DDX files in the input directory to DDS using DDXConv's batch mode.
-    ///     This spawns a single DDXConv process for the entire directory, which is much faster
-    ///     than spawning individual processes for each file.
+    ///     Converts all DDX files in the input directory to DDS using parallel in-process conversion.
     /// </summary>
     /// <param name="inputDir">Input directory containing DDX files.</param>
     /// <param name="outputDir">Output directory for DDS files.</param>
@@ -183,7 +90,7 @@ public partial class DdxSubprocessConverter
     /// </param>
     /// <returns>Batch conversion result with statistics.</returns>
 #pragma warning disable CA1068 // CancellationToken parameter ordering - reordering would break existing callers
-    public async Task<BatchConversionResult> ConvertBatchAsync(
+    public Task<BatchConversionResult> ConvertBatchAsync(
         string inputDir,
         string outputDir,
         BatchProgressCallback? progressCallback = null,
@@ -191,239 +98,69 @@ public partial class DdxSubprocessConverter
         bool pcFriendly = false)
 #pragma warning restore CA1068
     {
-        var result = new BatchConversionResult();
-
-        // Build arguments for batch mode with --progress flag for machine-parseable output
-        var args = $"\"{inputDir}\" \"{outputDir}\" --progress";
-        if (pcFriendly)
+        return Task.Run(() =>
         {
-            args += " --pc-friendly";
-        }
+            var result = new BatchConversionResult();
+            Directory.CreateDirectory(outputDir);
 
-        var psi = new ProcessStartInfo
-        {
-            FileName = DdxConvPath,
-            Arguments = args,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
+            var ddxFiles = Directory.GetFiles(inputDir, "*.ddx", SearchOption.AllDirectories);
+            result.TotalFiles = ddxFiles.Length;
 
-        using var process = new Process();
-        process.StartInfo = psi;
+            var converted = 0;
+            var failed = 0;
+            var unsupported = 0;
 
-        // Regex patterns for parsing [PROGRESS] lines
-        var progressRegex = ProgressLineRegex();
-        var doneRegex = DoneLineRegex();
-
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (string.IsNullOrEmpty(e.Data))
+            Parallel.ForEach(ddxFiles, new ParallelOptions { CancellationToken = cancellationToken }, ddxFile =>
             {
-                return;
-            }
+                var relativePath = Path.GetRelativePath(inputDir, ddxFile);
+                var outputPath = Path.Combine(outputDir, Path.ChangeExtension(relativePath, ".dds"));
+                Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
 
-            // Parse "[PROGRESS] STATUS path [error]" lines
-            var progressMatch = progressRegex.Match(e.Data);
-            if (progressMatch.Success)
-            {
-                var status = progressMatch.Groups[1].Value;
-                var inputPath = progressMatch.Groups[2].Value;
-                var error = progressMatch.Groups[3].Success ? progressMatch.Groups[3].Value : null;
-
-                switch (status)
+                try
                 {
-                    case "OK":
-                        result.Converted++;
-                        break;
-                    case "FAIL":
-                        result.Failed++;
-                        break;
-                    case "UNSUPPORTED":
-                        result.Unsupported++;
-                        break;
+                    var parser = new DdxParser(_verbose);
+                    parser.ConvertDdxToDds(ddxFile, outputPath, new ConversionOptions { SaveAtlas = _saveAtlas });
+                    Interlocked.Increment(ref converted);
+                    progressCallback?.Invoke(ddxFile, "OK", null);
                 }
-
-                progressCallback?.Invoke(inputPath, status, error);
-                return;
-            }
-
-            // Parse "[PROGRESS] DONE converted failed unsupported" line
-            var doneMatch = doneRegex.Match(e.Data);
-            if (doneMatch.Success)
-            // Final stats from DDXConv (we track our own, but can verify)
-            {
-                return;
-            }
-
-            // Parse "[PROGRESS] START count" line
-            if (e.Data.StartsWith("[PROGRESS] START ", StringComparison.Ordinal)
-                && int.TryParse(e.Data.AsSpan(17), out var total))
-            {
-                result.TotalFiles = total;
-            }
-        };
-
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (!string.IsNullOrEmpty(e.Data))
-            {
-                result.Errors.Add(e.Data);
-            }
-        };
-
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
-        try
-        {
-            // Wait for process to exit, with cancellation support
-            await process.WaitForExitAsync(cancellationToken);
-            result.ExitCode = process.ExitCode;
-        }
-        catch (OperationCanceledException)
-        {
-            // Kill the process if cancelled
-            try
-            {
-                process.Kill(true);
-            }
-            catch
-            {
-                // Best effort
-            }
-
-            result.WasCancelled = true;
-            throw;
-        }
-
-        return result;
-    }
-
-    [GeneratedRegex(@"^\[PROGRESS\] (OK|FAIL|UNSUPPORTED) ""([^""]+)""(?: (.+))?$", RegexOptions.Compiled)]
-    private static partial Regex ProgressLineRegex();
-
-    [GeneratedRegex(@"^\[PROGRESS\] DONE (\d+) (\d+) (\d+)$", RegexOptions.Compiled)]
-    private static partial Regex DoneLineRegex();
-
-    public ConversionResult ConvertFromMemoryWithResult(byte[] ddxData)
-    {
-        Processed++;
-        string? tempInputPath = null, tempOutputPath = null;
-
-        try
-        {
-            var tempPath = Path.GetTempPath();
-            tempInputPath = Path.Combine(tempPath, $"ddx_{Guid.NewGuid():N}.ddx");
-            tempOutputPath = Path.Combine(tempPath, $"dds_{Guid.NewGuid():N}.dds");
-
-            File.WriteAllBytes(tempInputPath, ddxData);
-            var args = $"\"{tempInputPath}\" \"{tempOutputPath}\" --verbose";
-            if (_saveAtlas)
-            {
-                args += " --atlas";
-            }
-
-            using var process = StartDdxConvProcess(args);
-            if (process == null)
-            {
-                Failed++;
-                return ConversionResult.Failure("Failed to start DDXConv");
-            }
-
-            var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-
-            var consoleOutput = stdout + (string.IsNullOrEmpty(stderr) ? "" : $"\nSTDERR: {stderr}");
-            if (_verbose && !string.IsNullOrWhiteSpace(stdout))
-            {
-                Console.WriteLine(stdout.TrimEnd());
-            }
-
-            var (isPartial, notes) = AnalyzeOutput(consoleOutput);
-
-            if (!File.Exists(tempOutputPath))
-            {
-                Failed++;
-                return new ConversionResult
+                catch (NotSupportedException)
                 {
-                    Success = false,
-                    IsPartial = isPartial,
-                    Notes = notes ?? $"Exit code {process.ExitCode}",
-                    ConsoleOutput = consoleOutput
-                };
-            }
-
-            var ddsData = File.ReadAllBytes(tempOutputPath);
-            var atlasPath = tempOutputPath.Replace(".dds", "_full_atlas.dds");
-            var atlasData = _saveAtlas && File.Exists(atlasPath) ? File.ReadAllBytes(atlasPath) : null;
-
-            Succeeded++;
-            return new ConversionResult
-            {
-                Success = true,
-                OutputData = ddsData,
-                AtlasData = atlasData,
-                IsPartial = isPartial,
-                Notes = notes,
-                ConsoleOutput = _verbose ? consoleOutput : null
-            };
-        }
-        catch (Exception ex)
-        {
-            Failed++;
-            return ConversionResult.Failure($"Exception: {ex.Message}");
-        }
-        finally
-        {
-            CleanupTempFiles(tempInputPath, tempOutputPath);
-        }
-    }
-
-    private static (bool isPartial, string? notes) AnalyzeOutput(string output)
-    {
-        var isPartial = output.Contains("atlas-only", StringComparison.OrdinalIgnoreCase) ||
-                        output.Contains("partial", StringComparison.OrdinalIgnoreCase);
-        string? notes = null;
-        if (output.Contains("truncated", StringComparison.OrdinalIgnoreCase))
-        {
-            isPartial = true;
-            notes = "truncated data";
-        }
-
-        return (isPartial, notes);
-    }
-
-    private static void CleanupTempFiles(string? input, string? output)
-    {
-        try
-        {
-            if (input != null && File.Exists(input))
-            {
-                File.Delete(input);
-            }
-
-            if (output != null && File.Exists(output))
-            {
-                File.Delete(output);
-            }
-
-            if (output != null)
-            {
-                var atlas = output.Replace(".dds", "_full_atlas.dds");
-                if (File.Exists(atlas))
-                {
-                    File.Delete(atlas);
+                    Interlocked.Increment(ref unsupported);
+                    progressCallback?.Invoke(ddxFile, "UNSUPPORTED", null);
                 }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref failed);
+                    progressCallback?.Invoke(ddxFile, "FAIL", ex.Message);
+                }
+            });
+
+            result.Converted = converted;
+            result.Failed = failed;
+            result.Unsupported = unsupported;
+
+            if (pcFriendly)
+            {
+                var normalMaps = Directory.GetFiles(outputDir, "*_n.dds", SearchOption.AllDirectories);
+                Parallel.ForEach(normalMaps, normalMap =>
+                {
+                    var specMap = normalMap.Replace("_n.dds", "_s.dds", StringComparison.Ordinal);
+                    try
+                    {
+                        DdsPostProcessor.MergeNormalSpecularMaps(normalMap, File.Exists(specMap) ? specMap : null);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_verbose)
+                        {
+                            Console.WriteLine($"[DdxConverter] PC-friendly merge failed for {normalMap}: {ex.Message}");
+                        }
+                    }
+                });
             }
-        }
-        catch
-        {
-            /* Best-effort cleanup */
-        }
+
+            return result;
+        }, cancellationToken);
     }
 
     public Task<ConversionResult> ConvertFromMemoryWithResultAsync(byte[] ddxData)

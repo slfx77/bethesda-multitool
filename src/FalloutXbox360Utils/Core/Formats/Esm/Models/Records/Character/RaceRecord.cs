@@ -18,27 +18,9 @@ public record RaceRecord
     /// <summary>Race description (DESC subrecord).</summary>
     public string? Description { get; init; }
 
-    // DATA subrecord (36 bytes) - S.P.E.C.I.A.L. bonuses (first 7 bytes of SkillBoosts area)
-    /// <summary>Strength modifier.</summary>
-    public sbyte Strength { get; init; }
-
-    /// <summary>Perception modifier.</summary>
-    public sbyte Perception { get; init; }
-
-    /// <summary>Endurance modifier.</summary>
-    public sbyte Endurance { get; init; }
-
-    /// <summary>Charisma modifier.</summary>
-    public sbyte Charisma { get; init; }
-
-    /// <summary>Intelligence modifier.</summary>
-    public sbyte Intelligence { get; init; }
-
-    /// <summary>Agility modifier.</summary>
-    public sbyte Agility { get; init; }
-
-    /// <summary>Luck modifier.</summary>
-    public sbyte Luck { get; init; }
+    // DATA subrecord (36 bytes) - Skill Boosts (7 pairs of AV code + boost value)
+    /// <summary>Skill boosts from DATA subrecord (7 pairs of Skill AV code + Boost value).</summary>
+    public List<(int SkillIndex, sbyte Boost)> SkillBoosts { get; init; } = [];
 
     // Height/Weight data from DATA subrecord
     /// <summary>Male height multiplier.</summary>
@@ -86,8 +68,8 @@ public record RaceRecord
     /// <summary>Default female hair FormID.</summary>
     public uint? DefaultHairFemaleFormId { get; init; }
 
-    /// <summary>Default hair color (index or FormID depending on game).</summary>
-    public uint? DefaultHairColorFormId { get; init; }
+    /// <summary>Default hair color index (CNAM subrecord, not a FormID).</summary>
+    public byte? DefaultHairColor { get; init; }
 
     /// <summary>Available hair style FormIDs.</summary>
     public List<uint> HairStyleFormIds { get; init; } = [];

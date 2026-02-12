@@ -42,8 +42,8 @@ public static class MinidumpExtractor
         // Extract modules from minidump first
         var (moduleCount, moduleOffsets) = await ExtractModulesAsync(filePath, options, progress);
 
-        // When PcFriendly is enabled, skip inline DDX conversion - we'll do batch conversion after
-        var skipDdxConversion = options.PcFriendly && options.ConvertDdx;
+        // Always skip inline DDX conversion - batch conversion after carving is much faster
+        var skipDdxConversion = options.ConvertDdx;
 
         // Create carver with options for signature-based extraction
         using var carver = new MemoryCarver(
@@ -75,11 +75,10 @@ public static class MinidumpExtractor
         // Build set of failed conversion offsets
         var failedConversionOffsets = carver.FailedConversionOffsets.ToHashSet();
 
-        // Batch DDX conversion with pc-friendly when enabled
-        // Run batch conversion if there are DDX files to convert (inline conversion was skipped)
+        // Batch DDX conversion — always use batch mode (much faster than per-file subprocess)
         var ddxConverted = carver.DdxConvertedCount;
         var ddxFailed = carver.DdxConvertFailedCount;
-        if (skipDdxConversion && options.ConvertDdx)
+        if (options.ConvertDdx)
         {
             var ddxDir = Path.Combine(extractDir, "ddx");
             var hasDdxToConvert = Directory.Exists(ddxDir) &&
@@ -87,9 +86,16 @@ public static class MinidumpExtractor
 
             if (hasDdxToConvert)
             {
-                var batchResult = await BatchConvertDdxAsync(extractDir, options.PcFriendly, progress);
+                var (batchResult, batchFailedOffsets) = await BatchConvertDdxAsync(
+                    extractDir, options.PcFriendly, progress, entries);
                 ddxConverted = batchResult.Converted;
                 ddxFailed = batchResult.Failed;
+
+                // Merge batch failure offsets into the overall failure set for UI reporting
+                foreach (var offset in batchFailedOffsets)
+                {
+                    failedConversionOffsets.Add(offset);
+                }
             }
             else if (options.Verbose)
             {
@@ -239,12 +245,16 @@ public static class MinidumpExtractor
 
     /// <summary>
     ///     Batch convert DDX files to DDS with pc-friendly option.
+    ///     Tracks failed conversion offsets for UI reporting.
     /// </summary>
-    private static async Task<BatchConversionResult> BatchConvertDdxAsync(
+    private static async Task<(BatchConversionResult result, HashSet<long> failedOffsets)> BatchConvertDdxAsync(
         string extractDir,
         bool pcFriendly,
-        IProgress<ExtractionProgress>? progress)
+        IProgress<ExtractionProgress>? progress,
+        IReadOnlyList<CarveEntry> manifest)
     {
+        var failedOffsets = new HashSet<long>();
+
         // DDX files are saved to "ddx" folder during carving (DdxFormat.OutputFolder = "ddx")
         // Convert them and output to "textures" folder
         var ddxDir = Path.Combine(extractDir, "ddx");
@@ -252,7 +262,7 @@ public static class MinidumpExtractor
 
         if (!Directory.Exists(ddxDir))
         {
-            return new BatchConversionResult();
+            return (new BatchConversionResult(), failedOffsets);
         }
 
         progress?.Report(new ExtractionProgress
@@ -265,11 +275,30 @@ public static class MinidumpExtractor
 
         try
         {
+            // Build filename → offset map from manifest for DDX entries
+            var filenameToOffset = manifest
+                .Where(e => e.FileType.StartsWith("ddx", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(e => e.Filename, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Offset, StringComparer.OrdinalIgnoreCase);
+
             var converter = new DdxSubprocessConverter();
             var result = await converter.ConvertBatchAsync(
                 ddxDir,
                 texturesDir,
-                null,
+                (inputPath, status, _) =>
+                {
+                    if (status is "FAIL" or "UNSUPPORTED")
+                    {
+                        var filename = Path.GetFileName(inputPath);
+                        if (filenameToOffset.TryGetValue(filename, out var offset))
+                        {
+                            lock (failedOffsets)
+                            {
+                                failedOffsets.Add(offset);
+                            }
+                        }
+                    }
+                },
                 default,
                 pcFriendly);
 
@@ -279,12 +308,12 @@ public static class MinidumpExtractor
                 CurrentOperation = $"Converted {result.Converted} textures ({result.Failed} failed)"
             });
 
-            return result;
+            return (result, failedOffsets);
         }
         catch (FileNotFoundException)
         {
             // DDXConv not available
-            return new BatchConversionResult();
+            return (new BatchConversionResult(), failedOffsets);
         }
     }
 

@@ -140,6 +140,10 @@ public record RecordCollection
     /// <summary>Reconstructed Furniture (FURN) records.</summary>
     public List<FurnitureRecord> Furniture { get; init; } = [];
 
+    // AI
+    /// <summary>Reconstructed AI Package (PACK) records.</summary>
+    public List<PackageRecord> Packages { get; init; } = [];
+
     /// <summary>FormID to Editor ID mapping built during reconstruction.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
@@ -159,7 +163,8 @@ public record RecordCollection
         WeaponMods.Count + Recipes.Count + Challenges.Count + Reputations.Count +
         Projectiles.Count + Explosions.Count + Messages.Count + Classes.Count +
         FormLists.Count + Activators.Count +
-        Lights.Count + Doors.Count + Statics.Count + Furniture.Count;
+        Lights.Count + Doors.Count + Statics.Count + Furniture.Count +
+        Packages.Count;
 
     /// <summary>
     ///     Counts of record types that were detected but not fully reconstructed.

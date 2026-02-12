@@ -164,7 +164,9 @@ public sealed partial class RecordParser
     /// </summary>
     private void MergeRuntimeScriptData(List<ScriptRecord> scripts)
     {
-        var scriptsByFormId = scripts.ToDictionary(s => s.FormId, s => s);
+        var scriptsByFormId = scripts
+            .GroupBy(s => s.FormId)
+            .ToDictionary(g => g.Key, g => g.First());
         var runtimeEntries = _scanResult.RuntimeEditorIds
             .Where(e => e.FormType == 0x11 && e.TesFormOffset != null)
             .ToList();

@@ -39,7 +39,6 @@ public sealed partial class SingleFileTab
                 _session.AnalysisResult?.FormIdMap,
                 _session.SemanticResult?.FormIdToDisplayName);
         }
-
         // Add child TreeViewNodes with progressive loading for large sets
         AddChildNodesProgressively(args.Node, browserNode.Children);
         EnsureTreeScrollViewerHooked();
@@ -50,8 +49,9 @@ public sealed partial class SingleFileTab
         if (args.InvokedItem is not TreeViewNode treeNode) return;
         if (treeNode.Content is not EsmBrowserNode browserNode) return;
 
-        // For Category/RecordType nodes, expand on click (not just chevron)
-        if (browserNode.NodeType is "Category" or "RecordType")
+        // For Category/RecordType/expandable Record nodes, expand on click (not just chevron)
+        if (browserNode.NodeType is "Category" or "RecordType"
+            || (browserNode.NodeType == "Record" && browserNode.HasUnrealizedChildren))
         {
             if (!treeNode.IsExpanded)
             {
@@ -65,7 +65,6 @@ public sealed partial class SingleFileTab
                             browserNode,
                             _session.AnalysisResult?.FormIdMap,
                             _session.SemanticResult?.FormIdToDisplayName);
-
                     AddChildNodesProgressively(treeNode, browserNode.Children);
                     EnsureTreeScrollViewerHooked();
                 }

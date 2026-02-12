@@ -21,4 +21,13 @@ public sealed class EsmPropertyEntry
     public string? Col2 { get; init; } // Full Name
     public string? Col3 { get; init; } // Form ID
     public string? Col4 { get; init; } // Quantity/Rank
+
+    /// <summary>Raw FormID for the main Value field (top-level FormID references).</summary>
+    public uint? LinkedFormId { get; init; }
+
+    /// <summary>Raw FormID for Col3 (sub-item FormID column).</summary>
+    public uint? Col3FormId { get; init; }
+
+    /// <summary>Raw FormID for Col4 (sub-item FormID column).</summary>
+    public uint? Col4FormId { get; init; }
 }

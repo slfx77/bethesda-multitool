@@ -8,17 +8,13 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 ///     Tests for validating ESM file coverage.
 ///     These tests use local sample files and are skipped when files are not available.
 /// </summary>
-public class EsmCoverageTests
+public class EsmCoverageTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public EsmCoverageTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
+    private readonly ITestOutputHelper _output = output;
 
     // Path to sample ESM files - relative to repository root
     // Tests run from bin/Debug/net10.0, so navigate up to find Sample folder
+
     private static string SampleEsmPath => Path.GetFullPath(
         Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Sample", "ESM", "360_proto",
             "FalloutNV.esm"));

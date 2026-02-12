@@ -107,7 +107,55 @@ internal static partial class EsmBrowserTreeBuilder
     };
 
     /// <summary>
-    ///     Fallout NV skill names indexed by skill ID.
+    ///     Maps reconstructed record C# types to their 4-character ESM record signatures.
+    /// </summary>
+    private static readonly Dictionary<Type, string> RecordTypeSignatures = new()
+    {
+        [typeof(NpcRecord)] = "NPC_",
+        [typeof(CreatureRecord)] = "CREA",
+        [typeof(RaceRecord)] = "RACE",
+        [typeof(FactionRecord)] = "FACT",
+        [typeof(ClassRecord)] = "CLAS",
+        [typeof(QuestRecord)] = "QUST",
+        [typeof(DialogueRecord)] = "INFO",
+        [typeof(NoteRecord)] = "NOTE",
+        [typeof(BookRecord)] = "BOOK",
+        [typeof(TerminalRecord)] = "TERM",
+        [typeof(WeaponRecord)] = "WEAP",
+        [typeof(ArmorRecord)] = "ARMO",
+        [typeof(AmmoRecord)] = "AMMO",
+        [typeof(ConsumableRecord)] = "ALCH",
+        [typeof(MiscItemRecord)] = "MISC",
+        [typeof(KeyRecord)] = "KEYM",
+        [typeof(ContainerRecord)] = "CONT",
+        [typeof(PerkRecord)] = "PERK",
+        [typeof(SpellRecord)] = "SPEL",
+        [typeof(CellRecord)] = "CELL",
+        [typeof(WorldspaceRecord)] = "WRLD",
+        [typeof(GameSettingRecord)] = "GMST",
+        [typeof(GlobalRecord)] = "GLOB",
+        [typeof(EnchantmentRecord)] = "ENCH",
+        [typeof(BaseEffectRecord)] = "MGEF",
+        [typeof(WeaponModRecord)] = "IMOD",
+        [typeof(RecipeRecord)] = "RCPE",
+        [typeof(ChallengeRecord)] = "CHAL",
+        [typeof(ReputationRecord)] = "REPU",
+        [typeof(ProjectileRecord)] = "PROJ",
+        [typeof(ExplosionRecord)] = "EXPL",
+        [typeof(MessageRecord)] = "MESG",
+        [typeof(LeveledListRecord)] = "LVLI",
+        [typeof(FormListRecord)] = "FLST",
+        [typeof(ActivatorRecord)] = "ACTI",
+        [typeof(LightRecord)] = "LIGH",
+        [typeof(DoorRecord)] = "DOOR",
+        [typeof(StaticRecord)] = "STAT",
+        [typeof(FurnitureRecord)] = "FURN",
+        [typeof(ScriptRecord)] = "SCPT",
+    };
+
+    /// <summary>
+    ///     Fallout NV skill names indexed by skill ID (0-based).
+    ///     Actor value codes 32-45 map to indices 0-13.
     /// </summary>
     private static readonly string[] SkillNames =
     [
@@ -115,6 +163,16 @@ internal static partial class EsmBrowserTreeBuilder
         "Medicine", "Melee Weapons", "Repair", "Science", "Guns",
         "Sneak", "Speech", "Survival", "Unarmed"
     ];
+
+    /// <summary>
+    ///     Maps an actor value code to a skill name.
+    ///     AV codes 32-45 map to skills; returns null for non-skill AVs.
+    /// </summary>
+    private static string? ActorValueToSkillName(int avCode)
+    {
+        var idx = avCode - 32;
+        return idx >= 0 && idx < SkillNames.Length ? SkillNames[idx] : null;
+    }
 
     /// <summary>
     ///     Cache for PropertyInfo[] by type - avoids repeated GetProperties() calls.
@@ -152,10 +210,9 @@ internal static partial class EsmBrowserTreeBuilder
             ("Classes", result.Classes)
         ]);
 
+        // Dialog Topics and Dialogues are in the Dialogue Viewer tab
         AddCategory(root, "Quests & Dialogue", "\uE8BD", [
             ("Quests", result.Quests),
-            ("Dialog Topics", result.DialogTopics),
-            ("Dialogues", result.Dialogues),
             ("Notes", result.Notes),
             ("Books", result.Books),
             ("Terminals", result.Terminals),
@@ -180,8 +237,15 @@ internal static partial class EsmBrowserTreeBuilder
             ("Base Effects", result.BaseEffects)
         ]);
 
-        AddWorldCategory(root, result.Worldspaces, result.Cells, result.MapMarkers, result.LeveledLists,
-            result.Activators, result.Lights, result.Doors, result.Statics, result.Furniture);
+        // World objects (base definitions only — spatial visualization is in the World Map tab)
+        AddCategory(root, "World Objects", "\uE774", [
+            ("Leveled Lists", result.LeveledLists),
+            ("Activators", result.Activators),
+            ("Lights", result.Lights),
+            ("Doors", result.Doors),
+            ("Statics", result.Statics),
+            ("Furniture", result.Furniture)
+        ]);
 
         AddCategory(root, "Game Data", "\uE8F1", [
             ("Game Settings", result.GameSettings),
@@ -225,112 +289,12 @@ internal static partial class EsmBrowserTreeBuilder
     /// <summary>
     ///     Adds the World category with cells nested under worldspaces.
     /// </summary>
-    private static void AddWorldCategory(
-        ObservableCollection<EsmBrowserNode> root,
-        List<WorldspaceRecord> worldspaces,
-        IList<CellRecord> cells,
-        List<PlacedReference> mapMarkers,
-        List<LeveledListRecord> leveledLists,
-        List<ActivatorRecord> activators,
-        List<LightRecord> lights,
-        List<DoorRecord> doors,
-        List<StaticRecord> statics,
-        List<FurnitureRecord> furniture)
-    {
-        // Group cells by worldspace FormID
-        var cellsByWorldspace = cells
-            .Where(c => c.WorldspaceFormId.HasValue)
-            .GroupBy(c => c.WorldspaceFormId!.Value)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        // Interior cells = cells without WorldspaceFormId
-        var interiorCells = cells.Where(c => !c.WorldspaceFormId.HasValue).ToList();
-
-        var totalCount = worldspaces.Count + interiorCells.Count + mapMarkers.Count + leveledLists.Count +
-                         activators.Count + lights.Count + doors.Count + statics.Count + furniture.Count;
-        if (totalCount == 0)
-        {
-            return;
-        }
-
-        // Build record types with special handling for worldspaces
-        var recordTypes =
-            new List<(string Name, IList Records, Dictionary<uint, List<CellRecord>>? CellLookup)>();
-
-        if (worldspaces.Count > 0)
-        {
-            recordTypes.Add(("Worldspaces", (IList)worldspaces, cellsByWorldspace));
-        }
-
-        if (interiorCells.Count > 0)
-        {
-            recordTypes.Add(("Interior Cells", (IList)interiorCells, null));
-        }
-
-        if (mapMarkers.Count > 0)
-        {
-            recordTypes.Add(("Map Markers", (IList)mapMarkers, null));
-        }
-
-        if (leveledLists.Count > 0)
-        {
-            recordTypes.Add(("Leveled Lists", (IList)leveledLists, null));
-        }
-
-        if (activators.Count > 0)
-        {
-            recordTypes.Add(("Activators", (IList)activators, null));
-        }
-
-        if (lights.Count > 0)
-        {
-            recordTypes.Add(("Lights", (IList)lights, null));
-        }
-
-        if (doors.Count > 0)
-        {
-            recordTypes.Add(("Doors", (IList)doors, null));
-        }
-
-        if (statics.Count > 0)
-        {
-            recordTypes.Add(("Statics", (IList)statics, null));
-        }
-
-        if (furniture.Count > 0)
-        {
-            recordTypes.Add(("Furniture", (IList)furniture, null));
-        }
-
-        var categoryNode = new EsmBrowserNode
-        {
-            DisplayName = $"World ({totalCount:N0})",
-            NodeType = "Category",
-            IconGlyph = "\uE774",
-            HasUnrealizedChildren = true,
-            DataObject = ("World", recordTypes, cellsByWorldspace)
-        };
-
-        root.Add(categoryNode);
-    }
 
     /// <summary>
     ///     Populates children for a category node (record type sub-nodes).
     /// </summary>
     public static void LoadCategoryChildren(EsmBrowserNode categoryNode)
     {
-        // Handle World category specially (has cells nested under worldspaces)
-        if (categoryNode.DataObject is
-                ValueTuple<string,
-                    List<(string Name, IList Records, Dictionary<uint, List<CellRecord>>? CellLookup)>,
-                    Dictionary<uint, List<CellRecord>>> worldData
-            && worldData.Item1 == "World")
-        {
-            LoadWorldCategoryChildren(categoryNode, worldData.Item2, worldData.Item3);
-            return;
-        }
-
-        // Standard category handling
         if (categoryNode.DataObject is not (string Name, IList Records)[] recordTypes)
         {
             return;
@@ -361,44 +325,6 @@ internal static partial class EsmBrowserTreeBuilder
         categoryNode.HasUnrealizedChildren = false;
     }
 
-    /// <summary>
-    ///     Populates children for the World category with worldspaces containing nested cells.
-    /// </summary>
-    private static void LoadWorldCategoryChildren(
-        EsmBrowserNode categoryNode,
-        List<(string Name, IList Records, Dictionary<uint, List<CellRecord>>? CellLookup)> recordTypes,
-        Dictionary<uint, List<CellRecord>> cellsByWorldspace)
-    {
-        foreach (var (name, records, _) in recordTypes)
-        {
-            if (records.Count == 0)
-            {
-                continue;
-            }
-
-            var typeIcon = SubCategoryIcons.GetValueOrDefault(name, categoryNode.IconGlyph);
-
-            // For Worldspaces, store the cell lookup for later expansion
-            object dataObject = name == "Worldspaces"
-                ? (records, cellsByWorldspace)
-                : records;
-
-            var typeNode = new EsmBrowserNode
-            {
-                DisplayName = $"{name} ({records.Count:N0})",
-                NodeType = "RecordType",
-                IconGlyph = typeIcon,
-                ParentIconGlyph = typeIcon,
-                ParentTypeName = name,
-                HasUnrealizedChildren = true,
-                DataObject = dataObject
-            };
-
-            categoryNode.Children.Add(typeNode);
-        }
-
-        categoryNode.HasUnrealizedChildren = false;
-    }
 
     /// <summary>
     ///     Populates children for a record type node (individual records).
@@ -408,14 +334,6 @@ internal static partial class EsmBrowserTreeBuilder
         Dictionary<uint, string>? lookup = null,
         Dictionary<uint, string>? displayNameLookup = null)
     {
-        // Handle Worldspaces with nested cells
-        if (typeNode.DataObject is
-            (IList worldspaceRecords, Dictionary<uint, List<CellRecord>> cellsByWorldspace))
-        {
-            LoadWorldspacesWithCells(typeNode, worldspaceRecords, cellsByWorldspace, lookup, displayNameLookup);
-            return;
-        }
-
         if (typeNode.DataObject is not IList records)
         {
             return;
@@ -574,180 +492,6 @@ internal static partial class EsmBrowserTreeBuilder
             ?? displayNameLookup?.GetValueOrDefault(formId.Value);
     }
 
-    /// <summary>
-    ///     Populates worldspace nodes with their cells as nested children.
-    /// </summary>
-    private static void LoadWorldspacesWithCells(
-        EsmBrowserNode typeNode,
-        IList worldspaceRecords,
-        Dictionary<uint, List<CellRecord>> cellsByWorldspace,
-        Dictionary<uint, string>? lookup,
-        Dictionary<uint, string>? displayNameLookup)
-    {
-        var recordNodes = new List<EsmBrowserNode>(worldspaceRecords.Count);
-
-        foreach (var record in worldspaceRecords)
-        {
-            var (formId, editorId, fullName, offset) = ExtractRecordIdentity(record);
-            var formIdHex = $"0x{formId:X8}";
-
-            // Get cells for this worldspace
-            var worldspaceCells = cellsByWorldspace.GetValueOrDefault(formId) ?? [];
-            var cellCount = worldspaceCells.Count;
-
-            // Build display name with cell count
-            string displayName;
-            string baseName;
-            if (!string.IsNullOrEmpty(fullName))
-            {
-                baseName = fullName;
-            }
-            else if (!string.IsNullOrEmpty(editorId))
-            {
-                baseName = editorId;
-            }
-            else
-            {
-                baseName = formIdHex;
-            }
-
-            displayName = cellCount > 0
-                ? $"{baseName} ({cellCount:N0} cells)"
-                : baseName;
-
-            var detail = !string.IsNullOrEmpty(editorId) && editorId != baseName
-                ? $"({editorId})"
-                : null;
-
-            // Prepare DataObject - if has cells, store tuple for lazy loading; otherwise just the record
-            // Use empty dictionaries as fallback to avoid nullable pattern matching issues
-            object dataObj = cellCount > 0
-                ? (record, worldspaceCells, lookup ?? new Dictionary<uint, string>(),
-                    displayNameLookup ?? new Dictionary<uint, string>())
-                : record;
-
-            var recordNode = new EsmBrowserNode
-            {
-                DisplayName = displayName,
-                Detail = detail,
-                FormIdHex = formIdHex,
-                EditorId = editorId,
-                NodeType = "Record",
-                IconGlyph = typeNode.IconGlyph,
-                ParentTypeName = typeNode.ParentTypeName,
-                ParentIconGlyph = typeNode.IconGlyph,
-                FileOffset = offset,
-                DataObject = dataObj,
-                Properties = BuildProperties(record, lookup, displayNameLookup),
-                // Cells will be loaded as children when expanded
-                HasUnrealizedChildren = cellCount > 0
-            };
-
-            recordNodes.Add(recordNode);
-        }
-
-        // Sort by display name
-        var sorted = recordNodes.OrderBy(n => n.DisplayName ?? "", StringComparer.OrdinalIgnoreCase).ToList();
-
-        lock (typeNode.Children)
-        {
-            typeNode.Children.Clear();
-            foreach (var node in sorted)
-            {
-                typeNode.Children.Add(node);
-            }
-        }
-
-        typeNode.HasUnrealizedChildren = false;
-    }
-
-    /// <summary>
-    ///     Populates cells as children of a worldspace node.
-    /// </summary>
-    public static void LoadWorldspaceCellChildren(
-        EsmBrowserNode worldspaceNode,
-        Dictionary<uint, string>? lookup = null,
-        Dictionary<uint, string>? displayNameLookup = null)
-    {
-        // DataObject is a tuple: (record, cells, lookup, displayNameLookup)
-        if (worldspaceNode.DataObject is not
-            ValueTuple<object, List<CellRecord>, Dictionary<uint, string>, Dictionary<uint, string>> cellData)
-        {
-            return;
-        }
-
-        var record = cellData.Item1;
-        var cells = cellData.Item2;
-
-        // Use stored lookups if available
-        lookup ??= cellData.Item3;
-        displayNameLookup ??= cellData.Item4;
-
-        // Get parent worldspace name for fallback display
-        var (wsFormId, wsEditorId, _, _) = ExtractRecordIdentity(record);
-        var worldspaceName = !string.IsNullOrEmpty(wsEditorId) ? wsEditorId : $"0x{wsFormId:X8}";
-
-        var cellNodes = new List<EsmBrowserNode>(cells.Count);
-
-        foreach (var cell in cells)
-        {
-            var formIdHex = $"0x{cell.FormId:X8}";
-
-            // Build display name with fallback to "WorldspaceName [GridX, GridY]" or "[FormID]"
-            string displayName;
-            if (!string.IsNullOrEmpty(cell.FullName))
-            {
-                displayName = cell.FullName;
-            }
-            else if (!string.IsNullOrEmpty(cell.EditorId))
-            {
-                displayName = cell.EditorId;
-            }
-            else if (cell.GridX.HasValue && cell.GridY.HasValue)
-            {
-                displayName = $"{worldspaceName} [{cell.GridX}, {cell.GridY}]";
-            }
-            else
-            {
-                displayName = $"{worldspaceName} [{formIdHex}]";
-            }
-
-            var detail = !string.IsNullOrEmpty(cell.EditorId) && cell.EditorId != displayName
-                ? $"({cell.EditorId})"
-                : formIdHex;
-
-            var cellNode = new EsmBrowserNode
-            {
-                DisplayName = displayName,
-                Detail = detail,
-                FormIdHex = formIdHex,
-                EditorId = cell.EditorId,
-                NodeType = "Record",
-                IconGlyph = "\uE707", // MapPin
-                ParentTypeName = "Cells",
-                ParentIconGlyph = "\uE707",
-                FileOffset = cell.Offset,
-                DataObject = cell,
-                Properties = BuildProperties(cell, lookup, displayNameLookup)
-            };
-
-            cellNodes.Add(cellNode);
-        }
-
-        // Sort by display name
-        var sorted = cellNodes.OrderBy(n => n.DisplayName ?? "", StringComparer.OrdinalIgnoreCase).ToList();
-
-        lock (worldspaceNode.Children)
-        {
-            worldspaceNode.Children.Clear();
-            foreach (var node in sorted)
-            {
-                worldspaceNode.Children.Add(node);
-            }
-        }
-
-        worldspaceNode.HasUnrealizedChildren = false;
-    }
 
     /// <summary>
     ///     Re-sorts children of all record type nodes based on the selected sort mode.
@@ -814,9 +558,19 @@ internal static partial class EsmBrowserTreeBuilder
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
 
+        // Add record type signature as the first Identity property
+        if (RecordTypeSignatures.TryGetValue(type, out var signature))
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Record Type",
+                Value = signature,
+                Category = "Identity"
+            });
+        }
+
         // Record-type flags for special handling
         var isCreature = record is CreatureRecord;
-        var isRace = record is RaceRecord;
 
         foreach (var prop in GetCachedProperties(type))
         {
@@ -832,14 +586,16 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
-            // Skip race SPECIAL attributes (combined into single line below)
-            if (isRace && prop.Name is "Strength" or "Perception" or "Endurance" or "Charisma"
-                    or "Intelligence" or "Agility" or "Luck")
+            var value = prop.GetValue(record);
+
+            // Skip WaterHeight when HasWater is false or value is a sentinel
+            // (0x80000000 → -2.147B or 0x7F7FFFFF → float.MaxValue ~3.4e38)
+            if (record is CellRecord cellRec && prop.Name == "WaterHeight"
+                && (!cellRec.HasWater || (value is float wh && (wh < -1_000_000f || wh > 1_000_000f))))
             {
                 continue;
             }
 
-            var value = prop.GetValue(record);
             var displayName = FormatPropertyName(prop.Name);
 
             // Special handling for ActorBaseSubrecord - extract into Characteristics and Attributes
@@ -1030,12 +786,12 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
-            // Class-specific: Tag Skills as names instead of raw indices
+            // Class-specific: Tag Skills as names (values are Actor Value codes, not 0-based indices)
             if (prop.Name == "TagSkills" && value is int[] tagSkillIndices)
             {
                 var names = tagSkillIndices
-                    .Where(i => i >= 0 && i < SkillNames.Length)
-                    .Select(i => SkillNames[i]);
+                    .Where(i => i >= 0)
+                    .Select(i => ActorValueToSkillName(i) ?? $"AV#{i}");
                 properties.Add(new EsmPropertyEntry
                 {
                     Name = "Tag Skills",
@@ -1045,17 +801,28 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
-            // Class-specific: Training Skill as name
+            // Class-specific: Training Skill as name (value is an Actor Value code)
             if (prop.Name == "TrainingSkill" && value is byte trainingIdx)
             {
-                var skillName = trainingIdx < SkillNames.Length
-                    ? SkillNames[trainingIdx]
-                    : $"Unknown ({trainingIdx})";
+                var skillName = ActorValueToSkillName(trainingIdx) ?? $"Unknown ({trainingIdx})";
                 properties.Add(new EsmPropertyEntry
                 {
                     Name = "Training Skill",
                     Value = skillName,
                     Category = "Attributes"
+                });
+                continue;
+            }
+
+            // Recipe-specific: Required Skill as name (value is an Actor Value code)
+            if (prop.Name == "RequiredSkill" && value is int requiredSkillAv)
+            {
+                var skillName = ActorValueToSkillName(requiredSkillAv) ?? $"AV#{requiredSkillAv}";
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Required Skill",
+                    Value = requiredSkillAv >= 0 ? skillName : "None",
+                    Category = "General"
                 });
                 continue;
             }
@@ -1129,7 +896,8 @@ internal static partial class EsmBrowserTreeBuilder
                 {
                     Name = displayName,
                     Value = FormatFormIdReference(formIdVal, editorId, fullName),
-                    Category = CategorizeProperty(prop.Name)
+                    Category = CategorizeProperty(prop.Name),
+                    LinkedFormId = formIdVal
                 });
                 continue;
             }
@@ -1241,17 +1009,19 @@ internal static partial class EsmBrowserTreeBuilder
             });
         }
 
-        // Race-specific: Combine S.P.E.C.I.A.L. modifiers into single line
-        if (record is RaceRecord raceRecord)
+        // Race-specific: Skill Boosts from DATA subrecord (7 pairs of AV code + boost value)
+        if (record is RaceRecord raceRecord && raceRecord.SkillBoosts.Count > 0)
         {
-            var formatted =
-                $"{raceRecord.Strength} ST, {raceRecord.Perception} PE, {raceRecord.Endurance} EN, " +
-                $"{raceRecord.Charisma} CH, {raceRecord.Intelligence} IN, {raceRecord.Agility} AG, " +
-                $"{raceRecord.Luck} LK";
+            var boosts = raceRecord.SkillBoosts
+                .Select(b =>
+                {
+                    var name = ActorValueToSkillName(b.SkillIndex) ?? $"AV#{b.SkillIndex}";
+                    return $"{name} {b.Boost:+#;-#;0}";
+                });
             properties.Add(new EsmPropertyEntry
             {
-                Name = "S.P.E.C.I.A.L. Modifiers",
-                Value = formatted,
+                Name = "Skill Boosts",
+                Value = string.Join(", ", boosts),
                 Category = "Attributes"
             });
         }
@@ -1319,7 +1089,8 @@ internal static partial class EsmBrowserTreeBuilder
                 Col1 = editorId ?? "",
                 Col2 = fullName ?? "",
                 Col3 = $"0x{faction.FactionFormId:X8}",
-                Col4 = $"Rank {faction.Rank}"
+                Col4 = $"Rank {faction.Rank}",
+                Col3FormId = faction.FactionFormId
             };
         }
 
@@ -1345,7 +1116,8 @@ internal static partial class EsmBrowserTreeBuilder
                 Col1 = editorId ?? $"0x{relation.FactionFormId:X8}",
                 Col2 = fullName ?? "",
                 Col3 = $"Modifier: {relation.Modifier}",
-                Col4 = $"Combat: {relation.CombatFlags}"
+                Col4 = $"Combat: {relation.CombatFlags}",
+                LinkedFormId = relation.FactionFormId
             };
         }
 
@@ -1359,7 +1131,8 @@ internal static partial class EsmBrowserTreeBuilder
                 Col1 = $"{inv.Count}×",
                 Col2 = editorId ?? "",
                 Col3 = fullName ?? "",
-                Col4 = $"0x{inv.ItemFormId:X8}"
+                Col4 = $"0x{inv.ItemFormId:X8}",
+                Col4FormId = inv.ItemFormId
             };
         }
 
@@ -1373,7 +1146,26 @@ internal static partial class EsmBrowserTreeBuilder
                 Col1 = $"Lvl {entry.Level}",
                 Col2 = editorId ?? "",
                 Col3 = fullName ?? "",
-                Col4 = $"0x{entry.FormId:X8} (×{entry.Count})"
+                Col4 = $"0x{entry.FormId:X8} (×{entry.Count})",
+                Col4FormId = entry.FormId
+            };
+        }
+
+        // Placed references: Base EditorID/Type | Position | Base FormID | Own FormID
+        if (item is PlacedReference refr)
+        {
+            var baseEditor = refr.BaseEditorId ?? refr.RecordType;
+            var pos = $"({refr.X:F0}, {refr.Y:F0}, {refr.Z:F0})";
+            var extra = refr.DestinationDoorFormId is > 0
+                ? $"0x{refr.FormId:X8} \u2192 door"
+                : $"0x{refr.FormId:X8}";
+            return new EsmPropertyEntry
+            {
+                Col1 = baseEditor,
+                Col2 = pos,
+                Col3 = $"0x{refr.BaseFormId:X8}",
+                Col4 = extra,
+                Col3FormId = refr.BaseFormId
             };
         }
 
@@ -1385,7 +1177,8 @@ internal static partial class EsmBrowserTreeBuilder
             return new EsmPropertyEntry
             {
                 Name = FormatFormIdReference(formId, editorId, fullName),
-                Value = ""
+                Value = "",
+                LinkedFormId = formId
             };
         }
 

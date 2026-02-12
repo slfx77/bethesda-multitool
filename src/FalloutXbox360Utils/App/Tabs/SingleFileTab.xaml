@@ -63,7 +63,6 @@
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
     <!--  Sub-Tab View  -->
@@ -229,9 +228,10 @@
           <StackPanel x:Name="DataBrowserPlaceholder"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
                       Spacing="12">
-            <ProgressRing x:Name="ReconstructProgressRing"
-                          Width="32" Height="32"
-                          IsActive="False" Visibility="Collapsed" />
+            <ProgressBar x:Name="ReconstructProgressBar"
+                         IsIndeterminate="False" Value="0"
+                         Width="200" Visibility="Collapsed"
+                         Style="{StaticResource TabProgressBarStyle}" />
             <TextBlock x:Name="ReconstructStatusText" x:Uid="Empty_RunAnalysis"
                        HorizontalAlignment="Center"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -322,13 +322,26 @@
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock x:Name="SelectedRecordTitle" x:Uid="Empty_SelectRecord"
-                           Grid.Row="0"
-                           Style="{StaticResource SubtitleTextBlockStyle}"
-                           TextWrapping="Wrap"
-                           MaxLines="2"
-                           TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Grid.Row="0" Spacing="0">
+                  <Button x:Name="NavBackButton" Width="32" Height="32" Padding="0"
+                          IsEnabled="False" Click="NavigateBack_Click"
+                          ToolTipService.ToolTip="Back">
+                    <FontIcon Glyph="&#xE72B;" FontSize="12" />
+                  </Button>
+                  <Button x:Name="NavForwardButton" Width="32" Height="32" Padding="0"
+                          Margin="2,0,8,0" IsEnabled="False" Click="NavigateForward_Click"
+                          ToolTipService.ToolTip="Forward">
+                    <FontIcon Glyph="&#xE72A;" FontSize="12" />
+                  </Button>
+                  <TextBlock x:Name="SelectedRecordTitle" x:Uid="Empty_SelectRecord"
+                             Style="{StaticResource SubtitleTextBlockStyle}"
+                             VerticalAlignment="Center"
+                             TextWrapping="Wrap"
+                             MaxLines="2"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
                 <Button x:Name="GoToOffsetButton" x:Uid="Button_GoToOffset"
                         Grid.Row="1"
                         Margin="0,8,0,0"
@@ -347,7 +360,200 @@
         </Grid>
       </controls:TabViewItem>
 
-      <!--  Tab 3: Reports  -->
+      <!--  Tab 3: Dialogue Viewer  -->
+      <controls:TabViewItem x:Name="DialogueViewerTab"
+                            Header="Dialogue Viewer"
+                            IsClosable="False" IsEnabled="False">
+        <Grid Padding="0,16,0,0">
+          <!--  Placeholder (shown before population)  -->
+          <StackPanel x:Name="DialogueViewerPlaceholder"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Spacing="12">
+            <TextBlock x:Name="DialogueViewerStatusText"
+                       Text="Run analysis on an ESM or DMP file to view dialogues"
+                       HorizontalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <ProgressBar x:Name="DialogueViewerProgressBar"
+                         Width="300" Visibility="Collapsed"
+                         IsIndeterminate="True" />
+          </StackPanel>
+
+          <!--  Main content: picker + conversation  -->
+          <Grid x:Name="DialogueViewerContent" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="350" MinWidth="280" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!--  LEFT PANEL: Quest/NPC picker  -->
+            <Grid Grid.Column="0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+
+              <!--  Search bar  -->
+              <TextBox x:Name="DialogueSearchBox"
+                       Grid.Row="0" Margin="0,0,8,8"
+                       PlaceholderText="Search quests, topics, dialogue..."
+                       TextChanged="DialogueSearchBox_TextChanged" />
+
+              <!--  Browse mode toggle  -->
+              <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
+                          Margin="0,0,8,8">
+                <TextBlock Text="Browse by:" VerticalAlignment="Center" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ComboBox x:Name="DialogueBrowseMode"
+                          MinWidth="120" SelectedIndex="0"
+                          SelectionChanged="DialogueBrowseMode_SelectionChanged">
+                  <ComboBoxItem Content="Quest" />
+                  <ComboBoxItem Content="NPC" />
+                </ComboBox>
+              </StackPanel>
+
+              <!--  Picker tree  -->
+              <TreeView x:Name="DialoguePickerTree"
+                        Grid.Row="2" Margin="0,0,8,0"
+                        CanDragItems="False" CanReorderItems="False"
+                        SelectionMode="Single"
+                        Expanding="DialoguePickerTree_Expanding"
+                        ItemInvoked="DialoguePickerTree_ItemInvoked">
+                <TreeView.ItemTemplate>
+                  <DataTemplate>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <FontIcon Grid.Column="0" FontSize="12"
+                                Glyph="{Binding Content.IconGlyph}"
+                                Margin="0,0,6,0" />
+                      <TextBlock Grid.Column="1" FontSize="12"
+                                 Text="{Binding Content.DisplayName}"
+                                 TextTrimming="CharacterEllipsis"
+                                 Margin="0,0,6,0" />
+                      <TextBlock Grid.Column="2" FontSize="11"
+                                 HorizontalAlignment="Left"
+                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                 Text="{Binding Content.Detail}"
+                                 TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                  </DataTemplate>
+                </TreeView.ItemTemplate>
+              </TreeView>
+            </Grid>
+
+            <!--  RIGHT PANEL: Conversation view  -->
+            <Grid Grid.Column="1" Padding="12,0,0,0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+
+              <!--  Header with back button  -->
+              <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="0"
+                          Margin="0,0,0,8">
+                <Button x:Name="DialogueBackButton" Width="32" Height="32" Padding="0"
+                        IsEnabled="False" Click="DialogueBack_Click"
+                        ToolTipService.ToolTip="Back">
+                  <FontIcon Glyph="&#xE72B;" FontSize="12" />
+                </Button>
+                <TextBlock x:Name="DialogueHeaderText"
+                           Text="Select a topic from the left panel"
+                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           VerticalAlignment="Center" Margin="8,0,0,0"
+                           TextWrapping="Wrap" MaxLines="2"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+
+              <!--  Conversation scroll area  -->
+              <ScrollViewer x:Name="DialogueConversationScroller"
+                            Grid.Row="1"
+                            VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="DialogueConversationPanel" Spacing="8"
+                            Padding="0,0,8,0" />
+              </ScrollViewer>
+
+              <!--  Player choices panel  -->
+              <Border Grid.Row="2"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                      CornerRadius="4" Padding="8" Margin="0,8,0,0">
+                <StackPanel x:Name="DialogueChoicesPanel" Spacing="4">
+                  <TextBlock x:Name="DialogueChoicesHeader"
+                             Text="Your responses:"
+                             FontSize="12" FontWeight="SemiBold"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                             Visibility="Collapsed" />
+                </StackPanel>
+              </Border>
+            </Grid>
+          </Grid>
+        </Grid>
+      </controls:TabViewItem>
+
+      <!--  Tab 4: World Map  -->
+      <controls:TabViewItem x:Name="WorldMapTab" Header="World"
+                            IsClosable="False" IsEnabled="False">
+        <Grid Padding="0,8,0,0">
+          <!--  Placeholder  -->
+          <StackPanel x:Name="WorldMapPlaceholder"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Spacing="12">
+            <TextBlock x:Name="WorldMapStatusText" Text="Run analysis to view world data"
+                       HorizontalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <ProgressBar x:Name="WorldMapProgressBar"
+                         Width="300" Visibility="Collapsed"
+                         IsIndeterminate="True" />
+          </StackPanel>
+
+          <!--  World map content  -->
+          <Grid x:Name="WorldMapContent" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" MinWidth="600" />
+              <ColumnDefinition Width="350" />
+            </Grid.ColumnDefinitions>
+
+            <!--  Left: Win2D map  -->
+            <local:WorldMapControl x:Name="WorldMapControl" Grid.Column="0"
+                                   InspectObject="WorldMap_InspectObject"
+                                   InspectCell="WorldMap_InspectCell" />
+
+            <!--  Right: Object detail panel  -->
+            <Grid Grid.Column="1" Padding="12,0,0,0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+
+              <TextBlock x:Name="WorldObjectTitle" Grid.Row="0"
+                         Text="Click an object to inspect"
+                         Style="{StaticResource SubtitleTextBlockStyle}"
+                         Margin="0,0,0,8" />
+
+              <Button x:Name="ViewInMapButton" Grid.Row="1"
+                      Content="View in Map"
+                      Click="ViewInMap_Click"
+                      Visibility="Collapsed"
+                      Margin="0,0,0,8"
+                      ToolTipService.ToolTip="Navigate to this cell in the map view" />
+
+              <Border Grid.Row="2" CornerRadius="4"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
+                  <StackPanel x:Name="WorldPropertyPanel" Spacing="2" />
+                </ScrollViewer>
+              </Border>
+            </Grid>
+          </Grid>
+        </Grid>
+      </controls:TabViewItem>
+
+      <!--  Tab 5: Reports  -->
       <controls:TabViewItem x:Name="ReportsTab" x:Uid="Tab_Reports"
                             IsClosable="False" IsEnabled="False">
         <Grid Padding="16">
@@ -360,9 +566,6 @@
           <!--  Top bar: Export buttons  -->
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8"
                       Margin="0,0,0,8">
-            <ProgressRing x:Name="ReportsProgressRing"
-                          Width="20" Height="20"
-                          IsActive="False" Visibility="Collapsed" />
             <Button x:Name="ExportSelectedReportButton" x:Uid="Button_ExportSelected"
                     Click="ExportSelectedReport_Click"
                     IsEnabled="False" />
@@ -442,7 +645,75 @@
         </Grid>
       </controls:TabViewItem>
 
-      <!--  Tab 4: Coverage (last)  -->
+      <!--  Tab 6: Summary (File Info + Coverage/Record Breakdown)  -->
+      <controls:TabViewItem x:Name="SummaryTab" x:Uid="Tab_Summary"
+                            IsClosable="False" IsEnabled="False">
+        <Grid Padding="16">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+          </Grid.RowDefinitions>
+
+          <!--  File Info Card (full width)  -->
+          <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}"
+                  Margin="0,0,0,16">
+            <Grid Padding="12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+
+              <!--  Column 1: File identity  -->
+              <StackPanel Grid.Column="0" Spacing="4">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="File" FontWeight="SemiBold" />
+                  <TextBlock x:Name="InfoFileName"
+                             TextTrimming="CharacterEllipsis"
+                             MaxWidth="300" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="Size" FontWeight="SemiBold" />
+                  <TextBlock x:Name="InfoFileSize" />
+                </StackPanel>
+              </StackPanel>
+
+              <!--  Column 2: Format details  -->
+              <StackPanel Grid.Column="1" Spacing="4">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="Format" FontWeight="SemiBold" />
+                  <TextBlock x:Name="InfoFormat" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="Endianness" FontWeight="SemiBold" />
+                  <TextBlock x:Name="InfoEndianness" />
+                </StackPanel>
+              </StackPanel>
+
+              <!--  Column 3: Build info (minidumps only)  -->
+              <StackPanel x:Name="InfoBuildPanel" Grid.Column="2" Spacing="4"
+                          Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="Module" FontWeight="SemiBold" />
+                  <TextBlock x:Name="InfoModuleName" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="Compiled" FontWeight="SemiBold" />
+                  <TextBlock x:Name="InfoCompileDate" />
+                </StackPanel>
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <!--  Record breakdown (ESM and DMP files)  -->
+          <ScrollViewer x:Name="SummaryRecordPanel" Grid.Row="1" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="RecordBreakdownPanel" Spacing="12" />
+          </ScrollViewer>
+        </Grid>
+      </controls:TabViewItem>
+
+      <!--  Tab 7: Coverage  -->
       <controls:TabViewItem x:Name="CoverageTab" x:Uid="Tab_Coverage"
                             IsClosable="False" IsEnabled="False">
         <Grid Padding="16">
@@ -539,70 +810,22 @@
 
     </controls:TabView>
 
-    <!--  File Info Card (shown after analysis)  -->
-    <Border
-      x:Name="FileInfoCard"
-      Grid.Row="1"
-      Margin="0,8,0,8"
-      Style="{StaticResource CardBorderStyle}"
-      Visibility="Collapsed">
-      <Grid Padding="12">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-
-        <!--  Column 1: File identity  -->
-        <StackPanel Grid.Column="0" Spacing="4">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="File" FontWeight="SemiBold" />
-            <TextBlock x:Name="InfoFileName"
-                       TextTrimming="CharacterEllipsis"
-                       MaxWidth="300" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="Size" FontWeight="SemiBold" />
-            <TextBlock x:Name="InfoFileSize" />
-          </StackPanel>
-        </StackPanel>
-
-        <!--  Column 2: Format details  -->
-        <StackPanel Grid.Column="1" Spacing="4">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="Format" FontWeight="SemiBold" />
-            <TextBlock x:Name="InfoFormat" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="Endianness" FontWeight="SemiBold" />
-            <TextBlock x:Name="InfoEndianness" />
-          </StackPanel>
-        </StackPanel>
-
-        <!--  Column 3: Build info (minidumps only)  -->
-        <StackPanel x:Name="InfoBuildPanel" Grid.Column="2" Spacing="4">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="Module" FontWeight="SemiBold" />
-            <TextBlock x:Name="InfoModuleName" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="Compiled" FontWeight="SemiBold" />
-            <TextBlock x:Name="InfoCompileDate" />
-          </StackPanel>
-        </StackPanel>
-      </Grid>
-    </Border>
-
-    <!--  Progress Bar (below file info)  -->
+    <!--  Progress Bars  -->
     <ProgressBar
       x:Name="AnalysisProgressBar"
-      Grid.Row="2"
+      Grid.Row="1"
       IsIndeterminate="True"
+      Style="{StaticResource TabProgressBarStyle}" />
+    <ProgressBar
+      x:Name="ReportsProgressBar"
+      Grid.Row="1"
+      IsIndeterminate="False" Value="0"
+      Visibility="Collapsed"
       Style="{StaticResource TabProgressBarStyle}" />
 
     <!--  Input/Output Section  -->
     <Grid
-      Grid.Row="3"
+      Grid.Row="2"
       Style="{StaticResource IoSectionGridStyle}">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />

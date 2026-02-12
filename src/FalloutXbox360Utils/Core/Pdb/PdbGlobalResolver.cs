@@ -13,29 +13,21 @@ namespace FalloutXbox360Utils.Core.Pdb;
 ///     Parses PDB global symbols, resolves them to virtual addresses in a memory dump,
 ///     reads their values, and walks data structures they point to.
 /// </summary>
-internal sealed partial class PdbGlobalResolver
+internal sealed partial class PdbGlobalResolver(
+    MemoryMappedViewAccessor accessor,
+    long fileSize,
+    MinidumpInfo minidumpInfo,
+    MinidumpModule gameModule,
+    List<EsmRecordFormat.PeSectionInfo> peSections)
 {
-    private readonly MemoryMappedViewAccessor _accessor;
-    private readonly long _fileSize;
-    private readonly MinidumpModule _gameModule;
-    private readonly MinidumpInfo _minidumpInfo;
-    private readonly List<EsmRecordFormat.PeSectionInfo> _peSections;
-
-    public PdbGlobalResolver(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidumpInfo,
-        MinidumpModule gameModule,
-        List<EsmRecordFormat.PeSectionInfo> peSections)
-    {
-        _accessor = accessor;
-        _fileSize = fileSize;
-        _minidumpInfo = minidumpInfo;
-        _gameModule = gameModule;
-        _peSections = peSections;
-    }
+    private readonly MemoryMappedViewAccessor _accessor = accessor;
+    private readonly long _fileSize = fileSize;
+    private readonly MinidumpModule _gameModule = gameModule;
+    private readonly MinidumpInfo _minidumpInfo = minidumpInfo;
+    private readonly List<EsmRecordFormat.PeSectionInfo> _peSections = peSections;
 
     #region Helpers
+
 
     private long? VaToFileOffset(uint va)
     {

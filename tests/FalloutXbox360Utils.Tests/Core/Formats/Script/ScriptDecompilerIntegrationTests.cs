@@ -14,15 +14,10 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
 ///     from the Xbox 360 ESM file. Compares decompiled output with embedded SCTX source text.
 ///     These tests are skipped when the sample ESM file is not present.
 /// </summary>
-public class ScriptDecompilerIntegrationTests
+public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
 {
     private const string Xbox360EsmPath = @"Sample\ESM\360_final\FalloutNV.esm";
-    private readonly ITestOutputHelper _output;
-
-    public ScriptDecompilerIntegrationTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
+    private readonly ITestOutputHelper _output = output;
 
     [Fact]
     public void Decompile_AllScptRecords_NoExceptions()
@@ -394,16 +389,16 @@ public class ScriptDecompilerIntegrationTests
                     break;
 
                 case "SCVR":
-                {
-                    var varName = EsmStringUtils.ReadNullTermString(subData);
-                    if (pendingSlsdIndex.HasValue)
                     {
-                        variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, varName, pendingSlsdType));
-                        pendingSlsdIndex = null;
-                    }
+                        var varName = EsmStringUtils.ReadNullTermString(subData);
+                        if (pendingSlsdIndex.HasValue)
+                        {
+                            variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, varName, pendingSlsdType));
+                            pendingSlsdIndex = null;
+                        }
 
-                    break;
-                }
+                        break;
+                    }
 
                 case "SCRO" when sub.DataLength >= 4:
                     var formId = isBigEndian

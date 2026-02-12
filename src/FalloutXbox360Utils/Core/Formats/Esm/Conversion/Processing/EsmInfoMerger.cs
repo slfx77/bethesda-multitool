@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 
-internal sealed class EsmInfoMerger
+internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
 {
     private const string Nam3Signature = "NAM3";
     private const string PnamSignature = "PNAM";
@@ -46,16 +46,10 @@ internal sealed class EsmInfoMerger
         "CTDT"
     ];
 
-    private readonly byte[] _input;
-    private readonly EsmConversionStats _stats;
+    private readonly byte[] _input = input;
+    private readonly EsmConversionStats _stats = stats;
     private Dictionary<int, InfoMergeEntry>? _mergeIndex;
     private IReadOnlyDictionary<uint, int>? _toftInfoOffsetsByFormId;
-
-    public EsmInfoMerger(byte[] input, EsmConversionStats stats)
-    {
-        _input = input;
-        _stats = stats;
-    }
 
     public void SetToftInfoIndex(IReadOnlyDictionary<uint, int> toftInfoOffsetsByFormId)
     {

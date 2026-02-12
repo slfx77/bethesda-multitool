@@ -1,7 +1,7 @@
 <Project>
-  <!-- Skip all build customizations for external submodules (XUIHelper, XCompression) -->
+  <!-- Skip all build customizations for external submodules (XUIHelper) -->
   <PropertyGroup
-    Condition="$(MSBuildProjectDirectory.Contains('XUIHelper')) OR $(MSBuildProjectDirectory.Contains('XCompression'))">
+    Condition="$(MSBuildProjectDirectory.Contains('XUIHelper'))">
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <PropertyGroup
-    Condition="!$(MSBuildProjectDirectory.Contains('XUIHelper')) AND !$(MSBuildProjectDirectory.Contains('XCompression'))">
+    Condition="!$(MSBuildProjectDirectory.Contains('XUIHelper'))">
     <!-- Enable .NET analyzers -->
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>

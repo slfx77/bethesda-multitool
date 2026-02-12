@@ -4,7 +4,6 @@
   </Configurations>
   <Folder Name="/DDXConv/">
     <Project Path="src/DDXConv/DDXConv/DDXConv.csproj" />
-    <Project Path="src/DDXConv/XCompression/XCompression.csproj" />
   </Folder>
   <Project Path="src/FalloutXbox360Utils/FalloutXbox360Utils.csproj">
     <Platform Project="x64" />

@@ -11,25 +11,17 @@ namespace FalloutXbox360Utils;
 ///     Minimap rendering and interaction logic for HexViewerControl.
 ///     Extracted to reduce complexity of the main control.
 /// </summary>
-internal sealed class HexMinimapRenderer
+internal sealed class HexMinimapRenderer(
+    Canvas canvas,
+    Border viewportIndicator,
+    ScrollViewer scrollViewer,
+    Func<long, FileRegion?> findRegion)
 {
-    private readonly Canvas _canvas;
-    private readonly Func<long, FileRegion?> _findRegion;
-    private readonly ScrollViewer _scrollViewer;
-    private readonly Border _viewportIndicator;
+    private readonly Canvas _canvas = canvas;
+    private readonly Func<long, FileRegion?> _findRegion = findRegion;
+    private readonly ScrollViewer _scrollViewer = scrollViewer;
+    private readonly Border _viewportIndicator = viewportIndicator;
     private double _dragOffset;
-
-    public HexMinimapRenderer(
-        Canvas canvas,
-        Border viewportIndicator,
-        ScrollViewer scrollViewer,
-        Func<long, FileRegion?> findRegion)
-    {
-        _canvas = canvas;
-        _viewportIndicator = viewportIndicator;
-        _scrollViewer = scrollViewer;
-        _findRegion = findRegion;
-    }
 
     public double Zoom { get; set; } = 1.0;
 

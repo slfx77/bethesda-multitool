@@ -17,49 +17,68 @@ public sealed partial class SingleFileTab
 {
     #region Semantic Reconstruction
 
-    private async Task RunSemanticReconstructionAsync()
+    /// <summary>
+    ///     Starts semantic reconstruction on a background thread immediately after analysis.
+    ///     Progress updates are dispatched to the UI thread. The task is stored in
+    ///     <see cref="_semanticReconstructionTask"/> so any sub-tab can await it.
+    /// </summary>
+    private void StartSemanticReconstructionInBackground()
     {
         if (_session.SemanticResult != null) return;
         if (!_session.HasEsmRecords || !_session.HasAccessor) return;
 
-        ReconstructButton.IsEnabled = false;
-        ReconstructProgressRing.IsActive = true;
-        ReconstructProgressRing.Visibility = Visibility.Visible;
-        var loadingMsg = _session.IsEsmFile
-            ? Strings.Status_LoadingEsmRecords
-            : Strings.Status_ReconstructingRecords;
-        ReconstructStatusText.Text = loadingMsg;
-        StatusTextBlock.Text = loadingMsg;
+        var result = _session.AnalysisResult!;
+        var accessor = _session.Accessor!;
+        var fileSize = _session.FileSize;
+
+        var progress = new Progress<(int percent, string phase)>(p =>
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                _reconstructionProgressHandler?.Invoke(p.percent, p.phase);
+                StatusTextBlock.Text = p.phase;
+            }));
+
+        _semanticReconstructionTask = Task.Run(() =>
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var reconstructor = new RecordParser(
+                result.EsmRecords!,
+                result.FormIdMap,
+                accessor,
+                fileSize,
+                result.MinidumpInfo);
+            var records = reconstructor.ReconstructAll(progress);
+            sw.Stop();
+            Logger.Instance.Info($"[Semantic Reconstruction] Wall-clock: {sw.Elapsed}");
+            return records;
+        });
+    }
+
+    /// <summary>
+    ///     Ensures semantic reconstruction is complete before proceeding.
+    ///     If reconstruction is already running in the background, awaits it.
+    ///     If already complete, returns immediately.
+    ///     Callers should set up _reconstructionProgressHandler and their own progress bar
+    ///     before calling this method.
+    /// </summary>
+    private async Task EnsureSemanticReconstructionAsync()
+    {
+        if (_session.SemanticResult != null) return;
+        if (_semanticReconstructionTask == null) return;
 
         try
         {
-            var result = _session.AnalysisResult!;
-            var accessor = _session.Accessor!;
-            var fileSize = _session.FileSize;
+            _session.SemanticResult = await _semanticReconstructionTask;
 
-            _session.SemanticResult = await Task.Run(() =>
+            if (_session.SemanticResult != null)
             {
-                var reconstructor = new RecordParser(
-                    result.EsmRecords!,
-                    result.FormIdMap,
-                    accessor,
-                    fileSize,
-                    result.MinidumpInfo);
-                return reconstructor.ReconstructAll();
-            });
-
-            StatusTextBlock.Text = Strings.Status_ReconstructedRecords(_session.SemanticResult.TotalRecordsReconstructed);
+                StatusTextBlock.Text = Strings.Status_ReconstructedRecords(_session.SemanticResult.TotalRecordsReconstructed);
+            }
         }
         catch (Exception ex)
         {
             await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
                 $"{ex.GetType().Name}: {ex.Message}", true);
-        }
-        finally
-        {
-            ReconstructProgressRing.IsActive = false;
-            ReconstructProgressRing.Visibility = Visibility.Collapsed;
-            ReconstructButton.IsEnabled = true;
         }
     }
 
@@ -67,8 +86,8 @@ public sealed partial class SingleFileTab
     {
         if (_session.SemanticResult == null) return;
 
-        ReconstructProgressRing.IsActive = true;
-        ReconstructProgressRing.Visibility = Visibility.Visible;
+        ReconstructProgressBar.Visibility = Visibility.Visible;
+        ReconstructProgressBar.IsIndeterminate = true;
         ReconstructStatusText.Text = Strings.Status_BuildingDataBrowserTree;
         StatusTextBlock.Text = Strings.Status_BuildingDataBrowserTree;
 
@@ -114,12 +133,20 @@ public sealed partial class SingleFileTab
 
             DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
             DataBrowserContent.Visibility = Visibility.Visible;
-            StatusTextBlock.Text = "Data browser ready. Search will index records on first use.";
+            StatusTextBlock.Text = "Data browser ready. Building navigation index...";
+
+            // Pre-build FormID navigation index in the background (avoids delay on first link click)
+            // Tracked via _formIdBuildTask so NavigateToFormId can await it if needed
+            _formIdBuildTask = Task.Run(() =>
+            {
+                BuildFormIdNodeIndex();
+                DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = "");
+            });
         }
         finally
         {
-            ReconstructProgressRing.IsActive = false;
-            ReconstructProgressRing.Visibility = Visibility.Collapsed;
+            ReconstructProgressBar.Visibility = Visibility.Collapsed;
+            ReconstructProgressBar.IsIndeterminate = false;
             ReconstructStatusText.Text = "";
             StatusTextBlock.Text = "";
         }

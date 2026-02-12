@@ -7,14 +7,32 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Script;
 ///     Decompiles Fallout: New Vegas compiled script bytecode (SCDA) back to GECK-compatible source text.
 ///     Handles both big-endian (Xbox 360) and little-endian (PC) bytecode.
 /// </summary>
-public sealed class ScriptDecompiler
+/// <remarks>
+///     Create a new script decompiler.
+/// </remarks>
+/// <param name="variables">Script local variable definitions (from SLSD+SCVR).</param>
+/// <param name="referencedObjects">SCRO FormID list (0-indexed in this list, 1-indexed in bytecode).</param>
+/// <param name="resolveFormName">Callback to resolve FormID to editor ID string.</param>
+/// <param name="isBigEndian">True for Xbox 360 bytecode, false for PC.</param>
+/// <param name="scriptName">Optional script name for the ScriptName line.</param>
+/// <param name="resolveExternalVariable">
+///     Optional callback to resolve cross-script variable references.
+///     Parameters: (FormID of referenced object, variable index) → variable name.
+/// </param>
+public sealed class ScriptDecompiler(
+    List<ScriptVariableInfo> variables,
+    List<uint> referencedObjects,
+    Func<uint, string?> resolveFormName,
+    bool isBigEndian = false,
+    string? scriptName = null,
+    Func<uint, ushort, string?>? resolveExternalVariable = null)
 {
-    private readonly Func<uint, string?> _resolveFormName;
-    private readonly Func<uint, ushort, string?>? _resolveExternalVariable;
-    private readonly List<uint> _referencedObjects;
-    private readonly List<ScriptVariableInfo> _variables;
-    private readonly bool _isBigEndian;
-    private readonly string? _scriptName;
+    private readonly Func<uint, string?> _resolveFormName = resolveFormName;
+    private readonly Func<uint, ushort, string?>? _resolveExternalVariable = resolveExternalVariable;
+    private readonly List<uint> _referencedObjects = referencedObjects;
+    private readonly List<ScriptVariableInfo> _variables = variables;
+    private readonly bool _isBigEndian = isBigEndian;
+    private readonly string? _scriptName = scriptName;
 
     // State during decompilation
     private BytecodeReader _reader = null!;
@@ -22,34 +40,6 @@ public sealed class ScriptDecompiler
     private int _indentLevel;
     private ushort _pendingRefIndex;
     private bool _hasPendingRef;
-
-    /// <summary>
-    ///     Create a new script decompiler.
-    /// </summary>
-    /// <param name="variables">Script local variable definitions (from SLSD+SCVR).</param>
-    /// <param name="referencedObjects">SCRO FormID list (0-indexed in this list, 1-indexed in bytecode).</param>
-    /// <param name="resolveFormName">Callback to resolve FormID to editor ID string.</param>
-    /// <param name="isBigEndian">True for Xbox 360 bytecode, false for PC.</param>
-    /// <param name="scriptName">Optional script name for the ScriptName line.</param>
-    /// <param name="resolveExternalVariable">
-    ///     Optional callback to resolve cross-script variable references.
-    ///     Parameters: (FormID of referenced object, variable index) → variable name.
-    /// </param>
-    public ScriptDecompiler(
-        List<ScriptVariableInfo> variables,
-        List<uint> referencedObjects,
-        Func<uint, string?> resolveFormName,
-        bool isBigEndian = false,
-        string? scriptName = null,
-        Func<uint, ushort, string?>? resolveExternalVariable = null)
-    {
-        _variables = variables;
-        _referencedObjects = referencedObjects;
-        _resolveFormName = resolveFormName;
-        _isBigEndian = isBigEndian;
-        _scriptName = scriptName;
-        _resolveExternalVariable = resolveExternalVariable;
-    }
 
     /// <summary>
     ///     Decompile compiled bytecode to GECK script source text.
@@ -446,6 +436,13 @@ public sealed class ScriptDecompiler
 
     private static void ApplyUnaryOrBinaryOperator(Stack<string> stack, string op)
     {
+        // 0x7E '~' is always unary negation (distinct from binary minus 0x2D '-')
+        if (op == "~")
+        {
+            stack.Push(stack.Count >= 1 ? $"-{stack.Pop()}" : "-0");
+            return;
+        }
+
         // Unary negation: '-' with fewer than 2 operands on stack
         if (op == "-" && stack.Count < 2)
         {
@@ -620,6 +617,7 @@ public sealed class ScriptDecompiler
             0x2F => "/",
             0x3E => ">",
             0x3C => "<",
+            ScriptOpcodes.ExprUnaryNegate => "~", // always unary negation (distinct from binary minus)
             _ => null
         };
     }
@@ -1100,16 +1098,16 @@ public sealed class ScriptDecompiler
         // Block type IDs from GECK wiki: https://geckwiki.com/index.php/Begin
         return blockType switch
         {
-            0  => "GameMode",
-            1  => "MenuMode",
-            2  => "OnActivate",
-            3  => "OnAdd",
-            4  => "OnEquip",
-            5  => "OnUnequip",
-            6  => "OnDrop",
-            7  => "SayToDone",
-            8  => "OnHit",
-            9  => "OnHitWith",
+            0 => "GameMode",
+            1 => "MenuMode",
+            2 => "OnActivate",
+            3 => "OnAdd",
+            4 => "OnEquip",
+            5 => "OnUnequip",
+            6 => "OnDrop",
+            7 => "SayToDone",
+            8 => "OnHit",
+            9 => "OnHitWith",
             10 => "OnDeath",
             11 => "OnMurder",
             12 => "OnCombatEnd",
@@ -1137,7 +1135,7 @@ public sealed class ScriptDecompiler
             35 => "OnDestructionStageChange",
             36 => "OnFire",
             37 => "OnNPCActivate",
-            _  => $"BlockType:{blockType:X4}"
+            _ => $"BlockType:{blockType:X4}"
         };
     }
 

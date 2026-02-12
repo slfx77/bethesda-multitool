@@ -5,6 +5,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Windows.UI.Text;
 
 namespace FalloutXbox360Utils;
 
@@ -13,6 +14,33 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    /// <summary>
+    ///     Creates a HyperlinkButton styled as an underlined link with explicit foreground color.
+    /// </summary>
+    private HyperlinkButton CreateFormIdLink(string text, uint formId, int fontSize, bool monospace = false)
+    {
+        // Foreground must be set on the TextBlock directly — HyperlinkButton visual state
+        // animations override Foreground on the control itself, but don't affect child local values.
+        var linkColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+            ActualTheme == ElementTheme.Light
+                ? Windows.UI.Color.FromArgb(0xFF, 0x00, 0x66, 0xCC)  // Dark blue for light mode
+                : Windows.UI.Color.FromArgb(0xFF, 0x75, 0xBE, 0xFF)); // Vivid sky blue for dark mode
+        var link = new HyperlinkButton
+        {
+            Content = new TextBlock
+            {
+                Text = text,
+                TextDecorations = TextDecorations.Underline,
+                FontSize = fontSize,
+                FontFamily = monospace ? new Microsoft.UI.Xaml.Media.FontFamily("Consolas") : null,
+                Foreground = linkColor
+            },
+            Padding = new Thickness(0),
+        };
+        link.Click += (_, _) => NavigateToFormId(formId);
+        return link;
+    }
+
     #region Button State Updates
 
     private void UpdateButtonStates()
@@ -259,6 +287,142 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Record Breakdown
+
+    private void PopulateRecordBreakdown()
+    {
+        if (_session.SemanticResult == null) return;
+
+        var r = _session.SemanticResult;
+        RecordBreakdownPanel.Children.Clear();
+
+        // Totals header — use "Parsed" for ESM files, "Reconstructed" for minidumps
+        var detailLabel = _session.IsEsmFile ? "Parsed" : "Reconstructed";
+        var totalsText = new TextBlock
+        {
+            Text = $"Total Records Processed: {r.TotalRecordsProcessed:N0}    {detailLabel}: {r.TotalRecordsReconstructed:N0}",
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        RecordBreakdownPanel.Children.Add(totalsText);
+
+        // Define categories with their record types and counts
+        var categories = new (string Name, (string Label, int Count)[] Records)[]
+        {
+            ("Characters", [("NPCs", r.Npcs.Count), ("Creatures", r.Creatures.Count), ("Races", r.Races.Count), ("Factions", r.Factions.Count)]),
+            ("Quests & Dialogue", [("Quests", r.Quests.Count), ("Dialog Topics", r.DialogTopics.Count), ("Dialogue", r.Dialogues.Count), ("Notes", r.Notes.Count), ("Books", r.Books.Count), ("Terminals", r.Terminals.Count), ("Scripts", r.Scripts.Count)]),
+            ("Items", [("Weapons", r.Weapons.Count), ("Armor", r.Armor.Count), ("Ammo", r.Ammo.Count), ("Consumables", r.Consumables.Count), ("Misc Items", r.MiscItems.Count), ("Keys", r.Keys.Count), ("Containers", r.Containers.Count), ("Leveled Lists", r.LeveledLists.Count)]),
+            ("Abilities", [("Perks", r.Perks.Count), ("Spells", r.Spells.Count), ("Enchantments", r.Enchantments.Count), ("Base Effects", r.BaseEffects.Count)]),
+            ("World", [("Cells", r.Cells.Count), ("Worldspaces", r.Worldspaces.Count), ("Map Markers", r.MapMarkers.Count), ("Statics", r.Statics.Count), ("Doors", r.Doors.Count), ("Lights", r.Lights.Count), ("Furniture", r.Furniture.Count), ("Activators", r.Activators.Count)]),
+            ("Gameplay", [("Globals", r.Globals.Count), ("Game Settings", r.GameSettings.Count), ("Classes", r.Classes.Count), ("Challenges", r.Challenges.Count), ("Reputations", r.Reputations.Count), ("Messages", r.Messages.Count), ("Form Lists", r.FormLists.Count)]),
+            ("Crafting & Combat", [("Weapon Mods", r.WeaponMods.Count), ("Recipes", r.Recipes.Count), ("Projectiles", r.Projectiles.Count), ("Explosions", r.Explosions.Count)])
+        };
+
+        // Build a flowing grid: 3 columns of category cards
+        var columnsGrid = new Grid();
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16, GridUnitType.Pixel) });
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16, GridUnitType.Pixel) });
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // Distribute categories across 3 columns (round-robin to balance heights)
+        var columnPanels = new StackPanel[3];
+        for (var c = 0; c < 3; c++)
+        {
+            columnPanels[c] = new StackPanel { Spacing = 12 };
+            Grid.SetColumn(columnPanels[c], c * 2); // columns 0, 2, 4 (gaps at 1, 3)
+            columnsGrid.Children.Add(columnPanels[c]);
+        }
+
+        for (var i = 0; i < categories.Length; i++)
+        {
+            var (name, records) = categories[i];
+            var card = BuildCategoryCard(name, records);
+            columnPanels[i % 3].Children.Add(card);
+        }
+
+        RecordBreakdownPanel.Children.Add(columnsGrid);
+
+        // Unreconstructed/unparsed record types
+        if (r.UnreconstructedTypeCounts.Count > 0)
+        {
+            var otherLabel = _session.IsEsmFile ? "Other (not parsed)" : "Other (not reconstructed)";
+            var otherRecords = r.UnreconstructedTypeCounts
+                .OrderByDescending(x => x.Value)
+                .Select(x => (x.Key, x.Value))
+                .ToArray();
+            var otherCard = BuildCategoryCard(otherLabel, otherRecords);
+            RecordBreakdownPanel.Children.Add(otherCard);
+        }
+
+        SummaryRecordPanel.Visibility = Visibility.Visible;
+        _recordBreakdownPopulated = true;
+    }
+
+    private static Border BuildCategoryCard(string title, (string Label, int Count)[] records)
+    {
+        var panel = new StackPanel { Spacing = 2 };
+
+        // Category header
+        panel.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 4)
+        });
+
+        // Record rows as a 2-column grid (label + count)
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        for (var i = 0; i < records.Length; i++)
+        {
+            var (label, count) = records[i];
+            if (count == 0) continue;
+
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var row = grid.RowDefinitions.Count - 1;
+
+            var labelText = new TextBlock
+            {
+                Text = label,
+                FontSize = 12,
+                Padding = new Thickness(0, 1, 8, 1)
+            };
+            Grid.SetRow(labelText, row);
+            Grid.SetColumn(labelText, 0);
+            grid.Children.Add(labelText);
+
+            var countText = new TextBlock
+            {
+                Text = count.ToString("N0"),
+                FontSize = 12,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Padding = new Thickness(0, 1, 0, 1)
+            };
+            Grid.SetRow(countText, row);
+            Grid.SetColumn(countText, 1);
+            grid.Children.Add(countText);
+        }
+
+        panel.Children.Add(grid);
+
+        return new Border
+        {
+            Child = panel,
+            Padding = new Thickness(12),
+            CornerRadius = new CornerRadius(4),
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"]
+        };
+    }
+
+    #endregion
+
     #region File Info Card
 
     private void UpdateFileInfoCard()
@@ -299,8 +463,6 @@ public sealed partial class SingleFileTab
                 InfoBuildPanel.Visibility = Visibility.Collapsed;
             }
         }
-
-        FileInfoCard.Visibility = Visibility.Visible;
     }
 
     #endregion
@@ -310,11 +472,15 @@ public sealed partial class SingleFileTab
     private void ResetSubTabs()
     {
         _session.Dispose();
-        FileInfoCard.Visibility = Visibility.Collapsed;
+        _semanticReconstructionTask = null;
+        _reconstructionProgressHandler = null;
+        SummaryTab.IsEnabled = false;
+        SummaryRecordPanel.Visibility = Visibility.Collapsed;
         CoverageTab.IsEnabled = false;
         DataBrowserTab.IsEnabled = false;
         ReportsTab.IsEnabled = false;
         _coveragePopulated = false;
+        _recordBreakdownPopulated = false;
         _allCoverageGapEntries = [];
         _reportEntries.Clear();
         ReportPreviewTextBox.Text = "";
@@ -337,6 +503,9 @@ public sealed partial class SingleFileTab
         PropertyPanel.Children.Clear();
         SelectedRecordTitle.Text = Strings.Empty_SelectARecord;
         GoToOffsetButton.Visibility = Visibility.Collapsed;
+        ResetNavigation();
+        ResetDialogueViewer();
+        ResetWorldMap();
         ExportAllReportsButton.IsEnabled = false;
         ExportSelectedReportButton.IsEnabled = false;
     }
@@ -488,16 +657,28 @@ public sealed partial class SingleFileTab
                     // 4-column sub-item (Inventory, Factions)
                     if (sub.Col1 != null || sub.Col2 != null || sub.Col3 != null || sub.Col4 != null)
                     {
-                        var col1Text = new TextBlock
+                        // Col1: use link if LinkedFormId is set (FactionRelations use Col1 for name)
+                        if (sub.LinkedFormId is > 0 && IsFormIdNavigable(sub.LinkedFormId.Value))
                         {
-                            Text = sub.Col1 ?? "",
-                            FontSize = 11,
-                            Padding = new Thickness(0, 1, 12, 1),
-                            IsTextSelectionEnabled = true
-                        };
-                        Grid.SetRow(col1Text, subRow);
-                        Grid.SetColumn(col1Text, 0);
-                        subItemsGrid.Children.Add(col1Text);
+                            var col1Link = CreateFormIdLink(sub.Col1 ?? "", sub.LinkedFormId.Value, 11);
+                            col1Link.Margin = new Thickness(0, 0, 12, 0);
+                            Grid.SetRow(col1Link, subRow);
+                            Grid.SetColumn(col1Link, 0);
+                            subItemsGrid.Children.Add(col1Link);
+                        }
+                        else
+                        {
+                            var col1Text = new TextBlock
+                            {
+                                Text = sub.Col1 ?? "",
+                                FontSize = 11,
+                                Padding = new Thickness(0, 1, 12, 1),
+                                IsTextSelectionEnabled = true
+                            };
+                            Grid.SetRow(col1Text, subRow);
+                            Grid.SetColumn(col1Text, 0);
+                            subItemsGrid.Children.Add(col1Text);
+                        }
 
                         var col2Text = new TextBlock
                         {
@@ -510,33 +691,57 @@ public sealed partial class SingleFileTab
                         Grid.SetColumn(col2Text, 1);
                         subItemsGrid.Children.Add(col2Text);
 
-                        var col3Text = new TextBlock
+                        // Col3: use link if Col3FormId is set (Factions show FormID in Col3)
+                        if (sub.Col3FormId is > 0 && IsFormIdNavigable(sub.Col3FormId.Value))
                         {
-                            Text = sub.Col3 ?? "",
-                            FontSize = 11,
-                            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                            Padding = new Thickness(0, 1, 12, 1),
-                            IsTextSelectionEnabled = true
-                        };
-                        Grid.SetRow(col3Text, subRow);
-                        Grid.SetColumn(col3Text, 2);
-                        subItemsGrid.Children.Add(col3Text);
+                            var col3Link = CreateFormIdLink(sub.Col3 ?? "", sub.Col3FormId.Value, 11, monospace: true);
+                            col3Link.Margin = new Thickness(0, 0, 12, 0);
+                            Grid.SetRow(col3Link, subRow);
+                            Grid.SetColumn(col3Link, 2);
+                            subItemsGrid.Children.Add(col3Link);
+                        }
+                        else
+                        {
+                            var col3Text = new TextBlock
+                            {
+                                Text = sub.Col3 ?? "",
+                                FontSize = 11,
+                                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                                Padding = new Thickness(0, 1, 12, 1),
+                                IsTextSelectionEnabled = true
+                            };
+                            Grid.SetRow(col3Text, subRow);
+                            Grid.SetColumn(col3Text, 2);
+                            subItemsGrid.Children.Add(col3Text);
+                        }
 
-                        var col4Text = new TextBlock
+                        // Col4: use link if Col4FormId is set (Inventory/LeveledList show FormID in Col4)
+                        if (sub.Col4FormId is > 0 && IsFormIdNavigable(sub.Col4FormId.Value))
                         {
-                            Text = sub.Col4 ?? "",
-                            FontSize = 11,
-                            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                            Padding = new Thickness(0, 1, 4, 1),
-                            IsTextSelectionEnabled = true
-                        };
-                        Grid.SetRow(col4Text, subRow);
-                        Grid.SetColumn(col4Text, 3);
-                        subItemsGrid.Children.Add(col4Text);
+                            var col4Link = CreateFormIdLink(sub.Col4 ?? "", sub.Col4FormId.Value, 11, monospace: true);
+                            col4Link.Margin = new Thickness(0, 0, 4, 0);
+                            Grid.SetRow(col4Link, subRow);
+                            Grid.SetColumn(col4Link, 3);
+                            subItemsGrid.Children.Add(col4Link);
+                        }
+                        else
+                        {
+                            var col4Text = new TextBlock
+                            {
+                                Text = sub.Col4 ?? "",
+                                FontSize = 11,
+                                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                                Padding = new Thickness(0, 1, 4, 1),
+                                IsTextSelectionEnabled = true
+                            };
+                            Grid.SetRow(col4Text, subRow);
+                            Grid.SetColumn(col4Text, 3);
+                            subItemsGrid.Children.Add(col4Text);
+                        }
                     }
-                    else if (string.IsNullOrEmpty(sub.Name))
+                    else if (string.IsNullOrEmpty(sub.Name) && sub.LinkedFormId == null)
                     {
-                        // Value-only sub-item (FaceGen hex blocks)
+                        // Value-only sub-item (FaceGen hex blocks, decompiled scripts)
                         var valText = new TextBlock
                         {
                             Text = sub.Value,
@@ -546,9 +751,36 @@ public sealed partial class SingleFileTab
                             IsTextSelectionEnabled = true,
                             Padding = new Thickness(0, 1, 0, 1)
                         };
-                        Grid.SetRow(valText, subRow);
-                        Grid.SetColumnSpan(valText, 4);
-                        subItemsGrid.Children.Add(valText);
+
+                        // For large multi-line content (scripts), add a dedicated ScrollViewer
+                        // so the content doesn't dominate the property panel
+                        FrameworkElement element;
+                        if (sub.Value != null && sub.Value.Contains('\n'))
+                        {
+                            element = new ScrollViewer
+                            {
+                                Content = valText,
+                                MaxHeight = 400,
+                                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+                            };
+                        }
+                        else
+                        {
+                            element = valText;
+                        }
+
+                        Grid.SetRow(element, subRow);
+                        Grid.SetColumnSpan(element, 4);
+                        subItemsGrid.Children.Add(element);
+                    }
+                    else if (sub.LinkedFormId is > 0 && IsFormIdNavigable(sub.LinkedFormId.Value))
+                    {
+                        // FormID link sub-item (Spells, Packages, Form Lists, etc.)
+                        var link = CreateFormIdLink(sub.Name ?? "", sub.LinkedFormId.Value, 11, monospace: true);
+                        link.Margin = new Thickness(0, 0, 4, 0);
+                        Grid.SetRow(link, subRow);
+                        Grid.SetColumnSpan(link, 4);
+                        subItemsGrid.Children.Add(link);
                     }
                     else
                     {
@@ -640,19 +872,32 @@ public sealed partial class SingleFileTab
                 mainGrid.Children.Add(nameText);
 
                 // Single value column (spans all value columns)
-                var valueText = new TextBlock
+                // Use HyperlinkButton for navigable FormID references
+                if (prop.LinkedFormId is > 0 && IsFormIdNavigable(prop.LinkedFormId.Value))
                 {
-                    Text = prop.Value,
-                    FontSize = 12,
-                    Padding = new Thickness(0, 3, 4, 2),
-                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                    TextWrapping = TextWrapping.Wrap,
-                    IsTextSelectionEnabled = true
-                };
-                Grid.SetRow(valueText, currentRow);
-                Grid.SetColumn(valueText, 2);
-                Grid.SetColumnSpan(valueText, 3);
-                mainGrid.Children.Add(valueText);
+                    var link = CreateFormIdLink(prop.Value, prop.LinkedFormId.Value, 12, monospace: true);
+                    link.Margin = new Thickness(0, 2, 4, 2);
+                    Grid.SetRow(link, currentRow);
+                    Grid.SetColumn(link, 2);
+                    Grid.SetColumnSpan(link, 3);
+                    mainGrid.Children.Add(link);
+                }
+                else
+                {
+                    var valueText = new TextBlock
+                    {
+                        Text = prop.Value,
+                        FontSize = 12,
+                        Padding = new Thickness(0, 3, 4, 2),
+                        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                        TextWrapping = TextWrapping.Wrap,
+                        IsTextSelectionEnabled = true
+                    };
+                    Grid.SetRow(valueText, currentRow);
+                    Grid.SetColumn(valueText, 2);
+                    Grid.SetColumnSpan(valueText, 3);
+                    mainGrid.Children.Add(valueText);
+                }
 
                 propertyRowIndex++;
                 currentRow++;
@@ -668,6 +913,15 @@ public sealed partial class SingleFileTab
 
     private void SelectBrowserNode(EsmBrowserNode browserNode)
     {
+        // Push to navigation history when user clicks a different record (not during programmatic navigation)
+        if (!_isNavigating && _selectedBrowserNode?.NodeType == "Record" && browserNode.NodeType == "Record"
+            && _selectedBrowserNode != browserNode)
+        {
+            _navBackStack.Push(_selectedBrowserNode);
+            _navForwardStack.Clear();
+            UpdateNavButtons();
+        }
+
         _selectedBrowserNode = browserNode;
 
         if (browserNode.NodeType == "Record")

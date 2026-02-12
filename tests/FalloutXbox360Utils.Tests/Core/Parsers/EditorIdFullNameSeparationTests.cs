@@ -14,14 +14,9 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 ///     the formIdCorrelations passed to RecordParser to contain display names
 ///     instead of editor IDs, which then leaked into _formIdToEditorId.
 /// </summary>
-public class EditorIdFullNameSeparationTests
+public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public EditorIdFullNameSeparationTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
+    private readonly ITestOutputHelper _output = output;
 
     [Fact]
     public void Reconstruction_WithEdidOnlyCorrelations_EditorIdNotEqualFullName()

@@ -17,12 +17,12 @@ public sealed partial class SingleFileTab
 
     private async Task GenerateReportsAsync()
     {
-        ReportsProgressRing.IsActive = true;
-        ReportsProgressRing.Visibility = Visibility.Visible;
+        ReportsProgressBar.Visibility = Visibility.Visible;
+        ReportsProgressBar.IsIndeterminate = true;
 
         try
         {
-            await RunSemanticReconstructionAsync();
+            await EnsureSemanticReconstructionAsync();
             if (_session.SemanticResult == null) return;
 
             StatusTextBlock.Text = "Generating reports...";
@@ -54,8 +54,8 @@ public sealed partial class SingleFileTab
         }
         finally
         {
-            ReportsProgressRing.IsActive = false;
-            ReportsProgressRing.Visibility = Visibility.Collapsed;
+            ReportsProgressBar.IsIndeterminate = false;
+            ReportsProgressBar.Visibility = Visibility.Collapsed;
         }
     }
 

@@ -465,6 +465,8 @@ Individual dialogue response entries. Each belongs to a TESTopic.
 
 **PDB Type:** `0x1BBC9` — Size: 4 bytes
 
+**Crash dump caveat:** In all analyzed crash dumps, TOPIC_INFO_DATA is **uninitialized** across all 15,548 TESTopicInfo entries — every instance contains the same constant bytes (`00 82 04 48`), with `0xCB` fill patterns visible in adjacent fields (Xbox 360 debug heap fill). The game engine appears to populate these fields lazily during active dialogue conversations; since crash dumps are captured outside dialogue, the data is never written. `RuntimeStructReader` validates these fields (`nextSpeaker ≤ 2`, `type ≤ 7`) and zeros them when invalid to prevent garbage flags from propagating.
+
 ### QUEST_INFO — Embedded in TESTopic.m_listQuestInfo
 
 Links a quest to its INFO records within a topic. Walked via pointer following from TESTopic.

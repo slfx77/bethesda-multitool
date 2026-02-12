@@ -4,19 +4,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Script;
 ///     Endian-aware binary reader over a byte array for script bytecode decoding.
 ///     Xbox 360 bytecode is big-endian; PC ESM bytecode is little-endian.
 /// </summary>
-public sealed class BytecodeReader
+public sealed class BytecodeReader(byte[] data, bool isBigEndian)
 {
-    private readonly byte[] _data;
-    private readonly bool _isBigEndian;
+    private readonly byte[] _data = data;
+    private readonly bool _isBigEndian = isBigEndian;
 
-    public BytecodeReader(byte[] data, bool isBigEndian)
-    {
-        _data = data;
-        _isBigEndian = isBigEndian;
-        Position = 0;
-    }
-
-    public int Position { get; set; }
+    public int Position { get; set; } = 0;
 
     public int Length => _data.Length;
     public int Remaining => _data.Length - Position;

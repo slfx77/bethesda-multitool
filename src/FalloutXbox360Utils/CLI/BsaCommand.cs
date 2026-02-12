@@ -621,14 +621,16 @@ public static class BsaCommand
             AnsiConsole.MarkupLine("[cyan]Output:[/] {0}", output);
 
             // Initialize converters if requested
+            // DDX conversion is handled separately via batch after extraction (much faster)
+            var ddxBatchAvailable = false;
             if (convert)
             {
-                var ddxAvailable = extractor.EnableDdxConversion(true, verbose);
+                ddxBatchAvailable = true; // DDXConv is compiled-in
                 var xmaAvailable = extractor.EnableXmaConversion(true);
                 var nifAvailable = extractor.EnableNifConversion(true, verbose);
 
                 AnsiConsole.MarkupLine("[cyan]Conversion:[/] DDX->DDS: {0}, XMA->WAV: {1}, NIF: {2}",
-                    ddxAvailable ? "[green]Yes[/]" : "[yellow]No (DDXConv not found)[/]",
+                    "[green]Yes (batch)[/]",
                     xmaAvailable ? "[green]Yes[/]" : "[yellow]No (FFmpeg not found)[/]",
                     nifAvailable ? "[green]Yes[/]" : "[red]No[/]");
             }
@@ -692,6 +694,39 @@ public static class BsaCommand
                     return await extractor.ExtractFilteredAsync(output, predicate, overwrite, progress);
                 });
 
+            // Batch DDX conversion (much faster than per-file subprocess spawning)
+            var ddxBatchConverted = 0;
+            var ddxBatchFailed = 0;
+            if (convert && ddxBatchAvailable)
+            {
+                var ddxFiles = Directory.GetFiles(output, "*.ddx", SearchOption.AllDirectories);
+                if (ddxFiles.Length > 0)
+                {
+                    AnsiConsole.MarkupLine("[cyan]Converting {0:N0} DDX textures (batch)...[/]", ddxFiles.Length);
+                    var ddxOutputDir = Path.Combine(Path.GetTempPath(), $"ddx_batch_{Guid.NewGuid():N}");
+                    try
+                    {
+                        var converter = new DdxSubprocessConverter();
+                        var batchResult = await converter.ConvertBatchAsync(
+                            output, ddxOutputDir, pcFriendly: true);
+                        ddxBatchConverted = batchResult.Converted;
+                        ddxBatchFailed = batchResult.Failed;
+                        DdxBatchHelper.MergeConversions(output, ddxOutputDir);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        AnsiConsole.MarkupLine("[yellow]DDXConv not available for batch conversion[/]");
+                    }
+                    finally
+                    {
+                        if (Directory.Exists(ddxOutputDir))
+                        {
+                            Directory.Delete(ddxOutputDir, true);
+                        }
+                    }
+                }
+            }
+
             // Summary
             var succeeded = results.Count(r => r.Success);
             var failed = results.Count(r => !r.Success);
@@ -701,16 +736,15 @@ public static class BsaCommand
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[green]✓ Extracted:[/] {0:N0} files ({1})", succeeded, FormatSize(totalSize));
 
-            if (converted > 0)
+            if (converted > 0 || ddxBatchConverted > 0)
             {
-                var ddxConverted = results.Count(r => r.ConversionType == "DDX->DDS");
                 var xmaConverted = results.Count(r => r.ConversionType == "XMA->WAV");
                 var nifConverted = results.Count(r => r.ConversionType == "NIF BE->LE");
 
                 var parts = new List<string>();
-                if (ddxConverted > 0)
+                if (ddxBatchConverted > 0)
                 {
-                    parts.Add($"{ddxConverted} DDX -> DDS");
+                    parts.Add($"{ddxBatchConverted} DDX -> DDS");
                 }
 
                 if (xmaConverted > 0)
@@ -724,6 +758,11 @@ public static class BsaCommand
                 }
 
                 AnsiConsole.MarkupLine("[blue]↻ Converted:[/] {0}", string.Join(", ", parts));
+
+                if (ddxBatchFailed > 0)
+                {
+                    AnsiConsole.MarkupLine("[yellow]  DDX conversion failures:[/] {0:N0}", ddxBatchFailed);
+                }
             }
 
             if (failed > 0)
@@ -791,6 +830,13 @@ public static class BsaCommand
             return;
         }
 
+        // If output is a directory (or has no extension), auto-generate the BSA filename
+        if (Directory.Exists(output) || string.IsNullOrEmpty(Path.GetExtension(output)))
+        {
+            Directory.CreateDirectory(output);
+            output = Path.Combine(output, Path.GetFileName(input));
+        }
+
         var tempDir = Path.Combine(Path.GetTempPath(), $"bsa_convert_{Guid.NewGuid():N}");
         var extractDir = Path.Combine(tempDir, "extracted");
         var ddxOutputDir = Path.Combine(tempDir, "ddx_converted");
@@ -818,7 +864,7 @@ public static class BsaCommand
             AnsiConsole.WriteLine();
 
             // Step 2: Check conversion availability
-            var ddxAvailable = convertDdx && DdxSubprocessConverter.IsAvailable();
+            var ddxAvailable = convertDdx; // DDXConv is compiled-in, always available
             var xmaAvailable = convertXma && XmaWavConverter.IsAvailable;
             var nifAvailable = convertNif;
 
@@ -893,10 +939,9 @@ public static class BsaCommand
 
             // Step 5: Repack into PC BSA v104
             AnsiConsole.MarkupLine("[yellow]Step 5:[/] Repacking into PC BSA v104...");
-            var fileFlags = DetectFileFlags(extractDir);
-            using var writer = new BsaWriter(compress, fileFlags);
-
             var allFiles = Directory.GetFiles(extractDir, "*", SearchOption.AllDirectories);
+            var relativePaths = allFiles.Select(f => Path.GetRelativePath(extractDir, f));
+            using var writer = BsaWriter.CreateWithAutoFlags(relativePaths, compress);
 
             await AnsiConsole.Progress()
                 .AutoClear(false)
@@ -1021,7 +1066,9 @@ public static class BsaCommand
                         task.Increment(1);
                         if (verbose)
                         {
-                            task.Description = $"[green]{Path.GetFileName(inputPath)}[/] [{status}]";
+                            var safeName = Markup.Escape(Path.GetFileName(inputPath));
+                            var safeStatus = Markup.Escape(status);
+                            task.Description = $"[green]{safeName}[/] {safeStatus}";
                         }
                     },
                     cancellationToken,
@@ -1029,7 +1076,7 @@ public static class BsaCommand
             });
 
         // Merge converted DDS files into extractDir, delete original DDX files
-        var merged = MergeDdxConversions(extractDir, ddxOutputDir);
+        var merged = DdxBatchHelper.MergeConversions(extractDir, ddxOutputDir);
 
         AnsiConsole.MarkupLine("  Converted: {0:N0}, Failed: {1:N0}, Unsupported: {2:N0}",
             batchResult.Converted, batchResult.Failed, batchResult.Unsupported);
@@ -1165,62 +1212,6 @@ public static class BsaCommand
         return nifConverted;
     }
 
-    /// <summary>
-    ///     Merge DDXConv batch output back into the extract directory.
-    ///     Moves converted DDS files into extractDir and deletes original DDX files.
-    /// </summary>
-    private static int MergeDdxConversions(string extractDir, string ddxOutputDir)
-    {
-        var merged = 0;
-
-        // Move all converted files from ddxOutputDir into extractDir
-        foreach (var file in Directory.EnumerateFiles(ddxOutputDir, "*", SearchOption.AllDirectories))
-        {
-            var relativePath = Path.GetRelativePath(ddxOutputDir, file);
-            var targetPath = Path.Combine(extractDir, relativePath);
-            var targetDir = Path.GetDirectoryName(targetPath);
-            if (!string.IsNullOrEmpty(targetDir))
-            {
-                Directory.CreateDirectory(targetDir);
-            }
-
-            File.Move(file, targetPath, overwrite: true);
-            merged++;
-        }
-
-        // Delete original DDX files from extractDir
-        foreach (var ddxFile in Directory.GetFiles(extractDir, "*.ddx", SearchOption.AllDirectories))
-        {
-            File.Delete(ddxFile);
-        }
-
-        return merged;
-    }
-
-    private static BsaFileFlags DetectFileFlags(string extractDir)
-    {
-        var flags = BsaFileFlags.None;
-
-        foreach (var file in Directory.EnumerateFiles(extractDir, "*", SearchOption.AllDirectories))
-        {
-            var ext = Path.GetExtension(file).ToLowerInvariant();
-            flags |= ext switch
-            {
-                ".nif" or ".kf" or ".egm" or ".egt" or ".tri" => BsaFileFlags.Meshes,
-                ".dds" or ".tga" or ".bmp" or ".png" => BsaFileFlags.Textures,
-                ".xml" or ".swf" => BsaFileFlags.Menus,
-                ".wav" or ".mp3" => BsaFileFlags.Sounds,
-                ".lip" => BsaFileFlags.Voices,
-                ".spt" => BsaFileFlags.Trees,
-                ".fnt" or ".tex" => BsaFileFlags.Fonts,
-                ".txt" or ".ini" or ".lst" or ".pex" or ".bto" or ".btr" => BsaFileFlags.Misc,
-                _ => BsaFileFlags.None
-            };
-        }
-
-        return flags;
-    }
-
     private static async Task RunValidateAsync(string input, bool keepTemp, bool verbose)
     {
         if (!File.Exists(input))
@@ -1307,7 +1298,8 @@ public static class BsaCommand
 
             using var writer = new BsaWriter(
                 originalArchive.Header.DefaultCompressed,
-                originalArchive.Header.FileFlags);
+                originalArchive.Header.FileFlags,
+                originalArchive.Header.EmbedFileNames);
 
             await AnsiConsole.Progress()
                 .AutoClear(false)

@@ -63,6 +63,7 @@ public sealed partial class EsmRecordFormat
         PositionSubrecord? position = null;
         var scale = 1.0f;
         uint? ownerFormId = null;
+        uint? destinationDoorFormId = null;
         var isMapMarker = false;
         ushort? markerType = null;
         string? markerName = null;
@@ -96,6 +97,12 @@ public sealed partial class EsmRecordFormat
 
                 case "XOWN" when sub.DataLength == 4:
                     ownerFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
+                    break;
+
+                case "XTEL" when sub.DataLength >= 4: // Door teleport destination
+                    destinationDoorFormId = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
                     break;
 
                 case "XMRK": // Map marker presence flag (0 bytes)
@@ -136,6 +143,7 @@ public sealed partial class EsmRecordFormat
             Position = position,
             Scale = scale,
             OwnerFormId = ownerFormId,
+            DestinationDoorFormId = destinationDoorFormId,
             BaseEditorId = editorIdMap?.GetValueOrDefault(baseFormId),
             IsMapMarker = isMapMarker,
             MarkerType = markerType,
@@ -221,7 +229,7 @@ public sealed partial class EsmRecordFormat
                 foreach (var grid in sortedGrids)
                 {
                     var gap = land.Header.Offset - grid.Offset;
-                    if (gap is > 0 and < 500)
+                    if (gap is > 0 and < 100_000)
                     {
                         match = grid;
                     }

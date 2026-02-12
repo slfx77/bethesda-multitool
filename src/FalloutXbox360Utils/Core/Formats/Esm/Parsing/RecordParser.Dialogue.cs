@@ -49,16 +49,9 @@ public sealed partial class RecordParser
             }
         }
 
-        // Deduplicate by FormID - same record can appear in both BE and LE memory regions.
-        // Keep the version with the most response data.
-        var deduped = dialogues
-            .GroupBy(d => d.FormId)
-            .Select(g => g.OrderByDescending(d => d.Responses.Count)
-                .ThenByDescending(d => d.Responses.Sum(r => r.Text?.Length ?? 0))
-                .First())
-            .ToList();
-
-        return deduped;
+        // Merge split INFO records — Xbox 360 splits INFO into Base (conditions, links, speaker)
+        // + Response (text, emotion) records with the same FormID. Also handles BE/LE duplicates.
+        return MergeSplitInfoRecords(dialogues);
     }
 
     private DialogueRecord? ReconstructDialogueFromScanResult(DetectedMainRecord record)
@@ -105,6 +98,14 @@ public sealed partial class RecordParser
         var linkToTopics = new List<uint>();
         var linkFromTopics = new List<uint>();
         var addTopics = new List<uint>();
+
+        // CTDA condition-based speaker tracking
+        uint? conditionSpeaker = null;
+        uint? conditionFaction = null;
+        uint? conditionRace = null;
+        uint? conditionVoiceType = null;
+        uint? snamSpeaker = null;
+        var conditionFunctions = new List<ushort>();
 
         // Track current response being built
         string? currentResponseText = null;
@@ -159,6 +160,9 @@ public sealed partial class RecordParser
                 case "ANAM" when sub.DataLength == 4:
                     speakerFormId = ReadFormId(subData, record.IsBigEndian);
                     break;
+                case "SNAM" when sub.DataLength == 4:
+                    snamSpeaker = ReadFormId(subData, record.IsBigEndian);
+                    break;
                 case "TPIC" when sub.DataLength == 4:
                     topicFormId = ReadFormId(subData, record.IsBigEndian);
                     break;
@@ -200,6 +204,49 @@ public sealed partial class RecordParser
                     }
 
                     break;
+                case "CTDA" when sub.DataLength >= 28:
+                    {
+                        var fields = SubrecordDataReader.ReadFields("CTDA", null, subData, record.IsBigEndian);
+                        if (fields.Count > 0)
+                        {
+                            var functionIndex = SubrecordDataReader.GetUInt16(fields, "FunctionIndex");
+                            conditionFunctions.Add(functionIndex);
+
+                            var param1 = SubrecordDataReader.GetUInt32(fields, "Parameter1");
+                            var runOn = SubrecordDataReader.GetUInt32(fields, "RunOn");
+                            var compValue = SubrecordDataReader.GetFloat(fields, "ComparisonValue");
+                            var typeByte = SubrecordDataReader.GetByte(fields, "Type");
+                            var compOp = (typeByte >> 5) & 0x7; // 0=Eq, 1=NotEq, 2=Gt, 3=GtEq, 4=Lt, 5=LtEq
+
+                            // Positive match: boolean function returns true for this param
+                            // Equal/GtEq + compValue~1.0  OR  NotEqual + compValue~0.0  OR  Greater + compValue~0.0
+                            var isPositive = runOn == 0 &&
+                                ((compOp is 0 or 3 && compValue >= 0.99f) ||
+                                 (compOp is 1 && compValue < 0.01f) ||
+                                 (compOp is 2 && compValue < 0.01f));
+
+                            if (isPositive)
+                            {
+                                switch (functionIndex)
+                                {
+                                    case 0x48: // GetIsID → specific NPC speaker
+                                        conditionSpeaker ??= param1;
+                                        break;
+                                    case 0x47: // GetInFaction → faction-based shared dialogue
+                                        conditionFaction ??= param1;
+                                        break;
+                                    case 0x45: // GetIsRace → race-based dialogue
+                                        conditionRace ??= param1;
+                                        break;
+                                    case 0x1AB: // GetIsVoiceType → voice-type-based generic dialogue
+                                        conditionVoiceType ??= param1;
+                                        break;
+                                }
+                            }
+                        }
+
+                        break;
+                    }
             }
         }
 
@@ -221,7 +268,12 @@ public sealed partial class RecordParser
             EditorId = editorId ?? GetEditorId(record.FormId),
             TopicFormId = topicFormId,
             QuestFormId = questFormId,
-            SpeakerFormId = speakerFormId,
+            // Speaker priority: ANAM > SNAM > CTDA GetIsID > (topic TNAM propagated later)
+            SpeakerFormId = speakerFormId ?? snamSpeaker ?? conditionSpeaker,
+            SpeakerFactionFormId = conditionFaction,
+            SpeakerRaceFormId = conditionRace,
+            SpeakerVoiceTypeFormId = conditionVoiceType,
+            ConditionFunctions = conditionFunctions,
             Responses = responses,
             PreviousInfo = previousInfo,
             Difficulty = difficulty,
@@ -231,6 +283,108 @@ public sealed partial class RecordParser
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    /// <summary>
+    ///     Merges split INFO records that share the same FormID.
+    ///     Xbox 360 splits INFO into Base (CTDA, ANAM, PNAM, TCLT, TCLF, NAME, DNAM, QSTI)
+    ///     and Response (TRDT, NAM1) records. This combines them into a single DialogueRecord.
+    /// </summary>
+    private static List<DialogueRecord> MergeSplitInfoRecords(List<DialogueRecord> dialogues)
+    {
+        return dialogues
+            .GroupBy(d => d.FormId)
+            .Select(g =>
+            {
+                // Start with the record that has the most response data
+                var best = g.OrderByDescending(d => d.Responses.Count)
+                    .ThenByDescending(d => d.Responses.Sum(r => r.Text?.Length ?? 0))
+                    .First();
+
+                // Merge missing fields from other records with the same FormID
+                foreach (var other in g)
+                {
+                    if (ReferenceEquals(other, best))
+                    {
+                        continue;
+                    }
+
+                    if (best.SpeakerFormId is null or 0 && other.SpeakerFormId is not null and not 0)
+                    {
+                        best = best with { SpeakerFormId = other.SpeakerFormId };
+                    }
+
+                    if (best.SpeakerFactionFormId is null or 0 && other.SpeakerFactionFormId is not null and not 0)
+                    {
+                        best = best with { SpeakerFactionFormId = other.SpeakerFactionFormId };
+                    }
+
+                    if (best.SpeakerRaceFormId is null or 0 && other.SpeakerRaceFormId is not null and not 0)
+                    {
+                        best = best with { SpeakerRaceFormId = other.SpeakerRaceFormId };
+                    }
+
+                    if (best.SpeakerVoiceTypeFormId is null or 0 && other.SpeakerVoiceTypeFormId is not null and not 0)
+                    {
+                        best = best with { SpeakerVoiceTypeFormId = other.SpeakerVoiceTypeFormId };
+                    }
+
+                    if (best.QuestFormId is null or 0 && other.QuestFormId is not null and not 0)
+                    {
+                        best = best with { QuestFormId = other.QuestFormId };
+                    }
+
+                    if (best.TopicFormId is null or 0 && other.TopicFormId is not null and not 0)
+                    {
+                        best = best with { TopicFormId = other.TopicFormId };
+                    }
+
+                    if (best.PreviousInfo is null or 0 && other.PreviousInfo is not null and not 0)
+                    {
+                        best = best with { PreviousInfo = other.PreviousInfo };
+                    }
+
+                    if (best.Difficulty == 0 && other.Difficulty != 0)
+                    {
+                        best = best with { Difficulty = other.Difficulty };
+                    }
+
+                    if (string.IsNullOrEmpty(best.EditorId) && !string.IsNullOrEmpty(other.EditorId))
+                    {
+                        best = best with { EditorId = other.EditorId };
+                    }
+
+                    if (best.LinkToTopics.Count == 0 && other.LinkToTopics.Count > 0)
+                    {
+                        best = best with { LinkToTopics = other.LinkToTopics };
+                    }
+
+                    if (best.LinkFromTopics.Count == 0 && other.LinkFromTopics.Count > 0)
+                    {
+                        best = best with { LinkFromTopics = other.LinkFromTopics };
+                    }
+
+                    if (best.AddTopics.Count == 0 && other.AddTopics.Count > 0)
+                    {
+                        best = best with { AddTopics = other.AddTopics };
+                    }
+
+                    if (best.Responses.Count == 0 && other.Responses.Count > 0)
+                    {
+                        best = best with { Responses = other.Responses };
+                    }
+
+                    if (other.ConditionFunctions.Count > 0)
+                    {
+                        var merged = new HashSet<ushort>(best.ConditionFunctions);
+                        merged.UnionWith(other.ConditionFunctions);
+                        best = best with { ConditionFunctions = merged.ToList() };
+                    }
+                }
+
+                return best;
+            })
+            .ToList();
     }
 
     #endregion
@@ -247,20 +401,68 @@ public sealed partial class RecordParser
 
         if (_accessor != null)
         {
-            // Use accessor-based subrecord parsing to find FULL and TNAM within DIAL record bounds
+            // Single-pass subrecord parsing for FULL, TNAM, QSTI, and DATA
             var buffer = ArrayPool<byte>.Shared.Rent(4096);
             try
             {
                 foreach (var record in topicRecords)
                 {
-                    var fullName = FindFullNameInRecord(record, buffer);
-                    var speakerFormId = FindFormIdSubrecordInRecord(record, buffer, "TNAM");
+                    var recordData = ReadRecordData(record, buffer);
+                    if (recordData == null)
+                    {
+                        // Fallback for unreadable records
+                        topics.Add(new DialogTopicRecord
+                        {
+                            FormId = record.FormId,
+                            EditorId = GetEditorId(record.FormId),
+                            Offset = record.Offset,
+                            IsBigEndian = record.IsBigEndian
+                        });
+                        continue;
+                    }
+
+                    var (data, dataSize) = recordData.Value;
+
+                    string? fullName = null;
+                    uint? speakerFormId = null;
+                    uint? questFormId = null;
+                    byte topicType = 0;
+                    byte topicFlags = 0;
+
+                    foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                    {
+                        var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+                        switch (sub.Signature)
+                        {
+                            case "EDID":
+                                // Handled via GetEditorId below
+                                break;
+                            case "FULL":
+                                fullName = EsmStringUtils.ReadNullTermString(subData);
+                                break;
+                            case "TNAM" when sub.DataLength == 4:
+                                speakerFormId = ReadFormId(subData, record.IsBigEndian);
+                                break;
+                            case "QSTI" when sub.DataLength == 4:
+                                questFormId = ReadFormId(subData, record.IsBigEndian);
+                                break;
+                            case "DATA" when sub.DataLength >= 2:
+                                // Topic type and flags — raw bytes, no endian swap needed
+                                topicType = subData[0];
+                                topicFlags = subData[1];
+                                break;
+                        }
+                    }
+
                     topics.Add(new DialogTopicRecord
                     {
                         FormId = record.FormId,
                         EditorId = GetEditorId(record.FormId),
                         FullName = fullName,
                         SpeakerFormId = speakerFormId,
+                        QuestFormId = questFormId,
+                        TopicType = topicType,
+                        Flags = topicFlags,
                         Offset = record.Offset,
                         IsBigEndian = record.IsBigEndian
                     });
@@ -970,9 +1172,12 @@ public sealed partial class RecordParser
             }
         }
 
-        Logger.Instance.Debug(
-            $"  [Semantic] EditorID convention matching: {linked} dialogues linked to quests " +
-            $"({sortedPrefixes.Count} quest prefixes)");
+        if (linked > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] EditorID convention matching: {linked} dialogues linked to quests " +
+                $"({sortedPrefixes.Count} quest prefixes)");
+        }
     }
 
     /// <summary>
@@ -1031,6 +1236,191 @@ public sealed partial class RecordParser
     }
 
     /// <summary>
+    ///     Propagate speaker from attributed INFOs to unattributed siblings within the same topic.
+    ///     If all attributed lines in a topic share the same speaker, unattributed lines inherit it.
+    /// </summary>
+    private static void PropagateTopicSiblingSpeakers(List<DialogueRecord> dialogues)
+    {
+        var byTopic = new Dictionary<uint, List<int>>();
+        for (var i = 0; i < dialogues.Count; i++)
+        {
+            if (dialogues[i].TopicFormId is > 0)
+            {
+                var topicId = dialogues[i].TopicFormId!.Value;
+                if (!byTopic.TryGetValue(topicId, out var list))
+                {
+                    list = [];
+                    byTopic[topicId] = list;
+                }
+
+                list.Add(i);
+            }
+        }
+
+        var propagated = 0;
+        foreach (var (_, indices) in byTopic)
+        {
+            if (indices.Count < 2)
+            {
+                continue;
+            }
+
+            var attributedIndices = indices.Where(i => HasAnySpeaker(dialogues[i])).ToList();
+            var unattributedIndices = indices.Where(i => !HasAnySpeaker(dialogues[i])).ToList();
+            if (attributedIndices.Count == 0 || unattributedIndices.Count == 0)
+            {
+                continue;
+            }
+
+            // Try NPC speaker, then voice type, then faction
+            if (TryPropagateDominant(dialogues, attributedIndices, unattributedIndices,
+                    d => d.SpeakerFormId, (d, v) => d with { SpeakerFormId = v }, out var count))
+            {
+                propagated += count;
+                continue;
+            }
+
+            if (TryPropagateDominant(dialogues, attributedIndices, unattributedIndices,
+                    d => d.SpeakerVoiceTypeFormId, (d, v) => d with { SpeakerVoiceTypeFormId = v }, out count))
+            {
+                propagated += count;
+                continue;
+            }
+
+            if (TryPropagateDominant(dialogues, attributedIndices, unattributedIndices,
+                    d => d.SpeakerFactionFormId, (d, v) => d with { SpeakerFactionFormId = v }, out count))
+            {
+                propagated += count;
+            }
+        }
+
+        if (propagated > 0)
+        {
+            Logger.Instance.Debug($"  Propagated topic-sibling speaker to {propagated:N0} dialogue records");
+        }
+    }
+
+    /// <summary>
+    ///     Propagate speaker from attributed INFOs to unattributed lines within the same quest.
+    ///     Uses a 60% threshold to avoid propagating in mixed-speaker quests.
+    /// </summary>
+    private static void PropagateQuestSpeakers(List<DialogueRecord> dialogues)
+    {
+        var byQuest = new Dictionary<uint, List<int>>();
+        for (var i = 0; i < dialogues.Count; i++)
+        {
+            if (dialogues[i].QuestFormId is > 0)
+            {
+                var questId = dialogues[i].QuestFormId!.Value;
+                if (!byQuest.TryGetValue(questId, out var list))
+                {
+                    list = [];
+                    byQuest[questId] = list;
+                }
+
+                list.Add(i);
+            }
+        }
+
+        var propagated = 0;
+        foreach (var (_, indices) in byQuest)
+        {
+            var unattributedIndices = indices.Where(i => !HasAnySpeaker(dialogues[i])).ToList();
+            if (unattributedIndices.Count == 0)
+            {
+                continue;
+            }
+
+            var attributedIndices = indices.Where(i => HasAnySpeaker(dialogues[i])).ToList();
+            if (attributedIndices.Count == 0)
+            {
+                continue;
+            }
+
+            // Higher threshold (60%) for quest-level to avoid bad propagation
+            if (TryPropagateDominant(dialogues, attributedIndices, unattributedIndices,
+                    d => d.SpeakerVoiceTypeFormId, (d, v) => d with { SpeakerVoiceTypeFormId = v },
+                    out var count, minRatio: 0.6))
+            {
+                propagated += count;
+                continue;
+            }
+
+            if (TryPropagateDominant(dialogues, attributedIndices, unattributedIndices,
+                    d => d.SpeakerFactionFormId, (d, v) => d with { SpeakerFactionFormId = v },
+                    out count, minRatio: 0.6))
+            {
+                propagated += count;
+                continue;
+            }
+
+            if (TryPropagateDominant(dialogues, attributedIndices, unattributedIndices,
+                    d => d.SpeakerFormId, (d, v) => d with { SpeakerFormId = v },
+                    out count, minRatio: 0.6))
+            {
+                propagated += count;
+            }
+        }
+
+        if (propagated > 0)
+        {
+            Logger.Instance.Debug($"  Propagated quest-level speaker to {propagated:N0} dialogue records");
+        }
+    }
+
+    private static bool HasAnySpeaker(DialogueRecord d)
+    {
+        return d.SpeakerFormId is > 0 || d.SpeakerFactionFormId is > 0 ||
+               d.SpeakerRaceFormId is > 0 || d.SpeakerVoiceTypeFormId is > 0;
+    }
+
+    /// <summary>
+    ///     Find the dominant (most common) value among attributed lines and propagate it to unattributed ones.
+    ///     Returns true if propagation was performed.
+    /// </summary>
+    private static bool TryPropagateDominant(
+        List<DialogueRecord> dialogues,
+        List<int> attributedIndices,
+        List<int> unattributedIndices,
+        Func<DialogueRecord, uint?> selector,
+        Func<DialogueRecord, uint, DialogueRecord> updater,
+        out int propagatedCount,
+        double minRatio = 0.5)
+    {
+        propagatedCount = 0;
+
+        // Find the most common non-zero value
+        var values = attributedIndices
+            .Select(i => selector(dialogues[i]))
+            .Where(v => v is > 0)
+            .GroupBy(v => v!.Value)
+            .Select(g => (Value: g.Key, Count: g.Count()))
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
+        if (values.Count == 0)
+        {
+            return false;
+        }
+
+        var dominant = values[0];
+        var total = attributedIndices.Count(i => selector(dialogues[i]) is > 0);
+        if (total == 0 || (double)dominant.Count / total < minRatio)
+        {
+            return false;
+        }
+
+        // Propagate to unattributed lines
+        foreach (var idx in unattributedIndices)
+        {
+            dialogues[idx] = updater(dialogues[idx], dominant.Value);
+            propagatedCount++;
+        }
+
+        return propagatedCount > 0;
+    }
+
+    /// <summary>
     ///     Statistics for topic linking operations.
     /// </summary>
     private sealed class TopicLinkStats
@@ -1041,6 +1431,81 @@ public sealed partial class RecordParser
         public int TopicsWalked;
         public int TotalInfosFound;
         public int TotalInfosLinked;
+    }
+
+    /// <summary>
+    ///     Link INFO records to their parent DIAL topics using the GRUP-based TopicToInfoMap.
+    ///     The scanner builds this map from Type 7 GRUP headers which definitively encode
+    ///     the DIAL→INFO parent-child relationship in the ESM file structure.
+    ///     Falls back to file offset ordering if the map is empty (e.g., memory dump scans).
+    /// </summary>
+    private void LinkInfoToTopicsByGroupOrder(
+        List<DialogueRecord> dialogues,
+        List<DialogTopicRecord> topics)
+    {
+        var topicToInfoMap = _scanResult.TopicToInfoMap;
+        if (topicToInfoMap.Count == 0)
+        {
+            Logger.Instance.Debug("  [Semantic] No TopicToInfoMap available — skipping GRUP-based linking");
+            return;
+        }
+
+        // Build FormID → dialogue list index for updating
+        var dialogueByFormId = new Dictionary<uint, int>();
+        for (var i = 0; i < dialogues.Count; i++)
+        {
+            dialogueByFormId.TryAdd(dialogues[i].FormId, i);
+        }
+
+        // Build DIAL FormID → topic record for quest propagation
+        var topicByFormId = new Dictionary<uint, DialogTopicRecord>();
+        foreach (var topic in topics)
+        {
+            topicByFormId.TryAdd(topic.FormId, topic);
+        }
+
+        var linked = 0;
+        var questLinked = 0;
+
+        foreach (var (dialFormId, infoFormIds) in topicToInfoMap)
+        {
+            foreach (var infoFormId in infoFormIds)
+            {
+                if (!dialogueByFormId.TryGetValue(infoFormId, out var idx))
+                {
+                    continue;
+                }
+
+                var dialogue = dialogues[idx];
+                var updated = dialogue;
+
+                // Set TopicFormId if not already assigned
+                if (!dialogue.TopicFormId.HasValue || dialogue.TopicFormId.Value == 0)
+                {
+                    updated = updated with { TopicFormId = dialFormId };
+                    linked++;
+                }
+
+                // Propagate QuestFormId from the DIAL topic if the INFO lacks one
+                if ((!dialogue.QuestFormId.HasValue || dialogue.QuestFormId.Value == 0)
+                    && topicByFormId.TryGetValue(dialFormId, out var topic)
+                    && topic.QuestFormId is > 0)
+                {
+                    updated = updated with { QuestFormId = topic.QuestFormId };
+                    questLinked++;
+                }
+
+                if (updated != dialogue)
+                {
+                    dialogues[idx] = updated;
+                }
+            }
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] GRUP-based linking: linked {linked} INFOs to parent DIALs, " +
+            $"{questLinked} quest propagations " +
+            $"(from {topicToInfoMap.Count} topics, {dialogues.Count} INFOs)");
     }
 
     #endregion
@@ -1059,8 +1524,12 @@ public sealed partial class RecordParser
     {
         // Build indices
         var (infosByTopic, unlinkedInfos) = BuildInfosByTopicIndex(dialogues);
-        var topicById = topics.ToDictionary(t => t.FormId, t => t);
-        var questById = quests.ToDictionary(q => q.FormId, q => q);
+        var topicById = topics
+            .GroupBy(t => t.FormId)
+            .ToDictionary(g => g.Key, g => g.First());
+        var questById = quests
+            .GroupBy(q => q.FormId)
+            .ToDictionary(g => g.Key, g => g.First());
 
         // Sort INFOs within each topic by InfoIndex
         foreach (var (_, infos) in infosByTopic)

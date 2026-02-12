@@ -23,6 +23,12 @@ public record WorldspaceRecord
     /// <summary>Water FormID (NAM2 subrecord).</summary>
     public uint? WaterFormId { get; init; }
 
+    /// <summary>Default land height from DNAM subrecord.</summary>
+    public float? DefaultLandHeight { get; init; }
+
+    /// <summary>Default water height from DNAM subrecord (fallback for cells with sentinel XCLW).</summary>
+    public float? DefaultWaterHeight { get; init; }
+
     /// <summary>Cells belonging to this worldspace.</summary>
     public List<CellRecord> Cells { get; init; } = [];
 

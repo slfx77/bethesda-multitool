@@ -43,6 +43,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private CoverageGapSortColumn _coverageGapSortColumn = CoverageGapSortColumn.Index;
     private bool _coveragePopulated;
     private bool _dependencyCheckDone;
+    private bool _recordBreakdownPopulated;
     private ObservableCollection<EsmBrowserNode>? _esmBrowserTree;
     private bool _flatListBuilt;
     private CancellationTokenSource? _searchDebounceToken;
@@ -56,6 +57,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private int _reportViewportLineCount = 50;
     private double _measuredLineHeight;
     private EsmBrowserNode? _selectedBrowserNode;
+    private Action<int, string>? _reconstructionProgressHandler;
+    private Task<RecordCollection>? _semanticReconstructionTask;
     private string _currentSearchQuery = "";
 
     #endregion
@@ -245,12 +248,21 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
             // Open shared session and load hex viewer with shared accessor
             _session.Open(filePath, _analysisResult, fileType);
+            SummaryTab.IsEnabled = true;
             UpdateFileInfoCard();
             await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
 
             // Enable data browser and reports tabs (depends on ESM records, not coverage)
             DataBrowserTab.IsEnabled = _session.HasEsmRecords;
+            DialogueViewerTab.IsEnabled = _session.HasEsmRecords;
+            WorldMapTab.IsEnabled = _session.HasEsmRecords;
             ReportsTab.IsEnabled = _session.HasEsmRecords;
+
+            // Start semantic reconstruction eagerly in background so sub-tabs load faster
+            if (_session.HasEsmRecords)
+            {
+                StartSemanticReconstructionInBackground();
+            }
 
             // If already on Data Browser tab, auto-reconstruct
             if (_session.HasEsmRecords && ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
@@ -273,8 +285,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
                 if (_session.CoverageResult.Error == null)
                 {
-                    await HexViewer.AddCoverageGapRegionsAsync(_session.CoverageResult);
                     CoverageTab.IsEnabled = true;
+                    await HexViewer.AddCoverageGapRegionsAsync(_session.CoverageResult);
                 }
             }
             catch (Exception coverageEx)
@@ -336,7 +348,22 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private async void ReconstructButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunSemanticReconstructionAsync();
+        if (_session.SemanticResult == null)
+        {
+            ReconstructButton.IsEnabled = false;
+            ReconstructProgressBar.Visibility = Visibility.Visible;
+            ReconstructProgressBar.IsIndeterminate = false;
+            _reconstructionProgressHandler = (percent, phase) =>
+            {
+                ReconstructProgressBar.Value = percent;
+                ReconstructStatusText.Text = phase;
+            };
+            await EnsureSemanticReconstructionAsync();
+            _reconstructionProgressHandler = null;
+            ReconstructProgressBar.Visibility = Visibility.Collapsed;
+            ReconstructButton.IsEnabled = true;
+        }
+
         if (_session.SemanticResult != null)
         {
             await PopulateDataBrowserAsync();
@@ -347,10 +374,16 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     #region Tab Selection Events
 
-    private void SubTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void SubTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.AddedItems.Count == 0) return;
         var selected = SubTabView.SelectedItem;
+
+        if (ReferenceEquals(selected, SummaryTab) && !_recordBreakdownPopulated && _session.HasEsmRecords)
+        {
+            await EnsureSemanticReconstructionAsync();
+            PopulateRecordBreakdown();
+        }
 
         if (ReferenceEquals(selected, CoverageTab) && !_coveragePopulated && _session.CoverageResult != null)
         {
@@ -363,6 +396,22 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             _session.HasEsmRecords)
         {
             ReconstructButton_Click(sender, new RoutedEventArgs());
+        }
+
+        // Auto-populate Dialogue Viewer when first selected
+        if (ReferenceEquals(selected, DialogueViewerTab) &&
+            !_dialogueViewerPopulated &&
+            _session.HasEsmRecords)
+        {
+            _ = PopulateDialogueViewerAsync();
+        }
+
+        // Auto-populate World Map when first selected
+        if (ReferenceEquals(selected, WorldMapTab) &&
+            !_worldMapPopulated &&
+            _session.HasEsmRecords)
+        {
+            _ = PopulateWorldMapAsync();
         }
 
         // Auto-generate reports when first selected

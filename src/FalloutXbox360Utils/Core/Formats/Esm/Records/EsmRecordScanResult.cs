@@ -62,6 +62,15 @@ public record EsmRecordScanResult
     // Runtime Editor ID entries with FormID associations (from hash table following)
     public List<RuntimeEditorIdEntry> RuntimeEditorIds { get; init; } = [];
 
+    /// <summary>Cell FormID → parent Worldspace FormID mapping (from ESM GRUP hierarchy).</summary>
+    public Dictionary<uint, uint> CellToWorldspaceMap { get; init; } = [];
+
+    /// <summary>Cell FormID → child REFR/ACHR/ACRE FormIDs (from ESM GRUP hierarchy type 8/9/10).</summary>
+    public Dictionary<uint, List<uint>> CellToRefrMap { get; init; } = [];
+
+    /// <summary>DIAL FormID → child INFO FormIDs (from ESM GRUP hierarchy type 7).</summary>
+    public Dictionary<uint, List<uint>> TopicToInfoMap { get; init; } = [];
+
     /// <summary>
     ///     Statistics by record type.
     /// </summary>

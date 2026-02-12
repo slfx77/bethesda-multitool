@@ -8,14 +8,9 @@ using Xunit.Abstractions;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
-public class NpcParsingTests
+public class NpcParsingTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public NpcParsingTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
+    private readonly ITestOutputHelper _output = output;
 
     [Fact]
     public void ParseSubrecords_ValidNpcRecord_ExtractsEdidAndFull()

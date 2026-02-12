@@ -3,27 +3,23 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 /// <summary>
 ///     Represents the schema for a subrecord - defines how to convert its bytes.
 /// </summary>
-public sealed class SubrecordSchema
+/// <remarks>
+///     Creates a schema from a sequence of fields.
+/// </remarks>
+public sealed class SubrecordSchema(params SubrecordField[] fields)
 {
-    /// <summary>
-    ///     Creates a schema from a sequence of fields.
-    /// </summary>
-    public SubrecordSchema(params SubrecordField[] fields)
-    {
-        Fields = fields;
-        ExpectedSize = fields.Sum(f => f.EffectiveSize);
-    }
+
 
     /// <summary>
     ///     The ordered list of fields in this subrecord.
     /// </summary>
-    public SubrecordField[] Fields { get; }
+    public SubrecordField[] Fields { get; } = fields;
 
     /// <summary>
     ///     Expected total size in bytes (sum of all field sizes).
     ///     0 means variable-length subrecord.
     /// </summary>
-    public int ExpectedSize { get; init; }
+    public int ExpectedSize { get; init; } = fields.Sum(f => f.EffectiveSize);
 
     /// <summary>
     ///     Optional constraint on parent record type.

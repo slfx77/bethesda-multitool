@@ -6,18 +6,12 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Handles search operations in hex viewer data.
 /// </summary>
-internal sealed class HexSearcher
+internal sealed class HexSearcher(Func<MemoryMappedViewAccessor?> getAccessor, Func<long> getFileSize)
 {
-    private readonly Func<MemoryMappedViewAccessor?> _getAccessor;
-    private readonly Func<long> _getFileSize;
+    private readonly Func<MemoryMappedViewAccessor?> _getAccessor = getAccessor;
+    private readonly Func<long> _getFileSize = getFileSize;
 
     private List<long> _searchResults = [];
-
-    public HexSearcher(Func<MemoryMappedViewAccessor?> getAccessor, Func<long> getFileSize)
-    {
-        _getAccessor = getAccessor;
-        _getFileSize = getFileSize;
-    }
 
     public IReadOnlyList<long> SearchResults => _searchResults;
     public int CurrentSearchIndex { get; private set; } = -1;

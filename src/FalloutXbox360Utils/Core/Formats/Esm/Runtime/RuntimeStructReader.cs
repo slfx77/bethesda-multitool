@@ -8,21 +8,15 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     Reader for runtime game structures in Xbox 360 memory dumps.
 ///     Provides methods to read and reconstruct game data from memory.
 /// </summary>
-public sealed partial class RuntimeStructReader
+public sealed partial class RuntimeStructReader(MemoryMappedViewAccessor accessor, long fileSize, MinidumpInfo minidumpInfo)
 {
     private const int MaxListItems = 50;
-    private readonly MemoryMappedViewAccessor _accessor;
-    private readonly long _fileSize;
-    private readonly MinidumpInfo _minidumpInfo;
-
-    public RuntimeStructReader(MemoryMappedViewAccessor accessor, long fileSize, MinidumpInfo minidumpInfo)
-    {
-        _accessor = accessor;
-        _fileSize = fileSize;
-        _minidumpInfo = minidumpInfo;
-    }
+    private readonly MemoryMappedViewAccessor _accessor = accessor;
+    private readonly long _fileSize = fileSize;
+    private readonly MinidumpInfo _minidumpInfo = minidumpInfo;
 
     #region NPC Struct Constants
+
 
     private const int NpcStructSize = 508;
     private const int NpcAcbsOffset = 68;

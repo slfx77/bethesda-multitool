@@ -10,31 +10,23 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Handles rendering of hex data rows for the HexViewerControl.
 /// </summary>
-internal sealed class HexRowRenderer
+internal sealed class HexRowRenderer(
+    TextBlock offsetTextBlock,
+    TextBlock hexTextBlock,
+    TextBlock asciiTextBlock,
+    Func<long, FileRegion?> findRegion)
 {
     private const int BytesPerRow = 16;
 
     private static readonly SolidColorBrush TextBrush = new(Color.FromArgb(255, 212, 212, 212));
     private static readonly SolidColorBrush HighlightBrush = new(Color.FromArgb(255, 255, 140, 0)); // Orange
-    private readonly TextBlock _asciiTextBlock;
+    private readonly TextBlock _asciiTextBlock = asciiTextBlock;
 
     // Brush cache to avoid repeated allocations during rendering
     private readonly Dictionary<Color, SolidColorBrush> _brushCache = new();
-    private readonly Func<long, FileRegion?> _findRegion;
-    private readonly TextBlock _hexTextBlock;
-    private readonly TextBlock _offsetTextBlock;
-
-    public HexRowRenderer(
-        TextBlock offsetTextBlock,
-        TextBlock hexTextBlock,
-        TextBlock asciiTextBlock,
-        Func<long, FileRegion?> findRegion)
-    {
-        _offsetTextBlock = offsetTextBlock;
-        _hexTextBlock = hexTextBlock;
-        _asciiTextBlock = asciiTextBlock;
-        _findRegion = findRegion;
-    }
+    private readonly Func<long, FileRegion?> _findRegion = findRegion;
+    private readonly TextBlock _hexTextBlock = hexTextBlock;
+    private readonly TextBlock _offsetTextBlock = offsetTextBlock;
 
     // Highlight range for current search result
     public long HighlightStart { get; set; } = -1;

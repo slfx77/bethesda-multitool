@@ -39,4 +39,5 @@ public static class ScriptOpcodes
     public const byte ExprFunctionCall = 0x58;  // Function call within expression
     public const byte ExprIntLiteral = 0x6E;    // 'n' — integer literal (4 bytes)
     public const byte ExprDoubleLiteral = 0x7A; // 'z' — double literal (8 bytes)
+    public const byte ExprUnaryNegate = 0x7E;   // '~' — unary negation (pops one, pushes negated)
 }

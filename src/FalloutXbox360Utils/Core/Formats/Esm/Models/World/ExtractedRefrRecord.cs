@@ -23,6 +23,9 @@ public record ExtractedRefrRecord
     /// <summary>XOWN - Owner FormID.</summary>
     public uint? OwnerFormId { get; init; }
 
+    /// <summary>XTEL - Destination door FormID (teleport target).</summary>
+    public uint? DestinationDoorFormId { get; init; }
+
     /// <summary>Parent cell FormID (if known).</summary>
     public uint? ParentCellFormId { get; init; }
 

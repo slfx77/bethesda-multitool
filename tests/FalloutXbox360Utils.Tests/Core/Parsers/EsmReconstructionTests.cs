@@ -11,14 +11,9 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 ///     Tests validate that compressed records are correctly decompressed and parsed.
 ///     Skipped automatically when sample files are not available.
 /// </summary>
-public class EsmReconstructionTests
+public class EsmReconstructionTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public EsmReconstructionTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
+    private readonly ITestOutputHelper _output = output;
 
     private static string SampleEsmPath => Path.GetFullPath(
         Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Sample", "ESM", "360_proto",

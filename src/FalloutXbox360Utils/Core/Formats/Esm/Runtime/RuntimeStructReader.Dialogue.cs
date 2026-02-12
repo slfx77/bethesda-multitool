@@ -132,6 +132,17 @@ public sealed partial class RuntimeStructReader
             dataFlagsExt = buffer[InfoDataOffset + 3];
         }
 
+        // Validate TOPIC_INFO_DATA — crash dumps often contain uninitialized template values
+        // (e.g., nextSpeaker=0x82, flags=0x04 from Xbox 360 heap fill patterns).
+        // Valid: type 0-7, nextSpeaker 0-2. If invalid, zero out all fields.
+        if (dataNextSpeaker > 2 || dataType > 7)
+        {
+            dataType = 0;
+            dataNextSpeaker = 0;
+            dataFlags = 0;
+            dataFlagsExt = 0;
+        }
+
         // Follow pSpeaker pointer at dump+64 → TESActorBase* → get NPC FormID
         var speakerFormId = FollowPointerToFormId(buffer, InfoSpeakerPtrOffset);
 
@@ -200,6 +211,15 @@ public sealed partial class RuntimeStructReader
             dataNextSpeaker = buffer[InfoDataOffset + 1];
             dataFlags = buffer[InfoDataOffset + 2];
             dataFlagsExt = buffer[InfoDataOffset + 3];
+        }
+
+        // Validate TOPIC_INFO_DATA — crash dumps often contain uninitialized template values
+        if (dataNextSpeaker > 2 || dataType > 7)
+        {
+            dataType = 0;
+            dataNextSpeaker = 0;
+            dataFlags = 0;
+            dataFlagsExt = 0;
         }
 
         // Follow pSpeaker pointer
