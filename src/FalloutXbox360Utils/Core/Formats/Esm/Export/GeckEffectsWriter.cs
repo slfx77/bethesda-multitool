@@ -3,20 +3,19 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-public static partial class GeckReportGenerator
+/// <summary>Generates GECK-style text reports for Perk, Spell, Enchantment, and Base Effect records.</summary>
+internal static class GeckEffectsWriter
 {
-    #region Perk Methods
-
-    private static void AppendPerksSection(StringBuilder sb, List<PerkRecord> perks,
+    internal static void AppendPerksSection(StringBuilder sb, List<PerkRecord> perks,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Perks ({perks.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Perks ({perks.Count})");
 
         foreach (var perk in perks.OrderBy(p => p.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "PERK", perk.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "PERK", perk.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(perk.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(perk.FormId)}");
             sb.AppendLine($"Editor ID:      {perk.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {perk.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(perk.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -51,7 +50,7 @@ public static partial class GeckReportGenerator
                 foreach (var entry in perk.Entries)
                 {
                     var abilityStr = entry.AbilityFormId.HasValue
-                        ? $" Ability: {FormatFormIdWithName(entry.AbilityFormId.Value, lookup)}"
+                        ? $" Ability: {GeckReportGenerator.FormatFormIdWithName(entry.AbilityFormId.Value, lookup)}"
                         : "";
                     sb.AppendLine($"  [Rank {entry.Rank}] {entry.TypeName}{abilityStr}");
                 }
@@ -69,20 +68,16 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Spell Methods
-
-    private static void AppendSpellsSection(StringBuilder sb, List<SpellRecord> spells,
+    internal static void AppendSpellsSection(StringBuilder sb, List<SpellRecord> spells,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Spells/Abilities ({spells.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Spells/Abilities ({spells.Count})");
 
         foreach (var spell in spells.OrderBy(s => s.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "SPEL", spell.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "SPEL", spell.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(spell.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(spell.FormId)}");
             sb.AppendLine($"Editor ID:      {spell.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {spell.FullName ?? "(none)"}");
             sb.AppendLine($"Type:           {spell.TypeName}");
@@ -101,7 +96,7 @@ public static partial class GeckReportGenerator
                 sb.AppendLine("Effects:");
                 foreach (var effect in spell.EffectFormIds)
                 {
-                    sb.AppendLine($"  - {FormatFormIdWithName(effect, lookup)}");
+                    sb.AppendLine($"  - {GeckReportGenerator.FormatFormIdWithName(effect, lookup)}");
                 }
             }
         }
@@ -117,14 +112,10 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Enchantment Methods
-
-    private static void AppendEnchantmentsSection(StringBuilder sb, List<EnchantmentRecord> enchantments,
+    internal static void AppendEnchantmentsSection(StringBuilder sb, List<EnchantmentRecord> enchantments,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Enchantments ({enchantments.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Enchantments ({enchantments.Count})");
         sb.AppendLine();
 
         var byType = enchantments.GroupBy(e => e.TypeName).OrderBy(g => g.Key).ToList();
@@ -142,7 +133,7 @@ public static partial class GeckReportGenerator
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  ENCHANTMENT: {ench.EditorId ?? "(none)"} \u2014 {ench.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {FormatFormId(ench.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(ench.FormId)}");
             sb.AppendLine($"  Type:        {ench.TypeName}");
             sb.AppendLine($"  Charge:      {ench.ChargeAmount}");
             sb.AppendLine($"  Cost:        {ench.EnchantCost}");
@@ -160,7 +151,7 @@ public static partial class GeckReportGenerator
                 foreach (var effect in ench.Effects)
                 {
                     var effectName = effect.EffectFormId != 0
-                        ? FormatFormIdWithName(effect.EffectFormId, lookup)
+                        ? GeckReportGenerator.FormatFormIdWithName(effect.EffectFormId, lookup)
                         : "(none)";
                     if (effectName.Length > 32)
                     {
@@ -191,14 +182,10 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region BaseEffect Methods
-
-    private static void AppendBaseEffectsSection(StringBuilder sb, List<BaseEffectRecord> effects,
+    internal static void AppendBaseEffectsSection(StringBuilder sb, List<BaseEffectRecord> effects,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Base Effects ({effects.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Base Effects ({effects.Count})");
         sb.AppendLine();
 
         var byArchetype = effects.GroupBy(e => e.ArchetypeName).OrderByDescending(g => g.Count()).ToList();
@@ -215,7 +202,7 @@ public static partial class GeckReportGenerator
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  EFFECT: {effect.EditorId ?? "(none)"} \u2014 {effect.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {FormatFormId(effect.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(effect.FormId)}");
             sb.AppendLine($"  Archetype:   {effect.ArchetypeName}");
             sb.AppendLine($"  Base Cost:   {effect.BaseCost:F2}");
             if (!string.IsNullOrEmpty(effect.EffectCode))
@@ -250,17 +237,17 @@ public static partial class GeckReportGenerator
 
             if (effect.Projectile != 0)
             {
-                sb.AppendLine($"  Projectile:  {FormatFormIdWithName(effect.Projectile, lookup)}");
+                sb.AppendLine($"  Projectile:  {GeckReportGenerator.FormatFormIdWithName(effect.Projectile, lookup)}");
             }
 
             if (effect.Explosion != 0)
             {
-                sb.AppendLine($"  Explosion:   {FormatFormIdWithName(effect.Explosion, lookup)}");
+                sb.AppendLine($"  Explosion:   {GeckReportGenerator.FormatFormIdWithName(effect.Explosion, lookup)}");
             }
 
             if (effect.AssociatedItem != 0)
             {
-                sb.AppendLine($"  Assoc. Item: {FormatFormIdWithName(effect.AssociatedItem, lookup)}");
+                sb.AppendLine($"  Assoc. Item: {GeckReportGenerator.FormatFormIdWithName(effect.AssociatedItem, lookup)}");
             }
 
             if (!string.IsNullOrEmpty(effect.ModelPath))
@@ -284,6 +271,4 @@ public static partial class GeckReportGenerator
         AppendBaseEffectsSection(sb, effects, lookup ?? []);
         return sb.ToString();
     }
-
-    #endregion
 }

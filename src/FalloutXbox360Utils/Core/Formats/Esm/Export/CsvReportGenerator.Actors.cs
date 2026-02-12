@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-public static partial class CsvReportGenerator
+internal static class CsvActorWriter
 {
     public static string GenerateNpcsCsv(List<NpcRecord> npcs, Dictionary<uint, string> lookup)
     {
@@ -37,9 +37,9 @@ public static partial class CsvReportGenerator
 
             sb.AppendLine(string.Join(",",
                 "NPC",
-                FId(npc.FormId),
-                E(npc.EditorId),
-                E(npc.FullName),
+                Fmt.FId(npc.FormId),
+                Fmt.CsvEscape(npc.EditorId),
+                Fmt.CsvEscape(npc.FullName),
                 gender,
                 s?.Level.ToString() ?? "",
                 sp is { Length: 7 } ? sp[0].ToString() : "",
@@ -81,22 +81,22 @@ public static partial class CsvReportGenerator
                 s?.CalcMin.ToString() ?? "",
                 s?.CalcMax.ToString() ?? "",
                 s?.Flags.ToString() ?? "",
-                FIdN(npc.Race),
-                Resolve(npc.Race ?? 0, lookup),
-                FIdN(npc.Class),
-                Resolve(npc.Class ?? 0, lookup),
-                FIdN(npc.Script),
-                FIdN(npc.VoiceType),
-                FIdN(npc.Template),
-                FIdN(npc.HairFormId),
-                Resolve(npc.HairFormId ?? 0, lookup),
+                Fmt.FIdN(npc.Race),
+                Fmt.Resolve(npc.Race ?? 0, lookup),
+                Fmt.FIdN(npc.Class),
+                Fmt.Resolve(npc.Class ?? 0, lookup),
+                Fmt.FIdN(npc.Script),
+                Fmt.FIdN(npc.VoiceType),
+                Fmt.FIdN(npc.Template),
+                Fmt.FIdN(npc.HairFormId),
+                Fmt.Resolve(npc.HairFormId ?? 0, lookup),
                 npc.HairLength?.ToString("F2") ?? "",
-                FIdN(npc.EyesFormId),
-                Resolve(npc.EyesFormId ?? 0, lookup),
-                FIdN(npc.CombatStyleFormId),
-                Resolve(npc.CombatStyleFormId ?? 0, lookup),
+                Fmt.FIdN(npc.EyesFormId),
+                Fmt.Resolve(npc.EyesFormId ?? 0, lookup),
+                Fmt.FIdN(npc.CombatStyleFormId),
+                Fmt.Resolve(npc.CombatStyleFormId ?? 0, lookup),
                 npc.FaceGenGeometrySymmetric != null ? "Yes" : "",
-                Endian(npc.IsBigEndian),
+                Fmt.Endian(npc.IsBigEndian),
                 npc.Offset.ToString(),
                 "", "", ""));
 
@@ -106,23 +106,23 @@ public static partial class CsvReportGenerator
             foreach (var f in npc.Factions)
             {
                 sb.AppendLine(
-                    $"FACTION,{FId(npc.FormId)}{subPad},{FId(f.FactionFormId)},{Resolve(f.FactionFormId, lookup)},{f.Rank}");
+                    $"FACTION,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(f.FactionFormId)},{Fmt.Resolve(f.FactionFormId, lookup)},{f.Rank}");
             }
 
             foreach (var spellId in npc.Spells)
             {
-                sb.AppendLine($"SPELL,{FId(npc.FormId)}{subPad},{FId(spellId)},{Resolve(spellId, lookup)},");
+                sb.AppendLine($"SPELL,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(spellId)},{Fmt.Resolve(spellId, lookup)},");
             }
 
             foreach (var item in npc.Inventory)
             {
                 sb.AppendLine(
-                    $"INVENTORY,{FId(npc.FormId)}{subPad},{FId(item.ItemFormId)},{Resolve(item.ItemFormId, lookup)},{item.Count}");
+                    $"INVENTORY,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(item.ItemFormId)},{Fmt.Resolve(item.ItemFormId, lookup)},{item.Count}");
             }
 
             foreach (var pkgId in npc.Packages)
             {
-                sb.AppendLine($"PACKAGE,{FId(npc.FormId)}{subPad},{FId(pkgId)},{Resolve(pkgId, lookup)},");
+                sb.AppendLine($"PACKAGE,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(pkgId)},{Fmt.Resolve(pkgId, lookup)},");
             }
         }
 
@@ -139,20 +139,20 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "CREATURE",
-                FId(c.FormId),
-                E(c.EditorId),
-                E(c.FullName),
+                Fmt.FId(c.FormId),
+                Fmt.CsvEscape(c.EditorId),
+                Fmt.CsvEscape(c.FullName),
                 c.CreatureType.ToString(),
-                E(c.CreatureTypeName),
+                Fmt.CsvEscape(c.CreatureTypeName),
                 c.Stats?.Level.ToString() ?? "",
                 c.Stats?.FatigueBase.ToString() ?? "",
                 c.AttackDamage.ToString(),
                 c.CombatSkill.ToString(),
                 c.MagicSkill.ToString(),
                 c.StealthSkill.ToString(),
-                FIdN(c.Script),
-                E(c.ModelPath),
-                Endian(c.IsBigEndian),
+                Fmt.FIdN(c.Script),
+                Fmt.CsvEscape(c.ModelPath),
+                Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString(),
                 "", "", ""));
 
@@ -160,11 +160,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "FACTION",
-                    FId(c.FormId),
+                    Fmt.FId(c.FormId),
                     "", "", "", "", "", "", "", "", "", "", "", "",
                     "", "",
-                    FId(f.FactionFormId),
-                    Resolve(f.FactionFormId, lookup),
+                    Fmt.FId(f.FactionFormId),
+                    Fmt.Resolve(f.FactionFormId, lookup),
                     f.Rank.ToString()));
             }
 
@@ -172,11 +172,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "SPELL",
-                    FId(c.FormId),
+                    Fmt.FId(c.FormId),
                     "", "", "", "", "", "", "", "", "", "", "", "",
                     "", "",
-                    FId(spellId),
-                    Resolve(spellId, lookup),
+                    Fmt.FId(spellId),
+                    Fmt.Resolve(spellId, lookup),
                     ""));
             }
         }
@@ -197,18 +197,18 @@ public static partial class CsvReportGenerator
                 : "";
             sb.AppendLine(string.Join(",",
                 "RACE",
-                FId(r.FormId),
-                E(r.EditorId),
-                E(r.FullName),
-                E(r.Description),
-                E(boosts),
+                Fmt.FId(r.FormId),
+                Fmt.CsvEscape(r.EditorId),
+                Fmt.CsvEscape(r.FullName),
+                Fmt.CsvEscape(r.Description),
+                Fmt.CsvEscape(boosts),
                 r.MaleHeight.ToString("F4"),
                 r.FemaleHeight.ToString("F4"),
-                FIdN(r.MaleVoiceFormId),
-                FIdN(r.FemaleVoiceFormId),
-                FIdN(r.OlderRaceFormId),
-                FIdN(r.YoungerRaceFormId),
-                Endian(r.IsBigEndian),
+                Fmt.FIdN(r.MaleVoiceFormId),
+                Fmt.FIdN(r.FemaleVoiceFormId),
+                Fmt.FIdN(r.OlderRaceFormId),
+                Fmt.FIdN(r.YoungerRaceFormId),
+                Fmt.Endian(r.IsBigEndian),
                 r.Offset.ToString(),
                 "", ""));
 
@@ -216,11 +216,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "ABILITY",
-                    FId(r.FormId),
+                    Fmt.FId(r.FormId),
                     "", "", "", "", "", "", "", "", "", "",
                     "", "",
-                    FId(abilityId),
-                    Resolve(abilityId, lookup)));
+                    Fmt.FId(abilityId),
+                    Fmt.Resolve(abilityId, lookup)));
             }
         }
 
@@ -237,14 +237,14 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "FACTION",
-                FId(f.FormId),
-                E(f.EditorId),
-                E(f.FullName),
+                Fmt.FId(f.FormId),
+                Fmt.CsvEscape(f.EditorId),
+                Fmt.CsvEscape(f.FullName),
                 f.Flags.ToString(),
                 f.IsHiddenFromPlayer.ToString(),
                 f.AllowsEvil.ToString(),
                 f.AllowsSpecialCombat.ToString(),
-                Endian(f.IsBigEndian),
+                Fmt.Endian(f.IsBigEndian),
                 f.Offset.ToString(),
                 "", "", ""));
 
@@ -252,11 +252,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "RANK",
-                    FId(f.FormId),
+                    Fmt.FId(f.FormId),
                     "", "", "", "", "", "",
                     "", "",
                     rank.RankNumber.ToString(),
-                    E(rank.MaleTitle ?? rank.FemaleTitle ?? ""),
+                    Fmt.CsvEscape(rank.MaleTitle ?? rank.FemaleTitle ?? ""),
                     ""));
             }
 
@@ -264,11 +264,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "RELATION",
-                    FId(f.FormId),
+                    Fmt.FId(f.FormId),
                     "", "", "", "", "", "",
                     "", "",
-                    FId(rel.FactionFormId),
-                    Resolve(rel.FactionFormId, lookup),
+                    Fmt.FId(rel.FactionFormId),
+                    Fmt.Resolve(rel.FactionFormId, lookup),
                     rel.Modifier.ToString()));
             }
         }
@@ -286,15 +286,15 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "CLAS",
-                FId(c.FormId),
-                E(c.EditorId),
-                E(c.FullName),
-                E(string.Join(";", c.TagSkills)),
+                Fmt.FId(c.FormId),
+                Fmt.CsvEscape(c.EditorId),
+                Fmt.CsvEscape(c.FullName),
+                Fmt.CsvEscape(string.Join(";", c.TagSkills)),
                 c.IsPlayable ? "Yes" : "No",
                 c.IsGuard ? "Yes" : "No",
                 c.TrainingSkill.ToString(),
                 c.TrainingLevel.ToString(),
-                Endian(c.IsBigEndian),
+                Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString()));
         }
 

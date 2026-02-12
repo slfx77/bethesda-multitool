@@ -4,7 +4,7 @@ using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-public static partial class CsvReportGenerator
+internal static class CsvMiscWriter
 {
     public static string GenerateQuestsCsv(List<QuestRecord> quests, Dictionary<uint, string> lookup)
     {
@@ -16,13 +16,13 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "QUEST",
-                FId(q.FormId),
-                E(q.EditorId),
-                E(q.FullName),
+                Fmt.FId(q.FormId),
+                Fmt.CsvEscape(q.EditorId),
+                Fmt.CsvEscape(q.FullName),
                 q.Flags.ToString(),
                 q.Priority.ToString(),
-                FIdN(q.Script),
-                Endian(q.IsBigEndian),
+                Fmt.FIdN(q.Script),
+                Fmt.Endian(q.IsBigEndian),
                 q.Offset.ToString(),
                 "", "", "", ""));
 
@@ -30,11 +30,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "STAGE",
-                    FId(q.FormId),
+                    Fmt.FId(q.FormId),
                     "", "", "", "", "",
                     "", "",
                     stage.Index.ToString(),
-                    E(stage.LogEntry),
+                    Fmt.CsvEscape(stage.LogEntry),
                     stage.Flags.ToString(),
                     ""));
             }
@@ -43,11 +43,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "OBJECTIVE",
-                    FId(q.FormId),
+                    Fmt.FId(q.FormId),
                     "", "", "", "", "",
                     "", "",
                     obj.Index.ToString(),
-                    E(obj.DisplayText),
+                    Fmt.CsvEscape(obj.DisplayText),
                     "",
                     obj.TargetStage?.ToString() ?? ""));
             }
@@ -83,23 +83,23 @@ public static partial class CsvReportGenerator
 
             sb.AppendLine(string.Join(",",
                 "DIALOGUE",
-                FId(d.FormId),
-                E(d.EditorId),
-                FIdN(d.TopicFormId),
-                Resolve(d.TopicFormId ?? 0, lookup),
-                FIdN(d.QuestFormId),
-                Resolve(d.QuestFormId ?? 0, lookup),
-                FIdN(d.SpeakerFormId),
-                Resolve(d.SpeakerFormId ?? 0, lookup),
-                FIdN(d.PreviousInfo),
-                E(d.PromptText),
+                Fmt.FId(d.FormId),
+                Fmt.CsvEscape(d.EditorId),
+                Fmt.FIdN(d.TopicFormId),
+                Fmt.Resolve(d.TopicFormId ?? 0, lookup),
+                Fmt.FIdN(d.QuestFormId),
+                Fmt.Resolve(d.QuestFormId ?? 0, lookup),
+                Fmt.FIdN(d.SpeakerFormId),
+                Fmt.Resolve(d.SpeakerFormId ?? 0, lookup),
+                Fmt.FIdN(d.PreviousInfo),
+                Fmt.CsvEscape(d.PromptText),
                 d.InfoIndex.ToString(),
                 $"0x{d.InfoFlags:X2}",
-                E(flagsDesc),
+                Fmt.CsvEscape(flagsDesc),
                 d.Difficulty > 0 ? d.DifficultyName : "",
-                E(linkToStr),
-                E(addStr),
-                Endian(d.IsBigEndian),
+                Fmt.CsvEscape(linkToStr),
+                Fmt.CsvEscape(addStr),
+                Fmt.Endian(d.IsBigEndian),
                 d.Offset.ToString(),
                 "", "", "", "", ""));
 
@@ -107,14 +107,14 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "RESPONSE",
-                    FId(d.FormId),
+                    Fmt.FId(d.FormId),
                     "", "", "", "", "", "", "", "",
                     "", "", "", "", "", "", "",
                     "", "",
                     r.ResponseNumber.ToString(),
-                    E(r.Text),
+                    Fmt.CsvEscape(r.Text),
                     r.EmotionType.ToString(),
-                    E(r.EmotionName),
+                    Fmt.CsvEscape(r.EmotionName),
                     r.EmotionValue.ToString()));
             }
         }
@@ -132,20 +132,20 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "TOPIC",
-                FId(t.FormId),
-                E(t.EditorId),
-                E(t.FullName),
+                Fmt.FId(t.FormId),
+                Fmt.CsvEscape(t.EditorId),
+                Fmt.CsvEscape(t.FullName),
                 t.TopicType.ToString(),
-                E(t.TopicTypeName),
+                Fmt.CsvEscape(t.TopicTypeName),
                 t.Flags.ToString(),
                 t.IsRumors.ToString(),
                 t.IsTopLevel.ToString(),
-                FIdN(t.QuestFormId),
-                Resolve(t.QuestFormId ?? 0, lookup),
+                Fmt.FIdN(t.QuestFormId),
+                Fmt.Resolve(t.QuestFormId ?? 0, lookup),
                 t.ResponseCount.ToString(),
                 t.Priority is not 0f ? t.Priority.ToString("F1") : "",
-                E(t.DummyPrompt),
-                Endian(t.IsBigEndian),
+                Fmt.CsvEscape(t.DummyPrompt),
+                Fmt.Endian(t.IsBigEndian),
                 t.Offset.ToString()));
         }
 
@@ -162,9 +162,9 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "CELL",
-                FId(cell.FormId),
-                E(cell.EditorId),
-                E(cell.FullName),
+                Fmt.FId(cell.FormId),
+                Fmt.CsvEscape(cell.EditorId),
+                Fmt.CsvEscape(cell.FullName),
                 cell.GridX?.ToString() ?? "",
                 cell.GridY?.ToString() ?? "",
                 cell.IsInterior.ToString(),
@@ -172,7 +172,7 @@ public static partial class CsvReportGenerator
                 cell.Flags.ToString(),
                 (cell.Heightmap != null).ToString(),
                 cell.PlacedObjects.Count.ToString(),
-                Endian(cell.IsBigEndian),
+                Fmt.Endian(cell.IsBigEndian),
                 cell.Offset.ToString(),
                 "", "", "", "", "", "", "", "", "", "", "", "", ""));
 
@@ -180,14 +180,14 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "OBJ",
-                    FId(cell.FormId),
+                    Fmt.FId(cell.FormId),
                     "", "", "", "", "", "", "", "", "",
                     "", "",
-                    FId(obj.FormId),
-                    E(obj.BaseEditorId),
-                    E(obj.RecordType),
-                    FId(obj.BaseFormId),
-                    Resolve(obj.BaseFormId, lookup),
+                    Fmt.FId(obj.FormId),
+                    Fmt.CsvEscape(obj.BaseEditorId),
+                    Fmt.CsvEscape(obj.RecordType),
+                    Fmt.FId(obj.BaseFormId),
+                    Fmt.Resolve(obj.BaseFormId, lookup),
                     obj.X.ToString("F2"),
                     obj.Y.ToString("F2"),
                     obj.Z.ToString("F2"),
@@ -195,7 +195,7 @@ public static partial class CsvReportGenerator
                     obj.RotY.ToString("F4"),
                     obj.RotZ.ToString("F4"),
                     obj.Scale.ToString("F4"),
-                    FIdN(obj.OwnerFormId)));
+                    Fmt.FIdN(obj.OwnerFormId)));
             }
         }
 
@@ -213,14 +213,14 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "WORLDSPACE",
-                FId(ws.FormId),
-                E(ws.EditorId),
-                E(ws.FullName),
-                FIdN(ws.ParentWorldspaceFormId),
-                FIdN(ws.ClimateFormId),
-                FIdN(ws.WaterFormId),
+                Fmt.FId(ws.FormId),
+                Fmt.CsvEscape(ws.EditorId),
+                Fmt.CsvEscape(ws.FullName),
+                Fmt.FIdN(ws.ParentWorldspaceFormId),
+                Fmt.FIdN(ws.ClimateFormId),
+                Fmt.FIdN(ws.WaterFormId),
                 ws.Cells.Count.ToString(),
-                Endian(ws.IsBigEndian),
+                Fmt.Endian(ws.IsBigEndian),
                 ws.Offset.ToString()));
         }
 
@@ -237,16 +237,16 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "PERK",
-                FId(p.FormId),
-                E(p.EditorId),
-                E(p.FullName),
-                E(p.Description),
+                Fmt.FId(p.FormId),
+                Fmt.CsvEscape(p.EditorId),
+                Fmt.CsvEscape(p.FullName),
+                Fmt.CsvEscape(p.Description),
                 p.Ranks.ToString(),
                 p.MinLevel.ToString(),
                 p.IsPlayable.ToString(),
                 p.IsTrait.ToString(),
-                E(p.IconPath),
-                Endian(p.IsBigEndian),
+                Fmt.CsvEscape(p.IconPath),
+                Fmt.Endian(p.IsBigEndian),
                 p.Offset.ToString(),
                 "", "", "", "", "", ""));
 
@@ -254,15 +254,15 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "ENTRY",
-                    FId(p.FormId),
+                    Fmt.FId(p.FormId),
                     "", "", "", "", "", "", "", "",
                     "", "",
                     entry.Rank.ToString(),
                     entry.Priority.ToString(),
                     entry.Type.ToString(),
-                    E(entry.TypeName),
-                    FIdN(entry.AbilityFormId),
-                    Resolve(entry.AbilityFormId ?? 0, lookup)));
+                    Fmt.CsvEscape(entry.TypeName),
+                    Fmt.FIdN(entry.AbilityFormId),
+                    Fmt.Resolve(entry.AbilityFormId ?? 0, lookup)));
             }
         }
 
@@ -279,15 +279,15 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "SPELL",
-                FId(s.FormId),
-                E(s.EditorId),
-                E(s.FullName),
+                Fmt.FId(s.FormId),
+                Fmt.CsvEscape(s.EditorId),
+                Fmt.CsvEscape(s.FullName),
                 ((int)s.Type).ToString(),
-                E(s.TypeName),
+                Fmt.CsvEscape(s.TypeName),
                 s.Cost.ToString(),
                 s.Level.ToString(),
                 s.Flags.ToString(),
-                Endian(s.IsBigEndian),
+                Fmt.Endian(s.IsBigEndian),
                 s.Offset.ToString(),
                 "", ""));
 
@@ -295,11 +295,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "EFFECT",
-                    FId(s.FormId),
+                    Fmt.FId(s.FormId),
                     "", "", "", "", "", "", "",
                     "", "",
-                    FId(effectId),
-                    Resolve(effectId, lookup)));
+                    Fmt.FId(effectId),
+                    Fmt.Resolve(effectId, lookup)));
             }
         }
 
@@ -316,14 +316,14 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "ENCH",
-                FId(e.FormId),
-                E(e.EditorId),
-                E(e.FullName),
+                Fmt.FId(e.FormId),
+                Fmt.CsvEscape(e.EditorId),
+                Fmt.CsvEscape(e.FullName),
                 e.TypeName,
                 e.ChargeAmount.ToString(),
                 e.EnchantCost.ToString(),
                 e.Effects.Count.ToString(),
-                Endian(e.IsBigEndian),
+                Fmt.Endian(e.IsBigEndian),
                 e.Offset.ToString()));
         }
 
@@ -339,14 +339,14 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "MGEF",
-                FId(e.FormId),
-                E(e.EditorId),
-                E(e.FullName),
+                Fmt.FId(e.FormId),
+                Fmt.CsvEscape(e.EditorId),
+                Fmt.CsvEscape(e.FullName),
                 e.ArchetypeName,
                 e.BaseCost.ToString("F2"),
                 e.ActorValue.ToString(),
                 e.ResistValue.ToString(),
-                Endian(e.IsBigEndian),
+                Fmt.Endian(e.IsBigEndian),
                 e.Offset.ToString()));
         }
 
@@ -362,14 +362,14 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "CHAL",
-                FId(c.FormId),
-                E(c.EditorId),
-                E(c.FullName),
+                Fmt.FId(c.FormId),
+                Fmt.CsvEscape(c.EditorId),
+                Fmt.CsvEscape(c.FullName),
                 c.TypeName,
                 c.Threshold.ToString(),
                 c.Interval.ToString(),
-                E(c.Description),
-                Endian(c.IsBigEndian),
+                Fmt.CsvEscape(c.Description),
+                Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString()));
         }
 
@@ -385,13 +385,13 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "EXPL",
-                FId(e.FormId),
-                E(e.EditorId),
-                E(e.FullName),
+                Fmt.FId(e.FormId),
+                Fmt.CsvEscape(e.EditorId),
+                Fmt.CsvEscape(e.FullName),
                 e.Force.ToString("F1"),
                 e.Damage.ToString("F1"),
                 e.Radius.ToString("F1"),
-                Endian(e.IsBigEndian),
+                Fmt.Endian(e.IsBigEndian),
                 e.Offset.ToString()));
         }
 
@@ -407,11 +407,11 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "GMST",
-                E(gs.EditorId),
-                FId(gs.FormId),
+                Fmt.CsvEscape(gs.EditorId),
+                Fmt.FId(gs.FormId),
                 gs.ValueType.ToString(),
-                E(gs.DisplayValue),
-                Endian(gs.IsBigEndian),
+                Fmt.CsvEscape(gs.DisplayValue),
+                Fmt.Endian(gs.IsBigEndian),
                 gs.Offset.ToString()));
         }
 
@@ -427,11 +427,11 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "GLOB",
-                E(g.EditorId),
-                FId(g.FormId),
+                Fmt.CsvEscape(g.EditorId),
+                Fmt.FId(g.FormId),
                 g.TypeName,
-                E(g.DisplayValue),
-                Endian(g.IsBigEndian),
+                Fmt.CsvEscape(g.DisplayValue),
+                Fmt.Endian(g.IsBigEndian),
                 g.Offset.ToString()));
         }
 
@@ -448,16 +448,16 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "LIST",
-                FId(list.FormId),
-                E(list.EditorId),
-                E(list.ListType),
+                Fmt.FId(list.FormId),
+                Fmt.CsvEscape(list.EditorId),
+                Fmt.CsvEscape(list.ListType),
                 list.ChanceNone.ToString(),
                 list.Flags.ToString(),
-                E(list.FlagsDescription),
-                FIdN(list.GlobalFormId),
-                list.GlobalFormId.HasValue ? Resolve(list.GlobalFormId.Value, lookup) : "",
+                Fmt.CsvEscape(list.FlagsDescription),
+                Fmt.FIdN(list.GlobalFormId),
+                list.GlobalFormId.HasValue ? Fmt.Resolve(list.GlobalFormId.Value, lookup) : "",
                 list.Entries.Count.ToString(),
-                Endian(list.IsBigEndian),
+                Fmt.Endian(list.IsBigEndian),
                 list.Offset.ToString(),
                 "", "", "", ""));
 
@@ -465,12 +465,12 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "ENTRY",
-                    FId(list.FormId),
+                    Fmt.FId(list.FormId),
                     "", "", "", "", "", "", "",
                     "", "", "",
                     entry.Level.ToString(),
-                    FId(entry.FormId),
-                    Resolve(entry.FormId, lookup),
+                    Fmt.FId(entry.FormId),
+                    Fmt.Resolve(entry.FormId, lookup),
                     entry.Count.ToString()));
             }
         }
@@ -488,16 +488,16 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "MARKER",
-                FId(m.FormId),
-                E(m.MarkerName),
+                Fmt.FId(m.FormId),
+                Fmt.CsvEscape(m.MarkerName),
                 m.MarkerType.HasValue ? ((ushort)m.MarkerType.Value).ToString() : "",
-                E(m.MarkerType?.ToString()),
-                FId(m.BaseFormId),
-                E(m.BaseEditorId ?? Resolve(m.BaseFormId, lookup)),
+                Fmt.CsvEscape(m.MarkerType?.ToString()),
+                Fmt.FId(m.BaseFormId),
+                Fmt.CsvEscape(m.BaseEditorId ?? Fmt.Resolve(m.BaseFormId, lookup)),
                 m.X.ToString("F2"),
                 m.Y.ToString("F2"),
                 m.Z.ToString("F2"),
-                Endian(m.IsBigEndian),
+                Fmt.Endian(m.IsBigEndian),
                 m.Offset.ToString()));
         }
 
@@ -514,14 +514,14 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "MESG",
-                FId(m.FormId),
-                E(m.EditorId),
-                E(m.FullName),
-                E(m.Description),
+                Fmt.FId(m.FormId),
+                Fmt.CsvEscape(m.EditorId),
+                Fmt.CsvEscape(m.FullName),
+                Fmt.CsvEscape(m.Description),
                 m.IsMessageBox ? "Yes" : "No",
                 m.IsAutoDisplay ? "Yes" : "No",
                 m.Buttons.Count.ToString(),
-                Endian(m.IsBigEndian),
+                Fmt.Endian(m.IsBigEndian),
                 m.Offset.ToString()));
         }
 
@@ -537,14 +537,14 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "NOTE",
-                FId(n.FormId),
-                E(n.EditorId),
-                E(n.FullName),
+                Fmt.FId(n.FormId),
+                Fmt.CsvEscape(n.EditorId),
+                Fmt.CsvEscape(n.FullName),
                 n.NoteType.ToString(),
-                E(n.NoteTypeName),
-                E(n.Text),
-                E(n.ModelPath),
-                Endian(n.IsBigEndian),
+                Fmt.CsvEscape(n.NoteTypeName),
+                Fmt.CsvEscape(n.Text),
+                Fmt.CsvEscape(n.ModelPath),
+                Fmt.Endian(n.IsBigEndian),
                 n.Offset.ToString()));
         }
 
@@ -561,16 +561,16 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "PROJ",
-                FId(p.FormId),
-                E(p.EditorId),
-                E(p.FullName),
+                Fmt.FId(p.FormId),
+                Fmt.CsvEscape(p.EditorId),
+                Fmt.CsvEscape(p.FullName),
                 p.TypeName,
                 p.Speed.ToString("F1"),
                 p.Gravity.ToString("F4"),
                 p.Range.ToString("F1"),
                 p.ImpactForce.ToString("F1"),
-                FIdN(p.Explosion),
-                Endian(p.IsBigEndian),
+                Fmt.FIdN(p.Explosion),
+                Fmt.Endian(p.IsBigEndian),
                 p.Offset.ToString()));
         }
 
@@ -586,12 +586,12 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "REPU",
-                FId(r.FormId),
-                E(r.EditorId),
-                E(r.FullName),
+                Fmt.FId(r.FormId),
+                Fmt.CsvEscape(r.EditorId),
+                Fmt.CsvEscape(r.FullName),
                 r.PositiveValue.ToString("F2"),
                 r.NegativeValue.ToString("F2"),
-                Endian(r.IsBigEndian),
+                Fmt.Endian(r.IsBigEndian),
                 r.Offset.ToString()));
         }
 
@@ -612,7 +612,7 @@ public static partial class CsvReportGenerator
             sb.AppendLine("Text,Length");
             foreach (var text in sp.AllDialogue.OrderByDescending(s => s.Length))
             {
-                sb.AppendLine($"{E(text)},{text.Length}");
+                sb.AppendLine($"{Fmt.CsvEscape(text)},{text.Length}");
             }
 
             files["string_pool_dialogue.csv"] = sb.ToString();
@@ -626,7 +626,7 @@ public static partial class CsvReportGenerator
             {
                 var dot = path.LastIndexOf('.');
                 var ext = dot >= 0 && dot < path.Length - 1 ? path[dot..] : "";
-                sb.AppendLine($"{E(path)},{E(ext)}");
+                sb.AppendLine($"{Fmt.CsvEscape(path)},{Fmt.CsvEscape(ext)}");
             }
 
             files["string_pool_file_paths.csv"] = sb.ToString();
@@ -638,7 +638,7 @@ public static partial class CsvReportGenerator
             sb.AppendLine("EditorID");
             foreach (var id in sp.AllEditorIds.OrderBy(s => s, StringComparer.Ordinal))
             {
-                sb.AppendLine(E(id));
+                sb.AppendLine(Fmt.CsvEscape(id));
             }
 
             files["string_pool_editor_ids.csv"] = sb.ToString();
@@ -661,7 +661,7 @@ public static partial class CsvReportGenerator
                         _ => "Unknown"
                     }
                     : "Unknown";
-                sb.AppendLine($"{E(name)},{inferredType}");
+                sb.AppendLine($"{Fmt.CsvEscape(name)},{inferredType}");
             }
 
             files["string_pool_game_settings.csv"] = sb.ToString();
@@ -680,13 +680,13 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "TERMINAL",
-                FId(t.FormId),
-                E(t.EditorId),
-                E(t.FullName),
+                Fmt.FId(t.FormId),
+                Fmt.CsvEscape(t.EditorId),
+                Fmt.CsvEscape(t.FullName),
                 t.Difficulty.ToString(),
-                E(t.DifficultyName),
-                E(t.HeaderText),
-                Endian(t.IsBigEndian),
+                Fmt.CsvEscape(t.DifficultyName),
+                Fmt.CsvEscape(t.HeaderText),
+                Fmt.Endian(t.IsBigEndian),
                 t.Offset.ToString(),
                 "", "", ""));
 
@@ -694,12 +694,12 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "MENUITEM",
-                    FId(t.FormId),
+                    Fmt.FId(t.FormId),
                     "", "", "", "", "",
                     "", "",
-                    E(mi.Text),
-                    FIdN(mi.ResultScript),
-                    FIdN(mi.SubTerminal)));
+                    Fmt.CsvEscape(mi.Text),
+                    Fmt.FIdN(mi.ResultScript),
+                    Fmt.FIdN(mi.SubTerminal)));
             }
         }
 

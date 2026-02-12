@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
 /// <summary>
-///     Shared formatting utilities used by both GeckReportGenerator and CsvReportGenerator.
+///     Shared formatting utilities used by report generator and CSV writer classes.
 /// </summary>
 internal static class Fmt
 {

@@ -3,14 +3,15 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-public static partial class GeckReportGenerator
+/// <summary>
+///     Generates GECK-style text reports for Script records.
+/// </summary>
+internal static class GeckScriptWriter
 {
-    #region Script Methods
-
-    private static void AppendScriptsSection(StringBuilder sb, List<ScriptRecord> scripts,
+    internal static void AppendScriptsSection(StringBuilder sb, List<ScriptRecord> scripts,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Scripts ({scripts.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Scripts ({scripts.Count})");
 
         var byType = scripts.GroupBy(s => s.ScriptType).OrderBy(g => g.Key).ToList();
         sb.AppendLine();
@@ -34,9 +35,9 @@ public static partial class GeckReportGenerator
 
         foreach (var script in scripts.OrderBy(s => s.EditorId ?? "", StringComparer.OrdinalIgnoreCase))
         {
-            AppendRecordHeader(sb, "SCPT", script.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "SCPT", script.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(script.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(script.FormId)}");
             sb.AppendLine($"Editor ID:      {script.EditorId ?? "(none)"}");
             sb.AppendLine($"Type:           {script.ScriptType}");
             sb.AppendLine($"Variables:      {script.VariableCount}");
@@ -49,7 +50,7 @@ public static partial class GeckReportGenerator
 
             if (script.OwnerQuestFormId.HasValue)
             {
-                sb.AppendLine($"Owner Quest:    {FormatFormIdWithName(script.OwnerQuestFormId.Value, lookup)}");
+                sb.AppendLine($"Owner Quest:    {GeckReportGenerator.FormatFormIdWithName(script.OwnerQuestFormId.Value, lookup)}");
             }
 
             if (script.QuestScriptDelay > 0)
@@ -73,7 +74,7 @@ public static partial class GeckReportGenerator
                 sb.AppendLine("Referenced Objects:");
                 foreach (var refId in script.ReferencedObjects)
                 {
-                    sb.AppendLine($"  {FormatFormIdWithName(refId, lookup)}");
+                    sb.AppendLine($"  {GeckReportGenerator.FormatFormIdWithName(refId, lookup)}");
                 }
             }
 
@@ -106,17 +107,13 @@ public static partial class GeckReportGenerator
         }
     }
 
-    /// <summary>
-    ///     Append a hex dump of byte data with offset, hex, and ASCII columns.
-    /// </summary>
-    private static void AppendHexDump(StringBuilder sb, byte[] data, int bytesPerLine = 16)
+    internal static void AppendHexDump(StringBuilder sb, byte[] data, int bytesPerLine = 16)
     {
         for (var i = 0; i < data.Length; i += bytesPerLine)
         {
             var count = Math.Min(bytesPerLine, data.Length - i);
             sb.Append($"  {i:X4}: ");
 
-            // Hex bytes
             for (var j = 0; j < bytesPerLine; j++)
             {
                 if (j < count)
@@ -136,7 +133,6 @@ public static partial class GeckReportGenerator
 
             sb.Append(" |");
 
-            // ASCII representation
             for (var j = 0; j < count; j++)
             {
                 var b = data[i + j];
@@ -147,16 +143,11 @@ public static partial class GeckReportGenerator
         }
     }
 
-    /// <summary>
-    ///     Generate a report for Scripts only.
-    /// </summary>
-    public static string GenerateScriptsReport(List<ScriptRecord> scripts,
+    internal static string GenerateScriptsReport(List<ScriptRecord> scripts,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendScriptsSection(sb, scripts, lookup ?? []);
         return sb.ToString();
     }
-
-    #endregion
 }

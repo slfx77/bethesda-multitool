@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-public static partial class CsvReportGenerator
+internal static class CsvItemWriter
 {
     public static string GenerateWeaponsCsv(List<WeaponRecord> weapons, Dictionary<uint, string> lookup)
     {
@@ -15,11 +15,11 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "WEAPON",
-                FId(w.FormId),
-                E(w.EditorId),
-                E(w.FullName),
+                Fmt.FId(w.FormId),
+                Fmt.CsvEscape(w.EditorId),
+                Fmt.CsvEscape(w.FullName),
                 ((int)w.WeaponType).ToString(),
-                E(w.WeaponTypeName),
+                Fmt.CsvEscape(w.WeaponTypeName),
                 w.Damage.ToString(),
                 w.DamagePerSecond.ToString("F1"),
                 w.ShotsPerSec.ToString("F2"),
@@ -33,46 +33,46 @@ public static partial class CsvReportGenerator
                 w.SkillRequirement.ToString(),
                 w.CriticalDamage.ToString(),
                 w.CriticalChance.ToString("F2"),
-                FIdN(w.CriticalEffectFormId),
+                Fmt.FIdN(w.CriticalEffectFormId),
                 w.Value.ToString(),
                 w.Weight.ToString("F2"),
                 w.Health.ToString(),
-                FIdN(w.AmmoFormId),
-                Resolve(w.AmmoFormId ?? 0, lookup),
-                FIdN(w.ProjectileFormId),
-                Resolve(w.ProjectileFormId ?? 0, lookup),
-                FIdN(w.ImpactDataSetFormId),
-                Resolve(w.ImpactDataSetFormId ?? 0, lookup),
+                Fmt.FIdN(w.AmmoFormId),
+                Fmt.Resolve(w.AmmoFormId ?? 0, lookup),
+                Fmt.FIdN(w.ProjectileFormId),
+                Fmt.Resolve(w.ProjectileFormId ?? 0, lookup),
+                Fmt.FIdN(w.ImpactDataSetFormId),
+                Fmt.Resolve(w.ImpactDataSetFormId ?? 0, lookup),
                 w.ActionPoints.ToString("F1"),
-                E(w.ModelPath),
-                FIdN(w.PickupSoundFormId),
-                Resolve(w.PickupSoundFormId ?? 0, lookup),
-                FIdN(w.PutdownSoundFormId),
-                Resolve(w.PutdownSoundFormId ?? 0, lookup),
-                FIdN(w.FireSound3DFormId),
-                Resolve(w.FireSound3DFormId ?? 0, lookup),
-                FIdN(w.FireSoundDistFormId),
-                Resolve(w.FireSoundDistFormId ?? 0, lookup),
-                FIdN(w.FireSound2DFormId),
-                Resolve(w.FireSound2DFormId ?? 0, lookup),
-                FIdN(w.DryFireSoundFormId),
-                Resolve(w.DryFireSoundFormId ?? 0, lookup),
-                FIdN(w.IdleSoundFormId),
-                Resolve(w.IdleSoundFormId ?? 0, lookup),
-                FIdN(w.EquipSoundFormId),
-                Resolve(w.EquipSoundFormId ?? 0, lookup),
-                FIdN(w.UnequipSoundFormId),
-                Resolve(w.UnequipSoundFormId ?? 0, lookup),
+                Fmt.CsvEscape(w.ModelPath),
+                Fmt.FIdN(w.PickupSoundFormId),
+                Fmt.Resolve(w.PickupSoundFormId ?? 0, lookup),
+                Fmt.FIdN(w.PutdownSoundFormId),
+                Fmt.Resolve(w.PutdownSoundFormId ?? 0, lookup),
+                Fmt.FIdN(w.FireSound3DFormId),
+                Fmt.Resolve(w.FireSound3DFormId ?? 0, lookup),
+                Fmt.FIdN(w.FireSoundDistFormId),
+                Fmt.Resolve(w.FireSoundDistFormId ?? 0, lookup),
+                Fmt.FIdN(w.FireSound2DFormId),
+                Fmt.Resolve(w.FireSound2DFormId ?? 0, lookup),
+                Fmt.FIdN(w.DryFireSoundFormId),
+                Fmt.Resolve(w.DryFireSoundFormId ?? 0, lookup),
+                Fmt.FIdN(w.IdleSoundFormId),
+                Fmt.Resolve(w.IdleSoundFormId ?? 0, lookup),
+                Fmt.FIdN(w.EquipSoundFormId),
+                Fmt.Resolve(w.EquipSoundFormId ?? 0, lookup),
+                Fmt.FIdN(w.UnequipSoundFormId),
+                Fmt.Resolve(w.UnequipSoundFormId ?? 0, lookup),
                 w.ProjectileData?.Speed.ToString("F1") ?? "",
                 w.ProjectileData?.Gravity.ToString("F4") ?? "",
                 w.ProjectileData?.Range.ToString("F0") ?? "",
                 w.ProjectileData?.Force.ToString("F1") ?? "",
-                FIdN(w.ProjectileData?.ExplosionFormId),
-                Resolve(w.ProjectileData?.ExplosionFormId ?? 0, lookup),
-                FIdN(w.ProjectileData?.ActiveSoundLoopFormId),
-                Resolve(w.ProjectileData?.ActiveSoundLoopFormId ?? 0, lookup),
-                E(w.ProjectileData?.ModelPath),
-                Endian(w.IsBigEndian),
+                Fmt.FIdN(w.ProjectileData?.ExplosionFormId),
+                Fmt.Resolve(w.ProjectileData?.ExplosionFormId ?? 0, lookup),
+                Fmt.FIdN(w.ProjectileData?.ActiveSoundLoopFormId),
+                Fmt.Resolve(w.ProjectileData?.ActiveSoundLoopFormId ?? 0, lookup),
+                Fmt.CsvEscape(w.ProjectileData?.ModelPath),
+                Fmt.Endian(w.IsBigEndian),
                 w.Offset.ToString()));
         }
 
@@ -88,14 +88,14 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "IMOD",
-                FId(m.FormId),
-                E(m.EditorId),
-                E(m.FullName),
-                E(m.Description),
+                Fmt.FId(m.FormId),
+                Fmt.CsvEscape(m.EditorId),
+                Fmt.CsvEscape(m.FullName),
+                Fmt.CsvEscape(m.Description),
                 m.Value.ToString(),
                 m.Weight.ToString("F2"),
-                E(m.ModelPath),
-                Endian(m.IsBigEndian),
+                Fmt.CsvEscape(m.ModelPath),
+                Fmt.Endian(m.IsBigEndian),
                 m.Offset.ToString()));
         }
 
@@ -111,16 +111,16 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "ARMOR",
-                FId(a.FormId),
-                E(a.EditorId),
-                E(a.FullName),
+                Fmt.FId(a.FormId),
+                Fmt.CsvEscape(a.EditorId),
+                Fmt.CsvEscape(a.FullName),
                 a.DamageThreshold.ToString("F1"),
                 a.DamageResistance.ToString(),
                 a.Value.ToString(),
                 a.Weight.ToString("F2"),
                 a.Health.ToString(),
-                E(a.ModelPath),
-                Endian(a.IsBigEndian),
+                Fmt.CsvEscape(a.ModelPath),
+                Fmt.Endian(a.IsBigEndian),
                 a.Offset.ToString()));
         }
 
@@ -137,19 +137,19 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "AMMO",
-                FId(a.FormId),
-                E(a.EditorId),
-                E(a.FullName),
+                Fmt.FId(a.FormId),
+                Fmt.CsvEscape(a.EditorId),
+                Fmt.CsvEscape(a.FullName),
                 a.Speed.ToString("F2"),
                 a.Value.ToString(),
                 a.Weight.ToString("F2"),
                 a.ClipRounds.ToString(),
                 a.Flags.ToString(),
-                FIdN(a.ProjectileFormId),
-                Resolve(a.ProjectileFormId ?? 0, lookup),
-                E(a.ModelPath),
-                E(a.ProjectileModelPath),
-                Endian(a.IsBigEndian),
+                Fmt.FIdN(a.ProjectileFormId),
+                Fmt.Resolve(a.ProjectileFormId ?? 0, lookup),
+                Fmt.CsvEscape(a.ModelPath),
+                Fmt.CsvEscape(a.ProjectileModelPath),
+                Fmt.Endian(a.IsBigEndian),
                 a.Offset.ToString()));
         }
 
@@ -167,16 +167,16 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "CONSUMABLE",
-                FId(c.FormId),
-                E(c.EditorId),
-                E(c.FullName),
+                Fmt.FId(c.FormId),
+                Fmt.CsvEscape(c.EditorId),
+                Fmt.CsvEscape(c.FullName),
                 c.Value.ToString(),
                 c.Weight.ToString("F2"),
-                FIdN(c.AddictionFormId),
-                Resolve(c.AddictionFormId ?? 0, lookup),
+                Fmt.FIdN(c.AddictionFormId),
+                Fmt.Resolve(c.AddictionFormId ?? 0, lookup),
                 c.AddictionChance.ToString("F2"),
-                E(c.ModelPath),
-                Endian(c.IsBigEndian),
+                Fmt.CsvEscape(c.ModelPath),
+                Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString(),
                 "", ""));
 
@@ -184,11 +184,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "EFFECT",
-                    FId(c.FormId),
+                    Fmt.FId(c.FormId),
                     "", "", "", "", "", "", "", "",
                     "", "",
-                    FId(effectId),
-                    Resolve(effectId, lookup)));
+                    Fmt.FId(effectId),
+                    Fmt.Resolve(effectId, lookup)));
             }
         }
 
@@ -204,13 +204,13 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "MISC",
-                FId(m.FormId),
-                E(m.EditorId),
-                E(m.FullName),
+                Fmt.FId(m.FormId),
+                Fmt.CsvEscape(m.EditorId),
+                Fmt.CsvEscape(m.FullName),
                 m.Value.ToString(),
                 m.Weight.ToString("F2"),
-                E(m.ModelPath),
-                Endian(m.IsBigEndian),
+                Fmt.CsvEscape(m.ModelPath),
+                Fmt.Endian(m.IsBigEndian),
                 m.Offset.ToString()));
         }
 
@@ -226,13 +226,13 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "KEY",
-                FId(k.FormId),
-                E(k.EditorId),
-                E(k.FullName),
+                Fmt.FId(k.FormId),
+                Fmt.CsvEscape(k.EditorId),
+                Fmt.CsvEscape(k.FullName),
                 k.Value.ToString(),
                 k.Weight.ToString("F2"),
-                E(k.ModelPath),
-                Endian(k.IsBigEndian),
+                Fmt.CsvEscape(k.ModelPath),
+                Fmt.Endian(k.IsBigEndian),
                 k.Offset.ToString()));
         }
 
@@ -249,13 +249,13 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "CONTAINER",
-                FId(c.FormId),
-                E(c.EditorId),
-                E(c.FullName),
+                Fmt.FId(c.FormId),
+                Fmt.CsvEscape(c.EditorId),
+                Fmt.CsvEscape(c.FullName),
                 c.Respawns.ToString(),
-                E(c.ModelPath),
-                FIdN(c.Script),
-                Endian(c.IsBigEndian),
+                Fmt.CsvEscape(c.ModelPath),
+                Fmt.FIdN(c.Script),
+                Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString(),
                 "", "", ""));
 
@@ -263,11 +263,11 @@ public static partial class CsvReportGenerator
             {
                 sb.AppendLine(string.Join(",",
                     "ITEM",
-                    FId(c.FormId),
+                    Fmt.FId(c.FormId),
                     "", "", "", "", "",
                     "", "",
-                    FId(item.ItemFormId),
-                    Resolve(item.ItemFormId, lookup),
+                    Fmt.FId(item.ItemFormId),
+                    Fmt.Resolve(item.ItemFormId, lookup),
                     item.Count.ToString()));
             }
         }
@@ -285,16 +285,16 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "BOOK",
-                FId(b.FormId),
-                E(b.EditorId),
-                E(b.FullName),
+                Fmt.FId(b.FormId),
+                Fmt.CsvEscape(b.EditorId),
+                Fmt.CsvEscape(b.FullName),
                 b.Value.ToString(),
                 b.Weight.ToString("F2"),
                 b.TeachesSkill.ToString(),
                 b.SkillTaught.ToString(),
-                E(b.Text),
-                E(b.ModelPath),
-                Endian(b.IsBigEndian),
+                Fmt.CsvEscape(b.Text),
+                Fmt.CsvEscape(b.ModelPath),
+                Fmt.Endian(b.IsBigEndian),
                 b.Offset.ToString()));
         }
 
@@ -312,15 +312,15 @@ public static partial class CsvReportGenerator
         {
             sb.AppendLine(string.Join(",",
                 "RCPE",
-                FId(r.FormId),
-                E(r.EditorId),
-                E(r.FullName),
+                Fmt.FId(r.FormId),
+                Fmt.CsvEscape(r.EditorId),
+                Fmt.CsvEscape(r.FullName),
                 r.RequiredSkill.ToString(),
                 r.RequiredSkillLevel.ToString(),
-                Resolve(r.CategoryFormId, lookup),
+                Fmt.Resolve(r.CategoryFormId, lookup),
                 r.Ingredients.Count.ToString(),
                 r.Outputs.Count.ToString(),
-                Endian(r.IsBigEndian),
+                Fmt.Endian(r.IsBigEndian),
                 r.Offset.ToString()));
         }
 

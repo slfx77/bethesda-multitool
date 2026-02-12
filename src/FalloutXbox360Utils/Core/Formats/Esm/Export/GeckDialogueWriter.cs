@@ -3,20 +3,19 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-public static partial class GeckReportGenerator
+/// <summary>Generates GECK-style text reports for Quest, Dialog Topic, Dialogue, and Dialogue Tree records.</summary>
+internal static class GeckDialogueWriter
 {
-    #region Quest Methods
-
-    private static void AppendQuestsSection(StringBuilder sb, List<QuestRecord> quests,
+    internal static void AppendQuestsSection(StringBuilder sb, List<QuestRecord> quests,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Quests ({quests.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Quests ({quests.Count})");
 
         foreach (var quest in quests.OrderBy(q => q.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "QUEST", quest.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "QUEST", quest.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(quest.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(quest.FormId)}");
             sb.AppendLine($"Editor ID:      {quest.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {quest.FullName ?? "(none)"}");
             sb.AppendLine($"Flags:          0x{quest.Flags:X2}");
@@ -26,7 +25,7 @@ public static partial class GeckReportGenerator
 
             if (quest.Script.HasValue)
             {
-                sb.AppendLine($"Script:         {FormatFormIdWithName(quest.Script.Value, lookup)}");
+                sb.AppendLine($"Script:         {GeckReportGenerator.FormatFormIdWithName(quest.Script.Value, lookup)}");
             }
 
             if (quest.Stages.Count > 0)
@@ -61,27 +60,23 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Quests only.
     /// </summary>
-    public static string GenerateQuestsReport(List<QuestRecord> quests, Dictionary<uint, string>? lookup = null)
+    internal static string GenerateQuestsReport(List<QuestRecord> quests, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendQuestsSection(sb, quests, lookup ?? []);
         return sb.ToString();
     }
 
-    #endregion
-
-    #region DialogTopic Methods
-
-    private static void AppendDialogTopicsSection(StringBuilder sb, List<DialogTopicRecord> topics,
+    internal static void AppendDialogTopicsSection(StringBuilder sb, List<DialogTopicRecord> topics,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Dialog Topics ({topics.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Dialog Topics ({topics.Count})");
 
         foreach (var topic in topics.OrderBy(t => t.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "DIAL", topic.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "DIAL", topic.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(topic.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(topic.FormId)}");
             sb.AppendLine($"Editor ID:      {topic.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {topic.FullName ?? "(none)"}");
             sb.AppendLine($"Type:           {topic.TopicTypeName}");
@@ -90,7 +85,7 @@ public static partial class GeckReportGenerator
 
             if (topic.QuestFormId.HasValue)
             {
-                sb.AppendLine($"Quest:          {FormatFormIdWithName(topic.QuestFormId.Value, lookup)}");
+                sb.AppendLine($"Quest:          {GeckReportGenerator.FormatFormIdWithName(topic.QuestFormId.Value, lookup)}");
             }
 
             if (topic.ResponseCount > 0)
@@ -103,7 +98,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Dialog Topics only.
     /// </summary>
-    public static string GenerateDialogTopicsReport(List<DialogTopicRecord> topics,
+    internal static string GenerateDialogTopicsReport(List<DialogTopicRecord> topics,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -111,14 +106,10 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Dialogue Methods
-
-    private static void AppendDialogueSection(StringBuilder sb, List<DialogueRecord> dialogues,
+    internal static void AppendDialogueSection(StringBuilder sb, List<DialogueRecord> dialogues,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Dialogue Responses ({dialogues.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Dialogue Responses ({dialogues.Count})");
 
         // Group by quest if possible
         var grouped = dialogues
@@ -130,34 +121,34 @@ public static partial class GeckReportGenerator
             if (group.Key != 0)
             {
                 sb.AppendLine();
-                sb.AppendLine($"--- Quest: {FormatFormIdWithName(group.Key, lookup)} ---");
+                sb.AppendLine($"--- Quest: {GeckReportGenerator.FormatFormIdWithName(group.Key, lookup)} ---");
             }
 
             foreach (var dialogue in group.OrderBy(d => d.EditorId ?? ""))
             {
-                AppendRecordHeader(sb, "INFO", dialogue.EditorId);
+                GeckReportGenerator.AppendRecordHeader(sb, "INFO", dialogue.EditorId);
 
-                sb.AppendLine($"FormID:         {FormatFormId(dialogue.FormId)}");
+                sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(dialogue.FormId)}");
                 sb.AppendLine($"Editor ID:      {dialogue.EditorId ?? "(none)"}");
 
                 if (dialogue.TopicFormId.HasValue)
                 {
-                    sb.AppendLine($"Topic:          {FormatFormIdWithName(dialogue.TopicFormId.Value, lookup)}");
+                    sb.AppendLine($"Topic:          {GeckReportGenerator.FormatFormIdWithName(dialogue.TopicFormId.Value, lookup)}");
                 }
 
                 if (dialogue.QuestFormId.HasValue)
                 {
-                    sb.AppendLine($"Quest:          {FormatFormIdWithName(dialogue.QuestFormId.Value, lookup)}");
+                    sb.AppendLine($"Quest:          {GeckReportGenerator.FormatFormIdWithName(dialogue.QuestFormId.Value, lookup)}");
                 }
 
                 if (dialogue.SpeakerFormId.HasValue)
                 {
-                    sb.AppendLine($"Speaker:        {FormatFormIdWithName(dialogue.SpeakerFormId.Value, lookup)}");
+                    sb.AppendLine($"Speaker:        {GeckReportGenerator.FormatFormIdWithName(dialogue.SpeakerFormId.Value, lookup)}");
                 }
 
                 if (dialogue.PreviousInfo.HasValue)
                 {
-                    sb.AppendLine($"Previous INFO:  {FormatFormIdWithName(dialogue.PreviousInfo.Value, lookup)}");
+                    sb.AppendLine($"Previous INFO:  {GeckReportGenerator.FormatFormIdWithName(dialogue.PreviousInfo.Value, lookup)}");
                 }
 
                 if (!string.IsNullOrEmpty(dialogue.PromptText))
@@ -202,7 +193,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Dialogue only.
     /// </summary>
-    public static string GenerateDialogueReport(List<DialogueRecord> dialogues,
+    internal static string GenerateDialogueReport(List<DialogueRecord> dialogues,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -210,20 +201,16 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region DialogueTree Methods
-
     /// <summary>
     ///     Generate a standalone GECK-style dialogue tree report from the hierarchical tree result.
     /// </summary>
-    public static string GenerateDialogueTreeReport(
+    internal static string GenerateDialogueTreeReport(
         DialogueTreeResult tree,
         Dictionary<uint, string> lookup,
         Dictionary<uint, string>? displayNameLookup = null)
     {
         var sb = new StringBuilder();
-        var combined = CombineLookups(lookup, displayNameLookup ?? []);
+        var combined = GeckReportGenerator.CombineLookups(lookup, displayNameLookup ?? []);
 
         var totalQuests = tree.QuestTrees.Count;
         var totalTopics = tree.QuestTrees.Values.Sum(q => q.Topics.Count) + tree.OrphanTopics.Count;
@@ -231,7 +218,7 @@ public static partial class GeckReportGenerator
             .SelectMany(q => q.Topics)
             .Sum(t => t.InfoChain.Count) + tree.OrphanTopics.Sum(t => t.InfoChain.Count);
 
-        AppendHeader(sb, "Dialogue Tree");
+        GeckReportGenerator.AppendHeader(sb, "Dialogue Tree");
         sb.AppendLine();
         sb.AppendLine($"  Quests:     {totalQuests:N0}");
         sb.AppendLine($"  Topics:     {totalTopics:N0}");
@@ -248,9 +235,9 @@ public static partial class GeckReportGenerator
         if (tree.OrphanTopics.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine(new string('=', SeparatorWidth));
+            sb.AppendLine(new string('=', GeckReportGenerator.SeparatorWidth));
             sb.AppendLine("  Orphan Topics (no quest link)");
-            sb.AppendLine(new string('=', SeparatorWidth));
+            sb.AppendLine(new string('=', GeckReportGenerator.SeparatorWidth));
 
             var visited = new HashSet<uint>();
             foreach (var topic in tree.OrphanTopics)
@@ -262,14 +249,14 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    private static void RenderQuestTree(StringBuilder sb, QuestDialogueNode questNode,
+    internal static void RenderQuestTree(StringBuilder sb, QuestDialogueNode questNode,
         Dictionary<uint, string> lookup)
     {
         sb.AppendLine();
-        var questLabel = questNode.QuestName ?? FormatFormId(questNode.QuestFormId);
-        sb.AppendLine($"{"",3}{new string('=', SeparatorWidth - 6)}");
-        sb.AppendLine($"{"",3}Quest: {questLabel} ({FormatFormId(questNode.QuestFormId)})");
-        sb.AppendLine($"{"",3}{new string('=', SeparatorWidth - 6)}");
+        var questLabel = questNode.QuestName ?? GeckReportGenerator.FormatFormId(questNode.QuestFormId);
+        sb.AppendLine($"{"",3}{new string('=', GeckReportGenerator.SeparatorWidth - 6)}");
+        sb.AppendLine($"{"",3}Quest: {questLabel} ({GeckReportGenerator.FormatFormId(questNode.QuestFormId)})");
+        sb.AppendLine($"{"",3}{new string('=', GeckReportGenerator.SeparatorWidth - 6)}");
 
         var visited = new HashSet<uint>();
         for (var i = 0; i < questNode.Topics.Count; i++)
@@ -282,7 +269,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    private static void RenderTopicTree(StringBuilder sb, TopicDialogueNode topic,
+    internal static void RenderTopicTree(StringBuilder sb, TopicDialogueNode topic,
         HashSet<uint> visited, string indent, Dictionary<uint, string> lookup,
         string? continuationIndent = null)
     {
@@ -293,7 +280,7 @@ public static partial class GeckReportGenerator
         {
             sb.AppendLine();
             sb.AppendLine(
-                $"{indent}Topic: {topic.TopicName ?? FormatFormId(topic.TopicFormId)} (see above)");
+                $"{indent}Topic: {topic.TopicName ?? GeckReportGenerator.FormatFormId(topic.TopicFormId)} (see above)");
             return;
         }
 
@@ -302,7 +289,7 @@ public static partial class GeckReportGenerator
         // Topic header
         var topicLabel = topic.TopicName ?? "(unnamed topic)";
         var topicTypeStr = topic.Topic != null ? $" [{topic.Topic.TopicTypeName}]" : "";
-        var formIdStr = topic.TopicFormId != 0 ? $" ({FormatFormId(topic.TopicFormId)})" : "";
+        var formIdStr = topic.TopicFormId != 0 ? $" ({GeckReportGenerator.FormatFormId(topic.TopicFormId)})" : "";
         sb.AppendLine($"{indent}Topic: {topicLabel}{formIdStr}{topicTypeStr}");
 
         // Topic metadata
@@ -336,7 +323,7 @@ public static partial class GeckReportGenerator
         }
     }
 
-    private static void RenderInfoNode(StringBuilder sb, InfoDialogueNode infoNode, int index,
+    internal static void RenderInfoNode(StringBuilder sb, InfoDialogueNode infoNode, int index,
         string indent, Dictionary<uint, string> lookup)
     {
         var info = infoNode.Info;
@@ -345,7 +332,7 @@ public static partial class GeckReportGenerator
         var speakerStr = "";
         if (info.SpeakerFormId.HasValue && info.SpeakerFormId.Value != 0)
         {
-            speakerStr = FormatFormIdWithName(info.SpeakerFormId.Value, lookup) + ": ";
+            speakerStr = GeckReportGenerator.FormatFormIdWithName(info.SpeakerFormId.Value, lookup) + ": ";
         }
 
         // Prompt text (player's line)
@@ -371,7 +358,7 @@ public static partial class GeckReportGenerator
         else if (string.IsNullOrEmpty(info.PromptText))
         {
             // No prompt and no responses — show FormID reference
-            sb.AppendLine($"{indent}  [{index}] {FormatFormId(info.FormId)} (no text recovered)");
+            sb.AppendLine($"{indent}  [{index}] {GeckReportGenerator.FormatFormId(info.FormId)} (no text recovered)");
         }
 
         // Flags line
@@ -397,19 +384,15 @@ public static partial class GeckReportGenerator
         }
     }
 
-    #endregion
-
-    #region Note Methods
-
-    private static void AppendNotesSection(StringBuilder sb, List<NoteRecord> notes)
+    internal static void AppendNotesSection(StringBuilder sb, List<NoteRecord> notes)
     {
-        AppendSectionHeader(sb, $"Notes ({notes.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Notes ({notes.Count})");
 
         foreach (var note in notes.OrderBy(n => n.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "NOTE", note.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "NOTE", note.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(note.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(note.FormId)}");
             sb.AppendLine($"Editor ID:      {note.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {note.FullName ?? "(none)"}");
             sb.AppendLine($"Type:           {note.NoteTypeName}");
@@ -432,26 +415,22 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Notes only.
     /// </summary>
-    public static string GenerateNotesReport(List<NoteRecord> notes, Dictionary<uint, string>? lookup = null)
+    internal static string GenerateNotesReport(List<NoteRecord> notes, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendNotesSection(sb, notes);
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Book Methods
-
-    private static void AppendBooksSection(StringBuilder sb, List<BookRecord> books)
+    internal static void AppendBooksSection(StringBuilder sb, List<BookRecord> books)
     {
-        AppendSectionHeader(sb, $"Books ({books.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Books ({books.Count})");
 
         foreach (var book in books.OrderBy(b => b.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "BOOK", book.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "BOOK", book.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(book.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(book.FormId)}");
             sb.AppendLine($"Editor ID:      {book.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {book.FullName ?? "(none)"}");
             sb.AppendLine($"Value:          {book.Value} caps");
@@ -479,26 +458,22 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Books only.
     /// </summary>
-    public static string GenerateBooksReport(List<BookRecord> books, Dictionary<uint, string>? lookup = null)
+    internal static string GenerateBooksReport(List<BookRecord> books, Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendBooksSection(sb, books);
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Terminal Methods
-
-    private static void AppendTerminalsSection(StringBuilder sb, List<TerminalRecord> terminals)
+    internal static void AppendTerminalsSection(StringBuilder sb, List<TerminalRecord> terminals)
     {
-        AppendSectionHeader(sb, $"Terminals ({terminals.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Terminals ({terminals.Count})");
 
         foreach (var terminal in terminals.OrderBy(t => t.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "TERM", terminal.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "TERM", terminal.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(terminal.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(terminal.FormId)}");
             sb.AppendLine($"Editor ID:      {terminal.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {terminal.FullName ?? "(none)"}");
             sb.AppendLine($"Difficulty:     {terminal.DifficultyName}");
@@ -530,7 +505,7 @@ public static partial class GeckReportGenerator
     /// <summary>
     ///     Generate a report for Terminals only.
     /// </summary>
-    public static string GenerateTerminalsReport(List<TerminalRecord> terminals,
+    internal static string GenerateTerminalsReport(List<TerminalRecord> terminals,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
@@ -538,14 +513,10 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Message Methods
-
-    private static void AppendMessagesSection(StringBuilder sb, List<MessageRecord> messages,
+    internal static void AppendMessagesSection(StringBuilder sb, List<MessageRecord> messages,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Messages ({messages.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Messages ({messages.Count})");
         sb.AppendLine();
 
         var messageBoxes = messages.Count(m => m.IsMessageBox);
@@ -563,7 +534,7 @@ public static partial class GeckReportGenerator
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  MESSAGE: {msg.EditorId ?? "(none)"} \u2014 {msg.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {FormatFormId(msg.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(msg.FormId)}");
             var flags = new List<string>();
             if (msg.IsMessageBox)
             {
@@ -587,7 +558,7 @@ public static partial class GeckReportGenerator
 
             if (msg.QuestFormId != 0)
             {
-                sb.AppendLine($"  Quest:       {FormatFormIdWithName(msg.QuestFormId, lookup)}");
+                sb.AppendLine($"  Quest:       {GeckReportGenerator.FormatFormIdWithName(msg.QuestFormId, lookup)}");
             }
 
             if (!string.IsNullOrEmpty(msg.Description))
@@ -614,13 +585,11 @@ public static partial class GeckReportGenerator
         }
     }
 
-    public static string GenerateMessagesReport(List<MessageRecord> messages,
+    internal static string GenerateMessagesReport(List<MessageRecord> messages,
         Dictionary<uint, string>? lookup = null)
     {
         var sb = new StringBuilder();
         AppendMessagesSection(sb, messages, lookup ?? []);
         return sb.ToString();
     }
-
-    #endregion
 }

@@ -3,20 +3,19 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-public static partial class GeckReportGenerator
+/// <summary>Generates GECK-style text reports for Faction, Reputation, and Challenge records.</summary>
+internal static class GeckFactionWriter
 {
-    #region Faction Methods
-
-    private static void AppendFactionsSection(StringBuilder sb, List<FactionRecord> factions,
+    internal static void AppendFactionsSection(StringBuilder sb, List<FactionRecord> factions,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Factions ({factions.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Factions ({factions.Count})");
 
         foreach (var faction in factions.OrderBy(f => f.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "FACT", faction.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "FACT", faction.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(faction.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(faction.FormId)}");
             sb.AppendLine($"Editor ID:      {faction.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {faction.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(faction.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -48,7 +47,7 @@ public static partial class GeckReportGenerator
                 sb.AppendLine("Relations:");
                 foreach (var rel in faction.Relations)
                 {
-                    sb.AppendLine($"  - {FormatFormIdWithName(rel.FactionFormId, lookup)}: {rel.Modifier:+0;-0}");
+                    sb.AppendLine($"  - {GeckReportGenerator.FormatFormIdWithName(rel.FactionFormId, lookup)}: {rel.Modifier:+0;-0}");
                 }
             }
         }
@@ -65,13 +64,9 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Reputation Methods
-
-    private static void AppendReputationsSection(StringBuilder sb, List<ReputationRecord> reputations)
+    internal static void AppendReputationsSection(StringBuilder sb, List<ReputationRecord> reputations)
     {
-        AppendSectionHeader(sb, $"Reputations ({reputations.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Reputations ({reputations.Count})");
         sb.AppendLine();
 
         sb.AppendLine($"Total Reputations: {reputations.Count:N0}");
@@ -81,9 +76,9 @@ public static partial class GeckReportGenerator
 
         foreach (var rep in reputations.OrderBy(r => r.EditorId, StringComparer.OrdinalIgnoreCase))
         {
-            var name = rep.FullName ?? rep.EditorId ?? FormatFormId(rep.FormId);
+            var name = rep.FullName ?? rep.EditorId ?? GeckReportGenerator.FormatFormId(rep.FormId);
             sb.AppendLine(
-                $"  {Truncate(name, 40),-40} {rep.PositiveValue,10:F2} {rep.NegativeValue,10:F2}  [{FormatFormId(rep.FormId)}]");
+                $"  {GeckReportGenerator.Truncate(name, 40),-40} {rep.PositiveValue,10:F2} {rep.NegativeValue,10:F2}  [{GeckReportGenerator.FormatFormId(rep.FormId)}]");
         }
 
         sb.AppendLine();
@@ -96,14 +91,10 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Challenge Methods
-
-    private static void AppendChallengesSection(StringBuilder sb, List<ChallengeRecord> challenges,
+    internal static void AppendChallengesSection(StringBuilder sb, List<ChallengeRecord> challenges,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Challenges ({challenges.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Challenges ({challenges.Count})");
         sb.AppendLine();
 
         var byType = challenges.GroupBy(c => c.TypeName).OrderByDescending(g => g.Count()).ToList();
@@ -120,7 +111,7 @@ public static partial class GeckReportGenerator
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  CHALLENGE: {chal.EditorId ?? "(none)"} \u2014 {chal.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {FormatFormId(chal.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(chal.FormId)}");
             sb.AppendLine($"  Type:        {chal.TypeName}");
             sb.AppendLine($"  Threshold:   {chal.Threshold}");
             if (chal.Interval != 0)
@@ -155,7 +146,7 @@ public static partial class GeckReportGenerator
 
             if (chal.Script != 0)
             {
-                sb.AppendLine($"  Script:      {FormatFormIdWithName(chal.Script, lookup)}");
+                sb.AppendLine($"  Script:      {GeckReportGenerator.FormatFormIdWithName(chal.Script, lookup)}");
             }
 
             sb.AppendLine();
@@ -169,6 +160,4 @@ public static partial class GeckReportGenerator
         AppendChallengesSection(sb, challenges, lookup ?? []);
         return sb.ToString();
     }
-
-    #endregion
 }

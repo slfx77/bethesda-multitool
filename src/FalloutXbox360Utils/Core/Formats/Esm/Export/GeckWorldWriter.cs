@@ -3,11 +3,10 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-public static partial class GeckReportGenerator
+/// <summary>Generates GECK-style text reports for Cell, Worldspace, Map Marker, Explosion, and Projectile records.</summary>
+internal static class GeckWorldWriter
 {
-    #region PlacedObjects Methods
-
-    private static void AppendPlacedObjects(StringBuilder sb, List<PlacedReference> placedObjects)
+    internal static void AppendPlacedObjects(StringBuilder sb, List<PlacedReference> placedObjects)
     {
         if (placedObjects.Count == 0)
         {
@@ -21,20 +20,16 @@ public static partial class GeckReportGenerator
         {
             var baseStr = !string.IsNullOrEmpty(obj.BaseEditorId)
                 ? obj.BaseEditorId
-                : FormatFormId(obj.BaseFormId);
+                : GeckReportGenerator.FormatFormId(obj.BaseFormId);
             var scaleStr = Math.Abs(obj.Scale - 1.0f) > 0.01f ? $" scale={obj.Scale:F2}" : "";
             sb.AppendLine($"  - {baseStr} ({obj.RecordType})");
             sb.AppendLine($"      at ({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1}){scaleStr}");
         }
     }
 
-    #endregion
-
-    #region Cell Methods
-
-    private static void AppendCellsSection(StringBuilder sb, List<CellRecord> cells)
+    internal static void AppendCellsSection(StringBuilder sb, List<CellRecord> cells)
     {
-        AppendSectionHeader(sb, $"Cells ({cells.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Cells ({cells.Count})");
 
         // Separate interior and exterior cells
         var exteriorCells = cells.Where(c => !c.IsInterior && c.GridX.HasValue).ToList();
@@ -48,9 +43,9 @@ public static partial class GeckReportGenerator
             foreach (var cell in exteriorCells.OrderBy(c => c.GridX).ThenBy(c => c.GridY))
             {
                 var gridStr = $"({cell.GridX}, {cell.GridY})";
-                AppendRecordHeader(sb, $"CELL {gridStr}", cell.EditorId);
+                GeckReportGenerator.AppendRecordHeader(sb, $"CELL {gridStr}", cell.EditorId);
 
-                sb.AppendLine($"FormID:         {FormatFormId(cell.FormId)}");
+                sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(cell.FormId)}");
                 sb.AppendLine($"Editor ID:      {cell.EditorId ?? "(none)"}");
                 sb.AppendLine($"Display Name:   {cell.FullName ?? "(none)"}");
                 sb.AppendLine($"Grid:           {cell.GridX}, {cell.GridY}");
@@ -76,9 +71,9 @@ public static partial class GeckReportGenerator
 
             foreach (var cell in interiorCells.OrderBy(c => c.EditorId ?? ""))
             {
-                AppendRecordHeader(sb, "CELL (Interior)", cell.EditorId);
+                GeckReportGenerator.AppendRecordHeader(sb, "CELL (Interior)", cell.EditorId);
 
-                sb.AppendLine($"FormID:         {FormatFormId(cell.FormId)}");
+                sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(cell.FormId)}");
                 sb.AppendLine($"Editor ID:      {cell.EditorId ?? "(none)"}");
                 sb.AppendLine($"Display Name:   {cell.FullName ?? "(none)"}");
                 sb.AppendLine($"Flags:          0x{cell.Flags:X2}");
@@ -100,20 +95,16 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Worldspace Methods
-
-    private static void AppendWorldspacesSection(StringBuilder sb, List<WorldspaceRecord> worldspaces,
+    internal static void AppendWorldspacesSection(StringBuilder sb, List<WorldspaceRecord> worldspaces,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Worldspaces ({worldspaces.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Worldspaces ({worldspaces.Count})");
 
         foreach (var wrld in worldspaces.OrderBy(w => w.EditorId ?? ""))
         {
-            AppendRecordHeader(sb, "WRLD", wrld.EditorId);
+            GeckReportGenerator.AppendRecordHeader(sb, "WRLD", wrld.EditorId);
 
-            sb.AppendLine($"FormID:         {FormatFormId(wrld.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(wrld.FormId)}");
             sb.AppendLine($"Editor ID:      {wrld.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {wrld.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(wrld.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -121,17 +112,17 @@ public static partial class GeckReportGenerator
 
             if (wrld.ParentWorldspaceFormId.HasValue)
             {
-                sb.AppendLine($"Parent:         {FormatFormIdWithName(wrld.ParentWorldspaceFormId.Value, lookup)}");
+                sb.AppendLine($"Parent:         {GeckReportGenerator.FormatFormIdWithName(wrld.ParentWorldspaceFormId.Value, lookup)}");
             }
 
             if (wrld.ClimateFormId.HasValue)
             {
-                sb.AppendLine($"Climate:        {FormatFormIdWithName(wrld.ClimateFormId.Value, lookup)}");
+                sb.AppendLine($"Climate:        {GeckReportGenerator.FormatFormIdWithName(wrld.ClimateFormId.Value, lookup)}");
             }
 
             if (wrld.WaterFormId.HasValue)
             {
-                sb.AppendLine($"Water:          {FormatFormIdWithName(wrld.WaterFormId.Value, lookup)}");
+                sb.AppendLine($"Water:          {GeckReportGenerator.FormatFormIdWithName(wrld.WaterFormId.Value, lookup)}");
             }
 
             if (wrld.Cells.Count > 0)
@@ -153,13 +144,9 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region MapMarker Methods
-
-    private static void AppendMapMarkersSection(StringBuilder sb, List<PlacedReference> markers)
+    internal static void AppendMapMarkersSection(StringBuilder sb, List<PlacedReference> markers)
     {
-        AppendSectionHeader(sb, $"Map Markers ({markers.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Map Markers ({markers.Count})");
         sb.AppendLine();
 
         var byType = markers.Where(m => m.MarkerType != null)
@@ -185,10 +172,10 @@ public static partial class GeckReportGenerator
                      .OrderBy(m => m.MarkerType?.ToString() ?? "")
                      .ThenBy(m => m.MarkerName, StringComparer.OrdinalIgnoreCase))
         {
-            var name = marker.MarkerName ?? marker.BaseEditorId ?? FormatFormId(marker.FormId);
+            var name = marker.MarkerName ?? marker.BaseEditorId ?? GeckReportGenerator.FormatFormId(marker.FormId);
             var typeName = marker.MarkerType?.ToString() ?? "(unknown)";
             sb.AppendLine(
-                $"  {Truncate(name, 32),-32} {typeName,-18} {marker.X,10:F1} {marker.Y,10:F1} {marker.Z,8:F1}  [{FormatFormId(marker.FormId)}]");
+                $"  {GeckReportGenerator.Truncate(name, 32),-32} {typeName,-18} {marker.X,10:F1} {marker.Y,10:F1} {marker.Z,8:F1}  [{GeckReportGenerator.FormatFormId(marker.FormId)}]");
         }
 
         sb.AppendLine();
@@ -202,14 +189,10 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Explosion Methods
-
-    private static void AppendExplosionsSection(StringBuilder sb, List<ExplosionRecord> explosions,
+    internal static void AppendExplosionsSection(StringBuilder sb, List<ExplosionRecord> explosions,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Explosions ({explosions.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Explosions ({explosions.Count})");
         sb.AppendLine();
 
         sb.AppendLine($"Total Explosions: {explosions.Count:N0}");
@@ -229,7 +212,7 @@ public static partial class GeckReportGenerator
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  EXPLOSION: {expl.EditorId ?? "(none)"} \u2014 {expl.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {FormatFormId(expl.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(expl.FormId)}");
             sb.AppendLine($"  \u2500\u2500 Stats {new string('\u2500', 70)}");
             sb.AppendLine($"  Force:       {expl.Force:F1}");
             sb.AppendLine($"  Damage:      {expl.Damage:F1}");
@@ -237,27 +220,27 @@ public static partial class GeckReportGenerator
             sb.AppendLine($"  IS Radius:   {expl.ISRadius:F1}");
             if (expl.Light != 0)
             {
-                sb.AppendLine($"  Light:       {FormatFormIdWithName(expl.Light, lookup)}");
+                sb.AppendLine($"  Light:       {GeckReportGenerator.FormatFormIdWithName(expl.Light, lookup)}");
             }
 
             if (expl.Sound1 != 0)
             {
-                sb.AppendLine($"  Sound 1:     {FormatFormIdWithName(expl.Sound1, lookup)}");
+                sb.AppendLine($"  Sound 1:     {GeckReportGenerator.FormatFormIdWithName(expl.Sound1, lookup)}");
             }
 
             if (expl.Sound2 != 0)
             {
-                sb.AppendLine($"  Sound 2:     {FormatFormIdWithName(expl.Sound2, lookup)}");
+                sb.AppendLine($"  Sound 2:     {GeckReportGenerator.FormatFormIdWithName(expl.Sound2, lookup)}");
             }
 
             if (expl.ImpactDataSet != 0)
             {
-                sb.AppendLine($"  Impact Data: {FormatFormIdWithName(expl.ImpactDataSet, lookup)}");
+                sb.AppendLine($"  Impact Data: {GeckReportGenerator.FormatFormIdWithName(expl.ImpactDataSet, lookup)}");
             }
 
             if (expl.Enchantment != 0)
             {
-                sb.AppendLine($"  Enchantment: {FormatFormIdWithName(expl.Enchantment, lookup)}");
+                sb.AppendLine($"  Enchantment: {GeckReportGenerator.FormatFormIdWithName(expl.Enchantment, lookup)}");
             }
 
             if (!string.IsNullOrEmpty(expl.ModelPath))
@@ -282,14 +265,10 @@ public static partial class GeckReportGenerator
         return sb.ToString();
     }
 
-    #endregion
-
-    #region Projectile Methods
-
-    private static void AppendProjectilesSection(StringBuilder sb, List<ProjectileRecord> projectiles,
+    internal static void AppendProjectilesSection(StringBuilder sb, List<ProjectileRecord> projectiles,
         Dictionary<uint, string> lookup)
     {
-        AppendSectionHeader(sb, $"Projectiles ({projectiles.Count})");
+        GeckReportGenerator.AppendSectionHeader(sb, $"Projectiles ({projectiles.Count})");
         sb.AppendLine();
 
         var byType = projectiles.GroupBy(p => p.TypeName).OrderByDescending(g => g.Count()).ToList();
@@ -312,7 +291,7 @@ public static partial class GeckReportGenerator
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  PROJECTILE: {proj.EditorId ?? "(none)"} \u2014 {proj.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:       {FormatFormId(proj.FormId)}");
+            sb.AppendLine($"  FormID:       {GeckReportGenerator.FormatFormId(proj.FormId)}");
             sb.AppendLine($"  Type:         {proj.TypeName}");
             sb.AppendLine($"  \u2500\u2500 Physics {new string('\u2500', 68)}");
             sb.AppendLine($"  Speed:        {proj.Speed:F1}");
@@ -339,23 +318,23 @@ public static partial class GeckReportGenerator
 
                 if (proj.MuzzleFlashLight != 0)
                 {
-                    sb.AppendLine($"  Flash Light:  {FormatFormIdWithName(proj.MuzzleFlashLight, lookup)}");
+                    sb.AppendLine($"  Flash Light:  {GeckReportGenerator.FormatFormIdWithName(proj.MuzzleFlashLight, lookup)}");
                 }
             }
 
             if (proj.Light != 0)
             {
-                sb.AppendLine($"  Light:        {FormatFormIdWithName(proj.Light, lookup)}");
+                sb.AppendLine($"  Light:        {GeckReportGenerator.FormatFormIdWithName(proj.Light, lookup)}");
             }
 
             if (proj.Explosion != 0)
             {
-                sb.AppendLine($"  Explosion:    {FormatFormIdWithName(proj.Explosion, lookup)}");
+                sb.AppendLine($"  Explosion:    {GeckReportGenerator.FormatFormIdWithName(proj.Explosion, lookup)}");
             }
 
             if (proj.Sound != 0)
             {
-                sb.AppendLine($"  Sound:        {FormatFormIdWithName(proj.Sound, lookup)}");
+                sb.AppendLine($"  Sound:        {GeckReportGenerator.FormatFormIdWithName(proj.Sound, lookup)}");
             }
 
             if (!string.IsNullOrEmpty(proj.ModelPath))
@@ -379,6 +358,4 @@ public static partial class GeckReportGenerator
         AppendProjectilesSection(sb, projectiles, lookup ?? []);
         return sb.ToString();
     }
-
-    #endregion
 }
