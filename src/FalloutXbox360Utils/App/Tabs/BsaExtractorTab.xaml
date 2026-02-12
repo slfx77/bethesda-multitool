@@ -39,393 +39,393 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-    <!-- Header row -->
-    <Grid Grid.Row="0"
-          Margin="0,0,0,8">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
-        <TextBlock
-          x:Uid="Header_BsaExtractor"
-          Style="{StaticResource SubtitleTextBlockStyle}" />
-        <TextBlock
-          x:Uid="Subtitle_BsaExtractor"
-          Style="{StaticResource TabSubtitleStyle}" />
-      </StackPanel>
-      <StackPanel
-        Grid.Column="1"
-        Style="{StaticResource SelectButtonsPanelStyle}">
-        <Button
-          x:Uid="Button_OpenBsa"
-          Click="SelectBsaButton_Click" />
-      </StackPanel>
-    </Grid>
-
-    <!-- Archive Info Card -->
-    <Border
-      x:Name="ArchiveInfoCard"
-      Grid.Row="1"
-      Margin="0,0,0,8"
-      Style="{StaticResource CardBorderStyle}"
-      Visibility="Collapsed">
-      <Grid Padding="12">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0"
-                    Orientation="Vertical"
-                    Spacing="4">
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
-            <TextBlock x:Uid="Label_Archive"
-                       FontWeight="SemiBold" />
-            <TextBlock x:Name="ArchiveNameText"
-                       Text="-" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
-            <TextBlock x:Uid="Label_Platform"
-                       FontWeight="SemiBold" />
-            <TextBlock x:Name="ArchivePlatformText"
-                       Text="-" />
-          </StackPanel>
-        </StackPanel>
-        <StackPanel Grid.Column="1"
-                    HorizontalAlignment="Center"
-                    Orientation="Vertical"
-                    Spacing="4">
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
-            <TextBlock x:Uid="Label_Folders"
-                       FontWeight="SemiBold" />
-            <TextBlock x:Name="ArchiveFolderCountText"
-                       Text="-" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
-            <TextBlock x:Uid="Label_Files"
-                       FontWeight="SemiBold" />
-            <TextBlock x:Name="ArchiveFileCountText"
-                       Text="-" />
-          </StackPanel>
-        </StackPanel>
-        <StackPanel Grid.Column="2"
-                    Orientation="Vertical"
-                    Spacing="4">
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
-            <TextBlock x:Uid="Label_Compressed"
-                       FontWeight="SemiBold" />
-            <TextBlock x:Name="ArchiveCompressedText"
-                       Text="-" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal"
-                      Spacing="8">
-            <TextBlock x:Uid="Label_Content"
-                       FontWeight="SemiBold" />
-            <TextBlock x:Name="ArchiveContentText"
-                       Text="-" />
-          </StackPanel>
-        </StackPanel>
-      </Grid>
-    </Border>
-
-    <!-- Filter and Selection Row -->
-    <Grid Grid.Row="2"
-          Margin="0,0,0,8"
-          Visibility="{x:Bind ArchiveInfoCard.Visibility, Mode=OneWay}">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="*" />
-      </Grid.RowDefinitions>
-
-      <!-- Filter Bar -->
+      <!-- Header row -->
       <Grid Grid.Row="0"
             Margin="0,0,0,8">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-
-        <ComboBox x:Name="ExtensionFilterCombo"
-                  x:Uid="Filter_ByType"
-                  Grid.Column="0"
-                  Width="150"
-                  Margin="0,0,8,0"
-                  SelectionChanged="ExtensionFilterCombo_SelectionChanged" />
-
-        <AutoSuggestBox x:Name="FolderFilterBox"
-                        x:Uid="Filter_ByFolder"
-                        Grid.Column="1"
-                        QueryIcon="Find"
-                        TextChanged="FolderFilterBox_TextChanged" />
-
-        <Button x:Uid="Button_SelectAll"
-                Grid.Column="2"
-                Margin="8,0,0,0"
-                Click="SelectAllButton_Click" />
-        <Button x:Uid="Button_SelectNone"
-                Grid.Column="3"
-                Margin="8,0,0,0"
-                Click="SelectNoneButton_Click" />
+        <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
+          <TextBlock
+            x:Uid="Header_BsaExtractor"
+            Style="{StaticResource SubtitleTextBlockStyle}" />
+          <TextBlock
+            x:Uid="Subtitle_BsaExtractor"
+            Style="{StaticResource TabSubtitleStyle}" />
+        </StackPanel>
+        <StackPanel
+          Grid.Column="1"
+          Style="{StaticResource SelectButtonsPanelStyle}">
+          <Button
+            x:Uid="Button_OpenBsa"
+            Click="SelectBsaButton_Click" />
+        </StackPanel>
       </Grid>
 
-      <!-- Files List Card -->
+      <!-- Archive Info Card -->
       <Border
+        x:Name="ArchiveInfoCard"
         Grid.Row="1"
-        VerticalAlignment="Stretch"
-        Style="{StaticResource CardBorderStyle}">
-        <Grid VerticalAlignment="Stretch">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-          </Grid.RowDefinitions>
-
-          <!-- Column headers -->
-          <Grid Grid.Row="0"
-                Style="{StaticResource ColumnHeaderGridStyle}">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="40" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="2*" />
-              <ColumnDefinition Width="80" />
-              <ColumnDefinition Width="110" />
-              <ColumnDefinition Width="100" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0"
-                       FontWeight="SemiBold"
-                       Text="" />
-            <Button
-              Grid.Column="1"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByPath_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="PathSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="2"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByFolder_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_Folder" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="FolderSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="3"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortBySize_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="SizeSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="4"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByCompressed_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_Compressed" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="CompressedSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-            <Button
-              Grid.Column="5"
-              Style="{StaticResource SortableColumnHeaderButtonStyle}"
-              Click="SortByStatus_Click">
-              <StackPanel Orientation="Horizontal"
-                          Spacing="4">
-                <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
-                <FontIcon
-                  x:Name="StatusSortIcon"
-                  Style="{StaticResource SortIconStyle}" />
-              </StackPanel>
-            </Button>
-          </Grid>
-
-          <!-- Files ListView -->
-          <ListView
-            x:Name="FilesListView"
-            Grid.Row="1"
-            Style="{StaticResource FileListViewStyle}">
-            <ListView.ItemTemplate>
-              <DataTemplate x:DataType="local:BsaFileEntry">
-                <Grid Style="{StaticResource ListItemRowGridStyle}">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="40" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="2*" />
-                    <ColumnDefinition Width="80" />
-                    <ColumnDefinition Width="110" />
-                    <ColumnDefinition Width="100" />
-                  </Grid.ColumnDefinitions>
-                  <CheckBox
-                    Grid.Column="0"
-                    IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
-                  <TextBlock
-                    Grid.Column="1"
-                    VerticalAlignment="Center"
-                    Text="{x:Bind FileName}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind FileName}" />
-                  <TextBlock
-                    Grid.Column="2"
-                    VerticalAlignment="Center"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="{x:Bind FolderPath}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind FolderPath}" />
-                  <TextBlock
-                    Grid.Column="3"
-                    VerticalAlignment="Center"
-                    HorizontalAlignment="Right"
-                    Text="{x:Bind SizeDisplay}" />
-                  <TextBlock
-                    Grid.Column="4"
-                    VerticalAlignment="Center"
-                    HorizontalAlignment="Center"
-                    Foreground="{x:Bind CompressedColor}"
-                    Text="{x:Bind CompressedDisplay}" />
-                  <TextBlock
-                    Grid.Column="5"
-                    VerticalAlignment="Center"
-                    Foreground="{x:Bind StatusColor, Mode=OneWay}"
-                    Text="{x:Bind StatusDisplay, Mode=OneWay}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{x:Bind StatusMessage, Mode=OneWay}" />
-                </Grid>
-              </DataTemplate>
-            </ListView.ItemTemplate>
-          </ListView>
-
-          <!-- Empty State -->
-          <StackPanel x:Name="EmptyStatePanel"
-                      Grid.Row="1"
+        Margin="0,0,0,8"
+        Style="{StaticResource CardBorderStyle}"
+        Visibility="Collapsed">
+        <Grid Padding="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0"
+                      Orientation="Vertical"
+                      Spacing="4">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+              <TextBlock x:Uid="Label_Archive"
+                         FontWeight="SemiBold" />
+              <TextBlock x:Name="ArchiveNameText"
+                         Text="-" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+              <TextBlock x:Uid="Label_Platform"
+                         FontWeight="SemiBold" />
+              <TextBlock x:Name="ArchivePlatformText"
+                         Text="-" />
+            </StackPanel>
+          </StackPanel>
+          <StackPanel Grid.Column="1"
                       HorizontalAlignment="Center"
-                      VerticalAlignment="Center"
-                      Visibility="Collapsed">
-            <FontIcon FontSize="48"
-                      Glyph="&#xE7B8;"
-                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock x:Uid="EmptyBsa_Title"
-                       Margin="0,8,0,0"
-                       FontSize="16"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       TextAlignment="Center" />
-            <TextBlock x:Uid="EmptyBsa_Subtitle"
-                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                       TextAlignment="Center" />
+                      Orientation="Vertical"
+                      Spacing="4">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+              <TextBlock x:Uid="Label_Folders"
+                         FontWeight="SemiBold" />
+              <TextBlock x:Name="ArchiveFolderCountText"
+                         Text="-" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+              <TextBlock x:Uid="Label_Files"
+                         FontWeight="SemiBold" />
+              <TextBlock x:Name="ArchiveFileCountText"
+                         Text="-" />
+            </StackPanel>
+          </StackPanel>
+          <StackPanel Grid.Column="2"
+                      Orientation="Vertical"
+                      Spacing="4">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+              <TextBlock x:Uid="Label_Compressed"
+                         FontWeight="SemiBold" />
+              <TextBlock x:Name="ArchiveCompressedText"
+                         Text="-" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+              <TextBlock x:Uid="Label_Content"
+                         FontWeight="SemiBold" />
+              <TextBlock x:Name="ArchiveContentText"
+                         Text="-" />
+            </StackPanel>
           </StackPanel>
         </Grid>
       </Border>
-    </Grid>
 
-    <!-- Empty state when no archive loaded -->
-    <Border
-      x:Name="NoArchivePanel"
-      Grid.Row="2"
-      VerticalAlignment="Stretch"
-      Style="{StaticResource CardBorderStyle}">
-      <StackPanel HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                  Spacing="16">
-        <FontIcon FontSize="64"
-                  Glyph="&#xE7B8;"
-                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        <TextBlock x:Uid="EmptyBsa_Title"
-                   FontSize="18"
-                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                   TextAlignment="Center" />
-        <TextBlock x:Uid="EmptyBsa_SubtitleAlt"
-                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                   TextAlignment="Center" />
-        <Button x:Uid="Button_OpenBsa"
-                HorizontalAlignment="Center"
-                Click="SelectBsaButton_Click"
-                Style="{StaticResource AccentButtonStyle}" />
-      </StackPanel>
-    </Border>
+      <!-- Filter and Selection Row -->
+      <Grid Grid.Row="2"
+            Margin="0,0,0,8"
+            Visibility="{x:Bind ArchiveInfoCard.Visibility, Mode=OneWay}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-    <!-- Statistics Row -->
-    <Border
-      x:Name="StatsCard"
-      Grid.Row="3"
-      Margin="0,8,0,0"
-      Style="{StaticResource CardBorderStyle}"
-      Visibility="Collapsed">
-      <Grid Padding="12">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <TextBlock x:Name="FilterStatusText"
-                   Grid.Column="0"
-                   VerticalAlignment="Center"
-                   Text="Showing all files" />
-        <TextBlock x:Name="SelectedCountText"
-                   Grid.Column="1"
-                   VerticalAlignment="Center"
-                   Margin="16,0"
-                   Text="0 selected" />
-        <TextBlock x:Name="SelectedSizeText"
-                   Grid.Column="2"
-                   VerticalAlignment="Center"
-                   Margin="16,0"
-                   Text="0 B" />
+        <!-- Filter Bar -->
+        <Grid Grid.Row="0"
+              Margin="0,0,0,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <ComboBox x:Name="ExtensionFilterCombo"
+                    x:Uid="Filter_ByType"
+                    Grid.Column="0"
+                    Width="150"
+                    Margin="0,0,8,0"
+                    SelectionChanged="ExtensionFilterCombo_SelectionChanged" />
+
+          <AutoSuggestBox x:Name="FolderFilterBox"
+                          x:Uid="Filter_ByFolder"
+                          Grid.Column="1"
+                          QueryIcon="Find"
+                          TextChanged="FolderFilterBox_TextChanged" />
+
+          <Button x:Uid="Button_SelectAll"
+                  Grid.Column="2"
+                  Margin="8,0,0,0"
+                  Click="SelectAllButton_Click" />
+          <Button x:Uid="Button_SelectNone"
+                  Grid.Column="3"
+                  Margin="8,0,0,0"
+                  Click="SelectNoneButton_Click" />
+        </Grid>
+
+        <!-- Files List Card -->
+        <Border
+          Grid.Row="1"
+          VerticalAlignment="Stretch"
+          Style="{StaticResource CardBorderStyle}">
+          <Grid VerticalAlignment="Stretch">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Column headers -->
+            <Grid Grid.Row="0"
+                  Style="{StaticResource ColumnHeaderGridStyle}">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="40" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="80" />
+                <ColumnDefinition Width="110" />
+                <ColumnDefinition Width="100" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0"
+                         FontWeight="SemiBold"
+                         Text="" />
+              <Button
+                Grid.Column="1"
+                Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                Click="SortByPath_Click">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="4">
+                  <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
+                  <FontIcon
+                    x:Name="PathSortIcon"
+                    Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+              <Button
+                Grid.Column="2"
+                Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                Click="SortByFolder_Click">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="4">
+                  <TextBlock x:Uid="Col_Folder" FontWeight="SemiBold" />
+                  <FontIcon
+                    x:Name="FolderSortIcon"
+                    Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+              <Button
+                Grid.Column="3"
+                Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                Click="SortBySize_Click">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="4">
+                  <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
+                  <FontIcon
+                    x:Name="SizeSortIcon"
+                    Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+              <Button
+                Grid.Column="4"
+                Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                Click="SortByCompressed_Click">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="4">
+                  <TextBlock x:Uid="Col_Compressed" FontWeight="SemiBold" />
+                  <FontIcon
+                    x:Name="CompressedSortIcon"
+                    Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+              <Button
+                Grid.Column="5"
+                Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                Click="SortByStatus_Click">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="4">
+                  <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
+                  <FontIcon
+                    x:Name="StatusSortIcon"
+                    Style="{StaticResource SortIconStyle}" />
+                </StackPanel>
+              </Button>
+            </Grid>
+
+            <!-- Files ListView -->
+            <ListView
+              x:Name="FilesListView"
+              Grid.Row="1"
+              Style="{StaticResource FileListViewStyle}">
+              <ListView.ItemTemplate>
+                <DataTemplate x:DataType="local:BsaFileEntry">
+                  <Grid Style="{StaticResource ListItemRowGridStyle}">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="40" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="2*" />
+                      <ColumnDefinition Width="80" />
+                      <ColumnDefinition Width="110" />
+                      <ColumnDefinition Width="100" />
+                    </Grid.ColumnDefinitions>
+                    <CheckBox
+                      Grid.Column="0"
+                      IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
+                    <TextBlock
+                      Grid.Column="1"
+                      VerticalAlignment="Center"
+                      Text="{x:Bind FileName}"
+                      TextTrimming="CharacterEllipsis"
+                      ToolTipService.ToolTip="{x:Bind FileName}" />
+                    <TextBlock
+                      Grid.Column="2"
+                      VerticalAlignment="Center"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      Text="{x:Bind FolderPath}"
+                      TextTrimming="CharacterEllipsis"
+                      ToolTipService.ToolTip="{x:Bind FolderPath}" />
+                    <TextBlock
+                      Grid.Column="3"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Right"
+                      Text="{x:Bind SizeDisplay}" />
+                    <TextBlock
+                      Grid.Column="4"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Center"
+                      Foreground="{x:Bind CompressedColor}"
+                      Text="{x:Bind CompressedDisplay}" />
+                    <TextBlock
+                      Grid.Column="5"
+                      VerticalAlignment="Center"
+                      Foreground="{x:Bind StatusColor, Mode=OneWay}"
+                      Text="{x:Bind StatusDisplay, Mode=OneWay}"
+                      TextTrimming="CharacterEllipsis"
+                      ToolTipService.ToolTip="{x:Bind StatusMessage, Mode=OneWay}" />
+                  </Grid>
+                </DataTemplate>
+              </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Empty State -->
+            <StackPanel x:Name="EmptyStatePanel"
+                        Grid.Row="1"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed">
+              <FontIcon FontSize="48"
+                        Glyph="&#xE7B8;"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              <TextBlock x:Uid="EmptyBsa_Title"
+                         Margin="0,8,0,0"
+                         FontSize="16"
+                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                         TextAlignment="Center" />
+              <TextBlock x:Uid="EmptyBsa_Subtitle"
+                         Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                         TextAlignment="Center" />
+            </StackPanel>
+          </Grid>
+        </Border>
       </Grid>
-    </Border>
 
-    <!-- Progress Bar -->
-    <ProgressBar
-      x:Name="ExtractionProgress"
-      Grid.Row="4"
-      Margin="0,8,0,0"
-      Maximum="100"
-      Visibility="Collapsed" />
+      <!-- Empty state when no archive loaded -->
+      <Border
+        x:Name="NoArchivePanel"
+        Grid.Row="2"
+        VerticalAlignment="Stretch"
+        Style="{StaticResource CardBorderStyle}">
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="16">
+          <FontIcon FontSize="64"
+                    Glyph="&#xE7B8;"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <TextBlock x:Uid="EmptyBsa_Title"
+                     FontSize="18"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                     TextAlignment="Center" />
+          <TextBlock x:Uid="EmptyBsa_SubtitleAlt"
+                     Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                     TextAlignment="Center" />
+          <Button x:Uid="Button_OpenBsa"
+                  HorizontalAlignment="Center"
+                  Click="SelectBsaButton_Click"
+                  Style="{StaticResource AccentButtonStyle}" />
+        </StackPanel>
+      </Border>
 
-    <!-- Action Buttons -->
-    <StackPanel
-      Grid.Row="5"
-      HorizontalAlignment="Right"
-      Orientation="Horizontal"
-      Spacing="8"
-      Margin="0,8,0,0">
-      <Button
-        x:Name="CancelButton"
-        x:Uid="Button_Cancel"
-        MinWidth="80"
-        Click="CancelButton_Click"
+      <!-- Statistics Row -->
+      <Border
+        x:Name="StatsCard"
+        Grid.Row="3"
+        Margin="0,8,0,0"
+        Style="{StaticResource CardBorderStyle}"
+        Visibility="Collapsed">
+        <Grid Padding="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="FilterStatusText"
+                     Grid.Column="0"
+                     VerticalAlignment="Center"
+                     Text="Showing all files" />
+          <TextBlock x:Name="SelectedCountText"
+                     Grid.Column="1"
+                     VerticalAlignment="Center"
+                     Margin="16,0"
+                     Text="0 selected" />
+          <TextBlock x:Name="SelectedSizeText"
+                     Grid.Column="2"
+                     VerticalAlignment="Center"
+                     Margin="16,0"
+                     Text="0 B" />
+        </Grid>
+      </Border>
+
+      <!-- Progress Bar -->
+      <ProgressBar
+        x:Name="ExtractionProgress"
+        Grid.Row="4"
+        Margin="0,8,0,0"
+        Maximum="100"
         Visibility="Collapsed" />
-      <Button
-        x:Name="ExtractButton"
-        x:Uid="Button_ExtractSelected"
-        MinWidth="120"
-        Click="ExtractButton_Click"
-        IsEnabled="False"
-        Style="{StaticResource AccentButtonStyle}" />
-    </StackPanel>
+
+      <!-- Action Buttons -->
+      <StackPanel
+        Grid.Row="5"
+        HorizontalAlignment="Right"
+        Orientation="Horizontal"
+        Spacing="8"
+        Margin="0,8,0,0">
+        <Button
+          x:Name="CancelButton"
+          x:Uid="Button_Cancel"
+          MinWidth="80"
+          Click="CancelButton_Click"
+          Visibility="Collapsed" />
+        <Button
+          x:Name="ExtractButton"
+          x:Uid="Button_ExtractSelected"
+          MinWidth="120"
+          Click="ExtractButton_Click"
+          IsEnabled="False"
+          Style="{StaticResource AccentButtonStyle}" />
+      </StackPanel>
     </Grid>
   </Grid>
 </UserControl>

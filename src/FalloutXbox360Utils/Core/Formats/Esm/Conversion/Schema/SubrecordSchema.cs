@@ -8,8 +8,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 /// </remarks>
 public sealed class SubrecordSchema(params SubrecordField[] fields)
 {
-
-
     /// <summary>
     ///     The ordered list of fields in this subrecord.
     /// </summary>

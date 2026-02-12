@@ -103,7 +103,7 @@ internal static partial class EsmBrowserTreeBuilder
         [(typeof(WeaponRecord), "FlagsEx")] = FlagRegistry.WeaponFlagsEx,
         [(typeof(LightRecord), "Flags")] = FlagRegistry.LightFlags,
         [(typeof(DoorRecord), "Flags")] = FlagRegistry.DoorFlags,
-        [(typeof(FurnitureRecord), "MarkerFlags")] = FlagRegistry.FurnitureMarkerFlags,
+        [(typeof(FurnitureRecord), "MarkerFlags")] = FlagRegistry.FurnitureMarkerFlags
     };
 
     /// <summary>
@@ -150,7 +150,7 @@ internal static partial class EsmBrowserTreeBuilder
         [typeof(DoorRecord)] = "DOOR",
         [typeof(StaticRecord)] = "STAT",
         [typeof(FurnitureRecord)] = "FURN",
-        [typeof(ScriptRecord)] = "SCPT",
+        [typeof(ScriptRecord)] = "SCPT"
     };
 
     /// <summary>
@@ -165,16 +165,6 @@ internal static partial class EsmBrowserTreeBuilder
     ];
 
     /// <summary>
-    ///     Maps an actor value code to a skill name.
-    ///     AV codes 32-45 map to skills; returns null for non-skill AVs.
-    /// </summary>
-    private static string? ActorValueToSkillName(int avCode)
-    {
-        var idx = avCode - 32;
-        return idx >= 0 && idx < SkillNames.Length ? SkillNames[idx] : null;
-    }
-
-    /// <summary>
     ///     Cache for PropertyInfo[] by type - avoids repeated GetProperties() calls.
     /// </summary>
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertyCache = new();
@@ -183,6 +173,16 @@ internal static partial class EsmBrowserTreeBuilder
     ///     Cache for named property lookups - avoids repeated GetProperty(name) calls.
     /// </summary>
     private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> NamedPropertyCache = new();
+
+    /// <summary>
+    ///     Maps an actor value code to a skill name.
+    ///     AV codes 32-45 map to skills; returns null for non-skill AVs.
+    /// </summary>
+    private static string? ActorValueToSkillName(int avCode)
+    {
+        var idx = avCode - 32;
+        return idx >= 0 && idx < SkillNames.Length ? SkillNames[idx] : null;
+    }
 
     /// <summary>
     ///     Gets cached PropertyInfo[] for a type.
@@ -289,7 +289,6 @@ internal static partial class EsmBrowserTreeBuilder
     /// <summary>
     ///     Adds the World category with cells nested under worldspaces.
     /// </summary>
-
     /// <summary>
     ///     Populates children for a category node (record type sub-nodes).
     /// </summary>
@@ -489,7 +488,7 @@ internal static partial class EsmBrowserTreeBuilder
     {
         if (formId is not > 0) return null;
         return editorIdLookup?.GetValueOrDefault(formId.Value)
-            ?? displayNameLookup?.GetValueOrDefault(formId.Value);
+               ?? displayNameLookup?.GetValueOrDefault(formId.Value);
     }
 
 
@@ -591,7 +590,8 @@ internal static partial class EsmBrowserTreeBuilder
             // Skip WaterHeight when HasWater is false or value is a sentinel
             // (0x80000000 → -2.147B or 0x7F7FFFFF → float.MaxValue ~3.4e38)
             if (record is CellRecord cellRec && prop.Name == "WaterHeight"
-                && (!cellRec.HasWater || (value is float wh && (wh < -1_000_000f || wh > 1_000_000f))))
+                                             && (!cellRec.HasWater || (value is float wh &&
+                                                                       (wh < -1_000_000f || wh > 1_000_000f))))
             {
                 continue;
             }
@@ -614,25 +614,25 @@ internal static partial class EsmBrowserTreeBuilder
                     Category = "Characteristics"
                 });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Level", Value = stats.Level.ToString(), Category = "Attributes" });
+                    { Name = "Level", Value = stats.Level.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Calc Min Level", Value = stats.CalcMin.ToString(), Category = "Attributes" });
+                    { Name = "Calc Min Level", Value = stats.CalcMin.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Calc Max Level", Value = stats.CalcMax.ToString(), Category = "Attributes" });
+                    { Name = "Calc Max Level", Value = stats.CalcMax.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Fatigue", Value = stats.FatigueBase.ToString(), Category = "Attributes" });
+                    { Name = "Fatigue", Value = stats.FatigueBase.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Speed Multiplier", Value = $"{stats.SpeedMultiplier}%", Category = "Attributes" });
+                    { Name = "Speed Multiplier", Value = $"{stats.SpeedMultiplier}%", Category = "Attributes" });
 
                 // NPC-only fields (creatures don't have barter gold, karma, disposition)
                 if (isNpc)
                 {
                     properties.Add(new EsmPropertyEntry
-                    { Name = "Barter Gold", Value = stats.BarterGold.ToString(), Category = "Attributes" });
+                        { Name = "Barter Gold", Value = stats.BarterGold.ToString(), Category = "Attributes" });
                     properties.Add(new EsmPropertyEntry
-                    { Name = "Karma", Value = $"{stats.KarmaAlignment:F2}", Category = "Attributes" });
+                        { Name = "Karma", Value = $"{stats.KarmaAlignment:F2}", Category = "Attributes" });
                     properties.Add(new EsmPropertyEntry
-                    { Name = "Disposition", Value = stats.DispositionBase.ToString(), Category = "Attributes" });
+                        { Name = "Disposition", Value = stats.DispositionBase.ToString(), Category = "Attributes" });
                 }
 
                 if (stats.TemplateFlags != 0)
@@ -652,15 +652,15 @@ internal static partial class EsmBrowserTreeBuilder
             if (value is NpcAiData ai)
             {
                 properties.Add(new EsmPropertyEntry
-                { Name = "Aggression", Value = $"{ai.AggressionName} ({ai.Aggression})", Category = "AI" });
+                    { Name = "Aggression", Value = $"{ai.AggressionName} ({ai.Aggression})", Category = "AI" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Confidence", Value = $"{ai.ConfidenceName} ({ai.Confidence})", Category = "AI" });
+                    { Name = "Confidence", Value = $"{ai.ConfidenceName} ({ai.Confidence})", Category = "AI" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Mood", Value = $"{ai.MoodName} ({ai.Mood})", Category = "AI" });
+                    { Name = "Mood", Value = $"{ai.MoodName} ({ai.Mood})", Category = "AI" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Assistance", Value = $"{ai.AssistanceName} ({ai.Assistance})", Category = "AI" });
+                    { Name = "Assistance", Value = $"{ai.AssistanceName} ({ai.Assistance})", Category = "AI" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Energy Level", Value = ai.EnergyLevel.ToString(), Category = "AI" });
+                    { Name = "Energy Level", Value = ai.EnergyLevel.ToString(), Category = "AI" });
                 properties.Add(new EsmPropertyEntry
                 {
                     Name = "Responsibility",
@@ -677,7 +677,7 @@ internal static partial class EsmBrowserTreeBuilder
                 var formatted = $"{special[0]} ST, {special[1]} PE, {special[2]} EN, {special[3]} CH, " +
                                 $"{special[4]} IN, {special[5]} AG, {special[6]} LK  (Total: {total})";
                 properties.Add(new EsmPropertyEntry
-                { Name = "S.P.E.C.I.A.L.", Value = formatted, Category = "Attributes" });
+                    { Name = "S.P.E.C.I.A.L.", Value = formatted, Category = "Attributes" });
                 continue;
             }
 
@@ -931,18 +931,18 @@ internal static partial class EsmBrowserTreeBuilder
             if (crea.CombatSkill > 0 || crea.MagicSkill > 0 || crea.StealthSkill > 0)
             {
                 properties.Add(new EsmPropertyEntry
-                { Name = "Combat Skill", Value = crea.CombatSkill.ToString(), Category = "Attributes" });
+                    { Name = "Combat Skill", Value = crea.CombatSkill.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Magic Skill", Value = crea.MagicSkill.ToString(), Category = "Attributes" });
+                    { Name = "Magic Skill", Value = crea.MagicSkill.ToString(), Category = "Attributes" });
                 properties.Add(new EsmPropertyEntry
-                { Name = "Stealth Skill", Value = crea.StealthSkill.ToString(), Category = "Attributes" });
+                    { Name = "Stealth Skill", Value = crea.StealthSkill.ToString(), Category = "Attributes" });
             }
 
             // Show attack damage if set
             if (crea.AttackDamage != 0)
             {
                 properties.Add(new EsmPropertyEntry
-                { Name = "Attack Damage", Value = crea.AttackDamage.ToString(), Category = "Attributes" });
+                    { Name = "Attack Damage", Value = crea.AttackDamage.ToString(), Category = "Attributes" });
             }
         }
 

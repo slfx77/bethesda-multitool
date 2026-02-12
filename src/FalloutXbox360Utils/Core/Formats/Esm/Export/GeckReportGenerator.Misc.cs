@@ -123,15 +123,15 @@ public static partial class GeckReportGenerator
     #region Split Report Methods
 
     /// <summary>
-    ///     Generate split reports - one file per record type.
+    ///     Generate all reports from the given data sources.
     ///     Returns a dictionary mapping filename to content.
+    ///     Produces identical output for CLI and GUI callers.
     /// </summary>
-    public static Dictionary<string, string> GenerateSplit(
-        RecordCollection result,
-        Dictionary<uint, string>? formIdToEditorId = null)
+    public static Dictionary<string, string> GenerateAllReports(ReportDataSources sources)
     {
+        var result = sources.Records;
         var files = new Dictionary<string, string>();
-        var lookup = formIdToEditorId ?? result.FormIdToEditorId;
+        var lookup = sources.FormIdMap ?? result.FormIdToEditorId;
         var displayNameLookup = result.FormIdToDisplayName;
 
         // Summary file
@@ -379,6 +379,27 @@ public static partial class GeckReportGenerator
         {
             files["classes.csv"] = CsvReportGenerator.GenerateClassesCsv(result.Classes);
             files["class_report.txt"] = GenerateClassesReport(result.Classes);
+        }
+
+        // Asset strings report (from runtime string pools)
+        if (sources.AssetStrings is { Count: > 0 })
+        {
+            files["assets.txt"] = GenerateAssetListReport(sources.AssetStrings);
+        }
+
+        // Runtime EditorIDs report (from pointer-following extraction)
+        if (sources.RuntimeEditorIds is { Count: > 0 })
+        {
+            files["runtime_editorids.csv"] = GenerateRuntimeEditorIdsReport(sources.RuntimeEditorIds);
+        }
+
+        // String pool CSVs (dialogue, file paths, EditorIDs, game settings from runtime memory)
+        if (sources.StringPool != null)
+        {
+            foreach (var (filename, content) in CsvReportGenerator.GenerateStringPoolCsvs(sources.StringPool))
+            {
+                files[filename] = content;
+            }
         }
 
         return files;

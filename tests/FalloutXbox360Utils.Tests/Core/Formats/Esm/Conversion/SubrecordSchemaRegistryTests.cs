@@ -8,6 +8,20 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Conversion;
 /// </summary>
 public class SubrecordSchemaRegistryTests
 {
+    #region GetReversedSignature
+
+    [Theory]
+    [InlineData("EDID", "DIDE")]
+    [InlineData("TES4", "4SET")]
+    [InlineData("ABCD", "DCBA")]
+    [InlineData("NPC_", "_CPN")]
+    public void GetReversedSignature_ReversesCorrectly(string input, string expected)
+    {
+        Assert.Equal(expected, SubrecordSchemaRegistry.GetReversedSignature(input));
+    }
+
+    #endregion
+
     #region GetSchema Lookup Priority
 
     [Fact]
@@ -268,20 +282,6 @@ public class SubrecordSchemaRegistryTests
     {
         var sigs = SubrecordSchemaRegistry.GetAllSignatures();
         Assert.True(sigs.Count > 50); // Should have many signatures
-    }
-
-    #endregion
-
-    #region GetReversedSignature
-
-    [Theory]
-    [InlineData("EDID", "DIDE")]
-    [InlineData("TES4", "4SET")]
-    [InlineData("ABCD", "DCBA")]
-    [InlineData("NPC_", "_CPN")]
-    public void GetReversedSignature_ReversesCorrectly(string input, string expected)
-    {
-        Assert.Equal(expected, SubrecordSchemaRegistry.GetReversedSignature(input));
     }
 
     #endregion

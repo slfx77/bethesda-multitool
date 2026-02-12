@@ -9,13 +9,11 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class SingleFileTab
 {
-    private WorldViewData? _worldViewData;
-    private bool _worldMapPopulated;
     private CellRecord? _selectedWorldCell;
 
     private async Task PopulateWorldMapAsync()
     {
-        if (_worldMapPopulated)
+        if (_session.WorldMapPopulated)
         {
             return;
         }
@@ -120,8 +118,8 @@ public sealed partial class SingleFileTab
                 };
             });
 
-            _worldViewData = worldData;
-            _worldMapPopulated = true;
+            _session.WorldViewData = worldData;
+            _session.WorldMapPopulated = true;
 
             WorldMapControl.LoadData(worldData);
 
@@ -141,8 +139,9 @@ public sealed partial class SingleFileTab
 
         // Show "View in Map" button only for cells that can be navigated to
         var canViewInMap = cell.GridX.HasValue && cell.GridY.HasValue
-                           && cell.WorldspaceFormId is > 0
-                           && _worldViewData?.Worldspaces.Any(ws => ws.FormId == cell.WorldspaceFormId.Value) == true;
+                                               && cell.WorldspaceFormId is > 0
+                                               && _session.WorldViewData?.Worldspaces.Any(ws =>
+                                                   ws.FormId == cell.WorldspaceFormId.Value) == true;
         ViewInMapButton.Visibility = canViewInMap ? Visibility.Visible : Visibility.Collapsed;
 
         var name = cell.EditorId ?? cell.FullName ?? $"0x{cell.FormId:X8}";
@@ -173,6 +172,7 @@ public sealed partial class SingleFileTab
                 Category = "Identity"
             });
         }
+
         if (!string.IsNullOrEmpty(cell.FullName))
         {
             properties.Add(new EsmPropertyEntry
@@ -193,6 +193,7 @@ public sealed partial class SingleFileTab
                 Category = "Grid"
             });
         }
+
         if (cell.WorldspaceFormId is > 0)
         {
             properties.Add(new EsmPropertyEntry
@@ -241,6 +242,7 @@ public sealed partial class SingleFileTab
                 LinkedFormId = cell.EncounterZoneFormId.Value
             });
         }
+
         if (cell.MusicTypeFormId is > 0)
         {
             properties.Add(new EsmPropertyEntry
@@ -251,6 +253,7 @@ public sealed partial class SingleFileTab
                 LinkedFormId = cell.MusicTypeFormId.Value
             });
         }
+
         if (cell.AcousticSpaceFormId is > 0)
         {
             properties.Add(new EsmPropertyEntry
@@ -261,6 +264,7 @@ public sealed partial class SingleFileTab
                 LinkedFormId = cell.AcousticSpaceFormId.Value
             });
         }
+
         if (cell.ImageSpaceFormId is > 0)
         {
             properties.Add(new EsmPropertyEntry
@@ -295,6 +299,7 @@ public sealed partial class SingleFileTab
                 Category = "Statistics"
             });
         }
+
         if (achrCount > 0)
         {
             properties.Add(new EsmPropertyEntry
@@ -304,6 +309,7 @@ public sealed partial class SingleFileTab
                 Category = "Statistics"
             });
         }
+
         if (acreCount > 0)
         {
             properties.Add(new EsmPropertyEntry
@@ -313,6 +319,7 @@ public sealed partial class SingleFileTab
                 Category = "Statistics"
             });
         }
+
         if (markerCount > 0)
         {
             properties.Add(new EsmPropertyEntry
@@ -386,7 +393,7 @@ public sealed partial class SingleFileTab
 
     private void ViewInMap_Click(object sender, RoutedEventArgs e)
     {
-        if (_selectedWorldCell == null || _worldViewData == null)
+        if (_selectedWorldCell == null || _session.WorldViewData == null)
         {
             return;
         }
@@ -394,7 +401,7 @@ public sealed partial class SingleFileTab
         var wsFormId = _selectedWorldCell.WorldspaceFormId;
         if (wsFormId is > 0)
         {
-            var wsIdx = _worldViewData.Worldspaces.FindIndex(ws => ws.FormId == wsFormId.Value);
+            var wsIdx = _session.WorldViewData.Worldspaces.FindIndex(ws => ws.FormId == wsFormId.Value);
             if (wsIdx >= 0)
             {
                 WorldMapControl.NavigateToWorldspaceAndCell(wsIdx, _selectedWorldCell);
@@ -470,7 +477,7 @@ public sealed partial class SingleFileTab
         }
 
         // Bounds
-        if (_worldViewData?.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds) == true)
+        if (_session.WorldViewData?.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds) == true)
         {
             properties.Add(new EsmPropertyEntry
             {
@@ -584,7 +591,8 @@ public sealed partial class SingleFileTab
                 mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
                 // 12% opacity background for category header
-                var categoryBgBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.12 };
+                var categoryBgBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color)
+                    { Opacity = 0.12 };
                 var categoryBg = new Border { Background = categoryBgBrush };
                 Grid.SetRow(categoryBg, currentRow);
                 Grid.SetColumnSpan(categoryBg, 3);
@@ -595,7 +603,8 @@ public sealed partial class SingleFileTab
                     Text = prop.Category,
                     FontSize = 13,
                     FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                    Foreground =
+                        (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
                     Margin = new Thickness(8, 5, 0, 7)
                 };
                 Grid.SetRow(categoryHeader, currentRow);
@@ -624,7 +633,8 @@ public sealed partial class SingleFileTab
                     Width = 18,
                     Padding = new Thickness(4, 3, 0, 2),
                     VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+                    Foreground =
+                        (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
                 };
                 Grid.SetRow(expandIcon, currentRow);
                 Grid.SetColumn(expandIcon, 0);
@@ -648,7 +658,8 @@ public sealed partial class SingleFileTab
                     FontSize = 12,
                     Padding = new Thickness(0, 3, 4, 2),
                     FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+                    Foreground =
+                        (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
                 };
                 Grid.SetRow(countText, currentRow);
                 Grid.SetColumn(countText, 2);
@@ -660,7 +671,8 @@ public sealed partial class SingleFileTab
                 var subItemsGrid = new Grid { Visibility = Visibility.Collapsed };
                 subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                subItemsGrid.ColumnDefinitions.Add(
+                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
                 var subRow = 0;
                 foreach (var sub in prop.SubItems)
@@ -833,7 +845,7 @@ public sealed partial class SingleFileTab
             return "Creatures";
         }
 
-        if (_worldViewData?.CategoryIndex.TryGetValue(obj.BaseFormId, out var category) == true)
+        if (_session.WorldViewData?.CategoryIndex.TryGetValue(obj.BaseFormId, out var category) == true)
         {
             return category switch
             {
@@ -853,9 +865,6 @@ public sealed partial class SingleFileTab
 
     private void ResetWorldMap()
     {
-        WorldMapTab.IsEnabled = false;
-        _worldMapPopulated = false;
-        _worldViewData = null;
         _selectedWorldCell = null;
         ViewInMapButton.Visibility = Visibility.Collapsed;
         WorldMapPlaceholder.Visibility = Visibility.Visible;

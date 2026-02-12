@@ -1,5 +1,4 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 

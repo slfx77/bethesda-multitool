@@ -49,9 +49,20 @@ internal static class ObjectBoundsIndex
         }
 
         // Category-only (no bounds data)
-        foreach (var r in records.Npcs) { categories.TryAdd(r.FormId, PlacedObjectCategory.Npc); }
-        foreach (var r in records.Creatures) { categories.TryAdd(r.FormId, PlacedObjectCategory.Creature); }
-        foreach (var r in records.Containers) { categories.TryAdd(r.FormId, PlacedObjectCategory.Container); }
+        foreach (var r in records.Npcs)
+        {
+            categories.TryAdd(r.FormId, PlacedObjectCategory.Npc);
+        }
+
+        foreach (var r in records.Creatures)
+        {
+            categories.TryAdd(r.FormId, PlacedObjectCategory.Creature);
+        }
+
+        foreach (var r in records.Containers)
+        {
+            categories.TryAdd(r.FormId, PlacedObjectCategory.Container);
+        }
 
         return (bounds, categories);
     }

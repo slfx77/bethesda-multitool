@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using FalloutXbox360Utils.Core.Formats.Esm;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 

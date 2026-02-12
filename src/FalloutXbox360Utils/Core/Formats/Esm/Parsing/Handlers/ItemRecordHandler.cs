@@ -1,0 +1,1411 @@
+using System.Buffers;
+using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Utils;
+
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+
+internal sealed class ItemRecordHandler(RecordParserContext context)
+{
+    private readonly RecordParserContext _context = context;
+
+    #region ReconstructKeys
+
+    /// <summary>
+    ///     Reconstruct all Key records from the scan result.
+    /// </summary>
+    internal List<KeyRecord> ReconstructKeys()
+    {
+        var keys = new List<KeyRecord>();
+        var keyRecords = _context.GetRecordsByType("KEYM").ToList();
+
+        foreach (var record in keyRecords)
+        {
+            keys.Add(new KeyRecord
+            {
+                FormId = record.FormId,
+                EditorId = _context.GetEditorId(record.FormId),
+                FullName = _context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+        }
+
+        // Merge keys from runtime struct reading
+        if (_context.RuntimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(keys.Select(k => k.FormId));
+            var runtimeCount = 0;
+            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x2E || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _context.RuntimeReader.ReadRuntimeKey(entry);
+                if (item != null)
+                {
+                    keys.Add(item);
+                    runtimeCount++;
+                }
+            }
+        }
+
+        return keys;
+    }
+
+    #endregion
+
+    #region ReconstructWeapons
+
+    /// <summary>
+    ///     Reconstruct all Weapon records from the scan result.
+    ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
+    ///     for records not found as raw ESM data (typically hundreds of weapons vs ~34 ESM records).
+    /// </summary>
+    internal List<WeaponRecord> ReconstructWeapons()
+    {
+        var weapons = new List<WeaponRecord>();
+        var weaponRecords = _context.GetRecordsByType("WEAP").ToList();
+
+        // Track FormIDs from ESM records to avoid duplicates
+        var esmFormIds = new HashSet<uint>();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in weaponRecords)
+            {
+                var weapon = new WeaponRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    FullName = _context.FindFullNameNear(record.Offset),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                };
+                weapons.Add(weapon);
+                esmFormIds.Add(weapon.FormId);
+            }
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(4096);
+            try
+            {
+                foreach (var record in weaponRecords)
+                {
+                    var weapon = ReconstructWeaponFromAccessor(record, buffer);
+                    if (weapon != null)
+                    {
+                        weapons.Add(weapon);
+                        esmFormIds.Add(weapon.FormId);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge weapons from runtime struct reading (hash table entries not found as ESM records)
+        if (_context.RuntimeReader != null)
+        {
+            var runtimeCount = 0;
+            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x28 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var weapon = _context.RuntimeReader.ReadRuntimeWeapon(entry);
+                if (weapon != null)
+                {
+                    weapons.Add(weapon);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} weapons from runtime struct reading " +
+                    $"(total: {weapons.Count}, ESM: {esmFormIds.Count})");
+            }
+        }
+
+        return weapons;
+    }
+
+    private WeaponRecord? ReconstructWeaponFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = _context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new WeaponRecord
+            {
+                FormId = record.FormId,
+                EditorId = _context.GetEditorId(record.FormId),
+                FullName = _context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+
+        // DATA subrecord (15 bytes)
+        var value = 0;
+        var health = 0;
+        float weight = 0;
+        short damage = 0;
+        byte clipSize = 0;
+
+        // DNAM subrecord (204 bytes)
+        WeaponType weaponType = 0;
+        uint animationType = 0;
+        var speed = 1.0f;
+        float reach = 0;
+        byte flags = 0;
+        var handGrip = HandGripAnimation.Default;
+        byte ammoPerShot = 1;
+        var reloadAnim = ReloadAnimation.ReloadA;
+        float minSpread = 0;
+        float spread = 0;
+        float drift = 0;
+        float ironSightFov = 0;
+        uint? ammoFormId = null;
+        uint? projectileFormId = null;
+        byte vatsToHitChance = 0;
+        var attackAnim = AttackAnimation.Default;
+        byte numProjectiles = 1;
+        float minRange = 0;
+        float maxRange = 0;
+        var onHit = OnHitBehavior.Normal;
+        uint flagsEx = 0;
+        float attackMultiplier = 1;
+        float shotsPerSec = 1;
+        float actionPoints = 0;
+        float aimArc = 0;
+        float limbDamageMult = 1;
+        uint strengthRequirement = 0;
+        uint skillRequirement = 0;
+        var equipmentType = EquipmentType.None;
+
+        // CRDT subrecord
+        short criticalDamage = 0;
+        var criticalChance = 1.0f;
+        uint? criticalEffectFormId = null;
+
+        // Sound subrecords
+        uint? pickupSoundFormId = null;
+        uint? putdownSoundFormId = null;
+        uint? fireSound3DFormId = null;
+        uint? fireSoundDistFormId = null;
+        uint? fireSound2DFormId = null;
+        uint? dryFireSoundFormId = null;
+        uint? idleSoundFormId = null;
+        uint? equipSoundFormId = null;
+        uint? unequipSoundFormId = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "ENAM" when sub.DataLength == 4:
+                    ammoFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 15:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "WEAP", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        value = SubrecordDataReader.GetInt32(fields, "Value");
+                        health = SubrecordDataReader.GetInt32(fields, "Health");
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                        damage = SubrecordDataReader.GetInt16(fields, "Damage");
+                        clipSize = SubrecordDataReader.GetByte(fields, "ClipSize");
+                    }
+
+                    break;
+                }
+                case "DNAM" when sub.DataLength >= 64:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DNAM", "WEAP", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        var wt = SubrecordDataReader.GetByte(fields, "WeaponType");
+                        animationType = wt;
+                        weaponType = (WeaponType)(wt <= 11 ? wt : 0);
+                        speed = SubrecordDataReader.GetFloat(fields, "Speed");
+                        reach = SubrecordDataReader.GetFloat(fields, "Reach");
+                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                        var grip = SubrecordDataReader.GetByte(fields, "HandGripAnim");
+                        handGrip = Enum.IsDefined(typeof(HandGripAnimation), grip)
+                            ? (HandGripAnimation)grip
+                            : HandGripAnimation.Default;
+                        ammoPerShot = SubrecordDataReader.GetByte(fields, "AmmoPerShot");
+                        var reload = SubrecordDataReader.GetByte(fields, "ReloadAnim");
+                        reloadAnim = reload <= 10
+                            ? (ReloadAnimation)reload
+                            : ReloadAnimation.ReloadA;
+                        minSpread = SubrecordDataReader.GetFloat(fields, "MinSpread");
+                        spread = SubrecordDataReader.GetFloat(fields, "Spread");
+                        drift = SubrecordDataReader.GetFloat(fields, "Drift");
+                        ironSightFov = SubrecordDataReader.GetFloat(fields, "IronFov");
+                        var projId = SubrecordDataReader.GetUInt32(fields, "Projectile");
+                        if (projId != 0)
+                        {
+                            projectileFormId = projId;
+                        }
+
+                        vatsToHitChance = SubrecordDataReader.GetByte(fields, "VatToHitChance");
+                        var attack = SubrecordDataReader.GetByte(fields, "AttackAnim");
+                        attackAnim = Enum.IsDefined(typeof(AttackAnimation), attack)
+                            ? (AttackAnimation)attack
+                            : AttackAnimation.Default;
+                        numProjectiles = SubrecordDataReader.GetByte(fields, "NumProjectiles");
+                        minRange = SubrecordDataReader.GetFloat(fields, "MinRange");
+                        maxRange = SubrecordDataReader.GetFloat(fields, "MaxRange");
+                        onHit = (OnHitBehavior)SubrecordDataReader.GetUInt32(fields, "HitBehavior");
+                        flagsEx = SubrecordDataReader.GetUInt32(fields, "FlagsEx");
+                        attackMultiplier = SubrecordDataReader.GetFloat(fields, "AttackMult");
+                        shotsPerSec = SubrecordDataReader.GetFloat(fields, "ShotsPerSec");
+                        actionPoints = SubrecordDataReader.GetFloat(fields, "ActionPoints");
+                        aimArc = SubrecordDataReader.GetFloat(fields, "AimArc");
+                        limbDamageMult = SubrecordDataReader.GetFloat(fields, "LimbDamageMult");
+                        strengthRequirement = SubrecordDataReader.GetUInt32(fields, "StrengthRequirement");
+                        skillRequirement = SubrecordDataReader.GetUInt32(fields, "SkillRequirement");
+                    }
+
+                    break;
+                }
+                case "ETYP" when sub.DataLength == 4:
+                {
+                    var etypValue = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    if (etypValue >= -1 && etypValue <= 13)
+                    {
+                        equipmentType = (EquipmentType)etypValue;
+                    }
+
+                    break;
+                }
+                case "CRDT" when sub.DataLength >= 16:
+                {
+                    var fields = SubrecordDataReader.ReadFields("CRDT", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        criticalDamage = SubrecordDataReader.GetInt16(fields, "CriticalDamage");
+                        criticalChance = SubrecordDataReader.GetFloat(fields, "CriticalChanceMult");
+                        criticalEffectFormId = SubrecordDataReader.GetUInt32(fields, "CriticalEffect");
+                    }
+
+                    break;
+                }
+                // Sound subrecords - each is a single FormID [SOUN]
+                case "YNAM" when sub.DataLength == 4:
+                    pickupSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength == 4:
+                    putdownSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SNAM" when sub.DataLength >= 4:
+                    // SNAM is paired: Shoot 3D FormID + Shoot Dist FormID (8 bytes)
+                    fireSound3DFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    if (sub.DataLength >= 8)
+                    {
+                        fireSoundDistFormId = RecordParserContext.ReadFormId(subData[4..], record.IsBigEndian);
+                    }
+
+                    break;
+                case "XNAM" when sub.DataLength == 4:
+                    fireSound2DFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "TNAM" when sub.DataLength == 4:
+                    dryFireSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "UNAM" when sub.DataLength == 4:
+                    idleSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "NAM9" when sub.DataLength == 4:
+                    equipSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "NAM8" when sub.DataLength == 4:
+                    unequipSoundFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new WeaponRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Value = value,
+            Health = health,
+            Weight = weight,
+            Damage = damage,
+            ClipSize = clipSize,
+            WeaponType = weaponType,
+            AnimationType = animationType,
+            Speed = speed,
+            Reach = reach,
+            Flags = flags,
+            HandGrip = handGrip,
+            AmmoPerShot = ammoPerShot,
+            ReloadAnim = reloadAnim,
+            MinSpread = minSpread,
+            Spread = spread,
+            Drift = drift,
+            IronSightFov = ironSightFov,
+            AmmoFormId = ammoFormId,
+            ProjectileFormId = projectileFormId,
+            VatsToHitChance = vatsToHitChance,
+            AttackAnim = attackAnim,
+            NumProjectiles = numProjectiles,
+            MinRange = minRange,
+            MaxRange = maxRange,
+            OnHit = onHit,
+            FlagsEx = flagsEx,
+            AttackMultiplier = attackMultiplier,
+            ShotsPerSec = shotsPerSec,
+            ActionPoints = actionPoints,
+            AimArc = aimArc,
+            LimbDamageMult = limbDamageMult,
+            StrengthRequirement = strengthRequirement,
+            SkillRequirement = skillRequirement,
+            EquipmentType = equipmentType,
+            CriticalDamage = criticalDamage,
+            CriticalChance = criticalChance,
+            CriticalEffectFormId = criticalEffectFormId,
+            PickupSoundFormId = pickupSoundFormId,
+            PutdownSoundFormId = putdownSoundFormId,
+            FireSound3DFormId = fireSound3DFormId,
+            FireSoundDistFormId = fireSoundDistFormId,
+            FireSound2DFormId = fireSound2DFormId,
+            DryFireSoundFormId = dryFireSoundFormId,
+            IdleSoundFormId = idleSoundFormId,
+            EquipSoundFormId = equipSoundFormId,
+            UnequipSoundFormId = unequipSoundFormId,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    /// <summary>
+    ///     Enrich weapon records with projectile physics data (gravity, speed, range,
+    ///     explosion, in-flight sounds) read from the BGSProjectile runtime struct.
+    /// </summary>
+    internal void EnrichWeaponsWithProjectileData(List<WeaponRecord> weapons)
+    {
+        if (_context.RuntimeReader == null || weapons.Count == 0)
+        {
+            return;
+        }
+
+        // Build: projectile FormID -> TesFormOffset (from runtime EditorID hash table)
+        var projectileEntries = new Dictionary<uint, RuntimeEditorIdEntry>();
+        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
+            {
+                projectileEntries.TryAdd(entry.FormId, entry);
+            }
+        }
+
+        if (projectileEntries.Count == 0)
+        {
+            return;
+        }
+
+        var enrichedCount = 0;
+        for (var i = 0; i < weapons.Count; i++)
+        {
+            var weapon = weapons[i];
+            if (!weapon.ProjectileFormId.HasValue)
+            {
+                continue;
+            }
+
+            if (!projectileEntries.TryGetValue(weapon.ProjectileFormId.Value, out var projEntry))
+            {
+                continue;
+            }
+
+            var projData = _context.RuntimeReader.ReadProjectilePhysics(
+                projEntry.TesFormOffset!.Value, projEntry.FormId);
+
+            if (projData != null)
+            {
+                weapons[i] = weapon with { ProjectileData = projData };
+                enrichedCount++;
+            }
+        }
+
+        if (enrichedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Enriched {enrichedCount}/{weapons.Count} weapons with projectile physics " +
+                $"({projectileEntries.Count} projectiles in hash table)");
+        }
+    }
+
+    #endregion
+
+    #region ReconstructArmor
+
+    /// <summary>
+    ///     Reconstruct all Armor records from the scan result.
+    /// </summary>
+    internal List<ArmorRecord> ReconstructArmor()
+    {
+        var armor = new List<ArmorRecord>();
+        var armorRecords = _context.GetRecordsByType("ARMO").ToList();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in armorRecords)
+            {
+                armor.Add(new ArmorRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    FullName = _context.FindFullNameNear(record.Offset),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(4096);
+            try
+            {
+                foreach (var record in armorRecords)
+                {
+                    var item = ReconstructArmorFromAccessor(record, buffer);
+                    if (item != null)
+                    {
+                        armor.Add(item);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge armor from runtime struct reading (hash table entries not found as ESM records)
+        if (_context.RuntimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(armor.Select(a => a.FormId));
+            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x18 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _context.RuntimeReader.ReadRuntimeArmor(entry);
+                if (item != null)
+                {
+                    armor.Add(item);
+                }
+            }
+        }
+
+        return armor;
+    }
+
+    private ArmorRecord? ReconstructArmorFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = _context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new ArmorRecord
+            {
+                FormId = record.FormId,
+                EditorId = _context.GetEditorId(record.FormId),
+                FullName = _context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        var value = 0;
+        var health = 0;
+        float weight = 0;
+        float damageThreshold = 0;
+        var damageResistance = 0;
+        uint bipedFlags = 0;
+        byte generalFlags = 0;
+        var equipmentType = EquipmentType.None;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 12:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "ARMO", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        value = SubrecordDataReader.GetInt32(fields, "Value");
+                        health = SubrecordDataReader.GetInt32(fields, "Health");
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                    }
+
+                    break;
+                }
+                case "DNAM" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DNAM", "ARMO", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        damageResistance = SubrecordDataReader.GetInt16(fields, "DamageResistance");
+                        damageThreshold = SubrecordDataReader.GetFloat(fields, "DamageThreshold");
+                    }
+
+                    break;
+                }
+                case "BMDT" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("BMDT", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        bipedFlags = SubrecordDataReader.GetUInt32(fields, "BipedFlags");
+                        generalFlags = SubrecordDataReader.GetByte(fields, "GeneralFlags");
+                    }
+
+                    break;
+                }
+                case "ETYP" when sub.DataLength == 4:
+                {
+                    var etypValue = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    if (etypValue >= -1 && etypValue <= 13)
+                    {
+                        equipmentType = (EquipmentType)etypValue;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new ArmorRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Value = value,
+            Health = health,
+            Weight = weight,
+            DamageThreshold = damageThreshold,
+            DamageResistance = damageResistance,
+            BipedFlags = bipedFlags,
+            GeneralFlags = generalFlags,
+            EquipmentType = equipmentType,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region ReconstructAmmo
+
+    /// <summary>
+    ///     Reconstruct all Ammo records from the scan result.
+    /// </summary>
+    internal List<AmmoRecord> ReconstructAmmo()
+    {
+        var ammo = new List<AmmoRecord>();
+        var ammoRecords = _context.GetRecordsByType("AMMO").ToList();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in ammoRecords)
+            {
+                ammo.Add(new AmmoRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    FullName = _context.FindFullNameNear(record.Offset),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(4096);
+            try
+            {
+                foreach (var record in ammoRecords)
+                {
+                    var item = ReconstructAmmoFromAccessor(record, buffer);
+                    if (item != null)
+                    {
+                        ammo.Add(item);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge ammo from runtime struct reading (hash table entries not found as ESM records)
+        if (_context.RuntimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(ammo.Select(a => a.FormId));
+            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x29 || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _context.RuntimeReader.ReadRuntimeAmmo(entry);
+                if (item != null)
+                {
+                    ammo.Add(item);
+                }
+            }
+        }
+
+        return ammo;
+    }
+
+    private AmmoRecord? ReconstructAmmoFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = _context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new AmmoRecord
+            {
+                FormId = record.FormId,
+                EditorId = _context.GetEditorId(record.FormId),
+                FullName = _context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        float speed = 0;
+        byte flags = 0;
+        uint value = 0;
+        byte clipRounds = 0;
+        uint? projectileFormId = null;
+        float weight = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 13:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "AMMO", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        speed = SubrecordDataReader.GetFloat(fields, "Speed");
+                        flags = SubrecordDataReader.GetByte(fields, "Flags");
+                        value = SubrecordDataReader.GetUInt32(fields, "Value");
+                        clipRounds = SubrecordDataReader.GetByte(fields, "ClipRounds");
+                    }
+
+                    break;
+                }
+                case "DAT2" when sub.DataLength >= 8:
+                    // DAT2 layout: ProjectilePerShot (U32), Projectile FormID (U32), Weight (float), ...
+                    var projId = RecordParserContext.ReadFormId(subData[4..], record.IsBigEndian);
+                    if (projId != 0)
+                    {
+                        projectileFormId = projId;
+                    }
+
+                    if (sub.DataLength >= 12)
+                    {
+                        weight = record.IsBigEndian
+                            ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                            : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                    }
+
+                    break;
+            }
+        }
+
+        return new AmmoRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Speed = speed,
+            Flags = flags,
+            Value = value,
+            ClipRounds = clipRounds,
+            ProjectileFormId = projectileFormId,
+            Weight = weight,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    /// <summary>
+    ///     Cross-references weapons and ammo to populate ProjectileFormId and ProjectileModelPath
+    ///     on ammo records. Each weapon has an AmmoFormId and a ProjectileFormId. We reverse-map:
+    ///     ammo FormID -> weapon -> projectile FormID -> BGSProjectile model path at dump offset +80.
+    /// </summary>
+    internal void EnrichAmmoWithProjectileModels(
+        List<WeaponRecord> weapons,
+        List<AmmoRecord> ammo)
+    {
+        if (_context.RuntimeReader == null || ammo.Count == 0)
+        {
+            return;
+        }
+
+        // Build: ammo FormID -> projectile FormID (from weapons that reference both)
+        var ammoToProjectile = new Dictionary<uint, uint>();
+        foreach (var weapon in weapons)
+        {
+            if (weapon.AmmoFormId is > 0 && weapon.ProjectileFormId is > 0)
+            {
+                ammoToProjectile.TryAdd(weapon.AmmoFormId.Value, weapon.ProjectileFormId.Value);
+            }
+        }
+
+        if (ammoToProjectile.Count == 0)
+        {
+            return;
+        }
+
+        // Build: projectile FormID -> TesFormOffset (from runtime EditorID hash table)
+        // PROJ = FormType 0x33
+        var projectileOffsets = new Dictionary<uint, long>();
+        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
+            {
+                projectileOffsets.TryAdd(entry.FormId, entry.TesFormOffset.Value);
+            }
+        }
+
+        // Enrich each ammo record with projectile FormID and model path
+        var enrichedCount = 0;
+        for (var i = 0; i < ammo.Count; i++)
+        {
+            var a = ammo[i];
+            if (!ammoToProjectile.TryGetValue(a.FormId, out var projFormId))
+            {
+                continue;
+            }
+
+            string? projModelPath = null;
+            if (projectileOffsets.TryGetValue(projFormId, out var projFileOffset))
+            {
+                // Read model path BSStringT at dump offset +80 (TESModel.cModel in BGSProjectile)
+                projModelPath = _context.RuntimeReader.ReadBSStringT(projFileOffset, 80);
+            }
+
+            // Create updated record with projectile data
+            // (records are immutable, so we replace in the list)
+            ammo[i] = a with
+            {
+                ProjectileFormId = projFormId,
+                ProjectileModelPath = projModelPath
+            };
+            enrichedCount++;
+        }
+
+        if (enrichedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Enriched {enrichedCount}/{ammo.Count} ammo records with projectile data " +
+                $"({projectileOffsets.Count} projectiles in hash table)");
+        }
+    }
+
+    #endregion
+
+    #region ReconstructConsumables
+
+    /// <summary>
+    ///     Reconstruct all Consumable (ALCH) records from the scan result.
+    /// </summary>
+    internal List<ConsumableRecord> ReconstructConsumables()
+    {
+        var consumables = new List<ConsumableRecord>();
+        var alchRecords = _context.GetRecordsByType("ALCH").ToList();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in alchRecords)
+            {
+                consumables.Add(new ConsumableRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    FullName = _context.FindFullNameNear(record.Offset),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(4096);
+            try
+            {
+                foreach (var record in alchRecords)
+                {
+                    var item = ReconstructConsumableFromAccessor(record, buffer);
+                    if (item != null)
+                    {
+                        consumables.Add(item);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge consumables from runtime struct reading
+        if (_context.RuntimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(consumables.Select(c => c.FormId));
+            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x2F || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _context.RuntimeReader.ReadRuntimeConsumable(entry);
+                if (item != null)
+                {
+                    consumables.Add(item);
+                }
+            }
+        }
+
+        return consumables;
+    }
+
+    private ConsumableRecord? ReconstructConsumableFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = _context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new ConsumableRecord
+            {
+                FormId = record.FormId,
+                EditorId = _context.GetEditorId(record.FormId),
+                FullName = _context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        float weight = 0;
+        uint value = 0;
+        uint flags = 0;
+        uint? addictionFormId = null;
+        float addictionChance = 0;
+        uint? withdrawalEffectFormId = null;
+        var effectFormIds = new List<uint>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "ALCH", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                    }
+
+                    break;
+                }
+                case "ENIT" when sub.DataLength >= 16:
+                {
+                    var fields = SubrecordDataReader.ReadFields("ENIT", "ALCH", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        value = SubrecordDataReader.GetUInt32(fields, "Value");
+                        addictionFormId = SubrecordDataReader.GetUInt32(fields, "Addiction");
+                        addictionChance = SubrecordDataReader.GetFloat(fields, "AddictionChance");
+                    }
+
+                    // Flags are at bytes 4-7 (stored as raw Bytes in schema, read directly)
+                    if (sub.DataLength >= 8)
+                    {
+                        flags = record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                            : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    }
+
+                    // WithdrawalEffect/UseSound at bytes 16-19
+                    if (sub.DataLength >= 20)
+                    {
+                        var weFormId = RecordParserContext.ReadFormId(subData[16..], record.IsBigEndian);
+                        if (weFormId != 0)
+                        {
+                            withdrawalEffectFormId = weFormId;
+                        }
+                    }
+
+                    break;
+                }
+                case "EFID" when sub.DataLength == 4:
+                    effectFormIds.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                    break;
+            }
+        }
+
+        return new ConsumableRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Weight = weight,
+            Value = value,
+            Flags = flags,
+            AddictionFormId = addictionFormId != 0 ? addictionFormId : null,
+            AddictionChance = addictionChance,
+            WithdrawalEffectFormId = withdrawalEffectFormId,
+            EffectFormIds = effectFormIds,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region ReconstructMiscItems
+
+    /// <summary>
+    ///     Reconstruct all Misc Item records from the scan result.
+    /// </summary>
+    internal List<MiscItemRecord> ReconstructMiscItems()
+    {
+        var miscItems = new List<MiscItemRecord>();
+        var miscRecords = _context.GetRecordsByType("MISC").ToList();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in miscRecords)
+            {
+                miscItems.Add(new MiscItemRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    FullName = _context.FindFullNameNear(record.Offset),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(4096);
+            try
+            {
+                foreach (var record in miscRecords)
+                {
+                    var item = ReconstructMiscItemFromAccessor(record, buffer);
+                    if (item != null)
+                    {
+                        miscItems.Add(item);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge misc items from runtime struct reading
+        if (_context.RuntimeReader != null)
+        {
+            var esmFormIds = new HashSet<uint>(miscItems.Select(m => m.FormId));
+            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x1F || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var item = _context.RuntimeReader.ReadRuntimeMiscItem(entry);
+                if (item != null)
+                {
+                    miscItems.Add(item);
+                }
+            }
+        }
+
+        return miscItems;
+    }
+
+    private MiscItemRecord? ReconstructMiscItemFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = _context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new MiscItemRecord
+            {
+                FormId = record.FormId,
+                EditorId = _context.GetEditorId(record.FormId),
+                FullName = _context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        ObjectBounds? bounds = null;
+        var value = 0;
+        float weight = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "OBND" when sub.DataLength == 12:
+                    bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "MISC", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        value = SubrecordDataReader.GetInt32(fields, "Value");
+                        weight = SubrecordDataReader.GetFloat(fields, "Weight");
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new MiscItemRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Bounds = bounds,
+            Value = value,
+            Weight = weight,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region ReconstructContainers
+
+    /// <summary>
+    ///     Reconstruct all Container records from the scan result.
+    /// </summary>
+    internal List<ContainerRecord> ReconstructContainers()
+    {
+        var containers = new List<ContainerRecord>();
+        var containerRecords = _context.GetRecordsByType("CONT").ToList();
+
+        // Track FormIDs from ESM records to avoid duplicates when merging runtime data
+        var esmFormIds = new HashSet<uint>();
+
+        if (_context.Accessor == null)
+        {
+            // Without accessor, use basic reconstruction (no CNTO parsing)
+            foreach (var record in containerRecords)
+            {
+                containers.Add(new ContainerRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    FullName = _context.FindFullNameNear(record.Offset),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+                esmFormIds.Add(record.FormId);
+            }
+        }
+        else
+        {
+            // With accessor, read full record data for CNTO subrecord parsing
+            var buffer = ArrayPool<byte>.Shared.Rent(16384);
+            try
+            {
+                foreach (var record in containerRecords)
+                {
+                    var container = ReconstructContainerFromAccessor(record, buffer);
+                    if (container != null)
+                    {
+                        containers.Add(container);
+                        esmFormIds.Add(container.FormId);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Merge containers from runtime struct reading
+        if (_context.RuntimeReader != null)
+        {
+            // Enrich ESM containers with runtime contents (current game state)
+            var runtimeEnrichments = new Dictionary<uint, ContainerRecord>();
+            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x1B || !esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var rtc = _context.RuntimeReader.ReadRuntimeContainer(entry);
+                if (rtc != null && rtc.Contents.Count > 0)
+                {
+                    runtimeEnrichments[entry.FormId] = rtc;
+                }
+            }
+
+            if (runtimeEnrichments.Count > 0)
+            {
+                for (var i = 0; i < containers.Count; i++)
+                {
+                    if (runtimeEnrichments.TryGetValue(containers[i].FormId, out var rtc))
+                    {
+                        containers[i] = containers[i] with
+                        {
+                            Contents = rtc.Contents,
+                            Flags = rtc.Flags,
+                            ModelPath = containers[i].ModelPath ?? rtc.ModelPath,
+                            Script = containers[i].Script ?? rtc.Script
+                        };
+                    }
+                }
+
+                Logger.Instance.Debug(
+                    $"  [Semantic] Enriched {runtimeEnrichments.Count} ESM containers with runtime contents");
+            }
+
+            // Add runtime-only containers (not in ESM)
+            var runtimeCount = 0;
+            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
+            {
+                if (entry.FormType != 0x1B || esmFormIds.Contains(entry.FormId))
+                {
+                    continue;
+                }
+
+                var container = _context.RuntimeReader.ReadRuntimeContainer(entry);
+                if (container != null)
+                {
+                    containers.Add(container);
+                    runtimeCount++;
+                }
+            }
+
+            if (runtimeCount > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Added {runtimeCount} containers from runtime struct reading " +
+                    $"(total: {containers.Count}, ESM: {esmFormIds.Count})");
+            }
+        }
+
+        return containers;
+    }
+
+    private ContainerRecord? ReconstructContainerFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = _context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new ContainerRecord
+            {
+                FormId = record.FormId,
+                EditorId = _context.GetEditorId(record.FormId),
+                FullName = _context.FindFullNameNear(record.Offset),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        string? modelPath = null;
+        uint? script = null;
+        var contents = new List<InventoryItem>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "CNTO" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("CNTO", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        var itemFormId = SubrecordDataReader.GetUInt32(fields, "Item");
+                        var count = SubrecordDataReader.GetInt32(fields, "Count");
+                        contents.Add(new InventoryItem(itemFormId, count));
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new ContainerRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? _context.GetEditorId(record.FormId),
+            FullName = fullName,
+            ModelPath = modelPath,
+            Script = script,
+            Contents = contents,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+}

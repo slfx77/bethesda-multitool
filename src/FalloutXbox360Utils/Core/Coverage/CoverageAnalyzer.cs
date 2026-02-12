@@ -93,7 +93,7 @@ public static class CoverageAnalyzer
         }
 
         // Enumerate PE sections from the module
-        var peSections = EsmRecordFormat.EnumeratePeSections(accessor, result.FileSize, minidump, gameModule);
+        var peSections = EsmEditorIdExtractor.EnumeratePeSections(accessor, result.FileSize, minidump, gameModule);
         if (peSections == null || peSections.Count == 0)
         {
             Console.WriteLine("[PDB] Could not enumerate PE sections from game module");

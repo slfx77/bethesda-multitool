@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Ddx;
@@ -90,7 +89,7 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
     {
         var saveAtlas = options?.TryGetValue("saveAtlas", out var saveAtlasObj) == true && saveAtlasObj is true;
-        _converter = new DdxSubprocessConverter(verbose, saveAtlas: saveAtlas);
+        _converter = new DdxSubprocessConverter(verbose, saveAtlas);
         return true;
     }
 

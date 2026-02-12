@@ -11,149 +11,10 @@ using Microsoft.UI.Xaml.Controls;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// Analysis methods: RunAnalysis*, ProcessPhase*, analysis orchestration
+///     Analysis methods: RunAnalysis*, ProcessPhase*, analysis orchestration
 /// </summary>
 public sealed partial class SingleFileTab
 {
-    #region Semantic Reconstruction
-
-    /// <summary>
-    ///     Starts semantic reconstruction on a background thread immediately after analysis.
-    ///     Progress updates are dispatched to the UI thread. The task is stored in
-    ///     <see cref="_semanticReconstructionTask"/> so any sub-tab can await it.
-    /// </summary>
-    private void StartSemanticReconstructionInBackground()
-    {
-        if (_session.SemanticResult != null) return;
-        if (!_session.HasEsmRecords || !_session.HasAccessor) return;
-
-        var result = _session.AnalysisResult!;
-        var accessor = _session.Accessor!;
-        var fileSize = _session.FileSize;
-
-        var progress = new Progress<(int percent, string phase)>(p =>
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                _reconstructionProgressHandler?.Invoke(p.percent, p.phase);
-                StatusTextBlock.Text = p.phase;
-            }));
-
-        _semanticReconstructionTask = Task.Run(() =>
-        {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            var reconstructor = new RecordParser(
-                result.EsmRecords!,
-                result.FormIdMap,
-                accessor,
-                fileSize,
-                result.MinidumpInfo);
-            var records = reconstructor.ReconstructAll(progress);
-            sw.Stop();
-            Logger.Instance.Info($"[Semantic Reconstruction] Wall-clock: {sw.Elapsed}");
-            return records;
-        });
-    }
-
-    /// <summary>
-    ///     Ensures semantic reconstruction is complete before proceeding.
-    ///     If reconstruction is already running in the background, awaits it.
-    ///     If already complete, returns immediately.
-    ///     Callers should set up _reconstructionProgressHandler and their own progress bar
-    ///     before calling this method.
-    /// </summary>
-    private async Task EnsureSemanticReconstructionAsync()
-    {
-        if (_session.SemanticResult != null) return;
-        if (_semanticReconstructionTask == null) return;
-
-        try
-        {
-            _session.SemanticResult = await _semanticReconstructionTask;
-
-            if (_session.SemanticResult != null)
-            {
-                StatusTextBlock.Text = Strings.Status_ReconstructedRecords(_session.SemanticResult.TotalRecordsReconstructed);
-            }
-        }
-        catch (Exception ex)
-        {
-            await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
-                $"{ex.GetType().Name}: {ex.Message}", true);
-        }
-    }
-
-    private async Task PopulateDataBrowserAsync()
-    {
-        if (_session.SemanticResult == null) return;
-
-        ReconstructProgressBar.Visibility = Visibility.Visible;
-        ReconstructProgressBar.IsIndeterminate = true;
-        ReconstructStatusText.Text = Strings.Status_BuildingDataBrowserTree;
-        StatusTextBlock.Text = Strings.Status_BuildingDataBrowserTree;
-
-        try
-        {
-            var semanticResult = _session.SemanticResult;
-            var lookup = _session.AnalysisResult?.FormIdMap;
-
-            // Progress callback for status updates
-            var progress = new Progress<string>(status =>
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    ReconstructStatusText.Text = status;
-                    StatusTextBlock.Text = status;
-                }));
-
-            // Build tree on background thread (fast - just category nodes)
-            var tree = await Task.Run(() =>
-            {
-                ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
-                var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, lookup);
-
-                ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
-                // Apply default sort (By Name) after building
-                EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
-
-                return builtTree;
-            });
-
-            _esmBrowserTree = tree;
-            _flatListBuilt = false;
-
-            StatusTextBlock.Text = Strings.Status_BuildingTreeView;
-
-            // Add category nodes to tree with chevrons (must be on UI thread)
-            EsmTreeView.RootNodes.Clear();
-            foreach (var node in _esmBrowserTree)
-            {
-                // Always show chevron for categories (they always have children)
-                var treeNode = new TreeViewNode { Content = node, HasUnrealizedChildren = true };
-                EsmTreeView.RootNodes.Add(treeNode);
-            }
-
-            DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
-            DataBrowserContent.Visibility = Visibility.Visible;
-            StatusTextBlock.Text = "Data browser ready. Building navigation index...";
-
-            // Pre-build FormID navigation index in the background (avoids delay on first link click)
-            // Tracked via _formIdBuildTask so NavigateToFormId can await it if needed
-            _formIdBuildTask = Task.Run(() =>
-            {
-                BuildFormIdNodeIndex();
-                DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = "");
-            });
-        }
-        finally
-        {
-            ReconstructProgressBar.Visibility = Visibility.Collapsed;
-            ReconstructProgressBar.IsIndeterminate = false;
-            ReconstructStatusText.Text = "";
-            StatusTextBlock.Text = "";
-        }
-    }
-
-    #endregion
-
     #region Dependency Checking
 
     private async Task CheckDependenciesAsync()
@@ -254,6 +115,146 @@ public sealed partial class SingleFileTab
             ExtractButton.IsEnabled = true;
             AnalysisProgressBar.Visibility = Visibility.Collapsed;
             AnalysisProgressBar.IsIndeterminate = true;
+        }
+    }
+
+    #endregion
+
+    #region Semantic Reconstruction
+
+    /// <summary>
+    ///     Starts semantic reconstruction on a background thread immediately after analysis.
+    ///     Progress updates are dispatched to the UI thread. The task is stored in
+    ///     <see cref="_semanticReconstructionTask" /> so any sub-tab can await it.
+    /// </summary>
+    private void StartSemanticReconstructionInBackground()
+    {
+        if (_session.SemanticResult != null) return;
+        if (!_session.HasEsmRecords || !_session.HasAccessor) return;
+
+        var result = _session.AnalysisResult!;
+        var accessor = _session.Accessor!;
+        var fileSize = _session.FileSize;
+
+        var progress = new Progress<(int percent, string phase)>(p =>
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                _reconstructionProgressHandler?.Invoke(p.percent, p.phase);
+                StatusTextBlock.Text = p.phase;
+            }));
+
+        _semanticReconstructionTask = Task.Run(() =>
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var reconstructor = new RecordParser(
+                result.EsmRecords!,
+                result.FormIdMap,
+                accessor,
+                fileSize,
+                result.MinidumpInfo);
+            var records = reconstructor.ReconstructAll(progress);
+            sw.Stop();
+            Logger.Instance.Info($"[Semantic Reconstruction] Wall-clock: {sw.Elapsed}");
+            return records;
+        });
+    }
+
+    /// <summary>
+    ///     Ensures semantic reconstruction is complete before proceeding.
+    ///     If reconstruction is already running in the background, awaits it.
+    ///     If already complete, returns immediately.
+    ///     Callers should set up _reconstructionProgressHandler and their own progress bar
+    ///     before calling this method.
+    /// </summary>
+    private async Task EnsureSemanticReconstructionAsync()
+    {
+        if (_session.SemanticResult != null) return;
+        if (_semanticReconstructionTask == null) return;
+
+        try
+        {
+            _session.SemanticResult = await _semanticReconstructionTask;
+
+            if (_session.SemanticResult != null)
+            {
+                StatusTextBlock.Text =
+                    Strings.Status_ReconstructedRecords(_session.SemanticResult.TotalRecordsReconstructed);
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
+                $"{ex.GetType().Name}: {ex.Message}", true);
+        }
+    }
+
+    private async Task PopulateDataBrowserAsync()
+    {
+        if (_session.SemanticResult == null) return;
+
+        ReconstructProgressBar.Visibility = Visibility.Visible;
+        ReconstructProgressBar.IsIndeterminate = true;
+        ReconstructStatusText.Text = Strings.Status_BuildingDataBrowserTree;
+        StatusTextBlock.Text = Strings.Status_BuildingDataBrowserTree;
+
+        try
+        {
+            var semanticResult = _session.SemanticResult;
+            var lookup = _session.AnalysisResult?.FormIdMap;
+
+            // Progress callback for status updates
+            var progress = new Progress<string>(status =>
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    ReconstructStatusText.Text = status;
+                    StatusTextBlock.Text = status;
+                }));
+
+            // Build tree on background thread (fast - just category nodes)
+            var tree = await Task.Run(() =>
+            {
+                ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
+                var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, lookup);
+
+                ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
+                // Apply default sort (By Name) after building
+                EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
+
+                return builtTree;
+            });
+
+            _esmBrowserTree = tree;
+            _flatListBuilt = false;
+
+            StatusTextBlock.Text = Strings.Status_BuildingTreeView;
+
+            // Add category nodes to tree with chevrons (must be on UI thread)
+            EsmTreeView.RootNodes.Clear();
+            foreach (var node in _esmBrowserTree)
+            {
+                // Always show chevron for categories (they always have children)
+                var treeNode = new TreeViewNode { Content = node, HasUnrealizedChildren = true };
+                EsmTreeView.RootNodes.Add(treeNode);
+            }
+
+            DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
+            DataBrowserContent.Visibility = Visibility.Visible;
+            StatusTextBlock.Text = "Data browser ready. Building navigation index...";
+
+            // Pre-build FormID navigation index in the background (avoids delay on first link click)
+            // Tracked via _formIdBuildTask so NavigateToFormId can await it if needed
+            _formIdBuildTask = Task.Run(() =>
+            {
+                BuildFormIdNodeIndex();
+                DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = "");
+            });
+        }
+        finally
+        {
+            ReconstructProgressBar.Visibility = Visibility.Collapsed;
+            ReconstructProgressBar.IsIndeterminate = false;
+            ReconstructStatusText.Text = "";
+            StatusTextBlock.Text = "";
         }
     }
 

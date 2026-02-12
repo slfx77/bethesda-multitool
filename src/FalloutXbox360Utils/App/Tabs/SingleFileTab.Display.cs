@@ -10,7 +10,7 @@ using Windows.UI.Text;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// Display methods: Update*, Build*, Show*, PopulateTreeView, UI updates
+///     Display methods: Update*, Build*, Show*, PopulateTreeView, UI updates
 /// </summary>
 public sealed partial class SingleFileTab
 {
@@ -23,7 +23,7 @@ public sealed partial class SingleFileTab
         // animations override Foreground on the control itself, but don't affect child local values.
         var linkColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(
             ActualTheme == ElementTheme.Light
-                ? Windows.UI.Color.FromArgb(0xFF, 0x00, 0x66, 0xCC)  // Dark blue for light mode
+                ? Windows.UI.Color.FromArgb(0xFF, 0x00, 0x66, 0xCC) // Dark blue for light mode
                 : Windows.UI.Color.FromArgb(0xFF, 0x75, 0xBE, 0xFF)); // Vivid sky blue for dark mode
         var link = new HyperlinkButton
         {
@@ -35,112 +35,11 @@ public sealed partial class SingleFileTab
                 FontFamily = monospace ? new Microsoft.UI.Xaml.Media.FontFamily("Consolas") : null,
                 Foreground = linkColor
             },
-            Padding = new Thickness(0),
+            Padding = new Thickness(0)
         };
         link.Click += (_, _) => NavigateToFormId(formId);
         return link;
     }
-
-    #region Button State Updates
-
-    private void UpdateButtonStates()
-    {
-        var valid = !string.IsNullOrEmpty(MinidumpPathTextBox.Text) && File.Exists(MinidumpPathTextBox.Text) &&
-                    FileTypeDetector.IsSupportedExtension(MinidumpPathTextBox.Text);
-        AnalyzeButton.IsEnabled = valid;
-        ExtractButton.IsEnabled = valid && _analysisResult != null && !string.IsNullOrEmpty(OutputPathTextBox.Text);
-    }
-
-    private void UpdateOutputPathFromInput(string inputPath)
-    {
-        var dir = Path.GetDirectoryName(inputPath) ?? "";
-        var name = Path.GetFileNameWithoutExtension(inputPath);
-        OutputPathTextBox.Text = Path.Combine(dir, $"{name}_extracted");
-    }
-
-    #endregion
-
-    #region Sort Icons
-
-    private void UpdateSortIcons()
-    {
-        OffsetSortIcon.Visibility = LengthSortIcon.Visibility =
-            TypeSortIcon.Visibility = FilenameSortIcon.Visibility = Visibility.Collapsed;
-        var icon = _sorter.CurrentColumn switch
-        {
-            CarvedFilesSorter.SortColumn.Offset => OffsetSortIcon,
-            CarvedFilesSorter.SortColumn.Length => LengthSortIcon,
-            CarvedFilesSorter.SortColumn.Type => TypeSortIcon,
-            CarvedFilesSorter.SortColumn.Filename => FilenameSortIcon,
-            _ => null
-        };
-        if (icon != null)
-        {
-            icon.Visibility = Visibility.Visible;
-            icon.Glyph = _sorter.IsAscending ? "\uE70E" : "\uE70D";
-        }
-    }
-
-    private void UpdateCoverageSortIcons()
-    {
-        CoverageIndexSortIcon.Visibility = CoverageOffsetSortIcon.Visibility =
-            CoverageSizeSortIcon.Visibility = CoverageClassSortIcon.Visibility = Visibility.Collapsed;
-
-        var icon = _coverageGapSortColumn switch
-        {
-            CoverageGapSortColumn.Index => CoverageIndexSortIcon,
-            CoverageGapSortColumn.Offset => CoverageOffsetSortIcon,
-            CoverageGapSortColumn.Size => CoverageSizeSortIcon,
-            CoverageGapSortColumn.Classification => CoverageClassSortIcon,
-            _ => null
-        };
-
-        if (icon != null)
-        {
-            icon.Visibility = Visibility.Visible;
-            icon.Glyph = _coverageGapSortAscending ? "\uE70E" : "\uE70D";
-        }
-    }
-
-    #endregion
-
-    #region List Refresh
-
-    private void RefreshSortedList()
-    {
-        var selectedItem = ResultsListView.SelectedItem as CarvedFileEntry;
-        var sorted = _sorter.Sort(_allCarvedFiles);
-        _carvedFiles.Clear();
-        foreach (var f in sorted) _carvedFiles.Add(f);
-        if (selectedItem != null && _carvedFiles.Contains(selectedItem))
-        {
-            ResultsListView.SelectedItem = selectedItem;
-            ResultsListView.ScrollIntoView(selectedItem, ScrollIntoViewAlignment.Leading);
-        }
-    }
-
-    private void RefreshCoverageGapList()
-    {
-        IEnumerable<CoverageGapEntry> sorted = _coverageGapSortColumn switch
-        {
-            CoverageGapSortColumn.Offset => _coverageGapSortAscending
-                ? _allCoverageGapEntries.OrderBy(g => g.RawFileOffset)
-                : _allCoverageGapEntries.OrderByDescending(g => g.RawFileOffset),
-            CoverageGapSortColumn.Size => _coverageGapSortAscending
-                ? _allCoverageGapEntries.OrderBy(g => g.RawSize)
-                : _allCoverageGapEntries.OrderByDescending(g => g.RawSize),
-            CoverageGapSortColumn.Classification => _coverageGapSortAscending
-                ? _allCoverageGapEntries.OrderBy(g => g.Classification, StringComparer.OrdinalIgnoreCase)
-                : _allCoverageGapEntries.OrderByDescending(g => g.Classification, StringComparer.OrdinalIgnoreCase),
-            _ => _coverageGapSortAscending
-                ? _allCoverageGapEntries.OrderBy(g => g.Index)
-                : _allCoverageGapEntries.OrderByDescending(g => g.Index)
-        };
-
-        CoverageGapListView.ItemsSource = new ObservableCollection<CoverageGapEntry>(sorted);
-    }
-
-    #endregion
 
     #region Coverage Tab
 
@@ -190,7 +89,8 @@ public sealed partial class SingleFileTab
                 var pct = totalGap > 0 ? entry.TotalBytes * 100.0 / totalGap : 0;
                 var displayName = FileTypeColors.GapDisplayNames.GetValueOrDefault(
                     entry.Classification, entry.Classification.ToString());
-                sb.Append($"{displayName + ":",-18}{entry.TotalBytes,15:N0} bytes  ({pct,5:F1}%)  - {entry.Count:N0} regions\n");
+                sb.Append(
+                    $"{displayName + ":",-18}{entry.TotalBytes,15:N0} bytes  ({pct,5:F1}%)  - {entry.Count:N0} regions\n");
             }
 
             classText = sb.ToString();
@@ -203,13 +103,13 @@ public sealed partial class SingleFileTab
         CoverageClassificationText.Text = classText;
 
         // Build full gap details list (no limit)
-        _allCoverageGapEntries = [];
+        _session.CoverageGaps = [];
         for (var i = 0; i < coverage.Gaps.Count; i++)
         {
             var gap = coverage.Gaps[i];
             var gapDisplayName = FileTypeColors.GapDisplayNames.GetValueOrDefault(
                 gap.Classification, gap.Classification.ToString());
-            _allCoverageGapEntries.Add(new CoverageGapEntry
+            _session.CoverageGaps.Add(new CoverageGapEntry
             {
                 Index = i + 1,
                 FileOffset = $"0x{gap.FileOffset:X8}",
@@ -225,200 +125,7 @@ public sealed partial class SingleFileTab
         _coverageGapSortAscending = true;
         RefreshCoverageGapList();
         CoverageGapListView.ItemTemplate = CreateCoverageGapItemTemplate();
-        _coveragePopulated = true;
-    }
-
-    #endregion
-
-    #region Coverage Tab Events
-
-    private void CoverageSortByIndex_Click(object sender, RoutedEventArgs e)
-    {
-        CycleCoverageSort(CoverageGapSortColumn.Index);
-    }
-
-    private void CoverageSortByOffset_Click(object sender, RoutedEventArgs e)
-    {
-        CycleCoverageSort(CoverageGapSortColumn.Offset);
-    }
-
-    private void CoverageSortBySize_Click(object sender, RoutedEventArgs e)
-    {
-        CycleCoverageSort(CoverageGapSortColumn.Size);
-    }
-
-    private void CoverageSortByClassification_Click(object sender, RoutedEventArgs e)
-    {
-        CycleCoverageSort(CoverageGapSortColumn.Classification);
-    }
-
-    private void CycleCoverageSort(CoverageGapSortColumn column)
-    {
-        if (_coverageGapSortColumn == column)
-        {
-            if (_coverageGapSortAscending)
-            {
-                _coverageGapSortAscending = false;
-            }
-            else
-            {
-                _coverageGapSortColumn = CoverageGapSortColumn.Index;
-                _coverageGapSortAscending = true;
-            }
-        }
-        else
-        {
-            _coverageGapSortColumn = column;
-            _coverageGapSortAscending = true;
-        }
-
-        UpdateCoverageSortIcons();
-        RefreshCoverageGapList();
-    }
-
-    private void CoverageGapListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CoverageGapListView.SelectedItem is CoverageGapEntry gap)
-        {
-            SubTabView.SelectedIndex = 0; // Switch to Memory Map tab
-            HexViewer.NavigateToOffset(gap.RawFileOffset);
-        }
-    }
-
-    #endregion
-
-    #region Record Breakdown
-
-    private void PopulateRecordBreakdown()
-    {
-        if (_session.SemanticResult == null) return;
-
-        var r = _session.SemanticResult;
-        RecordBreakdownPanel.Children.Clear();
-
-        // Totals header — use "Parsed" for ESM files, "Reconstructed" for minidumps
-        var detailLabel = _session.IsEsmFile ? "Parsed" : "Reconstructed";
-        var totalsText = new TextBlock
-        {
-            Text = $"Total Records Processed: {r.TotalRecordsProcessed:N0}    {detailLabel}: {r.TotalRecordsReconstructed:N0}",
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 4)
-        };
-        RecordBreakdownPanel.Children.Add(totalsText);
-
-        // Define categories with their record types and counts
-        var categories = new (string Name, (string Label, int Count)[] Records)[]
-        {
-            ("Characters", [("NPCs", r.Npcs.Count), ("Creatures", r.Creatures.Count), ("Races", r.Races.Count), ("Factions", r.Factions.Count)]),
-            ("Quests & Dialogue", [("Quests", r.Quests.Count), ("Dialog Topics", r.DialogTopics.Count), ("Dialogue", r.Dialogues.Count), ("Notes", r.Notes.Count), ("Books", r.Books.Count), ("Terminals", r.Terminals.Count), ("Scripts", r.Scripts.Count)]),
-            ("Items", [("Weapons", r.Weapons.Count), ("Armor", r.Armor.Count), ("Ammo", r.Ammo.Count), ("Consumables", r.Consumables.Count), ("Misc Items", r.MiscItems.Count), ("Keys", r.Keys.Count), ("Containers", r.Containers.Count), ("Leveled Lists", r.LeveledLists.Count)]),
-            ("Abilities", [("Perks", r.Perks.Count), ("Spells", r.Spells.Count), ("Enchantments", r.Enchantments.Count), ("Base Effects", r.BaseEffects.Count)]),
-            ("World", [("Cells", r.Cells.Count), ("Worldspaces", r.Worldspaces.Count), ("Map Markers", r.MapMarkers.Count), ("Statics", r.Statics.Count), ("Doors", r.Doors.Count), ("Lights", r.Lights.Count), ("Furniture", r.Furniture.Count), ("Activators", r.Activators.Count)]),
-            ("Gameplay", [("Globals", r.Globals.Count), ("Game Settings", r.GameSettings.Count), ("Classes", r.Classes.Count), ("Challenges", r.Challenges.Count), ("Reputations", r.Reputations.Count), ("Messages", r.Messages.Count), ("Form Lists", r.FormLists.Count)]),
-            ("Crafting & Combat", [("Weapon Mods", r.WeaponMods.Count), ("Recipes", r.Recipes.Count), ("Projectiles", r.Projectiles.Count), ("Explosions", r.Explosions.Count)])
-        };
-
-        // Build a flowing grid: 3 columns of category cards
-        var columnsGrid = new Grid();
-        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16, GridUnitType.Pixel) });
-        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16, GridUnitType.Pixel) });
-        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        // Distribute categories across 3 columns (round-robin to balance heights)
-        var columnPanels = new StackPanel[3];
-        for (var c = 0; c < 3; c++)
-        {
-            columnPanels[c] = new StackPanel { Spacing = 12 };
-            Grid.SetColumn(columnPanels[c], c * 2); // columns 0, 2, 4 (gaps at 1, 3)
-            columnsGrid.Children.Add(columnPanels[c]);
-        }
-
-        for (var i = 0; i < categories.Length; i++)
-        {
-            var (name, records) = categories[i];
-            var card = BuildCategoryCard(name, records);
-            columnPanels[i % 3].Children.Add(card);
-        }
-
-        RecordBreakdownPanel.Children.Add(columnsGrid);
-
-        // Unreconstructed/unparsed record types
-        if (r.UnreconstructedTypeCounts.Count > 0)
-        {
-            var otherLabel = _session.IsEsmFile ? "Other (not parsed)" : "Other (not reconstructed)";
-            var otherRecords = r.UnreconstructedTypeCounts
-                .OrderByDescending(x => x.Value)
-                .Select(x => (x.Key, x.Value))
-                .ToArray();
-            var otherCard = BuildCategoryCard(otherLabel, otherRecords);
-            RecordBreakdownPanel.Children.Add(otherCard);
-        }
-
-        SummaryRecordPanel.Visibility = Visibility.Visible;
-        _recordBreakdownPopulated = true;
-    }
-
-    private static Border BuildCategoryCard(string title, (string Label, int Count)[] records)
-    {
-        var panel = new StackPanel { Spacing = 2 };
-
-        // Category header
-        panel.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 4)
-        });
-
-        // Record rows as a 2-column grid (label + count)
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        for (var i = 0; i < records.Length; i++)
-        {
-            var (label, count) = records[i];
-            if (count == 0) continue;
-
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var row = grid.RowDefinitions.Count - 1;
-
-            var labelText = new TextBlock
-            {
-                Text = label,
-                FontSize = 12,
-                Padding = new Thickness(0, 1, 8, 1)
-            };
-            Grid.SetRow(labelText, row);
-            Grid.SetColumn(labelText, 0);
-            grid.Children.Add(labelText);
-
-            var countText = new TextBlock
-            {
-                Text = count.ToString("N0"),
-                FontSize = 12,
-                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Padding = new Thickness(0, 1, 0, 1)
-            };
-            Grid.SetRow(countText, row);
-            Grid.SetColumn(countText, 1);
-            grid.Children.Add(countText);
-        }
-
-        panel.Children.Add(grid);
-
-        return new Border
-        {
-            Child = panel,
-            Padding = new Thickness(12),
-            CornerRadius = new CornerRadius(4),
-            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"]
-        };
+        _session.CoveragePopulated = true;
     }
 
     #endregion
@@ -467,69 +174,6 @@ public sealed partial class SingleFileTab
 
     #endregion
 
-    #region Reset/Initialize
-
-    private void ResetSubTabs()
-    {
-        _session.Dispose();
-        _semanticReconstructionTask = null;
-        _reconstructionProgressHandler = null;
-        SummaryTab.IsEnabled = false;
-        SummaryRecordPanel.Visibility = Visibility.Collapsed;
-        CoverageTab.IsEnabled = false;
-        DataBrowserTab.IsEnabled = false;
-        ReportsTab.IsEnabled = false;
-        _coveragePopulated = false;
-        _recordBreakdownPopulated = false;
-        _allCoverageGapEntries = [];
-        _reportEntries.Clear();
-        ReportPreviewTextBox.Text = "";
-        _reportLines = [];
-        _reportLineOffsets = [];
-        _reportFullContent = "";
-        ReportViewerScrollBar.Maximum = 0;
-        ReportViewerScrollBar.Value = 0;
-        _reportSearchMatches = [];
-        _reportSearchIndex = 0;
-        _reportSearchQuery = "";
-        DataBrowserPlaceholder.Visibility = Visibility.Visible;
-        DataBrowserContent.Visibility = Visibility.Collapsed;
-        ReconstructStatusText.Text = Strings.Empty_RunAnalysisForEsm;
-        EsmTreeView.RootNodes.Clear();
-        _flatListBuilt = false;
-        _esmBrowserTree = null;
-        _currentSearchQuery = "";
-        EsmSearchBox.Text = "";
-        PropertyPanel.Children.Clear();
-        SelectedRecordTitle.Text = Strings.Empty_SelectARecord;
-        GoToOffsetButton.Visibility = Visibility.Collapsed;
-        ResetNavigation();
-        ResetDialogueViewer();
-        ResetWorldMap();
-        ExportAllReportsButton.IsEnabled = false;
-        ExportSelectedReportButton.IsEnabled = false;
-    }
-
-    private void InitializeFileTypeCheckboxes()
-    {
-        FileTypeCheckboxPanel.Children.Clear();
-        _fileTypeCheckboxes.Clear();
-        foreach (var fileType in FileTypeMapping.DisplayNames)
-        {
-            var cb = new CheckBox { Content = fileType, IsChecked = true, Margin = new Thickness(0, 0, 8, 0) };
-            _fileTypeCheckboxes[fileType] = cb;
-            FileTypeCheckboxPanel.Children.Add(cb);
-        }
-    }
-
-    private void SetupTextBoxContextMenus()
-    {
-        TextBoxContextMenuHelper.AttachContextMenu(MinidumpPathTextBox);
-        TextBoxContextMenuHelper.AttachContextMenu(OutputPathTextBox);
-    }
-
-    #endregion
-
     #region Property Panel Building
 
     private void BuildPropertyPanel(List<EsmPropertyEntry> properties)
@@ -543,7 +187,8 @@ public sealed partial class SingleFileTab
         mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // name
         mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // value col1
         mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // value col2
-        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // value col3
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition
+            { Width = new GridLength(1, GridUnitType.Star) }); // value col3
 
         var currentRow = 0;
         var propertyRowIndex = 0; // For alternating row colors (excludes category headers)
@@ -565,7 +210,8 @@ public sealed partial class SingleFileTab
                 mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
                 // Add more visible background for category headers (distinct from row stripes)
-                var categoryBgBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.12 };
+                var categoryBgBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color)
+                    { Opacity = 0.12 };
                 var categoryBg = new Border { Background = categoryBgBrush };
                 Grid.SetRow(categoryBg, currentRow);
                 Grid.SetColumnSpan(categoryBg, 5); // Spans all 5 columns
@@ -647,7 +293,8 @@ public sealed partial class SingleFileTab
                 subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col1: EditorID
                 subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col2: FullName
                 subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col3: FormID
-                subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Col4: Qty
+                subItemsGrid.ColumnDefinitions.Add(
+                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Col4: Qty
 
                 var subRow = 0;
                 foreach (var sub in prop.SubItems)
@@ -809,6 +456,7 @@ public sealed partial class SingleFileTab
                         Grid.SetColumnSpan(valText, 2);
                         subItemsGrid.Children.Add(valText);
                     }
+
                     subRow++;
                 }
 
@@ -905,6 +553,390 @@ public sealed partial class SingleFileTab
         }
 
         PropertyPanel.Children.Add(mainGrid);
+    }
+
+    #endregion
+
+    #region Button State Updates
+
+    private void UpdateButtonStates()
+    {
+        var valid = !string.IsNullOrEmpty(MinidumpPathTextBox.Text) && File.Exists(MinidumpPathTextBox.Text) &&
+                    FileTypeDetector.IsSupportedExtension(MinidumpPathTextBox.Text);
+        AnalyzeButton.IsEnabled = valid;
+        ExtractButton.IsEnabled = valid && _analysisResult != null && !string.IsNullOrEmpty(OutputPathTextBox.Text);
+    }
+
+    private void UpdateOutputPathFromInput(string inputPath)
+    {
+        var dir = Path.GetDirectoryName(inputPath) ?? "";
+        var name = Path.GetFileNameWithoutExtension(inputPath);
+        OutputPathTextBox.Text = Path.Combine(dir, $"{name}_extracted");
+    }
+
+    #endregion
+
+    #region Sort Icons
+
+    private void UpdateSortIcons()
+    {
+        OffsetSortIcon.Visibility = LengthSortIcon.Visibility =
+            TypeSortIcon.Visibility = FilenameSortIcon.Visibility = Visibility.Collapsed;
+        var icon = _sorter.CurrentColumn switch
+        {
+            CarvedFilesSorter.SortColumn.Offset => OffsetSortIcon,
+            CarvedFilesSorter.SortColumn.Length => LengthSortIcon,
+            CarvedFilesSorter.SortColumn.Type => TypeSortIcon,
+            CarvedFilesSorter.SortColumn.Filename => FilenameSortIcon,
+            _ => null
+        };
+        if (icon != null)
+        {
+            icon.Visibility = Visibility.Visible;
+            icon.Glyph = _sorter.IsAscending ? "\uE70E" : "\uE70D";
+        }
+    }
+
+    private void UpdateCoverageSortIcons()
+    {
+        CoverageIndexSortIcon.Visibility = CoverageOffsetSortIcon.Visibility =
+            CoverageSizeSortIcon.Visibility = CoverageClassSortIcon.Visibility = Visibility.Collapsed;
+
+        var icon = _coverageGapSortColumn switch
+        {
+            CoverageGapSortColumn.Index => CoverageIndexSortIcon,
+            CoverageGapSortColumn.Offset => CoverageOffsetSortIcon,
+            CoverageGapSortColumn.Size => CoverageSizeSortIcon,
+            CoverageGapSortColumn.Classification => CoverageClassSortIcon,
+            _ => null
+        };
+
+        if (icon != null)
+        {
+            icon.Visibility = Visibility.Visible;
+            icon.Glyph = _coverageGapSortAscending ? "\uE70E" : "\uE70D";
+        }
+    }
+
+    #endregion
+
+    #region List Refresh
+
+    private void RefreshSortedList()
+    {
+        var selectedItem = ResultsListView.SelectedItem as CarvedFileEntry;
+        var sorted = _sorter.Sort(_allCarvedFiles);
+        _carvedFiles.Clear();
+        foreach (var f in sorted) _carvedFiles.Add(f);
+        if (selectedItem != null && _carvedFiles.Contains(selectedItem))
+        {
+            ResultsListView.SelectedItem = selectedItem;
+            ResultsListView.ScrollIntoView(selectedItem, ScrollIntoViewAlignment.Leading);
+        }
+    }
+
+    private void RefreshCoverageGapList()
+    {
+        IEnumerable<CoverageGapEntry> sorted = _coverageGapSortColumn switch
+        {
+            CoverageGapSortColumn.Offset => _coverageGapSortAscending
+                ? _session.CoverageGaps.OrderBy(g => g.RawFileOffset)
+                : _session.CoverageGaps.OrderByDescending(g => g.RawFileOffset),
+            CoverageGapSortColumn.Size => _coverageGapSortAscending
+                ? _session.CoverageGaps.OrderBy(g => g.RawSize)
+                : _session.CoverageGaps.OrderByDescending(g => g.RawSize),
+            CoverageGapSortColumn.Classification => _coverageGapSortAscending
+                ? _session.CoverageGaps.OrderBy(g => g.Classification, StringComparer.OrdinalIgnoreCase)
+                : _session.CoverageGaps.OrderByDescending(g => g.Classification, StringComparer.OrdinalIgnoreCase),
+            _ => _coverageGapSortAscending
+                ? _session.CoverageGaps.OrderBy(g => g.Index)
+                : _session.CoverageGaps.OrderByDescending(g => g.Index)
+        };
+
+        CoverageGapListView.ItemsSource = new ObservableCollection<CoverageGapEntry>(sorted);
+    }
+
+    #endregion
+
+    #region Coverage Tab Events
+
+    private void CoverageSortByIndex_Click(object sender, RoutedEventArgs e)
+    {
+        CycleCoverageSort(CoverageGapSortColumn.Index);
+    }
+
+    private void CoverageSortByOffset_Click(object sender, RoutedEventArgs e)
+    {
+        CycleCoverageSort(CoverageGapSortColumn.Offset);
+    }
+
+    private void CoverageSortBySize_Click(object sender, RoutedEventArgs e)
+    {
+        CycleCoverageSort(CoverageGapSortColumn.Size);
+    }
+
+    private void CoverageSortByClassification_Click(object sender, RoutedEventArgs e)
+    {
+        CycleCoverageSort(CoverageGapSortColumn.Classification);
+    }
+
+    private void CycleCoverageSort(CoverageGapSortColumn column)
+    {
+        if (_coverageGapSortColumn == column)
+        {
+            if (_coverageGapSortAscending)
+            {
+                _coverageGapSortAscending = false;
+            }
+            else
+            {
+                _coverageGapSortColumn = CoverageGapSortColumn.Index;
+                _coverageGapSortAscending = true;
+            }
+        }
+        else
+        {
+            _coverageGapSortColumn = column;
+            _coverageGapSortAscending = true;
+        }
+
+        UpdateCoverageSortIcons();
+        RefreshCoverageGapList();
+    }
+
+    private void CoverageGapListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CoverageGapListView.SelectedItem is CoverageGapEntry gap)
+        {
+            SubTabView.SelectedIndex = 0; // Switch to Memory Map tab
+            HexViewer.NavigateToOffset(gap.RawFileOffset);
+        }
+    }
+
+    #endregion
+
+    #region Record Breakdown
+
+    private void PopulateRecordBreakdown()
+    {
+        if (_session.SemanticResult == null) return;
+
+        var r = _session.SemanticResult;
+        RecordBreakdownPanel.Children.Clear();
+
+        // Totals header — use "Parsed" for ESM files, "Reconstructed" for minidumps
+        var detailLabel = _session.IsEsmFile ? "Parsed" : "Reconstructed";
+        var totalsText = new TextBlock
+        {
+            Text =
+                $"Total Records Processed: {r.TotalRecordsProcessed:N0}    {detailLabel}: {r.TotalRecordsReconstructed:N0}",
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        RecordBreakdownPanel.Children.Add(totalsText);
+
+        // Define categories with their record types and counts
+        var categories = new (string Name, (string Label, int Count)[] Records)[]
+        {
+            ("Characters",
+            [
+                ("NPCs", r.Npcs.Count), ("Creatures", r.Creatures.Count), ("Races", r.Races.Count),
+                ("Factions", r.Factions.Count)
+            ]),
+            ("Quests & Dialogue",
+            [
+                ("Quests", r.Quests.Count), ("Dialog Topics", r.DialogTopics.Count), ("Dialogue", r.Dialogues.Count),
+                ("Notes", r.Notes.Count), ("Books", r.Books.Count), ("Terminals", r.Terminals.Count),
+                ("Scripts", r.Scripts.Count)
+            ]),
+            ("Items",
+            [
+                ("Weapons", r.Weapons.Count), ("Armor", r.Armor.Count), ("Ammo", r.Ammo.Count),
+                ("Consumables", r.Consumables.Count), ("Misc Items", r.MiscItems.Count), ("Keys", r.Keys.Count),
+                ("Containers", r.Containers.Count), ("Leveled Lists", r.LeveledLists.Count)
+            ]),
+            ("Abilities",
+            [
+                ("Perks", r.Perks.Count), ("Spells", r.Spells.Count), ("Enchantments", r.Enchantments.Count),
+                ("Base Effects", r.BaseEffects.Count)
+            ]),
+            ("World",
+            [
+                ("Cells", r.Cells.Count), ("Worldspaces", r.Worldspaces.Count), ("Map Markers", r.MapMarkers.Count),
+                ("Statics", r.Statics.Count), ("Doors", r.Doors.Count), ("Lights", r.Lights.Count),
+                ("Furniture", r.Furniture.Count), ("Activators", r.Activators.Count)
+            ]),
+            ("Gameplay",
+            [
+                ("Globals", r.Globals.Count), ("Game Settings", r.GameSettings.Count), ("Classes", r.Classes.Count),
+                ("Challenges", r.Challenges.Count), ("Reputations", r.Reputations.Count),
+                ("Messages", r.Messages.Count), ("Form Lists", r.FormLists.Count)
+            ]),
+            ("Crafting & Combat",
+            [
+                ("Weapon Mods", r.WeaponMods.Count), ("Recipes", r.Recipes.Count), ("Projectiles", r.Projectiles.Count),
+                ("Explosions", r.Explosions.Count)
+            ])
+        };
+
+        // Build a flowing grid: 3 columns of category cards
+        var columnsGrid = new Grid();
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16, GridUnitType.Pixel) });
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16, GridUnitType.Pixel) });
+        columnsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // Distribute categories across 3 columns (round-robin to balance heights)
+        var columnPanels = new StackPanel[3];
+        for (var c = 0; c < 3; c++)
+        {
+            columnPanels[c] = new StackPanel { Spacing = 12 };
+            Grid.SetColumn(columnPanels[c], c * 2); // columns 0, 2, 4 (gaps at 1, 3)
+            columnsGrid.Children.Add(columnPanels[c]);
+        }
+
+        for (var i = 0; i < categories.Length; i++)
+        {
+            var (name, records) = categories[i];
+            var card = BuildCategoryCard(name, records);
+            columnPanels[i % 3].Children.Add(card);
+        }
+
+        RecordBreakdownPanel.Children.Add(columnsGrid);
+
+        // Unreconstructed/unparsed record types
+        if (r.UnreconstructedTypeCounts.Count > 0)
+        {
+            var otherLabel = _session.IsEsmFile ? "Other (not parsed)" : "Other (not reconstructed)";
+            var otherRecords = r.UnreconstructedTypeCounts
+                .OrderByDescending(x => x.Value)
+                .Select(x => (x.Key, x.Value))
+                .ToArray();
+            var otherCard = BuildCategoryCard(otherLabel, otherRecords);
+            RecordBreakdownPanel.Children.Add(otherCard);
+        }
+
+        SummaryRecordPanel.Visibility = Visibility.Visible;
+        _session.RecordBreakdownPopulated = true;
+    }
+
+    private static Border BuildCategoryCard(string title, (string Label, int Count)[] records)
+    {
+        var panel = new StackPanel { Spacing = 2 };
+
+        // Category header
+        panel.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 4)
+        });
+
+        // Record rows as a 2-column grid (label + count)
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        for (var i = 0; i < records.Length; i++)
+        {
+            var (label, count) = records[i];
+            if (count == 0) continue;
+
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var row = grid.RowDefinitions.Count - 1;
+
+            var labelText = new TextBlock
+            {
+                Text = label,
+                FontSize = 12,
+                Padding = new Thickness(0, 1, 8, 1)
+            };
+            Grid.SetRow(labelText, row);
+            Grid.SetColumn(labelText, 0);
+            grid.Children.Add(labelText);
+
+            var countText = new TextBlock
+            {
+                Text = count.ToString("N0"),
+                FontSize = 12,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Padding = new Thickness(0, 1, 0, 1)
+            };
+            Grid.SetRow(countText, row);
+            Grid.SetColumn(countText, 1);
+            grid.Children.Add(countText);
+        }
+
+        panel.Children.Add(grid);
+
+        return new Border
+        {
+            Child = panel,
+            Padding = new Thickness(12),
+            CornerRadius = new CornerRadius(4),
+            Background =
+                (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"]
+        };
+    }
+
+    #endregion
+
+    #region Reset/Initialize
+
+    private void ResetSubTabs()
+    {
+        _session.Dispose();
+        _semanticReconstructionTask = null;
+        _reconstructionProgressHandler = null;
+        SummaryRecordPanel.Visibility = Visibility.Collapsed;
+        _reportEntries.Clear();
+        ReportPreviewTextBox.Text = "";
+        _reportLines = [];
+        _reportLineOffsets = [];
+        _reportFullContent = "";
+        ReportViewerScrollBar.Maximum = 0;
+        ReportViewerScrollBar.Value = 0;
+        _reportSearchMatches = [];
+        _reportSearchIndex = 0;
+        _reportSearchQuery = "";
+        DataBrowserPlaceholder.Visibility = Visibility.Visible;
+        DataBrowserContent.Visibility = Visibility.Collapsed;
+        ReconstructStatusText.Text = Strings.Empty_RunAnalysisForEsm;
+        EsmTreeView.RootNodes.Clear();
+        _flatListBuilt = false;
+        _esmBrowserTree = null;
+        _currentSearchQuery = "";
+        EsmSearchBox.Text = "";
+        PropertyPanel.Children.Clear();
+        SelectedRecordTitle.Text = Strings.Empty_SelectARecord;
+        GoToOffsetButton.Visibility = Visibility.Collapsed;
+        ResetNavigation();
+        ResetDialogueViewer();
+        ResetWorldMap();
+        ExportAllReportsButton.IsEnabled = false;
+        ExportSelectedReportButton.IsEnabled = false;
+    }
+
+    private void InitializeFileTypeCheckboxes()
+    {
+        FileTypeCheckboxPanel.Children.Clear();
+        _fileTypeCheckboxes.Clear();
+        foreach (var fileType in FileTypeMapping.DisplayNames)
+        {
+            var cb = new CheckBox { Content = fileType, IsChecked = true, Margin = new Thickness(0, 0, 8, 0) };
+            _fileTypeCheckboxes[fileType] = cb;
+            FileTypeCheckboxPanel.Children.Add(cb);
+        }
+    }
+
+    private void SetupTextBoxContextMenus()
+    {
+        TextBoxContextMenuHelper.AttachContextMenu(MinidumpPathTextBox);
+        TextBoxContextMenuHelper.AttachContextMenu(OutputPathTextBox);
     }
 
     #endregion

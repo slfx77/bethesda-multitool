@@ -1,5 +1,6 @@
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -9,7 +10,7 @@ using WinRT.Interop;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// File operations: Save*, Export*, Load*, file handling, report generation
+///     File operations: Save*, Export*, Load*, file handling, report generation
 /// </summary>
 public sealed partial class SingleFileTab
 {
@@ -27,14 +28,36 @@ public sealed partial class SingleFileTab
 
             StatusTextBlock.Text = "Generating reports...";
 
-            var semanticResult = _session.SemanticResult;
-            var formIdMap = _session.AnalysisResult?.FormIdMap;
+            // Extract string pool data for minidump files (requires coverage + accessor)
+            if (_session.StringPool == null && !_session.IsEsmFile
+                                            && _session.CoverageResult != null
+                                            && _session.Accessor != null
+                                            && _session.AnalysisResult?.MinidumpInfo != null)
+            {
+                _session.StringPool = await Task.Run(() =>
+                {
+                    var bufferAnalyzer = new RuntimeBufferAnalyzer(
+                        _session.Accessor, _session.FileSize,
+                        _session.AnalysisResult.MinidumpInfo, _session.CoverageResult, null);
+                    var sp = bufferAnalyzer.ExtractStringPoolOnly();
+                    RuntimeBufferAnalyzer.CrossReferenceWithCarvedFiles(
+                        sp, _session.AnalysisResult.CarvedFiles);
+                    return sp;
+                });
+            }
 
-            var splitReports = await Task.Run(() =>
-                GeckReportGenerator.GenerateSplit(semanticResult, formIdMap));
+            var sources = new ReportDataSources(
+                _session.SemanticResult,
+                _session.AnalysisResult?.FormIdMap,
+                _session.AnalysisResult?.EsmRecords?.AssetStrings,
+                _session.AnalysisResult?.EsmRecords?.RuntimeEditorIds,
+                _session.StringPool);
+
+            var reports = await Task.Run(() =>
+                GeckReportGenerator.GenerateAllReports(sources));
 
             _reportEntries.Clear();
-            foreach (var (filename, content) in splitReports.OrderBy(kvp => kvp.Key))
+            foreach (var (filename, content) in reports.OrderBy(kvp => kvp.Key))
             {
                 _reportEntries.Add(new ReportEntry
                 {

@@ -17,63 +17,68 @@ namespace FalloutXbox360Utils;
 
 public sealed partial class WorldMapControl : UserControl, IDisposable
 {
-    private enum ViewMode { WorldOverview, CellDetail, CellBrowser }
-
-    // --- State ---
-    private ViewMode _mode = ViewMode.WorldOverview;
-    private WorldViewData? _data;
-    private WorldspaceRecord? _selectedWorldspace;
-    private CellRecord? _selectedCell;
-
-    // --- Pan/Zoom ---
-    private float _zoom = 0.05f;
-    private Vector2 _panOffset;
-    private bool _isPanning;
-    private Vector2 _panStartScreen;
-    private Vector2 _panOffsetAtStart;
     private const float MinZoom = 0.001f;
     private const float MaxZoom = 50f;
-
-    // --- Cached Heightmap Bitmaps ---
-    private CanvasBitmap? _worldHeightmapBitmap;
-    private int _worldHmMinX, _worldHmMaxY;
-    private int _worldHmPixelWidth, _worldHmPixelHeight;
-    private CanvasBitmap? _cellHeightmapBitmap;
-    private bool _worldHeightmapDirty = true;
-    private float? _currentDefaultWaterHeight;
-
-    // --- Hover / Selection ---
-    private PlacedReference? _hoveredObject;
-    private PlacedReference? _selectedObject;
-
-    // --- Unlinked exterior cells (DMP files without WRLD records) ---
-    private List<CellRecord>? _unlinkedCells;
-
-    // --- Cell grid lookup (built when worldspace changes) ---
-    private Dictionary<(int x, int y), CellRecord>? _cellGridLookup;
-
-    // --- Filtered markers for the selected worldspace ---
-    private List<PlacedReference> _filteredMarkers = [];
-
-    // --- Cell browser search ---
-    private List<CellListItem> _allCellItems = [];
-
-    // --- Click detection ---
-    private Vector2 _pointerDownScreen;
-    private bool _pointerWasDragged;
 
     // --- Constants ---
     private const float CellWorldSize = 4096f;
     private const int HmGridSize = 33;
 
-    // --- Events ---
-    public event EventHandler<PlacedReference>? InspectObject;
-    public event EventHandler<CellRecord>? InspectCell;
+    // --- Cell browser search ---
+    private List<CellListItem> _allCellItems = [];
+
+    // --- Cell grid lookup (built when worldspace changes) ---
+    private Dictionary<(int x, int y), CellRecord>? _cellGridLookup;
+    private CanvasBitmap? _cellHeightmapBitmap;
+
+    // ========================================================================
+    // Cursor Helpers
+    // ========================================================================
+
+    private InputSystemCursorShape _currentCursorShape = InputSystemCursorShape.Arrow;
+    private float? _currentDefaultWaterHeight;
+    private WorldViewData? _data;
+
+    // --- Filtered markers for the selected worldspace ---
+    private List<PlacedReference> _filteredMarkers = [];
+
+    // --- Hover / Selection ---
+    private PlacedReference? _hoveredObject;
+    private bool _isPanning;
+
+    // --- State ---
+    private ViewMode _mode = ViewMode.WorldOverview;
+    private Vector2 _panOffset;
+    private Vector2 _panOffsetAtStart;
+    private Vector2 _panStartScreen;
+
+    // --- Click detection ---
+    private Vector2 _pointerDownScreen;
+    private bool _pointerWasDragged;
+    private CellRecord? _selectedCell;
+    private PlacedReference? _selectedObject;
+    private WorldspaceRecord? _selectedWorldspace;
+
+    // --- Unlinked exterior cells (DMP files without WRLD records) ---
+    private List<CellRecord>? _unlinkedCells;
+
+    // --- Cached Heightmap Bitmaps ---
+    private CanvasBitmap? _worldHeightmapBitmap;
+    private bool _worldHeightmapDirty = true;
+    private int _worldHmMinX, _worldHmMaxY;
+    private int _worldHmPixelWidth, _worldHmPixelHeight;
+
+    // --- Pan/Zoom ---
+    private float _zoom = 0.05f;
 
     public WorldMapControl()
     {
         InitializeComponent();
     }
+
+    // --- Events ---
+    public event EventHandler<PlacedReference>? InspectObject;
+    public event EventHandler<CellRecord>? InspectCell;
 
     internal void LoadData(WorldViewData data)
     {
@@ -839,14 +844,24 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 for (var x = 0; x < HmGridSize; x++)
                 {
                     var h = heights[y, x];
-                    if (h < globalMin) { globalMin = h; }
-                    if (h > globalMax) { globalMax = h; }
+                    if (h < globalMin)
+                    {
+                        globalMin = h;
+                    }
+
+                    if (h > globalMax)
+                    {
+                        globalMax = h;
+                    }
                 }
             }
         }
 
         var globalRange = globalMax - globalMin;
-        if (globalRange < 0.001f) { globalRange = 1f; }
+        if (globalRange < 0.001f)
+        {
+            globalRange = 1f;
+        }
 
         // Render RGBA pixels
         var pixels = new byte[imgW * imgH * 4];
@@ -917,13 +932,23 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             for (var x = 0; x < HmGridSize; x++)
             {
                 var h = heights[y, x];
-                if (h < minH) { minH = h; }
-                if (h > maxH) { maxH = h; }
+                if (h < minH)
+                {
+                    minH = h;
+                }
+
+                if (h > maxH)
+                {
+                    maxH = h;
+                }
             }
         }
 
         var range = maxH - minH;
-        if (range < 0.001f) { range = 1f; }
+        if (range < 0.001f)
+        {
+            range = 1f;
+        }
 
         var pixels = new byte[HmGridSize * HmGridSize * 4];
         for (var py = 0; py < HmGridSize; py++)
@@ -1017,7 +1042,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 if (hitObj != null)
                 {
                     var name = hitObj.BaseEditorId ?? $"0x{hitObj.BaseFormId:X8}";
-                    HoverInfoText.Text = $"{hitObj.RecordType}: {name} at ({hitObj.X:F0}, {hitObj.Y:F0}, {hitObj.Z:F0})";
+                    HoverInfoText.Text =
+                        $"{hitObj.RecordType}: {name} at ({hitObj.X:F0}, {hitObj.Y:F0}, {hitObj.Z:F0})";
                 }
                 else
                 {
@@ -1049,7 +1075,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 if (overviewHitObj != null)
                 {
                     var name = overviewHitObj.BaseEditorId ?? $"0x{overviewHitObj.BaseFormId:X8}";
-                    HoverInfoText.Text = $"{overviewHitObj.RecordType}: {name} at ({overviewHitObj.X:F0}, {overviewHitObj.Y:F0}, {overviewHitObj.Z:F0})";
+                    HoverInfoText.Text =
+                        $"{overviewHitObj.RecordType}: {name} at ({overviewHitObj.X:F0}, {overviewHitObj.Y:F0}, {overviewHitObj.Z:F0})";
                     SetInteractiveCursor(true);
                 }
                 else
@@ -1309,8 +1336,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     /// </summary>
     private List<CellRecord> GetActiveCells()
     {
-        if (_selectedWorldspace != null) { return _selectedWorldspace.Cells; }
-        if (_unlinkedCells != null) { return _unlinkedCells; }
+        if (_selectedWorldspace != null)
+        {
+            return _selectedWorldspace.Cells;
+        }
+
+        if (_unlinkedCells != null)
+        {
+            return _unlinkedCells;
+        }
+
         return [];
     }
 
@@ -1366,8 +1401,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         var canvasW = (float)MapCanvas.ActualWidth;
         var canvasH = (float)MapCanvas.ActualHeight;
-        if (canvasW < 1) { canvasW = 800; }
-        if (canvasH < 1) { canvasH = 600; }
+        if (canvasW < 1)
+        {
+            canvasW = 800;
+        }
+
+        if (canvasH < 1)
+        {
+            canvasH = 600;
+        }
+
         var minDim = Math.Min(canvasW, canvasH);
         _zoom = minDim / (viewRadius * 4f);
 
@@ -1537,22 +1580,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
     }
 
-    /// <summary>View model for a cell in the cell browser list.</summary>
-    internal sealed class CellListItem
-    {
-        public string Group { get; init; } = "";
-        public string GridLabel { get; init; } = "";
-        public string DisplayName { get; init; } = "";
-        public string ObjectCount { get; init; } = "";
-        public required CellRecord Cell { get; init; }
-    }
-
-    /// <summary>Group of cells for the grouped ListView.</summary>
-    internal sealed class CellListGroup(string key, List<CellListItem> items) : List<CellListItem>(items)
-    {
-        public string Key { get; } = key;
-    }
-
     // ========================================================================
     // Zoom Helpers
     // ========================================================================
@@ -1621,8 +1648,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         var worldW = worldMaxX - worldMinX;
         var worldH = worldMaxY - worldMinY;
-        if (worldW < 1) { worldW = 1; }
-        if (worldH < 1) { worldH = 1; }
+        if (worldW < 1)
+        {
+            worldW = 1;
+        }
+
+        if (worldH < 1)
+        {
+            worldH = 1;
+        }
 
         _zoom = Math.Min(canvasW / worldW, canvasH / worldH) * 0.9f;
         _zoom = Math.Clamp(_zoom, MinZoom, MaxZoom);
@@ -1642,8 +1676,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         var canvasW = (float)MapCanvas.ActualWidth;
         var canvasH = (float)MapCanvas.ActualHeight;
-        if (canvasW < 1) { canvasW = 800; }
-        if (canvasH < 1) { canvasH = 600; }
+        if (canvasW < 1)
+        {
+            canvasW = 800;
+        }
+
+        if (canvasH < 1)
+        {
+            canvasH = 600;
+        }
 
         var tl = ScreenToWorld(Vector2.Zero);
         var br = ScreenToWorld(new Vector2(canvasW, canvasH));
@@ -1694,12 +1735,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         return 500f;
     }
 
-    // ========================================================================
-    // Cursor Helpers
-    // ========================================================================
-
-    private InputSystemCursorShape _currentCursorShape = InputSystemCursorShape.Arrow;
-
     private void SetInteractiveCursor(bool interactive)
     {
         var shape = interactive ? InputSystemCursorShape.Hand : InputSystemCursorShape.Arrow;
@@ -1732,15 +1767,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private static string GetMarkerGlyph(MapMarkerType? markerType) => markerType switch
     {
-        MapMarkerType.City => "\uE80F",        // Home
-        MapMarkerType.Settlement => "\uE825",   // Map
-        MapMarkerType.Encampment => "\uE7C1",   // Globe
-        MapMarkerType.Cave => "\uE774",         // Mountain/pin
-        MapMarkerType.Factory => "\uE8B1",      // Settings/gear
-        MapMarkerType.Monument => "\uE734",     // Star (favorite)
-        MapMarkerType.Military => "\uE7C8",     // Shield
-        MapMarkerType.Vault => "\uE72E",        // Lock
-        _ => "\uE81D"                           // Flag
+        MapMarkerType.City => "\uE80F", // Home
+        MapMarkerType.Settlement => "\uE825", // Map
+        MapMarkerType.Encampment => "\uE7C1", // Globe
+        MapMarkerType.Cave => "\uE774", // Mountain/pin
+        MapMarkerType.Factory => "\uE8B1", // Settings/gear
+        MapMarkerType.Monument => "\uE734", // Star (favorite)
+        MapMarkerType.Military => "\uE7C8", // Shield
+        MapMarkerType.Vault => "\uE72E", // Lock
+        _ => "\uE81D" // Flag
     };
 
     private static Color GetMarkerColor(MapMarkerType? markerType) => markerType switch
@@ -1835,12 +1870,54 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private static float HueToRgb(float p, float q, float t)
     {
-        if (t < 0) { t += 1; }
-        if (t > 1) { t -= 1; }
-        if (t < 1f / 6f) { return p + (q - p) * 6 * t; }
-        if (t < 1f / 2f) { return q; }
-        if (t < 2f / 3f) { return p + (q - p) * (2f / 3f - t) * 6; }
+        if (t < 0)
+        {
+            t += 1;
+        }
+
+        if (t > 1)
+        {
+            t -= 1;
+        }
+
+        if (t < 1f / 6f)
+        {
+            return p + (q - p) * 6 * t;
+        }
+
+        if (t < 1f / 2f)
+        {
+            return q;
+        }
+
+        if (t < 2f / 3f)
+        {
+            return p + (q - p) * (2f / 3f - t) * 6;
+        }
+
         return p;
     }
 
+    private enum ViewMode
+    {
+        WorldOverview,
+        CellDetail,
+        CellBrowser
+    }
+
+    /// <summary>View model for a cell in the cell browser list.</summary>
+    internal sealed class CellListItem
+    {
+        public string Group { get; init; } = "";
+        public string GridLabel { get; init; } = "";
+        public string DisplayName { get; init; } = "";
+        public string ObjectCount { get; init; } = "";
+        public required CellRecord Cell { get; init; }
+    }
+
+    /// <summary>Group of cells for the grouped ListView.</summary>
+    internal sealed class CellListGroup(string key, List<CellListItem> items) : List<CellListItem>(items)
+    {
+        public string Key { get; } = key;
+    }
 }

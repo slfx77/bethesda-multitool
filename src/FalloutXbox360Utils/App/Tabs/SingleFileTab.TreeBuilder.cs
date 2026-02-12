@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Media;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// Tree building: ESM browser tree events, filtering, search, tree UI helpers
+///     Tree building: ESM browser tree events, filtering, search, tree UI helpers
 /// </summary>
 public sealed partial class SingleFileTab
 {
@@ -39,6 +39,7 @@ public sealed partial class SingleFileTab
                 _session.AnalysisResult?.FormIdMap,
                 _session.SemanticResult?.FormIdToDisplayName);
         }
+
         // Add child TreeViewNodes with progressive loading for large sets
         AddChildNodesProgressively(args.Node, browserNode.Children);
         EnsureTreeScrollViewerHooked();

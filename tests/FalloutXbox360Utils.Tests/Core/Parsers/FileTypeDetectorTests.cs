@@ -8,6 +8,18 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 /// </summary>
 public class FileTypeDetectorTests
 {
+    #region AnalysisFileType Enum
+
+    [Fact]
+    public void AnalysisFileType_HasExpectedValues()
+    {
+        Assert.Equal(0, (int)AnalysisFileType.Unknown);
+        Assert.Equal(1, (int)AnalysisFileType.Minidump);
+        Assert.Equal(2, (int)AnalysisFileType.EsmFile);
+    }
+
+    #endregion
+
     #region DetectFromMagic
 
     [Fact]
@@ -144,18 +156,6 @@ public class FileTypeDetectorTests
         {
             File.Delete(tempFile);
         }
-    }
-
-    #endregion
-
-    #region AnalysisFileType Enum
-
-    [Fact]
-    public void AnalysisFileType_HasExpectedValues()
-    {
-        Assert.Equal(0, (int)AnalysisFileType.Unknown);
-        Assert.Equal(1, (int)AnalysisFileType.Minidump);
-        Assert.Equal(2, (int)AnalysisFileType.EsmFile);
     }
 
     #endregion

@@ -280,47 +280,27 @@ public static class AnalyzeCommand
             stringPool = ExtractStringPool(result, accessor);
         }
 
-        // Generate split CSV reports (one file per record type)
-        var splitReports = GeckReportGenerator.GenerateSplit(semanticResult, result.FormIdMap);
+        // Generate all reports (split CSVs + assets + runtime EditorIDs + string pool)
+        var sources = new ReportDataSources(
+            semanticResult, result.FormIdMap,
+            result.EsmRecords!.AssetStrings,
+            result.EsmRecords.RuntimeEditorIds,
+            stringPool);
+        var splitReports = GeckReportGenerator.GenerateAllReports(sources);
         foreach (var (filename, content) in splitReports)
         {
             await File.WriteAllTextAsync(Path.Combine(extractEsm, filename), content);
         }
 
-        // Export script source files (individual .txt per script)
-        await EsmRecordExporter.ExportScriptSourcesAsync(result.EsmRecords!.ScriptSources, extractEsm);
-
-        // Export runtime EditorIDs report
-        if (result.EsmRecords!.RuntimeEditorIds.Count > 0)
-        {
-            var runtimeReport = GeckReportGenerator.GenerateRuntimeEditorIdsReport(
-                result.EsmRecords.RuntimeEditorIds);
-            await File.WriteAllTextAsync(Path.Combine(extractEsm, "runtime_editorids.csv"), runtimeReport);
-        }
-
-        // Export string pool data (dialogue, file paths, EditorIDs, settings from runtime memory)
         if (stringPool != null)
         {
-            var stringPoolCsvs = CsvReportGenerator.GenerateStringPoolCsvs(stringPool);
-            foreach (var (filename, content) in stringPoolCsvs)
-            {
-                await File.WriteAllTextAsync(Path.Combine(extractEsm, filename), content);
-            }
-
-            if (stringPoolCsvs.Count > 0)
-            {
-                AnsiConsole.MarkupLine(
-                    $"  String pool: {stringPool.DialogueLines:N0} dialogue, " +
-                    $"{stringPool.FilePaths:N0} paths, {stringPool.EditorIds:N0} EditorIDs");
-            }
+            AnsiConsole.MarkupLine(
+                $"  String pool: {stringPool.DialogueLines:N0} dialogue, " +
+                $"{stringPool.FilePaths:N0} paths, {stringPool.EditorIds:N0} EditorIDs");
         }
 
-        // Export asset strings report
-        if (result.EsmRecords.AssetStrings.Count > 0)
-        {
-            var assetReport = GeckReportGenerator.GenerateAssetListReport(result.EsmRecords.AssetStrings);
-            await File.WriteAllTextAsync(Path.Combine(extractEsm, "assets.txt"), assetReport);
-        }
+        // Export script source files (individual .txt per script)
+        await EsmRecordExporter.ExportScriptSourcesAsync(result.EsmRecords.ScriptSources, extractEsm);
 
         AnsiConsole.MarkupLine($"[green]ESM export complete.[/] {splitReports.Count} CSV files generated");
         AnsiConsole.MarkupLine($"  NPCs: {semanticResult.Npcs.Count}, Weapons: {semanticResult.Weapons.Count}, " +
@@ -381,7 +361,6 @@ public static class AnalyzeCommand
                 }
             }
         }
-
     }
 
     /// <summary>

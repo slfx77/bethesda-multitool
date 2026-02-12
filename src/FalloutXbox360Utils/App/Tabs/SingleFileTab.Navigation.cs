@@ -5,14 +5,14 @@ using Microsoft.UI.Xaml.Controls;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// Navigation: FormID link navigation with back/forward history stacks.
+///     Navigation: FormID link navigation with back/forward history stacks.
 /// </summary>
 public sealed partial class SingleFileTab
 {
     private readonly Stack<EsmBrowserNode> _navBackStack = new();
     private readonly Stack<EsmBrowserNode> _navForwardStack = new();
-    private Dictionary<uint, EsmBrowserNode>? _formIdNodeIndex;
     private Task? _formIdBuildTask;
+    private Dictionary<uint, EsmBrowserNode>? _formIdNodeIndex;
     private bool _isNavigating;
 
     /// <summary>

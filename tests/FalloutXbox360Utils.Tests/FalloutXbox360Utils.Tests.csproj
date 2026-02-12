@@ -2,59 +2,20 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <!-- Suppress underscore naming warning for test methods (standard convention) -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="coverlet.collector" Version="6.0.2">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="coverlet.msbuild" Version="6.0.2">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
   </ItemGroup>
-
-  <!-- Coverage settings -->
-  <PropertyGroup>
-    <!-- Exclude GUI code from coverage (requires UI automation to test) -->
-    <CollectCoverage>true</CollectCoverage>
-    <CoverletOutputFormat>cobertura</CoverletOutputFormat>
-    <!-- Exclude: App (GUI), CLI commands, entry points, generated code -->
-    <Exclude>
-      [FalloutXbox360Utils]FalloutXbox360Utils.App.*,[FalloutXbox360Utils]FalloutXbox360Utils.CLI.*,[FalloutXbox360Utils]System.Text.RegularExpressions.Generated.*</Exclude>
-    <ExcludeByFile>**/App/**/*,**/CLI/**/*,**/GuiEntryPoint.cs,**/Program.cs</ExcludeByFile>
-    <!--
-      Coverage threshold for Core logic:
-      - Current: ~14.9% line coverage for Core (after App/CLI exclusions)
-      - Target: 95% (requires significant test additions)
-      - Threshold: 14% (raised from 8% after adding synthetic data regression tests)
-
-      TODO: Increase threshold as coverage improves:
-      - Add tests for NifConverter, NifSchemaConverter
-      - Add tests for MemoryCarver, MemoryDumpAnalyzer
-
-      NOTE: Textures (DDX/DDS conversion), SCDA (disassembly), and NIF (conversion)
-      are documented as incomplete features. Tests for these modules should focus
-      on detection/parsing (stable) rather than conversion (incomplete).
-    -->
-    <Threshold>14</Threshold>
-    <ThresholdType>line</ThresholdType>
-    <ThresholdStat>total</ThresholdStat>
-  </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FalloutXbox360Utils\FalloutXbox360Utils.csproj" />

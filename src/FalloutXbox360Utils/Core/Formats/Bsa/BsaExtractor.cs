@@ -4,7 +4,6 @@
 using System.Buffers;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Xma;
 
 namespace FalloutXbox360Utils.Core.Formats.Bsa;
@@ -216,7 +215,7 @@ public sealed class BsaExtractor : IDisposable
 
         var metadata = parseResult.Metadata;
         if (!converter.CanConvert("nif", metadata))
-        // Already little-endian (PC format), no conversion needed
+            // Already little-endian (PC format), no conversion needed
         {
             return new ConversionResult
             {

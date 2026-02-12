@@ -28,7 +28,7 @@ internal sealed partial class NifSchemaConverter
     {
         _schema = schema;
         _versionContext = new NifVersionContext
-        { Version = version, UserVersion = (uint)userVersion, BsVersion = bsVersion };
+            { Version = version, UserVersion = (uint)userVersion, BsVersion = bsVersion };
     }
 
     /// <summary>

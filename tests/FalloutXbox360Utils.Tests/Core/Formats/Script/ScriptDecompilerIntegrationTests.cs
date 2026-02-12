@@ -5,7 +5,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Script;
 using FalloutXbox360Utils.Core.Utils;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
 
@@ -57,7 +56,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
             var decompiler = new ScriptDecompiler(
                 variables, referencedObjects,
                 _ => null,
-                isBigEndian: false);
+                false);
 
             var result = decompiler.Decompile(compiledData);
 
@@ -77,7 +76,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
         }
 
         _output.WriteLine($"\nResults: {successCount} success, {errorCount} errors out of {totalCount} total");
-        _output.WriteLine($"Success rate: {(totalCount > 0 ? (100.0 * successCount / totalCount) : 0):F1}%");
+        _output.WriteLine($"Success rate: {(totalCount > 0 ? 100.0 * successCount / totalCount : 0):F1}%");
 
         // We expect the vast majority to decompile without fatal errors
         Assert.True(errorCount == 0 || (double)successCount / totalCount > 0.9,
@@ -119,7 +118,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
             var decompiler = new ScriptDecompiler(
                 variables, referencedObjects,
                 _ => null,
-                isBigEndian: false);
+                false);
 
             var decompiled = decompiler.Decompile(compiledData);
 
@@ -190,7 +189,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
             var decompiler = new ScriptDecompiler(
                 variables, referencedObjects,
                 _ => null,
-                isBigEndian: false);
+                false);
 
             var decompiled = decompiler.Decompile(compiledData);
 
@@ -267,7 +266,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
             }
 
             var decompiler = new ScriptDecompiler(
-                variables, referencedObjects, _ => null, isBigEndian: false);
+                variables, referencedObjects, _ => null, false);
             var decompiled = decompiler.Decompile(compiledData);
 
             string[] blockKeywords = ["Begin", "End", "If", "ElseIf", "Else", "EndIf", "While", "EndWhile"];
@@ -332,7 +331,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
             }
         }
 
-        _output.WriteLine($"\n=== MISMATCH SUMMARY ===");
+        _output.WriteLine("\n=== MISMATCH SUMMARY ===");
         _output.WriteLine($"Total mismatches: {totalMismatch}");
         _output.WriteLine($"  Truncated: {truncatedCount}");
         _output.WriteLine($"  Unknown opcode: {unknownOpcodeCount}");
@@ -389,16 +388,16 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
                     break;
 
                 case "SCVR":
+                {
+                    var varName = EsmStringUtils.ReadNullTermString(subData);
+                    if (pendingSlsdIndex.HasValue)
                     {
-                        var varName = EsmStringUtils.ReadNullTermString(subData);
-                        if (pendingSlsdIndex.HasValue)
-                        {
-                            variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, varName, pendingSlsdType));
-                            pendingSlsdIndex = null;
-                        }
-
-                        break;
+                        variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, varName, pendingSlsdType));
+                        pendingSlsdIndex = null;
                     }
+
+                    break;
+                }
 
                 case "SCRO" when sub.DataLength >= 4:
                     var formId = isBigEndian

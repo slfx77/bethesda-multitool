@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
@@ -100,16 +99,17 @@ public static class EsmFileAnalyzer
         var cellToRefrMap = BuildCellToRefrMap(parsedRecords, grupHeaders);
         var topicToInfoMap = BuildTopicToInfoMap(parsedRecords, grupHeaders);
         Logger.Instance.Info($"[ESM Analysis] Cell\u2192Worldspace map: {cellToWorldspace.Count} cells mapped " +
-            $"(from {grupHeaders.Count(g => g.GroupType == 1)} World Children GRUPs)");
+                             $"(from {grupHeaders.Count(g => g.GroupType == 1)} World Children GRUPs)");
         Logger.Instance.Info($"[ESM Analysis] Cell\u2192REFR map: {cellToRefrMap.Count} cells with " +
-            $"{cellToRefrMap.Values.Sum(v => v.Count)} placed references");
+                             $"{cellToRefrMap.Values.Sum(v => v.Count)} placed references");
         Logger.Instance.Info($"[ESM Analysis] Topic\u2192INFO map: {topicToInfoMap.Count} topics with " +
-            $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
-        result.EsmRecords = ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, cellToRefrMap, topicToInfoMap);
+                             $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
+        result.EsmRecords =
+            ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, cellToRefrMap, topicToInfoMap);
         ExtractRefrRecordsFromParsed(result.EsmRecords, parsedRecords, isBigEndian);
 
         // Extract LAND records for heightmap rendering in World tab
-        EsmRecordFormat.ExtractLandRecords(accessor, fileInfo.Length, result.EsmRecords);
+        EsmWorldExtractor.ExtractLandRecords(accessor, fileInfo.Length, result.EsmRecords);
 
         // Log record counts for debugging
         var npcRecords = parsedRecords.Where(r => r.Header.Signature == "NPC_").ToList();
@@ -245,7 +245,7 @@ public static class EsmFileAnalyzer
                             : BinaryPrimitives.ReadInt32LittleEndian(sub.Data.AsSpan(4));
                         cellGrids.Add(new CellGridSubrecord { GridX = gridX, GridY = gridY, Offset = record.Offset });
                     }
-                    break;
+                        break;
                 }
             }
         }
@@ -638,7 +638,8 @@ public static class EsmFileAnalyzer
         }
 
         // Add all GRUP headers (24 bytes each)
-        allRegions.AddRange(grupHeaders.Select(grup => (grup.Offset, grup.Offset + GrupHeaderInfo.HeaderSize, "GRUP", true)));
+        allRegions.AddRange(grupHeaders.Select(grup =>
+            (grup.Offset, grup.Offset + GrupHeaderInfo.HeaderSize, "GRUP", true)));
 
         // Group consecutive regions by type to reduce region count
         // This dramatically improves hex viewer scrolling performance

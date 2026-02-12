@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
@@ -198,7 +197,6 @@ public sealed class EsmConverter : IDisposable
 
             var signature = ReadSignature(offset);
 
-            // Enter group
             if (signature == "GRUP")
             {
                 if (offset + grupHeaderSize > _input.Length)
@@ -218,89 +216,10 @@ public sealed class EsmConverter : IDisposable
                 continue;
             }
 
-            // Collect TOFT region (top-level only)
-            // TOFT records are container markers - the INFO records are INSIDE the TOFT data block.
-            // Each TOFT has: [24-byte header][DataSize bytes of nested INFO records]
-            // We need to scan INSIDE each TOFT block for INFO records, not skip past them.
+            // TOFT region is top-level only — collect all INFO records from it, then stop
             if (grupEndStack.Count == 0 && signature == "TOFT")
             {
-                var cur = offset;
-                while (cur + 4 <= _input.Length)
-                {
-                    var sig = ReadSignature(cur);
-                    if (sig == "GRUP")
-                    {
-                        break;
-                    }
-
-                    if (cur + recordHeaderSize > _input.Length)
-                    {
-                        break;
-                    }
-
-                    var header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(cur));
-
-                    // TOFT records are containers - scan inside them for INFO records
-                    // Structure: TOFT sentinel (FormID=0xFFFFFFFE, DataSize=N) contains INFO records inside
-                    //            TOFT end marker (FormID=0xFFFFFFFF, DataSize=0) marks end of TOFT section
-                    if (sig == "TOFT")
-                    {
-                        // Skip the TOFT header and scan inside its data block
-                        var toftDataStart = cur + recordHeaderSize;
-                        var toftDataEnd = toftDataStart + (int)header.DataSize;
-
-                        // Validate bounds - DataSize=0 means end marker, just skip header
-                        if (toftDataEnd > _input.Length || toftDataEnd <= toftDataStart)
-                        {
-                            cur += recordHeaderSize;
-                            continue;
-                        }
-
-                        // Scan INFO records inside this TOFT block
-                        var inner = toftDataStart;
-                        while (inner + recordHeaderSize <= toftDataEnd)
-                        {
-                            var innerSig = ReadSignature(inner);
-                            if (innerSig == "GRUP")
-                            {
-                                break;
-                            }
-
-                            var innerHeader = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(inner));
-                            if (innerSig == "INFO")
-                            {
-                                _ = map.TryAdd(innerHeader.FormId, inner);
-                            }
-
-                            var innerNext = inner + recordHeaderSize + (int)innerHeader.DataSize;
-                            if (innerNext <= inner || innerNext > toftDataEnd)
-                            {
-                                break;
-                            }
-
-                            inner = innerNext;
-                        }
-
-                        // Move past this entire TOFT block
-                        cur = toftDataEnd;
-                        continue;
-                    }
-
-                    // Non-TOFT record (INFO, etc.) directly in the TOFT region
-                    if (sig == "INFO")
-                    {
-                        _ = map.TryAdd(header.FormId, cur);
-                    }
-
-                    var next = cur + recordHeaderSize + (int)header.DataSize;
-                    if (next <= cur || next > _input.Length)
-                    {
-                        break;
-                    }
-
-                    cur = next;
-                }
-
+                CollectToftRegionRecords(offset, map);
                 break;
             }
 
@@ -320,6 +239,94 @@ public sealed class EsmConverter : IDisposable
         }
 
         return map;
+    }
+
+    /// <summary>
+    ///     Scans the TOFT streaming cache region for INFO records.
+    ///     TOFT records are container markers — INFO records live inside their data blocks.
+    /// </summary>
+    private void CollectToftRegionRecords(int startOffset, Dictionary<uint, int> map)
+    {
+        const int recordHeaderSize = 24;
+        var cur = startOffset;
+
+        while (cur + 4 <= _input.Length)
+        {
+            var sig = ReadSignature(cur);
+            if (sig == "GRUP")
+            {
+                break;
+            }
+
+            if (cur + recordHeaderSize > _input.Length)
+            {
+                break;
+            }
+
+            var header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(cur));
+
+            if (sig == "TOFT")
+            {
+                var toftDataStart = cur + recordHeaderSize;
+                var toftDataEnd = toftDataStart + (int)header.DataSize;
+
+                if (toftDataEnd > _input.Length || toftDataEnd <= toftDataStart)
+                {
+                    cur += recordHeaderSize;
+                    continue;
+                }
+
+                ScanInfoRecordsInsideToftBlock(toftDataStart, toftDataEnd, map);
+                cur = toftDataEnd;
+                continue;
+            }
+
+            // Non-TOFT record (INFO, etc.) directly in the TOFT region
+            if (sig == "INFO")
+            {
+                _ = map.TryAdd(header.FormId, cur);
+            }
+
+            var next = cur + recordHeaderSize + (int)header.DataSize;
+            if (next <= cur || next > _input.Length)
+            {
+                break;
+            }
+
+            cur = next;
+        }
+    }
+
+    /// <summary>
+    ///     Scans INFO records nested inside a single TOFT block's data area.
+    /// </summary>
+    private void ScanInfoRecordsInsideToftBlock(int dataStart, int dataEnd, Dictionary<uint, int> map)
+    {
+        const int recordHeaderSize = 24;
+        var inner = dataStart;
+
+        while (inner + recordHeaderSize <= dataEnd)
+        {
+            var sig = ReadSignature(inner);
+            if (sig == "GRUP")
+            {
+                break;
+            }
+
+            var header = RecordHeaderProcessor.ReadRecordHeader(_input.AsSpan(inner));
+            if (sig == "INFO")
+            {
+                _ = map.TryAdd(header.FormId, inner);
+            }
+
+            var next = inner + recordHeaderSize + (int)header.DataSize;
+            if (next <= inner || next > dataEnd)
+            {
+                break;
+            }
+
+            inner = next;
+        }
     }
 
     /// <summary>
@@ -393,148 +400,200 @@ public sealed class EsmConverter : IDisposable
 
         foreach (var wrld in outputWrlds)
         {
-            if (!indexExteriorCellsByWorld.TryGetValue(wrld.FormId, out var exteriorCells)
-                && !outputExteriorCellsByWorld.TryGetValue(wrld.FormId, out exteriorCells))
-            {
-                exteriorCells = [];
-            }
-
-            if (fallbackExteriorCells.Count == 0 && exteriorCells.Count == 0)
-            {
-                continue;
-            }
-
-            if (fallbackExteriorCells.Count > 0)
-            {
-                var merged = new Dictionary<uint, CellGrid>();
-                foreach (var cell in exteriorCells)
-                {
-                    merged[cell.FormId] = cell;
-                }
-
-                foreach (var cell in fallbackExteriorCells)
-                {
-                    _ = merged.TryAdd(cell.FormId, cell);
-                }
-
-                exteriorCells = merged.Values.ToList();
-            }
-
-            if ((wrld.Flags & 0x00040000) != 0)
-            {
-                continue; // Skip compressed WRLD records
-            }
-
-            var wrldData = EsmHelpers.GetRecordData(output, wrld, outputHeader.IsBigEndian);
-            var subs = EsmRecordParser.ParseSubrecords(wrldData, outputHeader.IsBigEndian);
-            var ofst = subs.FirstOrDefault(s => s.Signature == "OFST");
-            if (ofst == null || ofst.Data.Length == 0)
-            {
-                continue;
-            }
-
-            if (!TryGetWorldBounds(subs, outputHeader.IsBigEndian, out var minX, out var maxX, out var minY,
-                    out var maxY))
-            {
-                if (_verbose)
-                {
-                    Log($"  WRLD 0x{wrld.FormId:X8}: failed to get bounds");
-                }
-
-                continue;
-            }
-
-            var columns = maxX - minX + 1;
-            var rows = maxY - minY + 1;
-
-            if (columns <= 0 || rows <= 0)
-            {
-                continue;
-            }
-
-            var count = ofst.Data.Length / 4;
-            if (count <= 0)
-            {
-                continue;
-            }
-
-            var expected = columns * rows;
-            if (expected != count)
-            {
-                if (columns > 0 && count % columns == 0)
-                {
-                    rows = count / columns;
-                }
-                else if (rows > 0 && count % rows == 0)
-                {
-                    columns = count / rows;
-                }
-                else
-                {
-                    continue;
-                }
-            }
-
-            var offsets = new uint[count];
-            var bestByIndex = new Dictionary<int, uint>();
-
-            foreach (var cell in exteriorCells)
-            {
-                var col = cell.GridX - minX;
-                var row = cell.GridY - minY;
-                if (col < 0 || col >= columns || row < 0 || row >= rows)
-                {
-                    continue;
-                }
-
-                var ofstIndex = row * columns + col;
-                if (ofstIndex < 0 || ofstIndex >= count)
-                {
-                    continue;
-                }
-
-                if (!cellRecordOffsets.TryGetValue(cell.FormId, out var cellOffset))
-                {
-                    continue;
-                }
-
-                var rel = cellOffset - (long)wrld.Offset;
-                if (rel is <= 0 or > uint.MaxValue)
-                {
-                    continue;
-                }
-
-                var relValue = (uint)rel;
-                if (bestByIndex.TryGetValue(ofstIndex, out var existing))
-                {
-                    if (relValue < existing)
-                    {
-                        bestByIndex[ofstIndex] = relValue;
-                        offsets[ofstIndex] = relValue;
-                    }
-                }
-                else
-                {
-                    bestByIndex[ofstIndex] = relValue;
-                    offsets[ofstIndex] = relValue;
-                }
-            }
-
-            var ofstDataOffsetLocal = (long)wrld.Offset + EsmParser.MainRecordHeaderSize + ofst.Offset + 6;
-            if (ofstDataOffsetLocal < 0 || ofstDataOffsetLocal + (long)count * 4 > output.Length)
-            {
-                continue;
-            }
-
-            for (var i = 0; i < offsets.Length; i++)
-            {
-                BinaryPrimitives.WriteUInt32LittleEndian(
-                    output.AsSpan((int)ofstDataOffsetLocal + i * 4, 4),
-                    offsets[i]);
-            }
+            RebuildOfstForWorld(output, wrld, outputHeader.IsBigEndian,
+                indexExteriorCellsByWorld, outputExteriorCellsByWorld,
+                fallbackExteriorCells, cellRecordOffsets);
         }
     }
 
+
+    /// <summary>
+    ///     Rebuilds the OFST (cell offset table) for a single WRLD record.
+    /// </summary>
+    private void RebuildOfstForWorld(
+        byte[] output,
+        AnalyzerRecordInfo wrld,
+        bool bigEndian,
+        Dictionary<uint, List<CellGrid>> indexExteriorCellsByWorld,
+        Dictionary<uint, List<CellGrid>> outputExteriorCellsByWorld,
+        List<CellGrid> fallbackExteriorCells,
+        Dictionary<uint, uint> cellRecordOffsets)
+    {
+        var exteriorCells = ResolveExteriorCellsForWorld(
+            wrld.FormId, indexExteriorCellsByWorld, outputExteriorCellsByWorld, fallbackExteriorCells);
+
+        if (exteriorCells.Count == 0 || (wrld.Flags & 0x00040000) != 0)
+        {
+            return;
+        }
+
+        var wrldData = EsmHelpers.GetRecordData(output, wrld, bigEndian);
+        var subs = EsmRecordParser.ParseSubrecords(wrldData, bigEndian);
+        var ofst = subs.FirstOrDefault(s => s.Signature == "OFST");
+        if (ofst == null || ofst.Data.Length == 0)
+        {
+            return;
+        }
+
+        if (!TryGetWorldBounds(subs, bigEndian, out var minX, out var maxX, out var minY, out var maxY))
+        {
+            if (_verbose)
+            {
+                Log($"  WRLD 0x{wrld.FormId:X8}: failed to get bounds");
+            }
+
+            return;
+        }
+
+        if (!TryCalculateGridDimensions(ofst.Data.Length, maxX - minX + 1, maxY - minY + 1,
+                out var columns, out var rows, out var count))
+        {
+            return;
+        }
+
+        var offsets = BuildOfstOffsetArray(exteriorCells, cellRecordOffsets, wrld.Offset,
+            minX, minY, columns, rows, count);
+
+        var ofstDataOffset = (long)wrld.Offset + EsmParser.MainRecordHeaderSize + ofst.Offset + 6;
+        if (ofstDataOffset < 0 || ofstDataOffset + (long)count * 4 > output.Length)
+        {
+            return;
+        }
+
+        for (var i = 0; i < offsets.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                output.AsSpan((int)ofstDataOffset + i * 4, 4),
+                offsets[i]);
+        }
+    }
+
+    /// <summary>
+    ///     Resolves the exterior cells for a world by merging index, output, and fallback sources.
+    /// </summary>
+    private static List<CellGrid> ResolveExteriorCellsForWorld(
+        uint worldFormId,
+        Dictionary<uint, List<CellGrid>> indexExteriorCellsByWorld,
+        Dictionary<uint, List<CellGrid>> outputExteriorCellsByWorld,
+        List<CellGrid> fallbackExteriorCells)
+    {
+        if (!indexExteriorCellsByWorld.TryGetValue(worldFormId, out var exteriorCells)
+            && !outputExteriorCellsByWorld.TryGetValue(worldFormId, out exteriorCells))
+        {
+            exteriorCells = [];
+        }
+
+        if (fallbackExteriorCells.Count == 0 && exteriorCells.Count == 0)
+        {
+            return [];
+        }
+
+        if (fallbackExteriorCells.Count > 0)
+        {
+            var merged = new Dictionary<uint, CellGrid>();
+            foreach (var cell in exteriorCells)
+            {
+                merged[cell.FormId] = cell;
+            }
+
+            foreach (var cell in fallbackExteriorCells)
+            {
+                _ = merged.TryAdd(cell.FormId, cell);
+            }
+
+            return merged.Values.ToList();
+        }
+
+        return exteriorCells;
+    }
+
+    /// <summary>
+    ///     Calculates grid dimensions from OFST data, adjusting if the expected count doesn't match.
+    /// </summary>
+    private static bool TryCalculateGridDimensions(
+        int ofstDataLength, int initialColumns, int initialRows,
+        out int columns, out int rows, out int count)
+    {
+        columns = initialColumns;
+        rows = initialRows;
+        count = ofstDataLength / 4;
+
+        if (columns <= 0 || rows <= 0 || count <= 0)
+        {
+            return false;
+        }
+
+        var expected = columns * rows;
+        if (expected == count)
+        {
+            return true;
+        }
+
+        if (count % columns == 0)
+        {
+            rows = count / columns;
+        }
+        else if (count % rows == 0)
+        {
+            columns = count / rows;
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Builds the OFST offset array mapping grid positions to cell record offsets relative to the WRLD record.
+    /// </summary>
+    private static uint[] BuildOfstOffsetArray(
+        List<CellGrid> exteriorCells,
+        Dictionary<uint, uint> cellRecordOffsets,
+        uint wrldOffset,
+        int minX, int minY,
+        int columns, int rows, int count)
+    {
+        var offsets = new uint[count];
+        var bestByIndex = new Dictionary<int, uint>();
+
+        foreach (var cell in exteriorCells)
+        {
+            var col = cell.GridX - minX;
+            var row = cell.GridY - minY;
+            if (col < 0 || col >= columns || row < 0 || row >= rows)
+            {
+                continue;
+            }
+
+            var ofstIndex = row * columns + col;
+            if (ofstIndex < 0 || ofstIndex >= count)
+            {
+                continue;
+            }
+
+            if (!cellRecordOffsets.TryGetValue(cell.FormId, out var cellOffset))
+            {
+                continue;
+            }
+
+            var rel = cellOffset - (long)wrldOffset;
+            if (rel is <= 0 or > uint.MaxValue)
+            {
+                continue;
+            }
+
+            var relValue = (uint)rel;
+            if (!bestByIndex.TryGetValue(ofstIndex, out var existing) || relValue < existing)
+            {
+                bestByIndex[ofstIndex] = relValue;
+                offsets[ofstIndex] = relValue;
+            }
+        }
+
+        return offsets;
+    }
 
     private static bool TryGetWorldBounds(List<AnalyzerSubrecordInfo> subrecords, bool bigEndian,
         out int minX, out int maxX, out int minY, out int maxY)

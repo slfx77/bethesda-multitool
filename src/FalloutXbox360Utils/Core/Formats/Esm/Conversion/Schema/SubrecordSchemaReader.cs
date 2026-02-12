@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 

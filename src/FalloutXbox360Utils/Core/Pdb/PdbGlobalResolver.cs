@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Pdb;
 
@@ -18,16 +19,15 @@ internal sealed partial class PdbGlobalResolver(
     long fileSize,
     MinidumpInfo minidumpInfo,
     MinidumpModule gameModule,
-    List<EsmRecordFormat.PeSectionInfo> peSections)
+    List<PeSectionInfo> peSections)
 {
     private readonly MemoryMappedViewAccessor _accessor = accessor;
     private readonly long _fileSize = fileSize;
     private readonly MinidumpModule _gameModule = gameModule;
     private readonly MinidumpInfo _minidumpInfo = minidumpInfo;
-    private readonly List<EsmRecordFormat.PeSectionInfo> _peSections = peSections;
+    private readonly List<PeSectionInfo> _peSections = peSections;
 
     #region Helpers
-
 
     private long? VaToFileOffset(uint va)
     {
@@ -36,7 +36,7 @@ internal sealed partial class PdbGlobalResolver(
             return null;
         }
 
-        return _minidumpInfo.VirtualAddressToFileOffset(EsmRecordFormat.Xbox360VaToLong(va));
+        return _minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(va));
     }
 
     #endregion
@@ -199,7 +199,7 @@ internal sealed partial class PdbGlobalResolver(
         }
 
         // Check if it maps to a captured memory region
-        var va = EsmRecordFormat.Xbox360VaToLong(value);
+        var va = Xbox360MemoryUtils.VaToLong(value);
         if (_minidumpInfo.VirtualAddressToFileOffset(va).HasValue)
         {
             return PointerClassification.Heap;
@@ -354,8 +354,8 @@ internal sealed partial class PdbGlobalResolver(
         }
 
         // Validate: vfptr and bucketArray should be valid pointers
-        if (!EsmRecordFormat.IsValidPointerInDump(vfptr, _minidumpInfo) ||
-            !EsmRecordFormat.IsValidPointerInDump(bucketArrayVa, _minidumpInfo))
+        if (!Xbox360MemoryUtils.IsValidPointerInDump(vfptr, _minidumpInfo) ||
+            !Xbox360MemoryUtils.IsValidPointerInDump(bucketArrayVa, _minidumpInfo))
         {
             return null;
         }
@@ -380,7 +380,7 @@ internal sealed partial class PdbGlobalResolver(
 
             _accessor.ReadArray(offset, bucketBuffer, 0, 4);
             var val = BinaryPrimitives.ReadUInt32BigEndian(bucketBuffer);
-            if (val != 0 && EsmRecordFormat.IsValidPointerInDump(val, _minidumpInfo))
+            if (val != 0 && Xbox360MemoryUtils.IsValidPointerInDump(val, _minidumpInfo))
             {
                 nonNullBuckets++;
             }
@@ -427,7 +427,7 @@ internal sealed partial class PdbGlobalResolver(
             _accessor.ReadArray(offset, bucketBuffer, 0, 4);
             var itemVa = BinaryPrimitives.ReadUInt32BigEndian(bucketBuffer);
 
-            if (itemVa == 0 || !EsmRecordFormat.IsValidPointerInDump(itemVa, _minidumpInfo))
+            if (itemVa == 0 || !Xbox360MemoryUtils.IsValidPointerInDump(itemVa, _minidumpInfo))
             {
                 continue;
             }
@@ -468,7 +468,7 @@ internal sealed partial class PdbGlobalResolver(
             return "null";
         }
 
-        if (!EsmRecordFormat.IsValidPointerInDump(va, _minidumpInfo))
+        if (!Xbox360MemoryUtils.IsValidPointerInDump(va, _minidumpInfo))
         {
             return "unmapped";
         }
@@ -486,7 +486,7 @@ internal sealed partial class PdbGlobalResolver(
         if (formType > 0 && formType < 120)
         {
             var formId = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(12, 4));
-            if (formId != 0 && formId != 0xFFFFFFFF && formId >> 24 <= 0xFF)
+            if (formId != 0 && formId != 0xFFFFFFFF)
             {
                 return $"TESForm(type={formType:X2})";
             }
@@ -538,12 +538,12 @@ internal sealed partial class PdbGlobalResolver(
                 continue;
             }
 
-            if (EsmRecordFormat.IsValidPointerInDump(ptr, _minidumpInfo))
+            if (Xbox360MemoryUtils.IsValidPointerInDump(ptr, _minidumpInfo))
             {
                 validPtrs++;
 
                 // Check if this pointer matches a known carved file VA
-                var ptrVa = EsmRecordFormat.Xbox360VaToLong(ptr);
+                var ptrVa = Xbox360MemoryUtils.VaToLong(ptr);
                 if (assetVAs.Contains(ptrVa))
                 {
                     assetRefs++;
@@ -574,7 +574,7 @@ internal sealed partial class PdbGlobalResolver(
         for (var i = 144; i <= 152; i += 4)
         {
             var ptr = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(i, 4));
-            if (ptr != 0 && EsmRecordFormat.IsValidPointerInDump(ptr, _minidumpInfo))
+            if (ptr != 0 && Xbox360MemoryUtils.IsValidPointerInDump(ptr, _minidumpInfo))
             {
                 depthBufs++;
             }
@@ -590,7 +590,7 @@ internal sealed partial class PdbGlobalResolver(
 
     private int CountLinkedListEntries(uint headVa)
     {
-        if (headVa == 0 || !EsmRecordFormat.IsValidPointerInDump(headVa, _minidumpInfo))
+        if (headVa == 0 || !Xbox360MemoryUtils.IsValidPointerInDump(headVa, _minidumpInfo))
         {
             return 0;
         }
@@ -641,10 +641,10 @@ internal sealed partial class PdbGlobalResolver(
         for (var i = 0; i < 32; i += 4)
         {
             var ptr = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(i, 4));
-            if (ptr != 0 && EsmRecordFormat.IsValidPointerInDump(ptr, _minidumpInfo))
+            if (ptr != 0 && Xbox360MemoryUtils.IsValidPointerInDump(ptr, _minidumpInfo))
             {
                 validPtrs++;
-                var ptrVa = EsmRecordFormat.Xbox360VaToLong(ptr);
+                var ptrVa = Xbox360MemoryUtils.VaToLong(ptr);
                 if (assetVAs.Contains(ptrVa))
                 {
                     assetRefs++;

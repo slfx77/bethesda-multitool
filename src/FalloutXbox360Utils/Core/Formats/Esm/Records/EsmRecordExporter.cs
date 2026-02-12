@@ -105,7 +105,8 @@ public static class EsmRecordExporter
         sb.AppendLine(CultureInfo.InvariantCulture, $"; Script: {name}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"; FormID: 0x{script.FormId:X8}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"; Type: {script.ScriptType}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"; Variables: {script.VariableCount}, Refs: {script.RefObjectCount}, Compiled: {script.CompiledSize:N0} bytes");
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"; Variables: {script.VariableCount}, Refs: {script.RefObjectCount}, Compiled: {script.CompiledSize:N0} bytes");
         sb.AppendLine();
 
         AppendScriptSource(sb, script);
@@ -118,7 +119,11 @@ public static class EsmRecordExporter
 
     private static void AppendScriptSource(StringBuilder sb, ScriptRecord script)
     {
-        if (!script.HasSource) { return; }
+        if (!script.HasSource)
+        {
+            return;
+        }
+
         sb.AppendLine("; === Source Text (SCTX) ===");
         sb.AppendLine(script.SourceText);
         sb.AppendLine();
@@ -126,7 +131,11 @@ public static class EsmRecordExporter
 
     private static void AppendScriptDecompiled(StringBuilder sb, ScriptRecord script)
     {
-        if (string.IsNullOrEmpty(script.DecompiledText)) { return; }
+        if (string.IsNullOrEmpty(script.DecompiledText))
+        {
+            return;
+        }
+
         sb.AppendLine("; === Decompiled Bytecode (SCDA) ===");
         sb.AppendLine(script.DecompiledText);
         sb.AppendLine();
@@ -134,7 +143,11 @@ public static class EsmRecordExporter
 
     private static void AppendScriptVariables(StringBuilder sb, ScriptRecord script)
     {
-        if (script.Variables.Count == 0) { return; }
+        if (script.Variables.Count == 0)
+        {
+            return;
+        }
+
         sb.AppendLine("; === Variables ===");
         foreach (var v in script.Variables)
         {
@@ -147,7 +160,11 @@ public static class EsmRecordExporter
     private static void AppendScriptReferences(
         StringBuilder sb, ScriptRecord script, Dictionary<uint, string>? formIdMap)
     {
-        if (script.ReferencedObjects.Count == 0) { return; }
+        if (script.ReferencedObjects.Count == 0)
+        {
+            return;
+        }
+
         sb.AppendLine("; === Referenced Objects ===");
         foreach (var refId in script.ReferencedObjects)
         {

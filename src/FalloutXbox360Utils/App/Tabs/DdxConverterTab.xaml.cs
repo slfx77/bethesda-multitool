@@ -13,9 +13,6 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSettingsDrawer
 {
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
-
     private readonly List<DdxFileEntry> _allDdxFiles = [];
     private readonly DdxFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
@@ -36,6 +33,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
 #pragma warning disable CA1822, S2325
     private StatusTextHelper StatusTextBlock => new();
 #pragma warning restore CA1822, S2325
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
 
     public void Dispose()
     {
@@ -235,7 +234,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
         {
             var ddxFiles = Directory.EnumerateFiles(directory, "*.ddx", SearchOption.AllDirectories).ToArray();
 
-            if (ddxFiles.Length == 0) return Array.Empty<DdxFileEntry>();
+            if (ddxFiles.Length == 0) return [];
 
             cancellationToken.ThrowIfCancellationRequested();
 

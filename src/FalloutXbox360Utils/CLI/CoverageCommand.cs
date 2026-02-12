@@ -316,7 +316,7 @@ public static class CoverageCommand
                 CoverageCategory.Module => "Modules",
                 CoverageCategory.CarvedFile => "Carved files",
                 CoverageCategory.EsmRecord => "ESM records",
-                                _ => cat.ToString()
+                _ => cat.ToString()
             };
             lines.Add($"    {label + ":",-19}{bytes,15:N0} bytes  ({pct,5:F1}%)");
         }
@@ -412,7 +412,7 @@ public static class CoverageCommand
                 CoverageCategory.Module => "Modules",
                 CoverageCategory.CarvedFile => "Carved files",
                 CoverageCategory.EsmRecord => "ESM records",
-                                _ => cat.ToString()
+                _ => cat.ToString()
             };
             sb.AppendLine($"    {label + ":",-19}{bytes,15:N0} bytes  ({pct,5:F1}%)");
         }

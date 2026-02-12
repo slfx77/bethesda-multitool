@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
@@ -53,7 +54,8 @@ public static class DialogueCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
         var limitOpt = new Option<int?>("-l", "--limit") { Description = "Limit number of quests shown" };
-        var questOpt = new Option<string?>("-q", "--quest") { Description = "Filter by quest FormID (hex, e.g. 0x12345)" };
+        var questOpt = new Option<string?>("-q", "--quest")
+            { Description = "Filter by quest FormID (hex, e.g. 0x12345)" };
         var outputOpt = new Option<string?>("-o", "--output") { Description = "Output file path" };
 
         command.Arguments.Add(inputArg);
@@ -539,7 +541,8 @@ public static class DialogueCommand
         var command = new Command("npc", "Browse dialogue by NPC");
 
         var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
-        var npcArg = new Argument<string?>("npc") { Description = "NPC FormID (hex) or partial name. Omit for --list.", Arity = ArgumentArity.ZeroOrOne };
+        var npcArg = new Argument<string?>("npc")
+            { Description = "NPC FormID (hex) or partial name. Omit for --list.", Arity = ArgumentArity.ZeroOrOne };
         var listOpt = new Option<bool>("--list") { Description = "List all NPCs with dialogue" };
 
         command.Arguments.Add(inputArg);
@@ -601,7 +604,7 @@ public static class DialogueCommand
         // Find the NPC — try hex FormID first, then partial name match
         uint targetFormId = 0;
         if (npcFilter.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
-            uint.TryParse(npcFilter, System.Globalization.NumberStyles.HexNumber, null, out _))
+            uint.TryParse(npcFilter, NumberStyles.HexNumber, null, out _))
         {
             targetFormId = ParseFormId(npcFilter);
         }
@@ -848,7 +851,8 @@ public static class DialogueCommand
 
         // Build PNAM chain: find the head (no PreviousInfo or PreviousInfo not in this group)
         var byFormId = infos.ToDictionary(i => i.FormId);
-        var heads = infos.Where(i => i.PreviousInfo is not > 0 || !byFormId.ContainsKey(i.PreviousInfo!.Value)).ToList();
+        var heads = infos.Where(i => i.PreviousInfo is not > 0 || !byFormId.ContainsKey(i.PreviousInfo!.Value))
+            .ToList();
 
         if (heads.Count == 0)
         {
@@ -962,7 +966,8 @@ public static class DialogueCommand
 
         // Section 2: By Topic Type
         var byTopicType = unattributed
-            .GroupBy(d => d.TopicFormId is > 0 ? topicTypeMap.GetValueOrDefault(d.TopicFormId.Value, "Unknown") : "Unlinked")
+            .GroupBy(d =>
+                d.TopicFormId is > 0 ? topicTypeMap.GetValueOrDefault(d.TopicFormId.Value, "Unknown") : "Unlinked")
             .OrderByDescending(g => g.Count())
             .ToList();
 
@@ -993,7 +998,8 @@ public static class DialogueCommand
         condTable.AddColumn(new TableColumn("Count").RightAligned());
         condTable.AddColumn(new TableColumn("% of Unattributed").RightAligned());
 
-        condTable.AddRow("No CTDA conditions at all", $"{noConditions:N0}", FormatPct(noConditions, unattributed.Count));
+        condTable.AddRow("No CTDA conditions at all", $"{noConditions:N0}",
+            FormatPct(noConditions, unattributed.Count));
         condTable.AddRow("Has CTDA, no speaker-like functions", $"{hasConditionsNoSpeaker:N0}",
             FormatPct(hasConditionsNoSpeaker, unattributed.Count));
         condTable.AddRow("Has unhandled speaker-like conditions", $"{hasSpeakerLike:N0}",
@@ -1171,7 +1177,8 @@ public static class DialogueCommand
 
         AnsiConsole.MarkupLine($"[dim]Runtime entries total: {analysisResult.EsmRecords.RuntimeEditorIds.Count}[/]");
         AnsiConsole.MarkupLine($"[dim]INFO entries (with prompt): {infoEntries.Count}[/]");
-        AnsiConsole.MarkupLine($"[dim]INFO entries (all, FormType 0x{infoFormType ?? 0:X2}): {allInfoEntries.Count}[/]");
+        AnsiConsole.MarkupLine(
+            $"[dim]INFO entries (all, FormType 0x{infoFormType ?? 0:X2}): {allInfoEntries.Count}[/]");
 
         if (infoEntries.Count == 0)
         {
@@ -1180,7 +1187,7 @@ public static class DialogueCommand
         }
 
         // PART 1: Full 80-byte struct dump for first 3 entries (field identification)
-        AnsiConsole.MarkupLine($"\n[blue]Full struct dump (first 3 entries):[/]");
+        AnsiConsole.MarkupLine("\n[blue]Full struct dump (first 3 entries):[/]");
         AnsiConsole.WriteLine();
 
         foreach (var entry in infoEntries.Take(3))
@@ -1194,7 +1201,8 @@ public static class DialogueCommand
             var fullBuf = new byte[80];
             accessor.ReadArray(offset, fullBuf, 0, 80);
 
-            AnsiConsole.MarkupLine($"[yellow]0x{entry.FormId:X8}[/] ({Markup.Escape(entry.EditorId)}) at file+0x{offset:X}");
+            AnsiConsole.MarkupLine(
+                $"[yellow]0x{entry.FormId:X8}[/] ({Markup.Escape(entry.EditorId)}) at file+0x{offset:X}");
 
             // Dump in rows of 16 bytes with field annotations
             for (var row = 0; row < 80; row += 16)
@@ -1315,11 +1323,13 @@ public static class DialogueCommand
 
         // Flag distribution for ALL INFO entries (not just the sampled ones)
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[blue]Flag Distribution — ALL INFO entries (current offset 39)[/]").LeftJustified());
+        AnsiConsole.Write(new Rule("[blue]Flag Distribution — ALL INFO entries (current offset 39)[/]")
+            .LeftJustified());
         ShowFlagDistribution(allInfoEntries, accessor, fileInfo.Length, 39);
 
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[blue]Flag Distribution — ALL INFO entries (alternative offset 40)[/]").LeftJustified());
+        AnsiConsole.Write(new Rule("[blue]Flag Distribution — ALL INFO entries (alternative offset 40)[/]")
+            .LeftJustified());
         ShowFlagDistribution(allInfoEntries, accessor, fileInfo.Length, 40);
     }
 
@@ -1391,7 +1401,7 @@ public static class DialogueCommand
             str = str[2..];
         }
 
-        return uint.TryParse(str, System.Globalization.NumberStyles.HexNumber, null, out var result)
+        return uint.TryParse(str, NumberStyles.HexNumber, null, out var result)
             ? result
             : 0;
     }

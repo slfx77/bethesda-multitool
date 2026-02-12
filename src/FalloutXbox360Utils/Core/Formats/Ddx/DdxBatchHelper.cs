@@ -29,7 +29,7 @@ internal static class DdxBatchHelper
                 Directory.CreateDirectory(targetDir);
             }
 
-            File.Move(file, targetPath, overwrite: true);
+            File.Move(file, targetPath, true);
             merged++;
         }
 

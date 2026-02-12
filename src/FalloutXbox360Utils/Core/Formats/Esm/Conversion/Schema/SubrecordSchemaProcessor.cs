@@ -225,9 +225,12 @@ public static class SubrecordSchemaProcessor
             return result;
         }
 
-        // ATXT/BTXT: The schema handles these correctly — FormID swap at offset 0,
-        // Quadrant (uint8) and PlatformFlag (uint8) preserved as-is, Layer (uint16) swap at offset 6.
-        // No special handler needed; the previous code was incorrectly hardcoding byte 5 to 0x88.
+        // ATXT/BTXT: FormID swap at offset 0, Layer (uint16) swap at offset 6 are handled by the schema.
+        // Byte 5 (PlatformFlag) must be set to 0x88 for PC — Xbox 360 stores 0x00, PC expects 0x88.
+        if ((signature is "ATXT" or "BTXT") && result.Length >= 6)
+        {
+            result[5] = 0x88;
+        }
 
         // NOTE: AIDT was previously zeroing bytes 5-7 thinking they were Xbox-specific,
         // but Xbox and PC have the same values there (e.g., 64 D8 23). The schema handles

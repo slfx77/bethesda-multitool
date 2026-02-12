@@ -63,7 +63,7 @@ public static partial class CsvReportGenerator
                 sk is { Length: 14 } ? sk[11].ToString() : "", // Speech
                 sk is { Length: 14 } ? sk[12].ToString() : "", // Survival
                 sk is { Length: 14 } ? sk[13].ToString() : "", // Unarmed
-                                                               // Derived stats
+                // Derived stats
                 baseHealth, calcHealth, calcFatigue,
                 critChance, meleeDmg, unarmedDmg, poisonResist, radResist,
                 // AI Data (with Mood)

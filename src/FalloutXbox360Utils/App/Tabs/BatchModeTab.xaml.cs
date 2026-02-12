@@ -15,9 +15,6 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSettingsDrawer
 {
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
-
     private readonly ObservableCollection<DumpFileEntry> _dumpFiles = [];
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
     private CancellationTokenSource? _cts;
@@ -41,6 +38,8 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
 #pragma warning disable CA1822, S2325
     private StatusTextHelper StatusTextBlock => new();
 #pragma warning restore CA1822, S2325
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
 
     public void Dispose()
     {

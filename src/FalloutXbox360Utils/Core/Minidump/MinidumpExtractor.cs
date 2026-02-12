@@ -1,11 +1,10 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Carving;
+using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Ddx;
-using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core.Minidump;
 
@@ -320,11 +319,12 @@ public static class MinidumpExtractor
     /// <summary>
     ///     Generate ESM semantic report and heightmap images.
     /// </summary>
-    private static async Task<(bool reportGenerated, int heightmapsExported, int scriptsExtracted)> GenerateEsmOutputsAsync(
-        AnalysisResult analysisResult,
-        string filePath,
-        string extractDir,
-        IProgress<ExtractionProgress>? progress)
+    private static async Task<(bool reportGenerated, int heightmapsExported, int scriptsExtracted)>
+        GenerateEsmOutputsAsync(
+            AnalysisResult analysisResult,
+            string filePath,
+            string extractDir,
+            IProgress<ExtractionProgress>? progress)
     {
         var reportGenerated = false;
         var heightmapsExported = 0;
@@ -359,13 +359,17 @@ public static class MinidumpExtractor
                 analysisResult.MinidumpInfo);
             var semanticResult = reconstructor.ReconstructAll();
 
-            // Generate split GECK-style reports (one file per record type)
-            var splitReports = GeckReportGenerator.GenerateSplit(semanticResult, analysisResult.FormIdMap);
+            // Generate all GECK-style reports (split CSVs + assets + runtime EditorIDs)
+            var sources = new ReportDataSources(
+                semanticResult, analysisResult.FormIdMap,
+                analysisResult.EsmRecords.AssetStrings,
+                analysisResult.EsmRecords.RuntimeEditorIds);
+            var allReports = GeckReportGenerator.GenerateAllReports(sources);
             var esmDir = Path.Combine(extractDir, "esm_data");
             Directory.CreateDirectory(esmDir);
 
-            // Write all split report files
-            foreach (var (filename, content) in splitReports)
+            // Write all report files
+            foreach (var (filename, content) in allReports)
             {
                 var reportPath = Path.Combine(esmDir, filename);
                 await File.WriteAllTextAsync(reportPath, content);
@@ -379,22 +383,7 @@ public static class MinidumpExtractor
                 scriptsExtracted = semanticResult.Scripts.Count;
             }
 
-            // Generate asset list report from runtime string pools
-            if (analysisResult.EsmRecords.AssetStrings.Count > 0)
-            {
-                var assetReport = GeckReportGenerator.GenerateAssetListReport(analysisResult.EsmRecords.AssetStrings);
-                await File.WriteAllTextAsync(Path.Combine(esmDir, "assets.txt"), assetReport);
-            }
-
-            // Generate runtime EditorIDs report with FormID associations
-            if (analysisResult.EsmRecords.RuntimeEditorIds.Count > 0)
-            {
-                var runtimeEdidReport =
-                    GeckReportGenerator.GenerateRuntimeEditorIdsReport(analysisResult.EsmRecords.RuntimeEditorIds);
-                await File.WriteAllTextAsync(Path.Combine(esmDir, "runtime_editorids.csv"), runtimeEdidReport);
-            }
-
-            reportGenerated = splitReports.Count > 0;
+            reportGenerated = allReports.Count > 0;
 
             progress?.Report(new ExtractionProgress
             {

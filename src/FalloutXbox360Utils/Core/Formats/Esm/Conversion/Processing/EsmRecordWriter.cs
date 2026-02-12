@@ -8,7 +8,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 /// </summary>
 public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
 {
-    private readonly EsmInfoMerger _infoMerger = new EsmInfoMerger(input, stats);
+    private readonly EsmInfoMerger _infoMerger = new(input, stats);
     private readonly byte[] _input = input;
     private readonly EsmConversionStats _stats = stats;
 

@@ -36,183 +36,7 @@ public class AssetPathAndStringTests
     [InlineData("data\\plugin.esp")]
     public void IsAssetPath_ValidExtension_ReturnsTrue(string path)
     {
-        Assert.True(EsmRecordFormat.IsAssetPath(path));
-    }
-
-    #endregion
-
-    #region IsAssetPath - Invalid Cases
-
-    [Fact]
-    public void IsAssetPath_NoSeparator_ReturnsFalse()
-    {
-        Assert.False(EsmRecordFormat.IsAssetPath("file.nif"));
-    }
-
-    [Fact]
-    public void IsAssetPath_NoExtension_ReturnsFalse()
-    {
-        Assert.False(EsmRecordFormat.IsAssetPath("meshes\\weapons\\pistol"));
-    }
-
-    [Fact]
-    public void IsAssetPath_UnknownExtension_ReturnsFalse()
-    {
-        Assert.False(EsmRecordFormat.IsAssetPath("meshes\\weapons\\pistol.xyz"));
-    }
-
-    [Fact]
-    public void IsAssetPath_DotAtEnd_ReturnsFalse()
-    {
-        Assert.False(EsmRecordFormat.IsAssetPath("meshes\\weapons\\pistol."));
-    }
-
-    [Fact]
-    public void IsAssetPath_NoContent_ReturnsFalse()
-    {
-        Assert.False(EsmRecordFormat.IsAssetPath(""));
-    }
-
-    [Fact]
-    public void IsAssetPath_JustExtension_ReturnsFalse()
-    {
-        Assert.False(EsmRecordFormat.IsAssetPath(".nif"));
-    }
-
-    #endregion
-
-    #region CleanAssetPath
-
-    [Fact]
-    public void CleanAssetPath_BackslashesNormalized()
-    {
-        var result = EsmRecordFormat.CleanAssetPath("meshes\\weapons\\pistol.nif");
-        Assert.Equal("meshes/weapons/pistol.nif", result);
-    }
-
-    [Fact]
-    public void CleanAssetPath_LeadingSlashesRemoved()
-    {
-        var result = EsmRecordFormat.CleanAssetPath("///meshes/pistol.nif");
-        Assert.Equal("meshes/pistol.nif", result);
-    }
-
-    [Fact]
-    public void CleanAssetPath_ConvertedToLowercase()
-    {
-        var result = EsmRecordFormat.CleanAssetPath("Meshes\\Weapons\\Pistol.NIF");
-        Assert.Equal("meshes/weapons/pistol.nif", result);
-    }
-
-    [Fact]
-    public void CleanAssetPath_EmptyString_ReturnsEmpty()
-    {
-        Assert.Equal("", EsmRecordFormat.CleanAssetPath(""));
-    }
-
-    [Fact]
-    public void CleanAssetPath_Null_ReturnsNull()
-    {
-        Assert.Null(EsmRecordFormat.CleanAssetPath(null!));
-    }
-
-    [Fact]
-    public void CleanAssetPath_AlreadyClean_ReturnsUnchanged()
-    {
-        var result = EsmRecordFormat.CleanAssetPath("meshes/pistol.nif");
-        Assert.Equal("meshes/pistol.nif", result);
-    }
-
-    [Fact]
-    public void CleanAssetPath_MixedSlashes_Normalized()
-    {
-        var result = EsmRecordFormat.CleanAssetPath("meshes/weapons\\pistol.nif");
-        Assert.Equal("meshes/weapons/pistol.nif", result);
-    }
-
-    #endregion
-
-    #region ScanForRecords - EDID Validation (String Tests via Public API)
-
-    [Fact]
-    public void ScanForRecords_ValidEdid_Accepted()
-    {
-        var data = BuildEdidSubrecord("TestWeapon");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Single(result.EditorIds);
-        Assert.Equal("TestWeapon", result.EditorIds[0].Name);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidTooShort_Rejected()
-    {
-        // Editor ID with single character (needs >= 2)
-        var data = BuildEdidSubrecord("A");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Empty(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidStartsWithDigit_Rejected()
-    {
-        var data = BuildEdidSubrecord("1Invalid");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Empty(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidWithSpecialChars_Rejected()
-    {
-        var data = BuildEdidSubrecord("Test-Item");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Empty(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidWithUnderscore_Accepted()
-    {
-        var data = BuildEdidSubrecord("Test_Item");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Single(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidRepeatedPattern_Rejected()
-    {
-        // "katSkatSkatS" has pattern "katS" repeating 3 times
-        var data = BuildEdidSubrecord("katSkatSkatS");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Empty(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidLongValidName_Accepted()
-    {
-        var data = BuildEdidSubrecord("VDialogueDocMitchellTopic001");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Single(result.EditorIds);
-    }
-
-    #endregion
-
-    #region ScanForRecords - FULL Text Validation
-
-    [Fact]
-    public void ScanForRecords_ValidFullText_Accepted()
-    {
-        var data = BuildTextSubrecord("FULL", "Hunting Rifle");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Single(result.FullNames);
-        Assert.Equal("Hunting Rifle", result.FullNames[0].Text);
-    }
-
-    [Fact]
-    public void ScanForRecords_FullTooShort_Rejected()
-    {
-        // Text with single character (needs >= 2)
-        var data = BuildTextSubrecord("FULL", "A");
-        var result = EsmRecordFormat.ScanForRecords(data);
-        Assert.Empty(result.FullNames);
+        Assert.True(EsmStringDetector.IsAssetPath(path));
     }
 
     #endregion
@@ -236,9 +60,185 @@ public class AssetPathAndStringTests
         data[8] = 0x01;
         data[9] = 0x00;
 
-        var result = EsmRecordFormat.ScanForRecords(data);
+        var result = EsmRecordScanner.ScanForRecords(data);
         Assert.Single(result.NameReferences);
         Assert.Equal(0x00012345u, result.NameReferences[0].BaseFormId);
+    }
+
+    #endregion
+
+    #region IsAssetPath - Invalid Cases
+
+    [Fact]
+    public void IsAssetPath_NoSeparator_ReturnsFalse()
+    {
+        Assert.False(EsmStringDetector.IsAssetPath("file.nif"));
+    }
+
+    [Fact]
+    public void IsAssetPath_NoExtension_ReturnsFalse()
+    {
+        Assert.False(EsmStringDetector.IsAssetPath("meshes\\weapons\\pistol"));
+    }
+
+    [Fact]
+    public void IsAssetPath_UnknownExtension_ReturnsFalse()
+    {
+        Assert.False(EsmStringDetector.IsAssetPath("meshes\\weapons\\pistol.xyz"));
+    }
+
+    [Fact]
+    public void IsAssetPath_DotAtEnd_ReturnsFalse()
+    {
+        Assert.False(EsmStringDetector.IsAssetPath("meshes\\weapons\\pistol."));
+    }
+
+    [Fact]
+    public void IsAssetPath_NoContent_ReturnsFalse()
+    {
+        Assert.False(EsmStringDetector.IsAssetPath(""));
+    }
+
+    [Fact]
+    public void IsAssetPath_JustExtension_ReturnsFalse()
+    {
+        Assert.False(EsmStringDetector.IsAssetPath(".nif"));
+    }
+
+    #endregion
+
+    #region CleanAssetPath
+
+    [Fact]
+    public void CleanAssetPath_BackslashesNormalized()
+    {
+        var result = EsmStringDetector.CleanAssetPath("meshes\\weapons\\pistol.nif");
+        Assert.Equal("meshes/weapons/pistol.nif", result);
+    }
+
+    [Fact]
+    public void CleanAssetPath_LeadingSlashesRemoved()
+    {
+        var result = EsmStringDetector.CleanAssetPath("///meshes/pistol.nif");
+        Assert.Equal("meshes/pistol.nif", result);
+    }
+
+    [Fact]
+    public void CleanAssetPath_ConvertedToLowercase()
+    {
+        var result = EsmStringDetector.CleanAssetPath("Meshes\\Weapons\\Pistol.NIF");
+        Assert.Equal("meshes/weapons/pistol.nif", result);
+    }
+
+    [Fact]
+    public void CleanAssetPath_EmptyString_ReturnsEmpty()
+    {
+        Assert.Equal("", EsmStringDetector.CleanAssetPath(""));
+    }
+
+    [Fact]
+    public void CleanAssetPath_Null_ReturnsNull()
+    {
+        Assert.Null(EsmStringDetector.CleanAssetPath(null!));
+    }
+
+    [Fact]
+    public void CleanAssetPath_AlreadyClean_ReturnsUnchanged()
+    {
+        var result = EsmStringDetector.CleanAssetPath("meshes/pistol.nif");
+        Assert.Equal("meshes/pistol.nif", result);
+    }
+
+    [Fact]
+    public void CleanAssetPath_MixedSlashes_Normalized()
+    {
+        var result = EsmStringDetector.CleanAssetPath("meshes/weapons\\pistol.nif");
+        Assert.Equal("meshes/weapons/pistol.nif", result);
+    }
+
+    #endregion
+
+    #region ScanForRecords - EDID Validation (String Tests via Public API)
+
+    [Fact]
+    public void ScanForRecords_ValidEdid_Accepted()
+    {
+        var data = BuildEdidSubrecord("TestWeapon");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Single(result.EditorIds);
+        Assert.Equal("TestWeapon", result.EditorIds[0].Name);
+    }
+
+    [Fact]
+    public void ScanForRecords_EdidTooShort_Rejected()
+    {
+        // Editor ID with single character (needs >= 2)
+        var data = BuildEdidSubrecord("A");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Empty(result.EditorIds);
+    }
+
+    [Fact]
+    public void ScanForRecords_EdidStartsWithDigit_Rejected()
+    {
+        var data = BuildEdidSubrecord("1Invalid");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Empty(result.EditorIds);
+    }
+
+    [Fact]
+    public void ScanForRecords_EdidWithSpecialChars_Rejected()
+    {
+        var data = BuildEdidSubrecord("Test-Item");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Empty(result.EditorIds);
+    }
+
+    [Fact]
+    public void ScanForRecords_EdidWithUnderscore_Accepted()
+    {
+        var data = BuildEdidSubrecord("Test_Item");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Single(result.EditorIds);
+    }
+
+    [Fact]
+    public void ScanForRecords_EdidRepeatedPattern_Rejected()
+    {
+        // "katSkatSkatS" has pattern "katS" repeating 3 times
+        var data = BuildEdidSubrecord("katSkatSkatS");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Empty(result.EditorIds);
+    }
+
+    [Fact]
+    public void ScanForRecords_EdidLongValidName_Accepted()
+    {
+        var data = BuildEdidSubrecord("VDialogueDocMitchellTopic001");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Single(result.EditorIds);
+    }
+
+    #endregion
+
+    #region ScanForRecords - FULL Text Validation
+
+    [Fact]
+    public void ScanForRecords_ValidFullText_Accepted()
+    {
+        var data = BuildTextSubrecord("FULL", "Hunting Rifle");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Single(result.FullNames);
+        Assert.Equal("Hunting Rifle", result.FullNames[0].Text);
+    }
+
+    [Fact]
+    public void ScanForRecords_FullTooShort_Rejected()
+    {
+        // Text with single character (needs >= 2)
+        var data = BuildTextSubrecord("FULL", "A");
+        var result = EsmRecordScanner.ScanForRecords(data);
+        Assert.Empty(result.FullNames);
     }
 
     #endregion

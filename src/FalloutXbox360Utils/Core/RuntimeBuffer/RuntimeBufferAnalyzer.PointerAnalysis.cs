@@ -119,7 +119,7 @@ internal sealed partial class RuntimeBufferAnalyzer
     /// </summary>
     private bool IsValidPointer(uint va)
     {
-        return va != 0 && EsmRecordFormat.IsValidPointerInDump(va, _minidumpInfo);
+        return va != 0 && Xbox360MemoryUtils.IsValidPointerInDump(va, _minidumpInfo);
     }
 
     /// <summary>

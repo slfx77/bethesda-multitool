@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Xma;

@@ -12,9 +12,6 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSettingsDrawer
 {
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
-
     private readonly List<NifFileEntry> _allNifFiles = [];
     private readonly NifFilesSorter _sorter = new();
     private CancellationTokenSource? _cts;
@@ -35,6 +32,8 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 #pragma warning disable CA1822, S2325
     private StatusTextHelper StatusTextBlock => new();
 #pragma warning restore CA1822, S2325
+    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
+    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
 
     public void Dispose()
     {
@@ -216,7 +215,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
         return await Task.Run(() =>
         {
             var nifFiles = Directory.EnumerateFiles(directory, "*.nif", SearchOption.AllDirectories).ToList();
-            if (nifFiles.Count == 0 || cancellationToken.IsCancellationRequested) return Array.Empty<NifFileEntry>();
+            if (nifFiles.Count == 0 || cancellationToken.IsCancellationRequested) return [];
 
             InitializeScanProgress(nifFiles.Count);
 

@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
@@ -200,7 +199,8 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
                     index.CellChildGroups[key] = list;
                 }
 
-                list.Add(new GrupEntry(grupHeader.GroupType, grupHeader.LabelAsUInt, offset, (int)grupHeader.GroupSize));
+                list.Add(new GrupEntry(grupHeader.GroupType, grupHeader.LabelAsUInt, offset,
+                    (int)grupHeader.GroupSize));
             }
 
             // Scan World Children (type 1) groups for exterior cells
@@ -252,7 +252,8 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
                 // Only add if not already indexed at this offset (avoid re-adding the same group)
                 if (!list.Any(g => g.Offset == offset))
                 {
-                    list.Add(new GrupEntry(grupHeader.GroupType, grupHeader.LabelAsUInt, offset, (int)grupHeader.GroupSize));
+                    list.Add(new GrupEntry(grupHeader.GroupType, grupHeader.LabelAsUInt, offset,
+                        (int)grupHeader.GroupSize));
                 }
             }
         }
@@ -297,7 +298,8 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
                         (int)childGrupHeader.GroupSize));
                 }
 
-                grupStack.Push((offset + (int)childGrupHeader.GroupSize, childGrupHeader.GroupType, childGrupHeader.LabelAsUInt));
+                grupStack.Push((offset + (int)childGrupHeader.GroupSize, childGrupHeader.GroupType,
+                    childGrupHeader.LabelAsUInt));
                 offset += EsmParser.MainRecordHeaderSize;
             }
             else if (signature == "CELL")

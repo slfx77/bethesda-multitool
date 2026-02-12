@@ -331,7 +331,7 @@ public class SignatureMatcherTests
         matcher.Build();
 
         // Act
-        var results = matcher.Search(ReadOnlySpan<byte>.Empty);
+        var results = matcher.Search([]);
 
         // Assert
         Assert.Empty(results);

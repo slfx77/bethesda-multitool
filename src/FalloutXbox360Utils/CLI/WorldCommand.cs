@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
@@ -143,7 +144,8 @@ public static class WorldCommand
             var wsName = ws.FullName ?? ws.EditorId ?? $"0x{ws.FormId:X8}";
 
             AnsiConsole.Write(new Rule(
-                $"[yellow]{Markup.Escape(wsName)} (0x{ws.FormId:X8}) \u2014 {wsMarkers.Count} markers[/]").LeftJustified());
+                    $"[yellow]{Markup.Escape(wsName)} (0x{ws.FormId:X8}) \u2014 {wsMarkers.Count} markers[/]")
+                .LeftJustified());
             AnsiConsole.WriteLine();
 
             var table = new Table().Border(TableBorder.Rounded);
@@ -294,13 +296,16 @@ public static class WorldCommand
         };
     }
 
-    private static int GetCategorySortOrder(string category) => category switch
+    private static int GetCategorySortOrder(string category)
     {
-        "NPCs" => 0,
-        "Creatures" => 1,
-        "Map Markers" => 2,
-        _ => 3
-    };
+        return category switch
+        {
+            "NPCs" => 0,
+            "Creatures" => 1,
+            "Map Markers" => 2,
+            _ => 3
+        };
+    }
 
     private static uint ParseFormId(string str)
     {
@@ -309,7 +314,7 @@ public static class WorldCommand
             str = str[2..];
         }
 
-        return uint.TryParse(str, System.Globalization.NumberStyles.HexNumber, null, out var result)
+        return uint.TryParse(str, NumberStyles.HexNumber, null, out var result)
             ? result
             : 0;
     }

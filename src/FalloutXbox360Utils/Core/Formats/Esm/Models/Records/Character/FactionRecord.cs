@@ -47,8 +47,3 @@ public record FactionRecord
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
 }
-
-/// <summary>
-///     A faction rank with male/female titles and insignia path.
-/// </summary>
-public record FactionRank(int RankNumber, string? MaleTitle, string? FemaleTitle, string? Insignia);

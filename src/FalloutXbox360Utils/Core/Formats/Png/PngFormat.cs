@@ -99,8 +99,8 @@ public sealed class PngFormat : FileFormatBase
         for (var i = offset + 8; i <= offset + maxScan - 8; i++)
         {
             if (data.Slice(i, 4).SequenceEqual(IendMagic))
-            // IEND chunk includes 4 byte length (before), 4 byte type, and 4 byte CRC (after)
-            // The position i is at "IEND", so total size is i - offset + 4 (type) + 4 (CRC)
+                // IEND chunk includes 4 byte length (before), 4 byte type, and 4 byte CRC (after)
+                // The position i is at "IEND", so total size is i - offset + 4 (type) + 4 (CRC)
             {
                 return i - offset + 8;
             }

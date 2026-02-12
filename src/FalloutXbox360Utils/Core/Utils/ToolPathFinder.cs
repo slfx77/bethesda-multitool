@@ -37,7 +37,7 @@ public static class ToolPathFinder
     /// <summary>
     ///     Gets the directory containing the currently executing assembly.
     /// </summary>
-    [RequiresAssemblyFiles()]
+    [RequiresAssemblyFiles]
     public static string GetAssemblyDirectory()
     {
         return Path.GetDirectoryName(typeof(ToolPathFinder).Assembly.Location) ?? string.Empty;

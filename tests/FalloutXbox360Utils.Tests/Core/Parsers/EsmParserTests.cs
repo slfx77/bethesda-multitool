@@ -10,6 +10,54 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 /// </summary>
 public class EsmParserTests
 {
+    #region GetRecordTypeCounts
+
+    [Fact]
+    public void GetRecordTypeCounts_CountsCorrectly()
+    {
+        var hedrSize = 12;
+        var tes4DataSize = 6 + hedrSize;
+        var recordDataSize = 4;
+        var recordTotalSize = 24 + recordDataSize;
+        var grupSize = 24 + recordTotalSize * 2; // Two WEAP records
+
+        var buf = new byte[24 + tes4DataSize + grupSize];
+
+        // TES4
+        WriteSig(buf, 0, "TES4");
+        WriteUInt32LE(buf, 4, (uint)tes4DataSize);
+        var off = 24;
+        WriteSig(buf, off, "HEDR");
+        WriteUInt16LE(buf, off + 4, (ushort)hedrSize);
+        off += 6 + hedrSize;
+
+        // GRUP
+        WriteSig(buf, off, "GRUP");
+        WriteUInt32LE(buf, off + 4, (uint)grupSize);
+        WriteSig(buf, off + 8, "WEAP");
+        off += 24;
+
+        // First WEAP
+        WriteSig(buf, off, "WEAP");
+        WriteUInt32LE(buf, off + 4, (uint)recordDataSize);
+        WriteUInt32LE(buf, off + 12, 0x00001111);
+        off += recordTotalSize;
+
+        // Second WEAP
+        WriteSig(buf, off, "WEAP");
+        WriteUInt32LE(buf, off + 4, (uint)recordDataSize);
+        WriteUInt32LE(buf, off + 12, 0x00002222);
+
+        var counts = EsmParser.GetRecordTypeCounts(buf);
+
+        Assert.True(counts.ContainsKey("TES4"));
+        Assert.Equal(1, counts["TES4"]);
+        Assert.True(counts.ContainsKey("WEAP"));
+        Assert.Equal(2, counts["WEAP"]);
+    }
+
+    #endregion
+
     #region Helpers
 
     /// <summary>
@@ -165,7 +213,7 @@ public class EsmParserTests
         WriteUInt32BE(buf, 16, 1);
         WriteUInt32BE(buf, 20, 2);
 
-        var header = EsmParser.ParseRecordHeader(buf, bigEndian: true);
+        var header = EsmParser.ParseRecordHeader(buf, true);
 
         Assert.NotNull(header);
         Assert.Equal("WEAP", header!.Signature);
@@ -318,7 +366,7 @@ public class EsmParserTests
         WriteUInt16BE(buf, 4, (ushort)edid.Length);
         Array.Copy(edid, 0, buf, 6, edid.Length);
 
-        var subs = EsmParser.ParseSubrecords(buf, bigEndian: true);
+        var subs = EsmParser.ParseSubrecords(buf, true);
 
         Assert.Single(subs);
         Assert.Equal("EDID", subs[0].Signature);
@@ -394,7 +442,7 @@ public class EsmParserTests
     [Fact]
     public void ParseFileHeader_ValidLe_ReturnsHeader()
     {
-        var buf = BuildLeTes4Header(version: 1.34f, nextObjId: 0x001000);
+        var buf = BuildLeTes4Header(1.34f, 0x001000);
         var header = EsmParser.ParseFileHeader(buf);
 
         Assert.NotNull(header);
@@ -409,7 +457,7 @@ public class EsmParserTests
         // Build TES4 with HEDR + CNAM
         var author = "TestAuthor\0"u8.ToArray();
         var hedrSize = 12;
-        var totalData = (6 + hedrSize) + (6 + author.Length);
+        var totalData = 6 + hedrSize + 6 + author.Length;
         var buf = new byte[24 + totalData];
 
         WriteSig(buf, 0, "TES4");
@@ -562,54 +610,6 @@ public class EsmParserTests
 
     #endregion
 
-    #region GetRecordTypeCounts
-
-    [Fact]
-    public void GetRecordTypeCounts_CountsCorrectly()
-    {
-        var hedrSize = 12;
-        var tes4DataSize = 6 + hedrSize;
-        var recordDataSize = 4;
-        var recordTotalSize = 24 + recordDataSize;
-        var grupSize = 24 + recordTotalSize * 2; // Two WEAP records
-
-        var buf = new byte[24 + tes4DataSize + grupSize];
-
-        // TES4
-        WriteSig(buf, 0, "TES4");
-        WriteUInt32LE(buf, 4, (uint)tes4DataSize);
-        var off = 24;
-        WriteSig(buf, off, "HEDR");
-        WriteUInt16LE(buf, off + 4, (ushort)hedrSize);
-        off += 6 + hedrSize;
-
-        // GRUP
-        WriteSig(buf, off, "GRUP");
-        WriteUInt32LE(buf, off + 4, (uint)grupSize);
-        WriteSig(buf, off + 8, "WEAP");
-        off += 24;
-
-        // First WEAP
-        WriteSig(buf, off, "WEAP");
-        WriteUInt32LE(buf, off + 4, (uint)recordDataSize);
-        WriteUInt32LE(buf, off + 12, 0x00001111);
-        off += recordTotalSize;
-
-        // Second WEAP
-        WriteSig(buf, off, "WEAP");
-        WriteUInt32LE(buf, off + 4, (uint)recordDataSize);
-        WriteUInt32LE(buf, off + 12, 0x00002222);
-
-        var counts = EsmParser.GetRecordTypeCounts(buf);
-
-        Assert.True(counts.ContainsKey("TES4"));
-        Assert.Equal(1, counts["TES4"]);
-        Assert.True(counts.ContainsKey("WEAP"));
-        Assert.Equal(2, counts["WEAP"]);
-    }
-
-    #endregion
-
     #region DecompressRecordData
 
     [Fact]
@@ -628,7 +628,7 @@ public class EsmParserTests
         // Write decompressed size (LE)
         ms.Write(BitConverter.GetBytes((uint)original.Length));
         // Write zlib compressed data
-        using (var zlib = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+        using (var zlib = new ZLibStream(ms, CompressionLevel.Optimal, true))
         {
             zlib.Write(original);
         }

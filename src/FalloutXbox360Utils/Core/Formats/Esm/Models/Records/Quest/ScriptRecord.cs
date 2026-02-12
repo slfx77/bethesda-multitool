@@ -81,8 +81,16 @@ public record ScriptRecord
     {
         get
         {
-            if (IsQuestScript) { return "Quest"; }
-            if (IsMagicEffectScript) { return "Effect"; }
+            if (IsQuestScript)
+            {
+                return "Quest";
+            }
+
+            if (IsMagicEffectScript)
+            {
+                return "Effect";
+            }
+
             return "Object";
         }
     }

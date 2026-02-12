@@ -177,7 +177,7 @@ internal static class DependencyDialogHelper
         if (isMissing && !string.IsNullOrEmpty(dep.DownloadUrl))
         {
             var linkPanel = new StackPanel
-            { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(22, 4, 0, 0) };
+                { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(22, 4, 0, 0) };
 
             var downloadLink = new HyperlinkButton
             {

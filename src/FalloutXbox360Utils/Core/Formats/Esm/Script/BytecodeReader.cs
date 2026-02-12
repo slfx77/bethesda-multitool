@@ -9,7 +9,7 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
     private readonly byte[] _data = data;
     private readonly bool _isBigEndian = isBigEndian;
 
-    public int Position { get; set; } = 0;
+    public int Position { get; set; }
 
     public int Length => _data.Length;
     public int Remaining => _data.Length - Position;
@@ -36,7 +36,7 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
     }
 
     /// <summary>
-    ///     Peek at a byte at Position + <paramref name="offset"/> without advancing.
+    ///     Peek at a byte at Position + <paramref name="offset" /> without advancing.
     /// </summary>
     public byte PeekByteAt(int offset)
     {
@@ -148,7 +148,7 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
     }
 
     /// <summary>
-    ///     Check if there are at least <paramref name="count"/> bytes remaining.
+    ///     Check if there are at least <paramref name="count" /> bytes remaining.
     /// </summary>
     public bool CanRead(int count)
     {

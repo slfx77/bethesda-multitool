@@ -53,7 +53,7 @@ public static class BsaCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
         var filterOption = new Option<string?>("-f", "--filter")
-        { Description = "Filter by extension (e.g., .nif, .dds)" };
+            { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
 
         command.Arguments.Add(inputArg);
@@ -83,11 +83,11 @@ public static class BsaCommand
             Required = true
         };
         var filterOption = new Option<string?>("-f", "--filter")
-        { Description = "Filter by extension (e.g., .nif, .dds)" };
+            { Description = "Filter by extension (e.g., .nif, .dds)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
         var overwriteOption = new Option<bool>("--overwrite") { Description = "Overwrite existing files" };
         var convertOption = new Option<bool>("-c", "--convert")
-        { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->WAV, NIF endian)" };
+            { Description = "Convert Xbox 360 formats to PC (DDX->DDS, XMA->WAV, NIF endian)" };
         var verboseOption = new Option<bool>("-v", "--verbose") { Description = "Verbose output" };
 
         command.Arguments.Add(inputArg);
@@ -160,7 +160,7 @@ public static class BsaCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
         var keepTempOption = new Option<bool>("--keep-temp")
-        { Description = "Keep temporary files after validation" };
+            { Description = "Keep temporary files after validation" };
         var verboseOption = new Option<bool>("-v", "--verbose") { Description = "Verbose output" };
 
         command.Arguments.Add(inputArg);
@@ -1072,7 +1072,7 @@ public static class BsaCommand
                         }
                     },
                     cancellationToken,
-                    pcFriendly: true);
+                    true);
             });
 
         // Merge converted DDS files into extractDir, delete original DDX files

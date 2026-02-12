@@ -10,6 +10,16 @@ namespace FalloutXbox360Utils.Tests.Core.Utils;
 /// </summary>
 public class UtilityTests
 {
+    #region EsmSubrecordUtils Constants
+
+    [Fact]
+    public void SubrecordHeaderSize_Is6()
+    {
+        Assert.Equal(6, EsmSubrecordUtils.SubrecordHeaderSize);
+    }
+
+    #endregion
+
     #region EsmStringUtils.ReadNullTermString (Span overload)
 
     [Fact]
@@ -31,7 +41,7 @@ public class UtilityTests
     [Fact]
     public void ReadNullTermString_Span_Empty_ReturnsEmpty()
     {
-        var result = EsmStringUtils.ReadNullTermString(ReadOnlySpan<byte>.Empty);
+        var result = EsmStringUtils.ReadNullTermString([]);
         Assert.Equal("", result);
     }
 
@@ -107,7 +117,7 @@ public class UtilityTests
     [Fact]
     public void IsPrintableAscii_Empty_ReturnsFalse()
     {
-        Assert.False(EsmStringUtils.IsPrintableAscii(ReadOnlySpan<byte>.Empty));
+        Assert.False(EsmStringUtils.IsPrintableAscii([]));
     }
 
     [Fact]
@@ -224,7 +234,7 @@ public class UtilityTests
         BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off + 4), (ushort)data.Length);
         data.CopyTo(buf, off + 6);
 
-        var subs = EsmSubrecordUtils.IterateSubrecords(buf, buf.Length, bigEndian: false).ToList();
+        var subs = EsmSubrecordUtils.IterateSubrecords(buf, buf.Length, false).ToList();
 
         Assert.Equal(2, subs.Count);
         Assert.Equal("EDID", subs[0].Signature);
@@ -248,7 +258,7 @@ public class UtilityTests
         BinaryPrimitives.WriteUInt16BigEndian(buf.AsSpan(4), (ushort)data.Length);
         data.CopyTo(buf, 6);
 
-        var subs = EsmSubrecordUtils.IterateSubrecords(buf, buf.Length, bigEndian: true).ToList();
+        var subs = EsmSubrecordUtils.IterateSubrecords(buf, buf.Length, true).ToList();
 
         Assert.Single(subs);
         Assert.Equal("EDID", subs[0].Signature);
@@ -280,7 +290,7 @@ public class UtilityTests
     public void ReadSignatureAsUInt32_Le_ReadsCorrectly()
     {
         byte[] data = [0x45, 0x44, 0x49, 0x44]; // "EDID" LE
-        var result = EsmSubrecordUtils.ReadSignatureAsUInt32(data, bigEndian: false);
+        var result = EsmSubrecordUtils.ReadSignatureAsUInt32(data, false);
         // LE: 0x44494445
         Assert.Equal(0x44494445u, result);
     }
@@ -289,7 +299,7 @@ public class UtilityTests
     public void ReadSignatureAsUInt32_Be_ReadsCorrectly()
     {
         byte[] data = [0x45, 0x44, 0x49, 0x44]; // Same bytes
-        var result = EsmSubrecordUtils.ReadSignatureAsUInt32(data, bigEndian: true);
+        var result = EsmSubrecordUtils.ReadSignatureAsUInt32(data, true);
         // BE: 0x45444944
         Assert.Equal(0x45444944u, result);
     }
@@ -327,16 +337,6 @@ public class UtilityTests
         var edid = EsmSubrecordUtils.SignatureToUInt32("EDID");
         var data = EsmSubrecordUtils.SignatureToUInt32("DATA");
         Assert.NotEqual(edid, data);
-    }
-
-    #endregion
-
-    #region EsmSubrecordUtils Constants
-
-    [Fact]
-    public void SubrecordHeaderSize_Is6()
-    {
-        Assert.Equal(6, EsmSubrecordUtils.SubrecordHeaderSize);
     }
 
     #endregion

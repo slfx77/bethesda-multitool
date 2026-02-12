@@ -4,14 +4,6 @@ using System.Text;
 namespace FalloutXbox360Utils.Core.Utils;
 
 /// <summary>
-///     Subrecord structure parsed from ESM record data.
-/// </summary>
-/// <param name="Signature">4-character subrecord type signature (e.g., "EDID", "FULL").</param>
-/// <param name="DataOffset">Byte offset to subrecord data (after 6-byte header).</param>
-/// <param name="DataLength">Length of subrecord data in bytes.</param>
-public readonly record struct ParsedSubrecord(string Signature, int DataOffset, int DataLength);
-
-/// <summary>
 ///     Utilities for iterating through ESM subrecords.
 /// </summary>
 public static class EsmSubrecordUtils
@@ -78,5 +70,58 @@ public static class EsmSubrecordUtils
         }
 
         return (uint)(sig[0] | (sig[1] << 8) | (sig[2] << 16) | (sig[3] << 24));
+    }
+
+    /// <summary>
+    ///     Get subrecord length, trying both endianness.
+    /// </summary>
+    public static ushort GetSubrecordLength(byte[] data, int offset, int maxLen)
+    {
+        var lenLe = BinaryUtils.ReadUInt16LE(data, offset);
+        var lenBe = BinaryUtils.ReadUInt16BE(data, offset);
+
+        // Prefer LE if it's valid
+        if (lenLe > 0 && lenLe <= maxLen)
+        {
+            return lenLe;
+        }
+
+        if (lenBe > 0 && lenBe <= maxLen)
+        {
+            return lenBe;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    ///     Get FormID, trying both endianness.
+    /// </summary>
+    public static uint GetFormId(byte[] data, int offset)
+    {
+        var formIdLe = BinaryUtils.ReadUInt32LE(data, offset);
+        var formIdBe = BinaryUtils.ReadUInt32BE(data, offset);
+
+        // Valid FormIDs have plugin index 0x00-0x0F
+        if (formIdLe >> 24 <= 0x0F && formIdLe != 0)
+        {
+            return formIdLe;
+        }
+
+        if (formIdBe >> 24 <= 0x0F && formIdBe != 0)
+        {
+            return formIdBe;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    ///     Validate a FormID value.
+    /// </summary>
+    public static bool IsValidFormId(uint formId)
+    {
+        // FormID should not be 0 or 0xFFFFFFFF
+        return formId != 0 && formId != 0xFFFFFFFF;
     }
 }

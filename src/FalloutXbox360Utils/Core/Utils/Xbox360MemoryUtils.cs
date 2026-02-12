@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Minidump;
+
 namespace FalloutXbox360Utils.Core.Utils;
 
 /// <summary>
@@ -66,5 +68,19 @@ public static class Xbox360MemoryUtils
     public static bool IsModulePointer(uint value)
     {
         return value >= ModuleBase;
+    }
+
+    /// <summary>
+    ///     Validate that a 32-bit Xbox 360 pointer falls within a captured memory region
+    ///     in the minidump. Dynamically checks all captured regions regardless of memory layout.
+    /// </summary>
+    public static bool IsValidPointerInDump(uint value, MinidumpInfo minidumpInfo)
+    {
+        if (value == 0)
+        {
+            return false;
+        }
+
+        return minidumpInfo.VirtualAddressToFileOffset(VaToLong(value)).HasValue;
     }
 }

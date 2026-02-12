@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;

@@ -2,6 +2,7 @@ using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils;
 
@@ -28,6 +29,27 @@ internal sealed class AnalysisSessionState : IDisposable
     /// <summary>Semantic reconstruction result (computed on demand for reports/data browser).</summary>
     public RecordCollection? SemanticResult { get; set; }
 
+    // ── Dialogue Viewer derived data ──
+    public DialogueTreeResult? DialogueTree { get; set; }
+    public Dictionary<uint, string>? SpeakerNameCache { get; set; }
+    public Dictionary<uint, List<TopicDialogueNode>>? TopicsBySpeaker { get; set; }
+    public Dictionary<uint, TopicDialogueNode>? DialogueFormIdIndex { get; set; }
+    public bool DialogueViewerPopulated { get; set; }
+
+    // ── World Map derived data ──
+    public WorldViewData? WorldViewData { get; set; }
+    public bool WorldMapPopulated { get; set; }
+
+    // ── Coverage derived data ──
+    public List<CoverageGapEntry> CoverageGaps { get; set; } = [];
+    public bool CoveragePopulated { get; set; }
+
+    // ── Reports derived data ──
+    public StringPoolSummary? StringPool { get; set; }
+
+    // ── Summary derived data ──
+    public bool RecordBreakdownPopulated { get; set; }
+
     public bool IsAnalyzed => AnalysisResult != null;
     public bool HasAccessor => Accessor != null;
     public bool HasEsmRecords => AnalysisResult?.EsmRecords != null;
@@ -51,8 +73,32 @@ internal sealed class AnalysisSessionState : IDisposable
 
     public void Dispose()
     {
+        // Core analysis data
         CoverageResult = null;
         SemanticResult = null;
+
+        // Dialogue Viewer
+        DialogueTree = null;
+        SpeakerNameCache = null;
+        TopicsBySpeaker = null;
+        DialogueFormIdIndex = null;
+        DialogueViewerPopulated = false;
+
+        // World Map
+        WorldViewData = null;
+        WorldMapPopulated = false;
+
+        // Coverage
+        CoverageGaps = [];
+        CoveragePopulated = false;
+
+        // Reports
+        StringPool = null;
+
+        // Summary
+        RecordBreakdownPopulated = false;
+
+        // File resources
         Accessor?.Dispose();
         Accessor = null;
         _mmf?.Dispose();

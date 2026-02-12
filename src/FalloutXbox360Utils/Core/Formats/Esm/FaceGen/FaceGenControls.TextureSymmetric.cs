@@ -46,7 +46,7 @@ public static partial class FaceGenControls
         "Skin Tint Red / Green" // [32]
     };
 
-    public static readonly float[][] TextureSymmetricCoeffs = new float[33][]
+    public static readonly float[][] TextureSymmetricCoeffs = new float[][]
     {
         // [0] Beard Flushed / Pale
         new[]

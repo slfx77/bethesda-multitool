@@ -10,20 +10,67 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    #region Dialogue Viewer Reset
+
+    private void ResetDialogueViewer()
+    {
+        DialogueViewerPlaceholder.Visibility = Visibility.Visible;
+        DialogueViewerContent.Visibility = Visibility.Collapsed;
+        DialogueViewerProgressBar.Visibility = Visibility.Collapsed;
+        DialogueViewerStatusText.Text = "Run analysis on an ESM or DMP file to view dialogues";
+        DialoguePickerTree.RootNodes.Clear();
+        DialogueConversationPanel.Children.Clear();
+        DialogueChoicesPanel.Children.Clear();
+        DialogueChoicesHeader.Visibility = Visibility.Collapsed;
+        DialogueHeaderText.Text = "Select a topic from the left panel";
+        _dialogueNavStack.Clear();
+        _visitedTopicFormIds.Clear();
+        _currentDialogueTopic = null;
+        _dialogueSearchDebounceToken?.Dispose();
+        _dialogueSearchDebounceToken = null;
+        DialogueBackButton.IsEnabled = false;
+    }
+
+    #endregion
+
+    #region Cross-Tab Dialogue Navigation
+
+    /// <summary>
+    ///     Attempts to navigate to a dialogue record (INFO or DIAL) in the Dialogue Viewer tab.
+    ///     Returns true if the FormID was found and navigation was initiated.
+    /// </summary>
+    private bool TryNavigateToDialogueRecord(uint formId)
+    {
+        if (_session.DialogueFormIdIndex == null || !_session.DialogueFormIdIndex.TryGetValue(formId, out var topic))
+        {
+            return false;
+        }
+
+        // Switch to Dialogue Viewer tab
+        SubTabView.SelectedItem = DialogueViewerTab;
+
+        // Ensure it's populated
+        if (!_session.DialogueViewerPopulated && _session.SemanticResult != null)
+        {
+            _ = PopulateDialogueViewerAsync();
+        }
+
+        // Navigate to the topic
+        NavigateToDialogueTopic(topic, pushToStack: _currentDialogueTopic != null);
+        return true;
+    }
+
+    #endregion
+
     #region Dialogue Viewer Fields
 
     private readonly Stack<DialogueNavState> _dialogueNavStack = new();
     private const int DialogueNavStackLimit = 50;
     private readonly HashSet<uint> _visitedTopicFormIds = new();
 
-    private Dictionary<uint, string>? _speakerNameCache;
-    private Dictionary<uint, List<TopicDialogueNode>>? _topicsBySpeaker;
-    private Dictionary<uint, TopicDialogueNode>? _dialogueFormIdIndex;
 
-    private bool _dialogueViewerPopulated;
     private bool _dialoguePickerByQuest = true;
     private TopicDialogueNode? _currentDialogueTopic;
-    private DialogueTreeResult? _dialogueTree;
     private CancellationTokenSource? _dialogueSearchDebounceToken;
 
     /// <summary>Lightweight snapshot for dialogue back-navigation.</summary>
@@ -35,7 +82,7 @@ public sealed partial class SingleFileTab
 
     private async Task PopulateDialogueViewerAsync()
     {
-        if (_dialogueViewerPopulated)
+        if (_session.DialogueViewerPopulated)
         {
             return;
         }
@@ -68,10 +115,10 @@ public sealed partial class SingleFileTab
 
             DialogueViewerStatusText.Text = "Building dialogue viewer...";
 
-            _dialogueTree = result.DialogueTree;
+            _session.DialogueTree = result.DialogueTree;
 
             // Build speaker name cache
-            _speakerNameCache = BuildSpeakerNameCache(result);
+            _session.SpeakerNameCache = BuildSpeakerNameCache(result);
 
             // Build speaker index for NPC browse mode
             // Build set of NPCs with FullName to distinguish real NPCs from marker/template NPCs
@@ -79,17 +126,17 @@ public sealed partial class SingleFileTab
                 result.Npcs.Where(n => n.FullName != null).Select(n => n.FormId));
             npcsWithFullName.UnionWith(
                 result.Creatures.Where(c => c.FullName != null).Select(c => c.FormId));
-            _topicsBySpeaker = BuildTopicsBySpeaker(_dialogueTree, npcsWithFullName);
+            _session.TopicsBySpeaker = BuildTopicsBySpeaker(_session.DialogueTree, npcsWithFullName);
 
             // Build FormID → topic index for cross-tab navigation
-            _dialogueFormIdIndex = BuildDialogueFormIdIndex(_dialogueTree);
+            _session.DialogueFormIdIndex = BuildDialogueFormIdIndex(_session.DialogueTree);
 
             // Build the picker tree (default: quest mode)
-            BuildDialoguePickerTree(_dialogueTree, byQuest: true);
+            BuildDialoguePickerTree(_session.DialogueTree, byQuest: true);
 
             DialogueViewerPlaceholder.Visibility = Visibility.Collapsed;
             DialogueViewerContent.Visibility = Visibility.Visible;
-            _dialogueViewerPopulated = true;
+            _session.DialogueViewerPopulated = true;
         }
         finally
         {
@@ -175,13 +222,12 @@ public sealed partial class SingleFileTab
 
         // 2. Consensus across all INFOs, preferring NPCs with FullName
         var speakerCounts = new Dictionary<uint, int>();
-        foreach (var info in topic.InfoChain)
+        foreach (var speakerId in topic.InfoChain
+                     .Select(i => i.Info.SpeakerFormId)
+                     .Where(id => id is > 0))
         {
-            if (info.Info.SpeakerFormId is > 0)
-            {
-                speakerCounts.TryGetValue(info.Info.SpeakerFormId.Value, out var c);
-                speakerCounts[info.Info.SpeakerFormId.Value] = c + 1;
-            }
+            speakerCounts.TryGetValue(speakerId!.Value, out var c);
+            speakerCounts[speakerId.Value] = c + 1;
         }
 
         if (speakerCounts.Count == 0)
@@ -302,15 +348,15 @@ public sealed partial class SingleFileTab
 
     private void BuildNpcPickerTree(string? searchQuery)
     {
-        if (_topicsBySpeaker == null || _speakerNameCache == null)
+        if (_session.TopicsBySpeaker == null || _session.SpeakerNameCache == null)
         {
             return;
         }
 
-        var speakers = _topicsBySpeaker
+        var speakers = _session.TopicsBySpeaker
             .Select(kv => (
                 FormId: kv.Key,
-                Name: _speakerNameCache.GetValueOrDefault(kv.Key, $"0x{kv.Key:X8}"),
+                Name: _session.SpeakerNameCache.GetValueOrDefault(kv.Key, $"0x{kv.Key:X8}"),
                 Topics: FilterTopics(kv.Value, searchQuery)))
             .Where(s => s.Topics.Count > 0)
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
@@ -362,23 +408,9 @@ public sealed partial class SingleFileTab
         }
 
         // Match response text or prompt text
-        foreach (var info in topic.InfoChain)
-        {
-            if (info.Info.PromptText?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
-            {
-                return true;
-            }
-
-            foreach (var response in info.Info.Responses)
-            {
-                if (response.Text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return topic.InfoChain.Any(entry =>
+            entry.Info.PromptText?.Contains(query, StringComparison.OrdinalIgnoreCase) == true ||
+            entry.Info.Responses.Any(r => r.Text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true));
     }
 
 #pragma warning disable CA1822 // XAML event handlers cannot be static
@@ -404,9 +436,8 @@ public sealed partial class SingleFileTab
                         .Select(r => r.Text)
                         .FirstOrDefault(t => !string.IsNullOrEmpty(t));
 
-                    displayName = firstText != null
-                        ? (firstText.Length > 80 ? firstText[..77] + "..." : firstText)
-                        : topicName;
+                    var truncatedText = firstText?.Length > 80 ? firstText[..77] + "..." : firstText;
+                    displayName = truncatedText ?? topicName;
 
                     detail = topicType != null
                         ? $"{topicName} \u00B7 {topicType} ({infoCount})"
@@ -507,15 +538,12 @@ public sealed partial class SingleFileTab
         var parts = new List<string>();
 
         // Try to find quest name
-        if (_dialogueTree != null)
+        if (_session.DialogueTree != null)
         {
-            foreach (var quest in _dialogueTree.QuestTrees.Values)
+            var quest = _session.DialogueTree.QuestTrees.Values.FirstOrDefault(q => q.Topics.Contains(topic));
+            if (quest != null)
             {
-                if (quest.Topics.Contains(topic))
-                {
-                    parts.Add(quest.QuestName ?? $"Quest 0x{quest.QuestFormId:X8}");
-                    break;
-                }
+                parts.Add(quest.QuestName ?? $"Quest 0x{quest.QuestFormId:X8}");
             }
         }
 
@@ -626,23 +654,21 @@ public sealed partial class SingleFileTab
         content.Children.Add(speakerPanel);
 
         // Response texts
-        foreach (var response in info.Responses)
+        foreach (var response in info.Responses.Where(r => !string.IsNullOrEmpty(r.Text)))
         {
-            if (!string.IsNullOrEmpty(response.Text))
+            content.Children.Add(new TextBlock
             {
-                content.Children.Add(new TextBlock
-                {
-                    Text = $"\u201C{response.Text}\u201D",
-                    FontSize = 13,
-                    TextWrapping = TextWrapping.Wrap,
-                    IsTextSelectionEnabled = true,
-                    Margin = new Thickness(22, 2, 0, 2)
-                });
-            }
+                Text = $"\u201C{response.Text}\u201D",
+                FontSize = 13,
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+                Margin = new Thickness(22, 2, 0, 2)
+            });
         }
 
         // Metadata tags
-        var tags = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(22, 2, 0, 0) };
+        var tags = new StackPanel
+            { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(22, 2, 0, 0) };
         var hasTag = false;
 
         // Emotion tags
@@ -698,6 +724,7 @@ public sealed partial class SingleFileTab
         detailGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var row = 0;
+
         void AddRow(string name, string? value, uint? linkFormId = null)
         {
             if (string.IsNullOrEmpty(value) && linkFormId is null or 0)
@@ -752,14 +779,14 @@ public sealed partial class SingleFileTab
         // Relationships (with navigable links)
         if (info.TopicFormId is > 0)
         {
-            var topicDisplay = _speakerNameCache?.GetValueOrDefault(info.TopicFormId.Value)
+            var topicDisplay = _session.SpeakerNameCache?.GetValueOrDefault(info.TopicFormId.Value)
                                ?? $"0x{info.TopicFormId.Value:X8}";
             AddRow("Topic", topicDisplay, info.TopicFormId.Value);
         }
 
         if (info.QuestFormId is > 0)
         {
-            var questName = _speakerNameCache?.GetValueOrDefault(info.QuestFormId.Value)
+            var questName = _session.SpeakerNameCache?.GetValueOrDefault(info.QuestFormId.Value)
                             ?? _session.SemanticResult?.FormIdToEditorId?.GetValueOrDefault(info.QuestFormId.Value)
                             ?? $"0x{info.QuestFormId.Value:X8}";
             AddRow("Quest", questName, info.QuestFormId.Value);
@@ -1096,7 +1123,7 @@ public sealed partial class SingleFileTab
             return "Unknown Speaker";
         }
 
-        return _speakerNameCache?.GetValueOrDefault(formId.Value) ?? $"0x{formId.Value:X8}";
+        return _session.SpeakerNameCache?.GetValueOrDefault(formId.Value) ?? $"0x{formId.Value:X8}";
     }
 
     #endregion
@@ -1120,21 +1147,24 @@ public sealed partial class SingleFileTab
 
     private void DialogueBrowseMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_dialogueTree == null)
+        if (_session.DialogueTree == null)
         {
             return;
         }
 
         var byQuest = DialogueBrowseMode.SelectedIndex == 0;
         var searchQuery = string.IsNullOrWhiteSpace(DialogueSearchBox.Text) ? null : DialogueSearchBox.Text.Trim();
-        BuildDialoguePickerTree(_dialogueTree, byQuest, searchQuery);
+        BuildDialoguePickerTree(_session.DialogueTree, byQuest, searchQuery);
     }
 
     private async void DialogueSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         // Debounce 250ms
-        _dialogueSearchDebounceToken?.Cancel();
-        _dialogueSearchDebounceToken?.Dispose();
+        if (_dialogueSearchDebounceToken != null)
+        {
+            await _dialogueSearchDebounceToken.CancelAsync();
+            _dialogueSearchDebounceToken.Dispose();
+        }
         _dialogueSearchDebounceToken = new CancellationTokenSource();
         var token = _dialogueSearchDebounceToken.Token;
 
@@ -1147,72 +1177,14 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        if (_dialogueTree == null)
+        if (_session.DialogueTree == null)
         {
             return;
         }
 
         var searchQuery = string.IsNullOrWhiteSpace(DialogueSearchBox.Text) ? null : DialogueSearchBox.Text.Trim();
         var byQuest = DialogueBrowseMode.SelectedIndex == 0;
-        BuildDialoguePickerTree(_dialogueTree, byQuest, searchQuery);
-    }
-
-    #endregion
-
-    #region Dialogue Viewer Reset
-
-    private void ResetDialogueViewer()
-    {
-        DialogueViewerTab.IsEnabled = false;
-        DialogueViewerPlaceholder.Visibility = Visibility.Visible;
-        DialogueViewerContent.Visibility = Visibility.Collapsed;
-        DialogueViewerProgressBar.Visibility = Visibility.Collapsed;
-        DialogueViewerStatusText.Text = "Run analysis on an ESM or DMP file to view dialogues";
-        DialoguePickerTree.RootNodes.Clear();
-        DialogueConversationPanel.Children.Clear();
-        DialogueChoicesPanel.Children.Clear();
-        DialogueChoicesHeader.Visibility = Visibility.Collapsed;
-        DialogueHeaderText.Text = "Select a topic from the left panel";
-        _dialogueNavStack.Clear();
-        _visitedTopicFormIds.Clear();
-        _speakerNameCache = null;
-        _topicsBySpeaker = null;
-        _dialogueFormIdIndex = null;
-        _dialogueViewerPopulated = false;
-        _currentDialogueTopic = null;
-        _dialogueTree = null;
-        _dialogueSearchDebounceToken?.Dispose();
-        _dialogueSearchDebounceToken = null;
-        DialogueBackButton.IsEnabled = false;
-    }
-
-    #endregion
-
-    #region Cross-Tab Dialogue Navigation
-
-    /// <summary>
-    ///     Attempts to navigate to a dialogue record (INFO or DIAL) in the Dialogue Viewer tab.
-    ///     Returns true if the FormID was found and navigation was initiated.
-    /// </summary>
-    private bool TryNavigateToDialogueRecord(uint formId)
-    {
-        if (_dialogueFormIdIndex == null || !_dialogueFormIdIndex.TryGetValue(formId, out var topic))
-        {
-            return false;
-        }
-
-        // Switch to Dialogue Viewer tab
-        SubTabView.SelectedItem = DialogueViewerTab;
-
-        // Ensure it's populated
-        if (!_dialogueViewerPopulated && _session.SemanticResult != null)
-        {
-            _ = PopulateDialogueViewerAsync();
-        }
-
-        // Navigate to the topic
-        NavigateToDialogueTopic(topic, pushToStack: _currentDialogueTopic != null);
-        return true;
+        BuildDialoguePickerTree(_session.DialogueTree, byQuest, searchQuery);
     }
 
     #endregion

@@ -9,24 +9,109 @@ using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-
 using Microsoft.UI.Xaml.Input;
 using WinRT.Interop;
 
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// Main code-behind for the SingleFileTab UserControl.
-/// This partial class is split across multiple files:
-/// - SingleFileTab.xaml.cs (this file): Fields, constructor, main event handlers
-/// - SingleFileTab.Analysis.cs: Analysis methods and orchestration
-/// - SingleFileTab.Display.cs: Display/UI update methods
-/// - SingleFileTab.FileOperations.cs: File save/export/load operations
-/// - SingleFileTab.TreeBuilder.cs: ESM browser tree building and filtering
-/// - SingleFileTab.Helpers.cs: Helper/utility methods
+///     Main code-behind for the SingleFileTab UserControl.
+///     This partial class is split across multiple files:
+///     - SingleFileTab.xaml.cs (this file): Fields, constructor, main event handlers
+///     - SingleFileTab.Analysis.cs: Analysis methods and orchestration
+///     - SingleFileTab.Display.cs: Display/UI update methods
+///     - SingleFileTab.FileOperations.cs: File save/export/load operations
+///     - SingleFileTab.TreeBuilder.cs: ESM browser tree building and filtering
+///     - SingleFileTab.Helpers.cs: Helper/utility methods
 /// </summary>
 public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettingsDrawer
 {
+    #region Constructor
+
+    public SingleFileTab()
+    {
+        InitializeComponent();
+        ResultsListView.ItemsSource = _carvedFiles;
+        ReportListView.ItemsSource = _reportEntries;
+        InitializeFileTypeCheckboxes();
+        SetupTextBoxContextMenus();
+        Loaded += SingleFileTab_Loaded;
+        Unloaded += SingleFileTab_Unloaded;
+    }
+
+    #endregion
+
+    #region Properties
+
+#pragma warning disable CA1822, S2325
+    private StatusTextHelper StatusTextBlock => new();
+#pragma warning restore CA1822, S2325
+
+    #endregion
+
+    #region IDisposable
+
+    public void Dispose()
+    {
+        _searchDebounceToken?.Dispose();
+        _session.Dispose();
+    }
+
+    #endregion
+
+    #region Tab Selection Events
+
+    private async void SubTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count == 0) return;
+        var selected = SubTabView.SelectedItem;
+
+        if (ReferenceEquals(selected, SummaryTab) && !_session.RecordBreakdownPopulated && _session.HasEsmRecords)
+        {
+            await EnsureSemanticReconstructionAsync();
+            PopulateRecordBreakdown();
+        }
+
+        if (ReferenceEquals(selected, CoverageTab) && !_session.CoveragePopulated && _session.CoverageResult != null)
+        {
+            PopulateCoverageTab();
+        }
+
+        // Auto-populate Data Browser when first selected
+        if (ReferenceEquals(selected, DataBrowserTab) &&
+            DataBrowserContent.Visibility == Visibility.Collapsed &&
+            _session.HasEsmRecords)
+        {
+            ReconstructButton_Click(sender, new RoutedEventArgs());
+        }
+
+        // Auto-populate Dialogue Viewer when first selected
+        if (ReferenceEquals(selected, DialogueViewerTab) &&
+            !_session.DialogueViewerPopulated &&
+            _session.HasEsmRecords)
+        {
+            _ = PopulateDialogueViewerAsync();
+        }
+
+        // Auto-populate World Map when first selected
+        if (ReferenceEquals(selected, WorldMapTab) &&
+            !_session.WorldMapPopulated &&
+            _session.HasEsmRecords)
+        {
+            _ = PopulateWorldMapAsync();
+        }
+
+        // Auto-generate reports when first selected
+        if (ReferenceEquals(selected, ReportsTab) &&
+            _reportEntries.Count == 0 &&
+            _session.HasEsmRecords)
+        {
+            _ = GenerateReportsAsync();
+        }
+    }
+
+    #endregion
+
     #region Fields
 
     private readonly List<CarvedFileEntry> _allCarvedFiles = [];
@@ -36,14 +121,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private readonly AnalysisSessionState _session = new();
     private readonly CarvedFilesSorter _sorter = new();
 
-    private List<CoverageGapEntry> _allCoverageGapEntries = [];
     private AnalysisResult? _analysisResult;
     private CarvedFileEntry? _contextMenuTarget;
     private bool _coverageGapSortAscending = true;
     private CoverageGapSortColumn _coverageGapSortColumn = CoverageGapSortColumn.Index;
-    private bool _coveragePopulated;
     private bool _dependencyCheckDone;
-    private bool _recordBreakdownPopulated;
     private ObservableCollection<EsmBrowserNode>? _esmBrowserTree;
     private bool _flatListBuilt;
     private CancellationTokenSource? _searchDebounceToken;
@@ -60,39 +142,6 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private Action<int, string>? _reconstructionProgressHandler;
     private Task<RecordCollection>? _semanticReconstructionTask;
     private string _currentSearchQuery = "";
-
-    #endregion
-
-    #region Properties
-
-#pragma warning disable CA1822, S2325
-    private StatusTextHelper StatusTextBlock => new();
-#pragma warning restore CA1822, S2325
-
-    #endregion
-
-    #region Constructor
-
-    public SingleFileTab()
-    {
-        InitializeComponent();
-        ResultsListView.ItemsSource = _carvedFiles;
-        ReportListView.ItemsSource = _reportEntries;
-        InitializeFileTypeCheckboxes();
-        SetupTextBoxContextMenus();
-        Loaded += SingleFileTab_Loaded;
-        Unloaded += SingleFileTab_Unloaded;
-    }
-
-    #endregion
-
-    #region IDisposable
-
-    public void Dispose()
-    {
-        _searchDebounceToken?.Dispose();
-        _session.Dispose();
-    }
 
     #endregion
 
@@ -248,15 +297,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
             // Open shared session and load hex viewer with shared accessor
             _session.Open(filePath, _analysisResult, fileType);
-            SummaryTab.IsEnabled = true;
             UpdateFileInfoCard();
             await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
-
-            // Enable data browser and reports tabs (depends on ESM records, not coverage)
-            DataBrowserTab.IsEnabled = _session.HasEsmRecords;
-            DialogueViewerTab.IsEnabled = _session.HasEsmRecords;
-            WorldMapTab.IsEnabled = _session.HasEsmRecords;
-            ReportsTab.IsEnabled = _session.HasEsmRecords;
 
             // Start semantic reconstruction eagerly in background so sub-tabs load faster
             if (_session.HasEsmRecords)
@@ -285,7 +327,6 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
                 if (_session.CoverageResult.Error == null)
                 {
-                    CoverageTab.IsEnabled = true;
                     await HexViewer.AddCoverageGapRegionsAsync(_session.CoverageResult);
                 }
             }
@@ -367,59 +408,6 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         if (_session.SemanticResult != null)
         {
             await PopulateDataBrowserAsync();
-        }
-    }
-
-    #endregion
-
-    #region Tab Selection Events
-
-    private async void SubTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (e.AddedItems.Count == 0) return;
-        var selected = SubTabView.SelectedItem;
-
-        if (ReferenceEquals(selected, SummaryTab) && !_recordBreakdownPopulated && _session.HasEsmRecords)
-        {
-            await EnsureSemanticReconstructionAsync();
-            PopulateRecordBreakdown();
-        }
-
-        if (ReferenceEquals(selected, CoverageTab) && !_coveragePopulated && _session.CoverageResult != null)
-        {
-            PopulateCoverageTab();
-        }
-
-        // Auto-populate Data Browser when first selected
-        if (ReferenceEquals(selected, DataBrowserTab) &&
-            DataBrowserContent.Visibility == Visibility.Collapsed &&
-            _session.HasEsmRecords)
-        {
-            ReconstructButton_Click(sender, new RoutedEventArgs());
-        }
-
-        // Auto-populate Dialogue Viewer when first selected
-        if (ReferenceEquals(selected, DialogueViewerTab) &&
-            !_dialogueViewerPopulated &&
-            _session.HasEsmRecords)
-        {
-            _ = PopulateDialogueViewerAsync();
-        }
-
-        // Auto-populate World Map when first selected
-        if (ReferenceEquals(selected, WorldMapTab) &&
-            !_worldMapPopulated &&
-            _session.HasEsmRecords)
-        {
-            _ = PopulateWorldMapAsync();
-        }
-
-        // Auto-generate reports when first selected
-        if (ReferenceEquals(selected, ReportsTab) &&
-            _reportEntries.Count == 0 &&
-            _session.HasEsmRecords)
-        {
-            _ = GenerateReportsAsync();
         }
     }
 

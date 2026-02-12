@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 namespace FalloutXbox360Utils;
 
 /// <summary>
-/// Helper methods: Format*, Get*, utility methods, templates
+///     Helper methods: Format*, Get*, utility methods, templates
 /// </summary>
 public sealed partial class SingleFileTab
 {
@@ -49,6 +49,34 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Template Helpers
+
+    private static DataTemplate CreateCoverageGapItemTemplate()
+    {
+        var xaml = """
+                   <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                       <Grid Padding="8,2">
+                           <Grid.ColumnDefinitions>
+                               <ColumnDefinition Width="50" />
+                               <ColumnDefinition Width="110" />
+                               <ColumnDefinition Width="90" />
+                               <ColumnDefinition Width="140" />
+                               <ColumnDefinition Width="*" />
+                           </Grid.ColumnDefinitions>
+                           <TextBlock Grid.Column="0" FontSize="11" Text="{Binding Index}" />
+                           <TextBlock Grid.Column="1" FontFamily="Consolas" FontSize="11" Text="{Binding FileOffset}" />
+                           <TextBlock Grid.Column="2" FontSize="11" Text="{Binding Size}" />
+                           <TextBlock Grid.Column="3" FontSize="11" Text="{Binding Classification}" />
+                           <TextBlock Grid.Column="4" FontSize="11" Text="{Binding Context}" TextTrimming="CharacterEllipsis" />
+                       </Grid>
+                   </DataTemplate>
+                   """;
+        return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(xaml);
+    }
+
+    #endregion
+
     #region Dialog Helpers
 
     private bool _isDialogOpen;
@@ -83,34 +111,6 @@ public sealed partial class SingleFileTab
         {
             _isDialogOpen = false;
         }
-    }
-
-    #endregion
-
-    #region Template Helpers
-
-    private static DataTemplate CreateCoverageGapItemTemplate()
-    {
-        var xaml = """
-                   <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-                       <Grid Padding="8,2">
-                           <Grid.ColumnDefinitions>
-                               <ColumnDefinition Width="50" />
-                               <ColumnDefinition Width="110" />
-                               <ColumnDefinition Width="90" />
-                               <ColumnDefinition Width="140" />
-                               <ColumnDefinition Width="*" />
-                           </Grid.ColumnDefinitions>
-                           <TextBlock Grid.Column="0" FontSize="11" Text="{Binding Index}" />
-                           <TextBlock Grid.Column="1" FontFamily="Consolas" FontSize="11" Text="{Binding FileOffset}" />
-                           <TextBlock Grid.Column="2" FontSize="11" Text="{Binding Size}" />
-                           <TextBlock Grid.Column="3" FontSize="11" Text="{Binding Classification}" />
-                           <TextBlock Grid.Column="4" FontSize="11" Text="{Binding Context}" TextTrimming="CharacterEllipsis" />
-                       </Grid>
-                   </DataTemplate>
-                   """;
-        return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(xaml);
     }
 
     #endregion

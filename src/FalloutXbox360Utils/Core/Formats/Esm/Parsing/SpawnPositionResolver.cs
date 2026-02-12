@@ -73,8 +73,8 @@ internal static class SpawnPositionResolver
             {
                 cellCenters.TryAdd(cell.FormId,
                     (cell.GridX.Value * CellWorldSize + CellWorldSize * 0.5f,
-                     cell.GridY.Value * CellWorldSize + CellWorldSize * 0.5f,
-                     0f));
+                        cell.GridY.Value * CellWorldSize + CellWorldSize * 0.5f,
+                        0f));
             }
 
             foreach (var obj in cell.PlacedObjects)
@@ -175,8 +175,8 @@ internal static class SpawnPositionResolver
 
                     break;
 
-                    // Types 2 (Near Current), 3 (Near Editor), 5 (Object Type), 12 (Near Linked Ref)
-                    // cannot be resolved from static ESM data
+                // Types 2 (Near Current), 3 (Near Editor), 5 (Object Type), 12 (Near Linked Ref)
+                // cannot be resolved from static ESM data
             }
         }
 

@@ -432,7 +432,7 @@ internal sealed partial class NifConverter
 
         // Convert using schema
         if (!schemaConverter.TryConvert(output, outPos, block.Size, block.TypeName, blockRemap))
-        // Fallback: bulk swap
+            // Fallback: bulk swap
         {
             BulkSwap32(output, outPos, block.Size);
         }

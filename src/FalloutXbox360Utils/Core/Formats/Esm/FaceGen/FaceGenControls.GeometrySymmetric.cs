@@ -74,7 +74,7 @@ public static partial class FaceGenControls
     ///     Each row is a unit-length direction vector in 50-dimensional FGGS space.
     ///     Slider value = dot(row[j], fggs_values).
     /// </summary>
-    public static readonly float[][] GeometrySymmetricCoeffs = new float[56][]
+    public static readonly float[][] GeometrySymmetricCoeffs = new float[][]
     {
         // [0] Brow Ridge - high / low
         new[]

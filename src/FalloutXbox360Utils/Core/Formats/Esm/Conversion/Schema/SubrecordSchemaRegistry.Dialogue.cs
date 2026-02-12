@@ -253,9 +253,9 @@ public static partial class SubrecordSchemaRegistry
         schemas[new SchemaKey("PKDD", null, 24)] = new SubrecordSchema(
             F.Float("FOV"),
             F.FormId("TopicID"),
-            F.Padding(4),                        // 3 bools (NOHeadtracking, DoNotControlTarget, SpeakerMoveTalk) + 1 pad
+            F.Padding(4), // 3 bools (NOHeadtracking, DoNotControlTarget, SpeakerMoveTalk) + 1 pad
             F.Float("DistanceStartTalking"),
-            F.Padding(4),                        // 1 bool (SayTo) + 3 pad
+            F.Padding(4), // 1 bool (SayTo) + 3 pad
             F.UInt32("TriggerType"))
         {
             Description = "Package Dialogue Data"
@@ -282,7 +282,7 @@ public static partial class SubrecordSchemaRegistry
         // PKW3 - Package Use Weapon Data (24 bytes) - PDB: PACK_USE_WEAPON_DATA_PKW3
         // Offsets 0-5 are individual bools, NOT a uint32+bytes. Offset 20 is a uint32, NOT padding.
         schemas[new SchemaKey("PKW3", null, 24)] = new SubrecordSchema(
-            F.Padding(6),                        // 6 bools (AlwaysHit, DoNoDamage, Crouch, HoldFire, VolleyFire, RepeatFire)
+            F.Padding(6), // 6 bools (AlwaysHit, DoNoDamage, Crouch, HoldFire, VolleyFire, RepeatFire)
             F.UInt16("BurstCount"),
             F.UInt16("VolleyShotsMin"),
             F.UInt16("VolleyShotsMax"),

@@ -23,7 +23,6 @@ public class DdxSubprocessConverter(bool verbose = false, bool saveAtlas = false
     public int Failed { get; private set; }
 
 
-
     public bool ConvertFile(string inputPath, string outputPath)
     {
         Processed++;
@@ -38,7 +37,8 @@ public class DdxSubprocessConverter(bool verbose = false, bool saveAtlas = false
         {
             if (_verbose)
             {
-                Console.WriteLine($"[DdxConverter] Exception converting {inputPath}: {ex.GetType().Name}: {ex.Message}");
+                Console.WriteLine(
+                    $"[DdxConverter] Exception converting {inputPath}: {ex.GetType().Name}: {ex.Message}");
             }
 
             Failed++;

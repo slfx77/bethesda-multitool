@@ -20,7 +20,7 @@ public static class ScriptOpcodes
     public const ushort SetRef = 0x001C;
     public const ushort ScriptName = 0x001D;
     public const ushort Return = 0x001E;
-    public const ushort FlowRef = 0x001F;  // FLOW_REF — purpose unclear, skip paramLen
+    public const ushort FlowRef = 0x001F; // FLOW_REF — purpose unclear, skip paramLen
 
     /// <summary>Opcodes at or above this value are function calls (console or game).</summary>
     public const ushort MinFunctionOpcode = 0x0100;
@@ -29,15 +29,15 @@ public static class ScriptOpcodes
     public const ushort ScriptDone = 0xFFFF;
 
     // Variable marker bytes within bytecode
-    public const byte MarkerIntLocal = 0x73;    // 's' — int local variable
-    public const byte MarkerFloatLocal = 0x66;  // 'f' — float local variable
-    public const byte MarkerReference = 0x72;   // 'r' — reference.variable
-    public const byte MarkerGlobal = 0x47;      // 'G' — global variable
+    public const byte MarkerIntLocal = 0x73; // 's' — int local variable
+    public const byte MarkerFloatLocal = 0x66; // 'f' — float local variable
+    public const byte MarkerReference = 0x72; // 'r' — reference.variable
+    public const byte MarkerGlobal = 0x47; // 'G' — global variable
 
     // Expression tokens
-    public const byte ExprPush = 0x20;          // Push prefix (next byte determines value type)
-    public const byte ExprFunctionCall = 0x58;  // Function call within expression
-    public const byte ExprIntLiteral = 0x6E;    // 'n' — integer literal (4 bytes)
+    public const byte ExprPush = 0x20; // Push prefix (next byte determines value type)
+    public const byte ExprFunctionCall = 0x58; // Function call within expression
+    public const byte ExprIntLiteral = 0x6E; // 'n' — integer literal (4 bytes)
     public const byte ExprDoubleLiteral = 0x7A; // 'z' — double literal (8 bytes)
-    public const byte ExprUnaryNegate = 0x7E;   // '~' — unary negation (pops one, pushes negated)
+    public const byte ExprUnaryNegate = 0x7E; // '~' — unary negation (pops one, pushes negated)
 }

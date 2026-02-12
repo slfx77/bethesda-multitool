@@ -27,19 +27,19 @@ public sealed class ScriptDecompiler(
     string? scriptName = null,
     Func<uint, ushort, string?>? resolveExternalVariable = null)
 {
-    private readonly Func<uint, string?> _resolveFormName = resolveFormName;
-    private readonly Func<uint, ushort, string?>? _resolveExternalVariable = resolveExternalVariable;
-    private readonly List<uint> _referencedObjects = referencedObjects;
-    private readonly List<ScriptVariableInfo> _variables = variables;
     private readonly bool _isBigEndian = isBigEndian;
+    private readonly StringBuilder _output = new();
+    private readonly List<uint> _referencedObjects = referencedObjects;
+    private readonly Func<uint, ushort, string?>? _resolveExternalVariable = resolveExternalVariable;
+    private readonly Func<uint, string?> _resolveFormName = resolveFormName;
     private readonly string? _scriptName = scriptName;
+    private readonly List<ScriptVariableInfo> _variables = variables;
+    private bool _hasPendingRef;
+    private int _indentLevel;
+    private ushort _pendingRefIndex;
 
     // State during decompilation
     private BytecodeReader _reader = null!;
-    private readonly StringBuilder _output = new();
-    private int _indentLevel;
-    private ushort _pendingRefIndex;
-    private bool _hasPendingRef;
 
     /// <summary>
     ///     Decompile compiled bytecode to GECK script source text.
@@ -85,7 +85,8 @@ public sealed class ScriptDecompiler(
 
             if (!_reader.CanRead(paramLen))
             {
-                AppendLine($"; Truncated at offset 0x{opcodePos:X}: opcode 0x{opcode:X4} needs {paramLen} bytes, {_reader.Remaining} available");
+                AppendLine(
+                    $"; Truncated at offset 0x{opcodePos:X}: opcode 0x{opcode:X4} needs {paramLen} bytes, {_reader.Remaining} available");
                 break;
             }
 
@@ -336,7 +337,7 @@ public sealed class ScriptDecompiler(
         var paramStrings = new List<string>();
         for (var i = 0; i < paramCount && _reader.HasData; i++)
         {
-            var expectedType = (funcDef != null && i < funcDef.Params.Length)
+            var expectedType = funcDef != null && i < funcDef.Params.Length
                 ? funcDef.Params[i].Type
                 : (ScriptParamType?)null;
 
@@ -642,7 +643,7 @@ public sealed class ScriptDecompiler(
         // Check for marker bytes — all function parameters are marker-prefixed
         switch (marker)
         {
-            case ScriptOpcodes.MarkerIntLocal:  // 0x73 's' — int local variable
+            case ScriptOpcodes.MarkerIntLocal: // 0x73 's' — int local variable
             case ScriptOpcodes.MarkerFloatLocal: // 0x66 'f' — float local variable
                 _reader.ReadByte();
                 return ReadLocalVariable();

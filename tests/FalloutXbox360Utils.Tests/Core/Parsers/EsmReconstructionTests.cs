@@ -2,7 +2,6 @@ using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 

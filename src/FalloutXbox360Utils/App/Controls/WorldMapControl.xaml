@@ -72,11 +72,11 @@
 
     <!-- Win2D Canvas -->
     <canvas:CanvasControl x:Name="MapCanvas" Grid.Row="1"
-                           Draw="MapCanvas_Draw"
-                           PointerPressed="MapCanvas_PointerPressed"
-                           PointerMoved="MapCanvas_PointerMoved"
-                           PointerReleased="MapCanvas_PointerReleased"
-                           PointerWheelChanged="MapCanvas_PointerWheelChanged" />
+                          Draw="MapCanvas_Draw"
+                          PointerPressed="MapCanvas_PointerPressed"
+                          PointerMoved="MapCanvas_PointerMoved"
+                          PointerReleased="MapCanvas_PointerReleased"
+                          PointerWheelChanged="MapCanvas_PointerWheelChanged" />
 
     <!-- Cell Browser (shown instead of canvas when "All Cells" or "Interiors" is selected) -->
     <Grid x:Name="CellBrowserPanel" Grid.Row="1" Visibility="Collapsed">

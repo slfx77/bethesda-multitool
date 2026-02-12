@@ -24,5 +24,8 @@ public record ObjectBounds
     /// <summary>Maximum Z bound.</summary>
     public short Z2 { get; init; }
 
-    public override string ToString() => $"({X1}, {Y1}, {Z1}) to ({X2}, {Y2}, {Z2})";
+    public override string ToString()
+    {
+        return $"({X1}, {Y1}, {Z1}) to ({X2}, {Y2}, {Z2})";
+    }
 }

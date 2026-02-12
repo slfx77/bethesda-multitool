@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Xma;
@@ -22,7 +21,8 @@ internal static class XmaOggConverter
     /// <param name="targetSampleRate">Target sample rate (default 0 = preserve original)</param>
     /// <param name="targetBitrate">Target bitrate in kbps (default 0 = quality-based VBR)</param>
     /// <returns>Conversion result with OGG data</returns>
-    public static async Task<ConversionResult> ConvertAsync(byte[] xmaData, int targetSampleRate = 0, int targetBitrate = 0)
+    public static async Task<ConversionResult> ConvertAsync(byte[] xmaData, int targetSampleRate = 0,
+        int targetBitrate = 0)
     {
         if (!FfmpegLocator.IsAvailable)
         {

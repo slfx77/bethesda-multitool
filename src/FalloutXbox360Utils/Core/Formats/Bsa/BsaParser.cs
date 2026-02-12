@@ -125,11 +125,13 @@ public static class BsaParser
         if (archiveFlags.HasFlag(BsaArchiveFlags.IncludeFileNames))
         {
             foreach (var folder in folders)
+            {
                 foreach (var file in folder.Files)
                 {
                     var fileName = ReadNullTerminatedString(reader);
                     file.Name = fileName;
                 }
+            }
         }
 
         return new BsaArchive

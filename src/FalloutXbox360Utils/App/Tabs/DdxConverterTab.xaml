@@ -45,232 +45,232 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-    <!-- Header row: Title + Select buttons (outside card) -->
-    <Grid Grid.Row="0"
-          Margin="0,0,0,8">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
-        <TextBlock
-          x:Uid="Header_DdxConverter"
-          Style="{StaticResource SubtitleTextBlockStyle}" />
-        <TextBlock
-          x:Uid="Subtitle_DdxConvBy"
-          Style="{StaticResource TabSubtitleStyle}" />
-      </StackPanel>
-      <StackPanel
-        Grid.Column="1"
-        Style="{StaticResource SelectButtonsPanelStyle}">
-        <Button
-          x:Uid="Button_SelectAll"
-          Click="SelectAllButton_Click" />
-        <Button
-          x:Uid="Button_SelectNone"
-          Click="SelectNoneButton_Click" />
-      </StackPanel>
-    </Grid>
+      <!-- Header row: Title + Select buttons (outside card) -->
+      <Grid Grid.Row="0"
+            Margin="0,0,0,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
+          <TextBlock
+            x:Uid="Header_DdxConverter"
+            Style="{StaticResource SubtitleTextBlockStyle}" />
+          <TextBlock
+            x:Uid="Subtitle_DdxConvBy"
+            Style="{StaticResource TabSubtitleStyle}" />
+        </StackPanel>
+        <StackPanel
+          Grid.Column="1"
+          Style="{StaticResource SelectButtonsPanelStyle}">
+          <Button
+            x:Uid="Button_SelectAll"
+            Click="SelectAllButton_Click" />
+          <Button
+            x:Uid="Button_SelectNone"
+            Click="SelectNoneButton_Click" />
+        </StackPanel>
+      </Grid>
 
-    <!-- Files List Card -->
-    <Border
-      Grid.Row="1"
-      VerticalAlignment="Stretch"
-      Style="{StaticResource CardBorderStyle}">
-      <Grid VerticalAlignment="Stretch">
+      <!-- Files List Card -->
+      <Border
+        Grid.Row="1"
+        VerticalAlignment="Stretch"
+        Style="{StaticResource CardBorderStyle}">
+        <Grid VerticalAlignment="Stretch">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+          </Grid.RowDefinitions>
+
+          <!-- Column headers -->
+          <Grid Grid.Row="0"
+                Style="{StaticResource ColumnHeaderGridStyle}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="40" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="80" />
+              <ColumnDefinition Width="120" />
+              <ColumnDefinition Width="200" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0"
+                       FontWeight="SemiBold"
+                       Text="" />
+            <Button
+              Grid.Column="1"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByFilePath_Click">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="4">
+                <TextBlock x:Uid="Col_FilePath" FontWeight="SemiBold" />
+                <FontIcon
+                  x:Name="FilePathSortIcon"
+                  Style="{StaticResource SortIconStyle}" />
+              </StackPanel>
+            </Button>
+            <Button
+              Grid.Column="2"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortBySize_Click">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="4">
+                <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
+                <FontIcon
+                  x:Name="SizeSortIcon"
+                  Style="{StaticResource SortIconStyle}" />
+              </StackPanel>
+            </Button>
+            <Button
+              Grid.Column="3"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByFormat_Click">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="4">
+                <TextBlock x:Uid="Col_Format" FontWeight="SemiBold" />
+                <FontIcon
+                  x:Name="FormatSortIcon"
+                  Style="{StaticResource SortIconStyle}" />
+              </StackPanel>
+            </Button>
+            <Button
+              Grid.Column="4"
+              Style="{StaticResource SortableColumnHeaderButtonStyle}"
+              Click="SortByStatus_Click">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="4">
+                <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
+                <FontIcon
+                  x:Name="StatusSortIcon"
+                  Style="{StaticResource SortIconStyle}" />
+              </StackPanel>
+            </Button>
+          </Grid>
+
+          <!-- Files ListView -->
+          <ListView
+            x:Name="DdxFilesListView"
+            Grid.Row="1"
+            Style="{StaticResource FileListViewStyle}">
+            <ListView.ItemTemplate>
+              <DataTemplate x:DataType="local:DdxFileEntry">
+                <Grid Style="{StaticResource ListItemRowGridStyle}">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="40" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="120" />
+                    <ColumnDefinition Width="200" />
+                  </Grid.ColumnDefinitions>
+                  <CheckBox
+                    Grid.Column="0"
+                    IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
+                  <TextBlock
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Text="{x:Bind RelativePath}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind FullPath}" />
+                  <TextBlock
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Text="{x:Bind FileSizeDisplay}" />
+                  <TextBlock
+                    Grid.Column="3"
+                    VerticalAlignment="Center"
+                    Foreground="{x:Bind FormatColor}"
+                    Text="{x:Bind FormatDescription}" />
+                  <TextBlock
+                    Grid.Column="4"
+                    VerticalAlignment="Center"
+                    Foreground="{x:Bind StatusColor, Mode=OneWay}"
+                    Text="{x:Bind Status, Mode=OneWay}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}" />
+                </Grid>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+          </ListView>
+        </Grid>
+      </Border>
+
+      <!--  Progress Bar (above I/O)  -->
+      <ProgressBar
+        x:Name="ConversionProgressBar"
+        Grid.Row="2"
+        Style="{StaticResource TabProgressBarStyle}" />
+
+      <!-- Input/Output Section -->
+      <Grid
+        Grid.Row="3"
+        Style="{StaticResource IoSectionGridStyle}">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
-          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
 
-        <!-- Column headers -->
-        <Grid Grid.Row="0"
-              Style="{StaticResource ColumnHeaderGridStyle}">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="40" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="80" />
-            <ColumnDefinition Width="120" />
-            <ColumnDefinition Width="200" />
-          </Grid.ColumnDefinitions>
-          <TextBlock Grid.Column="0"
-                     FontWeight="SemiBold"
-                     Text="" />
-          <Button
-            Grid.Column="1"
-            Style="{StaticResource SortableColumnHeaderButtonStyle}"
-            Click="SortByFilePath_Click">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="4">
-              <TextBlock x:Uid="Col_FilePath" FontWeight="SemiBold" />
-              <FontIcon
-                x:Name="FilePathSortIcon"
-                Style="{StaticResource SortIconStyle}" />
-            </StackPanel>
-          </Button>
-          <Button
-            Grid.Column="2"
-            Style="{StaticResource SortableColumnHeaderButtonStyle}"
-            Click="SortBySize_Click">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="4">
-              <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
-              <FontIcon
-                x:Name="SizeSortIcon"
-                Style="{StaticResource SortIconStyle}" />
-            </StackPanel>
-          </Button>
-          <Button
-            Grid.Column="3"
-            Style="{StaticResource SortableColumnHeaderButtonStyle}"
-            Click="SortByFormat_Click">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="4">
-              <TextBlock x:Uid="Col_Format" FontWeight="SemiBold" />
-              <FontIcon
-                x:Name="FormatSortIcon"
-                Style="{StaticResource SortIconStyle}" />
-            </StackPanel>
-          </Button>
-          <Button
-            Grid.Column="4"
-            Style="{StaticResource SortableColumnHeaderButtonStyle}"
-            Click="SortByStatus_Click">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="4">
-              <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
-              <FontIcon
-                x:Name="StatusSortIcon"
-                Style="{StaticResource SortIconStyle}" />
-            </StackPanel>
-          </Button>
-        </Grid>
+        <!-- Input Directory -->
+        <TextBlock
+          x:Uid="Label_InputDirectory"
+          Grid.Row="0"
+          Grid.Column="0"
+          Style="{StaticResource IoLabelStyle}" />
+        <TextBox
+          x:Name="InputDirectoryTextBox"
+          x:Uid="Input_DdxInputDir"
+          Grid.Row="0"
+          Grid.Column="1"
+          Style="{StaticResource IoTextBoxStyle}"
+          TextChanged="InputDirectoryTextBox_TextChanged" />
+        <Button
+          x:Uid="Button_Browse"
+          Grid.Row="0"
+          Grid.Column="2"
+          Click="BrowseInputButton_Click" />
+        <Button
+          x:Name="ConvertButton"
+          x:Uid="Button_Convert"
+          Grid.Row="0"
+          Grid.Column="3"
+          MinWidth="120"
+          Margin="8,0,0,0"
+          Click="ConvertButton_Click"
+          IsEnabled="False"
+          Style="{StaticResource AccentButtonStyle}" />
 
-        <!-- Files ListView -->
-        <ListView
-          x:Name="DdxFilesListView"
+        <!-- Output Directory -->
+        <TextBlock
+          x:Uid="Label_OutputDirectory"
           Grid.Row="1"
-          Style="{StaticResource FileListViewStyle}">
-          <ListView.ItemTemplate>
-            <DataTemplate x:DataType="local:DdxFileEntry">
-              <Grid Style="{StaticResource ListItemRowGridStyle}">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="40" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="80" />
-                  <ColumnDefinition Width="120" />
-                  <ColumnDefinition Width="200" />
-                </Grid.ColumnDefinitions>
-                <CheckBox
-                  Grid.Column="0"
-                  IsChecked="{x:Bind IsSelected, Mode=TwoWay}" />
-                <TextBlock
-                  Grid.Column="1"
-                  VerticalAlignment="Center"
-                  Text="{x:Bind RelativePath}"
-                  TextTrimming="CharacterEllipsis"
-                  ToolTipService.ToolTip="{x:Bind FullPath}" />
-                <TextBlock
-                  Grid.Column="2"
-                  VerticalAlignment="Center"
-                  Text="{x:Bind FileSizeDisplay}" />
-                <TextBlock
-                  Grid.Column="3"
-                  VerticalAlignment="Center"
-                  Foreground="{x:Bind FormatColor}"
-                  Text="{x:Bind FormatDescription}" />
-                <TextBlock
-                  Grid.Column="4"
-                  VerticalAlignment="Center"
-                  Foreground="{x:Bind StatusColor, Mode=OneWay}"
-                  Text="{x:Bind Status, Mode=OneWay}"
-                  TextTrimming="CharacterEllipsis"
-                  ToolTipService.ToolTip="{x:Bind Status, Mode=OneWay}" />
-              </Grid>
-            </DataTemplate>
-          </ListView.ItemTemplate>
-        </ListView>
+          Grid.Column="0"
+          Style="{StaticResource IoLabelStyle}" />
+        <TextBox
+          x:Name="OutputDirectoryTextBox"
+          x:Uid="Input_ConvertOutputDir"
+          Grid.Row="1"
+          Grid.Column="1"
+          Style="{StaticResource IoTextBoxStyle}"
+          TextChanged="OutputDirectoryTextBox_TextChanged" />
+        <Button
+          x:Uid="Button_Browse"
+          Grid.Row="1"
+          Grid.Column="2"
+          Click="BrowseOutputButton_Click" />
+        <Button
+          x:Name="CancelButton"
+          x:Uid="Button_Cancel"
+          Grid.Row="1"
+          Grid.Column="3"
+          Margin="8,0,0,0"
+          HorizontalAlignment="Stretch"
+          Click="CancelButton_Click"
+          IsEnabled="False" />
       </Grid>
-    </Border>
-
-    <!--  Progress Bar (above I/O)  -->
-    <ProgressBar
-      x:Name="ConversionProgressBar"
-      Grid.Row="2"
-      Style="{StaticResource TabProgressBarStyle}" />
-
-    <!-- Input/Output Section -->
-    <Grid
-      Grid.Row="3"
-      Style="{StaticResource IoSectionGridStyle}">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-
-      <!-- Input Directory -->
-      <TextBlock
-        x:Uid="Label_InputDirectory"
-        Grid.Row="0"
-        Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}" />
-      <TextBox
-        x:Name="InputDirectoryTextBox"
-        x:Uid="Input_DdxInputDir"
-        Grid.Row="0"
-        Grid.Column="1"
-        Style="{StaticResource IoTextBoxStyle}"
-        TextChanged="InputDirectoryTextBox_TextChanged" />
-      <Button
-        x:Uid="Button_Browse"
-        Grid.Row="0"
-        Grid.Column="2"
-        Click="BrowseInputButton_Click" />
-      <Button
-        x:Name="ConvertButton"
-        x:Uid="Button_Convert"
-        Grid.Row="0"
-        Grid.Column="3"
-        MinWidth="120"
-        Margin="8,0,0,0"
-        Click="ConvertButton_Click"
-        IsEnabled="False"
-        Style="{StaticResource AccentButtonStyle}" />
-
-      <!-- Output Directory -->
-      <TextBlock
-        x:Uid="Label_OutputDirectory"
-        Grid.Row="1"
-        Grid.Column="0"
-        Style="{StaticResource IoLabelStyle}" />
-      <TextBox
-        x:Name="OutputDirectoryTextBox"
-        x:Uid="Input_ConvertOutputDir"
-        Grid.Row="1"
-        Grid.Column="1"
-        Style="{StaticResource IoTextBoxStyle}"
-        TextChanged="OutputDirectoryTextBox_TextChanged" />
-      <Button
-        x:Uid="Button_Browse"
-        Grid.Row="1"
-        Grid.Column="2"
-        Click="BrowseOutputButton_Click" />
-      <Button
-        x:Name="CancelButton"
-        x:Uid="Button_Cancel"
-        Grid.Row="1"
-        Grid.Column="3"
-        Margin="8,0,0,0"
-        HorizontalAlignment="Stretch"
-        Click="CancelButton_Click"
-        IsEnabled="False" />
-    </Grid>
     </Grid>
   </Grid>
 </UserControl>

@@ -125,7 +125,7 @@ public sealed class BsaWriter : IDisposable
 
         // FO3/FNV: strip Oblivion-only flags (Fonts, Menus text, Misc XML)
         // Reference: BSArchPro line 1519-1521
-        fileFlags &= ~(BsaFileFlags.Fonts);
+        fileFlags &= ~BsaFileFlags.Fonts;
 
         // Texture-only archives get EmbedFileNames (BSArchPro line 1508-1509)
         var embedNames = fileFlags == BsaFileFlags.Textures;

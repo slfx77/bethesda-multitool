@@ -16,7 +16,7 @@ public static partial class FaceGenControls
     /// </summary>
     public static (string Name, float Value)[] ComputeGeometrySymmetric(float[] fggs)
     {
-        if (fggs.Length != 50) return Array.Empty<(string, float)>();
+        if (fggs.Length != 50) return [];
         var results = new (string Name, float Value)[GeometrySymmetricNames.Length];
         for (var j = 0; j < GeometrySymmetricNames.Length; j++)
         {
@@ -31,7 +31,7 @@ public static partial class FaceGenControls
 
     public static (string Name, float Value)[] ComputeGeometryAsymmetric(float[] fgga)
     {
-        if (fgga.Length != 30) return Array.Empty<(string, float)>();
+        if (fgga.Length != 30) return [];
         var results = new (string Name, float Value)[GeometryAsymmetricNames.Length];
         for (var j = 0; j < GeometryAsymmetricNames.Length; j++)
         {
@@ -46,7 +46,7 @@ public static partial class FaceGenControls
 
     public static (string Name, float Value)[] ComputeTextureSymmetric(float[] fgts)
     {
-        if (fgts.Length != 50) return Array.Empty<(string, float)>();
+        if (fgts.Length != 50) return [];
         var results = new (string Name, float Value)[TextureSymmetricNames.Length];
         for (var j = 0; j < TextureSymmetricNames.Length; j++)
         {
