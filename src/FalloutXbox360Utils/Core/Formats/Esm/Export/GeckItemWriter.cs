@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 internal static class GeckItemWriter
 {
     internal static void AppendWeaponsSection(StringBuilder sb, List<WeaponRecord> weapons,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Weapons ({weapons.Count})");
 
@@ -60,7 +60,7 @@ internal static class GeckItemWriter
                 if (weapon.CriticalEffectFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Effect:         {GeckReportGenerator.FormatFormIdWithName(weapon.CriticalEffectFormId.Value, lookup)}");
+                        $"  Effect:         {resolver.FormatFull(weapon.CriticalEffectFormId.Value)}");
                 }
             }
 
@@ -72,17 +72,17 @@ internal static class GeckItemWriter
 
             if (weapon.AmmoFormId.HasValue)
             {
-                sb.AppendLine($"  Ammo:           {GeckReportGenerator.FormatFormIdWithName(weapon.AmmoFormId.Value, lookup)}");
+                sb.AppendLine($"  Ammo:           {resolver.FormatFull(weapon.AmmoFormId.Value)}");
             }
 
             if (weapon.ProjectileFormId.HasValue)
             {
-                sb.AppendLine($"  Projectile:     {GeckReportGenerator.FormatFormIdWithName(weapon.ProjectileFormId.Value, lookup)}");
+                sb.AppendLine($"  Projectile:     {resolver.FormatFull(weapon.ProjectileFormId.Value)}");
             }
 
             if (weapon.ImpactDataSetFormId.HasValue)
             {
-                sb.AppendLine($"  Impact Data:    {GeckReportGenerator.FormatFormIdWithName(weapon.ImpactDataSetFormId.Value, lookup)}");
+                sb.AppendLine($"  Impact Data:    {resolver.FormatFull(weapon.ImpactDataSetFormId.Value)}");
             }
 
             sb.AppendLine($"  AP Cost:        {weapon.ActionPoints:F0}");
@@ -106,55 +106,55 @@ internal static class GeckItemWriter
                 if (weapon.FireSound3DFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Fire (3D):      {GeckReportGenerator.FormatFormIdWithName(weapon.FireSound3DFormId.Value, lookup)}");
+                        $"  Fire (3D):      {resolver.FormatFull(weapon.FireSound3DFormId.Value)}");
                 }
 
                 if (weapon.FireSoundDistFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Fire (Distant): {GeckReportGenerator.FormatFormIdWithName(weapon.FireSoundDistFormId.Value, lookup)}");
+                        $"  Fire (Distant): {resolver.FormatFull(weapon.FireSoundDistFormId.Value)}");
                 }
 
                 if (weapon.FireSound2DFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Fire (2D):      {GeckReportGenerator.FormatFormIdWithName(weapon.FireSound2DFormId.Value, lookup)}");
+                        $"  Fire (2D):      {resolver.FormatFull(weapon.FireSound2DFormId.Value)}");
                 }
 
                 if (weapon.DryFireSoundFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Dry Fire:       {GeckReportGenerator.FormatFormIdWithName(weapon.DryFireSoundFormId.Value, lookup)}");
+                        $"  Dry Fire:       {resolver.FormatFull(weapon.DryFireSoundFormId.Value)}");
                 }
 
                 if (weapon.IdleSoundFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Idle:           {GeckReportGenerator.FormatFormIdWithName(weapon.IdleSoundFormId.Value, lookup)}");
+                        $"  Idle:           {resolver.FormatFull(weapon.IdleSoundFormId.Value)}");
                 }
 
                 if (weapon.EquipSoundFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Equip:          {GeckReportGenerator.FormatFormIdWithName(weapon.EquipSoundFormId.Value, lookup)}");
+                        $"  Equip:          {resolver.FormatFull(weapon.EquipSoundFormId.Value)}");
                 }
 
                 if (weapon.UnequipSoundFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Unequip:        {GeckReportGenerator.FormatFormIdWithName(weapon.UnequipSoundFormId.Value, lookup)}");
+                        $"  Unequip:        {resolver.FormatFull(weapon.UnequipSoundFormId.Value)}");
                 }
 
                 if (weapon.PickupSoundFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Pickup:         {GeckReportGenerator.FormatFormIdWithName(weapon.PickupSoundFormId.Value, lookup)}");
+                        $"  Pickup:         {resolver.FormatFull(weapon.PickupSoundFormId.Value)}");
                 }
 
                 if (weapon.PutdownSoundFormId.HasValue)
                 {
                     sb.AppendLine(
-                        $"  Putdown:        {GeckReportGenerator.FormatFormIdWithName(weapon.PutdownSoundFormId.Value, lookup)}");
+                        $"  Putdown:        {resolver.FormatFull(weapon.PutdownSoundFormId.Value)}");
                 }
             }
         }
@@ -163,8 +163,7 @@ internal static class GeckItemWriter
     internal static void AppendWeaponReportEntry(
         StringBuilder sb,
         WeaponRecord weapon,
-        Dictionary<uint, string> editorIdLookup,
-        Dictionary<uint, string> displayNameLookup)
+        FormIdResolver resolver)
     {
         sb.AppendLine();
 
@@ -236,7 +235,7 @@ internal static class GeckItemWriter
             if (weapon.CriticalEffectFormId.HasValue)
             {
                 sb.AppendLine(
-                    $"  Effect:         {GeckReportGenerator.FormatWithDisplayName(weapon.CriticalEffectFormId.Value, editorIdLookup, displayNameLookup)}");
+                    $"  Effect:         {resolver.FormatFull(weapon.CriticalEffectFormId.Value)}");
             }
         }
 
@@ -256,19 +255,19 @@ internal static class GeckItemWriter
             if (weapon.AmmoFormId.HasValue)
             {
                 sb.AppendLine(
-                    $"  Ammo:           {GeckReportGenerator.FormatWithDisplayName(weapon.AmmoFormId.Value, editorIdLookup, displayNameLookup)}");
+                    $"  Ammo:           {resolver.FormatFull(weapon.AmmoFormId.Value)}");
             }
 
             if (weapon.ProjectileFormId.HasValue)
             {
                 sb.AppendLine(
-                    $"  Projectile:     {GeckReportGenerator.FormatWithDisplayName(weapon.ProjectileFormId.Value, editorIdLookup, displayNameLookup)}");
+                    $"  Projectile:     {resolver.FormatFull(weapon.ProjectileFormId.Value)}");
             }
 
             if (weapon.ImpactDataSetFormId.HasValue)
             {
                 sb.AppendLine(
-                    $"  Impact Data:    {GeckReportGenerator.FormatWithDisplayName(weapon.ImpactDataSetFormId.Value, editorIdLookup, displayNameLookup)}");
+                    $"  Impact Data:    {resolver.FormatFull(weapon.ImpactDataSetFormId.Value)}");
             }
         }
 
@@ -291,25 +290,25 @@ internal static class GeckItemWriter
             if (proj.ExplosionFormId.HasValue)
             {
                 sb.AppendLine(
-                    $"  Explosion:      {GeckReportGenerator.FormatWithDisplayName(proj.ExplosionFormId.Value, editorIdLookup, displayNameLookup)}");
+                    $"  Explosion:      {resolver.FormatFull(proj.ExplosionFormId.Value)}");
             }
 
             if (proj.ActiveSoundLoopFormId.HasValue)
             {
                 sb.AppendLine(
-                    $"  In-Flight Snd:  {GeckReportGenerator.FormatFormIdWithName(proj.ActiveSoundLoopFormId.Value, editorIdLookup)}");
+                    $"  In-Flight Snd:  {resolver.FormatWithEditorId(proj.ActiveSoundLoopFormId.Value)}");
             }
 
             if (proj.CountdownSoundFormId.HasValue)
             {
                 sb.AppendLine(
-                    $"  Countdown Snd:  {GeckReportGenerator.FormatFormIdWithName(proj.CountdownSoundFormId.Value, editorIdLookup)}");
+                    $"  Countdown Snd:  {resolver.FormatWithEditorId(proj.CountdownSoundFormId.Value)}");
             }
 
             if (proj.DeactivateSoundFormId.HasValue)
             {
                 sb.AppendLine(
-                    $"  Deactivate Snd: {GeckReportGenerator.FormatFormIdWithName(proj.DeactivateSoundFormId.Value, editorIdLookup)}");
+                    $"  Deactivate Snd: {resolver.FormatWithEditorId(proj.DeactivateSoundFormId.Value)}");
             }
 
             if (!string.IsNullOrEmpty(proj.ModelPath))
@@ -329,15 +328,15 @@ internal static class GeckItemWriter
             sb.AppendLine();
             sb.AppendLine($"  \u2500\u2500 Sound Effects {new string('\u2500', 65)}");
 
-            GeckReportGenerator.AppendSoundLine(sb, "Fire (3D):", weapon.FireSound3DFormId, editorIdLookup);
-            GeckReportGenerator.AppendSoundLine(sb, "Fire (Distant):", weapon.FireSoundDistFormId, editorIdLookup);
-            GeckReportGenerator.AppendSoundLine(sb, "Fire (2D):", weapon.FireSound2DFormId, editorIdLookup);
-            GeckReportGenerator.AppendSoundLine(sb, "Dry Fire:", weapon.DryFireSoundFormId, editorIdLookup);
-            GeckReportGenerator.AppendSoundLine(sb, "Idle:", weapon.IdleSoundFormId, editorIdLookup);
-            GeckReportGenerator.AppendSoundLine(sb, "Equip:", weapon.EquipSoundFormId, editorIdLookup);
-            GeckReportGenerator.AppendSoundLine(sb, "Unequip:", weapon.UnequipSoundFormId, editorIdLookup);
-            GeckReportGenerator.AppendSoundLine(sb, "Pickup:", weapon.PickupSoundFormId, editorIdLookup);
-            GeckReportGenerator.AppendSoundLine(sb, "Putdown:", weapon.PutdownSoundFormId, editorIdLookup);
+            GeckReportGenerator.AppendSoundLine(sb, "Fire (3D):", weapon.FireSound3DFormId, resolver);
+            GeckReportGenerator.AppendSoundLine(sb, "Fire (Distant):", weapon.FireSoundDistFormId, resolver);
+            GeckReportGenerator.AppendSoundLine(sb, "Fire (2D):", weapon.FireSound2DFormId, resolver);
+            GeckReportGenerator.AppendSoundLine(sb, "Dry Fire:", weapon.DryFireSoundFormId, resolver);
+            GeckReportGenerator.AppendSoundLine(sb, "Idle:", weapon.IdleSoundFormId, resolver);
+            GeckReportGenerator.AppendSoundLine(sb, "Equip:", weapon.EquipSoundFormId, resolver);
+            GeckReportGenerator.AppendSoundLine(sb, "Unequip:", weapon.UnequipSoundFormId, resolver);
+            GeckReportGenerator.AppendSoundLine(sb, "Pickup:", weapon.PickupSoundFormId, resolver);
+            GeckReportGenerator.AppendSoundLine(sb, "Putdown:", weapon.PutdownSoundFormId, resolver);
         }
 
         // Model
@@ -353,10 +352,10 @@ internal static class GeckItemWriter
     ///     Generate a report for Weapons only.
     /// </summary>
     public static string GenerateWeaponsReport(List<WeaponRecord> weapons,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendWeaponsSection(sb, weapons, lookup ?? []);
+        AppendWeaponsSection(sb, weapons, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 
@@ -366,8 +365,7 @@ internal static class GeckItemWriter
     /// </summary>
     public static string GenerateWeaponReport(
         List<WeaponRecord> weapons,
-        Dictionary<uint, string> editorIdLookup,
-        Dictionary<uint, string> displayNameLookup)
+        FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         GeckReportGenerator.AppendHeader(sb, $"Weapon Report ({weapons.Count:N0} Weapons)");
@@ -399,7 +397,7 @@ internal static class GeckItemWriter
 
         foreach (var weapon in weapons.OrderBy(w => w.EditorId ?? ""))
         {
-            AppendWeaponReportEntry(sb, weapon, editorIdLookup, displayNameLookup);
+            AppendWeaponReportEntry(sb, weapon, resolver);
         }
 
         return sb.ToString();
@@ -444,7 +442,7 @@ internal static class GeckItemWriter
     }
 
     internal static void AppendAmmoSection(StringBuilder sb, List<AmmoRecord> ammo,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Ammunition ({ammo.Count})");
 
@@ -467,7 +465,7 @@ internal static class GeckItemWriter
 
             if (item.ProjectileFormId.HasValue)
             {
-                sb.AppendLine($"  Projectile:     {GeckReportGenerator.FormatFormIdWithName(item.ProjectileFormId.Value, lookup)}");
+                sb.AppendLine($"  Projectile:     {resolver.FormatFull(item.ProjectileFormId.Value)}");
             }
 
             if (!string.IsNullOrEmpty(item.ModelPath))
@@ -480,15 +478,15 @@ internal static class GeckItemWriter
     /// <summary>
     ///     Generate a report for Ammo only.
     /// </summary>
-    public static string GenerateAmmoReport(List<AmmoRecord> ammo, Dictionary<uint, string>? lookup = null)
+    public static string GenerateAmmoReport(List<AmmoRecord> ammo, FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendAmmoSection(sb, ammo, lookup ?? []);
+        AppendAmmoSection(sb, ammo, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 
     internal static void AppendConsumablesSection(StringBuilder sb, List<ConsumableRecord> consumables,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Consumables ({consumables.Count})");
 
@@ -509,7 +507,7 @@ internal static class GeckItemWriter
 
             if (item.AddictionFormId.HasValue)
             {
-                sb.AppendLine($"  Addiction:      {GeckReportGenerator.FormatFormIdWithName(item.AddictionFormId.Value, lookup)}");
+                sb.AppendLine($"  Addiction:      {resolver.FormatFull(item.AddictionFormId.Value)}");
                 sb.AppendLine($"  Addict. Chance: {item.AddictionChance * 100:F0}%");
             }
 
@@ -519,7 +517,7 @@ internal static class GeckItemWriter
                 sb.AppendLine("Effects:");
                 foreach (var effect in item.EffectFormIds)
                 {
-                    sb.AppendLine($"  - {GeckReportGenerator.FormatFormIdWithName(effect, lookup)}");
+                    sb.AppendLine($"  - {resolver.FormatFull(effect)}");
                 }
             }
 
@@ -534,10 +532,10 @@ internal static class GeckItemWriter
     ///     Generate a report for Consumables only.
     /// </summary>
     public static string GenerateConsumablesReport(List<ConsumableRecord> consumables,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendConsumablesSection(sb, consumables, lookup ?? []);
+        AppendConsumablesSection(sb, consumables, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 
@@ -607,7 +605,7 @@ internal static class GeckItemWriter
     }
 
     internal static void AppendContainersSection(StringBuilder sb, List<ContainerRecord> containers,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Containers ({containers.Count})");
 
@@ -629,7 +627,7 @@ internal static class GeckItemWriter
                 sb.AppendLine($"Contents ({container.Contents.Count}):");
                 foreach (var item in container.Contents)
                 {
-                    sb.AppendLine($"  - {GeckReportGenerator.FormatFormIdWithName(item.ItemFormId, lookup)} x{item.Count}");
+                    sb.AppendLine($"  - {resolver.FormatFull(item.ItemFormId)} x{item.Count}");
                 }
             }
         }
@@ -638,8 +636,7 @@ internal static class GeckItemWriter
     internal static void AppendContainerReportEntry(
         StringBuilder sb,
         ContainerRecord container,
-        Dictionary<uint, string> editorIdLookup,
-        Dictionary<uint, string> displayNameLookup)
+        FormIdResolver resolver)
     {
         sb.AppendLine();
 
@@ -669,8 +666,8 @@ internal static class GeckItemWriter
 
             foreach (var item in container.Contents)
             {
-                var editorId = GeckReportGenerator.ResolveEditorId(item.ItemFormId, editorIdLookup);
-                var displayName = GeckReportGenerator.ResolveDisplayName(item.ItemFormId, displayNameLookup);
+                var editorId = resolver.ResolveEditorId(item.ItemFormId);
+                var displayName = resolver.ResolveDisplayName(item.ItemFormId);
                 sb.AppendLine($"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {item.Count,5}");
             }
         }
@@ -681,7 +678,7 @@ internal static class GeckItemWriter
             sb.AppendLine();
             sb.AppendLine($"  \u2500\u2500 References {new string('\u2500', 67)}");
             sb.AppendLine(
-                $"  Script:         {GeckReportGenerator.FormatWithDisplayName(container.Script.Value, editorIdLookup, displayNameLookup)}");
+                $"  Script:         {resolver.FormatFull(container.Script.Value)}");
         }
 
         // Model path
@@ -697,10 +694,10 @@ internal static class GeckItemWriter
     ///     Generate a report for Containers only.
     /// </summary>
     public static string GenerateContainersReport(List<ContainerRecord> containers,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendContainersSection(sb, containers, lookup ?? []);
+        AppendContainersSection(sb, containers, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 
@@ -710,8 +707,7 @@ internal static class GeckItemWriter
     /// </summary>
     public static string GenerateContainerReport(
         List<ContainerRecord> containers,
-        Dictionary<uint, string> editorIdLookup,
-        Dictionary<uint, string> displayNameLookup)
+        FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         GeckReportGenerator.AppendHeader(sb, $"Container Report ({containers.Count:N0} Containers)");
@@ -732,14 +728,14 @@ internal static class GeckItemWriter
 
         foreach (var container in containers.OrderBy(c => c.EditorId ?? ""))
         {
-            AppendContainerReportEntry(sb, container, editorIdLookup, displayNameLookup);
+            AppendContainerReportEntry(sb, container, resolver);
         }
 
         return sb.ToString();
     }
 
     internal static void AppendRecipesSection(StringBuilder sb, List<RecipeRecord> recipes,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Recipes ({recipes.Count})");
         sb.AppendLine();
@@ -763,12 +759,12 @@ internal static class GeckItemWriter
 
             if (recipe.CategoryFormId != 0)
             {
-                sb.AppendLine($"  Category:       {GeckReportGenerator.FormatFormIdWithName(recipe.CategoryFormId, lookup)}");
+                sb.AppendLine($"  Category:       {resolver.FormatFull(recipe.CategoryFormId)}");
             }
 
             if (recipe.SubcategoryFormId != 0)
             {
-                sb.AppendLine($"  Subcategory:    {GeckReportGenerator.FormatFormIdWithName(recipe.SubcategoryFormId, lookup)}");
+                sb.AppendLine($"  Subcategory:    {resolver.FormatFull(recipe.SubcategoryFormId)}");
             }
 
             if (recipe.Ingredients.Count > 0)
@@ -780,7 +776,7 @@ internal static class GeckItemWriter
                 foreach (var ing in recipe.Ingredients)
                 {
                     var itemName = ing.ItemFormId != 0
-                        ? GeckReportGenerator.FormatFormIdWithName(ing.ItemFormId, lookup)
+                        ? resolver.FormatFull(ing.ItemFormId)
                         : "(none)";
                     sb.AppendLine($"  {GeckReportGenerator.Truncate(itemName, 50),-50} {ing.Count,6}");
                 }
@@ -795,7 +791,7 @@ internal static class GeckItemWriter
                 foreach (var output in recipe.Outputs)
                 {
                     var itemName = output.ItemFormId != 0
-                        ? GeckReportGenerator.FormatFormIdWithName(output.ItemFormId, lookup)
+                        ? resolver.FormatFull(output.ItemFormId)
                         : "(none)";
                     sb.AppendLine($"  {GeckReportGenerator.Truncate(itemName, 50),-50} {output.Count,6}");
                 }
@@ -806,10 +802,10 @@ internal static class GeckItemWriter
     }
 
     public static string GenerateRecipesReport(List<RecipeRecord> recipes,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendRecipesSection(sb, recipes, lookup ?? []);
+        AppendRecipesSection(sb, recipes, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 

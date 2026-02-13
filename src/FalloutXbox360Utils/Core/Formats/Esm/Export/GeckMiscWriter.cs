@@ -211,7 +211,7 @@ internal static class GeckMiscWriter
     }
 
     internal static void AppendLeveledListsSection(StringBuilder sb, List<LeveledListRecord> lists,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Leveled Lists ({lists.Count})");
         sb.AppendLine();
@@ -242,7 +242,7 @@ internal static class GeckMiscWriter
 
             if (list.GlobalFormId is > 0)
             {
-                sb.AppendLine($"  Global:      {GeckReportGenerator.FormatFormIdWithName(list.GlobalFormId.Value, lookup)}");
+                sb.AppendLine($"  Global:      {resolver.FormatFull(list.GlobalFormId.Value)}");
             }
 
             if (list.Entries.Count > 0)
@@ -254,7 +254,7 @@ internal static class GeckMiscWriter
                 foreach (var entry in list.Entries.OrderBy(e => e.Level))
                 {
                     var itemName = entry.FormId != 0
-                        ? GeckReportGenerator.FormatFormIdWithName(entry.FormId, lookup)
+                        ? resolver.FormatFull(entry.FormId)
                         : "(none)";
                     sb.AppendLine($"  {entry.Level,7}  {GeckReportGenerator.Truncate(itemName, 50),-50} {entry.Count,6}");
                 }
@@ -265,10 +265,10 @@ internal static class GeckMiscWriter
     }
 
     internal static string GenerateLeveledListsReport(List<LeveledListRecord> lists,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendLeveledListsSection(sb, lists, lookup ?? []);
+        AppendLeveledListsSection(sb, lists, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 }

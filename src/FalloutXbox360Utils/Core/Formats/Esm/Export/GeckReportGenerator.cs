@@ -32,10 +32,10 @@ public static class GeckReportGenerator
     /// </summary>
     public static string Generate(RecordCollection result,
         StringPoolSummary? stringPool = null,
-        Dictionary<uint, string>? formIdToEditorId = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        var lookup = formIdToEditorId ?? result.FormIdToEditorId;
+        resolver ??= result.CreateResolver();
 
         // Header
         AppendHeader(sb, "ESM Memory Dump Semantic Reconstruction Report");
@@ -46,7 +46,7 @@ public static class GeckReportGenerator
         // Characters
         if (result.Npcs.Count > 0)
         {
-            GeckActorWriter.AppendNpcsSection(sb, result.Npcs, lookup);
+            GeckActorWriter.AppendNpcsSection(sb, result.Npcs, resolver);
         }
 
         if (result.Creatures.Count > 0)
@@ -56,23 +56,23 @@ public static class GeckReportGenerator
 
         if (result.Races.Count > 0)
         {
-            GeckActorWriter.AppendRacesSection(sb, result.Races, lookup);
+            GeckActorWriter.AppendRacesSection(sb, result.Races, resolver);
         }
 
         if (result.Factions.Count > 0)
         {
-            GeckFactionWriter.AppendFactionsSection(sb, result.Factions, lookup);
+            GeckFactionWriter.AppendFactionsSection(sb, result.Factions, resolver);
         }
 
         // Quests and Dialogue
         if (result.Quests.Count > 0)
         {
-            GeckDialogueWriter.AppendQuestsSection(sb, result.Quests, lookup);
+            GeckDialogueWriter.AppendQuestsSection(sb, result.Quests, resolver);
         }
 
         if (result.DialogTopics.Count > 0)
         {
-            GeckDialogueWriter.AppendDialogTopicsSection(sb, result.DialogTopics, lookup);
+            GeckDialogueWriter.AppendDialogTopicsSection(sb, result.DialogTopics, resolver);
         }
 
         if (result.Notes.Count > 0)
@@ -92,19 +92,19 @@ public static class GeckReportGenerator
 
         if (result.Dialogues.Count > 0)
         {
-            GeckDialogueWriter.AppendDialogueSection(sb, result.Dialogues, lookup);
+            GeckDialogueWriter.AppendDialogueSection(sb, result.Dialogues, resolver);
         }
 
         // Scripts
         if (result.Scripts.Count > 0)
         {
-            GeckScriptWriter.AppendScriptsSection(sb, result.Scripts, lookup);
+            GeckScriptWriter.AppendScriptsSection(sb, result.Scripts, resolver);
         }
 
         // Items
         if (result.Weapons.Count > 0)
         {
-            GeckItemWriter.AppendWeaponsSection(sb, result.Weapons, lookup);
+            GeckItemWriter.AppendWeaponsSection(sb, result.Weapons, resolver);
         }
 
         if (result.Armor.Count > 0)
@@ -114,12 +114,12 @@ public static class GeckReportGenerator
 
         if (result.Ammo.Count > 0)
         {
-            GeckItemWriter.AppendAmmoSection(sb, result.Ammo, lookup);
+            GeckItemWriter.AppendAmmoSection(sb, result.Ammo, resolver);
         }
 
         if (result.Consumables.Count > 0)
         {
-            GeckItemWriter.AppendConsumablesSection(sb, result.Consumables, lookup);
+            GeckItemWriter.AppendConsumablesSection(sb, result.Consumables, resolver);
         }
 
         if (result.MiscItems.Count > 0)
@@ -134,29 +134,29 @@ public static class GeckReportGenerator
 
         if (result.Containers.Count > 0)
         {
-            GeckItemWriter.AppendContainersSection(sb, result.Containers, lookup);
+            GeckItemWriter.AppendContainersSection(sb, result.Containers, resolver);
         }
 
         // Abilities
         if (result.Perks.Count > 0)
         {
-            GeckEffectsWriter.AppendPerksSection(sb, result.Perks, lookup);
+            GeckEffectsWriter.AppendPerksSection(sb, result.Perks, resolver);
         }
 
         if (result.Spells.Count > 0)
         {
-            GeckEffectsWriter.AppendSpellsSection(sb, result.Spells, lookup);
+            GeckEffectsWriter.AppendSpellsSection(sb, result.Spells, resolver);
         }
 
         // World
         if (result.Cells.Count > 0)
         {
-            GeckWorldWriter.AppendCellsSection(sb, result.Cells);
+            GeckWorldWriter.AppendCellsSection(sb, result.Cells, resolver);
         }
 
         if (result.Worldspaces.Count > 0)
         {
-            GeckWorldWriter.AppendWorldspacesSection(sb, result.Worldspaces, lookup);
+            GeckWorldWriter.AppendWorldspacesSection(sb, result.Worldspaces, resolver);
         }
 
         // String pool data from runtime memory
@@ -177,8 +177,7 @@ public static class GeckReportGenerator
     {
         var result = sources.Records;
         var files = new Dictionary<string, string>();
-        var lookup = sources.FormIdMap ?? result.FormIdToEditorId;
-        var displayNameLookup = result.FormIdToDisplayName;
+        var resolver = sources.Resolver;
 
         // Summary file
         var summarySb = new StringBuilder();
@@ -201,39 +200,39 @@ public static class GeckReportGenerator
         // Characters
         if (result.Npcs.Count > 0)
         {
-            files["npcs.csv"] = CsvActorWriter.GenerateNpcsCsv(result.Npcs, lookup);
-            files["npc_report.txt"] = GeckActorWriter.GenerateNpcReport(result.Npcs, lookup, displayNameLookup);
+            files["npcs.csv"] = CsvActorWriter.GenerateNpcsCsv(result.Npcs, resolver);
+            files["npc_report.txt"] = GeckActorWriter.GenerateNpcReport(result.Npcs, resolver);
         }
 
         if (result.Creatures.Count > 0)
         {
-            files["creatures.csv"] = CsvActorWriter.GenerateCreaturesCsv(result.Creatures, lookup);
-            files["creature_report.txt"] = GeckActorWriter.GenerateCreaturesReport(result.Creatures, lookup);
+            files["creatures.csv"] = CsvActorWriter.GenerateCreaturesCsv(result.Creatures, resolver);
+            files["creature_report.txt"] = GeckActorWriter.GenerateCreaturesReport(result.Creatures, resolver);
         }
 
         if (result.Races.Count > 0)
         {
-            files["races.csv"] = CsvActorWriter.GenerateRacesCsv(result.Races, lookup);
-            files["race_report.txt"] = GeckActorWriter.GenerateRacesReport(result.Races, lookup);
+            files["races.csv"] = CsvActorWriter.GenerateRacesCsv(result.Races, resolver);
+            files["race_report.txt"] = GeckActorWriter.GenerateRacesReport(result.Races, resolver);
         }
 
         if (result.Factions.Count > 0)
         {
-            files["factions.csv"] = CsvActorWriter.GenerateFactionsCsv(result.Factions, lookup);
-            files["faction_report.txt"] = GeckFactionWriter.GenerateFactionsReport(result.Factions, lookup);
+            files["factions.csv"] = CsvActorWriter.GenerateFactionsCsv(result.Factions, resolver);
+            files["faction_report.txt"] = GeckFactionWriter.GenerateFactionsReport(result.Factions, resolver);
         }
 
         // Quests and Dialogue
         if (result.Quests.Count > 0)
         {
-            files["quests.csv"] = CsvMiscWriter.GenerateQuestsCsv(result.Quests, lookup);
-            files["quest_report.txt"] = GeckDialogueWriter.GenerateQuestsReport(result.Quests, lookup);
+            files["quests.csv"] = CsvMiscWriter.GenerateQuestsCsv(result.Quests, resolver);
+            files["quest_report.txt"] = GeckDialogueWriter.GenerateQuestsReport(result.Quests, resolver);
         }
 
         if (result.DialogTopics.Count > 0)
         {
-            files["dialog_topics.csv"] = CsvMiscWriter.GenerateDialogTopicsCsv(result.DialogTopics, lookup);
-            files["dialog_topic_report.txt"] = GeckDialogueWriter.GenerateDialogTopicsReport(result.DialogTopics, lookup);
+            files["dialog_topics.csv"] = CsvMiscWriter.GenerateDialogTopicsCsv(result.DialogTopics, resolver);
+            files["dialog_topic_report.txt"] = GeckDialogueWriter.GenerateDialogTopicsReport(result.DialogTopics, resolver);
         }
 
         if (result.Notes.Count > 0)
@@ -250,31 +249,31 @@ public static class GeckReportGenerator
 
         if (result.Terminals.Count > 0)
         {
-            files["terminals.csv"] = CsvMiscWriter.GenerateTerminalsCsv(result.Terminals, lookup);
-            files["terminal_report.txt"] = GeckDialogueWriter.GenerateTerminalsReport(result.Terminals, lookup);
+            files["terminals.csv"] = CsvMiscWriter.GenerateTerminalsCsv(result.Terminals, resolver);
+            files["terminal_report.txt"] = GeckDialogueWriter.GenerateTerminalsReport(result.Terminals);
         }
 
         if (result.Dialogues.Count > 0)
         {
-            files["dialogue.csv"] = CsvMiscWriter.GenerateDialogueCsv(result.Dialogues, lookup);
-            files["dialogue_report.txt"] = GeckDialogueWriter.GenerateDialogueReport(result.Dialogues, lookup);
+            files["dialogue.csv"] = CsvMiscWriter.GenerateDialogueCsv(result.Dialogues, resolver);
+            files["dialogue_report.txt"] = GeckDialogueWriter.GenerateDialogueReport(result.Dialogues, resolver);
         }
 
         if (result.Scripts.Count > 0)
         {
-            files["script_report.txt"] = GeckScriptWriter.GenerateScriptsReport(result.Scripts, lookup);
+            files["script_report.txt"] = GeckScriptWriter.GenerateScriptsReport(result.Scripts, resolver);
         }
 
         if (result.DialogueTree != null)
         {
-            files["dialogue_tree.txt"] = GeckDialogueWriter.GenerateDialogueTreeReport(result.DialogueTree, lookup, displayNameLookup);
+            files["dialogue_tree.txt"] = GeckDialogueWriter.GenerateDialogueTreeReport(result.DialogueTree, resolver);
         }
 
         // Items
         if (result.Weapons.Count > 0)
         {
-            files["weapons.csv"] = CsvItemWriter.GenerateWeaponsCsv(result.Weapons, lookup);
-            files["weapon_report.txt"] = GeckItemWriter.GenerateWeaponReport(result.Weapons, lookup, displayNameLookup);
+            files["weapons.csv"] = CsvItemWriter.GenerateWeaponsCsv(result.Weapons, resolver);
+            files["weapon_report.txt"] = GeckItemWriter.GenerateWeaponReport(result.Weapons, resolver);
         }
 
         if (result.Armor.Count > 0)
@@ -285,14 +284,14 @@ public static class GeckReportGenerator
 
         if (result.Ammo.Count > 0)
         {
-            files["ammo.csv"] = CsvItemWriter.GenerateAmmoCsv(result.Ammo, lookup);
-            files["ammo_report.txt"] = GeckItemWriter.GenerateAmmoReport(result.Ammo, lookup);
+            files["ammo.csv"] = CsvItemWriter.GenerateAmmoCsv(result.Ammo, resolver);
+            files["ammo_report.txt"] = GeckItemWriter.GenerateAmmoReport(result.Ammo, resolver);
         }
 
         if (result.Consumables.Count > 0)
         {
-            files["consumables.csv"] = CsvItemWriter.GenerateConsumablesCsv(result.Consumables, lookup);
-            files["consumable_report.txt"] = GeckItemWriter.GenerateConsumablesReport(result.Consumables, lookup);
+            files["consumables.csv"] = CsvItemWriter.GenerateConsumablesCsv(result.Consumables, resolver);
+            files["consumable_report.txt"] = GeckItemWriter.GenerateConsumablesReport(result.Consumables, resolver);
         }
 
         if (result.MiscItems.Count > 0)
@@ -309,46 +308,46 @@ public static class GeckReportGenerator
 
         if (result.Containers.Count > 0)
         {
-            files["containers.csv"] = CsvItemWriter.GenerateContainersCsv(result.Containers, lookup);
-            files["container_report.txt"] = GeckItemWriter.GenerateContainerReport(result.Containers, lookup, displayNameLookup);
+            files["containers.csv"] = CsvItemWriter.GenerateContainersCsv(result.Containers, resolver);
+            files["container_report.txt"] = GeckItemWriter.GenerateContainerReport(result.Containers, resolver);
         }
 
         // Abilities
         if (result.Perks.Count > 0)
         {
-            files["perks.csv"] = CsvMiscWriter.GeneratePerksCsv(result.Perks, lookup);
-            files["perk_report.txt"] = GeckEffectsWriter.GeneratePerksReport(result.Perks, lookup);
+            files["perks.csv"] = CsvMiscWriter.GeneratePerksCsv(result.Perks, resolver);
+            files["perk_report.txt"] = GeckEffectsWriter.GeneratePerksReport(result.Perks, resolver);
         }
 
         if (result.Spells.Count > 0)
         {
-            files["spells.csv"] = CsvMiscWriter.GenerateSpellsCsv(result.Spells, lookup);
-            files["spell_report.txt"] = GeckEffectsWriter.GenerateSpellsReport(result.Spells, lookup);
+            files["spells.csv"] = CsvMiscWriter.GenerateSpellsCsv(result.Spells, resolver);
+            files["spell_report.txt"] = GeckEffectsWriter.GenerateSpellsReport(result.Spells, resolver);
         }
 
         // World
         if (result.Cells.Count > 0)
         {
-            files["cells.csv"] = CsvMiscWriter.GenerateCellsCsv(result.Cells, lookup);
-            files["cell_report.txt"] = GeckWorldWriter.GenerateCellsReport(result.Cells, lookup);
+            files["cells.csv"] = CsvMiscWriter.GenerateCellsCsv(result.Cells, resolver);
+            files["cell_report.txt"] = GeckWorldWriter.GenerateCellsReport(result.Cells, resolver);
         }
 
         if (result.Worldspaces.Count > 0)
         {
-            files["worldspaces.csv"] = CsvMiscWriter.GenerateWorldspacesCsv(result.Worldspaces, lookup);
-            files["worldspace_report.txt"] = GeckWorldWriter.GenerateWorldspacesReport(result.Worldspaces, lookup);
+            files["worldspaces.csv"] = CsvMiscWriter.GenerateWorldspacesCsv(result.Worldspaces, resolver);
+            files["worldspace_report.txt"] = GeckWorldWriter.GenerateWorldspacesReport(result.Worldspaces, resolver);
         }
 
         if (result.MapMarkers.Count > 0)
         {
-            files["map_markers.csv"] = CsvMiscWriter.GenerateMapMarkersCsv(result.MapMarkers, lookup);
-            files["map_marker_report.txt"] = GeckWorldWriter.GenerateMapMarkersReport(result.MapMarkers, lookup);
+            files["map_markers.csv"] = CsvMiscWriter.GenerateMapMarkersCsv(result.MapMarkers, resolver);
+            files["map_marker_report.txt"] = GeckWorldWriter.GenerateMapMarkersReport(result.MapMarkers, resolver);
         }
 
         if (result.LeveledLists.Count > 0)
         {
-            files["leveled_lists.csv"] = CsvMiscWriter.GenerateLeveledListsCsv(result.LeveledLists, lookup);
-            files["leveled_list_report.txt"] = GeckMiscWriter.GenerateLeveledListsReport(result.LeveledLists, lookup);
+            files["leveled_lists.csv"] = CsvMiscWriter.GenerateLeveledListsCsv(result.LeveledLists, resolver);
+            files["leveled_list_report.txt"] = GeckMiscWriter.GenerateLeveledListsReport(result.LeveledLists, resolver);
         }
 
         // Game Data
@@ -366,14 +365,14 @@ public static class GeckReportGenerator
 
         if (result.Enchantments.Count > 0)
         {
-            files["enchantments.csv"] = CsvMiscWriter.GenerateEnchantmentsCsv(result.Enchantments, lookup);
-            files["enchantment_report.txt"] = GeckEffectsWriter.GenerateEnchantmentsReport(result.Enchantments, lookup);
+            files["enchantments.csv"] = CsvMiscWriter.GenerateEnchantmentsCsv(result.Enchantments, resolver);
+            files["enchantment_report.txt"] = GeckEffectsWriter.GenerateEnchantmentsReport(result.Enchantments, resolver);
         }
 
         if (result.BaseEffects.Count > 0)
         {
             files["base_effects.csv"] = CsvMiscWriter.GenerateBaseEffectsCsv(result.BaseEffects);
-            files["base_effect_report.txt"] = GeckEffectsWriter.GenerateBaseEffectsReport(result.BaseEffects, lookup);
+            files["base_effect_report.txt"] = GeckEffectsWriter.GenerateBaseEffectsReport(result.BaseEffects, resolver);
         }
 
         if (result.WeaponMods.Count > 0)
@@ -384,14 +383,14 @@ public static class GeckReportGenerator
 
         if (result.Recipes.Count > 0)
         {
-            files["recipes.csv"] = CsvItemWriter.GenerateRecipesCsv(result.Recipes, lookup);
-            files["recipe_report.txt"] = GeckItemWriter.GenerateRecipesReport(result.Recipes, lookup);
+            files["recipes.csv"] = CsvItemWriter.GenerateRecipesCsv(result.Recipes, resolver);
+            files["recipe_report.txt"] = GeckItemWriter.GenerateRecipesReport(result.Recipes, resolver);
         }
 
         if (result.Challenges.Count > 0)
         {
             files["challenges.csv"] = CsvMiscWriter.GenerateChallengesCsv(result.Challenges);
-            files["challenge_report.txt"] = GeckFactionWriter.GenerateChallengesReport(result.Challenges, lookup);
+            files["challenge_report.txt"] = GeckFactionWriter.GenerateChallengesReport(result.Challenges, resolver);
         }
 
         if (result.Reputations.Count > 0)
@@ -403,19 +402,19 @@ public static class GeckReportGenerator
         if (result.Projectiles.Count > 0)
         {
             files["projectiles.csv"] = CsvMiscWriter.GenerateProjectilesCsv(result.Projectiles);
-            files["projectile_report.txt"] = GeckWorldWriter.GenerateProjectilesReport(result.Projectiles, lookup);
+            files["projectile_report.txt"] = GeckWorldWriter.GenerateProjectilesReport(result.Projectiles, resolver);
         }
 
         if (result.Explosions.Count > 0)
         {
             files["explosions.csv"] = CsvMiscWriter.GenerateExplosionsCsv(result.Explosions);
-            files["explosion_report.txt"] = GeckWorldWriter.GenerateExplosionsReport(result.Explosions, lookup);
+            files["explosion_report.txt"] = GeckWorldWriter.GenerateExplosionsReport(result.Explosions, resolver);
         }
 
         if (result.Messages.Count > 0)
         {
             files["messages.csv"] = CsvMiscWriter.GenerateMessagesCsv(result.Messages);
-            files["message_report.txt"] = GeckDialogueWriter.GenerateMessagesReport(result.Messages, lookup);
+            files["message_report.txt"] = GeckDialogueWriter.GenerateMessagesReport(result.Messages, resolver);
         }
 
         if (result.Classes.Count > 0)
@@ -424,10 +423,16 @@ public static class GeckReportGenerator
             files["class_report.txt"] = GeckActorWriter.GenerateClassesReport(result.Classes);
         }
 
-        // Asset strings report (from runtime string pools)
+        // Asset tree report (human-readable directory tree grouped by category)
         if (sources.AssetStrings is { Count: > 0 })
         {
             files["assets.txt"] = GeckMiscWriter.GenerateAssetListReport(sources.AssetStrings);
+        }
+
+        // Asset CSV: FormID-based model paths merged with runtime string pool detections
+        if (result.ModelPathIndex.Count > 0 || sources.AssetStrings is { Count: > 0 })
+        {
+            files["assets.csv"] = CsvMiscWriter.GenerateEnrichedAssetsCsv(result, sources.AssetStrings);
         }
 
         // Runtime EditorIDs report (from pointer-following extraction)
@@ -465,9 +470,8 @@ public static class GeckReportGenerator
     /// </summary>
     public static string GenerateDialogueTreeReport(
         DialogueTreeResult dialogueTree,
-        Dictionary<uint, string> lookup,
-        Dictionary<uint, string> displayNameLookup)
-        => GeckDialogueWriter.GenerateDialogueTreeReport(dialogueTree, lookup, displayNameLookup);
+        FormIdResolver resolver)
+        => GeckDialogueWriter.GenerateDialogueTreeReport(dialogueTree, resolver);
 
     /// <summary>
     ///     Tree node for hierarchical path grouping in asset reports.
@@ -574,37 +578,6 @@ public static class GeckReportGenerator
         sb.AppendLine(new string(SeparatorChar, SeparatorWidth));
     }
 
-    internal static string FormatFormIdWithName(uint formId, Dictionary<uint, string> lookup)
-    {
-        return Fmt.FIdWithName(formId, lookup);
-    }
-
-    internal static string FormatWithDisplayName(
-        uint formId,
-        Dictionary<uint, string> editorIdLookup,
-        Dictionary<uint, string> displayNameLookup)
-    {
-        var editorId = editorIdLookup.GetValueOrDefault(formId);
-        var displayName = displayNameLookup.GetValueOrDefault(formId);
-
-        if (editorId != null && displayName != null)
-        {
-            return $"{editorId} \u2014 {displayName} ({FormatFormId(formId)})";
-        }
-
-        if (editorId != null)
-        {
-            return $"{editorId} ({FormatFormId(formId)})";
-        }
-
-        if (displayName != null)
-        {
-            return $"{displayName} ({FormatFormId(formId)})";
-        }
-
-        return FormatFormId(formId);
-    }
-
     internal static string FormatModifier(sbyte value)
     {
         return value switch
@@ -647,41 +620,18 @@ public static class GeckReportGenerator
         return value[..(maxLength - 1)] + "\u2026";
     }
 
-    internal static string ResolveEditorId(uint formId, Dictionary<uint, string> lookup)
-    {
-        return lookup.TryGetValue(formId, out var name) ? name : FormatFormId(formId);
-    }
-
-    internal static string ResolveDisplayName(uint formId, Dictionary<uint, string> lookup)
-    {
-        return lookup.TryGetValue(formId, out var name) ? name : "(none)";
-    }
-
-    internal static Dictionary<uint, string> CombineLookups(
-        Dictionary<uint, string> editorIdLookup,
-        Dictionary<uint, string> displayNameLookup)
-    {
-        var combined = new Dictionary<uint, string>(editorIdLookup);
-        foreach (var (formId, name) in displayNameLookup)
-        {
-            combined[formId] = name;
-        }
-
-        return combined;
-    }
-
     internal static void AppendSoundLine(
         StringBuilder sb,
         string label,
         uint? formId,
-        Dictionary<uint, string> editorIdLookup)
+        FormIdResolver resolver)
     {
         if (!formId.HasValue)
         {
             return;
         }
 
-        sb.AppendLine($"  {label,-17} {FormatFormIdWithName(formId.Value, editorIdLookup)}");
+        sb.AppendLine($"  {label,-17} {resolver.FormatFull(formId.Value)}");
     }
 
     internal static string CleanAssetPath(string path)

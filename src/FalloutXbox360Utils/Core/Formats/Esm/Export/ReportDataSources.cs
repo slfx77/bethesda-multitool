@@ -12,4 +12,10 @@ public record ReportDataSources(
     Dictionary<uint, string>? FormIdMap = null,
     List<DetectedAssetString>? AssetStrings = null,
     List<RuntimeEditorIdEntry>? RuntimeEditorIds = null,
-    StringPoolSummary? StringPool = null);
+    StringPoolSummary? StringPool = null)
+{
+    private FormIdResolver? _resolver;
+
+    /// <summary>Lazily-built unified resolver from the Records dictionaries.</summary>
+    public FormIdResolver Resolver => _resolver ??= Records.CreateResolver(FormIdMap);
+}

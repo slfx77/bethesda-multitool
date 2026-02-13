@@ -144,6 +144,9 @@ public record RecordCollection
     /// <summary>Reconstructed AI Package (PACK) records.</summary>
     public List<PackageRecord> Packages { get; init; } = [];
 
+    /// <summary>FormID → model path (.nif) mapping from STAT, ACTI, DOOR, LIGH, FURN, WEAP, ARMO, AMMO, ALCH, MISC, BOOK, CONT records.</summary>
+    public Dictionary<uint, string> ModelPathIndex { get; init; } = [];
+
     /// <summary>FormID to Editor ID mapping built during reconstruction.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
@@ -172,4 +175,38 @@ public record RecordCollection
     ///     Used for the "Other Records" summary section in split reports.
     /// </summary>
     public Dictionary<string, int> UnreconstructedTypeCounts { get; init; } = [];
+
+    /// <summary>Creates a FormIdResolver from this collection's dictionaries.</summary>
+    public Export.FormIdResolver CreateResolver(Dictionary<uint, string>? overrideEditorIds = null)
+    {
+        return new Export.FormIdResolver(
+            overrideEditorIds ?? FormIdToEditorId,
+            FormIdToDisplayName,
+            BuildRefToBaseMap());
+    }
+
+    private Dictionary<uint, uint> BuildRefToBaseMap()
+    {
+        var map = new Dictionary<uint, uint>();
+        foreach (var cell in Cells)
+        {
+            foreach (var obj in cell.PlacedObjects)
+            {
+                if (obj.FormId != 0 && obj.BaseFormId != 0)
+                {
+                    map.TryAdd(obj.FormId, obj.BaseFormId);
+                }
+            }
+        }
+
+        foreach (var marker in MapMarkers)
+        {
+            if (marker.FormId != 0 && marker.BaseFormId != 0)
+            {
+                map.TryAdd(marker.FormId, marker.BaseFormId);
+            }
+        }
+
+        return map;
+    }
 }

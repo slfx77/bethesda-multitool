@@ -5,11 +5,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
 internal static class CsvItemWriter
 {
-    public static string GenerateWeaponsCsv(List<WeaponRecord> weapons, Dictionary<uint, string> lookup)
+    public static string GenerateWeaponsCsv(List<WeaponRecord> weapons, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,WeaponType,WeaponTypeName,Damage,DPS,FireRate,ClipSize,MinRange,MaxRange,Spread,MinSpread,Drift,StrReq,SkillReq,CritDamage,CritChance,CritEffectFormID,Value,Weight,Health,AmmoFormID,AmmoName,ProjectileFormID,ProjectileName,ImpactDataSetFormID,ImpactDataSetName,APCost,ModelPath,PickupSoundFormID,PickupSoundName,PutdownSoundFormID,PutdownSoundName,FireSound3DFormID,FireSound3DName,FireSoundDistFormID,FireSoundDistName,FireSound2DFormID,FireSound2DName,DryFireSoundFormID,DryFireSoundName,IdleSoundFormID,IdleSoundName,EquipSoundFormID,EquipSoundName,UnequipSoundFormID,UnequipSoundName,ProjSpeed,ProjGravity,ProjRange,ProjForce,ProjExplosionFormID,ProjExplosionName,ProjInFlightSoundFormID,ProjInFlightSoundName,ProjModelPath,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,WeaponType,WeaponTypeName,Damage,DPS,FireRate,ClipSize,MinRange,MaxRange,Spread,MinSpread,Drift,StrReq,SkillReq,CritDamage,CritChance,CritEffectFormID,Value,Weight,Health,AmmoFormID,AmmoName,AmmoDisplayName,ProjectileFormID,ProjectileName,ProjectileDisplayName,ImpactDataSetFormID,ImpactDataSetName,ImpactDataSetDisplayName,APCost,ModelPath,PickupSoundFormID,PickupSoundName,PickupSoundDisplayName,PutdownSoundFormID,PutdownSoundName,PutdownSoundDisplayName,FireSound3DFormID,FireSound3DName,FireSound3DDisplayName,FireSoundDistFormID,FireSoundDistName,FireSoundDistDisplayName,FireSound2DFormID,FireSound2DName,FireSound2DDisplayName,DryFireSoundFormID,DryFireSoundName,DryFireSoundDisplayName,IdleSoundFormID,IdleSoundName,IdleSoundDisplayName,EquipSoundFormID,EquipSoundName,EquipSoundDisplayName,UnequipSoundFormID,UnequipSoundName,UnequipSoundDisplayName,ProjSpeed,ProjGravity,ProjRange,ProjForce,ProjExplosionFormID,ProjExplosionName,ProjExplosionDisplayName,ProjInFlightSoundFormID,ProjInFlightSoundName,ProjInFlightSoundDisplayName,ProjModelPath,Endianness,Offset");
 
         foreach (var w in weapons.OrderBy(w => w.EditorId ?? ""))
         {
@@ -38,39 +38,53 @@ internal static class CsvItemWriter
                 w.Weight.ToString("F2"),
                 w.Health.ToString(),
                 Fmt.FIdN(w.AmmoFormId),
-                Fmt.Resolve(w.AmmoFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.AmmoFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.AmmoFormId ?? 0),
                 Fmt.FIdN(w.ProjectileFormId),
-                Fmt.Resolve(w.ProjectileFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.ProjectileFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.ProjectileFormId ?? 0),
                 Fmt.FIdN(w.ImpactDataSetFormId),
-                Fmt.Resolve(w.ImpactDataSetFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.ImpactDataSetFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.ImpactDataSetFormId ?? 0),
                 w.ActionPoints.ToString("F1"),
                 Fmt.CsvEscape(w.ModelPath),
                 Fmt.FIdN(w.PickupSoundFormId),
-                Fmt.Resolve(w.PickupSoundFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.PickupSoundFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.PickupSoundFormId ?? 0),
                 Fmt.FIdN(w.PutdownSoundFormId),
-                Fmt.Resolve(w.PutdownSoundFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.PutdownSoundFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.PutdownSoundFormId ?? 0),
                 Fmt.FIdN(w.FireSound3DFormId),
-                Fmt.Resolve(w.FireSound3DFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.FireSound3DFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.FireSound3DFormId ?? 0),
                 Fmt.FIdN(w.FireSoundDistFormId),
-                Fmt.Resolve(w.FireSoundDistFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.FireSoundDistFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.FireSoundDistFormId ?? 0),
                 Fmt.FIdN(w.FireSound2DFormId),
-                Fmt.Resolve(w.FireSound2DFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.FireSound2DFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.FireSound2DFormId ?? 0),
                 Fmt.FIdN(w.DryFireSoundFormId),
-                Fmt.Resolve(w.DryFireSoundFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.DryFireSoundFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.DryFireSoundFormId ?? 0),
                 Fmt.FIdN(w.IdleSoundFormId),
-                Fmt.Resolve(w.IdleSoundFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.IdleSoundFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.IdleSoundFormId ?? 0),
                 Fmt.FIdN(w.EquipSoundFormId),
-                Fmt.Resolve(w.EquipSoundFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.EquipSoundFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.EquipSoundFormId ?? 0),
                 Fmt.FIdN(w.UnequipSoundFormId),
-                Fmt.Resolve(w.UnequipSoundFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.UnequipSoundFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.UnequipSoundFormId ?? 0),
                 w.ProjectileData?.Speed.ToString("F1") ?? "",
                 w.ProjectileData?.Gravity.ToString("F4") ?? "",
                 w.ProjectileData?.Range.ToString("F0") ?? "",
                 w.ProjectileData?.Force.ToString("F1") ?? "",
                 Fmt.FIdN(w.ProjectileData?.ExplosionFormId),
-                Fmt.Resolve(w.ProjectileData?.ExplosionFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.ProjectileData?.ExplosionFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.ProjectileData?.ExplosionFormId ?? 0),
                 Fmt.FIdN(w.ProjectileData?.ActiveSoundLoopFormId),
-                Fmt.Resolve(w.ProjectileData?.ActiveSoundLoopFormId ?? 0, lookup),
+                resolver.ResolveCsv(w.ProjectileData?.ActiveSoundLoopFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(w.ProjectileData?.ActiveSoundLoopFormId ?? 0),
                 Fmt.CsvEscape(w.ProjectileData?.ModelPath),
                 Fmt.Endian(w.IsBigEndian),
                 w.Offset.ToString()));
@@ -127,11 +141,11 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
-    public static string GenerateAmmoCsv(List<AmmoRecord> ammo, Dictionary<uint, string> lookup)
+    public static string GenerateAmmoCsv(List<AmmoRecord> ammo, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Speed,Value,Weight,ClipRounds,Flags,ProjectileFormID,ProjectileName,ModelPath,ProjectileModelPath,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,Speed,Value,Weight,ClipRounds,Flags,ProjectileFormID,ProjectileName,ProjectileDisplayName,ModelPath,ProjectileModelPath,Endianness,Offset");
 
         foreach (var a in ammo.OrderBy(a => a.EditorId ?? ""))
         {
@@ -146,7 +160,8 @@ internal static class CsvItemWriter
                 a.ClipRounds.ToString(),
                 a.Flags.ToString(),
                 Fmt.FIdN(a.ProjectileFormId),
-                Fmt.Resolve(a.ProjectileFormId ?? 0, lookup),
+                resolver.ResolveCsv(a.ProjectileFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(a.ProjectileFormId ?? 0),
                 Fmt.CsvEscape(a.ModelPath),
                 Fmt.CsvEscape(a.ProjectileModelPath),
                 Fmt.Endian(a.IsBigEndian),
@@ -157,11 +172,11 @@ internal static class CsvItemWriter
     }
 
     public static string GenerateConsumablesCsv(List<ConsumableRecord> consumables,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Value,Weight,AddictionFormID,AddictionName,AddictionChance,ModelPath,Endianness,Offset,EffectFormID,EffectName");
+            "RowType,FormID,EditorID,Name,Value,Weight,AddictionFormID,AddictionName,AddictionDisplayName,AddictionChance,ModelPath,Endianness,Offset,EffectFormID,EffectName,EffectDisplayName");
 
         foreach (var c in consumables.OrderBy(c => c.EditorId ?? ""))
         {
@@ -173,22 +188,24 @@ internal static class CsvItemWriter
                 c.Value.ToString(),
                 c.Weight.ToString("F2"),
                 Fmt.FIdN(c.AddictionFormId),
-                Fmt.Resolve(c.AddictionFormId ?? 0, lookup),
+                resolver.ResolveCsv(c.AddictionFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(c.AddictionFormId ?? 0),
                 c.AddictionChance.ToString("F2"),
                 Fmt.CsvEscape(c.ModelPath),
                 Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString(),
-                "", ""));
+                "", "", ""));
 
             foreach (var effectId in c.EffectFormIds)
             {
                 sb.AppendLine(string.Join(",",
                     "EFFECT",
                     Fmt.FId(c.FormId),
-                    "", "", "", "", "", "", "", "",
+                    "", "", "", "", "", "", "", "", "",
                     "", "",
                     Fmt.FId(effectId),
-                    Fmt.Resolve(effectId, lookup)));
+                    resolver.ResolveCsv(effectId),
+                    resolver.ResolveDisplayNameCsv(effectId)));
             }
         }
 
@@ -239,11 +256,11 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
-    public static string GenerateContainersCsv(List<ContainerRecord> containers, Dictionary<uint, string> lookup)
+    public static string GenerateContainersCsv(List<ContainerRecord> containers, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Respawns,ModelPath,ScriptFormID,Endianness,Offset,ItemFormID,ItemName,Count");
+            "RowType,FormID,EditorID,Name,Respawns,ModelPath,ScriptFormID,Endianness,Offset,ItemFormID,ItemName,ItemDisplayName,Count");
 
         foreach (var c in containers.OrderBy(c => c.EditorId ?? ""))
         {
@@ -257,7 +274,7 @@ internal static class CsvItemWriter
                 Fmt.FIdN(c.Script),
                 Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString(),
-                "", "", ""));
+                "", "", "", ""));
 
             foreach (var item in c.Contents)
             {
@@ -267,7 +284,8 @@ internal static class CsvItemWriter
                     "", "", "", "", "",
                     "", "",
                     Fmt.FId(item.ItemFormId),
-                    Fmt.Resolve(item.ItemFormId, lookup),
+                    resolver.ResolveCsv(item.ItemFormId),
+                    resolver.ResolveDisplayNameCsv(item.ItemFormId),
                     item.Count.ToString()));
             }
         }
@@ -302,11 +320,11 @@ internal static class CsvItemWriter
     }
 
     public static string GenerateRecipesCsv(List<RecipeRecord> recipes,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,RequiredSkill,RequiredLevel,Category,IngredientCount,OutputCount,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,RequiredSkill,RequiredLevel,Category,CategoryDisplayName,IngredientCount,OutputCount,Endianness,Offset");
 
         foreach (var r in recipes.OrderBy(r => r.EditorId ?? ""))
         {
@@ -317,7 +335,8 @@ internal static class CsvItemWriter
                 Fmt.CsvEscape(r.FullName),
                 r.RequiredSkill.ToString(),
                 r.RequiredSkillLevel.ToString(),
-                Fmt.Resolve(r.CategoryFormId, lookup),
+                resolver.ResolveCsv(r.CategoryFormId),
+                resolver.ResolveDisplayNameCsv(r.CategoryFormId),
                 r.Ingredients.Count.ToString(),
                 r.Outputs.Count.ToString(),
                 Fmt.Endian(r.IsBigEndian),

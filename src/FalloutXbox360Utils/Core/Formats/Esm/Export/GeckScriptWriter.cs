@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 internal static class GeckScriptWriter
 {
     internal static void AppendScriptsSection(StringBuilder sb, List<ScriptRecord> scripts,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Scripts ({scripts.Count})");
 
@@ -40,7 +40,7 @@ internal static class GeckScriptWriter
             sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(script.FormId)}");
             sb.AppendLine($"Editor ID:      {script.EditorId ?? "(none)"}");
             sb.AppendLine($"Type:           {script.ScriptType}");
-            sb.AppendLine($"Variables:      {script.VariableCount}");
+            sb.AppendLine($"Variables:      {script.Variables.Count}");
             sb.AppendLine($"Ref Objects:    {script.RefObjectCount}");
             sb.AppendLine($"Compiled Size:  {script.CompiledSize:N0} bytes");
             sb.AppendLine($"Is Compiled:    {script.IsCompiled}");
@@ -50,7 +50,7 @@ internal static class GeckScriptWriter
 
             if (script.OwnerQuestFormId.HasValue)
             {
-                sb.AppendLine($"Owner Quest:    {GeckReportGenerator.FormatFormIdWithName(script.OwnerQuestFormId.Value, lookup)}");
+                sb.AppendLine($"Owner Quest:    {resolver.FormatFull(script.OwnerQuestFormId.Value)}");
             }
 
             if (script.QuestScriptDelay > 0)
@@ -74,7 +74,7 @@ internal static class GeckScriptWriter
                 sb.AppendLine("Referenced Objects:");
                 foreach (var refId in script.ReferencedObjects)
                 {
-                    sb.AppendLine($"  {GeckReportGenerator.FormatFormIdWithName(refId, lookup)}");
+                    sb.AppendLine($"  {resolver.FormatFull(refId)}");
                 }
             }
 
@@ -144,10 +144,10 @@ internal static class GeckScriptWriter
     }
 
     internal static string GenerateScriptsReport(List<ScriptRecord> scripts,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendScriptsSection(sb, scripts, lookup ?? []);
+        AppendScriptsSection(sb, scripts, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 }

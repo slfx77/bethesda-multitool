@@ -1,4 +1,5 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Strings;
 
@@ -6,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
 internal static class CsvMiscWriter
 {
-    public static string GenerateQuestsCsv(List<QuestRecord> quests, Dictionary<uint, string> lookup)
+    public static string GenerateQuestsCsv(List<QuestRecord> quests, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -56,11 +57,11 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
-    public static string GenerateDialogueCsv(List<DialogueRecord> dialogues, Dictionary<uint, string> lookup)
+    public static string GenerateDialogueCsv(List<DialogueRecord> dialogues, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,TopicFormID,TopicName,QuestFormID,QuestName,SpeakerFormID,SpeakerName,PreviousInfoFormID,PromptText,InfoIndex,InfoFlags,FlagsDescription,Difficulty,LinkToTopics,AddTopics,Endianness,Offset,ResponseNumber,ResponseText,EmotionType,EmotionName,EmotionValue");
+            "RowType,FormID,EditorID,TopicFormID,TopicName,TopicDisplayName,QuestFormID,QuestName,QuestDisplayName,SpeakerFormID,SpeakerName,SpeakerDisplayName,PreviousInfoFormID,PromptText,InfoIndex,InfoFlags,FlagsDescription,Difficulty,LinkToTopics,AddTopics,Endianness,Offset,ResponseNumber,ResponseText,EmotionType,EmotionName,EmotionValue");
 
         foreach (var d in dialogues.OrderBy(d => d.EditorId ?? ""))
         {
@@ -86,11 +87,14 @@ internal static class CsvMiscWriter
                 Fmt.FId(d.FormId),
                 Fmt.CsvEscape(d.EditorId),
                 Fmt.FIdN(d.TopicFormId),
-                Fmt.Resolve(d.TopicFormId ?? 0, lookup),
+                resolver.ResolveCsv(d.TopicFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(d.TopicFormId ?? 0),
                 Fmt.FIdN(d.QuestFormId),
-                Fmt.Resolve(d.QuestFormId ?? 0, lookup),
+                resolver.ResolveCsv(d.QuestFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(d.QuestFormId ?? 0),
                 Fmt.FIdN(d.SpeakerFormId),
-                Fmt.Resolve(d.SpeakerFormId ?? 0, lookup),
+                resolver.ResolveCsv(d.SpeakerFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(d.SpeakerFormId ?? 0),
                 Fmt.FIdN(d.PreviousInfo),
                 Fmt.CsvEscape(d.PromptText),
                 d.InfoIndex.ToString(),
@@ -108,7 +112,7 @@ internal static class CsvMiscWriter
                 sb.AppendLine(string.Join(",",
                     "RESPONSE",
                     Fmt.FId(d.FormId),
-                    "", "", "", "", "", "", "", "",
+                    "", "", "", "", "", "", "", "", "", "", "",
                     "", "", "", "", "", "", "",
                     "", "",
                     r.ResponseNumber.ToString(),
@@ -122,11 +126,11 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
-    public static string GenerateDialogTopicsCsv(List<DialogTopicRecord> topics, Dictionary<uint, string> lookup)
+    public static string GenerateDialogTopicsCsv(List<DialogTopicRecord> topics, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,TopicType,TopicTypeName,Flags,IsRumors,IsTopLevel,QuestFormID,QuestName,ResponseCount,Priority,DummyPrompt,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,TopicType,TopicTypeName,Flags,IsRumors,IsTopLevel,QuestFormID,QuestName,QuestDisplayName,ResponseCount,Priority,DummyPrompt,Endianness,Offset");
 
         foreach (var t in topics.OrderBy(t => t.EditorId ?? ""))
         {
@@ -141,7 +145,8 @@ internal static class CsvMiscWriter
                 t.IsRumors.ToString(),
                 t.IsTopLevel.ToString(),
                 Fmt.FIdN(t.QuestFormId),
-                Fmt.Resolve(t.QuestFormId ?? 0, lookup),
+                resolver.ResolveCsv(t.QuestFormId ?? 0),
+                resolver.ResolveDisplayNameCsv(t.QuestFormId ?? 0),
                 t.ResponseCount.ToString(),
                 t.Priority is not 0f ? t.Priority.ToString("F1") : "",
                 Fmt.CsvEscape(t.DummyPrompt),
@@ -152,11 +157,11 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
-    public static string GenerateCellsCsv(List<CellRecord> cells, Dictionary<uint, string> lookup)
+    public static string GenerateCellsCsv(List<CellRecord> cells, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,CellFormID,CellEditorID,CellName,GridX,GridY,IsInterior,HasWater,Flags,HasHeightmap,PlacedObjectCount,Endianness,Offset,ObjectFormID,ObjectEditorID,ObjectRecordType,BaseFormID,BaseEditorID,X,Y,Z,RotX,RotY,RotZ,Scale,OwnerFormID");
+            "RowType,CellFormID,CellEditorID,CellName,GridX,GridY,IsInterior,HasWater,Flags,HasHeightmap,PlacedObjectCount,Endianness,Offset,ObjectFormID,ObjectEditorID,ObjectRecordType,BaseFormID,BaseEditorID,BaseDisplayName,X,Y,Z,RotX,RotY,RotZ,Scale,OwnerFormID,BoundsX1,BoundsY1,BoundsZ1,BoundsX2,BoundsY2,BoundsZ2,ModelPath");
 
         foreach (var cell in cells.OrderBy(c => c.GridX ?? int.MaxValue).ThenBy(c => c.GridY ?? int.MaxValue))
         {
@@ -174,7 +179,8 @@ internal static class CsvMiscWriter
                 cell.PlacedObjects.Count.ToString(),
                 Fmt.Endian(cell.IsBigEndian),
                 cell.Offset.ToString(),
-                "", "", "", "", "", "", "", "", "", "", "", "", ""));
+                "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+                "", "", "", "", "", "", ""));
 
             foreach (var obj in cell.PlacedObjects.OrderBy(o => o.RecordType).ThenBy(o => o.BaseEditorId ?? ""))
             {
@@ -187,7 +193,8 @@ internal static class CsvMiscWriter
                     Fmt.CsvEscape(obj.BaseEditorId),
                     Fmt.CsvEscape(obj.RecordType),
                     Fmt.FId(obj.BaseFormId),
-                    Fmt.Resolve(obj.BaseFormId, lookup),
+                    resolver.ResolveCsv(obj.BaseFormId),
+                    resolver.ResolveDisplayNameCsv(obj.BaseFormId),
                     obj.X.ToString("F2"),
                     obj.Y.ToString("F2"),
                     obj.Z.ToString("F2"),
@@ -195,7 +202,14 @@ internal static class CsvMiscWriter
                     obj.RotY.ToString("F4"),
                     obj.RotZ.ToString("F4"),
                     obj.Scale.ToString("F4"),
-                    Fmt.FIdN(obj.OwnerFormId)));
+                    Fmt.FIdN(obj.OwnerFormId),
+                    obj.Bounds?.X1.ToString() ?? "",
+                    obj.Bounds?.Y1.ToString() ?? "",
+                    obj.Bounds?.Z1.ToString() ?? "",
+                    obj.Bounds?.X2.ToString() ?? "",
+                    obj.Bounds?.Y2.ToString() ?? "",
+                    obj.Bounds?.Z2.ToString() ?? "",
+                    Fmt.CsvEscape(obj.ModelPath)));
             }
         }
 
@@ -203,11 +217,11 @@ internal static class CsvMiscWriter
     }
 
     public static string GenerateWorldspacesCsv(List<WorldspaceRecord> worldspaces,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,ParentWorldspaceFormID,ClimateFormID,WaterFormID,CellCount,Endianness,Offset");
+            "RowType,FormID,EditorID,Name,ParentWorldspaceFormID,ClimateFormID,WaterFormID,CellCount,Endianness,Offset,DefaultLandHeight,DefaultWaterHeight,BoundsMinX,BoundsMinY,BoundsMaxX,BoundsMaxY,MapWidth,MapHeight,MapNWCellX,MapNWCellY,MapSECellX,MapSECellY");
 
         foreach (var ws in worldspaces.OrderBy(w => w.EditorId ?? ""))
         {
@@ -221,17 +235,29 @@ internal static class CsvMiscWriter
                 Fmt.FIdN(ws.WaterFormId),
                 ws.Cells.Count.ToString(),
                 Fmt.Endian(ws.IsBigEndian),
-                ws.Offset.ToString()));
+                ws.Offset.ToString(),
+                ws.DefaultLandHeight?.ToString("F1") ?? "",
+                ws.DefaultWaterHeight?.ToString("F1") ?? "",
+                ws.BoundsMinX?.ToString("F0") ?? "",
+                ws.BoundsMinY?.ToString("F0") ?? "",
+                ws.BoundsMaxX?.ToString("F0") ?? "",
+                ws.BoundsMaxY?.ToString("F0") ?? "",
+                ws.MapUsableWidth?.ToString() ?? "",
+                ws.MapUsableHeight?.ToString() ?? "",
+                ws.MapNWCellX?.ToString() ?? "",
+                ws.MapNWCellY?.ToString() ?? "",
+                ws.MapSECellX?.ToString() ?? "",
+                ws.MapSECellY?.ToString() ?? ""));
         }
 
         return sb.ToString();
     }
 
-    public static string GeneratePerksCsv(List<PerkRecord> perks, Dictionary<uint, string> lookup)
+    public static string GeneratePerksCsv(List<PerkRecord> perks, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Description,Ranks,MinLevel,IsPlayable,IsTrait,IconPath,Endianness,Offset,EntryRank,EntryPriority,EntryType,EntryTypeName,EntryAbilityFormID,EntryAbilityName");
+            "RowType,FormID,EditorID,Name,Description,Ranks,MinLevel,IsPlayable,IsTrait,IconPath,Endianness,Offset,EntryRank,EntryPriority,EntryType,EntryTypeName,EntryAbilityFormID,EntryAbilityName,EntryAbilityDisplayName");
 
         foreach (var p in perks.OrderBy(p => p.EditorId ?? ""))
         {
@@ -248,7 +274,7 @@ internal static class CsvMiscWriter
                 Fmt.CsvEscape(p.IconPath),
                 Fmt.Endian(p.IsBigEndian),
                 p.Offset.ToString(),
-                "", "", "", "", "", ""));
+                "", "", "", "", "", "", ""));
 
             foreach (var entry in p.Entries)
             {
@@ -262,18 +288,19 @@ internal static class CsvMiscWriter
                     entry.Type.ToString(),
                     Fmt.CsvEscape(entry.TypeName),
                     Fmt.FIdN(entry.AbilityFormId),
-                    Fmt.Resolve(entry.AbilityFormId ?? 0, lookup)));
+                    resolver.ResolveCsv(entry.AbilityFormId ?? 0),
+                    resolver.ResolveDisplayNameCsv(entry.AbilityFormId ?? 0)));
             }
         }
 
         return sb.ToString();
     }
 
-    public static string GenerateSpellsCsv(List<SpellRecord> spells, Dictionary<uint, string> lookup)
+    public static string GenerateSpellsCsv(List<SpellRecord> spells, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Type,TypeName,Cost,Level,Flags,Endianness,Offset,EffectFormID,EffectName");
+            "RowType,FormID,EditorID,Name,Type,TypeName,Cost,Level,Flags,Endianness,Offset,EffectFormID,EffectName,EffectDisplayName");
 
         foreach (var s in spells.OrderBy(s => s.EditorId ?? ""))
         {
@@ -289,7 +316,7 @@ internal static class CsvMiscWriter
                 s.Flags.ToString(),
                 Fmt.Endian(s.IsBigEndian),
                 s.Offset.ToString(),
-                "", ""));
+                "", "", ""));
 
             foreach (var effectId in s.EffectFormIds)
             {
@@ -299,7 +326,8 @@ internal static class CsvMiscWriter
                     "", "", "", "", "", "", "",
                     "", "",
                     Fmt.FId(effectId),
-                    Fmt.Resolve(effectId, lookup)));
+                    resolver.ResolveCsv(effectId),
+                    resolver.ResolveDisplayNameCsv(effectId)));
             }
         }
 
@@ -307,7 +335,7 @@ internal static class CsvMiscWriter
     }
 
     public static string GenerateEnchantmentsCsv(List<EnchantmentRecord> enchantments,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine("RowType,FormID,EditorID,Name,Type,ChargeAmount,EnchantCost,EffectCount,Endianness,Offset");
@@ -438,11 +466,11 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
-    public static string GenerateLeveledListsCsv(List<LeveledListRecord> lists, Dictionary<uint, string> lookup)
+    public static string GenerateLeveledListsCsv(List<LeveledListRecord> lists, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,ListType,ChanceNone,Flags,FlagsDescription,GlobalFormID,GlobalEditorID,EntryCount,Endianness,Offset,EntryLevel,EntryFormID,EntryEditorID,EntryCount");
+            "RowType,FormID,EditorID,ListType,ChanceNone,Flags,FlagsDescription,GlobalFormID,GlobalEditorID,GlobalDisplayName,EntryCount,Endianness,Offset,EntryLevel,EntryFormID,EntryEditorID,EntryDisplayName,EntryCount");
 
         foreach (var list in lists.OrderBy(l => l.EditorId ?? ""))
         {
@@ -455,22 +483,24 @@ internal static class CsvMiscWriter
                 list.Flags.ToString(),
                 Fmt.CsvEscape(list.FlagsDescription),
                 Fmt.FIdN(list.GlobalFormId),
-                list.GlobalFormId.HasValue ? Fmt.Resolve(list.GlobalFormId.Value, lookup) : "",
+                list.GlobalFormId.HasValue ? resolver.ResolveCsv(list.GlobalFormId.Value) : "",
+                list.GlobalFormId.HasValue ? resolver.ResolveDisplayNameCsv(list.GlobalFormId.Value) : "",
                 list.Entries.Count.ToString(),
                 Fmt.Endian(list.IsBigEndian),
                 list.Offset.ToString(),
-                "", "", "", ""));
+                "", "", "", "", ""));
 
             foreach (var entry in list.Entries.OrderBy(e => e.Level))
             {
                 sb.AppendLine(string.Join(",",
                     "ENTRY",
                     Fmt.FId(list.FormId),
-                    "", "", "", "", "", "", "",
+                    "", "", "", "", "", "", "", "",
                     "", "", "",
                     entry.Level.ToString(),
                     Fmt.FId(entry.FormId),
-                    Fmt.Resolve(entry.FormId, lookup),
+                    resolver.ResolveCsv(entry.FormId),
+                    resolver.ResolveDisplayNameCsv(entry.FormId),
                     entry.Count.ToString()));
             }
         }
@@ -478,11 +508,11 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
-    public static string GenerateMapMarkersCsv(List<PlacedReference> markers, Dictionary<uint, string> lookup)
+    public static string GenerateMapMarkersCsv(List<PlacedReference> markers, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,MarkerName,MarkerType,MarkerTypeName,BaseFormID,BaseEditorID,X,Y,Z,Endianness,Offset");
+            "RowType,FormID,MarkerName,MarkerType,MarkerTypeName,BaseFormID,BaseEditorID,BaseDisplayName,X,Y,Z,Endianness,Offset");
 
         foreach (var m in markers.OrderBy(m => m.MarkerName ?? ""))
         {
@@ -493,7 +523,8 @@ internal static class CsvMiscWriter
                 m.MarkerType.HasValue ? ((ushort)m.MarkerType.Value).ToString() : "",
                 Fmt.CsvEscape(m.MarkerType?.ToString()),
                 Fmt.FId(m.BaseFormId),
-                Fmt.CsvEscape(m.BaseEditorId ?? Fmt.Resolve(m.BaseFormId, lookup)),
+                Fmt.CsvEscape(m.BaseEditorId ?? resolver.ResolveCsv(m.BaseFormId)),
+                resolver.ResolveDisplayNameCsv(m.BaseFormId),
                 m.X.ToString("F2"),
                 m.Y.ToString("F2"),
                 m.Z.ToString("F2"),
@@ -670,7 +701,7 @@ internal static class CsvMiscWriter
         return files;
     }
 
-    public static string GenerateTerminalsCsv(List<TerminalRecord> terminals, Dictionary<uint, string> lookup)
+    public static string GenerateTerminalsCsv(List<TerminalRecord> terminals, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
@@ -704,5 +735,122 @@ internal static class CsvMiscWriter
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    ///     Generate enriched asset CSV: combines FormID-based model paths (from ESM records)
+    ///     with runtime string pool detections. Each row is a unique asset path, annotated with
+    ///     the FormID(s) that reference it and whether it was also found in the string pool.
+    /// </summary>
+    public static string GenerateEnrichedAssetsCsv(
+        RecordCollection records,
+        List<DetectedAssetString>? assetStrings)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("FormID,EditorID,RecordType,AssetPath,AssetCategory,InStringPool");
+
+        // Build FormID → RecordType lookup from all collections that contribute to modelIndex
+        var formIdToType = new Dictionary<uint, string>();
+        AddRecordTypes(formIdToType, records.Statics, "STAT");
+        AddRecordTypes(formIdToType, records.Activators, "ACTI");
+        AddRecordTypes(formIdToType, records.Doors, "DOOR");
+        AddRecordTypes(formIdToType, records.Lights, "LIGH");
+        AddRecordTypes(formIdToType, records.Furniture, "FURN");
+        AddRecordTypes(formIdToType, records.Weapons, "WEAP");
+        AddRecordTypes(formIdToType, records.Armor, "ARMO");
+        AddRecordTypes(formIdToType, records.Ammo, "AMMO");
+        AddRecordTypes(formIdToType, records.Consumables, "ALCH");
+        AddRecordTypes(formIdToType, records.MiscItems, "MISC");
+        AddRecordTypes(formIdToType, records.Books, "BOOK");
+        AddRecordTypes(formIdToType, records.Containers, "CONT");
+
+        // Build a set of normalized string-pool paths for cross-reference
+        var stringPoolPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (assetStrings != null)
+        {
+            foreach (var asset in assetStrings)
+            {
+                stringPoolPaths.Add(NormalizePath(asset.Path));
+            }
+        }
+
+        // Track which string-pool paths are matched to a FormID
+        var matchedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Emit rows for each FormID → model path mapping
+        foreach (var (formId, modelPath) in records.ModelPathIndex.OrderBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase))
+        {
+            var editorId = records.FormIdToEditorId.GetValueOrDefault(formId, "");
+            var recordType = formIdToType.GetValueOrDefault(formId, "");
+            var normalizedPath = NormalizePath(modelPath);
+            var inPool = stringPoolPaths.Contains(normalizedPath) ? "Yes" : "No";
+            if (inPool == "Yes")
+            {
+                matchedPaths.Add(normalizedPath);
+            }
+
+            sb.AppendLine(string.Join(",",
+                Fmt.FId(formId),
+                Fmt.CsvEscape(editorId),
+                recordType,
+                Fmt.CsvEscape(modelPath),
+                "Model",
+                inPool));
+        }
+
+        // Emit orphan rows: string-pool asset paths with no known FormID owner
+        if (assetStrings != null)
+        {
+            var orphans = assetStrings
+                .Where(a => !matchedPaths.Contains(NormalizePath(a.Path)))
+                .Select(a => (Path: GeckReportGenerator.CleanAssetPath(a.Path), a.Category))
+                .DistinctBy(a => a.Path, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(a => a.Path, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (path, category) in orphans)
+            {
+                sb.AppendLine(string.Join(",",
+                    "",
+                    "",
+                    "",
+                    Fmt.CsvEscape(path),
+                    category.ToString(),
+                    "Yes"));
+            }
+        }
+
+        return sb.ToString();
+
+        static void AddRecordTypes<T>(Dictionary<uint, string> map, List<T> records, string type)
+            where T : class
+        {
+            foreach (var record in records)
+            {
+                // Use reflection-free approach: all these types have a FormId property
+                var formId = record switch
+                {
+                    StaticRecord r => r.FormId,
+                    ActivatorRecord r => r.FormId,
+                    DoorRecord r => r.FormId,
+                    LightRecord r => r.FormId,
+                    FurnitureRecord r => r.FormId,
+                    WeaponRecord r => r.FormId,
+                    ArmorRecord r => r.FormId,
+                    AmmoRecord r => r.FormId,
+                    ConsumableRecord r => r.FormId,
+                    MiscItemRecord r => r.FormId,
+                    BookRecord r => r.FormId,
+                    ContainerRecord r => r.FormId,
+                    _ => 0u
+                };
+                if (formId != 0)
+                {
+                    map.TryAdd(formId, type);
+                }
+            }
+        }
+
+        static string NormalizePath(string path)
+            => path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
     }
 }

@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 internal static class GeckEffectsWriter
 {
     internal static void AppendPerksSection(StringBuilder sb, List<PerkRecord> perks,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Perks ({perks.Count})");
 
@@ -50,7 +50,7 @@ internal static class GeckEffectsWriter
                 foreach (var entry in perk.Entries)
                 {
                     var abilityStr = entry.AbilityFormId.HasValue
-                        ? $" Ability: {GeckReportGenerator.FormatFormIdWithName(entry.AbilityFormId.Value, lookup)}"
+                        ? $" Ability: {resolver.FormatFull(entry.AbilityFormId.Value)}"
                         : "";
                     sb.AppendLine($"  [Rank {entry.Rank}] {entry.TypeName}{abilityStr}");
                 }
@@ -61,15 +61,15 @@ internal static class GeckEffectsWriter
     /// <summary>
     ///     Generate a report for Perks only.
     /// </summary>
-    public static string GeneratePerksReport(List<PerkRecord> perks, Dictionary<uint, string>? lookup = null)
+    public static string GeneratePerksReport(List<PerkRecord> perks, FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendPerksSection(sb, perks, lookup ?? []);
+        AppendPerksSection(sb, perks, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 
     internal static void AppendSpellsSection(StringBuilder sb, List<SpellRecord> spells,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Spells/Abilities ({spells.Count})");
 
@@ -96,7 +96,7 @@ internal static class GeckEffectsWriter
                 sb.AppendLine("Effects:");
                 foreach (var effect in spell.EffectFormIds)
                 {
-                    sb.AppendLine($"  - {GeckReportGenerator.FormatFormIdWithName(effect, lookup)}");
+                    sb.AppendLine($"  - {resolver.FormatFull(effect)}");
                 }
             }
         }
@@ -105,15 +105,15 @@ internal static class GeckEffectsWriter
     /// <summary>
     ///     Generate a report for Spells only.
     /// </summary>
-    public static string GenerateSpellsReport(List<SpellRecord> spells, Dictionary<uint, string>? lookup = null)
+    public static string GenerateSpellsReport(List<SpellRecord> spells, FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendSpellsSection(sb, spells, lookup ?? []);
+        AppendSpellsSection(sb, spells, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 
     internal static void AppendEnchantmentsSection(StringBuilder sb, List<EnchantmentRecord> enchantments,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Enchantments ({enchantments.Count})");
         sb.AppendLine();
@@ -151,7 +151,7 @@ internal static class GeckEffectsWriter
                 foreach (var effect in ench.Effects)
                 {
                     var effectName = effect.EffectFormId != 0
-                        ? GeckReportGenerator.FormatFormIdWithName(effect.EffectFormId, lookup)
+                        ? resolver.FormatFull(effect.EffectFormId)
                         : "(none)";
                     if (effectName.Length > 32)
                     {
@@ -175,15 +175,15 @@ internal static class GeckEffectsWriter
     }
 
     public static string GenerateEnchantmentsReport(List<EnchantmentRecord> enchantments,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendEnchantmentsSection(sb, enchantments, lookup ?? []);
+        AppendEnchantmentsSection(sb, enchantments, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 
     internal static void AppendBaseEffectsSection(StringBuilder sb, List<BaseEffectRecord> effects,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Base Effects ({effects.Count})");
         sb.AppendLine();
@@ -237,17 +237,17 @@ internal static class GeckEffectsWriter
 
             if (effect.Projectile != 0)
             {
-                sb.AppendLine($"  Projectile:  {GeckReportGenerator.FormatFormIdWithName(effect.Projectile, lookup)}");
+                sb.AppendLine($"  Projectile:  {resolver.FormatFull(effect.Projectile)}");
             }
 
             if (effect.Explosion != 0)
             {
-                sb.AppendLine($"  Explosion:   {GeckReportGenerator.FormatFormIdWithName(effect.Explosion, lookup)}");
+                sb.AppendLine($"  Explosion:   {resolver.FormatFull(effect.Explosion)}");
             }
 
             if (effect.AssociatedItem != 0)
             {
-                sb.AppendLine($"  Assoc. Item: {GeckReportGenerator.FormatFormIdWithName(effect.AssociatedItem, lookup)}");
+                sb.AppendLine($"  Assoc. Item: {resolver.FormatFull(effect.AssociatedItem)}");
             }
 
             if (!string.IsNullOrEmpty(effect.ModelPath))
@@ -265,10 +265,10 @@ internal static class GeckEffectsWriter
     }
 
     public static string GenerateBaseEffectsReport(List<BaseEffectRecord> effects,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendBaseEffectsSection(sb, effects, lookup ?? []);
+        AppendBaseEffectsSection(sb, effects, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 }

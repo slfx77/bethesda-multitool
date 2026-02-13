@@ -184,25 +184,19 @@ public static class HeightmapPngExporter
         string outputPath,
         bool useColorGradient = true)
     {
-        var correlatedHeightmaps = new Dictionary<(int x, int y), DetectedVhgtHeightmap>();
+        var precomputedHeights = new Dictionary<(int x, int y), float[,]>();
 
-        // Primary source: use LAND records that have both cell coordinates and heightmap data.
-        // Build DetectedVhgtHeightmap directly from the LAND record's own decompressed VHGT,
-        // since standalone VHGT detections may be in different memory regions.
+        // Primary source: use LAND records with pre-computed heights.
+        // Call CalculateHeights() on the LandHeightmap directly to preserve ExactHeights
+        // from runtime terrain mesh data (avoids lossy delta re-encoding).
         foreach (var land in landRecords)
         {
             if (land.BestCellX.HasValue && land.BestCellY.HasValue && land.Heightmap != null)
             {
                 var key = (land.BestCellX.Value, land.BestCellY.Value);
-                if (!correlatedHeightmaps.ContainsKey(key))
+                if (!precomputedHeights.ContainsKey(key))
                 {
-                    correlatedHeightmaps[key] = new DetectedVhgtHeightmap
-                    {
-                        Offset = land.Heightmap.Offset,
-                        IsBigEndian = land.Header.IsBigEndian,
-                        HeightOffset = land.Heightmap.HeightOffset,
-                        HeightDeltas = land.Heightmap.HeightDeltas
-                    };
+                    precomputedHeights[key] = land.Heightmap.CalculateHeights();
                 }
             }
         }
@@ -214,20 +208,19 @@ public static class HeightmapPngExporter
             if (nearestGrid != null)
             {
                 var key = (nearestGrid.GridX, nearestGrid.GridY);
-                if (!correlatedHeightmaps.ContainsKey(key))
+                if (!precomputedHeights.ContainsKey(key))
                 {
-                    correlatedHeightmaps[key] = heightmap;
+                    precomputedHeights[key] = heightmap.CalculateHeights();
                 }
             }
         }
 
-        if (correlatedHeightmaps.Count == 0)
+        if (precomputedHeights.Count == 0)
         {
             return;
         }
 
-        // Delegate to the shared rendering logic
-        await RenderCompositeAsync(correlatedHeightmaps, outputPath, useColorGradient);
+        await RenderCompositeFromHeightsAsync(precomputedHeights, outputPath, useColorGradient);
     }
 
     /// <summary>
@@ -363,6 +356,126 @@ public static class HeightmapPngExporter
         });
     }
 
+    /// <summary>
+    ///     Render a composite worldmap from precomputed height arrays (float[33,33] per cell).
+    /// </summary>
+    private static async Task RenderCompositeFromHeightsAsync(
+        Dictionary<(int x, int y), float[,]> precomputedHeights,
+        string outputPath,
+        bool useColorGradient)
+    {
+        var minX = precomputedHeights.Keys.Min(k => k.x);
+        var maxX = precomputedHeights.Keys.Max(k => k.x);
+        var minY = precomputedHeights.Keys.Min(k => k.y);
+        var maxY = precomputedHeights.Keys.Max(k => k.y);
+
+        var gridWidth = maxX - minX + 1;
+        var gridHeight = maxY - minY + 1;
+
+        var imgWidth = gridWidth * 33;
+        var imgHeight = gridHeight * 33;
+
+        byte[] compositePixels;
+        if (useColorGradient)
+        {
+            compositePixels = new byte[imgWidth * imgHeight * 3];
+            for (var i = 0; i < compositePixels.Length; i += 3)
+            {
+                compositePixels[i] = 32;
+                compositePixels[i + 1] = 32;
+                compositePixels[i + 2] = 32;
+            }
+        }
+        else
+        {
+            compositePixels = new byte[imgWidth * imgHeight];
+            Array.Fill(compositePixels, (byte)32);
+        }
+
+        var globalMin = float.MaxValue;
+        var globalMax = float.MinValue;
+
+        foreach (var heights in precomputedHeights.Values)
+        {
+            for (var y = 0; y < 33; y++)
+            {
+                for (var x = 0; x < 33; x++)
+                {
+                    var h = heights[y, x];
+                    if (h < globalMin)
+                    {
+                        globalMin = h;
+                    }
+
+                    if (h > globalMax)
+                    {
+                        globalMax = h;
+                    }
+                }
+            }
+        }
+
+        if (globalMin >= globalMax)
+        {
+            return;
+        }
+
+        var globalRange = globalMax - globalMin;
+        if (globalRange < 0.001f)
+        {
+            globalRange = 1f;
+        }
+
+        foreach (var kvp in precomputedHeights)
+        {
+            var (cellX, cellY) = kvp.Key;
+            var heights = kvp.Value;
+
+            var imgCellX = cellX - minX;
+            var imgCellY = maxY - cellY;
+
+            for (var py = 0; py < 33; py++)
+            {
+                for (var px = 0; px < 33; px++)
+                {
+                    var height = heights[32 - py, px];
+                    var normalized = (height - globalMin) / globalRange;
+
+                    var imgX = imgCellX * 33 + px;
+                    var imgY = imgCellY * 33 + py;
+
+                    if (useColorGradient)
+                    {
+                        var (r, g, b) = HeightToColor(normalized);
+                        var idx = (imgY * imgWidth + imgX) * 3;
+                        compositePixels[idx] = r;
+                        compositePixels[idx + 1] = g;
+                        compositePixels[idx + 2] = b;
+                    }
+                    else
+                    {
+                        var gray = (byte)(normalized * 255);
+                        var idx = imgY * imgWidth + imgX;
+                        compositePixels[idx] = gray;
+                    }
+                }
+            }
+        }
+
+        await Task.Run(() =>
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
+            if (useColorGradient)
+            {
+                SaveRgb(compositePixels, imgWidth, imgHeight, outputPath);
+            }
+            else
+            {
+                SaveGrayscale(compositePixels, imgWidth, imgHeight, outputPath);
+            }
+        });
+    }
+
     #region Helper Methods
 
     private static CellGridSubrecord? FindNearestCellGrid(long heightmapOffset, List<CellGridSubrecord>? cellGrids)
@@ -400,7 +513,9 @@ public static class HeightmapPngExporter
         {
             for (var x = 0; x < 33; x++)
             {
-                var normalized = (heights[y, x] - minH) / range;
+                // Row 0 = south edge, row 32 = north edge.
+                // Flip Y so north is at the top of the image.
+                var normalized = (heights[32 - y, x] - minH) / range;
                 var (r, g, b) = HeightToColor(normalized);
 
                 var idx = (y * 33 + x) * 3;
@@ -429,7 +544,9 @@ public static class HeightmapPngExporter
         {
             for (var x = 0; x < 33; x++)
             {
-                var normalized = (heights[y, x] - minH) / range;
+                // Row 0 = south edge, row 32 = north edge.
+                // Flip Y so north is at the top of the image.
+                var normalized = (heights[32 - y, x] - minH) / range;
                 pixels[y * 33 + x] = (byte)(normalized * 255);
             }
         }

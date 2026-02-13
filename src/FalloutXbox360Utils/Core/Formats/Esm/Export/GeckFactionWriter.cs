@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 internal static class GeckFactionWriter
 {
     internal static void AppendFactionsSection(StringBuilder sb, List<FactionRecord> factions,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Factions ({factions.Count})");
 
@@ -47,7 +47,7 @@ internal static class GeckFactionWriter
                 sb.AppendLine("Relations:");
                 foreach (var rel in faction.Relations)
                 {
-                    sb.AppendLine($"  - {GeckReportGenerator.FormatFormIdWithName(rel.FactionFormId, lookup)}: {rel.Modifier:+0;-0}");
+                    sb.AppendLine($"  - {resolver.FormatFull(rel.FactionFormId)}: {rel.Modifier:+0;-0}");
                 }
             }
         }
@@ -57,10 +57,10 @@ internal static class GeckFactionWriter
     ///     Generate a report for Factions only.
     /// </summary>
     public static string GenerateFactionsReport(List<FactionRecord> factions,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendFactionsSection(sb, factions, lookup ?? []);
+        AppendFactionsSection(sb, factions, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 
@@ -92,7 +92,7 @@ internal static class GeckFactionWriter
     }
 
     internal static void AppendChallengesSection(StringBuilder sb, List<ChallengeRecord> challenges,
-        Dictionary<uint, string> lookup)
+        FormIdResolver resolver)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"Challenges ({challenges.Count})");
         sb.AppendLine();
@@ -146,7 +146,7 @@ internal static class GeckFactionWriter
 
             if (chal.Script != 0)
             {
-                sb.AppendLine($"  Script:      {GeckReportGenerator.FormatFormIdWithName(chal.Script, lookup)}");
+                sb.AppendLine($"  Script:      {resolver.FormatFull(chal.Script)}");
             }
 
             sb.AppendLine();
@@ -154,10 +154,10 @@ internal static class GeckFactionWriter
     }
 
     public static string GenerateChallengesReport(List<ChallengeRecord> challenges,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
-        AppendChallengesSection(sb, challenges, lookup ?? []);
+        AppendChallengesSection(sb, challenges, resolver ?? FormIdResolver.Empty);
         return sb.ToString();
     }
 }

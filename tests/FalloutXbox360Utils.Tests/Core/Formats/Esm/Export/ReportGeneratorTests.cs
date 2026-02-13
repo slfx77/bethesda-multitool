@@ -156,7 +156,7 @@ public class ReportGeneratorTests
     public void GenerateNpcsCsv_ContainsHeaderRow()
     {
         var records = MinimalRecords();
-        var csv = CsvActorWriter.GenerateNpcsCsv(records.Npcs, records.FormIdToEditorId);
+        var csv = CsvActorWriter.GenerateNpcsCsv(records.Npcs, records.CreateResolver());
 
         Assert.Contains("RowType,FormID,EditorID,Name", csv);
     }
@@ -165,7 +165,7 @@ public class ReportGeneratorTests
     public void GenerateNpcsCsv_ContainsNpcData()
     {
         var records = MinimalRecords();
-        var csv = CsvActorWriter.GenerateNpcsCsv(records.Npcs, records.FormIdToEditorId);
+        var csv = CsvActorWriter.GenerateNpcsCsv(records.Npcs, records.CreateResolver());
 
         Assert.Contains("TestNpc", csv);
         Assert.Contains("0x00100000", csv);
@@ -175,7 +175,7 @@ public class ReportGeneratorTests
     public void GenerateWeaponsCsv_ContainsHeaderRow()
     {
         var records = MinimalRecords();
-        var csv = CsvItemWriter.GenerateWeaponsCsv(records.Weapons, records.FormIdToEditorId);
+        var csv = CsvItemWriter.GenerateWeaponsCsv(records.Weapons, records.CreateResolver());
 
         Assert.Contains("RowType,FormID,EditorID,Name", csv);
     }
@@ -184,7 +184,7 @@ public class ReportGeneratorTests
     public void GenerateWeaponsCsv_ContainsWeaponData()
     {
         var records = MinimalRecords();
-        var csv = CsvItemWriter.GenerateWeaponsCsv(records.Weapons, records.FormIdToEditorId);
+        var csv = CsvItemWriter.GenerateWeaponsCsv(records.Weapons, records.CreateResolver());
 
         Assert.Contains("TestWeapon", csv);
         Assert.Contains("0x00200000", csv);
