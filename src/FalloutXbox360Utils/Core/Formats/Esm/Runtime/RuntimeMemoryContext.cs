@@ -111,6 +111,22 @@ internal sealed class RuntimeMemoryContext(
     /// </summary>
     public uint? FollowPointerToFormId(byte[] buffer, int pointerOffset)
     {
+        return FollowPointerToFormIdCore(buffer, pointerOffset, expectedFormType: null);
+    }
+
+    /// <summary>
+    ///     Follow a pointer to a TESForm, but only return the FormID if the target's
+    ///     FormType matches the expected type. Returns null for type mismatches.
+    ///     This prevents stale/garbage pointers from resolving to unrelated form types
+    ///     (e.g., a speaker pointer resolving to a DIAL topic instead of an NPC).
+    /// </summary>
+    public uint? FollowPointerToFormId(byte[] buffer, int pointerOffset, byte expectedFormType)
+    {
+        return FollowPointerToFormIdCore(buffer, pointerOffset, expectedFormType);
+    }
+
+    private uint? FollowPointerToFormIdCore(byte[] buffer, int pointerOffset, byte? expectedFormType)
+    {
         if (pointerOffset + 4 > buffer.Length)
         {
             return null;
@@ -144,7 +160,14 @@ internal sealed class RuntimeMemoryContext(
         }
 
         var formType = tesFormBuffer[4];
-        if (formType > 200)
+        if (expectedFormType.HasValue)
+        {
+            if (formType != expectedFormType.Value)
+            {
+                return null;
+            }
+        }
+        else if (formType > 200)
         {
             return null;
         }

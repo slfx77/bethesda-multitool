@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -12,21 +13,26 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
 
-    #region Struct Layout Constants
+    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
+    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
+        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    // TESObjectWEAP layout
-    private const int WeapStructSize = 924;
-    private const int WeapModelPathOffset = 80;
-    private const int WeapValueOffset = 152;
-    private const int WeapWeightOffset = 160;
-    private const int WeapHealthOffset = 168;
-    private const int WeapDamageOffset = 176;
-    private const int WeapAmmoPtrOffset = 184;
-    private const int WeapClipRoundsOffset = 192;
-    private const int WeapDataStart = 260;
-    private const int WeapAnimTypeOffset = 260;
-    private const int WeapSpeedOffset = 264;
-    private const int WeapReachOffset = 268;
+    #region Struct Layouts (Proto Debug PDB base + _s)
+
+    // TESObjectWEAP: PDB size 908, Debug dump 912, Release dump 924
+    private int WeapStructSize => 908 + _s;
+    private int WeapModelPathOffset => 64 + _s;
+    private int WeapValueOffset => 136 + _s;
+    private int WeapWeightOffset => 144 + _s;
+    private int WeapHealthOffset => 152 + _s;
+    private int WeapDamageOffset => 160 + _s;
+    private int WeapAmmoPtrOffset => 168 + _s;
+    private int WeapClipRoundsOffset => 176 + _s;
+    private int WeapDataStart => 244 + _s;
+    private int WeapAnimTypeOffset => 244 + _s;
+    private int WeapSpeedOffset => 248 + _s;
+    private int WeapReachOffset => 252 + _s;
+    // DNAM relative offsets — fixed within the DNAM data block, not TESForm-derived
     private const int DnamMinSpreadRelOffset = 16;
     private const int DnamSpreadRelOffset = 20;
     private const int DnamProjectileRelOffset = 36;
@@ -35,47 +41,47 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
     private const int DnamMaxRangeRelOffset = 48;
     private const int DnamActionPointsRelOffset = 68;
     private const int DnamShotsPerSecRelOffset = 88;
-    private const int WeapCritDamageOffset = 456;
-    private const int WeapCritChanceOffset = 460;
-    private const int WeapPickupSoundOffset = 252;
-    private const int WeapPutdownSoundOffset = 256;
-    private const int WeapFireSound3DOffset = 548;
-    private const int WeapFireSoundDistOffset = 552;
-    private const int WeapFireSound2DOffset = 556;
-    private const int WeapDryFireSoundOffset = 564;
-    private const int WeapIdleSoundOffset = 572;
-    private const int WeapEquipSoundOffset = 576;
-    private const int WeapUnequipSoundOffset = 580;
-    private const int WeapImpactDataSetOffset = 584;
+    private int WeapCritDamageOffset => 440 + _s;
+    private int WeapCritChanceOffset => 444 + _s;
+    private int WeapPickupSoundOffset => 236 + _s;
+    private int WeapPutdownSoundOffset => 240 + _s;
+    private int WeapFireSound3DOffset => 532 + _s;
+    private int WeapFireSoundDistOffset => 536 + _s;
+    private int WeapFireSound2DOffset => 540 + _s;
+    private int WeapDryFireSoundOffset => 548 + _s;
+    private int WeapIdleSoundOffset => 556 + _s;
+    private int WeapEquipSoundOffset => 560 + _s;
+    private int WeapUnequipSoundOffset => 564 + _s;
+    private int WeapImpactDataSetOffset => 568 + _s;
 
-    // TESObjectARMO layout
-    private const int ArmoStructSize = 416;
-    private const int ArmoValueOffset = 108;
-    private const int ArmoWeightOffset = 116;
-    private const int ArmoHealthOffset = 124;
-    private const int ArmoRatingOffset = 392;
+    // TESObjectARMO: PDB size 400, Debug dump 404, Release dump 416
+    private int ArmoStructSize => 400 + _s;
+    private int ArmoValueOffset => 92 + _s;
+    private int ArmoWeightOffset => 100 + _s;
+    private int ArmoHealthOffset => 108 + _s;
+    private int ArmoRatingOffset => 376 + _s;
 
-    // TESObjectAMMO layout
-    private const int AmmoStructSize = 236;
-    private const int AmmoValueOffset = 140;
+    // TESObjectAMMO: PDB size ~220, Debug dump ~224, Release dump 236
+    private int AmmoStructSize => 220 + _s;
+    private int AmmoValueOffset => 124 + _s;
 
-    // TESObjectALCH layout
-    private const int AlchStructSize = 232;
-    private const int AlchWeightOffset = 168;
-    private const int AlchValueOffset = 200;
+    // TESObjectALCH: PDB size ~216, Debug dump ~220, Release dump 232
+    private int AlchStructSize => 216 + _s;
+    private int AlchWeightOffset => 152 + _s;
+    private int AlchValueOffset => 184 + _s;
 
-    // TESObjectMISC / TESKey layout
-    private const int MiscStructSize = 188;
-    private const int MiscValueOffset = 136;
-    private const int MiscWeightOffset = 144;
+    // TESObjectMISC / TESKey: PDB size 172, Debug dump 176, Release dump 188
+    private int MiscStructSize => 172 + _s;
+    private int MiscValueOffset => 120 + _s;
+    private int MiscWeightOffset => 128 + _s;
 
-    // TESObjectCONT layout
-    private const int ContStructSize = 172;
-    private const int ContModelPathOffset = 80;
-    private const int ContScriptOffset = 116;
-    private const int ContContentsDataOffset = 68;
-    private const int ContContentsNextOffset = 72;
-    private const int ContFlagsOffset = 140;
+    // TESObjectCONT: PDB size 156, Debug dump 160, Release dump 172
+    private int ContStructSize => 156 + _s;
+    private int ContModelPathOffset => 64 + _s;
+    private int ContScriptPtrOffset => 108 + _s; // TESScriptableForm::pFormScript (base+104, field+4)
+    private int ContContentsDataOffset => 52 + _s;
+    private int ContContentsNextOffset => 56 + _s;
+    private int ContFlagsOffset => 124 + _s;
 
     #endregion
 
@@ -450,9 +456,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
         var modelPath = _context.ReadBSStringT(offset, ContModelPathOffset);
 
         // Read script pointer
-        var scriptFormId =
-            _context.FollowPointerToFormId(buffer,
-                ContScriptOffset - 4); // -4 because offset is to TESScriptableForm, pointer is inside
+        var scriptFormId = _context.FollowPointerToFormId(buffer, ContScriptPtrOffset);
 
         // Read container contents using same pattern as NPC inventory
         var contents = ReadContainerContents(buffer);
@@ -526,7 +530,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
 
     #region Weapon Helper Methods
 
-    private static (int Value, int Health, float Weight, short Damage, byte ClipSize)
+    private (int Value, int Health, float Weight, short Damage, byte ClipSize)
         ReadWeaponBaseClassFields(byte[] buffer)
     {
         var value = RuntimeMemoryContext.ReadInt32BE(buffer, WeapValueOffset);
@@ -558,7 +562,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
         return (value, health, weight, damage, clipSize);
     }
 
-    private static (Enums.WeaponType WeaponType, uint AnimationType, float Speed, float Reach,
+    private (Enums.WeaponType WeaponType, uint AnimationType, float Speed, float Reach,
         float MinSpread, float Spread, float MinRange, float MaxRange,
         byte VatsChance, float ActionPoints, float ShotsPerSec) ReadWeaponCombatFields(byte[] buffer)
     {
@@ -599,7 +603,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             minRange, maxRange, vatsChance, actionPoints, shotsPerSec);
     }
 
-    private static (short Damage, float Chance) ReadWeaponCriticalFields(byte[] buffer)
+    private (short Damage, float Chance) ReadWeaponCriticalFields(byte[] buffer)
     {
         var damage = (short)BinaryUtils.ReadUInt16BE(buffer, WeapCritDamageOffset);
         var chance = BinaryUtils.ReadFloatBE(buffer, WeapCritChanceOffset);

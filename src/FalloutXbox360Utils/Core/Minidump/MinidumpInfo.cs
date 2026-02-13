@@ -53,21 +53,59 @@ public class MinidumpInfo
         return null;
     }
 
+    // Lazily-built sorted index for O(log n) VA lookups.
+    private long[]? _sortedVaStarts;
+    private MinidumpMemoryRegion[]? _sortedRegionIndex;
+
     /// <summary>
-    ///     Convert a virtual address to a file offset using memory regions.
+    ///     Convert a virtual address to a file offset using binary search on sorted memory regions.
+    ///     O(log n) per lookup instead of O(n) linear scan.
     /// </summary>
     public long? VirtualAddressToFileOffset(long virtualAddress)
     {
-        foreach (var region in MemoryRegions)
+        EnsureVaIndex();
+
+        // Binary search for the region containing this VA.
+        // Array.BinarySearch returns the index of the match, or the bitwise complement
+        // of the index of the next larger element.
+        var idx = Array.BinarySearch(_sortedVaStarts!, virtualAddress);
+
+        if (idx < 0)
         {
-            if (virtualAddress >= region.VirtualAddress && virtualAddress < region.VirtualAddress + region.Size)
-            {
-                var offsetInRegion = virtualAddress - region.VirtualAddress;
-                return region.FileOffset + offsetInRegion;
-            }
+            // Not an exact match on a region start — check the region before this insertion point.
+            idx = ~idx - 1;
+        }
+
+        if (idx < 0 || idx >= _sortedRegionIndex!.Length)
+        {
+            return null;
+        }
+
+        var region = _sortedRegionIndex[idx];
+        if (virtualAddress >= region.VirtualAddress && virtualAddress < region.VirtualAddress + region.Size)
+        {
+            return region.FileOffset + (virtualAddress - region.VirtualAddress);
         }
 
         return null;
+    }
+
+    private void EnsureVaIndex()
+    {
+        if (_sortedVaStarts != null)
+        {
+            return;
+        }
+
+        var sorted = MemoryRegions.OrderBy(r => r.VirtualAddress).ToArray();
+        var starts = new long[sorted.Length];
+        for (var i = 0; i < sorted.Length; i++)
+        {
+            starts[i] = sorted[i].VirtualAddress;
+        }
+
+        _sortedRegionIndex = sorted;
+        _sortedVaStarts = starts;
     }
 
     /// <summary>

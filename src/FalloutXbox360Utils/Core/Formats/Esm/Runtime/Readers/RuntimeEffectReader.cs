@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -11,22 +12,26 @@ internal sealed class RuntimeEffectReader(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
 
-    #region Projectile Struct Constants
+    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
+    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
+        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    private const int ProjStructSize = 224;
-    private const int ProjDataBase = 112;
-    private const int ProjGravityOffset = ProjDataBase + 4;
-    private const int ProjSpeedOffset = ProjDataBase + 8;
-    private const int ProjRangeOffset = ProjDataBase + 12;
-    private const int ProjExplosionOffset = ProjDataBase + 36;
-    private const int ProjActiveSoundOffset = ProjDataBase + 40;
-    private const int ProjMuzzleFlashDurOffset = ProjDataBase + 44;
-    private const int ProjForceOffset = ProjDataBase + 52;
-    private const int ProjCountdownSoundOffset = ProjDataBase + 56;
-    private const int ProjDeactivateSoundOffset = ProjDataBase + 60;
+    #region Projectile Struct Layout (Proto Debug PDB base + _s)
+
+    // BGSProjectile: PDB size 208, Debug dump 212, Release dump 224
+    private int ProjStructSize => 208 + _s;
+    private int ProjGravityOffset => 100 + _s;
+    private int ProjSpeedOffset => 104 + _s;
+    private int ProjRangeOffset => 108 + _s;
+    private int ProjExplosionOffset => 132 + _s;
+    private int ProjActiveSoundOffset => 136 + _s;
+    private int ProjMuzzleFlashDurOffset => 140 + _s;
+    private int ProjForceOffset => 148 + _s;
+    private int ProjCountdownSoundOffset => 152 + _s;
+    private int ProjDeactivateSoundOffset => 156 + _s;
 
     /// <summary>Model path BSStringT offset, shared by all TESBoundObject-derived types.</summary>
-    private const int ModelPathOffset = 80;
+    private int ModelPathOffset => 64 + _s;
 
     #endregion
 

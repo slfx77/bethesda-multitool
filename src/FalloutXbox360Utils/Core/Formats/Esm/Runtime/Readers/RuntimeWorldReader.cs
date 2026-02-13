@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -12,11 +13,21 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
 
-    #region World/Land Struct Constants
+    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
+    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
+        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    private const int LandStructSize = 60;
-    private const int LandLoadedDataPtrOffset = 56;
+    #region World/Land Struct Layout
+
+    // TESObjectLAND: PDB size 44, Debug dump 48, Release dump 60
+    private int LandStructSize => 44 + _s;
+    private int LandLoadedDataPtrOffset => 40 + _s;
+    // LoadedLandData: 164 bytes — standalone struct, identical across all builds
     private const int LoadedDataSize = 164;
+    private const int LoadedDataVerticesPtrOffset = 4;    // NiPoint3** ppVertices
+    private const int LoadedDataNormalsPtrOffset = 8;     // NiPoint3** ppNormals
+    private const int LoadedDataColorsPtrOffset = 12;     // NiColorA** ppColorsA
+    private const int LoadedDataHeightExtentsOffset = 24; // NiPoint2: min/max terrain heights
     private const int LoadedDataCellXOffset = 152;
     private const int LoadedDataCellYOffset = 156;
     private const int LoadedDataBaseHeightOffset = 160;
@@ -29,8 +40,8 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     /// </summary>
     public RuntimeLoadedLandData? ReadRuntimeLandData(RuntimeEditorIdEntry entry)
     {
-        // FormType 0x45 = LAND (stable across builds)
-        if (entry.TesFormOffset == null || entry.FormType != 0x45)
+        // Caller is responsible for filtering to LAND entries (FormType varies by build)
+        if (entry.TesFormOffset == null)
         {
             return null;
         }
@@ -51,8 +62,8 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // Validate FormID at offset 16 (runtime TESForm layout)
-        var formId = BinaryUtils.ReadUInt32BE(buffer, 16);
+        // Validate FormID at offset 12 (TESForm: vfptr(4) + cFormType(1) + pad(3) + flags(4) + iFormID(4))
+        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
         if (formId != entry.FormId)
         {
             return null;
@@ -100,15 +111,185 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             baseHeight = 0;
         }
 
+        // Extract HeightExtents (NiPoint2 at offset +24): min/max terrain heights for this cell
+        var (minHeight, maxHeight) = ReadHeightExtents(loadedDataBuffer);
+
+        // Extract terrain mesh from heap pointers (ppVertices, ppNormals, ppColorsA)
+        var terrainMesh = ReadTerrainMesh(loadedDataBuffer);
+
         return new RuntimeLoadedLandData
         {
             FormId = formId,
             CellX = cellX,
             CellY = cellY,
             BaseHeight = baseHeight,
+            MinHeight = minHeight,
+            MaxHeight = maxHeight,
             LandOffset = offset,
-            LoadedDataOffset = loadedDataFileOffset.Value
+            LoadedDataOffset = loadedDataFileOffset.Value,
+            TerrainMesh = terrainMesh
         };
+    }
+
+    private static (float? Min, float? Max) ReadHeightExtents(byte[] loadedDataBuffer)
+    {
+        var rawMin = BinaryUtils.ReadFloatBE(loadedDataBuffer, LoadedDataHeightExtentsOffset);
+        var rawMax = BinaryUtils.ReadFloatBE(loadedDataBuffer, LoadedDataHeightExtentsOffset + 4);
+
+        float? min = RuntimeMemoryContext.IsNormalFloat(rawMin) && rawMin is > -100000 and < 100000
+            ? rawMin
+            : null;
+        float? max = RuntimeMemoryContext.IsNormalFloat(rawMax) && rawMax is > -100000 and < 100000
+            ? rawMax
+            : null;
+
+        return (min, max);
+    }
+
+    /// <summary>
+    ///     Extract terrain mesh data from LoadedLandData heap pointers.
+    ///     Follows double-indirected pointers (NiPoint3** ppVertices, ppNormals; NiColorA** ppColorsA).
+    ///     Returns null if vertex data cannot be extracted.
+    /// </summary>
+    private RuntimeTerrainMesh? ReadTerrainMesh(byte[] loadedDataBuffer)
+    {
+        // Vertices are required — normals and colors are optional
+        var (vertices, vertexOffset) = ReadDoubleIndirectedFloatArray(
+            loadedDataBuffer, LoadedDataVerticesPtrOffset,
+            floatsPerElement: 3, RuntimeTerrainMesh.VertexCount, maxAbsValue: 200_000);
+
+        if (vertices == null)
+        {
+            return null;
+        }
+
+        // Reject degenerate meshes by checking vertex coordinate ranges.
+        // Real Gamebryo terrain cells span exactly 4096×4096 world units.
+        // If the X or Y range is far from ~4096, the data is garbage.
+        var minX = float.MaxValue;
+        var maxX = float.MinValue;
+        var minY = float.MaxValue;
+        var maxY = float.MinValue;
+        for (var i = 0; i < RuntimeTerrainMesh.VertexCount; i++)
+        {
+            var x = vertices[i * 3];
+            var y = vertices[i * 3 + 1];
+            if (RuntimeMemoryContext.IsNormalFloat(x) && Math.Abs(x) <= 200_000)
+            {
+                minX = Math.Min(minX, x);
+                maxX = Math.Max(maxX, x);
+            }
+
+            if (RuntimeMemoryContext.IsNormalFloat(y) && Math.Abs(y) <= 200_000)
+            {
+                minY = Math.Min(minY, y);
+                maxY = Math.Max(maxY, y);
+            }
+        }
+
+        var rangeX = maxX - minX;
+        var rangeY = maxY - minY;
+
+        // Expected range is ~4096 (32 quads × 128 units each). Reject if range is
+        // too small (<1000) or too large (>10000) — clearly not a real terrain cell.
+        if (rangeX < 1000 || rangeX > 10000 || rangeY < 1000 || rangeY > 10000)
+        {
+            return null;
+        }
+
+        // Try normals (NiPoint3, components should be in [-1, 1] but allow some tolerance)
+        var (normals, _) = ReadDoubleIndirectedFloatArray(
+            loadedDataBuffer, LoadedDataNormalsPtrOffset,
+            floatsPerElement: 3, RuntimeTerrainMesh.VertexCount, maxAbsValue: 2.0f);
+
+        // Try vertex colors (NiColorA = RGBA, components in [0, 1])
+        var (colors, _) = ReadDoubleIndirectedFloatArray(
+            loadedDataBuffer, LoadedDataColorsPtrOffset,
+            floatsPerElement: 4, RuntimeTerrainMesh.VertexCount, maxAbsValue: 2.0f);
+
+        return new RuntimeTerrainMesh
+        {
+            Vertices = vertices,
+            Normals = normals,
+            Colors = colors,
+            VertexDataOffset = vertexOffset
+        };
+    }
+
+    /// <summary>
+    ///     Follow a double-indirected pointer (T**) from the LoadedLandData buffer to read a float array.
+    ///     Step 1: Read pointer at ptrOffset → VA of the inner pointer.
+    ///     Step 2: Dereference inner pointer → VA of the actual float array.
+    ///     Step 3: Read elementCount × floatsPerElement floats from the array.
+    /// </summary>
+    private (float[]? Data, long FileOffset) ReadDoubleIndirectedFloatArray(
+        byte[] loadedDataBuffer, int ptrOffset, int floatsPerElement, int elementCount, float maxAbsValue)
+    {
+        if (ptrOffset + 4 > loadedDataBuffer.Length)
+        {
+            return (null, 0);
+        }
+
+        // Step 1: Read the outer pointer (T**)
+        var outerPtr = BinaryUtils.ReadUInt32BE(loadedDataBuffer, ptrOffset);
+        if (outerPtr == 0 || !_context.IsValidPointer(outerPtr))
+        {
+            return (null, 0);
+        }
+
+        var outerFileOffset = _context.VaToFileOffset(outerPtr);
+        if (outerFileOffset == null)
+        {
+            return (null, 0);
+        }
+
+        // Step 2: Dereference to get the inner pointer (T*)
+        var innerPtrBytes = _context.ReadBytes(outerFileOffset.Value, 4);
+        if (innerPtrBytes == null)
+        {
+            return (null, 0);
+        }
+
+        var innerPtr = BinaryUtils.ReadUInt32BE(innerPtrBytes, 0);
+        if (innerPtr == 0 || !_context.IsValidPointer(innerPtr))
+        {
+            return (null, 0);
+        }
+
+        var dataFileOffset = _context.VaToFileOffset(innerPtr);
+        if (dataFileOffset == null)
+        {
+            return (null, 0);
+        }
+
+        // Step 3: Read the float array
+        var totalFloats = elementCount * floatsPerElement;
+        var byteCount = totalFloats * 4;
+        var rawData = _context.ReadBytes(dataFileOffset.Value, byteCount);
+        if (rawData == null)
+        {
+            return (null, 0);
+        }
+
+        // Parse big-endian floats with validation
+        var result = new float[totalFloats];
+        var validCount = 0;
+        for (var i = 0; i < totalFloats; i++)
+        {
+            result[i] = BinaryUtils.ReadFloatBE(rawData, i * 4);
+            if (RuntimeMemoryContext.IsNormalFloat(result[i]) && Math.Abs(result[i]) <= maxAbsValue)
+            {
+                validCount++;
+            }
+        }
+
+        // Require at least 50% valid floats (same quality gate as ReadFaceGenMorphArray)
+        if (validCount < totalFloats * 0.5)
+        {
+            return (null, 0);
+        }
+
+        return (result, dataFileOffset.Value);
     }
 
     /// <summary>
@@ -119,7 +300,8 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     {
         var result = new Dictionary<uint, RuntimeLoadedLandData>();
 
-        foreach (var entry in entries.Where(e => e.FormType == 0x45))
+        // Entries are pre-filtered to LAND by EsmEditorIdExtractor (FormType varies by build)
+        foreach (var entry in entries)
         {
             var landData = ReadRuntimeLandData(entry);
             if (landData != null)

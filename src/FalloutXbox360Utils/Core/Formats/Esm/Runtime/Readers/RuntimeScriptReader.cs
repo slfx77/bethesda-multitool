@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -11,29 +12,35 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
 
-    #region Script Struct Constants
+    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
+    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
+        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    // PDB Script class: 84 bytes, Runtime (TESForm +16): 100 bytes, FormType: 0x11
-    private const int ScptStructSize = 100;
-    private const int ScptVarCountOffset = 40;
-    private const int ScptRefCountOffset = 44;
-    private const int ScptDataSizeOffset = 48;
-    private const int ScptLastVarIdOffset = 52;
-    private const int ScptIsQuestOffset = 56;
-    private const int ScptIsMagicEffectOffset = 57;
-    private const int ScptIsCompiledOffset = 58;
-    private const int ScptTextPtrOffset = 60; // m_text: char* -> SCTX source
-    private const int ScptDataPtrOffset = 64; // m_data: char* -> SCDA bytecode
-    private const int ScptQuestDelayOffset = 72;
-    private const int ScptOwnerQuestOffset = 80; // pOwnerQuest: TESQuest*
-    private const int ScptRefObjectsListOffset = 84; // BSSimpleList<SCRIPT_REFERENCED_OBJECT*>
-    private const int ScptVariablesListOffset = 92; // BSSimpleList<ScriptVariable*>
+    #region Script Struct Layout (Proto Debug PDB base + _s)
 
-    // SCRIPT_REFERENCED_OBJECT: 16 bytes (cEditorID BSStringT + pForm TESForm* + uiVariableID)
+    // Script: PDB size 84, Debug dump 88, Release dump 100, FormType: 0x11
+    private int ScptStructSize => 84 + _s;
+    private int ScptVarCountOffset => 24 + _s;
+    private int ScptRefCountOffset => 28 + _s;
+    private int ScptDataSizeOffset => 32 + _s;
+    private int ScptLastVarIdOffset => 36 + _s;
+    private int ScptIsQuestOffset => 40 + _s;
+    private int ScptIsMagicEffectOffset => 41 + _s;
+    private int ScptIsCompiledOffset => 42 + _s;
+    private int ScptTextPtrOffset => 44 + _s; // m_text: char* -> SCTX source
+    private int ScptDataPtrOffset => 48 + _s; // m_data: char* -> SCDA bytecode
+    private int ScptQuestDelayOffset => 56 + _s;
+    private int ScptOwnerQuestOffset => 64 + _s; // pOwnerQuest: TESQuest*
+    private int ScptRefObjectsListOffset => 68 + _s; // BSSimpleList<SCRIPT_REFERENCED_OBJECT*>
+    private int ScptVariablesListOffset => 76 + _s; // BSSimpleList<ScriptVariable*>
+
+    // SCRIPT_REFERENCED_OBJECT: 16 bytes — standalone struct, not TESForm-derived
+    // +0: cEditorID (BSStringT, 8 bytes), +8: pForm (TESForm*, 4 bytes), +12: uiVariableID (UInt32)
     private const int ScroFormPtrOffset = 8;
+    private const int ScroVarIdOffset = 12;
     private const int ScroStructSize = 16;
 
-    // ScriptVariable: 32 bytes (SCRIPT_LOCAL data 24 bytes + cName BSStringT 8 bytes)
+    // ScriptVariable: 32 bytes — standalone struct, not TESForm-derived
     private const int SvarIsIntegerOffset = 12; // bIsInteger within SCRIPT_LOCAL
     private const int SvarNameOffset = 24; // BSStringT cName
     private const int SvarStructSize = 32;
@@ -42,7 +49,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
 
     /// <summary>
     ///     Read a Script C++ struct from a runtime memory dump.
-    ///     PDB layout: TESForm(40) + SCRIPT_HEADER(20) + m_text(4) + m_data(4) +
+    ///     Layout: TESForm(40) + SCRIPT_HEADER(20) + m_text(4) + m_data(4) +
     ///     floats(12) + pOwnerQuest(4) + listRefObjects(8) + listVariables(8) = 100 bytes.
     /// </summary>
     public RuntimeScriptData? ReadRuntimeScript(RuntimeEditorIdEntry entry)
@@ -106,9 +113,10 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         // Follow pOwnerQuest pointer
         var ownerQuestFormId = _context.FollowPointerToFormId(buffer, ScptOwnerQuestOffset);
 
-        // Walk BSSimpleLists for ref objects and variables
-        var refObjects = WalkScriptRefObjectList(offset);
-        var variables = WalkScriptVariableList(offset);
+        // Walk BSSimpleLists for ref objects and variables.
+        // Pass expected counts from SCRIPT_HEADER to avoid truncating large lists.
+        var refObjects = WalkScriptRefObjectList(offset, refObjectCount);
+        var variables = WalkScriptVariableList(offset, variableCount);
 
         return new RuntimeScriptData
         {
@@ -210,7 +218,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
     ///     Each node's m_item is a SCRIPT_REFERENCED_OBJECT* pointer (16 bytes):
     ///     +0: cEditorID (BSStringT, 8 bytes), +8: pForm (TESForm*, 4 bytes), +12: uiVariableID (UInt32)
     /// </summary>
-    private List<(uint FormId, string? EditorId)> WalkScriptRefObjectList(long scriptOffset)
+    private List<(uint FormId, string? EditorId)> WalkScriptRefObjectList(long scriptOffset, uint expectedCount)
     {
         var results = new List<(uint, string?)>();
 
@@ -234,7 +242,12 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         // Follow BSSimpleList chain
         var nextVA = firstNext;
         var visited = new HashSet<uint>();
-        while (nextVA != 0 && results.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
+        // Use per-script expected count when it exceeds the default cap.
+        // +10 buffer accounts for SCRV entries mixed in alongside SCRO entries.
+        // Math.Max ensures we never read fewer entries than the default (avoiding regression).
+        // 200 hard cap prevents runaway traversal on corrupt data.
+        var maxItems = (int)Math.Min(Math.Max(expectedCount + 10, RuntimeMemoryContext.MaxListItems), 200);
+        while (nextVA != 0 && results.Count < maxItems && !visited.Contains(nextVA))
         {
             visited.Add(nextVA);
             var nodeFileOffset = _context.VaToFileOffset(nextVA);
@@ -290,7 +303,12 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         var formId = _context.FollowPointerToFormId(buf, ScroFormPtrOffset);
         if (formId == null)
         {
-            return null;
+            // SCRV entry: pForm is NULL but uiVariableID identifies a local variable.
+            // These occupy slots in the reference list alongside SCRO entries — the bytecode
+            // uses 1-based indices into the combined list. Flag with high bit 0x80000000
+            // so the decompiler can distinguish SCRV from SCRO entries.
+            var varId = BinaryUtils.ReadUInt32BE(buf, ScroVarIdOffset);
+            return (0x80000000 | varId, null);
         }
 
         // Read cEditorID BSStringT at offset 0
@@ -304,7 +322,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
     ///     Each node's m_item is a ScriptVariable* pointer (32 bytes):
     ///     +0: SCRIPT_LOCAL data (uiID at +0, bIsInteger at +12), +24: cName BSStringT
     /// </summary>
-    private List<ScriptVariableInfo> WalkScriptVariableList(long scriptOffset)
+    private List<ScriptVariableInfo> WalkScriptVariableList(long scriptOffset, uint expectedCount)
     {
         var results = new List<ScriptVariableInfo>();
 
@@ -325,10 +343,12 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             results.Add(firstVar);
         }
 
-        // Follow BSSimpleList chain
+        // Follow BSSimpleList chain.
+        // Use per-script expected count when it exceeds the default cap.
+        var maxItems = (int)Math.Min(Math.Max(expectedCount + 10, RuntimeMemoryContext.MaxListItems), 200);
         var nextVA = firstNext;
         var visited = new HashSet<uint>();
-        while (nextVA != 0 && results.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
+        while (nextVA != 0 && results.Count < maxItems && !visited.Contains(nextVA))
         {
             visited.Add(nextVA);
             var nodeFileOffset = _context.VaToFileOffset(nextVA);

@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -12,58 +13,67 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
 
-    #region NPC Struct Constants
+    // Build-specific offset shift: Proto Debug PDB + _s = actual dump offset.
+    // Debug dumps: _s=4, Release dumps: _s=16.
+    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
+        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    private const int NpcStructSize = 508;
-    private const int NpcAcbsOffset = 68;
-    private const int NpcDeathItemPtrOffset = 92;
-    private const int NpcVoiceTypePtrOffset = 96;
-    private const int NpcTemplatePtrOffset = 100;
-    private const int NpcRacePtrOffset = 288;
-    private const int NpcClassPtrOffset = 320;
-    private const int NpcAiDataOffset = 164;
-    private const int NpcMoodOffset = 168;
-    private const int NpcAiFlagsOffset = 172;
-    private const int NpcAiAssistanceOffset = 178;
-    private const int NpcSpecialOffset = 204;
+    #region NPC Struct Layout (Proto Debug PDB base + _s)
+
+    // TESNPC: PDB size 492, Debug dump 496, Release dump 508
+    private int NpcStructSize => 492 + _s;
+    private int NpcAcbsOffset => 52 + _s;
+    private int NpcDeathItemPtrOffset => 76 + _s;
+    private int NpcVoiceTypePtrOffset => 80 + _s;
+    private int NpcTemplatePtrOffset => 84 + _s;
+    private int NpcRacePtrOffset => 272 + _s;
+    private int NpcClassPtrOffset => 304 + _s;
+    private int NpcAiDataOffset => 148 + _s;
+    private int NpcMoodOffset => 152 + _s;
+    private int NpcAiFlagsOffset => 156 + _s;
+    private int NpcAiAssistanceOffset => 162 + _s;
+    private int NpcSpecialOffset => 188 + _s;
     private const int NpcSpecialSize = 7;
-    private const int NpcSkillsOffset = 292;
+    private int NpcSkillsOffset => 276 + _s;
     private const int NpcSkillsSize = 14;
-    private const int NpcFggsPointerOffset = 336;
-    private const int NpcFggsCountOffset = 348;
-    private const int NpcFggaPointerOffset = 368;
-    private const int NpcFggaCountOffset = 380;
-    private const int NpcFgtsPointerOffset = 400;
-    private const int NpcFgtsCountOffset = 412;
-    private const int NpcHairPtrOffset = 456;
-    private const int NpcHairLengthOffset = 460;
-    private const int NpcEyesPtrOffset = 464;
-    private const int NpcCombatStylePtrOffset = 484;
-    private const int NpcContainerDataOffset = 120;
-    private const int NpcContainerNextOffset = 124;
-    private const int NpcFactionListHeadOffset = 112;
+    private int NpcFggsPointerOffset => 320 + _s;
+    private int NpcFggsCountOffset => 332 + _s;
+    private int NpcFggaPointerOffset => 352 + _s;
+    private int NpcFggaCountOffset => 364 + _s;
+    private int NpcFgtsPointerOffset => 384 + _s;
+    private int NpcFgtsCountOffset => 396 + _s;
+    private int NpcHairPtrOffset => 440 + _s;
+    private int NpcHairLengthOffset => 444 + _s;
+    private int NpcEyesPtrOffset => 448 + _s;
+    private int NpcCombatStylePtrOffset => 468 + _s;
+    private int NpcScriptPtrOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
+    private int NpcContainerDataOffset => 104 + _s;
+    private int NpcContainerNextOffset => 108 + _s;
+    private int NpcFactionListHeadOffset => 96 + _s;
 
     #endregion
 
-    #region Faction Struct Constants
+    #region Faction Struct Layout (Proto Debug PDB base + _s)
 
-    private const int FactStructSize = 108;
-    private const int FactFlagsOffset = 68;
-    private const int FactFullNameOffset = 44;
+    // TESFaction: PDB size 76, Debug dump 80, Release dump 92
+    private int FactStructSize => 76 + _s;
+    private int FactFlagsOffset => 52 + _s;
+    private int FactFullNameOffset => 28 + _s;
 
     #endregion
 
-    #region Creature Struct Constants
+    #region Creature Struct Layout (Proto Debug PDB base + _s)
 
-    private const int CreaStructSize = 440;
-    private const int CreaModelPathOffset = 188;
-    private const int CreaScriptOffset = 220;
-    private const int CreaCombatSkillOffset = 228;
-    private const int CreaMagicSkillOffset = 229;
-    private const int CreaStealthSkillOffset = 230;
-    private const int CreaAttackDamageOffset = 232;
-    private const int CreaTypeOffset = 236;
-    private const int CreaAcbsOffset = 24;
+    // TESCreature: PDB size 352, Debug dump 356, Release dump 368
+    private int CreaStructSize => 352 + _s;
+    private int CreaModelPathOffset => 172 + _s;
+    private int CreaScriptOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
+    private int CreaCombatSkillOffset => 212 + _s;
+    private int CreaMagicSkillOffset => 213 + _s;
+    private int CreaStealthSkillOffset => 214 + _s;
+    private int CreaAttackDamageOffset => 216 + _s;
+    private int CreaTypeOffset => 220 + _s;
+    private int CreaAcbsOffset => 8 + _s;
 
     #endregion
 
@@ -102,11 +112,14 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
             return null;
         }
 
+        // Read script pointer before ACBS validation so it's available even for minimal NPCs
+        var scriptFormId = _context.FollowPointerToFormId(buffer, NpcScriptPtrOffset);
+
         // Read ACBS stats block at empirically verified offset +68
         var stats = ReadActorBaseStats(buffer, NpcAcbsOffset, offset);
         if (stats == null)
         {
-            return CreateMinimalNpc(entry, offset);
+            return CreateMinimalNpc(entry, offset, scriptFormId);
         }
 
         // Follow pointer fields to get FormIDs
@@ -160,6 +173,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
             HairLength = hairLength,
             EyesFormId = eyes,
             CombatStyleFormId = combatStyle,
+            Script = scriptFormId,
             FaceGenGeometrySymmetric = fggs,
             FaceGenGeometryAsymmetric = fgga,
             FaceGenTextureSymmetric = fgts,
@@ -425,7 +439,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     ///     padding(3), flags(4 at +172), ..., assistance(1 at +178).
     ///     Empirically verified via GSSunnySmiles (aggression=1, confidence=4, assistance=2).
     /// </summary>
-    private static NpcAiData? ReadNpcAiData(byte[] buffer)
+    private NpcAiData? ReadNpcAiData(byte[] buffer)
     {
         if (NpcAiAssistanceOffset + 1 > buffer.Length)
         {
@@ -523,7 +537,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     ///     Returns null if the value is zero (NULL/unset) or invalid.
     ///     Empirically verified: Sunny=0.60, Doc=0.29, Arcade=0.69, Boone=NULL, Raul=NULL.
     /// </summary>
-    private static float? ReadNpcHairLength(byte[] buffer)
+    private float? ReadNpcHairLength(byte[] buffer)
     {
         if (NpcHairLengthOffset + 4 > buffer.Length)
         {
@@ -605,7 +619,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     ///     Speech(11), Survival(12), Unarmed(13).
     ///     Empirically verified via GSSunnySmiles: [12,12,14,14,14,12,47,12,12,47,47,12,12,12].
     /// </summary>
-    private static byte[]? ReadNpcSkills(byte[] buffer)
+    private byte[]? ReadNpcSkills(byte[] buffer)
     {
         if (NpcSkillsOffset + NpcSkillsSize > buffer.Length)
         {
@@ -645,7 +659,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     ///     Returns 7 bytes (ST, PE, EN, CH, IN, AG, LK) or null if values look invalid.
     ///     Empirically verified via GSSunnySmiles (6,5,4,4,4,6,4) and CraigBoone (4,9,5,3,4,7,8).
     /// </summary>
-    private static byte[]? ReadNpcSpecial(byte[] buffer)
+    private byte[]? ReadNpcSpecial(byte[] buffer)
     {
         if (NpcSpecialOffset + NpcSpecialSize > buffer.Length)
         {
@@ -744,13 +758,14 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     /// <summary>
     ///     Creates a minimal NPC record using only hash table data (no struct reading).
     /// </summary>
-    private static NpcRecord CreateMinimalNpc(RuntimeEditorIdEntry entry, long offset)
+    private static NpcRecord CreateMinimalNpc(RuntimeEditorIdEntry entry, long offset, uint? scriptFormId = null)
     {
         return new NpcRecord
         {
             FormId = entry.FormId,
             EditorId = entry.EditorId,
             FullName = entry.DisplayName,
+            Script = scriptFormId,
             Offset = offset,
             IsBigEndian = true
         };

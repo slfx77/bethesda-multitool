@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -10,52 +11,71 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
+    private readonly InfoOffsets _info = InfoLayout;
 
-    #region Dialogue Struct Constants
+    #region Struct Layouts
 
-    private const int DialStructSize = 88;
+    /// <summary>
+    ///     TESTopicInfo struct layout offsets.
+    ///     All known dumps use Release/Final Debug PDB sizes (TESTopicInfo = 96 bytes).
+    /// </summary>
+    private record InfoOffsets(
+        int StructSize,
+        int IndexOffset,
+        int DataOffset,
+        int PromptOffset,
+        int SpeakerPtrOffset,
+        int DifficultyOffset,
+        int QuestPtrOffset);
+
+    // TESTopicInfo: Proto Debug PDB = 80 bytes, all known dumps = 96 bytes (PDB + 16 shift).
+    private static readonly InfoOffsets InfoLayout = new(96, 48, 51, 56, 76, 84, 88);
+
+    // TESTopic layout — consistent across all known builds (Final Debug / Release PDB, 80 bytes).
+    // FullName=+44, DataType=+52, Flags=+53, Priority=+56, QuestInfoList=+60, DummyPrompt=+68.
+    private const int DialStructSize = 80;
     private const int DialFullNameOffset = 44;
     private const int DialDataTypeOffset = 52;
     private const int DialDataFlagsOffset = 53;
     private const int DialPriorityOffset = 56;
     private const int DialQuestInfoListOffset = 60;
     private const int DialDummyPromptOffset = 68;
-    private const int DialTopicCountOffset = 84;
-
-    private const int InfoStructSize = 80;
-    private const int InfoIndexOffset = 36;
-    private const int InfoDataOffset = 39;
-    private const int InfoSpeakerPtrOffset = 64;
-    private const int InfoDifficultyOffset = 72;
-    private const int InfoQuestPtrOffset = 76;
 
     #endregion
 
-    #region Note Struct Constants
+    // Build-specific offset shift for Note/Quest/Terminal structs.
+    private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
+        MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    private const int NoteStructSize = 160;
-    private const int NoteTypeOffset = 140;
-    private const int NoteModelPathOffset = 68;
-    private const int NoteFullNameOffset = 92;
+    #region Note Struct Layout (Proto Debug PDB base + _s)
 
-    #endregion
-
-    #region Quest Struct Constants
-
-    private const int QustStructSize = 140;
-    private const int QustFlagsOffset = 76;
-    private const int QustPriorityOffset = 77;
-    private const int QustFullNameOffset = 68;
+    // BGSNote: PDB size 128, Debug dump 132, Release dump 144
+    private int NoteStructSize => 128 + _s;
+    private int NoteTypeOffset => 124 + _s;
+    private int NoteModelPathOffset => 52 + _s;
+    private int NoteFullNameOffset => 76 + _s;
 
     #endregion
 
-    #region Terminal Struct Constants
+    #region Quest Struct Layout (Proto Debug PDB base + _s)
 
-    private const int TermStructSize = 184;
-    private const int TermDifficultyOffset = 132;
-    private const int TermFlagsOffset = 133;
-    private const int TermPasswordOffset = 136;
-    private const int TermMenuItemListOffset = 152;
+    // TESQuest: PDB size 108, Debug dump 112, Release dump 124
+    private int QustStructSize => 108 + _s;
+    private int QustFlagsOffset => 60 + _s;
+    private int QustPriorityOffset => 61 + _s;
+    private int QustFullNameOffset => 52 + _s;
+
+    #endregion
+
+    #region Terminal Struct Layout (Proto Debug PDB base + _s)
+
+    // BGSTerminal: PDB size 168, Debug dump 172, Release dump 184
+    private int TermStructSize => 168 + _s;
+    private int TermDifficultyOffset => 116 + _s;
+    private int TermFlagsOffset => 117 + _s;
+    private int TermPasswordOffset => 120 + _s;
+    private int TermMenuItemListOffset => 136 + _s;
+    // TERMINAL_MENU_ITEM offsets — fixed within the menu item struct, not TESForm-derived
     private const int MenuItemSize = 120;
     private const int MenuItemResponseTextOffset = 0;
     private const int MenuItemResultScriptOffset = 16;
@@ -114,12 +134,8 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             priority = 0;
         }
 
-        // Read topic count
-        var topicCount = BinaryUtils.ReadUInt32BE(buffer, DialTopicCountOffset);
-        if (topicCount > 10000)
-        {
-            topicCount = 0;
-        }
+        // Read topic count (may be beyond struct boundary for some builds)
+        uint topicCount = 0;
 
         // Read FullName via BSStringT
         var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, DialFullNameOffset);
@@ -152,15 +168,15 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + InfoStructSize > _context.FileSize)
+        if (offset + _info.StructSize > _context.FileSize)
         {
             return null;
         }
 
-        var buffer = new byte[InfoStructSize];
+        var buffer = new byte[_info.StructSize];
         try
         {
-            _context.Accessor.ReadArray(offset, buffer, 0, InfoStructSize);
+            _context.Accessor.ReadArray(offset, buffer, 0, _info.StructSize);
         }
         catch
         {
@@ -174,20 +190,20 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // Read iInfoIndex (uint16 BE at dump+36)
-        var infoIndex = BinaryUtils.ReadUInt16BE(buffer, InfoIndexOffset);
+        // Read iInfoIndex (uint16 BE)
+        var infoIndex = BinaryUtils.ReadUInt16BE(buffer, _info.IndexOffset);
 
-        // Read TOPIC_INFO_DATA (4 bytes at dump+39): type, nextSpeaker, flags, flagsExt
+        // Read TOPIC_INFO_DATA (4 bytes): type, nextSpeaker, flags, flagsExt
         byte dataType = 0;
         byte dataNextSpeaker = 0;
         byte dataFlags = 0;
         byte dataFlagsExt = 0;
-        if (InfoDataOffset + 4 <= buffer.Length)
+        if (_info.DataOffset + 4 <= buffer.Length)
         {
-            dataType = buffer[InfoDataOffset];
-            dataNextSpeaker = buffer[InfoDataOffset + 1];
-            dataFlags = buffer[InfoDataOffset + 2];
-            dataFlagsExt = buffer[InfoDataOffset + 3];
+            dataType = buffer[_info.DataOffset];
+            dataNextSpeaker = buffer[_info.DataOffset + 1];
+            dataFlags = buffer[_info.DataOffset + 2];
+            dataFlagsExt = buffer[_info.DataOffset + 3];
         }
 
         // Validate TOPIC_INFO_DATA — crash dumps often contain uninitialized template values
@@ -201,18 +217,19 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             dataFlagsExt = 0;
         }
 
-        // Follow pSpeaker pointer at dump+64 → TESActorBase* → get NPC FormID
-        var speakerFormId = _context.FollowPointerToFormId(buffer, InfoSpeakerPtrOffset);
+        // Follow pSpeaker pointer → TESActorBase* → get NPC FormID (0x2A) or Creature (0x2B)
+        var speakerFormId = _context.FollowPointerToFormId(buffer, _info.SpeakerPtrOffset, 0x2A)
+                            ?? _context.FollowPointerToFormId(buffer, _info.SpeakerPtrOffset, 0x2B);
 
-        // Read eDifficulty (uint32 BE at dump+72)
-        var difficulty = BinaryUtils.ReadUInt32BE(buffer, InfoDifficultyOffset);
+        // Read eDifficulty (uint32 BE)
+        var difficulty = BinaryUtils.ReadUInt32BE(buffer, _info.DifficultyOffset);
         if (difficulty > 10)
         {
             difficulty = 0; // Sanity check: difficulty should be 0-5
         }
 
-        // Follow pOwnerQuest pointer at dump+76 → TESQuest* → get Quest FormID
-        var questFormId = _context.FollowPointerToFormId(buffer, InfoQuestPtrOffset);
+        // Follow pOwnerQuest pointer → TESQuest* (0x47) → get Quest FormID
+        var questFormId = _context.FollowPointerToFormId(buffer, _info.QuestPtrOffset, 0x47);
 
         return new RuntimeDialogueInfo
         {
@@ -236,15 +253,15 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     public RuntimeDialogueInfo? ReadRuntimeDialogueInfoFromVA(uint va)
     {
         var fileOffset = _context.VaToFileOffset(va);
-        if (fileOffset == null || fileOffset.Value + InfoStructSize > _context.FileSize)
+        if (fileOffset == null || fileOffset.Value + _info.StructSize > _context.FileSize)
         {
             return null;
         }
 
-        var buffer = new byte[InfoStructSize];
+        var buffer = new byte[_info.StructSize];
         try
         {
-            _context.Accessor.ReadArray(fileOffset.Value, buffer, 0, InfoStructSize);
+            _context.Accessor.ReadArray(fileOffset.Value, buffer, 0, _info.StructSize);
         }
         catch
         {
@@ -259,16 +276,16 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         }
 
         // Read iInfoIndex
-        var infoIndex = BinaryUtils.ReadUInt16BE(buffer, InfoIndexOffset);
+        var infoIndex = BinaryUtils.ReadUInt16BE(buffer, _info.IndexOffset);
 
         // Read TOPIC_INFO_DATA
         byte dataType = 0, dataNextSpeaker = 0, dataFlags = 0, dataFlagsExt = 0;
-        if (InfoDataOffset + 4 <= buffer.Length)
+        if (_info.DataOffset + 4 <= buffer.Length)
         {
-            dataType = buffer[InfoDataOffset];
-            dataNextSpeaker = buffer[InfoDataOffset + 1];
-            dataFlags = buffer[InfoDataOffset + 2];
-            dataFlagsExt = buffer[InfoDataOffset + 3];
+            dataType = buffer[_info.DataOffset];
+            dataNextSpeaker = buffer[_info.DataOffset + 1];
+            dataFlags = buffer[_info.DataOffset + 2];
+            dataFlagsExt = buffer[_info.DataOffset + 3];
         }
 
         // Validate TOPIC_INFO_DATA — crash dumps often contain uninitialized template values
@@ -280,21 +297,22 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             dataFlagsExt = 0;
         }
 
-        // Follow pSpeaker pointer
-        var speakerFormId = _context.FollowPointerToFormId(buffer, InfoSpeakerPtrOffset);
+        // Follow pSpeaker pointer → TESActorBase* → get NPC FormID (0x2A) or Creature (0x2B)
+        var speakerFormId = _context.FollowPointerToFormId(buffer, _info.SpeakerPtrOffset, 0x2A)
+                            ?? _context.FollowPointerToFormId(buffer, _info.SpeakerPtrOffset, 0x2B);
 
         // Read eDifficulty
-        var difficulty = BinaryUtils.ReadUInt32BE(buffer, InfoDifficultyOffset);
+        var difficulty = BinaryUtils.ReadUInt32BE(buffer, _info.DifficultyOffset);
         if (difficulty > 10)
         {
             difficulty = 0;
         }
 
-        // Follow pOwnerQuest pointer
-        var questFormId = _context.FollowPointerToFormId(buffer, InfoQuestPtrOffset);
+        // Follow pOwnerQuest pointer → TESQuest* (0x47)
+        var questFormId = _context.FollowPointerToFormId(buffer, _info.QuestPtrOffset, 0x47);
 
         // Read cPrompt BSStringT
-        var promptText = _context.ReadBSStringT(fileOffset.Value, 44); // InfoPromptOffset = 44
+        var promptText = _context.ReadBSStringT(fileOffset.Value, _info.PromptOffset);
 
         return new RuntimeDialogueInfo
         {
