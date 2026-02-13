@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="../../src/DDXConv/DDXConv/DDXConv.csproj" />
+  <Project Path="../../src/FalloutXbox360Utils/FalloutXbox360Utils.csproj" />
+  <Project Path="../Shared/Shared.csproj" />
+  <Project Path="MinidumpAnalyzer.csproj" />
+</Solution>

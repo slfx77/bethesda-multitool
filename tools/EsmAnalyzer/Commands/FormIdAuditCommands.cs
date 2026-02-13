@@ -131,7 +131,7 @@ public static class FormIdAuditCommands
             // Handle compressed records
             if ((record.Flags & 0x00040000) != 0 && record.DataSize >= 4)
             {
-                var decompressedSize = EsmBinary.ReadUInt32(recordData, 0, convertedBigEndian);
+                var decompressedSize = BinaryUtils.ReadUInt32(recordData, 0, convertedBigEndian);
                 if (decompressedSize > 0 && decompressedSize < 100_000_000)
                 {
                     try
@@ -429,7 +429,7 @@ public static class FormIdAuditCommands
             // Handle compressed records
             if ((record.Flags & 0x00040000) != 0 && record.DataSize >= 4)
             {
-                var decompressedSize = EsmBinary.ReadUInt32(recordData, 0, bigEndian);
+                var decompressedSize = BinaryUtils.ReadUInt32(recordData, 0, bigEndian);
                 if (decompressedSize > 0 && decompressedSize < 100_000_000)
                 {
                     try

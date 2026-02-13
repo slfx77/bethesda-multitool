@@ -18,18 +18,18 @@ public static class FieldValueDecoder
             {
                 SubrecordFieldType.UInt8 => data[0].ToString(),
                 SubrecordFieldType.Int8 => ((sbyte)data[0]).ToString(),
-                SubrecordFieldType.UInt16 => EsmBinary.ReadUInt16(data, bigEndian).ToString(),
-                SubrecordFieldType.Int16 => EsmBinary.ReadInt16(data, bigEndian).ToString(),
-                SubrecordFieldType.UInt16LittleEndian => EsmBinary.ReadUInt16(data, false).ToString(),
-                SubrecordFieldType.UInt32 => EsmBinary.ReadUInt32(data, bigEndian).ToString(),
-                SubrecordFieldType.Int32 => EsmBinary.ReadInt32(data, bigEndian).ToString(),
+                SubrecordFieldType.UInt16 => BinaryUtils.ReadUInt16(data, 0, bigEndian).ToString(),
+                SubrecordFieldType.Int16 => BinaryUtils.ReadInt16(data, 0, bigEndian).ToString(),
+                SubrecordFieldType.UInt16LittleEndian => BinaryUtils.ReadUInt16(data, 0, false).ToString(),
+                SubrecordFieldType.UInt32 => BinaryUtils.ReadUInt32(data, 0, bigEndian).ToString(),
+                SubrecordFieldType.Int32 => BinaryUtils.ReadInt32(data, 0, bigEndian).ToString(),
                 SubrecordFieldType.UInt32WordSwapped => DecodeWordSwapped(data, bigEndian).ToString(),
-                SubrecordFieldType.Float => FormatFloat(EsmBinary.ReadSingle(data, bigEndian)),
-                SubrecordFieldType.FormId => $"0x{EsmBinary.ReadUInt32(data, bigEndian):X8}",
-                SubrecordFieldType.FormIdLittleEndian => $"0x{EsmBinary.ReadUInt32(data, false):X8}",
-                SubrecordFieldType.UInt64 => EsmBinary.ReadUInt64(data, bigEndian).ToString(),
-                SubrecordFieldType.Int64 => EsmBinary.ReadInt64(data, bigEndian).ToString(),
-                SubrecordFieldType.Double => FormatDouble(EsmBinary.ReadDouble(data, bigEndian)),
+                SubrecordFieldType.Float => FormatFloat(BinaryUtils.ReadFloat(data, 0, bigEndian)),
+                SubrecordFieldType.FormId => $"0x{BinaryUtils.ReadUInt32(data, 0, bigEndian):X8}",
+                SubrecordFieldType.FormIdLittleEndian => $"0x{BinaryUtils.ReadUInt32(data, 0, false):X8}",
+                SubrecordFieldType.UInt64 => BinaryUtils.ReadUInt64(data, 0, bigEndian).ToString(),
+                SubrecordFieldType.Int64 => BinaryUtils.ReadInt64(data, 0, bigEndian).ToString(),
+                SubrecordFieldType.Double => FormatDouble(BinaryUtils.ReadDouble(data, 0, bigEndian)),
                 SubrecordFieldType.Vec3 => FormatVec3(data, bigEndian),
                 SubrecordFieldType.Quaternion => FormatQuaternion(data, bigEndian),
                 SubrecordFieldType.PosRot => FormatPosRot(data, bigEndian),
@@ -109,9 +109,9 @@ public static class FieldValueDecoder
     /// </summary>
     public static string FormatVec3(ReadOnlySpan<byte> data, bool bigEndian)
     {
-        var x = EsmBinary.ReadSingle(data, 0, bigEndian);
-        var y = EsmBinary.ReadSingle(data, 4, bigEndian);
-        var z = EsmBinary.ReadSingle(data, 8, bigEndian);
+        var x = BinaryUtils.ReadFloat(data, 0, bigEndian);
+        var y = BinaryUtils.ReadFloat(data, 4, bigEndian);
+        var z = BinaryUtils.ReadFloat(data, 8, bigEndian);
         return $"({x:F2}, {y:F2}, {z:F2})";
     }
 
@@ -120,10 +120,10 @@ public static class FieldValueDecoder
     /// </summary>
     public static string FormatQuaternion(ReadOnlySpan<byte> data, bool bigEndian)
     {
-        var w = EsmBinary.ReadSingle(data, 0, bigEndian);
-        var x = EsmBinary.ReadSingle(data, 4, bigEndian);
-        var y = EsmBinary.ReadSingle(data, 8, bigEndian);
-        var z = EsmBinary.ReadSingle(data, 12, bigEndian);
+        var w = BinaryUtils.ReadFloat(data, 0, bigEndian);
+        var x = BinaryUtils.ReadFloat(data, 4, bigEndian);
+        var y = BinaryUtils.ReadFloat(data, 8, bigEndian);
+        var z = BinaryUtils.ReadFloat(data, 12, bigEndian);
         return $"({w:F3}, {x:F3}, {y:F3}, {z:F3})";
     }
 
@@ -132,12 +132,12 @@ public static class FieldValueDecoder
     /// </summary>
     public static string FormatPosRot(ReadOnlySpan<byte> data, bool bigEndian)
     {
-        var px = EsmBinary.ReadSingle(data, 0, bigEndian);
-        var py = EsmBinary.ReadSingle(data, 4, bigEndian);
-        var pz = EsmBinary.ReadSingle(data, 8, bigEndian);
-        var rx = EsmBinary.ReadSingle(data, 12, bigEndian);
-        var ry = EsmBinary.ReadSingle(data, 16, bigEndian);
-        var rz = EsmBinary.ReadSingle(data, 20, bigEndian);
+        var px = BinaryUtils.ReadFloat(data, 0, bigEndian);
+        var py = BinaryUtils.ReadFloat(data, 4, bigEndian);
+        var pz = BinaryUtils.ReadFloat(data, 8, bigEndian);
+        var rx = BinaryUtils.ReadFloat(data, 12, bigEndian);
+        var ry = BinaryUtils.ReadFloat(data, 16, bigEndian);
+        var rz = BinaryUtils.ReadFloat(data, 20, bigEndian);
         return $"Pos({px:F1},{py:F1},{pz:F1}) Rot({rx:F2},{ry:F2},{rz:F2})";
     }
 

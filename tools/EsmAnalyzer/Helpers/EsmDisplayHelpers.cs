@@ -426,22 +426,22 @@ public static class EsmDisplayHelpers
 
     private static ushort ReadUInt16(byte[] data, int offset, bool bigEndian)
     {
-        return EsmBinary.ReadUInt16(data, offset, bigEndian);
+        return BinaryUtils.ReadUInt16(data, offset, bigEndian);
     }
 
     private static uint ReadUInt32(byte[] data, int offset, bool bigEndian)
     {
-        return EsmBinary.ReadUInt32(data, offset, bigEndian);
+        return BinaryUtils.ReadUInt32(data, offset, bigEndian);
     }
 
     private static int ReadInt32(byte[] data, int offset, bool bigEndian)
     {
-        return EsmBinary.ReadInt32(data, offset, bigEndian);
+        return BinaryUtils.ReadInt32(data, offset, bigEndian);
     }
 
     private static float ReadSingle(byte[] data, int offset, bool bigEndian)
     {
-        return EsmBinary.ReadSingle(data, offset, bigEndian);
+        return BinaryUtils.ReadFloat(data, offset, bigEndian);
     }
 
     /// <summary>

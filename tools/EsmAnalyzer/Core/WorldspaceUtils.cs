@@ -46,8 +46,8 @@ public static class WorldspaceUtils
                 continue;
             }
 
-            var recSize = EsmBinary.ReadUInt32(data, offset + 4, bigEndian);
-            var formId = EsmBinary.ReadUInt32(data, offset + 12, bigEndian);
+            var recSize = BinaryUtils.ReadUInt32(data, offset + 4, bigEndian);
+            var formId = BinaryUtils.ReadUInt32(data, offset + 12, bigEndian);
 
             if (sig == "WRLD" && formId == worldspaceFormId)
             {
@@ -117,7 +117,7 @@ public static class WorldspaceUtils
                 ])
                 : Encoding.ASCII.GetString(recordData.Slice(subOffset, 4));
 
-            var subSize = EsmBinary.ReadUInt16(recordData.ToArray(), subOffset + 4, bigEndian);
+            var subSize = BinaryUtils.ReadUInt16(recordData.ToArray(), subOffset + 4, bigEndian);
 
             if (subSig == "MNAM" && subSize >= 16)
             {
@@ -126,10 +126,10 @@ public static class WorldspaceUtils
                 // MNAM structure (16 bytes):
                 // int32 usableWidth, int32 usableHeight
                 // int16 nwCellX, int16 nwCellY, int16 seCellX, int16 seCellY
-                var nwCellX = EsmBinary.ReadInt16(mnamData.ToArray(), 8, bigEndian);
-                var nwCellY = EsmBinary.ReadInt16(mnamData.ToArray(), 10, bigEndian);
-                var seCellX = EsmBinary.ReadInt16(mnamData.ToArray(), 12, bigEndian);
-                var seCellY = EsmBinary.ReadInt16(mnamData.ToArray(), 14, bigEndian);
+                var nwCellX = BinaryUtils.ReadInt16(mnamData.ToArray(), 8, bigEndian);
+                var nwCellY = BinaryUtils.ReadInt16(mnamData.ToArray(), 10, bigEndian);
+                var seCellX = BinaryUtils.ReadInt16(mnamData.ToArray(), 12, bigEndian);
+                var seCellY = BinaryUtils.ReadInt16(mnamData.ToArray(), 14, bigEndian);
 
                 // NW is top-left (higher Y), SE is bottom-right (lower Y)
                 return new WorldspaceBounds

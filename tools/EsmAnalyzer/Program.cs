@@ -46,6 +46,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(OfstCommands.CreateOfstImageCommand()); // "ofst-image" at root
         rootCommand.Subcommands.Add(NaviCommands.CreateCompareNaviCommand());  // "compare-navi" at root
         rootCommand.Subcommands.Add(NaviCommands.CreateDumpNvmiCommand());     // "dump-nvmi" at root (NAVI navmesh info)
+        rootCommand.Subcommands.Add(OrphanedFormIdCommands.CreateOrphanRefsCommand());  // "orphan-refs" at root
 
         // ===== compare subcommands =====
         var compareCommand = new Command("compare", "Compare ESM files (land, cells, heightmaps)");
@@ -149,6 +150,9 @@ internal sealed class Program
             _ = table.AddRow("  [cyan]wrld ofst-cell[/]", "Resolve a CELL FormID to its WRLD OFST entry");
             _ = table.AddRow("  [cyan]wrld ofst-validate[/]", "Validate OFST offsets vs CELL grid data");
             _ = table.AddRow("  [cyan]wrld ofst-image[/]", "Visualize WRLD OFST as an image");
+
+            _ = table.AddRow("", "");
+            _ = table.AddRow("[cyan]orphan-refs[/]", "Find FormID references to non-existent records (cut content detection)");
 
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();

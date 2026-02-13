@@ -96,8 +96,8 @@ public static class HeightmapUtils
                 var xclc = EsmRecordParser.FindSubrecord(subrecords, "XCLC");
                 if (xclc != null && xclc.Data.Length >= 8)
                 {
-                    var gridX = EsmBinary.ReadInt32(xclc.Data, 0, bigEndian);
-                    var gridY = EsmBinary.ReadInt32(xclc.Data, 4, bigEndian);
+                    var gridX = BinaryUtils.ReadInt32(xclc.Data, 0, bigEndian);
+                    var gridY = BinaryUtils.ReadInt32(xclc.Data, 4, bigEndian);
 
                     cellMap[(gridX, gridY)] = new CellRecordInfo
                     {
@@ -207,9 +207,9 @@ public static class HeightmapUtils
 
             if (sig == "GRUP")
             {
-                var grupSize = EsmBinary.ReadUInt32(data, offset + 4, bigEndian);
-                var grupType = EsmBinary.ReadUInt32(data, offset + 12, bigEndian);
-                var grupLabel = EsmBinary.ReadUInt32(data, offset + 8, bigEndian);
+                var grupSize = BinaryUtils.ReadUInt32(data, offset + 4, bigEndian);
+                var grupType = BinaryUtils.ReadUInt32(data, offset + 12, bigEndian);
+                var grupLabel = BinaryUtils.ReadUInt32(data, offset + 8, bigEndian);
 
                 // Type 1 = Worldspace children
                 if (grupType == 1 && grupLabel == worldspaceFormId)
@@ -222,9 +222,9 @@ public static class HeightmapUtils
             }
             else
             {
-                var recSize = EsmBinary.ReadUInt32(data, offset + 4, bigEndian);
-                var flags = EsmBinary.ReadUInt32(data, offset + 8, bigEndian);
-                var formId = EsmBinary.ReadUInt32(data, offset + 12, bigEndian);
+                var recSize = BinaryUtils.ReadUInt32(data, offset + 4, bigEndian);
+                var flags = BinaryUtils.ReadUInt32(data, offset + 8, bigEndian);
+                var formId = BinaryUtils.ReadUInt32(data, offset + 12, bigEndian);
 
                 if (inTargetWorldspace)
                 {
@@ -286,7 +286,7 @@ public static class HeightmapUtils
         // Decompress if needed
         if (record.IsCompressed && recordData.Length >= 4)
         {
-            var decompressedSize = EsmBinary.ReadUInt32(recordData, 0, bigEndian);
+            var decompressedSize = BinaryUtils.ReadUInt32(recordData, 0, bigEndian);
             recordData = DecompressZlib(recordData.AsSpan(4).ToArray(), (int)decompressedSize);
         }
 

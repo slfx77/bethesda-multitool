@@ -7,7 +7,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Schema;
-using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmBinary;
+using static FalloutXbox360Utils.Core.Utils.BinaryUtils;
 
 namespace EsmAnalyzer.Commands;
 
@@ -133,7 +133,7 @@ public static partial class LandCommands
             return false;
         }
 
-        baseHeight = ReadSingle(vhgt.Data, 0, parsedHeader.IsBigEndian);
+        baseHeight = ReadFloat(vhgt.Data, 0, parsedHeader.IsBigEndian);
         deltas = new sbyte[vhgt.Data.Length - 4];
         for (var i = 4; i < vhgt.Data.Length; i++)
         {

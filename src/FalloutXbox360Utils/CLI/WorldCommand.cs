@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Spectre.Console;
 
@@ -19,6 +20,7 @@ public static class WorldCommand
 
         command.Subcommands.Add(CreateMarkersCommand());
         command.Subcommands.Add(CreateCellCommand());
+        command.Subcommands.Add(CompareCommand.Create());
 
         return command;
     }
@@ -46,15 +48,21 @@ public static class WorldCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
         var formIdArg = new Argument<string>("formid") { Description = "Cell FormID (hex, e.g. 0x00012345)" };
+        var exportObjOpt = new Option<string?>("--export-obj")
+        {
+            Description = "Export runtime terrain mesh to Wavefront OBJ file"
+        };
 
         command.Arguments.Add(inputArg);
         command.Arguments.Add(formIdArg);
+        command.Options.Add(exportObjOpt);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             var input = parseResult.GetValue(inputArg)!;
             var formIdStr = parseResult.GetValue(formIdArg)!;
-            await RunCellAsync(input, formIdStr, cancellationToken);
+            var exportObj = parseResult.GetValue(exportObjOpt);
+            await RunCellAsync(input, formIdStr, exportObj, cancellationToken);
         });
 
         return command;
@@ -171,7 +179,8 @@ public static class WorldCommand
             $"[green]Total:[/] {totalMarkers:N0} markers across {worldspaceCount} worldspace(s)");
     }
 
-    private static async Task RunCellAsync(string input, string formIdStr, CancellationToken cancellationToken)
+    private static async Task RunCellAsync(
+        string input, string formIdStr, string? exportObjPath, CancellationToken cancellationToken)
     {
         var formId = ParseFormId(formIdStr);
         if (formId == 0)
@@ -186,22 +195,7 @@ public static class WorldCommand
             return;
         }
 
-        // Search all cells (worldspace exterior + interior)
-        CellRecord? cell = null;
-        string? worldspaceName = null;
-
-        foreach (var ws in result.Worldspaces)
-        {
-            cell = ws.Cells.FirstOrDefault(c => c.FormId == formId);
-            if (cell != null)
-            {
-                worldspaceName = ws.FullName ?? ws.EditorId ?? $"0x{ws.FormId:X8}";
-                break;
-            }
-        }
-
-        cell ??= result.Cells.FirstOrDefault(c => c.FormId == formId);
-
+        var (cell, worldspaceName) = FindCell(result, formId);
         if (cell == null)
         {
             AnsiConsole.MarkupLine("[yellow]Cell 0x{0:X8} not found.[/]", formId);
@@ -213,7 +207,29 @@ public static class WorldCommand
         AnsiConsole.Write(new Rule($"[blue]Cell: {Markup.Escape(cellName)} (0x{formId:X8})[/]").LeftJustified());
         AnsiConsole.WriteLine();
 
-        // Cell properties
+        var resolver = result.CreateResolver();
+
+        RenderCellDetails(cell, worldspaceName);
+        HandleTerrainMeshExport(cell, exportObjPath);
+        RenderPlacedObjects(cell, resolver);
+    }
+
+    private static (CellRecord? Cell, string? WorldspaceName) FindCell(RecordCollection result, uint formId)
+    {
+        foreach (var ws in result.Worldspaces)
+        {
+            var cell = ws.Cells.FirstOrDefault(c => c.FormId == formId);
+            if (cell != null)
+            {
+                return (cell, ws.FullName ?? ws.EditorId ?? $"0x{ws.FormId:X8}");
+            }
+        }
+
+        return (result.Cells.FirstOrDefault(c => c.FormId == formId), null);
+    }
+
+    private static void RenderCellDetails(CellRecord cell, string? worldspaceName)
+    {
         var detailTable = new Table().Border(TableBorder.Rounded).HideHeaders();
         detailTable.AddColumn("Property");
         detailTable.AddColumn("Value");
@@ -241,20 +257,49 @@ public static class WorldCommand
 
         detailTable.AddRow("Interior", cell.IsInterior ? "Yes" : "No");
         detailTable.AddRow("Has Heightmap", cell.Heightmap != null ? "Yes" : "No");
+        detailTable.AddRow("Runtime Terrain Mesh", FormatTerrainMeshStatus(cell.RuntimeTerrainMesh));
         detailTable.AddRow("Has Water", cell.HasWater ? "Yes" : "No");
         detailTable.AddRow("Objects", $"{cell.PlacedObjects.Count:N0}");
         detailTable.AddRow("Endianness", cell.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)");
 
         AnsiConsole.Write(detailTable);
         AnsiConsole.WriteLine();
+    }
 
+    private static void HandleTerrainMeshExport(CellRecord cell, string? exportObjPath)
+    {
+        if (exportObjPath == null)
+        {
+            return;
+        }
+
+        if (cell.RuntimeTerrainMesh != null)
+        {
+            TerrainObjExporter.Export(
+                cell.RuntimeTerrainMesh,
+                cell.GridX ?? 0, cell.GridY ?? 0,
+                exportObjPath);
+            AnsiConsole.MarkupLine(
+                "[green]Terrain mesh exported to:[/] {0} ({1} vertices)",
+                exportObjPath, RuntimeTerrainMesh.VertexCount);
+        }
+        else
+        {
+            AnsiConsole.MarkupLine(
+                "[yellow]No runtime terrain mesh available for this cell.[/]");
+        }
+
+        AnsiConsole.WriteLine();
+    }
+
+    private static void RenderPlacedObjects(CellRecord cell, FormIdResolver resolver)
+    {
         if (cell.PlacedObjects.Count == 0)
         {
             AnsiConsole.MarkupLine("[dim]No placed objects in this cell.[/]");
             return;
         }
 
-        // Group placed objects by category
         var grouped = cell.PlacedObjects
             .GroupBy(obj => GetCategoryName(obj))
             .OrderBy(g => GetCategorySortOrder(g.Key));
@@ -266,14 +311,16 @@ public static class WorldCommand
 
             var table = new Table().Border(TableBorder.Simple);
             table.AddColumn("FormID");
-            table.AddColumn("Base Editor ID");
+            table.AddColumn("Base");
             table.AddColumn(new TableColumn("Position").RightAligned());
 
             foreach (var obj in group.OrderBy(o => o.BaseEditorId ?? $"0x{o.BaseFormId:X8}"))
             {
-                var editorId = obj.BaseEditorId ?? $"0x{obj.BaseFormId:X8}";
+                var baseName = obj.BaseEditorId
+                               ?? resolver.GetBestName(obj.BaseFormId)
+                               ?? $"0x{obj.BaseFormId:X8}";
                 var pos = $"({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})";
-                table.AddRow($"0x{obj.FormId:X8}", Markup.Escape(editorId), pos);
+                table.AddRow($"0x{obj.FormId:X8}", Markup.Escape(baseName), pos);
             }
 
             AnsiConsole.Write(table);
@@ -305,6 +352,27 @@ public static class WorldCommand
             "Map Markers" => 2,
             _ => 3
         };
+    }
+
+    private static string FormatTerrainMeshStatus(RuntimeTerrainMesh? mesh)
+    {
+        if (mesh == null)
+        {
+            return "No";
+        }
+
+        var parts = new List<string> { $"{RuntimeTerrainMesh.VertexCount} vertices" };
+        if (mesh.HasNormals)
+        {
+            parts.Add("normals");
+        }
+
+        if (mesh.HasColors)
+        {
+            parts.Add("colors");
+        }
+
+        return $"Yes ({string.Join(", ", parts)})";
     }
 
     private static uint ParseFormId(string str)

@@ -396,7 +396,8 @@ public static class DialogueCommand
             };
         }
 
-        var report = GeckReportGenerator.GenerateDialogueTreeReport(tree, lookup, result.FormIdToDisplayName);
+        var resolver = result.CreateResolver(lookup);
+        var report = GeckReportGenerator.GenerateDialogueTreeReport(tree, resolver);
 
         if (!string.IsNullOrEmpty(output))
         {
@@ -1186,28 +1187,40 @@ public static class DialogueCommand
             return;
         }
 
-        // PART 1: Full 80-byte struct dump for first 3 entries (field identification)
-        AnsiConsole.MarkupLine("\n[blue]Full struct dump (first 3 entries):[/]");
+        // TESTopicInfo struct offsets — all known dumps use Release/Final Debug layout (96 bytes).
+        var buildType = MinidumpAnalyzer.DetectBuildType(analysisResult.MinidumpInfo!) ?? "Unknown";
+        var infoStructSize = 96;
+        var infoIndexOff = 48;
+        var infoDataOff = 51;
+        var infoPromptOff = 56;
+        var infoSpeakerOff = 76;
+        var infoDiffOff = 84;
+        var infoQuestOff = 88;
+
+        AnsiConsole.MarkupLine($"[dim]Build type: {buildType} → TESTopicInfo struct size: {infoStructSize}B[/]");
+
+        // PART 1: Full struct dump for first 3 entries (field identification)
+        AnsiConsole.MarkupLine($"\n[blue]Full struct dump (first 3 entries, {infoStructSize}B each):[/]");
         AnsiConsole.WriteLine();
 
         foreach (var entry in infoEntries.Take(3))
         {
             var offset = entry.TesFormOffset!.Value;
-            if (offset + 80 > fileInfo.Length)
+            if (offset + infoStructSize > fileInfo.Length)
             {
                 continue;
             }
 
-            var fullBuf = new byte[80];
-            accessor.ReadArray(offset, fullBuf, 0, 80);
+            var fullBuf = new byte[infoStructSize];
+            accessor.ReadArray(offset, fullBuf, 0, infoStructSize);
 
             AnsiConsole.MarkupLine(
                 $"[yellow]0x{entry.FormId:X8}[/] ({Markup.Escape(entry.EditorId)}) at file+0x{offset:X}");
 
             // Dump in rows of 16 bytes with field annotations
-            for (var row = 0; row < 80; row += 16)
+            for (var row = 0; row < infoStructSize; row += 16)
             {
-                var rowLen = Math.Min(16, 80 - row);
+                var rowLen = Math.Min(16, infoStructSize - row);
                 var hex = string.Join(" ", Enumerable.Range(row, rowLen).Select(i => $"{fullBuf[i]:X2}"));
                 var ascii = string.Concat(Enumerable.Range(row, rowLen).Select(i =>
                     fullBuf[i] >= 32 && fullBuf[i] < 127 ? (char)fullBuf[i] : '.'));
@@ -1215,27 +1228,30 @@ public static class DialogueCommand
                 AnsiConsole.MarkupLine($"  [dim]+{row,2:D2}[/]: {hex,-48} {Markup.Escape(ascii)}");
             }
 
-            // Annotate known fields
+            // Annotate known fields using build-detected offsets
             var fid = BinaryUtils.ReadUInt32BE(fullBuf, 12);
-            var idx36 = BinaryUtils.ReadUInt16BE(fullBuf, 36);
-            var prompt44 = BinaryUtils.ReadUInt32BE(fullBuf, 44);
-            var speaker64 = BinaryUtils.ReadUInt32BE(fullBuf, 64);
-            var diff72 = BinaryUtils.ReadUInt32BE(fullBuf, 72);
-            var quest76 = BinaryUtils.ReadUInt32BE(fullBuf, 76);
+            var idx = BinaryUtils.ReadUInt16BE(fullBuf, infoIndexOff);
+            var prompt = BinaryUtils.ReadUInt32BE(fullBuf, infoPromptOff);
+            var speaker = BinaryUtils.ReadUInt32BE(fullBuf, infoSpeakerOff);
+            var diff = BinaryUtils.ReadUInt32BE(fullBuf, infoDiffOff);
+            var quest = infoQuestOff + 4 <= infoStructSize ? BinaryUtils.ReadUInt32BE(fullBuf, infoQuestOff) : 0u;
 
             AnsiConsole.MarkupLine($"  [dim]Fields: FormType=0x{fullBuf[4]:X2} FormID=0x{fid:X8}[/]");
-            AnsiConsole.MarkupLine($"  [dim]  +36: 0x{idx36:X4} (iInfoIndex?)  +44: 0x{prompt44:X8} (cPrompt ptr)[/]");
-            AnsiConsole.MarkupLine($"  [dim]  +64: 0x{speaker64:X8} (pSpeaker?)  +72: 0x{diff72:X8} (difficulty?)[/]");
-            AnsiConsole.MarkupLine($"  [dim]  +76: 0x{quest76:X8} (pQuest?)[/]");
+            AnsiConsole.MarkupLine(
+                $"  [dim]  +{infoIndexOff}: 0x{idx:X4} (iInfoIndex)  +{infoPromptOff}: 0x{prompt:X8} (cPrompt ptr)[/]");
+            AnsiConsole.MarkupLine(
+                $"  [dim]  +{infoSpeakerOff}: 0x{speaker:X8} (pSpeaker)  +{infoDiffOff}: 0x{diff:X8} (eDifficulty)[/]");
+            AnsiConsole.MarkupLine($"  [dim]  +{infoQuestOff}: 0x{quest:X8} (pOwnerQuest)[/]");
             AnsiConsole.MarkupLine($"  [dim]  Prompt: \"{Markup.Escape(entry.DialogueLine ?? "")}\"[/]");
             AnsiConsole.WriteLine();
         }
 
         // PART 2: Find bytes that VARY across entries (to distinguish per-record data from constants)
-        AnsiConsole.Write(new Rule("[blue]Byte Variance Analysis (across all INFO entries)[/]").LeftJustified());
+        AnsiConsole.Write(new Rule($"[blue]Byte Variance Analysis ({infoStructSize}B, across all INFO entries)[/]")
+            .LeftJustified());
 
-        var varianceTracker = new HashSet<byte>[80];
-        for (var i = 0; i < 80; i++)
+        var varianceTracker = new HashSet<byte>[infoStructSize];
+        for (var i = 0; i < infoStructSize; i++)
         {
             varianceTracker[i] = [];
         }
@@ -1244,14 +1260,14 @@ public static class DialogueCommand
         foreach (var entry in allInfoEntries.Take(500))
         {
             var offset = entry.TesFormOffset!.Value;
-            if (offset + 80 > fileInfo.Length)
+            if (offset + infoStructSize > fileInfo.Length)
             {
                 continue;
             }
 
-            var buf = new byte[80];
-            accessor.ReadArray(offset, buf, 0, 80);
-            for (var i = 0; i < 80; i++)
+            var buf = new byte[infoStructSize];
+            accessor.ReadArray(offset, buf, 0, infoStructSize);
+            for (var i = 0; i < infoStructSize; i++)
             {
                 varianceTracker[i].Add(buf[i]);
             }
@@ -1267,7 +1283,7 @@ public static class DialogueCommand
         var lowVar = new List<string>();
         var perRecord = new List<string>();
 
-        for (var i = 0; i < 80; i++)
+        for (var i = 0; i < infoStructSize; i++)
         {
             var uniqueCount = varianceTracker[i].Count;
             var sampleVal = varianceTracker[i].First();
@@ -1294,7 +1310,7 @@ public static class DialogueCommand
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[blue]Low-Variance Byte Details (likely flags/enums)[/]").LeftJustified());
 
-        for (var i = 0; i < 80; i++)
+        for (var i = 0; i < infoStructSize; i++)
         {
             var uniqueCount = varianceTracker[i].Count;
             if (uniqueCount >= 2 && uniqueCount <= 10)
@@ -1304,7 +1320,7 @@ public static class DialogueCommand
                 foreach (var entry in allInfoEntries.Take(500))
                 {
                     var offset = entry.TesFormOffset!.Value;
-                    if (offset + 80 > fileInfo.Length)
+                    if (offset + infoStructSize > fileInfo.Length)
                     {
                         continue;
                     }
@@ -1321,16 +1337,11 @@ public static class DialogueCommand
             }
         }
 
-        // Flag distribution for ALL INFO entries (not just the sampled ones)
+        // Flag distribution for ALL INFO entries using build-detected data offset
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[blue]Flag Distribution — ALL INFO entries (current offset 39)[/]")
+        AnsiConsole.Write(new Rule($"[blue]Flag Distribution — ALL INFO entries (offset +{infoDataOff})[/]")
             .LeftJustified());
-        ShowFlagDistribution(allInfoEntries, accessor, fileInfo.Length, 39);
-
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[blue]Flag Distribution — ALL INFO entries (alternative offset 40)[/]")
-            .LeftJustified());
-        ShowFlagDistribution(allInfoEntries, accessor, fileInfo.Length, 40);
+        ShowFlagDistribution(allInfoEntries, accessor, fileInfo.Length, infoDataOff);
     }
 
     private static string DecodeFlagNames(byte flags)

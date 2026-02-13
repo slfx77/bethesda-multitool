@@ -22,9 +22,9 @@ public static class LandHelpers
         {
             for (var i = 0; i + 7 < data.Length; i += 8)
             {
-                var formId = EsmBinary.ReadUInt32(data, i, bigEndian);
+                var formId = BinaryUtils.ReadUInt32(data, i, bigEndian);
                 var quadrant = data[i + 4];
-                var layer = EsmBinary.ReadUInt16(data, i + 6, bigEndian);
+                var layer = BinaryUtils.ReadUInt16(data, i + 6, bigEndian);
 
                 entries++;
                 _ = uniqueFormIds.Add(formId);
@@ -58,9 +58,9 @@ public static class LandHelpers
         {
             for (var i = 0; i + 7 < data.Length; i += 8)
             {
-                var pos = EsmBinary.ReadUInt16(data, i, bigEndian);
-                var flags = EsmBinary.ReadUInt16(data, i + 2, bigEndian);
-                var opacity = EsmBinary.ReadSingle(data, i + 4, bigEndian);
+                var pos = BinaryUtils.ReadUInt16(data, i, bigEndian);
+                var flags = BinaryUtils.ReadUInt16(data, i + 2, bigEndian);
+                var opacity = BinaryUtils.ReadFloat(data, i + 4, bigEndian);
 
                 entries++;
                 UpdateUShortRange(ref minPos, ref maxPos, pos);

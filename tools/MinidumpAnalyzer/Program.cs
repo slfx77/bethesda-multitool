@@ -8,5 +8,6 @@ rootCommand.Subcommands.Add(RegionCommands.CreateModulesCommand());
 rootCommand.Subcommands.Add(RegionCommands.CreateVa2OffsetCommand());
 rootCommand.Subcommands.Add(RegionCommands.CreateHexDumpCommand());
 rootCommand.Subcommands.Add(FaceGenCommands.CreateGenFaceGenCommand());
+rootCommand.Subcommands.Add(ScriptCommands.CreateScriptsCommand());
 
 return rootCommand.Parse(args).Invoke();

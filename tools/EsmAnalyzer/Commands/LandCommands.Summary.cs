@@ -91,7 +91,7 @@ public static partial class LandCommands
             return $"size={data.Length} (too small)";
         }
 
-        var value = EsmBinary.ReadUInt32(data, 0, bigEndian);
+        var value = BinaryUtils.ReadUInt32(data, 0, bigEndian);
         return $"value=0x{value:X8} ({value})";
     }
 
@@ -125,7 +125,7 @@ public static partial class LandCommands
             return "size<4";
         }
 
-        var baseHeight = EsmBinary.ReadSingle(data, 0, bigEndian);
+        var baseHeight = BinaryUtils.ReadFloat(data, 0, bigEndian);
         var minDelta = sbyte.MaxValue;
         var maxDelta = sbyte.MinValue;
         for (var i = 4; i < data.Length; i++)
@@ -160,7 +160,7 @@ public static partial class LandCommands
         }
 
         var data = vhgt.Data;
-        var baseHeight = EsmBinary.ReadSingle(data, 0, bigEndian);
+        var baseHeight = BinaryUtils.ReadFloat(data, 0, bigEndian);
         var deltas = new sbyte[data.Length - 4];
         for (var i = 4; i < data.Length; i++)
         {

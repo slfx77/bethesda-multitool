@@ -1,5 +1,7 @@
 using System.CommandLine;
+using System.Globalization;
 using System.IO.MemoryMappedFiles;
+using System.Text;
 using System.Text.Json;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
@@ -40,6 +42,22 @@ public static class AnalyzeCommand
             Description = "Export semantic reconstruction (GECK-style report) to file"
         };
         var verboseOpt = new Option<bool>("-v", "--verbose") { Description = "Show detailed progress" };
+        var terrainObjOpt = new Option<string?>("--terrain-obj")
+        {
+            Description = "Export runtime terrain meshes to Wavefront OBJ file (requires -s)"
+        };
+        var terrainDiagOpt = new Option<bool>("--terrain-diag")
+        {
+            Description = "Run terrain mesh data quality diagnostic (requires -e)"
+        };
+        var extractMeshesOpt = new Option<string?>("--extract-meshes")
+        {
+            Description = "Extract runtime NIF geometry (NiTriShapeData/NiTriStripsData) to directory"
+        };
+        var extractTexturesOpt = new Option<string?>("--extract-textures")
+        {
+            Description = "Extract runtime textures (NiPixelData) as DDS files to directory"
+        };
 
         command.Arguments.Add(inputArg);
         command.Options.Add(outputOpt);
@@ -47,35 +65,45 @@ public static class AnalyzeCommand
         command.Options.Add(extractEsmOpt);
         command.Options.Add(semanticOpt);
         command.Options.Add(verboseOpt);
+        command.Options.Add(terrainObjOpt);
+        command.Options.Add(terrainDiagOpt);
+        command.Options.Add(extractMeshesOpt);
+        command.Options.Add(extractTexturesOpt);
 
         command.SetAction(async (parseResult, _) =>
         {
-            var input = parseResult.GetValue(inputArg)!;
-            var output = parseResult.GetValue(outputOpt);
-            var format = parseResult.GetValue(formatOpt)!;
-            var extractEsm = parseResult.GetValue(extractEsmOpt);
-            var semantic = parseResult.GetValue(semanticOpt);
-            var verbose = parseResult.GetValue(verboseOpt);
-            await ExecuteAsync(input, output, format, extractEsm, semantic, verbose);
+            var options = new AnalyzeOptions
+            {
+                Input = parseResult.GetValue(inputArg)!,
+                Output = parseResult.GetValue(outputOpt),
+                Format = parseResult.GetValue(formatOpt)!,
+                ExtractEsm = parseResult.GetValue(extractEsmOpt),
+                Semantic = parseResult.GetValue(semanticOpt),
+                Verbose = parseResult.GetValue(verboseOpt),
+                TerrainObj = parseResult.GetValue(terrainObjOpt),
+                TerrainDiag = parseResult.GetValue(terrainDiagOpt),
+                ExtractMeshes = parseResult.GetValue(extractMeshesOpt),
+                ExtractTextures = parseResult.GetValue(extractTexturesOpt)
+            };
+            await ExecuteAsync(options);
         });
 
         return command;
     }
 
-    private static async Task ExecuteAsync(string input, string? output, string format, string? extractEsm,
-        string? semantic, bool verbose)
+    private static async Task ExecuteAsync(AnalyzeOptions opts)
     {
-        if (!File.Exists(input))
+        if (!File.Exists(opts.Input))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {input}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {opts.Input}");
             return;
         }
 
         // Configure logger for verbose mode
-        Logger.Instance.SetVerbose(verbose);
-        Logger.Instance.IncludeTimestamp = verbose;
+        Logger.Instance.SetVerbose(opts.Verbose);
+        Logger.Instance.IncludeTimestamp = opts.Verbose;
 
-        AnsiConsole.MarkupLine($"[blue]Analyzing:[/] {Path.GetFileName(input)}");
+        AnsiConsole.MarkupLine($"[blue]Analyzing:[/] {Path.GetFileName(opts.Input)}");
         AnsiConsole.WriteLine();
 
         var analyzer = new MinidumpAnalyzer();
@@ -100,48 +128,65 @@ public static class AnalyzeCommand
                     task.Description = $"[green]{p.Phase}[/][grey]{filesInfo}[/]";
                 });
 
-                result = await analyzer.AnalyzeAsync(input, progress, true, verbose);
+                result = await analyzer.AnalyzeAsync(opts.Input, progress, true, opts.Verbose);
                 task.Value = 100;
                 task.Description = $"[green]Complete[/] [grey]({result.CarvedFiles.Count} files)[/]";
             });
 
         AnsiConsole.WriteLine();
 
-        var report = format.ToLowerInvariant() switch
+        var report = opts.Format.ToLowerInvariant() switch
         {
             "md" or "markdown" => MinidumpAnalyzer.GenerateReport(result),
             "json" => SerializeResultToJson(result),
             _ => MinidumpAnalyzer.GenerateSummary(result)
         };
 
-        if (!string.IsNullOrEmpty(output))
+        if (!string.IsNullOrEmpty(opts.Output))
         {
-            var outputDir = Path.GetDirectoryName(output);
+            var outputDir = Path.GetDirectoryName(opts.Output);
             if (!string.IsNullOrEmpty(outputDir))
             {
                 Directory.CreateDirectory(outputDir);
             }
 
-            await File.WriteAllTextAsync(output, report);
-            AnsiConsole.MarkupLine($"[green]Report saved to:[/] {output}");
+            await File.WriteAllTextAsync(opts.Output, report);
+            AnsiConsole.MarkupLine($"[green]Report saved to:[/] {opts.Output}");
         }
         else
         {
             AnsiConsole.WriteLine(report);
         }
 
-        if (!string.IsNullOrEmpty(semantic) && result.EsmRecords != null)
+        if (!string.IsNullOrEmpty(opts.Semantic) && result.EsmRecords != null)
         {
-            await ExportSemanticReportAsync(result, semantic);
+            await ExportSemanticReportAsync(result, opts.Semantic, opts.TerrainObj);
         }
 
-        if (!string.IsNullOrEmpty(extractEsm) && result.EsmRecords != null)
+        if (!string.IsNullOrEmpty(opts.ExtractEsm) && result.EsmRecords != null)
         {
-            await ExtractEsmRecordsAsync(input, extractEsm, result, verbose);
+            await ExtractEsmRecordsAsync(opts.Input, opts.ExtractEsm, result, opts.Verbose);
+
+            if (opts.TerrainDiag)
+            {
+                RunTerrainDiagnostic(result.EsmRecords, opts.ExtractEsm, Path.GetFileName(opts.Input));
+            }
         }
+
+        if (!string.IsNullOrEmpty(opts.ExtractMeshes) && result.MinidumpInfo != null)
+        {
+            await ExtractRuntimeMeshesAsync(opts.Input, opts.ExtractMeshes, result);
+        }
+
+        if (!string.IsNullOrEmpty(opts.ExtractTextures) && result.MinidumpInfo != null)
+        {
+            await ExtractRuntimeTexturesAsync(opts.Input, opts.ExtractTextures, result);
+        }
+
     }
 
-    private static async Task ExportSemanticReportAsync(AnalysisResult result, string outputPath)
+    private static async Task ExportSemanticReportAsync(
+        AnalysisResult result, string outputPath, string? terrainObjPath = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Generating semantic reconstruction (GECK-style report)...[/]");
@@ -171,6 +216,38 @@ public static class AnalyzeCommand
         AnsiConsole.MarkupLine($"  NPCs: {semanticResult.Npcs.Count}, Quests: {semanticResult.Quests.Count}, " +
                                $"Scripts: {semanticResult.Scripts.Count}, Notes: {semanticResult.Notes.Count}, " +
                                $"Dialogue: {semanticResult.Dialogues.Count}, Cells: {semanticResult.Cells.Count}");
+
+        // Export terrain meshes to OBJ if requested
+        if (!string.IsNullOrEmpty(terrainObjPath))
+        {
+            ExportTerrainMeshes(result.EsmRecords!, terrainObjPath);
+        }
+    }
+
+    private static void ExportTerrainMeshes(EsmRecordScanResult scanResult, string outputPath)
+    {
+        // Collect terrain meshes from LAND records (using runtime enrichment data)
+        var withMesh = scanResult.LandRecords.Count(l => l.RuntimeTerrainMesh != null);
+        var withCoords = scanResult.LandRecords.Count(l => l.BestCellX.HasValue && l.BestCellY.HasValue);
+        Logger.Instance.Debug("Terrain OBJ: {0} LAND records total, {1} with mesh, {2} with coords",
+            scanResult.LandRecords.Count, withMesh, withCoords);
+
+        var cellsWithMesh = scanResult.LandRecords
+            .Where(l => l.RuntimeTerrainMesh != null && l.BestCellX.HasValue && l.BestCellY.HasValue)
+            .Select(l => (l.RuntimeTerrainMesh!, l.BestCellX!.Value, l.BestCellY!.Value))
+            .ToList();
+
+        if (cellsWithMesh.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No LAND records with runtime terrain meshes found.[/]");
+            return;
+        }
+
+        TerrainObjExporter.ExportMultiple(cellsWithMesh, outputPath);
+        AnsiConsole.MarkupLine(
+            $"[green]Terrain mesh exported:[/] {outputPath} ({cellsWithMesh.Count} cells, " +
+            $"{cellsWithMesh.Count * RuntimeTerrainMesh.VertexCount:N0} vertices, " +
+            $"{cellsWithMesh.Count * 2048:N0} triangles)");
     }
 
     /// <summary>
@@ -307,60 +384,432 @@ public static class AnalyzeCommand
                                $"Quests: {semanticResult.Quests.Count}, Dialogue: {semanticResult.Dialogues.Count}, " +
                                $"Cells: {semanticResult.Cells.Count}");
 
-        // Export heightmap PNGs
-        if (result.EsmRecords!.Heightmaps.Count > 0)
+        await ExportHeightmapPngsAsync(result.EsmRecords!, extractEsm);
+    }
+
+    private static async Task ExportHeightmapPngsAsync(EsmRecordScanResult esmRecords, string extractEsm)
+    {
+        var hasStandaloneHeightmaps = esmRecords.Heightmaps.Count > 0;
+        var hasLandHeightmaps = esmRecords.LandRecords.Any(l => l.Heightmap != null);
+
+        if (!hasStandaloneHeightmaps && !hasLandHeightmaps)
         {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[blue]Exporting heightmap PNG images...[/]");
-            var heightmapsDir = Path.Combine(extractEsm, "heightmaps");
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[blue]Exporting heightmap PNG images...[/]");
+        var heightmapsDir = Path.Combine(extractEsm, "heightmaps");
+
+        if (hasStandaloneHeightmaps)
+        {
             await HeightmapPngExporter.ExportAsync(
-                result.EsmRecords.Heightmaps,
-                result.EsmRecords.CellGrids,
-                heightmapsDir);
+                esmRecords.Heightmaps, esmRecords.CellGrids, heightmapsDir);
             AnsiConsole.MarkupLine(
-                $"[green]Heightmaps exported:[/] {result.EsmRecords.Heightmaps.Count} images to {heightmapsDir}");
+                $"[green]Heightmaps exported:[/] {esmRecords.Heightmaps.Count} images to {heightmapsDir}");
+        }
 
-            // Also export LAND record heightmaps as PNGs (with cell coordinate names)
-            if (result.EsmRecords.LandRecords.Any(l => l.Heightmap != null))
+        // Export LAND record heightmaps as PNGs (includes runtime-synthesized heightmaps)
+        if (hasLandHeightmaps)
+        {
+            await HeightmapPngExporter.ExportLandRecordsAsync(esmRecords.LandRecords, heightmapsDir);
+            var landHeightmapCount = esmRecords.LandRecords.Count(l => l.Heightmap != null);
+            AnsiConsole.MarkupLine(
+                $"[green]LAND heightmaps exported:[/] {landHeightmapCount} images to {heightmapsDir}");
+        }
+
+        // Export a composite worldmap if we have correlated heightmaps
+        if (esmRecords.CellGrids.Count <= 0 && esmRecords.LandRecords.Count <= 0)
+        {
+            return;
+        }
+
+        var compositePath = Path.Combine(heightmapsDir, "worldmap_composite.png");
+        if (esmRecords.LandRecords.Count > 0)
+        {
+            await HeightmapPngExporter.ExportCompositeWorldmapAsync(
+                esmRecords.Heightmaps, esmRecords.CellGrids,
+                esmRecords.LandRecords, compositePath);
+        }
+        else
+        {
+            await HeightmapPngExporter.ExportCompositeWorldmapAsync(
+                esmRecords.Heightmaps, esmRecords.CellGrids, compositePath);
+        }
+
+        if (File.Exists(compositePath))
+        {
+            AnsiConsole.MarkupLine($"[green]Composite worldmap:[/] {compositePath}");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[yellow]Composite worldmap:[/] not generated (no correlated heightmaps)");
+        }
+    }
+
+    private static void RunTerrainDiagnostic(
+        EsmRecordScanResult esmRecords, string outputDir, string dumpFilename)
+    {
+        var cellsWithMesh = esmRecords.LandRecords
+            .Where(l => l.RuntimeTerrainMesh != null && l.BestCellX.HasValue && l.BestCellY.HasValue)
+            .ToList();
+
+        if (cellsWithMesh.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]Terrain diagnostic:[/] No cells with runtime terrain meshes.");
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[blue]Terrain mesh data quality diagnostic[/]");
+
+        var diagnostics = cellsWithMesh
+            .Select(l => l.RuntimeTerrainMesh!.DiagnoseQuality(
+                l.BestCellX!.Value, l.BestCellY!.Value, l.Header.FormId))
+            .OrderBy(d => d.CellX)
+            .ThenBy(d => d.CellY)
+            .ToList();
+
+        // Console table
+        var table = new Table();
+        table.AddColumn("Cell");
+        table.AddColumn("FormID");
+        table.AddColumn(new TableColumn("ZRange").RightAligned());
+        table.AddColumn(new TableColumn("UniqueZ").RightAligned());
+        table.AddColumn(new TableColumn("ZeroZ%").RightAligned());
+        table.AddColumn(new TableColumn("GarbZ").RightAligned());
+        table.AddColumn(new TableColumn("DomZ%").RightAligned());
+        table.AddColumn(new TableColumn("LastRow").RightAligned());
+        table.AddColumn(new TableColumn("Discont").RightAligned());
+        table.AddColumn("Class");
+
+        foreach (var d in diagnostics)
+        {
+            var classColor = d.Classification switch
             {
-                await HeightmapPngExporter.ExportLandRecordsAsync(
-                    result.EsmRecords.LandRecords,
-                    heightmapsDir);
-            }
+                "Complete" => "green",
+                "Partial" => "yellow",
+                "Flat" => "red",
+                "FewPixels" => "red",
+                _ => "grey"
+            };
 
-            // Export a composite worldmap if we have correlated heightmaps
-            if (result.EsmRecords.CellGrids.Count > 0 ||
-                result.EsmRecords.LandRecords.Count > 0)
+            var garbColor = d.GarbageZCount > 0 ? "red" : "green";
+
+            table.AddRow(
+                $"{d.CellX},{d.CellY}",
+                $"0x{d.FormId:X8}",
+                $"{d.ZRange:F1}",
+                $"{d.UniqueZCount}",
+                $"{d.ZeroZCount * 100.0f / RuntimeTerrainMesh.VertexCount:F1}",
+                $"[{garbColor}]{d.GarbageZCount}[/]",
+                $"{d.DominantZPercent:F1}",
+                $"{d.LastActiveRow}",
+                $"{d.RowDiscontinuities}",
+                $"[{classColor}]{d.Classification}[/]");
+        }
+
+        AnsiConsole.Write(table);
+
+        // Summary counts
+        var complete = diagnostics.Count(d => d.Classification == "Complete");
+        var partial = diagnostics.Count(d => d.Classification == "Partial");
+        var flat = diagnostics.Count(d => d.Classification == "Flat");
+        var fewPixels = diagnostics.Count(d => d.Classification == "FewPixels");
+        AnsiConsole.MarkupLine(
+            $"  [green]Complete: {complete}[/]  [yellow]Partial: {partial}[/]  " +
+            $"[red]Flat: {flat}  FewPixels: {fewPixels}[/]  Total: {diagnostics.Count}");
+
+        // Export CSV
+        var csvPath = Path.Combine(outputDir, "terrain_diagnostics.csv");
+        var csv = new StringBuilder();
+        csv.AppendLine("DumpFile,CellX,CellY,FormID,MinZ,MaxZ,ZRange,ZStdDev," +
+                        "UniqueZCount,ZeroZCount,ZeroZPct,GarbageZCount,DominantZPct," +
+                        "LastActiveRow,RowDiscontinuities,Classification");
+        foreach (var d in diagnostics)
+        {
+            csv.AppendLine(CultureInfo.InvariantCulture,
+                $"{dumpFilename},{d.CellX},{d.CellY},0x{d.FormId:X8}," +
+                $"{d.MinZ:F2},{d.MaxZ:F2},{d.ZRange:F2},{d.ZStdDev:F2}," +
+                $"{d.UniqueZCount},{d.ZeroZCount}," +
+                $"{d.ZeroZCount * 100.0f / RuntimeTerrainMesh.VertexCount:F1}," +
+                $"{d.GarbageZCount},{d.DominantZPercent:F1},{d.LastActiveRow}," +
+                $"{d.RowDiscontinuities},{d.Classification}");
+        }
+
+        Directory.CreateDirectory(outputDir);
+        File.WriteAllText(csvPath, csv.ToString());
+        AnsiConsole.MarkupLine($"  CSV exported: {csvPath}");
+    }
+
+    private static async Task ExtractRuntimeMeshesAsync(
+        string inputPath, string outputDir, AnalysisResult result)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[blue]Scanning for runtime NIF geometry (NiTriShapeData/NiTriStripsData)...[/]");
+
+        Directory.CreateDirectory(outputDir);
+        List<ExtractedMesh> meshes;
+        var sceneGraph = new Dictionary<long, SceneGraphInfo>();
+
+        using (var mmf = MemoryMappedFile.CreateFromFile(inputPath, FileMode.Open, null, 0,
+                   MemoryMappedFileAccess.Read))
+        using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
+        {
+            var context = new RuntimeMemoryContext(accessor, result.FileSize, result.MinidumpInfo!);
+            var scanner = new RuntimeGeometryScanner(context);
+
+            meshes = [];
+
+            await AnsiConsole.Progress()
+                .AutoClear(false)
+                .Columns(
+                    new TaskDescriptionColumn(),
+                    new ProgressBarColumn(),
+                    new PercentageColumn(),
+                    new SpinnerColumn())
+                .StartAsync(_ =>
+                {
+                    var progressTask = _.AddTask("[green]Scanning for meshes[/]", maxValue: result.FileSize);
+
+                    var progress = new Progress<(long Scanned, long Total)>(p =>
+                    {
+                        progressTask.Value = p.Scanned;
+                        progressTask.Description =
+                            $"[green]Scanning[/] [grey]({scanner.MeshesFound} meshes found)[/]";
+                    });
+
+                    meshes = scanner.ScanForMeshes(progress);
+                    progressTask.Value = result.FileSize;
+                    progressTask.Description =
+                        $"[green]Complete[/] [grey]({meshes.Count} meshes)[/]";
+
+                    return Task.CompletedTask;
+                });
+
+            // Walk scene graph to find NiTriShape parents and node names
+            if (meshes.Count > 0)
             {
-                var compositePath = Path.Combine(heightmapsDir, "worldmap_composite.png");
-                if (result.EsmRecords.LandRecords.Count > 0)
-                {
-                    await HeightmapPngExporter.ExportCompositeWorldmapAsync(
-                        result.EsmRecords.Heightmaps,
-                        result.EsmRecords.CellGrids,
-                        result.EsmRecords.LandRecords,
-                        compositePath,
-                        false);
-                }
-                else
-                {
-                    await HeightmapPngExporter.ExportCompositeWorldmapAsync(
-                        result.EsmRecords.Heightmaps,
-                        result.EsmRecords.CellGrids,
-                        compositePath,
-                        false);
-                }
-
-                if (File.Exists(compositePath))
-                {
-                    AnsiConsole.MarkupLine($"[green]Composite worldmap:[/] {compositePath}");
-                }
-                else
-                {
-                    AnsiConsole.MarkupLine("[yellow]Composite worldmap:[/] not generated (no correlated heightmaps)");
-                }
+                AnsiConsole.MarkupLine("[blue]Walking scene graph for mesh naming...[/]");
+                var walker = new RuntimeSceneGraphWalker(context);
+                sceneGraph = walker.WalkSceneGraph(meshes);
+                AnsiConsole.MarkupLine($"  Resolved {sceneGraph.Count}/{meshes.Count} meshes to scene graph nodes");
             }
         }
+
+        if (meshes.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No runtime meshes found in dump.[/]");
+            return;
+        }
+
+        // Classify: 3D meshes have normals (lit geometry), UI meshes don't (text, HUD)
+        var meshes3D = meshes.Where(m => m.Is3D).ToList();
+        var meshesUI = meshes.Where(m => !m.Is3D).ToList();
+
+        // Export combined OBJ with only 3D meshes (UI meshes are useless in a viewer)
+        var combinedPath = Path.Combine(outputDir, "meshes_3d_combined.obj");
+        if (meshes3D.Count > 0)
+        {
+            MeshObjExporter.ExportMultiple(meshes3D, combinedPath);
+        }
+
+        // Export individual OBJ files into 3d/ and ui/ subdirectories
+        ExportMeshSubdirectory(meshes3D, Path.Combine(outputDir, "3d"), sceneGraph);
+        ExportMeshSubdirectory(meshesUI, Path.Combine(outputDir, "ui"), sceneGraph);
+
+        // Export summary CSV (all meshes with category + scene graph columns)
+        var summaryPath = Path.Combine(outputDir, "mesh_summary.csv");
+        ExportMeshSummary(meshes, sceneGraph, summaryPath);
+
+        // Statistics
+        var totalTriangles = meshes.Sum(m => m.TriangleCount);
+        var totalVertices = meshes.Sum(m => m.VertexCount);
+        var triShapes = meshes.Count(m => m.Type == MeshType.TriShape);
+        var triStrips = meshes.Count(m => m.Type == MeshType.TriStrips);
+
+        AnsiConsole.MarkupLine($"[green]Extracted {meshes.Count} meshes[/] " +
+                               $"({meshes3D.Count} 3D, {meshesUI.Count} UI)");
+        AnsiConsole.MarkupLine($"  {totalVertices:N0} vertices, {totalTriangles:N0} triangles");
+        AnsiConsole.MarkupLine($"  Types: {triShapes} TriShape, {triStrips} TriStrips");
+        if (meshes3D.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"  3D combined: {combinedPath} ({meshes3D.Count} objects)");
+        }
+
+        AnsiConsole.MarkupLine($"  3D individual: {Path.Combine(outputDir, "3d")}/");
+        AnsiConsole.MarkupLine($"  UI individual: {Path.Combine(outputDir, "ui")}/");
+        AnsiConsole.MarkupLine($"  Summary CSV: {summaryPath}");
+    }
+
+    private static void ExportMeshSubdirectory(
+        List<ExtractedMesh> meshes, string dir, Dictionary<long, SceneGraphInfo> sceneGraph)
+    {
+        if (meshes.Count == 0)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(dir);
+        for (var i = 0; i < meshes.Count; i++)
+        {
+            var mesh = meshes[i];
+            var name = GetMeshFileName(mesh, i, sceneGraph);
+            MeshObjExporter.Export(mesh, Path.Combine(dir, name), name.Replace(".obj", ""));
+        }
+    }
+
+    private static string GetMeshFileName(
+        ExtractedMesh mesh, int index, Dictionary<long, SceneGraphInfo> sceneGraph)
+    {
+        if (sceneGraph.TryGetValue(mesh.SourceOffset, out var info))
+        {
+            // Use the scene graph path to build a meaningful name
+            var safeName = SanitizeFileName(info.ModelName ?? info.NodeName ?? $"{mesh.SourceOffset:X}");
+            return $"mesh_{index:D4}_{safeName}.obj";
+        }
+
+        return $"mesh_{index:D4}_{mesh.SourceOffset:X}.obj";
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var sb = new System.Text.StringBuilder(name.Length);
+        foreach (var c in name)
+        {
+            sb.Append(invalid.Contains(c) ? '_' : c);
+        }
+
+        // Truncate to avoid overly long filenames
+        var result = sb.ToString();
+        return result.Length > 60 ? result[..60] : result;
+    }
+
+    private static void ExportMeshSummary(
+        List<ExtractedMesh> meshes,
+        Dictionary<long, SceneGraphInfo> sceneGraph,
+        string outputPath)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Index,Offset,Type,Category,Vertices,Triangles,HasNormals,HasUVs,HasColors," +
+                       "BoundCenterX,BoundCenterY,BoundCenterZ,BoundRadius," +
+                       "NodeName,ModelName,SceneGraphPath,RootNodeVA");
+
+        for (var i = 0; i < meshes.Count; i++)
+        {
+            var m = meshes[i];
+            var category = m.Is3D ? "3D" : "UI";
+            sceneGraph.TryGetValue(m.SourceOffset, out var info);
+
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"{i},0x{m.SourceOffset:X},{m.Type},{category},{m.VertexCount},{m.TriangleCount}," +
+                $"{(m.Normals != null ? "Yes" : "No")},{(m.UVs != null ? "Yes" : "No")}," +
+                $"{(m.VertexColors != null ? "Yes" : "No")}," +
+                $"{m.BoundCenterX:F2},{m.BoundCenterY:F2},{m.BoundCenterZ:F2},{m.BoundRadius:F2}," +
+                $"{CsvEscapeValue(info?.NodeName)},{CsvEscapeValue(info?.ModelName)}," +
+                $"{CsvEscapeValue(info?.FullPath)},{(info != null ? $"0x{info.RootNodeVa:X}" : "")}");
+        }
+
+        var dir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        File.WriteAllText(outputPath, sb.ToString());
+    }
+
+    private static async Task ExtractRuntimeTexturesAsync(
+        string inputPath, string outputDir, AnalysisResult result)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[blue]Scanning for runtime textures (NiPixelData + NiSourceTexture)...[/]");
+
+        Directory.CreateDirectory(outputDir);
+        List<ExtractedTexture> textures;
+
+        using (var mmf = MemoryMappedFile.CreateFromFile(inputPath, FileMode.Open, null, 0,
+                   MemoryMappedFileAccess.Read))
+        using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
+        {
+            var context = new RuntimeMemoryContext(accessor, result.FileSize, result.MinidumpInfo!);
+            var scanner = new RuntimeTextureScanner(context);
+
+            textures = [];
+
+            await AnsiConsole.Progress()
+                .AutoClear(false)
+                .Columns(
+                    new TaskDescriptionColumn(),
+                    new ProgressBarColumn(),
+                    new PercentageColumn(),
+                    new SpinnerColumn())
+                .StartAsync(_ =>
+                {
+                    var progressTask = _.AddTask("[green]Scanning for textures[/]", maxValue: result.FileSize);
+
+                    var progress = new Progress<(long Scanned, long Total)>(p =>
+                    {
+                        progressTask.Value = p.Scanned;
+                        progressTask.Description =
+                            $"[green]Scanning[/] [grey]({scanner.TexturesFound} textures found)[/]";
+                    });
+
+                    // Combined single-pass scan: finds NiPixelData and resolves NiSourceTexture filenames
+                    textures = scanner.ScanForTextures(progress);
+                    progressTask.Value = result.FileSize;
+                    progressTask.Description =
+                        $"[green]Complete[/] [grey]({textures.Count} textures)[/]";
+
+                    return Task.CompletedTask;
+                });
+        }
+
+        if (textures.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No runtime textures found in dump.[/]");
+            AnsiConsole.MarkupLine("  (Most Xbox 360 textures are in GPU memory not captured in minidumps.)");
+            return;
+        }
+
+        var named = textures.Count(t => t.Filename != null);
+        if (named > 0)
+        {
+            AnsiConsole.MarkupLine($"  Resolved {named}/{textures.Count} texture filenames via NiSourceTexture");
+        }
+
+        // Export DDS files and summary
+        DdsExporter.ExportAll(textures, outputDir);
+
+        // Statistics
+        var compressed = textures.Count(t => t.IsCompressed);
+        var totalBytes = textures.Sum(t => (long)t.DataSize);
+        var formats = textures.GroupBy(t => t.Format)
+            .Select(g => $"{g.Count()} {g.Key}")
+            .ToArray();
+
+        AnsiConsole.MarkupLine($"[green]Extracted {textures.Count} textures[/] " +
+                               $"({compressed} compressed, {textures.Count - compressed} uncompressed)");
+        AnsiConsole.MarkupLine($"  Total data: {totalBytes:N0} bytes");
+        AnsiConsole.MarkupLine($"  Formats: {string.Join(", ", formats)}");
+        AnsiConsole.MarkupLine($"  Output: {outputDir}/");
+        AnsiConsole.MarkupLine($"  Summary CSV: {Path.Combine(outputDir, "texture_summary.csv")}");
+    }
+
+    private static string CsvEscapeValue(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "";
+        }
+
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+        {
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        }
+
+        return value;
     }
 
     /// <summary>
@@ -390,5 +839,19 @@ public static class AnalyzeCommand
             AnsiConsole.MarkupLine($"[yellow]Warning:[/] String pool extraction failed: {ex.Message}");
             return null;
         }
+    }
+
+    private sealed record AnalyzeOptions
+    {
+        public required string Input { get; init; }
+        public string? Output { get; init; }
+        public required string Format { get; init; }
+        public string? ExtractEsm { get; init; }
+        public string? Semantic { get; init; }
+        public bool Verbose { get; init; }
+        public string? TerrainObj { get; init; }
+        public bool TerrainDiag { get; init; }
+        public string? ExtractMeshes { get; init; }
+        public string? ExtractTextures { get; init; }
     }
 }

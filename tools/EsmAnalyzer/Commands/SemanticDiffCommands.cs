@@ -3,7 +3,7 @@ using System.CommandLine.Parsing;
 using System.Text;
 using EsmAnalyzer.Core;
 using Spectre.Console;
-using Xbox360MemoryCarver.Core.Formats.EsmRecord;
+using FalloutXbox360Utils.Core.Formats.Esm;
 
 namespace EsmAnalyzer.Commands;
 
@@ -207,9 +207,9 @@ public static class SemanticDiffCommands
             }
 
             // Parse record header
-            var dataSize = EsmBinary.ReadUInt32(data, offset + 4, bigEndian);
-            var flags = EsmBinary.ReadUInt32(data, offset + 8, bigEndian);
-            var formId = EsmBinary.ReadUInt32(data, offset + 12, bigEndian);
+            var dataSize = BinaryUtils.ReadUInt32(data, offset + 4, bigEndian);
+            var flags = BinaryUtils.ReadUInt32(data, offset + 8, bigEndian);
+            var formId = BinaryUtils.ReadUInt32(data, offset + 12, bigEndian);
 
             var headerSize = 24; // FNV uses 24-byte headers
             var recordStart = offset;
@@ -230,7 +230,7 @@ public static class SemanticDiffCommands
                 if (compressed)
                 {
                     // Decompress
-                    var decompSize = EsmBinary.ReadUInt32(data, offset + headerSize, bigEndian);
+                    var decompSize = BinaryUtils.ReadUInt32(data, offset + headerSize, bigEndian);
                     var compData = data.AsSpan(offset + headerSize + 4, (int)dataSize - 4);
                     recordData = DecompressZlib(compData.ToArray(), (int)decompSize);
                     subOffset = 0;
@@ -262,7 +262,7 @@ public static class SemanticDiffCommands
             var sig = bigEndian
                 ? new string([(char)data[offset + 3], (char)data[offset + 2], (char)data[offset + 1], (char)data[offset]])
                 : Encoding.ASCII.GetString(data, offset, 4);
-            var size = EsmBinary.ReadUInt16(data, offset + 4, bigEndian);
+            var size = BinaryUtils.ReadUInt16(data, offset + 4, bigEndian);
 
             if (offset + 6 + size > endOffset)
             {
@@ -537,9 +537,9 @@ public static class SemanticDiffCommands
         return data.Length switch
         {
             1 => data[0].ToString(),
-            2 => EsmBinary.ReadUInt16(data, bigEndian).ToString(),
+            2 => BinaryUtils.ReadUInt16(data, 0, bigEndian).ToString(),
             4 when sig.EndsWith("ID", StringComparison.Ordinal) || sig == "NAME" || sig == "SCRI" || sig == "TPLT" =>
-                $"0x{EsmBinary.ReadUInt32(data, bigEndian):X8}",
+                $"0x{BinaryUtils.ReadUInt32(data, 0, bigEndian):X8}",
             4 => FormatAs4Bytes(data, bigEndian),
             _ => FormatBytes(data)
         };
@@ -547,8 +547,8 @@ public static class SemanticDiffCommands
 
     private static string FormatAs4Bytes(byte[] data, bool bigEndian)
     {
-        var u32 = EsmBinary.ReadUInt32(data, 0, bigEndian);
-        var f = EsmBinary.ReadSingle(data, 0, bigEndian);
+        var u32 = BinaryUtils.ReadUInt32(data, 0, bigEndian);
+        var f = BinaryUtils.ReadFloat(data, 0, bigEndian);
 
         // Heuristic: if it looks like a valid float, show as float
         if (!float.IsNaN(f) && !float.IsInfinity(f) && Math.Abs(f) < 1e10 && Math.Abs(f) > 1e-10)
