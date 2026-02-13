@@ -12,6 +12,12 @@ out/
 *.sln.docstates
 .claude/
 
+# Build artifacts
+build/
+
+# Accidental files
+nul
+
 # NuGet
 packages/
 *.nupkg
