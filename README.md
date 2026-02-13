@@ -1,6 +1,6 @@
 # Fallout Xbox 360 Utils
 
-A cross-platform tool for Xbox 360 memory dump analysis, file carving, and DDX texture conversion. Features a **WinUI 3 GUI** on Windows and a **cross-platform CLI** for batch processing on Windows, Linux, and macOS.
+A .NET 10.0 toolkit for Xbox 360 memory dump analysis, ESM/NIF format conversion, file carving, and game data exploration. Features a **WinUI 3 GUI** on Windows and a **cross-platform CLI** for batch processing.
 
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
@@ -8,30 +8,46 @@ A cross-platform tool for Xbox 360 memory dump analysis, file carving, and DDX t
 
 ## Features
 
-### GUI (Windows only)
+### GUI (Windows)
 
-- **Hex Viewer**: Virtual-scrolling hex editor supporting 200MB+ files
-- **Minimap**: VS Code-style overview with file type region coloring
-- **Analysis Tab**: File signature detection with filtering and statistics
-- **Extraction**: Carve and export detected files with DDX -> DDS conversion
+- **ESM Data Browser**: Explore ESM records with search, property display, and GECK-style flag decoding
+- **Dialogue Viewer**: Browse NPC dialogue trees by speaker, quest, and topic
+- **World Map**: Interactive heightmap visualization with cell navigation and placed object overlay
+- **Hex Viewer**: Virtual-scrolling hex editor supporting 200MB+ files with minimap overview
+- **Memory Carver**: File signature detection, extraction, and DDX/XMA conversion
+- **BSA Extractor**: Extract Bethesda archive files with Xbox 360 to PC conversion
+- **NIF Converter**: Xbox 360 to PC NIF mesh conversion (geometry expansion, endian conversion)
+- **DDX Converter**: Batch DDX to DDS texture conversion
+- **Repacker**: Rebuild Xbox 360 memory regions with modified assets
 
 ### CLI (Cross-platform)
 
-- Batch processing of memory dumps
-- Automatic file type detection and extraction
-- DDX to DDS texture conversion
-- Verbose progress reporting
+| Command | Description |
+| --- | --- |
+| `carve` | Extract files from memory dumps with type filtering |
+| `analyze` | Full ESM semantic reconstruction with GECK-format CSV/text reports |
+| `esm` | Convert Xbox 360 ESM to PC format (GECK compatible) |
+| `nif` | Convert Xbox 360 NIF meshes to PC format |
+| `bsa` | Extract BSA archives |
+| `dialogue` | Browse and export NPC dialogue trees |
+| `world` | Explore worldspace data, heightmaps, and placed objects |
+| `compare` | Compare ESM files (converted vs. PC reference) |
+| `modules` | List loaded modules from memory dumps |
+| `coverage` | Analyze memory region coverage |
 
-### Supported File Types
+### Format Support
 
-| Category    | Formats                                         |
-| ----------- | ----------------------------------------------- |
-| Textures    | DDX (3XDO/3XDR), DDS, PNG                       |
-| Audio       | XMA (Xbox Media Audio), LIP (lip sync)          |
-| Models      | NIF (NetImmerse/Gamebryo)                       |
-| Scripts     | ObScript (Bethesda scripting)                   |
-| Executables | XEX (Xbox Executable)                           |
-| Data        | ESP/ESM (Bethesda plugins), XUI (Xbox UI), XDBF |
+| Category | Formats |
+| --- | --- |
+| Game Data | ESM/ESP (Xbox 360 and PC, with full conversion) |
+| Models | NIF (Xbox 360 to PC conversion with geometry expansion) |
+| Archives | BSA (Bethesda Softworks Archive) |
+| Textures | DDX (3XDO/3XDR), DDS, PNG |
+| Audio | XMA (Xbox Media Audio), LIP (lip sync) |
+| Scripts | ObScript bytecode (decompilation + comparison) |
+| Executables | XEX (Xbox Executable) |
+| UI | XUI (Xbox UI), XDBF (Xbox Dashboard) |
+| Crash dumps | Xbox 360 minidumps with PDB-aware struct reading |
 
 ## Installation
 
@@ -39,11 +55,11 @@ A cross-platform tool for Xbox 360 memory dump analysis, file carving, and DDX t
 
 Download from [Releases](https://github.com/slfx77/xbox-360-minidump-extractor/releases):
 
-| Platform    | Download                                   |
-| ----------- | ------------------------------------------ |
-| Windows GUI | `FalloutXbox360Utils-Windows-GUI-x64.zip`  |
-| Windows CLI | `FalloutXbox360Utils-Windows-CLI-x64.zip`  |
-| Linux CLI   | `FalloutXbox360Utils-Linux-CLI-x64.tar.gz` |
+| Platform | Download |
+| --- | --- |
+| Windows GUI | `FalloutXbox360Utils-Windows-GUI-x64.zip` |
+| Windows CLI | `FalloutXbox360Utils-Windows-CLI-x64.zip` |
+| Linux CLI | `FalloutXbox360Utils-Linux-CLI-x64.tar.gz` |
 
 ### Build from Source
 
@@ -62,174 +78,151 @@ dotnet run --project src/FalloutXbox360Utils -f net10.0-windows10.0.19041.0
 
 # Run CLI (cross-platform)
 dotnet run --project src/FalloutXbox360Utils -f net10.0 -- --help
+
+# Run tests
+dotnet test -p:CollectCoverage=false
 ```
 
 ## Usage
 
 ### GUI Mode (Windows)
 
-Run the application without arguments to launch the GUI:
+Launch without arguments for the GUI, or auto-load a file:
 
 ```bash
 FalloutXbox360Utils.exe
-```
-
-Or auto-load a dump file:
-
-```bash
 FalloutXbox360Utils.exe path/to/dump.dmp
 ```
+
+Tabs: **Single File** (ESM browser, dialogue, world map, hex viewer) | **BSA Extractor** | **NIF Converter** | **DDX Converter** | **Repacker** | **Batch Mode**
 
 ### CLI Mode
 
 ```bash
-# Basic extraction
-FalloutXbox360Utils dump.dmp -o output_folder
+# Extract files from a memory dump
+FalloutXbox360Utils carve dump.dmp -o output -t ddx xma nif --convert-ddx
 
-# With options
-FalloutXbox360Utils dump.dmp -o output -t ddx xma nif -v --convert-ddx
+# Analyze ESM from a memory dump (generates GECK-format reports)
+FalloutXbox360Utils analyze dump.dmp -o reports/
 
-# Windows: Force CLI mode (otherwise defaults to GUI)
+# Convert Xbox 360 ESM to PC format
+FalloutXbox360Utils esm convert Sample/ESM/360_final/FalloutNV.esm -o FalloutNV.pc.esm
+
+# Convert Xbox 360 NIF to PC format
+FalloutXbox360Utils nif mesh.nif -o mesh_pc.nif
+
+# Browse dialogue
+FalloutXbox360Utils dialogue dump.dmp --npc CraigBoone
+
+# Explore worldspace
+FalloutXbox360Utils world dump.dmp --worldspace WastelandNV
+
+# Force CLI mode on Windows (otherwise defaults to GUI)
 FalloutXbox360Utils --no-gui dump.dmp -o output
 ```
 
-#### CLI Options
+### Developer Tools
 
-| Option          | Description                                 |
-| --------------- | ------------------------------------------- |
-| `<input>`       | Path to memory dump file (.dmp)             |
-| `-o, --output`  | Output directory (default: `output`)        |
-| `-n, --no-gui`  | Force CLI mode on Windows                   |
-| `-t, --types`   | File types to extract (e.g., `ddx xma nif`) |
-| `--convert-ddx` | Convert DDX textures to DDS (default: true) |
-| `-v, --verbose` | Enable verbose output                       |
-| `--max-files`   | Max files per type (default: 10000)         |
-
-### Analysis Commands
+Standalone analysis tools for development and debugging:
 
 ```bash
-# Analyze dump structure (console summary)
-FalloutXbox360Utils analyze dump.dmp
+# ESM analysis and comparison
+dotnet run --project tools/EsmAnalyzer -c Release -- stats FalloutNV.esm
+dotnet run --project tools/EsmAnalyzer -c Release -- semdiff converted.esm pc_reference.esm -t NPC_
 
-# Generate markdown report
-FalloutXbox360Utils analyze dump.dmp -f md -o report.md
+# Memory dump script analysis
+dotnet run --project tools/MinidumpAnalyzer -- scripts dump.dmp
 
-# List loaded modules
-FalloutXbox360Utils modules dump.dmp              # Text output
-FalloutXbox360Utils modules dump.dmp -f md        # Markdown table
-FalloutXbox360Utils modules dump.dmp -f csv       # CSV export
+# NIF structure analysis
+dotnet run --project tools/NifAnalyzer -f net10.0 -- info mesh.nif
 ```
 
-The `analyze` command provides:
+## ESM Conversion
 
-- Build type detection (Debug, Release Beta, Release MemDebug)
-- Loaded module list with sizes and base addresses
-- SCDA (compiled script) record count and source availability
-- ESM record statistics (EDID, GMST, SCTX, SCRO fragments)
-- FormID to EditorID correlation map
+The ESM converter handles Xbox 360 to PC format conversion for Fallout: New Vegas master files:
 
-## DDXConv Standalone Tool
+- **Endian conversion**: Record/subrecord headers and data fields (hybrid big/little-endian)
+- **Split INFO merging**: Xbox 360's split dialogue records merged to match PC format
+- **Schema-driven**: Field types defined in `SubrecordSchemaRegistry` for correct byte-swapping
+- **GECK compatible**: Output loads in the Garden of Eden Creation Kit
 
-The DDXConv command-line tool can also be used standalone for DDX to DDS conversion:
+## Script Decompiler
 
-```bash
-# Single file conversion
-dotnet run --project src/DDXConv/DDXConv -- texture.ddx output.dds
+Decompiles ObScript bytecode (SCDA subrecords) back to readable script source:
 
-# Batch conversion
-dotnet run --project src/DDXConv/DDXConv -- ddx_folder/ output_folder/
-```
-
-## External Dependencies
-
-Some features require external tools or libraries. The GUI will show a notification on startup if any are missing.
-
-### Microsoft XNA Framework 4.0 (Required for DDX conversion)
-
-DDX texture conversion requires `XnaNative.dll` from the Microsoft XNA Framework:
-
-- **Download**: [Microsoft XNA Framework Redistributable 4.0](https://www.microsoft.com/en-us/download/details.aspx?id=20914)
-- **Affected features**: DDX -> DDS texture conversion in Memory Carver and DDX Converter tabs
-- **Without it**: DDX files will be extracted but not converted to DDS format
-
-### FFmpeg (Required for XMA audio conversion)
-
-XMA audio conversion to WAV format requires FFmpeg:
-
-- **Download**: [FFmpeg.org](https://www.ffmpeg.org/download.html)
-- **Installation**: Add the `bin` folder to your system PATH, or place `ffmpeg.exe` in `C:\ffmpeg\bin\`
-- **Affected features**: XMA -> WAV audio conversion in Memory Carver tabs
-- **Without it**: XMA files will be extracted but not converted to WAV format
-
-## Technical Details
-
-### Xbox 360 Specifics
-
-- **DDX Formats**: 3XDO (standard compressed), 3XDR (alternate tiling - experimental)
-- **Architecture**: PowerPC (processor type 0x3 in minidumps)
-- **Texture Tiling**: Morton-order (Z-order) swizzling on Xbox 360 GPU
-- **Compression**: XMemCompress/XMemDecompress via XnaNative.dll
-
-### Minidump Structure
-
-- Stream type 4: `MINIDUMP_MODULE_LIST` - Loaded module info with accurate sizes
-- Stream type 9: `MINIDUMP_MEMORY64_LIST` - Memory region descriptors
-- Modules extracted from metadata have correct sizes; signature carving uses heuristics
+- Full opcode coverage for Fallout: New Vegas
+- Cross-script variable resolution via SCRO/SCRV reference chains
+- FormID to EditorID resolution for human-readable output
+- Semantic comparison between original SCTX source and decompiled output
 
 ## Project Structure
 
 ```
 src/FalloutXbox360Utils/
-├── CLI/                     # Command-line interface commands
-├── Core/                    # Cross-platform carving logic
-│   ├── Carving/             # File carving engine
-│   ├── Converters/          # DDX/XUR conversion
-│   ├── Formats/             # Self-contained format modules
-│   ├── Minidump/            # Minidump parsing
-│   └── Utils/               # Binary utilities
 ├── App/                     # WinUI 3 GUI (Windows only)
-├── Program.cs               # Entry point (CLI/GUI switch)
-└── GuiEntryPoint.cs         # GUI bootstrap (Windows only)
+│   ├── Controls/            #   WorldMapControl
+│   ├── Helpers/             #   Tree builders, display helpers
+│   ├── Models/              #   Session state, view models
+│   └── Tabs/                #   SingleFile, BSA, NIF, DDX, Repack, Batch
+├── CLI/                     # Cross-platform CLI commands
+├── Core/                    # Format libraries
+│   ├── Carving/             #   File signature detection and extraction
+│   ├── Formats/
+│   │   ├── Bsa/             #   BSA archive extraction
+│   │   ├── Ddx/             #   DDX texture parsing
+│   │   ├── Esm/             #   ESM parsing, conversion, export, runtime readers
+│   │   └── Nif/             #   NIF mesh parsing and conversion
+│   ├── Minidump/            #   Xbox 360 minidump parsing
+│   └── Utils/               #   Binary utilities
+└── Repack/                  # Memory region repacking
 
-src/DDXConv/                 # DDX conversion submodule
+src/DDXConv/                 # DDX conversion library (submodule)
+
+tools/
+├── EsmAnalyzer/             # ESM comparison, semantic diff, conversion
+├── MinidumpAnalyzer/        # Runtime memory analysis, script extraction
+├── NifAnalyzer/             # NIF structure inspection
+└── ...                      # Additional analysis tools
 ```
+
+## External Dependencies
+
+Some features require external tools. The GUI shows a notification on startup if any are missing.
+
+### Microsoft XNA Framework 4.0 (DDX conversion)
+
+DDX texture conversion requires `XnaNative.dll` from the [Microsoft XNA Framework Redistributable 4.0](https://www.microsoft.com/en-us/download/details.aspx?id=20914). Without it, DDX files are extracted but not converted to DDS.
+
+### FFmpeg (XMA audio conversion)
+
+XMA to WAV conversion requires [FFmpeg](https://www.ffmpeg.org/download.html) on PATH or at `C:\ffmpeg\bin\`. Without it, XMA files are extracted but not converted to WAV.
 
 ## Documentation
 
-- [Architecture Guide](docs/Architecture.md) - Internal architecture, components, and extensibility
-- [DDX/DDS Format Guide](docs/DDX_DDS_Format_Guide.md) - Texture format documentation
-- [Memory Dump Research](docs/Memory_Dump_Research.md) - Xbox 360 dump structure research
-
-## Contributing
-
-Contributions are welcome! Please ensure:
-
-- Code follows existing style (file-scoped namespaces, `_camelCase` fields)
-- All I/O operations are async
-- New file types include parser, signature, and color mapping
+- [Xbox 360 ESM Format](docs/Xbox_360_ESM_Format.md) - ESM binary format and hybrid endianness
+- [ESM Conversion Transforms](docs/Xbox_360_ESM_Conversion_Transforms.md) - Conversion field mappings
+- [DDX Format](docs/Xbox_360_DDX_Format.md) - DDX texture format documentation
+- [PDB Runtime Structures](docs/PDB_Runtime_Structures.md) - Gamebryo runtime struct layouts
+- [Script Bytecode Format](docs/PDB_Script_Bytecode_Format.md) - ObScript SCDA bytecode format
 
 ## License
 
-This project is licensed under the **MIT License** - See [LICENSE](LICENSE) file for details.
+MIT License - See [LICENSE](LICENSE) for details.
 
 ### Third-Party Components
 
-This project uses the following external components:
-
-| Component                                                 | License                                                                       | Usage                                                   |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------- |
-| [DDXConv](https://github.com/GamesPastOrg/DDXConv)        | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE)            | DDX -> DDS texture conversion (forked, built-in)        |
-| [XCompression](https://github.com/gibbed/XCompression)    | [zlib](https://github.com/gibbed/XCompression/blob/vs2017/LICENSE.txt)        | LZX decompression (submodule, called as subprocess)     |
-| [XUIHelper](https://github.com/SGCSam/XUIHelper)          | [GPLv3](https://github.com/SGCSam/XUIHelper/blob/main/LICENSE)                | XUR -> XUI conversion (submodule, called as subprocess) |
-| [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema for endian conversion (embedded)      |
-
-**Note**: XUIHelper is licensed under GPLv3. Since it is invoked as a separate subprocess (not linked), this project remains MIT licensed. XUIHelper's GPLv3 license applies only to the XUIHelper component itself.
+| Component | License | Usage |
+| --- | --- | --- |
+| [DDXConv](https://github.com/GamesPastOrg/DDXConv) | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE) | DDX to DDS texture conversion (forked, built-in) |
+| [XCompression](https://github.com/gibbed/XCompression) | [zlib](https://github.com/gibbed/XCompression/blob/vs2017/LICENSE.txt) | LZX decompression (submodule, subprocess) |
+| [XUIHelper](https://github.com/SGCSam/XUIHelper) | [GPLv3](https://github.com/SGCSam/XUIHelper/blob/main/LICENSE) | XUR to XUI conversion (subprocess, not linked) |
+| [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema (embedded) |
 
 ## Acknowledgments
 
-- [AlexxEG/BSA_Browser](https://github.com/AlexxEG/BSA_Browser) - BSA format reference (helped clarify that BSA files are always little-endian)
-- [GamesPastOrg/DDXConv](https://github.com/GamesPastOrg/DDXConv) - DDX texture conversion tool (MIT License, Copyright © 2026 Kran)
-- [gibbed/XCompression](https://github.com/gibbed/XCompression) - Xbox LZX decompression library (zlib License, Copyright © 2018 Rick)
-- [SGCSam/XUIHelper](https://github.com/SGCSam/XUIHelper) - Xbox UI format conversion tool (GPLv3)
-- [fo76utils/NifSkope](https://github.com/fo76utils/nifskope) - NIF format schema (nif.xml) (BSD-3-Clause, Copyright © 2005-2014 NIF File Format Library and Tools)
-- [Xenia Xbox 360 Emulator](https://github.com/xenia-project/xenia) - Format documentation and research
+- [AlexxEG/BSA_Browser](https://github.com/AlexxEG/BSA_Browser) - BSA format reference
+- [GamesPastOrg/DDXConv](https://github.com/GamesPastOrg/DDXConv) - DDX texture conversion (MIT, Copyright 2026 Kran)
+- [gibbed/XCompression](https://github.com/gibbed/XCompression) - Xbox LZX decompression (zlib, Copyright 2018 Rick)
+- [SGCSam/XUIHelper](https://github.com/SGCSam/XUIHelper) - Xbox UI format conversion (GPLv3)
+- [fo76utils/NifSkope](https://github.com/fo76utils/nifskope) - NIF format schema (BSD-3-Clause)
+- [Xenia](https://github.com/xenia-project/xenia) - Format documentation and research
