@@ -10,7 +10,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
 ///     release builds (which only have compiled bytecode).
 ///     These tests are skipped when sample dump files are not present.
 /// </summary>
-public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
+public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFileFixture samples)
 {
     private readonly ITestOutputHelper _output = output;
 
@@ -18,12 +18,9 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
     [Trait("Category", "Slow")]
     public async Task Decompile_DebugDump_RuntimeScripts_StructurallyCorrect()
     {
+        Skip.If(samples.DebugDump is null, "Debug memory dump not available");
         var scripts = await DumpAnalysisHelper.AnalyzeDumpAsync(@"Sample\MemoryDump\Fallout_Debug.xex.dmp");
-        if (scripts == null)
-        {
-            _output.WriteLine("SKIPPED: Debug dump not available or analysis failed");
-            return;
-        }
+        Skip.If(scripts is null, "Debug dump analysis failed");
 
         var runtimeScriptsWithSource = scripts
             .Where(s => s.FromRuntime && s.HasSource && s.DecompiledText != null)
@@ -83,12 +80,9 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
     [Trait("Category", "Slow")]
     public async Task Decompile_ReleaseDump_RuntimeScripts_NoCrashes()
     {
+        Skip.If(samples.ReleaseDump is null, "Release memory dump not available");
         var scripts = await DumpAnalysisHelper.AnalyzeDumpAsync(@"Sample\MemoryDump\Fallout_Release_Beta.xex.dmp");
-        if (scripts == null)
-        {
-            _output.WriteLine("SKIPPED: Release dump not available or analysis failed");
-            return;
-        }
+        Skip.If(scripts is null, "Release dump analysis failed");
 
         var runtimeScripts = scripts
             .Where(s => s.FromRuntime && s.CompiledData is { Length: > 0 })
@@ -141,12 +135,9 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
     [Trait("Category", "Slow")]
     public async Task Decompile_DebugDump_ResolvesFormIdsToEditorIds()
     {
+        Skip.If(samples.DebugDump is null, "Debug memory dump not available");
         var scripts = await DumpAnalysisHelper.AnalyzeDumpAsync(@"Sample\MemoryDump\Fallout_Debug.xex.dmp");
-        if (scripts == null)
-        {
-            _output.WriteLine("SKIPPED: Debug dump not available or analysis failed");
-            return;
-        }
+        Skip.If(scripts is null, "Debug dump analysis failed");
 
         var scriptsWithDecompiled = scripts
             .Where(s => s.DecompiledText != null && s.ReferencedObjects.Count > 0)
@@ -196,12 +187,9 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
     [Trait("Category", "Slow")]
     public async Task Decompile_DebugDump_CrossScriptVariablesResolved()
     {
+        Skip.If(samples.DebugDump is null, "Debug memory dump not available");
         var scripts = await DumpAnalysisHelper.AnalyzeDumpAsync(@"Sample\MemoryDump\Fallout_Debug.xex.dmp");
-        if (scripts == null)
-        {
-            _output.WriteLine("SKIPPED: Debug dump not available or analysis failed");
-            return;
-        }
+        Skip.If(scripts is null, "Debug dump analysis failed");
 
         var scriptsWithDecompiled = scripts
             .Where(s => !string.IsNullOrEmpty(s.DecompiledText))
@@ -246,12 +234,9 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
     [Trait("Category", "Slow")]
     public async Task Decompile_DebugDump_SemanticComparison()
     {
+        Skip.If(samples.DebugDump is null, "Debug memory dump not available");
         var scripts = await DumpAnalysisHelper.AnalyzeDumpAsync(@"Sample\MemoryDump\Fallout_Debug.xex.dmp");
-        if (scripts == null)
-        {
-            _output.WriteLine("SKIPPED: Debug dump not available or analysis failed");
-            return;
-        }
+        Skip.If(scripts is null, "Debug dump analysis failed");
 
         var scriptsWithBoth = scripts
             .Where(s => s.HasSource && !string.IsNullOrEmpty(s.DecompiledText))

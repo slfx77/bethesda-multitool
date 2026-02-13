@@ -13,22 +13,16 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
 ///     from the Xbox 360 ESM file. Compares decompiled output with embedded SCTX source text.
 ///     These tests are skipped when the sample ESM file is not present.
 /// </summary>
-public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
+public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFileFixture samples)
 {
-    private const string Xbox360EsmPath = @"Sample\ESM\360_final\FalloutNV.esm";
     private readonly ITestOutputHelper _output = output;
 
     [Fact]
     public void Decompile_AllScptRecords_NoExceptions()
     {
-        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
-        if (esmPath == null)
-        {
-            _output.WriteLine("SKIPPED: ESM file not found");
-            return;
-        }
+        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var fileData = File.ReadAllBytes(esmPath);
+        var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         Assert.True(isBigEndian, "Xbox 360 ESM should be big-endian");
 
@@ -86,14 +80,9 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
     [Fact]
     public void Decompile_ScptRecords_StructurallyCorrect()
     {
-        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
-        if (esmPath == null)
-        {
-            _output.WriteLine("SKIPPED: ESM file not found");
-            return;
-        }
+        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var fileData = File.ReadAllBytes(esmPath);
+        var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         var scptRecords = EsmRecordParser.ScanForRecordType(fileData, isBigEndian, "SCPT");
 
@@ -154,14 +143,9 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
     [Fact]
     public void Decompile_SampleScripts_DetailedComparison()
     {
-        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
-        if (esmPath == null)
-        {
-            _output.WriteLine("SKIPPED: ESM file not found");
-            return;
-        }
+        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var fileData = File.ReadAllBytes(esmPath);
+        var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         var scptRecords = EsmRecordParser.ScanForRecordType(fileData, isBigEndian, "SCPT");
 
@@ -236,14 +220,9 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
     [Fact]
     public void Decompile_DiagnoseMismatches()
     {
-        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
-        if (esmPath == null)
-        {
-            _output.WriteLine("SKIPPED: ESM file not found");
-            return;
-        }
+        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var fileData = File.ReadAllBytes(esmPath);
+        var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         var scptRecords = EsmRecordParser.ScanForRecordType(fileData, isBigEndian, "SCPT");
 
@@ -346,14 +325,9 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
     [Trait("Category", "Slow")]
     public void Decompile_EsmScripts_SemanticComparison()
     {
-        var esmPath = ScriptTestHelpers.FindSamplePath(Xbox360EsmPath);
-        if (esmPath == null)
-        {
-            _output.WriteLine("SKIPPED: ESM file not found");
-            return;
-        }
+        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var fileData = File.ReadAllBytes(esmPath);
+        var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
 
         // Build FormID→EditorID map for SCRO resolution

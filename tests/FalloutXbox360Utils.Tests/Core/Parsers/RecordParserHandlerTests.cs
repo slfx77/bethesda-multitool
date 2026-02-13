@@ -13,7 +13,7 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 ///     Uses synthetic scan results to test without requiring sample files.
 ///     These tests anchor behavior before the partial-class-to-handler refactoring.
 /// </summary>
-public class RecordParserHandlerTests(ITestOutputHelper output)
+public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixture samples)
 {
     private readonly ITestOutputHelper _output = output;
 
@@ -619,20 +619,12 @@ public class RecordParserHandlerTests(ITestOutputHelper output)
 
     #region Sample-File-Based Tests (Skipped When Unavailable)
 
-    private static string SampleEsmPath => Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Sample", "ESM", "360_proto",
-            "FalloutNV.esm"));
-
     [Fact]
     public void ReconstructAll_WithSampleFile_ProducesNonEmptyResults()
     {
-        if (!File.Exists(SampleEsmPath))
-        {
-            _output.WriteLine($"Sample file not found: {SampleEsmPath} — skipping");
-            return;
-        }
+        Skip.If(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
-        var fileData = File.ReadAllBytes(SampleEsmPath);
+        var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         var (records, _) = EsmParser.EnumerateRecordsWithGrups(fileData);
 
@@ -646,7 +638,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output)
 
         var scanResult = new EsmRecordScanResult { MainRecords = mainRecords };
 
-        using var mmf = MemoryMappedFile.CreateFromFile(SampleEsmPath, FileMode.Open, null, 0,
+        using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,
             MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
 

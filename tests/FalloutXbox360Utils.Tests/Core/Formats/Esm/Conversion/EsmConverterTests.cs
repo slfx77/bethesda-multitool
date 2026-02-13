@@ -10,7 +10,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Conversion;
 ///     Tests exercise ConvertToLittleEndian with synthetic big-endian ESM data.
 ///     These tests anchor behavior before the complexity-reduction refactoring.
 /// </summary>
-public class EsmConverterTests(ITestOutputHelper output)
+public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture samples)
 {
     private readonly ITestOutputHelper _output = output;
 
@@ -250,20 +250,12 @@ public class EsmConverterTests(ITestOutputHelper output)
 
     #region Sample-File-Based Tests
 
-    private static string SampleEsmPath => Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Sample", "ESM", "360_final",
-            "FalloutNV.esm"));
-
     [Fact]
     public void ConvertToLittleEndian_RealEsm_ProducesValidOutput()
     {
-        if (!File.Exists(SampleEsmPath))
-        {
-            _output.WriteLine($"Sample file not found: {SampleEsmPath} — skipping");
-            return;
-        }
+        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var input = File.ReadAllBytes(SampleEsmPath);
+        var input = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         _output.WriteLine($"Input: {input.Length:N0} bytes");
 
         using var converter = new EsmConverter(input, verbose: false);

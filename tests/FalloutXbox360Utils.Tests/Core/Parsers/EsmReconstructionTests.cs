@@ -10,13 +10,9 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 ///     Tests validate that compressed records are correctly decompressed and parsed.
 ///     Skipped automatically when sample files are not available.
 /// </summary>
-public class EsmReconstructionTests(ITestOutputHelper output)
+public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture samples)
 {
     private readonly ITestOutputHelper _output = output;
-
-    private static string SampleEsmPath => Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Sample", "ESM", "360_proto",
-            "FalloutNV.esm"));
 
     /// <summary>
     ///     Builds an EsmRecordScanResult from the fast structured parser output.
@@ -41,19 +37,15 @@ public class EsmReconstructionTests(ITestOutputHelper output)
     [Fact]
     public void NpcReconstruction_CompressedRecord_ShouldParseAllFields()
     {
-        if (!File.Exists(SampleEsmPath))
-        {
-            _output.WriteLine($"Sample file not found: {SampleEsmPath}");
-            return;
-        }
+        Skip.If(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
-        var fileData = File.ReadAllBytes(SampleEsmPath);
+        var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
         _output.WriteLine($"File size: {fileData.Length:N0} bytes");
 
         var scanResult = BuildScanResultFromParser(fileData);
         _output.WriteLine($"Parsed {scanResult.MainRecords.Count:N0} records");
 
-        using var mmf = MemoryMappedFile.CreateFromFile(SampleEsmPath, FileMode.Open, null, 0,
+        using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,
             MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
 
@@ -76,16 +68,12 @@ public class EsmReconstructionTests(ITestOutputHelper output)
     [Fact]
     public void CreatureReconstruction_ShouldParseSubrecords()
     {
-        if (!File.Exists(SampleEsmPath))
-        {
-            _output.WriteLine($"Sample file not found: {SampleEsmPath}");
-            return;
-        }
+        Skip.If(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
-        var fileData = File.ReadAllBytes(SampleEsmPath);
+        var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
         var scanResult = BuildScanResultFromParser(fileData);
 
-        using var mmf = MemoryMappedFile.CreateFromFile(SampleEsmPath, FileMode.Open, null, 0,
+        using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,
             MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
 
