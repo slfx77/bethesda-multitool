@@ -106,7 +106,7 @@ public static class EsmRecordExporter
         sb.AppendLine(CultureInfo.InvariantCulture, $"; FormID: 0x{script.FormId:X8}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"; Type: {script.ScriptType}");
         sb.AppendLine(CultureInfo.InvariantCulture,
-            $"; Variables: {script.VariableCount}, Refs: {script.RefObjectCount}, Compiled: {script.CompiledSize:N0} bytes");
+            $"; Variables: {script.Variables.Count}, Refs: {script.RefObjectCount}, Compiled: {script.CompiledSize:N0} bytes");
         sb.AppendLine();
 
         AppendScriptSource(sb, script);

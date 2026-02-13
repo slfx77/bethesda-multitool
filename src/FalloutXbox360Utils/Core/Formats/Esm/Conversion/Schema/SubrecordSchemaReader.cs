@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 
@@ -63,18 +64,18 @@ public static class SubrecordSchemaReader
         {
             SubrecordFieldType.UInt8 => data.Length >= 1 ? data[0] : null,
             SubrecordFieldType.Int8 => data.Length >= 1 ? (sbyte)data[0] : null,
-            SubrecordFieldType.UInt16 => data.Length >= 2 ? EsmBinary.ReadUInt16(data, bigEndian) : null,
-            SubrecordFieldType.Int16 => data.Length >= 2 ? EsmBinary.ReadInt16(data, bigEndian) : null,
-            SubrecordFieldType.UInt16LittleEndian => data.Length >= 2 ? EsmBinary.ReadUInt16(data, false) : null,
-            SubrecordFieldType.UInt32 => data.Length >= 4 ? EsmBinary.ReadUInt32(data, bigEndian) : null,
-            SubrecordFieldType.Int32 => data.Length >= 4 ? EsmBinary.ReadInt32(data, bigEndian) : null,
+            SubrecordFieldType.UInt16 => data.Length >= 2 ? BinaryUtils.ReadUInt16(data, 0, bigEndian) : null,
+            SubrecordFieldType.Int16 => data.Length >= 2 ? BinaryUtils.ReadInt16(data, 0, bigEndian) : null,
+            SubrecordFieldType.UInt16LittleEndian => data.Length >= 2 ? BinaryUtils.ReadUInt16LE(data) : null,
+            SubrecordFieldType.UInt32 => data.Length >= 4 ? BinaryUtils.ReadUInt32(data, 0, bigEndian) : null,
+            SubrecordFieldType.Int32 => data.Length >= 4 ? BinaryUtils.ReadInt32(data, 0, bigEndian) : null,
             SubrecordFieldType.UInt32WordSwapped => ReadUInt32WordSwapped(data),
-            SubrecordFieldType.Float => data.Length >= 4 ? EsmBinary.ReadSingle(data, bigEndian) : null,
-            SubrecordFieldType.FormId => data.Length >= 4 ? EsmBinary.ReadUInt32(data, bigEndian) : null,
-            SubrecordFieldType.FormIdLittleEndian => data.Length >= 4 ? EsmBinary.ReadUInt32(data, false) : null,
-            SubrecordFieldType.UInt64 => data.Length >= 8 ? EsmBinary.ReadUInt64(data, bigEndian) : null,
-            SubrecordFieldType.Int64 => data.Length >= 8 ? EsmBinary.ReadInt64(data, bigEndian) : null,
-            SubrecordFieldType.Double => data.Length >= 8 ? EsmBinary.ReadDouble(data, bigEndian) : null,
+            SubrecordFieldType.Float => data.Length >= 4 ? BinaryUtils.ReadFloat(data, 0, bigEndian) : null,
+            SubrecordFieldType.FormId => data.Length >= 4 ? BinaryUtils.ReadUInt32(data, 0, bigEndian) : null,
+            SubrecordFieldType.FormIdLittleEndian => data.Length >= 4 ? BinaryUtils.ReadUInt32LE(data) : null,
+            SubrecordFieldType.UInt64 => data.Length >= 8 ? BinaryUtils.ReadUInt64(data, 0, bigEndian) : null,
+            SubrecordFieldType.Int64 => data.Length >= 8 ? BinaryUtils.ReadInt64(data, 0, bigEndian) : null,
+            SubrecordFieldType.Double => data.Length >= 8 ? BinaryUtils.ReadDouble(data, 0, bigEndian) : null,
             SubrecordFieldType.Vec3 => ReadVec3(data, bigEndian),
             SubrecordFieldType.Quaternion => ReadQuaternion(data, bigEndian),
             SubrecordFieldType.PosRot => ReadPosRot(data, bigEndian),
@@ -98,7 +99,7 @@ public static class SubrecordSchemaReader
             return null;
         }
 
-        var heightOffset = EsmBinary.ReadSingle(data, bigEndian);
+        var heightOffset = BinaryUtils.ReadFloat(data, 0, bigEndian);
 
         var deltas = new sbyte[1089];
         for (var i = 0; i < 1089 && i + 4 < data.Length; i++)
@@ -120,9 +121,9 @@ public static class SubrecordSchemaReader
             return null;
         }
 
-        var gridX = EsmBinary.ReadInt32(data, 0, bigEndian);
-        var gridY = EsmBinary.ReadInt32(data, 4, bigEndian);
-        var flags = data.Length >= 12 ? EsmBinary.ReadUInt32(data, 8, bigEndian) : 0u;
+        var gridX = BinaryUtils.ReadInt32(data, 0, bigEndian);
+        var gridY = BinaryUtils.ReadInt32(data, 4, bigEndian);
+        var flags = data.Length >= 12 ? BinaryUtils.ReadUInt32(data, 8, bigEndian) : 0u;
 
         return (gridX, gridY, flags);
     }
@@ -140,12 +141,12 @@ public static class SubrecordSchemaReader
         }
 
         return (
-            EsmBinary.ReadSingle(data, 0, bigEndian),
-            EsmBinary.ReadSingle(data, 4, bigEndian),
-            EsmBinary.ReadSingle(data, 8, bigEndian),
-            EsmBinary.ReadSingle(data, 12, bigEndian),
-            EsmBinary.ReadSingle(data, 16, bigEndian),
-            EsmBinary.ReadSingle(data, 20, bigEndian)
+            BinaryUtils.ReadFloat(data, 0, bigEndian),
+            BinaryUtils.ReadFloat(data, 4, bigEndian),
+            BinaryUtils.ReadFloat(data, 8, bigEndian),
+            BinaryUtils.ReadFloat(data, 12, bigEndian),
+            BinaryUtils.ReadFloat(data, 16, bigEndian),
+            BinaryUtils.ReadFloat(data, 20, bigEndian)
         );
     }
 
@@ -154,7 +155,7 @@ public static class SubrecordSchemaReader
     /// </summary>
     public static uint? ReadNameFormId(ReadOnlySpan<byte> data, bool bigEndian)
     {
-        return data.Length >= 4 ? EsmBinary.ReadUInt32(data, bigEndian) : null;
+        return data.Length >= 4 ? BinaryUtils.ReadUInt32(data, 0, bigEndian) : null;
     }
 
     /// <summary>
@@ -162,7 +163,7 @@ public static class SubrecordSchemaReader
     /// </summary>
     public static float? ReadXsclScale(ReadOnlySpan<byte> data, bool bigEndian)
     {
-        return data.Length >= 4 ? EsmBinary.ReadSingle(data, bigEndian) : null;
+        return data.Length >= 4 ? BinaryUtils.ReadFloat(data, 0, bigEndian) : null;
     }
 
     #region Private Readers
@@ -188,9 +189,9 @@ public static class SubrecordSchemaReader
         }
 
         return (
-            EsmBinary.ReadSingle(data, 0, bigEndian),
-            EsmBinary.ReadSingle(data, 4, bigEndian),
-            EsmBinary.ReadSingle(data, 8, bigEndian)
+            BinaryUtils.ReadFloat(data, 0, bigEndian),
+            BinaryUtils.ReadFloat(data, 4, bigEndian),
+            BinaryUtils.ReadFloat(data, 8, bigEndian)
         );
     }
 
@@ -202,10 +203,10 @@ public static class SubrecordSchemaReader
         }
 
         return (
-            EsmBinary.ReadSingle(data, 0, bigEndian),
-            EsmBinary.ReadSingle(data, 4, bigEndian),
-            EsmBinary.ReadSingle(data, 8, bigEndian),
-            EsmBinary.ReadSingle(data, 12, bigEndian)
+            BinaryUtils.ReadFloat(data, 0, bigEndian),
+            BinaryUtils.ReadFloat(data, 4, bigEndian),
+            BinaryUtils.ReadFloat(data, 8, bigEndian),
+            BinaryUtils.ReadFloat(data, 12, bigEndian)
         );
     }
 

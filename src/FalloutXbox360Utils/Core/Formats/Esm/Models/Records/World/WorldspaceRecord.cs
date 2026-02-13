@@ -29,6 +29,39 @@ public record WorldspaceRecord
     /// <summary>Default water height from DNAM subrecord (fallback for cells with sentinel XCLW).</summary>
     public float? DefaultWaterHeight { get; init; }
 
+    /// <summary>Map usable width from MNAM subrecord (WORLD_MAP_DATA).</summary>
+    public int? MapUsableWidth { get; init; }
+
+    /// <summary>Map usable height from MNAM subrecord (WORLD_MAP_DATA).</summary>
+    public int? MapUsableHeight { get; init; }
+
+    /// <summary>Map NW corner cell X from MNAM subrecord.</summary>
+    public short? MapNWCellX { get; init; }
+
+    /// <summary>Map NW corner cell Y from MNAM subrecord.</summary>
+    public short? MapNWCellY { get; init; }
+
+    /// <summary>Map SE corner cell X from MNAM subrecord.</summary>
+    public short? MapSECellX { get; init; }
+
+    /// <summary>Map SE corner cell Y from MNAM subrecord.</summary>
+    public short? MapSECellY { get; init; }
+
+    /// <summary>World bounds minimum X from NAM0 subrecord.</summary>
+    public float? BoundsMinX { get; init; }
+
+    /// <summary>World bounds minimum Y from NAM0 subrecord.</summary>
+    public float? BoundsMinY { get; init; }
+
+    /// <summary>World bounds maximum X from NAM9 subrecord.</summary>
+    public float? BoundsMaxX { get; init; }
+
+    /// <summary>World bounds maximum Y from NAM9 subrecord.</summary>
+    public float? BoundsMaxY { get; init; }
+
+    /// <summary>Encounter zone FormID (XEZN subrecord).</summary>
+    public uint? EncounterZoneFormId { get; init; }
+
     /// <summary>Cells belonging to this worldspace.</summary>
     public List<CellRecord> Cells { get; init; } = [];
 

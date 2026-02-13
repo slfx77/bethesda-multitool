@@ -62,8 +62,14 @@ public record EsmRecordScanResult
     // Runtime Editor ID entries with FormID associations (from hash table following)
     public List<RuntimeEditorIdEntry> RuntimeEditorIds { get; init; } = [];
 
+    // Runtime LAND form entries from pAllForms hash table (LAND records lack editor IDs)
+    public List<RuntimeEditorIdEntry> RuntimeLandFormEntries { get; init; } = [];
+
     /// <summary>Cell FormID → parent Worldspace FormID mapping (from ESM GRUP hierarchy).</summary>
     public Dictionary<uint, uint> CellToWorldspaceMap { get; init; } = [];
+
+    /// <summary>LAND FormID → parent Worldspace FormID mapping (from ESM GRUP hierarchy).</summary>
+    public Dictionary<uint, uint> LandToWorldspaceMap { get; init; } = [];
 
     /// <summary>Cell FormID → child REFR/ACHR/ACRE FormIDs (from ESM GRUP hierarchy type 8/9/10).</summary>
     public Dictionary<uint, List<uint>> CellToRefrMap { get; init; } = [];

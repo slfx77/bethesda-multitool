@@ -57,6 +57,9 @@ public record CellRecord
     /// <summary>Associated LAND record heightmap (if found).</summary>
     public LandHeightmap? Heightmap { get; init; }
 
+    /// <summary>Runtime terrain mesh extracted from LoadedLandData heap pointers (if available).</summary>
+    public RuntimeTerrainMesh? RuntimeTerrainMesh { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

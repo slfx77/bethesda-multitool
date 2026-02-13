@@ -89,14 +89,27 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         Logger.Instance.Debug($"  [Semantic] Cell reconstruction: {cellRecords.Count} cells, " +
                               $"{refrRecords.Count} REFRs, GRUP mapping: {hasGrupMapping} ({cellToRefrMap.Count} entries)");
 
-        // Pre-build heightmap lookup by cell grid coordinates for O(1) access
-        // (avoids O(N) linear scan per cell over all LAND records)
-        var heightmapByGrid = new Dictionary<(int, int), LandHeightmap>();
+        // Pre-build heightmap lookup by cell grid coordinates for O(1) access.
+        // Key includes worldspace FormID to prevent cross-worldspace pollution
+        // (different worldspaces can share the same cell grid coordinates).
+        var landWorldMap = _context.ScanResult.LandToWorldspaceMap;
+        var heightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
+        var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
         foreach (var land in _context.ScanResult.LandRecords)
         {
-            if (land.BestCellX.HasValue && land.BestCellY.HasValue && land.Heightmap != null)
+            if (land.BestCellX.HasValue && land.BestCellY.HasValue)
             {
-                heightmapByGrid.TryAdd((land.BestCellX.Value, land.BestCellY.Value), land.Heightmap);
+                landWorldMap.TryGetValue(land.Header.FormId, out var ws);
+                var gridKey = (ws, land.BestCellX.Value, land.BestCellY.Value);
+                if (land.Heightmap != null)
+                {
+                    heightmapByGrid.TryAdd(gridKey, land.Heightmap);
+                }
+
+                if (land.RuntimeTerrainMesh != null)
+                {
+                    terrainMeshByGrid.TryAdd(gridKey, land.RuntimeTerrainMesh);
+                }
             }
         }
 
@@ -124,14 +137,15 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             {
                 foreach (var record in cellRecords)
                 {
+                    cellWorldMap.TryGetValue(record.FormId, out var cellWs);
                     var cell = ReconstructCellFromAccessor(record, refrByFormId,
                         hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
-                        heightmapByGrid, buffer);
+                        heightmapByGrid, terrainMeshByGrid, cellWs, buffer);
                     if (cell != null)
                     {
-                        if (cellWorldMap.TryGetValue(cell.FormId, out var worldFormId))
+                        if (cellWs > 0)
                         {
-                            cell = cell with { WorldspaceFormId = worldFormId };
+                            cell = cell with { WorldspaceFormId = cellWs };
                         }
 
                         cells.Add(cell);
@@ -165,10 +179,13 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             }
         }
 
-        // For each cell, find destination cells via door teleports
+        // For each cell, find destination cells via door teleports and annotate doors
         for (var i = 0; i < cells.Count; i++)
         {
             var linkedCells = new HashSet<uint>();
+            var updatedObjects = new List<PlacedReference>();
+            var anyChanged = false;
+
 #pragma warning disable S3267 // Loop body has conditional + TryGetValue that makes LINQ impractical
             foreach (var obj in cells[i].PlacedObjects)
 #pragma warning restore S3267
@@ -178,12 +195,22 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                     destCellFormId != cells[i].FormId) // Exclude self-links
                 {
                     linkedCells.Add(destCellFormId);
+                    updatedObjects.Add(obj with { DestinationCellFormId = destCellFormId });
+                    anyChanged = true;
+                }
+                else
+                {
+                    updatedObjects.Add(obj);
                 }
             }
 
-            if (linkedCells.Count > 0)
+            if (anyChanged || linkedCells.Count > 0)
             {
-                cells[i] = cells[i] with { LinkedCellFormIds = linkedCells.ToList() };
+                cells[i] = cells[i] with
+                {
+                    PlacedObjects = anyChanged ? updatedObjects : cells[i].PlacedObjects,
+                    LinkedCellFormIds = linkedCells.Count > 0 ? linkedCells.ToList() : cells[i].LinkedCellFormIds
+                };
             }
         }
     }
@@ -248,12 +275,12 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         {
             // DMP fallback with binary search: O(log N + K) instead of O(N)
             var startOffset = record.Offset;
-            var endOffset = record.Offset + 100000;
+            var endOffset = record.Offset + 500_000; // CELL GRUPs can span hundreds of KB
             var startIdx = Array.BinarySearch(refrOffsetIndex, startOffset);
             if (startIdx < 0) startIdx = ~startIdx; // First element >= startOffset
 
             var results = new List<ExtractedRefrRecord>();
-            for (var i = startIdx; i < refrSortedByOffset.Length && results.Count < 100; i++)
+            for (var i = startIdx; i < refrSortedByOffset.Length; i++)
             {
                 var refr = refrSortedByOffset[i];
                 if (refr.Header.Offset >= endOffset) break;
@@ -261,6 +288,12 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 {
                     results.Add(refr);
                 }
+            }
+
+            if (results.Count > 500)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Cell 0x{record.FormId:X8}: DMP proximity found {results.Count} REFRs (may include neighbors)");
             }
 
             sourceRefs = results;
@@ -300,7 +333,9 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
         ExtractedRefrRecord[]? refrSortedByOffset,
-        Dictionary<(int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid,
+        uint cellWorldspace,
         byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
@@ -372,11 +407,23 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
             refrOffsetIndex, refrSortedByOffset);
 
-        // Find associated heightmap via O(1) dictionary lookup
+        // Find associated heightmap and terrain mesh via O(1) dictionary lookups.
+        // Key includes worldspace to prevent cross-worldspace pollution.
+        // Falls back to worldspace 0 for DMP mode (no GRUP hierarchy).
         LandHeightmap? heightmap = null;
+        RuntimeTerrainMesh? terrainMesh = null;
         if (gridX.HasValue && gridY.HasValue)
         {
-            heightmapByGrid.TryGetValue((gridX.Value, gridY.Value), out heightmap);
+            var gridKey = (cellWorldspace, gridX.Value, gridY.Value);
+            if (!heightmapByGrid.TryGetValue(gridKey, out heightmap) && cellWorldspace != 0)
+            {
+                heightmapByGrid.TryGetValue((0u, gridX.Value, gridY.Value), out heightmap);
+            }
+
+            if (!terrainMeshByGrid.TryGetValue(gridKey, out terrainMesh) && cellWorldspace != 0)
+            {
+                terrainMeshByGrid.TryGetValue((0u, gridX.Value, gridY.Value), out terrainMesh);
+            }
         }
 
         return new CellRecord
@@ -394,6 +441,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             ImageSpaceFormId = imageSpaceFormId,
             PlacedObjects = cellRefs,
             Heightmap = heightmap,
+            RuntimeTerrainMesh = terrainMesh,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -487,6 +535,17 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         uint? water = null;
         float? defaultLandHeight = null;
         float? defaultWaterHeight = null;
+        int? mapUsableWidth = null;
+        int? mapUsableHeight = null;
+        short? mapNWCellX = null;
+        short? mapNWCellY = null;
+        short? mapSECellX = null;
+        short? mapSECellY = null;
+        float? boundsMinX = null;
+        float? boundsMinY = null;
+        float? boundsMaxX = null;
+        float? boundsMaxY = null;
+        uint? encounterZone = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -517,6 +576,45 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                         ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
                     break;
+                case "MNAM" when sub.DataLength >= 16:
+                    mapUsableWidth = (int)(record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData));
+                    mapUsableHeight = (int)(record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]));
+                    mapNWCellX = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt16BigEndian(subData[8..])
+                        : BinaryPrimitives.ReadInt16LittleEndian(subData[8..]);
+                    mapNWCellY = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt16BigEndian(subData[10..])
+                        : BinaryPrimitives.ReadInt16LittleEndian(subData[10..]);
+                    mapSECellX = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt16BigEndian(subData[12..])
+                        : BinaryPrimitives.ReadInt16LittleEndian(subData[12..]);
+                    mapSECellY = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt16BigEndian(subData[14..])
+                        : BinaryPrimitives.ReadInt16LittleEndian(subData[14..]);
+                    break;
+                case "NAM0" when sub.DataLength >= 8:
+                    boundsMinX = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    boundsMinY = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
+                    break;
+                case "NAM9" when sub.DataLength >= 8:
+                    boundsMaxX = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData)
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData);
+                    boundsMaxY = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[4..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[4..]);
+                    break;
+                case "XEZN" when sub.DataLength == 4:
+                    encounterZone = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
             }
         }
 
@@ -530,6 +628,17 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             WaterFormId = water,
             DefaultLandHeight = defaultLandHeight,
             DefaultWaterHeight = defaultWaterHeight,
+            MapUsableWidth = mapUsableWidth,
+            MapUsableHeight = mapUsableHeight,
+            MapNWCellX = mapNWCellX,
+            MapNWCellY = mapNWCellY,
+            MapSECellX = mapSECellX,
+            MapSECellY = mapSECellY,
+            BoundsMinX = boundsMinX,
+            BoundsMinY = boundsMinY,
+            BoundsMaxX = boundsMaxX,
+            BoundsMaxY = boundsMaxY,
+            EncounterZoneFormId = encounterZone,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -545,6 +654,41 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    #endregion
+
+    #region Enrichment
+
+    /// <summary>
+    ///     Enrich placed references in cells with base object bounds and model paths.
+    ///     Joins PlacedReference.BaseFormId to pre-built indexes from reconstructed base objects.
+    /// </summary>
+    internal static void EnrichPlacedReferences(
+        List<CellRecord> cells,
+        Dictionary<uint, ObjectBounds> boundsIndex,
+        Dictionary<uint, string> modelIndex)
+    {
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var cell = cells[i];
+            if (!cell.PlacedObjects.Any(obj =>
+                    boundsIndex.ContainsKey(obj.BaseFormId) || modelIndex.ContainsKey(obj.BaseFormId)))
+            {
+                continue;
+            }
+
+            var enriched = cell.PlacedObjects.Select(obj =>
+            {
+                boundsIndex.TryGetValue(obj.BaseFormId, out var bounds);
+                modelIndex.TryGetValue(obj.BaseFormId, out var modelPath);
+                return bounds != null || modelPath != null
+                    ? obj with { Bounds = bounds ?? obj.Bounds, ModelPath = modelPath ?? obj.ModelPath }
+                    : obj;
+            }).ToList();
+
+            cells[i] = cell with { PlacedObjects = enriched };
+        }
     }
 
     #endregion

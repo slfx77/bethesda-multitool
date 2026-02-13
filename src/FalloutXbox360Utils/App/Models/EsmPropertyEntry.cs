@@ -30,4 +30,7 @@ public sealed class EsmPropertyEntry
 
     /// <summary>Raw FormID for Col4 (sub-item FormID column).</summary>
     public uint? Col4FormId { get; init; }
+
+    /// <summary>Cell FormID for world map navigation (linked cells, door destinations).</summary>
+    public uint? CellNavigationFormId { get; init; }
 }

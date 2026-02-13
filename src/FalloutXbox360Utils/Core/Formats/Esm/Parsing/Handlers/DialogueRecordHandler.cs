@@ -122,6 +122,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             {
                 case "EDID":
                     editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                        _context.FormIdToEditorId[record.FormId] = editorId;
                     break;
                 case "QSTI" when sub.DataLength == 4:
                     questFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -436,8 +438,12 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                         switch (sub.Signature)
                         {
                             case "EDID":
-                                // Handled via GetEditorId below
+                            {
+                                var edid = EsmStringUtils.ReadNullTermString(subData);
+                                if (!string.IsNullOrEmpty(edid))
+                                    _context.FormIdToEditorId[record.FormId] = edid;
                                 break;
+                            }
                             case "FULL":
                                 fullName = EsmStringUtils.ReadNullTermString(subData);
                                 break;

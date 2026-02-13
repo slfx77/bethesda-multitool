@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils;
@@ -11,8 +12,7 @@ internal sealed class WorldViewData
     public required List<CellRecord> InteriorCells { get; init; }
     public required Dictionary<uint, ObjectBounds> BoundsIndex { get; init; }
     public required Dictionary<uint, PlacedObjectCategory> CategoryIndex { get; init; }
-    public required Dictionary<uint, string> FormIdToEditorId { get; init; }
-    public required Dictionary<uint, string> FormIdToDisplayName { get; init; }
+    public required FormIdResolver Resolver { get; init; }
     public required List<PlacedReference> MapMarkers { get; init; }
 
     /// <summary>Map markers grouped by worldspace FormID for per-worldspace filtering.</summary>
@@ -20,6 +20,12 @@ internal sealed class WorldViewData
 
     /// <summary>All cells (exterior + interior) for cell browser mode.</summary>
     public required List<CellRecord> AllCells { get; init; }
+
+    /// <summary>Lookup from FormID to CellRecord for navigation.</summary>
+    public required Dictionary<uint, CellRecord> CellByFormId { get; init; }
+
+    /// <summary>Reverse lookup: placed reference FormID → parent CellRecord.</summary>
+    public required Dictionary<uint, CellRecord> RefrToCellIndex { get; init; }
 
     /// <summary>Exterior cells with grid coordinates that aren't linked to any worldspace (common in DMP files).</summary>
     public required List<CellRecord> UnlinkedExteriorCells { get; init; }

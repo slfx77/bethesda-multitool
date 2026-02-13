@@ -30,6 +30,9 @@ public record ExtractedLandRecord
     /// <summary>Base height from runtime LoadedLandData.</summary>
     public float? RuntimeBaseHeight { get; init; }
 
+    /// <summary>Terrain mesh extracted from runtime heap pointers.</summary>
+    public RuntimeTerrainMesh? RuntimeTerrainMesh { get; init; }
+
     /// <summary>
     ///     Get the best available cell X coordinate, preferring runtime data.
     /// </summary>

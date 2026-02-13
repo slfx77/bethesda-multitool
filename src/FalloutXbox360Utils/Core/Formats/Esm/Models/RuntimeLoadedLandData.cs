@@ -18,9 +18,18 @@ public record RuntimeLoadedLandData
     /// <summary>Base elevation for the cell.</summary>
     public float BaseHeight { get; init; }
 
+    /// <summary>Minimum terrain height in this cell (from HeightExtents at offset +24).</summary>
+    public float? MinHeight { get; init; }
+
+    /// <summary>Maximum terrain height in this cell (from HeightExtents at offset +28).</summary>
+    public float? MaxHeight { get; init; }
+
     /// <summary>File offset of the TESObjectLAND runtime struct.</summary>
     public long LandOffset { get; init; }
 
     /// <summary>File offset of the LoadedLandData struct.</summary>
     public long LoadedDataOffset { get; init; }
+
+    /// <summary>Terrain mesh extracted from heap pointers (ppVertices, ppNormals, ppColorsA).</summary>
+    public RuntimeTerrainMesh? TerrainMesh { get; init; }
 }

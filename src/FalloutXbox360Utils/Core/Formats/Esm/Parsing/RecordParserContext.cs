@@ -33,6 +33,14 @@ public sealed class RecordParserContext
     /// </summary>
     public Dictionary<uint, string> FormIdToFullName { get; } = new();
 
+    private Dictionary<uint, uint>? _refToBase;
+
+    /// <summary>
+    ///     Pre-built Ref→Base mapping from ScanResult.RefrRecords.
+    ///     Cached for reuse by both ScriptRecordHandler (during reconstruction) and CreateResolver().
+    /// </summary>
+    public Dictionary<uint, uint> RefToBase => _refToBase ??= BuildRefToBase();
+
     public RecordParserContext(
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? formIdCorrelations = null,
@@ -177,15 +185,7 @@ public sealed class RecordParserContext
             return editorId;
         }
 
-        foreach (var entry in ScanResult.RuntimeEditorIds)
-        {
-            if (entry.FormId == formId)
-            {
-                return entry.DisplayName ?? entry.EditorId;
-            }
-        }
-
-        return null;
+        return FormIdToFullName.GetValueOrDefault(formId);
     }
 
     /// <summary>
@@ -256,6 +256,12 @@ public sealed class RecordParserContext
         return map;
     }
 
+    /// <summary>Creates a FormIdResolver from the current context's dictionaries.</summary>
+    public Export.FormIdResolver CreateResolver()
+    {
+        return new Export.FormIdResolver(FormIdToEditorId, BuildFormIdToDisplayNameMap(), RefToBase);
+    }
+
     #endregion
 
     #region Static Helpers
@@ -306,6 +312,20 @@ public sealed class RecordParserContext
     #endregion
 
     #region Private
+
+    private Dictionary<uint, uint> BuildRefToBase()
+    {
+        var map = new Dictionary<uint, uint>();
+        foreach (var refr in ScanResult.RefrRecords)
+        {
+            if (refr.Header.FormId != 0 && refr.BaseFormId != 0)
+            {
+                map.TryAdd(refr.Header.FormId, refr.BaseFormId);
+            }
+        }
+
+        return map;
+    }
 
     private static Dictionary<uint, string> BuildFormIdToEditorIdMap(EsmRecordScanResult scanResult)
     {

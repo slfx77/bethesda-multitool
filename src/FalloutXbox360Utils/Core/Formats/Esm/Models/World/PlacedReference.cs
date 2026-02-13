@@ -7,6 +7,12 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 /// </summary>
 public record PlacedReference
 {
+    /// <summary>Object bounds from the base object's OBND subrecord (if resolved).</summary>
+    public ObjectBounds? Bounds { get; init; }
+
+    /// <summary>Model path from the base object's MODL subrecord (if resolved).</summary>
+    public string? ModelPath { get; init; }
+
     /// <summary>FormID of the placed reference.</summary>
     public uint FormId { get; init; }
 
@@ -48,6 +54,9 @@ public record PlacedReference
 
     /// <summary>Destination door FormID from XTEL (for door references).</summary>
     public uint? DestinationDoorFormId { get; init; }
+
+    /// <summary>Destination cell FormID resolved from door teleport (XTEL → cell lookup).</summary>
+    public uint? DestinationCellFormId { get; init; }
 
     /// <summary>Whether this is a map marker (has XMRK subrecord).</summary>
     public bool IsMapMarker { get; init; }

@@ -101,13 +101,19 @@ public sealed class RecordParser
         // Enrich LAND records with runtime cell coordinates for heightmap stitching
         if (_context.RuntimeReader != null)
         {
-            var runtimeLandData = _context.RuntimeReader.ReadAllRuntimeLandData(
-                _context.ScanResult.RuntimeEditorIds);
+            // Use pAllForms entries (LAND records lack editor IDs, so they're absent from RuntimeEditorIds)
+            var landEntries = _context.ScanResult.RuntimeLandFormEntries.Count > 0
+                ? _context.ScanResult.RuntimeLandFormEntries
+                : _context.ScanResult.RuntimeEditorIds; // Fallback for compatibility
+            var runtimeLandData = _context.RuntimeReader.ReadAllRuntimeLandData(landEntries);
             if (runtimeLandData.Count > 0)
             {
+                var existingCount = _context.ScanResult.LandRecords.Count;
                 EsmWorldExtractor.EnrichLandRecordsWithRuntimeData(_context.ScanResult, runtimeLandData);
+                var addedCount = _context.ScanResult.LandRecords.Count - existingCount;
                 Logger.Instance.Debug(
-                    $"  [Semantic] Enriched {runtimeLandData.Count} LAND records with runtime cell coordinates");
+                    $"  [Semantic] Enriched LAND records: {runtimeLandData.Count} with terrain data " +
+                    $"({existingCount} existing + {addedCount} runtime-only = {_context.ScanResult.LandRecords.Count} total)");
             }
         }
 
@@ -170,9 +176,106 @@ public sealed class RecordParser
         progress?.Report((45, "Building dialogue trees..."));
         phaseSw.Restart();
         var dialogueTree = _dialogue.BuildDialogueTrees(dialogues, dialogTopics, quests);
+
+        // Backfill: quests discovered from dialogue QSTI references but not from QUST records.
+        // For some DMPs, runtime quest detection finds nothing, but dialogue INFOs still reference
+        // quest FormIDs via QSTI subrecords. Create stub QuestRecords so the Data Browser shows them.
+        var existingQuestIds = new HashSet<uint>(quests.Select(q => q.FormId));
+        foreach (var (questFormId, questNode) in dialogueTree.QuestTrees)
+        {
+            if (questFormId != 0 && !existingQuestIds.Contains(questFormId))
+            {
+                quests.Add(new QuestRecord
+                {
+                    FormId = questFormId,
+                    EditorId = _context.GetEditorId(questFormId),
+                    FullName = _context.FormIdToFullName.GetValueOrDefault(questFormId)
+                               ?? questNode.QuestName,
+                    Offset = 0,
+                    IsBigEndian = true
+                });
+            }
+        }
+
         var notes = _text.ReconstructNotes();
         var books = _text.ReconstructBooks();
         var terminals = _text.ReconstructTerminals();
+
+        // Reconstruct ACTI/DOOR/FURN early so their Script FormIDs are available
+        // for cross-reference chain building below.
+        var activators = _misc.ReconstructActivators();
+        var doors = _misc.ReconstructDoors();
+        var furniture = _misc.ReconstructFurniture();
+
+        // Build runtime object→script mappings for DMP cross-reference chains.
+        // In memory dumps, ESM records are freed at load time so the ESM-based
+        // BuildCrossReferenceChains finds nothing. Runtime struct readers extract
+        // Script FormIDs from C++ object pointers (NPC_, CREA, CONT, ACTI, DOOR, FURN) instead.
+        if (_context.RuntimeReader != null)
+        {
+            var runtimeObjectToScript = new Dictionary<uint, uint>();
+            foreach (var npc in npcs)
+            {
+                if (npc.Script is > 0)
+                {
+                    runtimeObjectToScript.TryAdd(npc.FormId, npc.Script.Value);
+                }
+            }
+
+            foreach (var creature in creatures)
+            {
+                if (creature.Script is > 0)
+                {
+                    runtimeObjectToScript.TryAdd(creature.FormId, creature.Script.Value);
+                }
+            }
+
+            foreach (var container in containers)
+            {
+                if (container.Script is > 0)
+                {
+                    runtimeObjectToScript.TryAdd(container.FormId, container.Script.Value);
+                }
+            }
+
+            foreach (var activator in activators)
+            {
+                if (activator.Script is > 0)
+                {
+                    runtimeObjectToScript.TryAdd(activator.FormId, activator.Script.Value);
+                }
+            }
+
+            foreach (var door in doors)
+            {
+                if (door.Script is > 0)
+                {
+                    runtimeObjectToScript.TryAdd(door.FormId, door.Script.Value);
+                }
+            }
+
+            foreach (var furn in furniture)
+            {
+                if (furn.Script is > 0)
+                {
+                    runtimeObjectToScript.TryAdd(furn.FormId, furn.Script.Value);
+                }
+            }
+
+            if (runtimeObjectToScript.Count > 0)
+            {
+                _scripts.SetRuntimeObjectScriptMappings(runtimeObjectToScript);
+                Logger.Instance.Debug(
+                    $"  [Semantic] Runtime obj→script: {runtimeObjectToScript.Count} mappings " +
+                    $"(NPCs: {npcs.Count(n => n.Script is > 0)}, " +
+                    $"Creatures: {creatures.Count(c => c.Script is > 0)}, " +
+                    $"Containers: {containers.Count(c => c.Script is > 0)}, " +
+                    $"Activators: {activators.Count(a => a.Script is > 0)}, " +
+                    $"Doors: {doors.Count(d => d.Script is > 0)}, " +
+                    $"Furniture: {furniture.Count(f => f.Script is > 0)})");
+            }
+        }
+
         var scripts = _scripts.ReconstructScripts();
         Logger.Instance.Debug(
             $"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
@@ -212,12 +315,36 @@ public sealed class RecordParser
         var messages = _text.ReconstructMessages();
         var classes = _misc.ReconstructClasses();
         var formLists = _misc.ReconstructFormLists();
-        var activators = _misc.ReconstructActivators();
+        // activators, doors, furniture already reconstructed above (before script cross-ref chains)
         var lights = _misc.ReconstructLights();
-        var doors = _misc.ReconstructDoors();
         var statics = _misc.ReconstructStatics();
-        var furniture = _misc.ReconstructFurniture();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
+
+        // Enrich placed references with base object bounds and model paths
+        phaseSw.Restart();
+        var boundsIndex = new Dictionary<uint, ObjectBounds>();
+        var modelIndex = new Dictionary<uint, string>();
+        AddToIndexes(statics, s => s.FormId, s => s.Bounds, s => s.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(activators, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(doors, d => d.FormId, d => d.Bounds, d => d.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(lights, l => l.FormId, l => l.Bounds, l => l.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(furniture, f => f.FormId, f => f.Bounds, f => f.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(weapons, w => w.FormId, w => w.Bounds, w => w.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(armor, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(ammo, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(consumables, c => c.FormId, c => c.Bounds, c => c.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(miscItems, m => m.FormId, m => m.Bounds, m => m.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(books, b => b.FormId, b => b.Bounds, b => b.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(containers, c => c.FormId, c => (ObjectBounds?)null, c => c.ModelPath, boundsIndex, modelIndex);
+
+        WorldRecordHandler.EnrichPlacedReferences(cells, boundsIndex, modelIndex);
+        foreach (var ws in worldspaces)
+        {
+            WorldRecordHandler.EnrichPlacedReferences(ws.Cells, boundsIndex, modelIndex);
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] Enrichment: {phaseSw.Elapsed} (Bounds: {boundsIndex.Count}, Models: {modelIndex.Count})");
 
         progress?.Report((95, "Building lookup tables..."));
 
@@ -281,6 +408,7 @@ public sealed class RecordParser
             // AI
             Packages = packages,
 
+            ModelPathIndex = modelIndex,
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),
             FormIdToDisplayName = _context.BuildFormIdToDisplayNameMap(),
             TotalRecordsProcessed = _context.ScanResult.MainRecords.Count,
@@ -372,6 +500,40 @@ public sealed class RecordParser
 
     // AI
     public List<PackageRecord> ReconstructPackages() => _ai.ReconstructPackages();
+
+    #endregion
+
+    #region Private Helpers
+
+    private static void AddToIndexes<T>(
+        List<T> records,
+        Func<T, uint> formIdSelector,
+        Func<T, ObjectBounds?> boundsSelector,
+        Func<T, string?> modelSelector,
+        Dictionary<uint, ObjectBounds> boundsIndex,
+        Dictionary<uint, string> modelIndex)
+    {
+        foreach (var record in records)
+        {
+            var formId = formIdSelector(record);
+            if (formId == 0)
+            {
+                continue;
+            }
+
+            var bounds = boundsSelector(record);
+            if (bounds != null)
+            {
+                boundsIndex.TryAdd(formId, bounds);
+            }
+
+            var model = modelSelector(record);
+            if (model != null)
+            {
+                modelIndex.TryAdd(formId, model);
+            }
+        }
+    }
 
     #endregion
 }

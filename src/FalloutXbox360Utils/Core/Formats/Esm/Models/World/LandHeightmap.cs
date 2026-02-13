@@ -16,11 +16,22 @@ public record LandHeightmap
     public long Offset { get; init; }
 
     /// <summary>
+    ///     Optional exact height grid (from runtime mesh data).
+    ///     When set, CalculateHeights() returns this directly, bypassing lossy delta decoding.
+    /// </summary>
+    public float[,]? ExactHeights { get; init; }
+
+    /// <summary>
     ///     Calculate actual heights for visualization.
     ///     Heights are cumulative: each row starts from the previous row's end value.
     /// </summary>
     public float[,] CalculateHeights()
     {
+        if (ExactHeights != null)
+        {
+            return ExactHeights;
+        }
+
         var heights = new float[33, 33];
         var rowStart = HeightOffset * 8;
 

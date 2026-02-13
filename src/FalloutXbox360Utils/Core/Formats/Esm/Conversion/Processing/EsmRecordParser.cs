@@ -1,4 +1,5 @@
 using System.Text;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 
@@ -186,12 +187,12 @@ internal static class EsmRecordParser
                     (char)recordData[offset + 0]
                 ])
                 : Encoding.ASCII.GetString(recordData, offset, 4);
-            var size = EsmBinary.ReadUInt16(recordData, offset + 4, bigEndian);
+            var size = BinaryUtils.ReadUInt16(recordData, offset + 4, bigEndian);
 
             // Handle Bethesda extended-size subrecords (XXXX)
             if (sig == "XXXX" && size == 4 && offset + 10 <= recordData.Length)
             {
-                pendingExtendedSize = EsmBinary.ReadUInt32(recordData, offset + 6, bigEndian);
+                pendingExtendedSize = BinaryUtils.ReadUInt32(recordData, offset + 6, bigEndian);
                 offset += 10;
                 continue;
             }

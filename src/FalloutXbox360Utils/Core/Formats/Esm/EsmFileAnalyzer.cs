@@ -96,16 +96,18 @@ public static class EsmFileAnalyzer
         });
 
         var cellToWorldspace = BuildCellToWorldspaceMap(parsedRecords, grupHeaders);
+        var landToWorldspace = BuildLandToWorldspaceMap(parsedRecords, grupHeaders);
         var cellToRefrMap = BuildCellToRefrMap(parsedRecords, grupHeaders);
         var topicToInfoMap = BuildTopicToInfoMap(parsedRecords, grupHeaders);
         Logger.Instance.Info($"[ESM Analysis] Cell\u2192Worldspace map: {cellToWorldspace.Count} cells mapped " +
                              $"(from {grupHeaders.Count(g => g.GroupType == 1)} World Children GRUPs)");
+        Logger.Instance.Info($"[ESM Analysis] LAND\u2192Worldspace map: {landToWorldspace.Count} LAND records mapped");
         Logger.Instance.Info($"[ESM Analysis] Cell\u2192REFR map: {cellToRefrMap.Count} cells with " +
                              $"{cellToRefrMap.Values.Sum(v => v.Count)} placed references");
         Logger.Instance.Info($"[ESM Analysis] Topic\u2192INFO map: {topicToInfoMap.Count} topics with " +
                              $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
         result.EsmRecords =
-            ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, cellToRefrMap, topicToInfoMap);
+            ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap);
         ExtractRefrRecordsFromParsed(result.EsmRecords, parsedRecords, isBigEndian);
 
         // Extract LAND records for heightmap rendering in World tab
@@ -168,6 +170,7 @@ public static class EsmFileAnalyzer
         List<ParsedMainRecord> records,
         bool bigEndian,
         Dictionary<uint, uint>? cellToWorldspaceMap = null,
+        Dictionary<uint, uint>? landToWorldspaceMap = null,
         Dictionary<uint, List<uint>>? cellToRefrMap = null,
         Dictionary<uint, List<uint>>? topicToInfoMap = null)
     {
@@ -263,6 +266,7 @@ public static class EsmFileAnalyzer
             Conditions = conditions,
             CellGrids = cellGrids,
             CellToWorldspaceMap = cellToWorldspaceMap ?? [],
+            LandToWorldspaceMap = landToWorldspaceMap ?? [],
             CellToRefrMap = cellToRefrMap ?? [],
             TopicToInfoMap = topicToInfoMap ?? []
         };
@@ -303,6 +307,46 @@ public static class EsmFileAnalyzer
                     // (which reverses them for big-endian files), so always read as LE
                     var worldFormId = BinaryPrimitives.ReadUInt32LittleEndian(group.Label);
                     map[cell.Header.FormId] = worldFormId;
+                    break;
+                }
+            }
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    ///     Builds a mapping from LAND FormID to parent Worldspace FormID
+    ///     by checking which LAND records fall within World Children GRUPs (type 1).
+    /// </summary>
+    private static Dictionary<uint, uint> BuildLandToWorldspaceMap(
+        List<ParsedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
+    {
+        var map = new Dictionary<uint, uint>();
+
+        var worldChildrenGroups = grupHeaders
+            .Where(g => g.GroupType == 1)
+            .ToList();
+
+        if (worldChildrenGroups.Count == 0)
+        {
+            return map;
+        }
+
+        var landRecords = records
+            .Where(r => r.Header.Signature == "LAND")
+            .OrderBy(r => r.Offset)
+            .ToList();
+
+        foreach (var land in landRecords)
+        {
+            foreach (var group in worldChildrenGroups)
+            {
+                var groupEnd = group.Offset + group.GroupSize;
+                if (land.Offset > group.Offset && land.Offset < groupEnd)
+                {
+                    var worldFormId = BinaryPrimitives.ReadUInt32LittleEndian(group.Label);
+                    map[land.Header.FormId] = worldFormId;
                     break;
                 }
             }

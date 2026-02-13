@@ -128,20 +128,20 @@ public static class EsmHelpers
         if (offset + 16 > data.Length)
             return "GRUP (truncated)";
 
-        var groupType = EsmBinary.ReadInt32(data, offset + 12, bigEndian);
+        var groupType = BinaryUtils.ReadInt32(data, offset + 12, bigEndian);
         var labelBytes = data.AsSpan(offset + 8, 4);
 
         return groupType switch
         {
             0 => $"GRUP Top '{Encoding.ASCII.GetString(labelBytes)}'", // Top-level (record type)
-            1 => $"GRUP World {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // World children
-            2 or 3 => $"GRUP Block {EsmBinary.ReadInt32(labelBytes, bigEndian)}", // Interior/Exterior cell block
-            4 or 5 => $"GRUP Sub-Block {EsmBinary.ReadInt32(labelBytes, bigEndian)}", // Interior/Exterior cell sub-block
-            6 => $"GRUP Cell {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Cell children
-            7 => $"GRUP Topic {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Topic children
-            8 => $"GRUP Persistent {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Cell persistent
-            9 => $"GRUP Temporary {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Cell temporary
-            10 => $"GRUP VisibleDistant {EsmBinary.ReadUInt32(labelBytes, bigEndian):X8}", // Visible distant
+            1 => $"GRUP World {BinaryUtils.ReadUInt32(labelBytes, 0, bigEndian):X8}", // World children
+            2 or 3 => $"GRUP Block {BinaryUtils.ReadInt32(labelBytes, 0, bigEndian)}", // Interior/Exterior cell block
+            4 or 5 => $"GRUP Sub-Block {BinaryUtils.ReadInt32(labelBytes, 0, bigEndian)}", // Interior/Exterior cell sub-block
+            6 => $"GRUP Cell {BinaryUtils.ReadUInt32(labelBytes, 0, bigEndian):X8}", // Cell children
+            7 => $"GRUP Topic {BinaryUtils.ReadUInt32(labelBytes, 0, bigEndian):X8}", // Topic children
+            8 => $"GRUP Persistent {BinaryUtils.ReadUInt32(labelBytes, 0, bigEndian):X8}", // Cell persistent
+            9 => $"GRUP Temporary {BinaryUtils.ReadUInt32(labelBytes, 0, bigEndian):X8}", // Cell temporary
+            10 => $"GRUP VisibleDistant {BinaryUtils.ReadUInt32(labelBytes, 0, bigEndian):X8}", // Visible distant
             _ => $"GRUP Type {groupType}"
         };
     }

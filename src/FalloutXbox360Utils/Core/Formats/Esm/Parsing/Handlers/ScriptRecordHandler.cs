@@ -9,6 +9,16 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 internal sealed class ScriptRecordHandler(RecordParserContext context)
 {
     private readonly RecordParserContext _context = context;
+    private Dictionary<uint, uint>? _runtimeObjectToScript;
+
+    /// <summary>
+    ///     Provide pre-built object→script mappings from runtime struct data (NPC_, CREA, CONT, ACTI).
+    ///     Used for DMP files where ESM records are not available for BuildCrossReferenceChains.
+    /// </summary>
+    internal void SetRuntimeObjectScriptMappings(Dictionary<uint, uint> objectToScript)
+    {
+        _runtimeObjectToScript = objectToScript;
+    }
 
     /// <summary>
     ///     Reconstruct all Script (SCPT) records from the scan result.
@@ -79,6 +89,137 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
                 variableDb.TryAdd(script.OwnerQuestFormId.Value, script.Variables);
             }
         }
+
+        // Quest fallback: for quest scripts with no OwnerQuestFormId, scan SCRO list
+        // for QUST FormIDs and map those to the script's variables.
+        // RuntimeEditorIds is only populated for DMP files (runtime hash table walk).
+        var questFormIds = _context.ScanResult.RuntimeEditorIds
+            .Where(e => e.FormType == 0x19)
+            .Select(e => e.FormId)
+            .ToHashSet();
+        var questFallbackCount = 0;
+
+        if (questFormIds.Count > 0)
+        {
+            foreach (var script in scripts)
+            {
+                if (!script.IsQuestScript || script.OwnerQuestFormId.HasValue
+                    || script.Variables.Count == 0)
+                {
+                    continue;
+                }
+
+                foreach (var scroFormId in script.ReferencedObjects)
+                {
+                    if ((scroFormId & 0x80000000) != 0)
+                    {
+                        continue; // skip SCRV entries
+                    }
+
+                    if (variableDb.ContainsKey(scroFormId))
+                    {
+                        continue;
+                    }
+
+                    if (!questFormIds.Contains(scroFormId))
+                    {
+                        continue;
+                    }
+
+                    variableDb.TryAdd(scroFormId, script.Variables);
+                    questFallbackCount++;
+                }
+            }
+        }
+
+        // Build object→script mappings for multi-level variable resolution.
+        // When resolving ref.varN, the SCRO FormID may point to a placed reference (REFR/ACHR)
+        // or a base object (NPC_/CREA) rather than a script. These mappings enable the chain:
+        // placed ref → base object → script → variables
+        var objectToScript = new Dictionary<uint, uint>();
+        if (_context.Accessor != null)
+        {
+            BuildObjectToScriptMap(objectToScript);
+        }
+
+        // Merge runtime object→script mappings (from NPC_/CREA/CONT/ACTI runtime struct reads).
+        // For DMP files, ESM records are freed at load time so BuildCrossReferenceChains finds nothing.
+        // Runtime struct readers extract Script FormIDs from C++ object pointers instead.
+        if (_runtimeObjectToScript != null)
+        {
+            foreach (var (objectFormId, scriptFormId) in _runtimeObjectToScript)
+            {
+                objectToScript.TryAdd(objectFormId, scriptFormId);
+            }
+        }
+
+        var dbSizeBefore = variableDb.Count;
+
+        // Extend variableDb with indirect object→script→variables mappings
+        foreach (var (objectFormId, scriptFormId) in objectToScript)
+        {
+            if (variableDb.TryGetValue(scriptFormId, out var vars))
+            {
+                variableDb.TryAdd(objectFormId, vars);
+            }
+        }
+
+        // Extend variableDb with ref→base→variables mappings
+        foreach (var (refFormId, baseFormId) in _context.RefToBase)
+        {
+            if (variableDb.TryGetValue(baseFormId, out var vars))
+            {
+                variableDb.TryAdd(refFormId, vars);
+            }
+        }
+
+        // EditorID-based REF→base heuristic for placed references.
+        // Many placed refs have EditorIDs like "CraigBooneREF" — strip "REF" to find
+        // the base form "CraigBoone" and chain to its script's variables.
+        // Note: Build a fresh reverse lookup from FormIdToEditorId (which is mutable and includes
+        // reconstruction-added entries) rather than using the stale EditorIdToFormId dictionary.
+        var editorIdToFormId = _context.FormIdToEditorId
+            .GroupBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
+        var refHeuristicCount = 0;
+
+        foreach (var script in scripts)
+        {
+            foreach (var refFormId in script.ReferencedObjects)
+            {
+                if (variableDb.ContainsKey(refFormId))
+                {
+                    continue;
+                }
+
+                var editorId = _context.ResolveFormName(refFormId);
+                if (editorId == null || !editorId.EndsWith("REF", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var baseName = editorId[..^3];
+                if (editorIdToFormId.TryGetValue(baseName, out var baseFormId))
+                {
+                    if (variableDb.TryGetValue(baseFormId, out var vars))
+                    {
+                        variableDb.TryAdd(refFormId, vars);
+                        refHeuristicCount++;
+                    }
+                    else if (objectToScript.TryGetValue(baseFormId, out var scriptFid)
+                             && variableDb.TryGetValue(scriptFid, out var scriptVars))
+                    {
+                        variableDb.TryAdd(refFormId, scriptVars);
+                        refHeuristicCount++;
+                    }
+                }
+            }
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] Cross-ref chains: {objectToScript.Count} obj→script, " +
+            $"{_context.RefToBase.Count} ref→base, {refHeuristicCount} REF→base, " +
+            $"{questFallbackCount} quest→script, variableDb {dbSizeBefore}→{variableDb.Count}");
 
         // PASS 2: Decompile all scripts with the full cross-script variable database
         var resolvedCount = 0;
@@ -154,6 +295,66 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         }
 
         return (script with { DecompiledText = decompiledText }, crossRefsResolved);
+    }
+
+    /// <summary>
+    ///     Build object→script (SCRI) mappings by scanning ESM records.
+    ///     SCRI subrecords on NPC_/CREA/ACTI/etc. link objects to their scripts.
+    ///     Ref→base mappings come from <see cref="RecordParserContext.RefToBase" /> (pre-built from
+    ///     ScanResult.RefrRecords) and are used to chain: placed ref → base object → script.
+    /// </summary>
+    private void BuildObjectToScriptMap(Dictionary<uint, uint> objectToScript)
+    {
+        // Record types that can have SCRI subrecords (objects with attached scripts)
+        HashSet<string> scriTypes =
+            ["NPC_", "CREA", "ACTI", "CONT", "DOOR", "FURN", "WEAP", "ARMO", "MISC",
+             "BOOK", "ALCH", "KEYM", "AMMO", "LIGH", "LVLC", "LVLN", "FACT", "QUST"];
+
+        var buffer = ArrayPool<byte>.Shared.Rent(65536);
+        try
+        {
+            foreach (var record in _context.ScanResult.MainRecords)
+            {
+                if (!scriTypes.Contains(record.RecordType))
+                {
+                    continue;
+                }
+
+                var recordData = _context.ReadRecordData(record, buffer);
+                if (recordData == null)
+                {
+                    continue;
+                }
+
+                var (data, dataSize) = recordData.Value;
+
+                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                {
+                    if (sub.Signature == "SCRI" && sub.DataLength >= 4)
+                    {
+                        var scriptFormId = record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset, 4))
+                            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset, 4));
+                        objectToScript.TryAdd(record.FormId, scriptFormId);
+                        break; // Only one SCRI per record
+                    }
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        // Build ref→base→script chains: for each ref that has a base with a script,
+        // add the ref → script's variables mapping
+        foreach (var (refFormId, baseFormId) in _context.RefToBase)
+        {
+            if (objectToScript.TryGetValue(baseFormId, out var scriptFormId))
+            {
+                objectToScript.TryAdd(refFormId, scriptFormId);
+            }
+        }
     }
 
     /// <summary>
@@ -411,6 +612,16 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
                     referencedObjects.Add(formId);
+                    break;
+
+                // SCRV entries occupy slots in the reference list alongside SCRO.
+                // The bytecode uses 1-based indices into the combined SCRO+SCRV list.
+                // Store with high bit set so the decompiler can distinguish them.
+                case "SCRV" when sub.DataLength >= 4:
+                    var varIdx = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    referencedObjects.Add(0x80000000 | varIdx);
                     break;
             }
         }
