@@ -40,6 +40,23 @@ public sealed class ScriptDecompiler(
 
     // State during decompilation
     private BytecodeReader _reader = null!;
+    private int _exprEnd; // Current expression boundary (prevents over-reading ASCII numbers)
+
+    /// <summary>
+    ///     Expression node on the RPN evaluation stack, carrying both the rendered text
+    ///     and the precedence level of the outermost operator.
+    ///     Higher precedence values bind more tightly; Atomic values are never wrapped.
+    /// </summary>
+    private readonly record struct ExprNode(string Text, int Precedence)
+    {
+        public const int Atomic = int.MaxValue;
+        public const int PrecOr = 1;             // ||
+        public const int PrecAnd = 2;            // &&
+        public const int PrecEquality = 3;       // ==, !=
+        public const int PrecRelational = 4;     // <, >, <=, >=
+        public const int PrecAdditive = 5;       // +, -
+        public const int PrecMultiplicative = 6; // *, /, %
+    }
 
     /// <summary>
     ///     Decompile compiled bytecode to GECK script source text.
@@ -51,6 +68,7 @@ public sealed class ScriptDecompiler(
         _indentLevel = 0;
         _hasPendingRef = false;
         _reader = new BytecodeReader(compiledData, _isBigEndian);
+        _exprEnd = compiledData.Length;
 
         try
         {
@@ -282,7 +300,7 @@ public sealed class ScriptDecompiler(
         var exprEnd = _reader.Position + exprLen;
 
         var expr = DecodeExpression(exprEnd);
-        AppendLine($"{keyword} ({expr})");
+        AppendLine($"{keyword} {expr}");
         _indentLevel++;
     }
 
@@ -318,6 +336,8 @@ public sealed class ScriptDecompiler(
             return ScriptFunctionTable.GetName(opcode);
         }
 
+        // GECK scripts use both short and long names interchangeably.
+        // Prefer short name when available as it's more common in hand-written scripts.
         return !string.IsNullOrEmpty(funcDef.ShortName) ? funcDef.ShortName : funcDef.Name;
     }
 
@@ -356,7 +376,8 @@ public sealed class ScriptDecompiler(
     /// </summary>
     private string DecodeExpression(int exprEnd)
     {
-        var stack = new Stack<string>();
+        var stack = new Stack<ExprNode>();
+        _exprEnd = exprEnd;
 
         while (_reader.Position < exprEnd && _reader.HasData)
         {
@@ -371,10 +392,10 @@ public sealed class ScriptDecompiler(
             return "<empty expression>";
         }
 
-        return stack.Count == 1 ? stack.Pop() : string.Join(", ", stack.Reverse());
+        return stack.Count == 1 ? stack.Pop().Text : string.Join(", ", stack.Reverse().Select(n => n.Text));
     }
 
-    private bool TryDecodeExpressionToken(Stack<string> stack, int exprEnd)
+    private bool TryDecodeExpressionToken(Stack<ExprNode> stack, int exprEnd)
     {
         if (!_reader.HasData || _reader.Position >= exprEnd)
         {
@@ -412,7 +433,7 @@ public sealed class ScriptDecompiler(
             }
 
             // Otherwise it's a push operand
-            stack.Push(DecodePushValue());
+            stack.Push(new ExprNode(DecodePushValue(), ExprNode.Atomic));
             return true;
         }
 
@@ -420,7 +441,7 @@ public sealed class ScriptDecompiler(
         var standalone = TryDecodeOperand();
         if (standalone != null)
         {
-            stack.Push(standalone);
+            stack.Push(new ExprNode(standalone, ExprNode.Atomic));
             return true;
         }
 
@@ -429,25 +450,27 @@ public sealed class ScriptDecompiler(
         if (remaining > 0)
         {
             var hexDump = BitConverter.ToString(_reader.ReadBytes(remaining)).Replace("-", " ");
-            stack.Push($"<unknown: {hexDump}>");
+            stack.Push(new ExprNode($"<unknown: {hexDump}>", ExprNode.Atomic));
         }
 
         return false;
     }
 
-    private static void ApplyUnaryOrBinaryOperator(Stack<string> stack, string op)
+    private static void ApplyUnaryOrBinaryOperator(Stack<ExprNode> stack, string op)
     {
         // 0x7E '~' is always unary negation (distinct from binary minus 0x2D '-')
         if (op == "~")
         {
-            stack.Push(stack.Count >= 1 ? $"-{stack.Pop()}" : "-0");
+            var operand = stack.Count >= 1 ? stack.Pop().Text : "0";
+            stack.Push(new ExprNode($"-{operand}", ExprNode.Atomic));
             return;
         }
 
         // Unary negation: '-' with fewer than 2 operands on stack
         if (op == "-" && stack.Count < 2)
         {
-            stack.Push(stack.Count == 1 ? $"-{stack.Pop()}" : "-0");
+            var operand = stack.Count == 1 ? stack.Pop().Text : "0";
+            stack.Push(new ExprNode($"-{operand}", ExprNode.Atomic));
             return;
         }
 
@@ -498,6 +521,12 @@ public sealed class ScriptDecompiler(
                 // ASCII digit literals: 0x30='0' through 0x39='9'
                 // Multi-digit numbers (e.g., 768 → 0x37 0x36 0x38) and decimals (0.125)
                 if (subToken is >= 0x30 and <= 0x39)
+                {
+                    return ReadAsciiNumber();
+                }
+
+                // Decimal-only literals: 0x2E='.' followed by digit (e.g., .5 → 0x2E 0x35)
+                if (subToken == 0x2E && _reader.CanRead(2) && _reader.PeekByteAt(1) is >= 0x30 and <= 0x39)
                 {
                     return ReadAsciiNumber();
                 }
@@ -581,17 +610,31 @@ public sealed class ScriptDecompiler(
             : $"{prefix}{funcName}";
     }
 
-    private static void ApplyBinaryOperator(Stack<string> stack, string op)
+    private static void ApplyBinaryOperator(Stack<ExprNode> stack, string op)
     {
+        var prec = GetOperatorPrecedence(op);
+
         if (stack.Count < 2)
         {
-            stack.Push(stack.Count == 1 ? $"({stack.Pop()} {op} ???)" : $"(??? {op} ???)");
+            var partial = stack.Count == 1 ? $"({stack.Pop().Text} {op} ???)" : $"(??? {op} ???)";
+            stack.Push(new ExprNode(partial, prec));
             return;
         }
 
         var right = stack.Pop();
         var left = stack.Pop();
-        stack.Push($"{left} {op} {right}");
+
+        // Wrap left operand if its outermost operator has lower precedence
+        var leftText = left.Precedence < prec ? $"({left.Text})" : left.Text;
+
+        // Wrap right operand if lower precedence, or same precedence for
+        // non-commutative operators to preserve left-to-right evaluation:
+        // a - (b - c) != a - b - c
+        var wrapRight = right.Precedence < prec ||
+                        (right.Precedence == prec && op is "-" or "/" or "%");
+        var rightText = wrapRight ? $"({right.Text})" : right.Text;
+
+        stack.Push(new ExprNode($"{leftText} {op} {rightText}", prec));
     }
 
     private static string? GetTwoByteOperator(byte first, byte second)
@@ -616,12 +659,24 @@ public sealed class ScriptDecompiler(
             0x2D => "-",
             0x2A => "*",
             0x2F => "/",
+            0x25 => "%",
             0x3E => ">",
             0x3C => "<",
             ScriptOpcodes.ExprUnaryNegate => "~", // always unary negation (distinct from binary minus)
             _ => null
         };
     }
+
+    private static int GetOperatorPrecedence(string op) => op switch
+    {
+        "||" => ExprNode.PrecOr,
+        "&&" => ExprNode.PrecAnd,
+        "==" or "!=" => ExprNode.PrecEquality,
+        "<" or ">" or "<=" or ">=" => ExprNode.PrecRelational,
+        "+" or "-" => ExprNode.PrecAdditive,
+        "*" or "/" or "%" => ExprNode.PrecMultiplicative,
+        _ => ExprNode.Atomic
+    };
 
     #endregion
 
@@ -689,6 +744,9 @@ public sealed class ScriptDecompiler(
                 return _reader.CanRead(4) ? _reader.ReadInt32().ToString() : "<truncated vatdata>";
             case ScriptParamType.ScriptVar:
                 return DecodeScriptVarParam();
+            case ScriptParamType.Axis:
+                // Axis is a single raw byte: 'X'=0x58, 'Y'=0x59, 'Z'=0x5A (no marker prefix)
+                return _reader.HasData ? DecodeAxis(_reader.ReadByte()) : "<truncated axis>";
         }
 
         // All remaining types are 2 bytes — read once, then interpret
@@ -717,13 +775,13 @@ public sealed class ScriptDecompiler(
             ScriptParamType.ActorValue => GetActorValueName(val),
             ScriptParamType.Axis => DecodeAxis(val),
             ScriptParamType.Sex => val == 0 ? "Male" : "Female",
-            ScriptParamType.AnimGroup => $"AnimGroup:{val}",
+            ScriptParamType.AnimGroup => GetAnimGroupName(val),
             ScriptParamType.CrimeType => DecodeCrimeType(val),
             ScriptParamType.FormType => $"FormType:{val}",
-            ScriptParamType.MiscStat => $"MiscStat:{val}",
+            ScriptParamType.MiscStat => GetMiscStatName(val),
             ScriptParamType.Alignment => $"Alignment:{val}",
             ScriptParamType.EquipType => $"EquipType:{val}",
-            ScriptParamType.CritStage => $"CritStage:{val}",
+            ScriptParamType.CritStage => DecodeCritStage(val),
             ScriptParamType.VatsValue => $"VATSValue:{val}",
             ScriptParamType.Stage => val.ToString(),
             _ => null
@@ -786,6 +844,49 @@ public sealed class ScriptDecompiler(
         return _reader.CanRead(2) ? GetVariableName(_reader.ReadUInt16()) : "<truncated scriptvar>";
     }
 
+    private static string GetAnimGroupName(ushort val)
+    {
+        // TESAnimGroup enum values — from PDB symbols (ANIM_GROUP_* enum)
+        return val switch
+        {
+            0 => "Idle",
+            1 => "DynamicIdle",
+            2 => "SpecialIdle",
+            3 => "Forward",
+            4 => "Backward",
+            5 => "Left",
+            6 => "Right",
+            7 => "FastForward",
+            8 => "FastBackward",
+            9 => "FastLeft",
+            10 => "FastRight",
+            11 => "DodgeForward",
+            12 => "DodgeBack",
+            13 => "DodgeLeft",
+            14 => "DodgeRight",
+            15 => "TurnLeft",
+            16 => "TurnRight",
+            17 => "Aim",
+            18 => "AimUp",
+            19 => "AimDown",
+            20 => "AimIS",
+            21 => "AimISUp",
+            22 => "AimISDown",
+            23 => "Holster",
+            24 => "Equip",
+            25 => "Unequip",
+            92 => "AttackPower",
+            93 => "AttackForwardPower",
+            94 => "AttackBackPower",
+            95 => "AttackLeftPower",
+            96 => "AttackRightPower",
+            170 => "BlockIdle",
+            171 => "BlockHit",
+            172 => "Recoil",
+            _ => $"AnimGroup:{val}"
+        };
+    }
+
     private static string DecodeAxis(ushort val)
     {
         return val switch
@@ -794,6 +895,20 @@ public sealed class ScriptDecompiler(
             0x59 => "Y",
             0x5A => "Z",
             _ => $"Axis:{val}"
+        };
+    }
+
+    private static string DecodeCritStage(ushort val)
+    {
+        // Values from GECK wiki — confirmed against SCTX source text
+        return val switch
+        {
+            0 => "None",
+            1 => "GooStart",
+            2 => "GooEnd",
+            3 => "DisintegrateStart",
+            4 => "DisintegrateEnd",
+            _ => $"CritStage:{val}"
         };
     }
 
@@ -807,6 +922,58 @@ public sealed class ScriptDecompiler(
             3 => "Attack",
             4 => "Murder",
             _ => $"CrimeType:{val}"
+        };
+    }
+
+    // Names from PDB enum MiscStatManager::MiscStatID, mapped to GECK display strings
+    private static string GetMiscStatName(ushort index)
+    {
+        return index switch
+        {
+            0 => "\"Quests Completed\"",
+            1 => "\"Locations Discovered\"",
+            2 => "\"People Killed\"",
+            3 => "\"Creatures Killed\"",
+            4 => "\"Locks Picked\"",
+            5 => "\"Computers Hacked\"",
+            6 => "\"Stimpaks Taken\"",
+            7 => "\"Rad-X Taken\"",
+            8 => "\"RadAway Taken\"",
+            9 => "\"Chems Taken\"",
+            10 => "\"Times Addicted\"",
+            11 => "\"Mines Disarmed\"",
+            12 => "\"Speech Successes\"",
+            13 => "\"Pockets Picked\"",
+            14 => "\"Pants Exploded\"",
+            15 => "\"Books Read\"",
+            16 => "\"Health From Stimpaks\"",
+            17 => "\"Weapons Created\"",
+            18 => "\"Health From Food\"",
+            19 => "\"Water Consumed\"",
+            20 => "\"Sandman Kills\"",
+            21 => "\"Paralyzing Punches\"",
+            22 => "\"Robots Disabled\"",
+            23 => "\"Times Slept\"",
+            24 => "\"Corpses Eaten\"",
+            25 => "\"Mysterious Stranger Visits\"",
+            26 => "\"Doctor Bags Used\"",
+            27 => "\"Challenges Completed\"",
+            28 => "\"Miss Fortunate Occurrences\"",
+            29 => "\"Disintegrations\"",
+            30 => "\"Have Limbs Crippled\"",
+            31 => "\"Speech Failures\"",
+            32 => "\"Items Crafted\"",
+            33 => "\"Weapon Modifications\"",
+            34 => "\"Items Repaired\"",
+            35 => "\"Total Things Killed\"",
+            36 => "\"Dismembered Limbs\"",
+            37 => "\"Caravan Games Won\"",
+            38 => "\"Caravan Games Lost\"",
+            39 => "\"Barter Amount Traded\"",
+            40 => "\"Roulette Games Played\"",
+            41 => "\"Blackjack Games Played\"",
+            42 => "\"Slot Games Played\"",
+            _ => $"MiscStat:{index}"
         };
     }
 
@@ -900,8 +1067,9 @@ public sealed class ScriptDecompiler(
     {
         var chars = new List<char>();
 
-        // Read consecutive digit bytes and optional decimal point
-        while (_reader.HasData)
+        // Read consecutive digit bytes and optional decimal point.
+        // Respect expression boundary to avoid reading into the next instruction.
+        while (_reader.HasData && _reader.Position < _exprEnd)
         {
             var b = _reader.PeekByte();
             if (b is >= 0x30 and <= 0x39)
@@ -1014,9 +1182,24 @@ public sealed class ScriptDecompiler(
         var listIndex = index - 1;
         if (listIndex < _referencedObjects.Count)
         {
-            var formId = _referencedObjects[listIndex];
-            var name = _resolveFormName(formId);
-            return !string.IsNullOrEmpty(name) ? name : $"0x{formId:X8}";
+            var value = _referencedObjects[listIndex];
+
+            // SCRV entries (local variable references) are flagged with high bit.
+            // The variable index is in the lower 31 bits.
+            if ((value & 0x80000000) != 0)
+            {
+                var varIndex = value & 0x7FFFFFFF;
+                return GetVariableName(varIndex);
+            }
+
+            // Well-known FormID: player reference
+            if (value == 0x00000014)
+            {
+                return "player";
+            }
+
+            var name = _resolveFormName(value);
+            return !string.IsNullOrEmpty(name) ? name : $"0x{value:X8}";
         }
 
         return $"SCRO[{index}]";
@@ -1033,7 +1216,14 @@ public sealed class ScriptDecompiler(
         }
 
         var listIndex = index - 1;
-        return listIndex < _referencedObjects.Count ? _referencedObjects[listIndex] : null;
+        if (listIndex >= _referencedObjects.Count)
+        {
+            return null;
+        }
+
+        var value = _referencedObjects[listIndex];
+        // Skip SCRV entries (flagged with high bit) — they're local variables, not form references
+        return (value & 0x80000000) != 0 ? null : value;
     }
 
     /// <summary>
@@ -1073,25 +1263,19 @@ public sealed class ScriptDecompiler(
 
     private static string FormatDouble(double value)
     {
-        // Use range check for zero comparison
         if (Math.Abs(value) < double.Epsilon)
         {
-            return "0.0";
+            return "0";
         }
 
         var floor = Math.Floor(value);
         if (Math.Abs(value - floor) < 0.0001 && Math.Abs(value) < 1e15)
         {
-            return $"{value:F1}";
+            // GECK writes integer-valued numbers without decimal point (e.g., "100" not "100.0")
+            return ((long)value).ToString();
         }
 
-        var s = value.ToString("G");
-        if (!s.Contains('.') && !s.Contains('E') && !s.Contains('e'))
-        {
-            s += ".0";
-        }
-
-        return s;
+        return value.ToString("G");
     }
 
     private static string GetBlockTypeName(ushort blockType)
@@ -1190,6 +1374,38 @@ public sealed class ScriptDecompiler(
             43 => "Speech",
             44 => "Survival",
             45 => "Unarmed",
+            // Actor values 46+ from GECK wiki Actor_Value_Codes
+            46 => "InventoryWeight",
+            47 => "Paralysis",
+            48 => "Invisibility",
+            49 => "Chameleon",
+            50 => "NightEye",
+            51 => "Turbo",
+            52 => "FireResist",
+            53 => "WaterBreathing",
+            54 => "RadiationRads",
+            55 => "BloodyMess",
+            56 => "UnarmedDamage",
+            57 => "Assistance",
+            58 => "ElectricResist",
+            59 => "FrostResist",
+            60 => "EnergyResist",
+            61 => "EmpResist",
+            62 => "Variable01",
+            63 => "Variable02",
+            64 => "Variable03",
+            65 => "Variable04",
+            66 => "Variable05",
+            67 => "Variable06",
+            68 => "Variable07",
+            69 => "Variable08",
+            70 => "Variable09",
+            71 => "Variable10",
+            72 => "IgnoreCrippledLimbs",
+            73 => "Dehydration",
+            74 => "Hunger",
+            75 => "SleepDeprevation",
+            76 => "DamageThreshold",
             _ => $"ActorValue:{index}"
         };
     }

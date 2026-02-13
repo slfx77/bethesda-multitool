@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using FalloutXbox360Utils.Core.Formats.Esm.Script;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
@@ -239,5 +240,181 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output)
 
         // Verify we actually analyzed scripts (soft assertion — resolution rate varies by dump)
         Assert.True(scriptsWithDecompiled.Count > 0, "Should have scripts with decompiled text");
+    }
+
+    [Fact]
+    [Trait("Category", "Slow")]
+    public async Task Decompile_DebugDump_SemanticComparison()
+    {
+        var scripts = await DumpAnalysisHelper.AnalyzeDumpAsync(@"Sample\MemoryDump\Fallout_Debug.xex.dmp");
+        if (scripts == null)
+        {
+            _output.WriteLine("SKIPPED: Debug dump not available or analysis failed");
+            return;
+        }
+
+        var scriptsWithBoth = scripts
+            .Where(s => s.HasSource && !string.IsNullOrEmpty(s.DecompiledText))
+            .ToList();
+
+        _output.WriteLine($"Total scripts: {scripts.Count}");
+        _output.WriteLine($"Scripts with both SCTX and decompiled: {scriptsWithBoth.Count}");
+
+        if (scriptsWithBoth.Count == 0)
+        {
+            _output.WriteLine("No scripts with both source and decompiled text found");
+            return;
+        }
+
+        var nameMap = ScriptComparer.BuildFunctionNameNormalizationMap();
+
+        var totalMatches = 0;
+        var aggregateMismatches = new Dictionary<string, int>();
+        var aggregateTolerated = new Dictionary<string, int>();
+        var scriptMatchRates = new List<double>();
+        var worstScripts = new List<(string Name, double MatchRate, int Mismatches)>();
+
+        foreach (var script in scriptsWithBoth)
+        {
+            var result = ScriptComparer.CompareScripts(
+                script.SourceText!, script.DecompiledText!, nameMap);
+
+            totalMatches += result.MatchCount;
+            scriptMatchRates.Add(result.MatchRate);
+
+            foreach (var (category, count) in result.MismatchesByCategory)
+            {
+                aggregateMismatches.TryGetValue(category, out var existing);
+                aggregateMismatches[category] = existing + count;
+            }
+
+            foreach (var (category, count) in result.ToleratedDifferences)
+            {
+                aggregateTolerated.TryGetValue(category, out var existing);
+                aggregateTolerated[category] = existing + count;
+            }
+
+            if (result.MatchRate < 80 && worstScripts.Count < 5)
+            {
+                worstScripts.Add((
+                    script.EditorId ?? $"0x{script.FormId:X8}",
+                    result.MatchRate,
+                    result.TotalMismatches));
+            }
+        }
+
+        var totalMismatches = aggregateMismatches.Values.Sum();
+        var totalTolerated = aggregateTolerated.Values.Sum();
+        var totalLines = totalMatches + totalMismatches;
+        var overallMatchRate = totalLines > 0 ? 100.0 * totalMatches / totalLines : 0;
+
+        _output.WriteLine($"\n=== Semantic Comparison Results ===");
+        _output.WriteLine($"Total lines compared: {totalLines:N0}");
+        _output.WriteLine($"Matching lines: {totalMatches:N0} (includes {totalTolerated:N0} tolerated)");
+        _output.WriteLine($"Mismatched lines: {totalMismatches:N0}");
+        _output.WriteLine($"Overall match rate: {overallMatchRate:F1}%");
+
+        _output.WriteLine($"\n--- Mismatch Categories ---");
+        foreach (var (category, count) in aggregateMismatches.OrderByDescending(kv => kv.Value))
+        {
+            var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
+            _output.WriteLine($"  {category,-25} {count,6:N0}  ({pct:F1}%)");
+        }
+
+        if (aggregateTolerated.Count > 0)
+        {
+            _output.WriteLine($"\n--- Tolerated Differences (counted as matches) ---");
+            foreach (var (category, count) in aggregateTolerated.OrderByDescending(kv => kv.Value))
+            {
+                var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
+                _output.WriteLine($"  {category,-25} {count,6:N0}  ({pct:F1}%)");
+            }
+        }
+
+        if (worstScripts.Count > 0)
+        {
+            _output.WriteLine($"\n--- Worst Scripts ---");
+            foreach (var (name, rate, mismatches) in worstScripts)
+            {
+                _output.WriteLine($"  {name}: {rate:F1}% match ({mismatches} mismatches)");
+            }
+        }
+
+        // Show examples from the first script that has mismatches
+        var firstWithMismatches = scriptsWithBoth
+            .Select(s => (Script: s, Result: ScriptComparer.CompareScripts(
+                s.SourceText!, s.DecompiledText!, nameMap)))
+            .FirstOrDefault(x => x.Result.Examples.Count > 0);
+
+        if (firstWithMismatches.Script != null)
+        {
+            _output.WriteLine(
+                $"\n--- Example mismatches from {firstWithMismatches.Script.EditorId ?? "?"} ---");
+            foreach (var (source, decompiled, category) in firstWithMismatches.Result.Examples.Take(5))
+            {
+                _output.WriteLine($"  [{category}]");
+                _output.WriteLine($"    SCTX: {source}");
+                _output.WriteLine($"    SCDA: {decompiled}");
+            }
+        }
+
+        // Write detailed report to file for analysis
+        var reportPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "TestOutput", "semantic-comparison.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+        using (var writer = new StreamWriter(reportPath))
+        {
+            writer.WriteLine($"=== Semantic Comparison Results ===");
+            writer.WriteLine($"Total lines compared: {totalLines:N0}");
+            writer.WriteLine($"Matching lines: {totalMatches:N0} (includes {totalTolerated:N0} tolerated)");
+            writer.WriteLine($"Mismatched lines: {totalMismatches:N0}");
+            writer.WriteLine($"Overall match rate: {overallMatchRate:F1}%");
+            writer.WriteLine();
+            writer.WriteLine($"--- Mismatch Categories ---");
+            foreach (var (category, count) in aggregateMismatches.OrderByDescending(kv => kv.Value))
+            {
+                var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
+                writer.WriteLine($"  {category,-25} {count,6:N0}  ({pct:F1}%)");
+            }
+
+            if (aggregateTolerated.Count > 0)
+            {
+                writer.WriteLine();
+                writer.WriteLine($"--- Tolerated Differences (counted as matches) ---");
+                foreach (var (category, count) in aggregateTolerated.OrderByDescending(kv => kv.Value))
+                {
+                    var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
+                    writer.WriteLine($"  {category,-25} {count,6:N0}  ({pct:F1}%)");
+                }
+            }
+
+            writer.WriteLine();
+            writer.WriteLine("--- All Mismatch Examples (first 10 per script) ---");
+            foreach (var script in scriptsWithBoth)
+            {
+                var result = ScriptComparer.CompareScripts(
+                    script.SourceText!, script.DecompiledText!, nameMap);
+                if (result.Examples.Count == 0)
+                {
+                    continue;
+                }
+
+                writer.WriteLine(
+                    $"\n  {script.EditorId ?? $"0x{script.FormId:X8}"} ({result.MatchRate:F1}% match, {result.TotalMismatches} mismatches):");
+                foreach (var (source, decompiled, category) in result.Examples)
+                {
+                    writer.WriteLine($"    [{category}]");
+                    writer.WriteLine($"      SCTX: {source}");
+                    writer.WriteLine($"      SCDA: {decompiled}");
+                }
+            }
+        }
+
+        _output.WriteLine($"Detailed report written to: {Path.GetFullPath(reportPath)}");
+
+        Assert.True(scriptsWithBoth.Count > 0, "Should have scripts with both source and decompiled text");
+        // Initial baseline — will increase as we fix decompiler bugs
+        Assert.True(overallMatchRate > 50,
+            $"Overall semantic match rate {overallMatchRate:F1}% below 50% threshold");
     }
 }

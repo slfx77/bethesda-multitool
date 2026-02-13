@@ -1,7 +1,10 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Script;
+
 namespace FalloutXbox360Utils.Tests.Core.Formats.Script;
 
 /// <summary>
 ///     Shared helpers for script decompiler integration tests.
+///     Semantic comparison logic has been moved to <see cref="ScriptComparer" /> in the main project.
 /// </summary>
 internal static class ScriptTestHelpers
 {
