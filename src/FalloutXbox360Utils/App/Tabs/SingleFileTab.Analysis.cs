@@ -177,6 +177,7 @@ public sealed partial class SingleFileTab
 
             if (_session.SemanticResult != null)
             {
+                _session.Resolver = _session.SemanticResult.CreateResolver();
                 StatusTextBlock.Text =
                     Strings.Status_ReconstructedRecords(_session.SemanticResult.TotalRecordsReconstructed);
             }
@@ -200,7 +201,7 @@ public sealed partial class SingleFileTab
         try
         {
             var semanticResult = _session.SemanticResult;
-            var lookup = _session.AnalysisResult?.FormIdMap;
+            var resolver = _session.Resolver;
 
             // Progress callback for status updates
             var progress = new Progress<string>(status =>
@@ -214,7 +215,7 @@ public sealed partial class SingleFileTab
             var tree = await Task.Run(() =>
             {
                 ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
-                var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, lookup);
+                var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, resolver);
 
                 ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
                 // Apply default sort (By Name) after building

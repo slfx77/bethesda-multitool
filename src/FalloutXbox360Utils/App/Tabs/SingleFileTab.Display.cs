@@ -25,16 +25,20 @@ public sealed partial class SingleFileTab
             ActualTheme == ElementTheme.Light
                 ? Windows.UI.Color.FromArgb(0xFF, 0x00, 0x66, 0xCC) // Dark blue for light mode
                 : Windows.UI.Color.FromArgb(0xFF, 0x75, 0xBE, 0xFF)); // Vivid sky blue for dark mode
+        var textBlock = new TextBlock
+        {
+            Text = text,
+            TextDecorations = TextDecorations.Underline,
+            FontSize = fontSize,
+            Foreground = linkColor
+        };
+        if (monospace)
+        {
+            textBlock.FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas");
+        }
         var link = new HyperlinkButton
         {
-            Content = new TextBlock
-            {
-                Text = text,
-                TextDecorations = TextDecorations.Underline,
-                FontSize = fontSize,
-                FontFamily = monospace ? new Microsoft.UI.Xaml.Media.FontFamily("Consolas") : null,
-                Foreground = linkColor
-            },
+            Content = textBlock,
             Padding = new Thickness(0)
         };
         link.Click += (_, _) => NavigateToFormId(formId);
@@ -914,6 +918,7 @@ public sealed partial class SingleFileTab
         PropertyPanel.Children.Clear();
         SelectedRecordTitle.Text = Strings.Empty_SelectARecord;
         GoToOffsetButton.Visibility = Visibility.Collapsed;
+        ViewWorldspaceButton.Visibility = Visibility.Collapsed;
         ResetNavigation();
         ResetDialogueViewer();
         ResetWorldMap();
@@ -969,12 +974,17 @@ public sealed partial class SingleFileTab
             {
                 GoToOffsetButton.Visibility = Visibility.Collapsed;
             }
+
+            ViewWorldspaceButton.Visibility = browserNode.DataObject is WorldspaceRecord
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
         else
         {
             SelectedRecordTitle.Text = browserNode.DisplayName;
             PropertyPanel.Children.Clear();
             GoToOffsetButton.Visibility = Visibility.Collapsed;
+            ViewWorldspaceButton.Visibility = Visibility.Collapsed;
         }
     }
 

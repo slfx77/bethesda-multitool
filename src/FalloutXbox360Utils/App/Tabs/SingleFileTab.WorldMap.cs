@@ -97,16 +97,34 @@ public sealed partial class SingleFileTab
                                 !linkedCellFormIds.Contains(c.FormId))
                     .ToList();
 
+                // Build cell FormID lookup for navigation
+                var cellByFormId = new Dictionary<uint, CellRecord>();
+                foreach (var cell in semantic.Cells)
+                {
+                    cellByFormId.TryAdd(cell.FormId, cell);
+                }
+
+                // Build reverse index: placed reference FormID → parent cell
+                var refrToCellIndex = new Dictionary<uint, CellRecord>();
+                foreach (var cell in semantic.Cells)
+                {
+                    foreach (var obj in cell.PlacedObjects)
+                    {
+                        refrToCellIndex.TryAdd(obj.FormId, cell);
+                    }
+                }
+
                 return new WorldViewData
                 {
                     Worldspaces = semantic.Worldspaces,
                     InteriorCells = semantic.Cells.Where(c => c.IsInterior).ToList(),
                     UnlinkedExteriorCells = unlinkedExterior,
                     AllCells = semantic.Cells,
+                    CellByFormId = cellByFormId,
+                    RefrToCellIndex = refrToCellIndex,
                     BoundsIndex = boundsIndex,
                     CategoryIndex = categoryIndex,
-                    FormIdToEditorId = semantic.FormIdToEditorId,
-                    FormIdToDisplayName = semantic.FormIdToDisplayName,
+                    Resolver = semantic.CreateResolver(),
                     MapMarkers = semantic.MapMarkers,
                     MarkersByWorldspace = markersByWorldspace,
                     DefaultWaterHeight = defaultWaterHeight,
@@ -137,12 +155,8 @@ public sealed partial class SingleFileTab
         _selectedWorldCell = cell;
         WorldMapControl?.SelectObject(null);
 
-        // Show "View in Map" button only for cells that can be navigated to
-        var canViewInMap = cell.GridX.HasValue && cell.GridY.HasValue
-                                               && cell.WorldspaceFormId is > 0
-                                               && _session.WorldViewData?.Worldspaces.Any(ws =>
-                                                   ws.FormId == cell.WorldspaceFormId.Value) == true;
-        ViewInMapButton.Visibility = canViewInMap ? Visibility.Visible : Visibility.Collapsed;
+        // Show "View Cell" button for all cells (exterior and interior)
+        ViewInMapButton.Visibility = Visibility.Visible;
 
         var name = cell.EditorId ?? cell.FullName ?? $"0x{cell.FormId:X8}";
         if (cell.GridX.HasValue && cell.GridY.HasValue)
@@ -343,7 +357,25 @@ public sealed partial class SingleFileTab
             {
                 Name = "Linked Cells",
                 Value = cell.LinkedCellFormIds.Count.ToString(),
-                Category = "Statistics"
+                Category = "Statistics",
+                IsExpandable = true,
+                SubItems = cell.LinkedCellFormIds.Select(formId =>
+                {
+                    var cellName = $"0x{formId:X8}";
+                    if (_session.WorldViewData?.CellByFormId.TryGetValue(formId, out var linked) == true)
+                    {
+                        cellName = linked.EditorId ?? linked.FullName ?? cellName;
+                    }
+
+                    return new EsmPropertyEntry
+                    {
+                        Name = cellName,
+                        Value = $"0x{formId:X8}",
+                        Col1 = cellName,
+                        Col3 = $"0x{formId:X8}",
+                        CellNavigationFormId = formId
+                    };
+                }).ToList()
             });
         }
 
@@ -362,13 +394,19 @@ public sealed partial class SingleFileTab
                     Value = group.Count().ToString(),
                     Category = "Placed Objects",
                     IsExpandable = true,
-                    SubItems = group.Select(obj => new EsmPropertyEntry
+                    SubItems = group.Select(obj =>
                     {
-                        Col1 = obj.BaseEditorId ?? $"0x{obj.BaseFormId:X8}",
-                        Col3 = $"0x{obj.FormId:X8}",
-                        Col3FormId = obj.FormId,
-                        Name = obj.BaseEditorId ?? $"0x{obj.BaseFormId:X8}",
-                        Value = $"0x{obj.FormId:X8}"
+                        var baseName = obj.BaseEditorId
+                                       ?? _session.Resolver?.GetBestName(obj.BaseFormId)
+                                       ?? $"0x{obj.BaseFormId:X8}";
+                        return new EsmPropertyEntry
+                        {
+                            Col1 = baseName,
+                            Col3 = $"0x{obj.FormId:X8}",
+                            Col3FormId = obj.FormId,
+                            Name = baseName,
+                            Value = $"0x{obj.FormId:X8}"
+                        };
                     }).ToList()
                 });
             }
@@ -405,17 +443,32 @@ public sealed partial class SingleFileTab
             if (wsIdx >= 0)
             {
                 WorldMapControl.NavigateToWorldspaceAndCell(wsIdx, _selectedWorldCell);
+                return;
             }
         }
+
+        // Interior or unlinked cell — navigate directly to cell detail
+        WorldMapControl.NavigateToCell(_selectedWorldCell);
     }
 
     private void WorldMap_InspectObject(object? sender, PlacedReference obj)
     {
-        _selectedWorldCell = null;
-        ViewInMapButton.Visibility = Visibility.Collapsed;
+        if (_session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var ownerCell) == true)
+        {
+            _selectedWorldCell = ownerCell;
+            ViewInMapButton.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            _selectedWorldCell = null;
+            ViewInMapButton.Visibility = Visibility.Collapsed;
+        }
+
         WorldMapControl?.SelectObject(obj);
 
-        var name = obj.BaseEditorId ?? $"0x{obj.BaseFormId:X8}";
+        var name = obj.BaseEditorId
+                   ?? _session.Resolver?.GetBestName(obj.BaseFormId)
+                   ?? $"0x{obj.BaseFormId:X8}";
         WorldObjectTitle.Text = $"{obj.RecordType}: {name}";
 
         WorldPropertyPanel.Children.Clear();
@@ -432,7 +485,7 @@ public sealed partial class SingleFileTab
         properties.Add(new EsmPropertyEntry
         {
             Name = "Base Form ID",
-            Value = $"0x{obj.BaseFormId:X8}",
+            Value = _session.Resolver?.FormatFull(obj.BaseFormId) ?? $"0x{obj.BaseFormId:X8}",
             Category = "Identity",
             LinkedFormId = obj.BaseFormId
         });
@@ -452,6 +505,23 @@ public sealed partial class SingleFileTab
             Value = obj.RecordType,
             Category = "Identity"
         });
+
+        if (_session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var parentCell) == true)
+        {
+            var cellName = parentCell.EditorId ?? parentCell.FullName ?? $"0x{parentCell.FormId:X8}";
+            if (parentCell.GridX.HasValue && parentCell.GridY.HasValue)
+            {
+                cellName = $"[{parentCell.GridX.Value},{parentCell.GridY.Value}] {cellName}";
+            }
+
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Parent Cell",
+                Value = cellName,
+                Category = "Identity",
+                CellNavigationFormId = parentCell.FormId
+            });
+        }
 
         // Position
         properties.Add(new EsmPropertyEntry
@@ -518,6 +588,24 @@ public sealed partial class SingleFileTab
                 Value = $"0x{obj.DestinationDoorFormId.Value:X8}",
                 Category = "References",
                 LinkedFormId = obj.DestinationDoorFormId.Value
+            });
+        }
+
+        if (obj.DestinationCellFormId is > 0)
+        {
+            var cellName = $"0x{obj.DestinationCellFormId.Value:X8}";
+            if (_session.WorldViewData?.CellByFormId.TryGetValue(obj.DestinationCellFormId.Value, out var destCell) ==
+                true)
+            {
+                cellName = destCell.EditorId ?? destCell.FullName ?? cellName;
+            }
+
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Destination Cell",
+                Value = cellName,
+                Category = "References",
+                CellNavigationFormId = obj.DestinationCellFormId.Value
             });
         }
 
@@ -690,8 +778,16 @@ public sealed partial class SingleFileTab
                         MaxWidth = 160
                     };
 
+                    // Cell navigation links (linked cells, door destinations)
+                    if (sub.CellNavigationFormId is > 0)
+                    {
+                        subName.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                            Microsoft.UI.Colors.CornflowerBlue);
+                        var capturedFormId = sub.CellNavigationFormId.Value;
+                        subName.Tapped += (_, _) => NavigateToCellInWorldMap(capturedFormId);
+                    }
                     // Find the placed object for navigation
-                    if (sub.Col3FormId is > 0 && _selectedWorldCell != null)
+                    else if (sub.Col3FormId is > 0 && _selectedWorldCell != null)
                     {
                         var targetFormId = sub.Col3FormId.Value;
                         var placedObj = _selectedWorldCell.PlacedObjects
@@ -788,8 +884,24 @@ public sealed partial class SingleFileTab
                 Grid.SetColumn(nameText, 1);
                 mainGrid.Children.Add(nameText);
 
-                // Value column: use HyperlinkButton for navigable FormID references
-                if (prop.LinkedFormId is > 0 && IsFormIdNavigable(prop.LinkedFormId.Value))
+                // Value column: cell navigation link, FormID link, or plain text
+                if (prop.CellNavigationFormId is > 0)
+                {
+                    var cellLink = new TextBlock
+                    {
+                        Text = prop.Value,
+                        FontSize = 12,
+                        Padding = new Thickness(0, 3, 4, 2),
+                        Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                            Microsoft.UI.Colors.CornflowerBlue)
+                    };
+                    var capturedCellFormId = prop.CellNavigationFormId.Value;
+                    cellLink.Tapped += (_, _) => NavigateToCellInWorldMap(capturedCellFormId);
+                    Grid.SetRow(cellLink, currentRow);
+                    Grid.SetColumn(cellLink, 2);
+                    mainGrid.Children.Add(cellLink);
+                }
+                else if (prop.LinkedFormId is > 0 && IsFormIdNavigable(prop.LinkedFormId.Value))
                 {
                     var link = CreateFormIdLink(prop.Value, prop.LinkedFormId.Value, 12, monospace: true);
                     link.Margin = new Thickness(0, 2, 4, 2);
@@ -861,6 +973,50 @@ public sealed partial class SingleFileTab
         }
 
         return "Other";
+    }
+
+    private void NavigateToCellInWorldMap(uint cellFormId)
+    {
+        if (_session.WorldViewData?.CellByFormId.TryGetValue(cellFormId, out var cell) != true || cell == null)
+        {
+            return;
+        }
+
+        // For exterior cells, navigate to worldspace first
+        if (cell.WorldspaceFormId is > 0)
+        {
+            var wsIdx = _session.WorldViewData.Worldspaces.FindIndex(ws => ws.FormId == cell.WorldspaceFormId.Value);
+            if (wsIdx >= 0)
+            {
+                WorldMapControl.NavigateToWorldspaceAndCell(wsIdx, cell);
+                return;
+            }
+        }
+
+        WorldMapControl.NavigateToCell(cell);
+    }
+
+    private async void ViewWorldspace_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedBrowserNode?.DataObject is not WorldspaceRecord ws)
+        {
+            return;
+        }
+
+        await PopulateWorldMapAsync();
+        if (_session.WorldViewData == null)
+        {
+            return;
+        }
+
+        var wsIdx = _session.WorldViewData.Worldspaces.FindIndex(w => w.FormId == ws.FormId);
+        if (wsIdx < 0)
+        {
+            return;
+        }
+
+        SubTabView.SelectedItem = WorldMapTab;
+        WorldMapControl.NavigateToWorldspace(wsIdx);
     }
 
     private void ResetWorldMap()

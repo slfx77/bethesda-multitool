@@ -26,6 +26,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     // --- Cell browser search ---
     private List<CellListItem> _allCellItems = [];
+    private BrowserMode _activeBrowser = BrowserMode.None;
+
+    // --- Legend category visibility ---
+    private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
+    private bool _legendExpanded = true;
+
+    // --- Navigation history ---
+    private readonly Stack<WorldNavState> _navBack = new();
+    private readonly Stack<WorldNavState> _navForward = new();
+    private bool _isRestoringNav;
 
     // --- Cell grid lookup (built when worldspace changes) ---
     private Dictionary<(int x, int y), CellRecord>? _cellGridLookup;
@@ -88,9 +98,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         WorldspaceComboBox.Items.Clear();
         foreach (var ws in data.Worldspaces)
         {
-            var name = ws.FullName ?? ws.EditorId ?? $"0x{ws.FormId:X8}";
-            var cellCount = ws.Cells.Count;
-            WorldspaceComboBox.Items.Add($"{name} ({cellCount} cells)");
+            var name = FormatWorldspaceName(ws);
+            WorldspaceComboBox.Items.Add($"{name} \u2014 {ws.Cells.Count} cells");
         }
 
         if (data.UnlinkedExteriorCells.Count > 0)
@@ -98,17 +107,113 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             WorldspaceComboBox.Items.Add($"Unlinked Exterior ({data.UnlinkedExteriorCells.Count} cells)");
         }
 
-        if (data.InteriorCells.Count > 0)
-        {
-            WorldspaceComboBox.Items.Add($"Interior Cells ({data.InteriorCells.Count})");
-        }
+        // Update toolbar button labels with counts
+        InteriorsButton.Content = data.InteriorCells.Count > 0
+            ? $"Interiors ({data.InteriorCells.Count})"
+            : "Interiors";
+        InteriorsButton.IsEnabled = data.InteriorCells.Count > 0;
+        AllCellsButton.Content = $"All Cells ({data.AllCells.Count})";
 
-        WorldspaceComboBox.Items.Add($"All Cells ({data.AllCells.Count})");
+        BuildLegendPanel();
 
         if (data.Worldspaces.Count > 0)
         {
             WorldspaceComboBox.SelectedIndex = 0;
         }
+    }
+
+    private void LegendToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _legendExpanded = !_legendExpanded;
+        LegendPanel.Visibility = _legendExpanded ? Visibility.Visible : Visibility.Collapsed;
+        LegendToggleIcon.Glyph = _legendExpanded ? "\uE70D" : "\uE70E";
+    }
+
+    private void BuildLegendPanel()
+    {
+        LegendPanel.Children.Clear();
+        var grayBorder = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 100, 100, 100));
+        var grayFill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(30, 128, 128, 128));
+        var graySwatchBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 100, 100, 100));
+        var whiteBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Colors.White);
+        var dimTextBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(128, 255, 255, 255));
+
+        foreach (var category in Enum.GetValues<PlacedObjectCategory>())
+        {
+            var color = GetCategoryColor(category);
+            var colorBorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
+            var colorFillBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Color.FromArgb(30, color.R, color.G, color.B));
+            var colorSwatchBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
+
+            var swatch = new Border
+            {
+                Width = 10,
+                Height = 10,
+                CornerRadius = new CornerRadius(category == PlacedObjectCategory.MapMarker ? 5 : 2),
+                Background = colorSwatchBrush
+            };
+            var label = new TextBlock
+            {
+                Text = GetCategoryDisplayName(category),
+                FontSize = 10,
+                Foreground = whiteBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0)
+            };
+            var content = new StackPanel
+            {
+                Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            content.Children.Add(swatch);
+            content.Children.Add(label);
+
+            var item = new Border
+            {
+                Child = content,
+                BorderBrush = colorBorderBrush,
+                Background = colorFillBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 3, 8, 3),
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            var enabled = true;
+            var capturedCategory = category;
+            item.Tapped += (_, _) =>
+            {
+                enabled = !enabled;
+                if (enabled)
+                {
+                    _hiddenCategories.Remove(capturedCategory);
+                    item.BorderBrush = colorBorderBrush;
+                    item.Background = colorFillBrush;
+                    swatch.Background = colorSwatchBrush;
+                    label.Foreground = whiteBrush;
+                }
+                else
+                {
+                    _hiddenCategories.Add(capturedCategory);
+                    item.BorderBrush = grayBorder;
+                    item.Background = grayFill;
+                    swatch.Background = graySwatchBrush;
+                    label.Foreground = dimTextBrush;
+                }
+
+                MapCanvas.Invalidate();
+            };
+
+            LegendPanel.Children.Add(item);
+        }
+    }
+
+    private void SetCanvasMode(bool canvasVisible)
+    {
+        MapCanvas.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
+        LegendOverlay.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
+        CellBrowserPanel.Visibility = canvasVisible ? Visibility.Collapsed : Visibility.Visible;
     }
 
     public void SelectObject(PlacedReference? obj)
@@ -125,6 +230,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _selectedCell = null;
         _selectedObject = null;
         _mode = ViewMode.WorldOverview;
+        _activeBrowser = BrowserMode.None;
+        _hiddenCategories.Clear();
+        _navBack.Clear();
+        _navForward.Clear();
         _worldHeightmapDirty = true;
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
@@ -155,19 +264,17 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
 
         var idx = WorldspaceComboBox.SelectedIndex;
-        var nextIdx = _data.Worldspaces.Count;
 
-        // Compute dynamic indices based on which optional entries exist
-        var unlinkedIdx = _data.UnlinkedExteriorCells.Count > 0 ? nextIdx++ : -1;
-        var interiorIdx = _data.InteriorCells.Count > 0 ? nextIdx++ : -1;
-        var allCellsIdx = nextIdx;
+        // Dropdown now only contains worldspaces + optional "Unlinked Exterior" entry
+        var unlinkedIdx = _data.UnlinkedExteriorCells.Count > 0 ? _data.Worldspaces.Count : -1;
 
-        if (idx < _data.Worldspaces.Count)
+        if (idx >= 0 && idx < _data.Worldspaces.Count)
         {
             // Worldspace selected
             _selectedWorldspace = _data.Worldspaces[idx];
             _unlinkedCells = null;
             _mode = ViewMode.WorldOverview;
+            _activeBrowser = BrowserMode.None;
             _selectedCell = null;
             BackButton.Visibility = Visibility.Collapsed;
             _worldHeightmapBitmap?.Dispose();
@@ -180,8 +287,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _filteredMarkers = _data.MarkersByWorldspace
                 .GetValueOrDefault(_selectedWorldspace.FormId) ?? [];
             BuildCellGridLookup();
-            MapCanvas.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
-            CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+            SetCanvasMode(true);
             ZoomToFitWorldspace();
             MapCanvas.Invalidate();
         }
@@ -191,6 +297,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _selectedWorldspace = null;
             _unlinkedCells = _data.UnlinkedExteriorCells;
             _mode = ViewMode.WorldOverview;
+            _activeBrowser = BrowserMode.None;
             _selectedCell = null;
             BackButton.Visibility = Visibility.Collapsed;
             _worldHeightmapBitmap?.Dispose();
@@ -202,54 +309,142 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _cellHeightmapBitmap = null;
             _filteredMarkers = [];
             BuildCellGridLookup();
-            MapCanvas.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
-            CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+            SetCanvasMode(true);
             ZoomToFitWorldspace();
             MapCanvas.Invalidate();
-        }
-        else if (idx == interiorIdx)
-        {
-            // Interior cells — show as searchable list (interiors are isolated, map is useless)
-            _selectedWorldspace = null;
-            _unlinkedCells = null;
-            _mode = ViewMode.CellBrowser;
-            _selectedCell = null;
-            BackButton.Visibility = Visibility.Collapsed;
-            _filteredMarkers = [];
-            MapCanvas.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
-            CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
-            PopulateInteriorCellBrowser();
-        }
-        else if (idx == allCellsIdx)
-        {
-            // All Cells browser mode
-            _selectedWorldspace = null;
-            _unlinkedCells = null;
-            _mode = ViewMode.CellBrowser;
-            _selectedCell = null;
-            BackButton.Visibility = Visibility.Collapsed;
-            _filteredMarkers = [];
-            MapCanvas.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
-            CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
-            PopulateCellBrowser();
         }
     }
 
     private void BackButton_Click(object sender, RoutedEventArgs e)
     {
-        _mode = ViewMode.WorldOverview;
+        if (_navBack.Count > 0)
+        {
+            _navForward.Push(CaptureNavState());
+            _isRestoringNav = true;
+            RestoreNavState(_navBack.Pop());
+            _isRestoringNav = false;
+            UpdateNavButtons();
+            return;
+        }
+
+        // Fallback: simple back behavior
         _selectedCell = null;
-        BackButton.Visibility = Visibility.Collapsed;
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
         HoverInfoText.Text = "";
 
+        if (_activeBrowser != BrowserMode.None)
+        {
+            _mode = ViewMode.CellBrowser;
+            SetCanvasMode(false);
+            UpdateNavButtons();
+            return;
+        }
+
+        _mode = ViewMode.WorldOverview;
         if (GetActiveCells().Count > 0)
         {
             ZoomToFitWorldspace();
         }
 
         MapCanvas.Invalidate();
+        UpdateNavButtons();
+    }
+
+    private void ForwardButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_navForward.Count == 0)
+        {
+            return;
+        }
+
+        _navBack.Push(CaptureNavState());
+        _isRestoringNav = true;
+        RestoreNavState(_navForward.Pop());
+        _isRestoringNav = false;
+        UpdateNavButtons();
+    }
+
+    private WorldNavState CaptureNavState() => new(
+        _mode, _activeBrowser,
+        WorldspaceComboBox.SelectedIndex,
+        _selectedCell?.FormId);
+
+    private void RestoreNavState(WorldNavState state)
+    {
+        _selectedCell = null;
+        _cellHeightmapBitmap?.Dispose();
+        _cellHeightmapBitmap = null;
+        HoverInfoText.Text = "";
+
+        switch (state.Mode)
+        {
+            case ViewMode.CellBrowser:
+                // Restore to a browser view
+                if (state.Browser == BrowserMode.Interiors)
+                {
+                    InteriorsButton_Click(this, new RoutedEventArgs());
+                }
+                else if (state.Browser == BrowserMode.AllCells)
+                {
+                    AllCellsButton_Click(this, new RoutedEventArgs());
+                }
+
+                break;
+
+            case ViewMode.CellDetail when state.CellFormId.HasValue:
+                // Restore worldspace first if needed
+                if (state.WorldspaceComboIndex >= 0 &&
+                    state.WorldspaceComboIndex != WorldspaceComboBox.SelectedIndex)
+                {
+                    WorldspaceComboBox.SelectedIndex = state.WorldspaceComboIndex;
+                }
+
+                // Find and navigate to the cell
+                var cell = FindCellByFormId(state.CellFormId.Value);
+                if (cell != null)
+                {
+                    NavigateToCell(cell);
+                }
+
+                break;
+
+            default:
+                // WorldOverview — restore worldspace selection
+                if (state.WorldspaceComboIndex >= 0 &&
+                    state.WorldspaceComboIndex < WorldspaceComboBox.Items.Count)
+                {
+                    WorldspaceComboBox.SelectedIndex = state.WorldspaceComboIndex;
+                }
+
+                break;
+        }
+    }
+
+    private CellRecord? FindCellByFormId(uint formId)
+    {
+        // Check current worldspace cells
+        if (_selectedWorldspace != null)
+        {
+            var cell = _selectedWorldspace.Cells.Find(c => c.FormId == formId);
+            if (cell != null)
+            {
+                return cell;
+            }
+        }
+
+        // Check all cells
+        return _data?.AllCells.Find(c => c.FormId == formId);
+    }
+
+    private void UpdateNavButtons()
+    {
+        BackButton.Visibility = _navBack.Count > 0 || _mode == ViewMode.CellDetail
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ForwardButton.Visibility = _navForward.Count > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private void ZoomFit_Click(object sender, RoutedEventArgs e)
@@ -264,6 +459,93 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
 
         MapCanvas.Invalidate();
+    }
+
+    private void InteriorsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_data == null || _data.InteriorCells.Count == 0)
+        {
+            return;
+        }
+
+        if (!_isRestoringNav)
+        {
+            _navForward.Clear();
+            _navBack.Push(CaptureNavState());
+        }
+
+        _selectedWorldspace = null;
+        _unlinkedCells = null;
+        _mode = ViewMode.CellBrowser;
+        _activeBrowser = BrowserMode.Interiors;
+        _selectedCell = null;
+        _filteredMarkers = [];
+        SetCanvasMode(false);
+        FilterHasObjects.IsChecked = false;
+        FilterNamedOnly.IsChecked = false;
+        PopulateInteriorCellBrowser();
+        UpdateNavButtons();
+    }
+
+    private void AllCellsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_data == null)
+        {
+            return;
+        }
+
+        if (!_isRestoringNav)
+        {
+            _navForward.Clear();
+            _navBack.Push(CaptureNavState());
+        }
+
+        _selectedWorldspace = null;
+        _unlinkedCells = null;
+        _mode = ViewMode.CellBrowser;
+        _activeBrowser = BrowserMode.AllCells;
+        _selectedCell = null;
+        _filteredMarkers = [];
+        SetCanvasMode(false);
+        FilterHasObjects.IsChecked = false;
+        FilterNamedOnly.IsChecked = false;
+        PopulateCellBrowser();
+        UpdateNavButtons();
+    }
+
+    private void CellFilter_Changed(object sender, RoutedEventArgs e)
+    {
+        ApplyCellFilters();
+    }
+
+    private void ApplyCellFilters()
+    {
+        var query = CellSearchBox.Text?.Trim() ?? "";
+        var hasObjects = FilterHasObjects.IsChecked == true;
+        var namedOnly = FilterNamedOnly.IsChecked == true;
+
+        IEnumerable<CellListItem> filtered = _allCellItems;
+
+        if (!string.IsNullOrEmpty(query))
+        {
+            filtered = filtered.Where(i =>
+                i.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                i.GridLabel.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                i.Group.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (hasObjects)
+        {
+            filtered = filtered.Where(i => i.Cell.PlacedObjects.Count > 0);
+        }
+
+        if (namedOnly)
+        {
+            filtered = filtered.Where(i =>
+                !string.IsNullOrEmpty(i.Cell.FullName) || !string.IsNullOrEmpty(i.Cell.EditorId));
+        }
+
+        RebuildCellListFromItems(filtered.ToList());
     }
 
     // ========================================================================
@@ -341,6 +623,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
                 foreach (var obj in cell.PlacedObjects)
                 {
+                    if (_hiddenCategories.Contains(GetObjectCategory(obj)))
+                    {
+                        continue;
+                    }
+
                     if (!IsPointInView(obj.X, -obj.Y, tlWorld, brWorld, GetObjectViewMargin(obj)))
                     {
                         continue;
@@ -367,7 +654,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
                 foreach (var obj in cell.PlacedObjects)
                 {
-                    if (obj.IsMapMarker || !IsPointInView(obj.X, -obj.Y, tlWorld, brWorld, GetObjectViewMargin(obj)))
+                    if (obj.IsMapMarker || _hiddenCategories.Contains(GetObjectCategory(obj)) ||
+                        !IsPointInView(obj.X, -obj.Y, tlWorld, brWorld, GetObjectViewMargin(obj)))
                     {
                         continue;
                     }
@@ -471,7 +759,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void DrawMapMarkers(CanvasDrawingSession ds)
     {
-        if (_data == null || _filteredMarkers.Count == 0)
+        if (_data == null || _filteredMarkers.Count == 0 ||
+            _hiddenCategories.Contains(PlacedObjectCategory.MapMarker))
         {
             return;
         }
@@ -563,6 +852,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var (tlWorld, brWorld) = GetVisibleWorldBounds();
         foreach (var obj in _selectedCell.PlacedObjects)
         {
+            if (_hiddenCategories.Contains(GetObjectCategory(obj)))
+            {
+                continue;
+            }
+
             if (!IsPointInView(obj.X, -obj.Y, tlWorld, brWorld, GetObjectViewMargin(obj)))
             {
                 continue;
@@ -1191,26 +1485,79 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             {
                 InspectObject?.Invoke(this, hitObj);
             }
+            else
+            {
+                // Click on empty space: deselect object, show cell info
+                _selectedObject = null;
+                InspectCell?.Invoke(this, _selectedCell);
+                MapCanvas.Invalidate();
+            }
         }
     }
 
-    private void NavigateToCell(CellRecord cell)
+    public void NavigateToCell(CellRecord cell)
     {
+        if (!_isRestoringNav)
+        {
+            _navForward.Clear();
+            _navBack.Push(CaptureNavState());
+        }
+
         _selectedCell = cell;
         _mode = ViewMode.CellDetail;
-        BackButton.Visibility = Visibility.Visible;
         _hoveredObject = null;
+
+        // Ensure canvas is visible (may be hidden if coming from browser)
+        SetCanvasMode(true);
 
         // Build cell heightmap
         BuildCellHeightmapBitmap(MapCanvas, cell);
 
         ZoomToFitCell(cell);
         MapCanvas.Invalidate();
+        UpdateNavButtons();
     }
 
     // ========================================================================
     // Hit Testing
     // ========================================================================
+
+    /// <summary>
+    ///     Tests whether worldPos hits the object's visual bounds (rotated AABB or circle fallback).
+    ///     Returns distance to object center if hit, float.MaxValue otherwise.
+    /// </summary>
+    private float HitTestObjectBounds(Vector2 worldPos, PlacedReference obj)
+    {
+        var pos = new Vector2(obj.X, -obj.Y);
+
+        if (_data?.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds) == true)
+        {
+            var halfW = (bounds.X2 - bounds.X1) * 0.5f * obj.Scale;
+            var halfH = (bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale;
+
+            if (halfW >= 1f || halfH >= 1f)
+            {
+                // Transform test point into object's local (unrotated) space
+                // Drawing uses CreateRotation(-obj.RotZ, pos), so inverse is +obj.RotZ
+                var inverseRotation = Matrix3x2.CreateRotation(obj.RotZ, pos);
+                var localPoint = Vector2.Transform(worldPos, inverseRotation);
+
+                // Add small padding for usability (5 screen pixels)
+                var pad = 5f / _zoom;
+                if (localPoint.X >= pos.X - halfW - pad && localPoint.X <= pos.X + halfW + pad &&
+                    localPoint.Y >= pos.Y - halfH - pad && localPoint.Y <= pos.Y + halfH + pad)
+                {
+                    return Vector2.Distance(worldPos, pos);
+                }
+
+                return float.MaxValue;
+            }
+        }
+
+        // No valid OBND — fallback to circle (matches drawn circle radius)
+        var dist = Vector2.Distance(worldPos, pos);
+        return dist <= 12f / _zoom ? dist : float.MaxValue;
+    }
 
     private PlacedReference? HitTestPlacedObject(Vector2 worldPos)
     {
@@ -1221,14 +1568,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         PlacedReference? closest = null;
         var closestDist = float.MaxValue;
-        var hitRadius = 50f / _zoom; // Screen-size-relative hit radius
 
         foreach (var obj in _selectedCell.PlacedObjects)
         {
-            var objPos = new Vector2(obj.X, -obj.Y);
-            var dist = Vector2.Distance(worldPos, objPos);
+            if (_hiddenCategories.Contains(GetObjectCategory(obj)))
+            {
+                continue;
+            }
 
-            if (dist < hitRadius && dist < closestDist)
+            var dist = HitTestObjectBounds(worldPos, obj);
+            if (dist < closestDist)
             {
                 closestDist = dist;
                 closest = obj;
@@ -1245,6 +1594,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return null;
         }
 
+        var useBounds = _zoom > 0.07f; // Matches rendering threshold (boxes vs dots)
         var hitRadius = 30f / _zoom;
         PlacedReference? closest = null;
         var closestDist = float.MaxValue;
@@ -1264,10 +1614,27 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
                 foreach (var obj in cell!.PlacedObjects)
                 {
-                    var objPos = new Vector2(obj.X, -obj.Y);
-                    var dist = Vector2.Distance(worldPos, objPos);
+                    if (_hiddenCategories.Contains(GetObjectCategory(obj)))
+                    {
+                        continue;
+                    }
 
-                    if (dist < hitRadius && dist < closestDist)
+                    float dist;
+                    if (useBounds)
+                    {
+                        dist = HitTestObjectBounds(worldPos, obj);
+                    }
+                    else
+                    {
+                        var objPos = new Vector2(obj.X, -obj.Y);
+                        dist = Vector2.Distance(worldPos, objPos);
+                        if (dist >= hitRadius)
+                        {
+                            dist = float.MaxValue;
+                        }
+                    }
+
+                    if (dist < closestDist)
                     {
                         closestDist = dist;
                         closest = obj;
@@ -1286,15 +1653,27 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             foreach (var obj in cell.PlacedObjects)
             {
-                if (obj.IsMapMarker)
+                if (obj.IsMapMarker || _hiddenCategories.Contains(GetObjectCategory(obj)))
                 {
                     continue;
                 }
 
-                var objPos = new Vector2(obj.X, -obj.Y);
-                var dist = Vector2.Distance(worldPos, objPos);
+                float dist;
+                if (useBounds)
+                {
+                    dist = HitTestObjectBounds(worldPos, obj);
+                }
+                else
+                {
+                    var objPos = new Vector2(obj.X, -obj.Y);
+                    dist = Vector2.Distance(worldPos, objPos);
+                    if (dist >= hitRadius)
+                    {
+                        dist = float.MaxValue;
+                    }
+                }
 
-                if (dist < hitRadius && dist < closestDist)
+                if (dist < closestDist)
                 {
                     closestDist = dist;
                     closest = obj;
@@ -1307,7 +1686,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private PlacedReference? HitTestMapMarker(Vector2 worldPos)
     {
-        if (_filteredMarkers.Count == 0)
+        if (_filteredMarkers.Count == 0 || _hiddenCategories.Contains(PlacedObjectCategory.MapMarker))
         {
             return null;
         }
@@ -1376,6 +1755,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         WorldspaceComboBox.SelectedIndex = worldspaceIndex;
         // Then navigate to the specific cell
         NavigateToCell(cell);
+    }
+
+    public void NavigateToWorldspace(int worldspaceIndex)
+    {
+        if (worldspaceIndex >= 0 && worldspaceIndex < WorldspaceComboBox.Items.Count)
+        {
+            WorldspaceComboBox.SelectedIndex = worldspaceIndex;
+        }
     }
 
     public void NavigateToObjectInOverview(PlacedReference obj)
@@ -1473,17 +1860,17 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             }
             else if (cell.WorldspaceFormId is > 0)
             {
-                if (_data!.FormIdToEditorId.TryGetValue(cell.WorldspaceFormId.Value, out var wsName))
+                var wsEditorId = _data!.Resolver.GetEditorId(cell.WorldspaceFormId.Value);
+                var wsDisplayName = _data.Resolver.GetDisplayName(cell.WorldspaceFormId.Value);
+
+                if (!string.IsNullOrEmpty(wsDisplayName) && !string.IsNullOrEmpty(wsEditorId) &&
+                    !string.Equals(wsDisplayName, wsEditorId, StringComparison.OrdinalIgnoreCase))
                 {
-                    group = wsName;
-                }
-                else if (_data.FormIdToDisplayName.TryGetValue(cell.WorldspaceFormId.Value, out var wsDisplayName))
-                {
-                    group = wsDisplayName;
+                    group = $"{wsDisplayName} ({wsEditorId})";
                 }
                 else
                 {
-                    group = $"Worldspace 0x{cell.WorldspaceFormId.Value:X8}";
+                    group = wsEditorId ?? wsDisplayName ?? $"Worldspace 0x{cell.WorldspaceFormId.Value:X8}";
                 }
             }
             else
@@ -1540,21 +1927,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void CellSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        var query = CellSearchBox.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(query))
-        {
-            RebuildCellListFromItems(_allCellItems);
-            return;
-        }
-
-        var filtered = _allCellItems
-            .Where(i =>
-                i.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                i.GridLabel.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                i.Group.Contains(query, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        RebuildCellListFromItems(filtered);
+        ApplyCellFilters();
     }
 
     private void CellListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1574,8 +1947,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         if (CellListView.SelectedItem is CellListItem item)
         {
-            MapCanvas.Visibility = Visibility.Visible;
-            CellBrowserPanel.Visibility = Visibility.Collapsed;
             NavigateToCell(item.Cell);
         }
     }
@@ -1746,6 +2117,33 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     }
 
     // ========================================================================
+    // Category Helpers
+    // ========================================================================
+
+    private PlacedObjectCategory GetObjectCategory(PlacedReference obj)
+    {
+        if (obj.IsMapMarker)
+        {
+            return PlacedObjectCategory.MapMarker;
+        }
+
+        return obj.RecordType switch
+        {
+            "ACHR" => PlacedObjectCategory.Npc,
+            "ACRE" => PlacedObjectCategory.Creature,
+            _ => _data?.CategoryIndex.GetValueOrDefault(obj.BaseFormId, PlacedObjectCategory.Unknown)
+                 ?? PlacedObjectCategory.Unknown
+        };
+    }
+
+    private static string GetCategoryDisplayName(PlacedObjectCategory category) => category switch
+    {
+        PlacedObjectCategory.Npc => "NPC",
+        PlacedObjectCategory.MapMarker => "Map Marker",
+        _ => category.ToString()
+    };
+
+    // ========================================================================
     // Color Helpers
     // ========================================================================
 
@@ -1799,6 +2197,24 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         "Interior" => 1,
         _ => 0
     };
+
+    /// <summary>
+    ///     Format worldspace name as "Display Name (EditorId)" when both are available
+    ///     and different, otherwise just the best available name.
+    /// </summary>
+    private static string FormatWorldspaceName(WorldspaceRecord ws)
+    {
+        var fullName = ws.FullName;
+        var editorId = ws.EditorId;
+
+        if (!string.IsNullOrEmpty(fullName) && !string.IsNullOrEmpty(editorId) &&
+            !string.Equals(fullName, editorId, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{fullName} ({editorId})";
+        }
+
+        return fullName ?? editorId ?? $"0x{ws.FormId:X8}";
+    }
 
     // ========================================================================
     // HeightToColor — ported from HeightmapPngExporter
@@ -1904,6 +2320,19 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         CellDetail,
         CellBrowser
     }
+
+    private enum BrowserMode
+    {
+        None,
+        Interiors,
+        AllCells
+    }
+
+    private record WorldNavState(
+        ViewMode Mode,
+        BrowserMode Browser,
+        int WorldspaceComboIndex,
+        uint? CellFormId);
 
     /// <summary>View model for a cell in the cell browser list.</summary>
     internal sealed class CellListItem

@@ -28,8 +28,7 @@ public sealed partial class SingleFileTab
         {
             EnsureAllChildrenLoaded(
                 _esmBrowserTree,
-                _session.AnalysisResult?.FormIdMap,
-                _session.SemanticResult?.FormIdToDisplayName);
+                _session.Resolver);
             _flatListBuilt = true;
         }
 

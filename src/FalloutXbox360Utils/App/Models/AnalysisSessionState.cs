@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Strings;
 
@@ -29,9 +30,11 @@ internal sealed class AnalysisSessionState : IDisposable
     /// <summary>Semantic reconstruction result (computed on demand for reports/data browser).</summary>
     public RecordCollection? SemanticResult { get; set; }
 
+    /// <summary>Unified FormID resolver built from SemanticResult. Set when SemanticResult is assigned.</summary>
+    public FormIdResolver? Resolver { get; set; }
+
     // ── Dialogue Viewer derived data ──
     public DialogueTreeResult? DialogueTree { get; set; }
-    public Dictionary<uint, string>? SpeakerNameCache { get; set; }
     public Dictionary<uint, List<TopicDialogueNode>>? TopicsBySpeaker { get; set; }
     public Dictionary<uint, TopicDialogueNode>? DialogueFormIdIndex { get; set; }
     public bool DialogueViewerPopulated { get; set; }
@@ -77,9 +80,11 @@ internal sealed class AnalysisSessionState : IDisposable
         CoverageResult = null;
         SemanticResult = null;
 
+        // Resolver
+        Resolver = null;
+
         // Dialogue Viewer
         DialogueTree = null;
-        SpeakerNameCache = null;
         TopicsBySpeaker = null;
         DialogueFormIdIndex = null;
         DialogueViewerPopulated = false;

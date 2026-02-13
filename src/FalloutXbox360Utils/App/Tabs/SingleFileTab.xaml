@@ -222,7 +222,7 @@
 
         <!--  Tab 2: Data Browser  -->
         <controls:TabViewItem x:Name="DataBrowserTab" x:Uid="Tab_DataBrowser"
-                              IsClosable="False" IsEnabled="False">
+                              IsClosable="False">
           <Grid Padding="0,16,0,0">
             <!--  Placeholder: loading indicator  -->
             <StackPanel x:Name="DataBrowserPlaceholder"
@@ -347,6 +347,12 @@
                           Margin="0,8,0,0"
                           Click="GoToRecordOffset_Click"
                           Visibility="Collapsed" />
+                  <Button x:Name="ViewWorldspaceButton" Grid.Row="2"
+                          Content="View Worldspace"
+                          Click="ViewWorldspace_Click"
+                          Visibility="Collapsed"
+                          Margin="0,8,0,0"
+                          ToolTipService.ToolTip="View this worldspace in the World tab" />
                 </Grid>
 
                 <Border Grid.Row="1" CornerRadius="4"
@@ -363,7 +369,7 @@
         <!--  Tab 3: Dialogue Viewer  -->
         <controls:TabViewItem x:Name="DialogueViewerTab"
                               Header="Dialogue Viewer"
-                              IsClosable="False" IsEnabled="False">
+                              IsClosable="False">
           <Grid Padding="0,16,0,0">
             <!--  Placeholder (shown before population)  -->
             <StackPanel x:Name="DialogueViewerPlaceholder"
@@ -496,7 +502,7 @@
 
         <!--  Tab 4: World Map  -->
         <controls:TabViewItem x:Name="WorldMapTab" Header="World"
-                              IsClosable="False" IsEnabled="False">
+                              IsClosable="False">
           <Grid Padding="0,8,0,0">
             <!--  Placeholder  -->
             <StackPanel x:Name="WorldMapPlaceholder"
@@ -536,11 +542,11 @@
                            Margin="0,0,0,8" />
 
                 <Button x:Name="ViewInMapButton" Grid.Row="1"
-                        Content="View in Map"
+                        Content="View Cell"
                         Click="ViewInMap_Click"
                         Visibility="Collapsed"
                         Margin="0,0,0,8"
-                        ToolTipService.ToolTip="Navigate to this cell in the map view" />
+                        ToolTipService.ToolTip="View this cell in detail mode" />
 
                 <Border Grid.Row="2" CornerRadius="4"
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
@@ -555,7 +561,7 @@
 
         <!--  Tab 5: Reports  -->
         <controls:TabViewItem x:Name="ReportsTab" x:Uid="Tab_Reports"
-                              IsClosable="False" IsEnabled="False">
+                              IsClosable="False">
           <Grid Padding="16">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
@@ -647,7 +653,7 @@
 
         <!--  Tab 6: Summary (File Info + Coverage/Record Breakdown)  -->
         <controls:TabViewItem x:Name="SummaryTab" x:Uid="Tab_Summary"
-                              IsClosable="False" IsEnabled="False">
+                              IsClosable="False">
           <Grid Padding="16">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
@@ -715,7 +721,7 @@
 
         <!--  Tab 7: Coverage  -->
         <controls:TabViewItem x:Name="CoverageTab" x:Uid="Tab_Coverage"
-                              IsClosable="False" IsEnabled="False">
+                              IsClosable="False">
           <Grid Padding="16">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="400" />

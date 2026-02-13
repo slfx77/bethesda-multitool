@@ -117,8 +117,7 @@ public sealed partial class SingleFileTab
 
             _session.DialogueTree = result.DialogueTree;
 
-            // Build speaker name cache
-            _session.SpeakerNameCache = BuildSpeakerNameCache(result);
+            // Resolver is already built in EnsureSemanticReconstructionAsync
 
             // Build speaker index for NPC browse mode
             // Build set of NPCs with FullName to distinguish real NPCs from marker/template NPCs
@@ -144,34 +143,9 @@ public sealed partial class SingleFileTab
         }
     }
 
-    private Dictionary<uint, string> BuildSpeakerNameCache(RecordCollection result)
+    private string ResolveFormName(uint formId)
     {
-        var cache = new Dictionary<uint, string>();
-
-        foreach (var npc in result.Npcs)
-        {
-            cache.TryAdd(npc.FormId, npc.FullName ?? npc.EditorId ?? $"0x{npc.FormId:X8}");
-        }
-
-        foreach (var creature in result.Creatures)
-        {
-            cache.TryAdd(creature.FormId, creature.FullName ?? creature.EditorId ?? $"0x{creature.FormId:X8}");
-        }
-
-        foreach (var (formId, name) in result.FormIdToDisplayName)
-        {
-            cache.TryAdd(formId, name);
-        }
-
-        if (_session.AnalysisResult?.FormIdMap != null)
-        {
-            foreach (var (formId, name) in _session.AnalysisResult.FormIdMap)
-            {
-                cache.TryAdd(formId, name);
-            }
-        }
-
-        return cache;
+        return _session.Resolver?.GetBestNameWithRefChain(formId) ?? $"0x{formId:X8}";
     }
 
     private static Dictionary<uint, List<TopicDialogueNode>> BuildTopicsBySpeaker(
@@ -348,7 +322,7 @@ public sealed partial class SingleFileTab
 
     private void BuildNpcPickerTree(string? searchQuery)
     {
-        if (_session.TopicsBySpeaker == null || _session.SpeakerNameCache == null)
+        if (_session.TopicsBySpeaker == null)
         {
             return;
         }
@@ -356,7 +330,7 @@ public sealed partial class SingleFileTab
         var speakers = _session.TopicsBySpeaker
             .Select(kv => (
                 FormId: kv.Key,
-                Name: _session.SpeakerNameCache.GetValueOrDefault(kv.Key, $"0x{kv.Key:X8}"),
+                Name: ResolveFormName(kv.Key),
                 Topics: FilterTopics(kv.Value, searchQuery)))
             .Where(s => s.Topics.Count > 0)
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
@@ -779,16 +753,13 @@ public sealed partial class SingleFileTab
         // Relationships (with navigable links)
         if (info.TopicFormId is > 0)
         {
-            var topicDisplay = _session.SpeakerNameCache?.GetValueOrDefault(info.TopicFormId.Value)
-                               ?? $"0x{info.TopicFormId.Value:X8}";
+            var topicDisplay = ResolveFormName(info.TopicFormId.Value);
             AddRow("Topic", topicDisplay, info.TopicFormId.Value);
         }
 
         if (info.QuestFormId is > 0)
         {
-            var questName = _session.SpeakerNameCache?.GetValueOrDefault(info.QuestFormId.Value)
-                            ?? _session.SemanticResult?.FormIdToEditorId?.GetValueOrDefault(info.QuestFormId.Value)
-                            ?? $"0x{info.QuestFormId.Value:X8}";
+            var questName = ResolveFormName(info.QuestFormId.Value);
             AddRow("Quest", questName, info.QuestFormId.Value);
         }
 
@@ -1123,7 +1094,7 @@ public sealed partial class SingleFileTab
             return "Unknown Speaker";
         }
 
-        return _session.SpeakerNameCache?.GetValueOrDefault(formId.Value) ?? $"0x{formId.Value:X8}";
+        return _session.Resolver?.GetBestNameWithRefChain(formId.Value) ?? $"0x{formId.Value:X8}";
     }
 
     #endregion

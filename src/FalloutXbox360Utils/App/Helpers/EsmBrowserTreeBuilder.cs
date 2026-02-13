@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
@@ -40,8 +41,8 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     private static readonly string[] CategoryOrder =
     [
-        "Identity", "Attributes", "Derived Stats", "Characteristics", "AI", "Associations", "References", "General",
-        "Metadata"
+        "Identity", "Attributes", "Derived Stats", "Characteristics", "AI", "Associations", "References",
+        "Statistics", "General", "Metadata"
     ];
 
     /// <summary>
@@ -69,6 +70,7 @@ internal static partial class EsmBrowserTreeBuilder
         ["Containers"] = "\uF540", // Safe
 
         // World sub-categories
+        ["Worldspaces"] = "\uE909", // Globe
         ["Cells"] = "\uE707", // MapPin
         ["Map Markers"] = "\uE707" // MapPin
     };
@@ -198,7 +200,7 @@ internal static partial class EsmBrowserTreeBuilder
 
     public static ObservableCollection<EsmBrowserNode> BuildTree(
         RecordCollection result,
-        Dictionary<uint, string>? lookup = null)
+        FormIdResolver? resolver = null)
     {
         var root = new ObservableCollection<EsmBrowserNode>();
 
@@ -239,6 +241,7 @@ internal static partial class EsmBrowserTreeBuilder
 
         // World objects (base definitions only — spatial visualization is in the World Map tab)
         AddCategory(root, "World Objects", "\uE774", [
+            ("Worldspaces", result.Worldspaces),
             ("Leveled Lists", result.LeveledLists),
             ("Activators", result.Activators),
             ("Lights", result.Lights),
@@ -330,8 +333,7 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     public static void LoadRecordTypeChildren(
         EsmBrowserNode typeNode,
-        Dictionary<uint, string>? lookup = null,
-        Dictionary<uint, string>? displayNameLookup = null)
+        FormIdResolver? resolver = null)
     {
         if (typeNode.DataObject is not IList records)
         {
@@ -353,8 +355,8 @@ internal static partial class EsmBrowserTreeBuilder
             if (record is DialogueRecord dialogue)
             {
                 // Dialogue records: show response text with quest/topic context
-                displayName = BuildDialogueDisplayName(dialogue, formIdHex, lookup, displayNameLookup);
-                detail = BuildDialogueDetail(dialogue, formIdHex, lookup);
+                displayName = BuildDialogueDisplayName(dialogue, formIdHex, resolver);
+                detail = BuildDialogueDetail(dialogue, formIdHex, resolver);
             }
             else if (!string.IsNullOrEmpty(fullName) && !string.IsNullOrEmpty(editorId))
             {
@@ -389,7 +391,7 @@ internal static partial class EsmBrowserTreeBuilder
                 ParentIconGlyph = typeNode.IconGlyph,
                 FileOffset = offset,
                 DataObject = record,
-                Properties = BuildProperties(record, lookup, displayNameLookup)
+                Properties = BuildProperties(record, resolver)
             };
 
             recordNodes.Add(recordNode);
@@ -418,8 +420,7 @@ internal static partial class EsmBrowserTreeBuilder
     private static string BuildDialogueDisplayName(
         DialogueRecord dialogue,
         string formIdHex,
-        Dictionary<uint, string>? editorIdLookup,
-        Dictionary<uint, string>? displayNameLookup)
+        FormIdResolver? resolver)
     {
         // Try first response text
         var responseText = dialogue.Responses.FirstOrDefault()?.Text;
@@ -435,8 +436,8 @@ internal static partial class EsmBrowserTreeBuilder
         }
 
         // Fallback: Quest - Topic names
-        var questName = ResolveEditorIdOrName(dialogue.QuestFormId, editorIdLookup, displayNameLookup);
-        var topicName = ResolveEditorIdOrName(dialogue.TopicFormId, editorIdLookup, displayNameLookup);
+        var questName = ResolveEditorIdOrName(dialogue.QuestFormId, resolver);
+        var topicName = ResolveEditorIdOrName(dialogue.TopicFormId, resolver);
         if (questName != null || topicName != null)
         {
             var parts = new[] { questName, topicName }.Where(p => p != null);
@@ -453,7 +454,7 @@ internal static partial class EsmBrowserTreeBuilder
     private static string? BuildDialogueDetail(
         DialogueRecord dialogue,
         string formIdHex,
-        Dictionary<uint, string>? editorIdLookup)
+        FormIdResolver? resolver)
     {
         // Only show quest/topic context when display name is response or prompt text.
         // When display is already quest/topic (no response/prompt), showing it again is redundant.
@@ -466,10 +467,10 @@ internal static partial class EsmBrowserTreeBuilder
         }
 
         var questId = dialogue.QuestFormId is > 0
-            ? editorIdLookup?.GetValueOrDefault(dialogue.QuestFormId.Value)
+            ? resolver?.GetEditorId(dialogue.QuestFormId.Value)
             : null;
         var topicId = dialogue.TopicFormId is > 0
-            ? editorIdLookup?.GetValueOrDefault(dialogue.TopicFormId.Value)
+            ? resolver?.GetEditorId(dialogue.TopicFormId.Value)
             : null;
 
         if (questId != null || topicId != null)
@@ -483,12 +484,11 @@ internal static partial class EsmBrowserTreeBuilder
 
     private static string? ResolveEditorIdOrName(
         uint? formId,
-        Dictionary<uint, string>? editorIdLookup,
-        Dictionary<uint, string>? displayNameLookup)
+        FormIdResolver? resolver)
     {
         if (formId is not > 0) return null;
-        return editorIdLookup?.GetValueOrDefault(formId.Value)
-               ?? displayNameLookup?.GetValueOrDefault(formId.Value);
+        return resolver?.GetEditorId(formId.Value)
+               ?? resolver?.GetDisplayName(formId.Value);
     }
 
 
@@ -551,8 +551,7 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     public static List<EsmPropertyEntry> BuildProperties(
         object record,
-        Dictionary<uint, string>? lookup = null,
-        Dictionary<uint, string>? displayNameLookup = null)
+        FormIdResolver? resolver = null)
     {
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
@@ -855,6 +854,12 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
+            // Skip Cells list for WorldspaceRecord (shown as summary instead)
+            if (record is WorldspaceRecord && prop.Name == "Cells")
+            {
+                continue;
+            }
+
             // Handle expandable list properties (skip empty lists)
             if (value is IList list)
             {
@@ -867,7 +872,7 @@ internal static partial class EsmBrowserTreeBuilder
                 foreach (var item in list)
                 {
                     // Create table-like entries for Factions and Inventory (with column data)
-                    subItems.Add(CreateListItemEntry(item, lookup, displayNameLookup));
+                    subItems.Add(CreateListItemEntry(item, resolver));
                 }
 
                 properties.Add(new EsmPropertyEntry
@@ -889,8 +894,8 @@ internal static partial class EsmBrowserTreeBuilder
 
             if (isFormIdField && value is uint formIdVal && formIdVal != 0)
             {
-                var editorId = lookup?.GetValueOrDefault(formIdVal);
-                var fullName = displayNameLookup?.GetValueOrDefault(formIdVal);
+                var editorId = resolver?.GetEditorId(formIdVal);
+                var fullName = resolver?.GetDisplayName(formIdVal);
 
                 properties.Add(new EsmPropertyEntry
                 {
@@ -902,7 +907,7 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
-            var valueStr = FormatPropertyValue(prop.Name, value, prop.PropertyType, lookup, displayNameLookup);
+            var valueStr = FormatPropertyValue(prop.Name, value, prop.PropertyType, resolver);
             if (valueStr == null)
             {
                 continue;
@@ -1026,6 +1031,31 @@ internal static partial class EsmBrowserTreeBuilder
             });
         }
 
+        // Worldspace-specific summary (cell counts, total objects)
+        if (record is WorldspaceRecord wsRecord)
+        {
+            var gridCells = wsRecord.Cells.Count(c => c.GridX.HasValue);
+            var persistentCells = wsRecord.Cells.Count - gridCells;
+            var totalObjects = wsRecord.Cells.Sum(c => c.PlacedObjects.Count);
+
+            properties.Add(new EsmPropertyEntry
+                { Name = "Cell Count", Value = wsRecord.Cells.Count.ToString("N0"), Category = "Statistics" });
+            if (gridCells > 0)
+            {
+                properties.Add(new EsmPropertyEntry
+                    { Name = "  Grid Cells", Value = gridCells.ToString("N0"), Category = "Statistics" });
+            }
+
+            if (persistentCells > 0)
+            {
+                properties.Add(new EsmPropertyEntry
+                    { Name = "  Persistent Cells", Value = persistentCells.ToString("N0"), Category = "Statistics" });
+            }
+
+            properties.Add(new EsmPropertyEntry
+                { Name = "Total Placed Objects", Value = totalObjects.ToString("N0"), Category = "Statistics" });
+        }
+
         // Sort properties by category for consistent grouping
         return properties.OrderBy(p => Array.IndexOf(CategoryOrder, p.Category ?? "General"))
             .ThenBy(p => p.Category == "General" ? 1 : 0) // Unknown categories at end
@@ -1071,8 +1101,7 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     private static EsmPropertyEntry CreateListItemEntry(
         object? item,
-        Dictionary<uint, string>? lookup,
-        Dictionary<uint, string>? displayNameLookup)
+        FormIdResolver? resolver)
     {
         if (item == null)
         {
@@ -1082,8 +1111,8 @@ internal static partial class EsmBrowserTreeBuilder
         // Factions: 4 columns - Editor ID, Full Name, Form ID, Rank
         if (item is FactionMembership faction)
         {
-            var fullName = displayNameLookup?.GetValueOrDefault(faction.FactionFormId);
-            var editorId = lookup?.GetValueOrDefault(faction.FactionFormId);
+            var fullName = resolver?.GetDisplayName(faction.FactionFormId);
+            var editorId = resolver?.GetEditorId(faction.FactionFormId);
             return new EsmPropertyEntry
             {
                 Col1 = editorId ?? "",
@@ -1109,8 +1138,8 @@ internal static partial class EsmBrowserTreeBuilder
         // Faction Relations: Editor ID/Name, Full Name, Modifier, Combat Reaction
         if (item is FactionRelation relation)
         {
-            var fullName = displayNameLookup?.GetValueOrDefault(relation.FactionFormId);
-            var editorId = lookup?.GetValueOrDefault(relation.FactionFormId);
+            var fullName = resolver?.GetDisplayName(relation.FactionFormId);
+            var editorId = resolver?.GetEditorId(relation.FactionFormId);
             return new EsmPropertyEntry
             {
                 Col1 = editorId ?? $"0x{relation.FactionFormId:X8}",
@@ -1124,8 +1153,8 @@ internal static partial class EsmBrowserTreeBuilder
         // Inventory: 4 columns - Quantity, Editor ID, Full Name, Form ID
         if (item is InventoryItem inv)
         {
-            var fullName = displayNameLookup?.GetValueOrDefault(inv.ItemFormId);
-            var editorId = lookup?.GetValueOrDefault(inv.ItemFormId);
+            var fullName = resolver?.GetDisplayName(inv.ItemFormId);
+            var editorId = resolver?.GetEditorId(inv.ItemFormId);
             return new EsmPropertyEntry
             {
                 Col1 = $"{inv.Count}×",
@@ -1139,8 +1168,8 @@ internal static partial class EsmBrowserTreeBuilder
         // Leveled List Entries: 4 columns - Level, Editor ID, Full Name, Form ID + Count
         if (item is LeveledEntry entry)
         {
-            var fullName = displayNameLookup?.GetValueOrDefault(entry.FormId);
-            var editorId = lookup?.GetValueOrDefault(entry.FormId);
+            var fullName = resolver?.GetDisplayName(entry.FormId);
+            var editorId = resolver?.GetEditorId(entry.FormId);
             return new EsmPropertyEntry
             {
                 Col1 = $"Lvl {entry.Level}",
@@ -1172,8 +1201,8 @@ internal static partial class EsmBrowserTreeBuilder
         // For uint items that might be FormIDs (Spells, Packages, etc.)
         if (item is uint formId && formId != 0)
         {
-            var fullName = displayNameLookup?.GetValueOrDefault(formId);
-            var editorId = lookup?.GetValueOrDefault(formId);
+            var fullName = resolver?.GetDisplayName(formId);
+            var editorId = resolver?.GetEditorId(formId);
             return new EsmPropertyEntry
             {
                 Name = FormatFormIdReference(formId, editorId, fullName),
@@ -1208,8 +1237,8 @@ internal static partial class EsmBrowserTreeBuilder
                         (prop.Name.EndsWith("FormId", StringComparison.Ordinal) ||
                          prop.Name == "FormId" || KnownFormIdFields.Contains(prop.Name)))
                     {
-                        var dispName = displayNameLookup?.GetValueOrDefault(fid);
-                        var edId = lookup?.GetValueOrDefault(fid);
+                        var dispName = resolver?.GetDisplayName(fid);
+                        var edId = resolver?.GetEditorId(fid);
                         parts.Add($"{FormatPropertyName(prop.Name)}: {FormatFormIdReference(fid, edId, dispName)}");
                     }
                     else if (val is float f)
@@ -1233,8 +1262,7 @@ internal static partial class EsmBrowserTreeBuilder
         string name,
         object? value,
         Type propertyType,
-        Dictionary<uint, string>? lookup,
-        Dictionary<uint, string>? displayNameLookup = null)
+        FormIdResolver? resolver = null)
     {
         // Show FullName even when empty (important for creatures without display names)
         if (name == "FullName")
@@ -1276,8 +1304,8 @@ internal static partial class EsmBrowserTreeBuilder
                 return null;
             }
 
-            var editorId = lookup?.GetValueOrDefault(formId);
-            var displayName = displayNameLookup?.GetValueOrDefault(formId);
+            var editorId = resolver?.GetEditorId(formId);
+            var displayName = resolver?.GetDisplayName(formId);
 
             return FormatFormIdReference(formId, editorId, displayName);
         }

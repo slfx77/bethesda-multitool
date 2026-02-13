@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -36,8 +37,7 @@ public sealed partial class SingleFileTab
         {
             EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                 browserNode,
-                _session.AnalysisResult?.FormIdMap,
-                _session.SemanticResult?.FormIdToDisplayName);
+                _session.Resolver);
         }
 
         // Add child TreeViewNodes with progressive loading for large sets
@@ -64,8 +64,7 @@ public sealed partial class SingleFileTab
                     else if (browserNode.NodeType == "RecordType" && browserNode.Children.Count == 0)
                         EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                             browserNode,
-                            _session.AnalysisResult?.FormIdMap,
-                            _session.SemanticResult?.FormIdToDisplayName);
+                            _session.Resolver);
                     AddChildNodesProgressively(treeNode, browserNode.Children);
                     EnsureTreeScrollViewerHooked();
                 }
@@ -246,10 +245,9 @@ public sealed partial class SingleFileTab
         if (!_flatListBuilt)
         {
             StatusTextBlock.Text = "Building search index...";
-            var lookup = _session.AnalysisResult?.FormIdMap;
-            var displayNameLookup = _session.SemanticResult?.FormIdToDisplayName;
+            var resolver = _session.Resolver;
             var tree = _esmBrowserTree;
-            await Task.Run(() => EnsureAllChildrenLoaded(tree, lookup, displayNameLookup), token);
+            await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver), token);
             _flatListBuilt = true;
         }
 
@@ -292,8 +290,7 @@ public sealed partial class SingleFileTab
 
     private static void EnsureAllChildrenLoaded(
         ObservableCollection<EsmBrowserNode> tree,
-        Dictionary<uint, string>? lookup,
-        Dictionary<uint, string>? displayNameLookup)
+        FormIdResolver? resolver)
     {
         // Snapshot collections before iterating — UI thread may modify Children
         // concurrently through tree expansion (EsmTreeView_Expanding).
@@ -315,7 +312,7 @@ public sealed partial class SingleFileTab
 
                 if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
                 {
-                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, lookup, displayNameLookup);
+                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver);
                 }
             }
         }

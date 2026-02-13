@@ -16,58 +16,26 @@
     <!-- Toolbar -->
     <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Padding="0,0,0,8">
       <Button x:Name="BackButton" Click="BackButton_Click"
-              Visibility="Collapsed" ToolTipService.ToolTip="Back to World Map">
+              Visibility="Collapsed" ToolTipService.ToolTip="Back">
         <FontIcon Glyph="&#xE72B;" FontSize="12" />
+      </Button>
+      <Button x:Name="ForwardButton" Click="ForwardButton_Click"
+              Visibility="Collapsed" ToolTipService.ToolTip="Forward">
+        <FontIcon Glyph="&#xE72A;" FontSize="12" />
       </Button>
       <ComboBox x:Name="WorldspaceComboBox" MinWidth="220"
                 SelectionChanged="WorldspaceComboBox_SelectionChanged"
                 PlaceholderText="Select Worldspace" />
+      <Button x:Name="InteriorsButton" Content="Interiors"
+              Click="InteriorsButton_Click"
+              ToolTipService.ToolTip="Browse interior cells" />
+      <Button x:Name="AllCellsButton" Content="All Cells"
+              Click="AllCellsButton_Click"
+              ToolTipService.ToolTip="Browse all cells" />
       <Button Content="Fit" Click="ZoomFit_Click"
               ToolTipService.ToolTip="Zoom to fit" />
       <TextBlock x:Name="ZoomLevelText" VerticalAlignment="Center" FontSize="11"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-
-      <!-- Legend toggle -->
-      <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-              CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
-        <StackPanel Orientation="Horizontal" Spacing="12">
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Width="10" Height="10" CornerRadius="2"
-                    Background="#A0A0A0" />
-            <TextBlock Text="Static" FontSize="10" VerticalAlignment="Center" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Width="10" Height="10" CornerRadius="2"
-                    Background="#3C8C28" />
-            <TextBlock Text="Plant" FontSize="10" VerticalAlignment="Center" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Width="10" Height="10" CornerRadius="2"
-                    Background="#FFA500" />
-            <TextBlock Text="Door" FontSize="10" VerticalAlignment="Center" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Width="10" Height="10" CornerRadius="2"
-                    Background="#00C8C8" />
-            <TextBlock Text="Activator" FontSize="10" VerticalAlignment="Center" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Width="10" Height="10" CornerRadius="2"
-                    Background="#00C800" />
-            <TextBlock Text="NPC" FontSize="10" VerticalAlignment="Center" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Width="10" Height="10" CornerRadius="2"
-                    Background="#DC3232" />
-            <TextBlock Text="Creature" FontSize="10" VerticalAlignment="Center" />
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Width="10" Height="10" CornerRadius="5"
-                    Background="#FFFFFF" />
-            <TextBlock Text="Marker" FontSize="10" VerticalAlignment="Center" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
     </StackPanel>
 
     <!-- Win2D Canvas -->
@@ -78,16 +46,43 @@
                           PointerReleased="MapCanvas_PointerReleased"
                           PointerWheelChanged="MapCanvas_PointerWheelChanged" />
 
+    <!-- Legend overlay (floating above canvas, bottom-left) -->
+    <Border x:Name="LegendOverlay" Grid.Row="1"
+            VerticalAlignment="Bottom" HorizontalAlignment="Left"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            CornerRadius="4" Padding="6,4" Margin="8,0,0,8"
+            Opacity="0.92">
+      <StackPanel Spacing="0">
+        <Button x:Name="LegendToggleButton" Click="LegendToggle_Click"
+                HorizontalAlignment="Left"
+                Background="Transparent" BorderThickness="0"
+                Padding="4,2" MinHeight="0" MinWidth="0">
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <FontIcon x:Name="LegendToggleIcon" Glyph="&#xE70D;" FontSize="10" />
+            <TextBlock Text="Legend" FontSize="10" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <StackPanel x:Name="LegendPanel" Spacing="3" Margin="0,4,0,0" />
+      </StackPanel>
+    </Border>
+
     <!-- Cell Browser (shown instead of canvas when "All Cells" or "Interiors" is selected) -->
     <Grid x:Name="CellBrowserPanel" Grid.Row="1" Visibility="Collapsed">
       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
       <TextBox x:Name="CellSearchBox" Grid.Row="0" PlaceholderText="Search cells..."
                TextChanged="CellSearchBox_TextChanged" Margin="0,0,0,4" />
-      <ListView x:Name="CellListView" Grid.Row="1"
+      <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" Margin="0,0,0,4">
+        <CheckBox x:Name="FilterHasObjects" Content="Has objects"
+                  Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
+        <CheckBox x:Name="FilterNamedOnly" Content="Named only"
+                  Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
+      </StackPanel>
+      <ListView x:Name="CellListView" Grid.Row="2"
                 SelectionMode="Single"
                 SelectionChanged="CellListView_SelectionChanged">
         <ListView.GroupStyle>
@@ -119,7 +114,7 @@
           </DataTemplate>
         </ListView.ItemTemplate>
       </ListView>
-      <Button x:Name="ViewCellButton" Grid.Row="2" Content="View Cell"
+      <Button x:Name="ViewCellButton" Grid.Row="3" Content="View Cell"
               Click="ViewCellButton_Click" Visibility="Collapsed"
               Margin="0,4,0,0"
               ToolTipService.ToolTip="View this cell in detail mode" />
