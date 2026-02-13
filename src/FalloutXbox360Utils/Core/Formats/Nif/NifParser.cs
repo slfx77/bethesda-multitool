@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif;
 
@@ -33,7 +34,7 @@ internal static class NifParser
         }
 
         pos = ParseBethesdaHeader(data, pos, info);
-        var numBlockTypes = ReadUInt16(data, pos, info.IsBigEndian);
+        var numBlockTypes = BinaryUtils.ReadUInt16(data, pos, info.IsBigEndian);
         pos += 2;
 
         pos = ParseBlockTypeNames(data, pos, numBlockTypes, info);
@@ -96,7 +97,7 @@ internal static class NifParser
                 return -1;
             }
 
-            var strLen = ReadUInt32(data, pos, info.IsBigEndian);
+            var strLen = BinaryUtils.ReadUInt32(data, pos, info.IsBigEndian);
             pos += 4;
 
             if (strLen > 256 || pos + strLen > data.Length)
@@ -117,14 +118,14 @@ internal static class NifParser
         var blockTypeIndices = new ushort[numBlocks];
         for (var i = 0; i < numBlocks; i++)
         {
-            blockTypeIndices[i] = ReadUInt16(data, pos + i * 2, isBigEndian);
+            blockTypeIndices[i] = BinaryUtils.ReadUInt16(data, pos + i * 2, isBigEndian);
         }
 
         var sizePos = pos + numBlocks * 2;
         var blockSizes = new uint[numBlocks];
         for (var i = 0; i < numBlocks; i++)
         {
-            blockSizes[i] = ReadUInt32(data, sizePos + i * 4, isBigEndian);
+            blockSizes[i] = BinaryUtils.ReadUInt32(data, sizePos + i * 4, isBigEndian);
         }
 
         return (blockTypeIndices, blockSizes);
@@ -132,7 +133,7 @@ internal static class NifParser
 
     private static int SkipGroups(byte[] data, int pos, bool isBigEndian)
     {
-        var numGroups = ReadUInt32(data, pos, isBigEndian);
+        var numGroups = BinaryUtils.ReadUInt32(data, pos, isBigEndian);
         return pos + 4 + (int)numGroups * 4;
     }
 
@@ -153,20 +154,6 @@ internal static class NifParser
             });
             pos += (int)blockSizes[i];
         }
-    }
-
-    private static ushort ReadUInt16(byte[] data, int pos, bool isBigEndian)
-    {
-        return isBigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos))
-            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
-    }
-
-    private static uint ReadUInt32(byte[] data, int pos, bool isBigEndian)
-    {
-        return isBigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
     }
 
     private static int ParseStringTable(byte[] data, int pos, bool isBigEndian, List<string> strings)

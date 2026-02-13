@@ -1,7 +1,7 @@
 // BSPackedAdditionalGeometryData extraction for Xbox 360 NIF files
 // Extracts half-float geometry data and converts to full floats
 
-using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 
@@ -77,7 +77,7 @@ internal static class NifPackedDataExtractor
             return false;
         }
 
-        numVertices = ReadUInt16(data, pos, isBigEndian);
+        numVertices = BinaryUtils.ReadUInt16(data, pos, isBigEndian);
         pos += 2;
 
         // NumBlockInfos (uint) - number of data streams
@@ -86,7 +86,7 @@ internal static class NifPackedDataExtractor
             return false;
         }
 
-        var numBlockInfos = ReadUInt32(data, pos, isBigEndian);
+        var numBlockInfos = BinaryUtils.ReadUInt32(data, pos, isBigEndian);
         pos += 4;
 
         Log.Debug($"    Packed data: {numVertices} vertices, {numBlockInfos} streams");
@@ -117,12 +117,12 @@ internal static class NifPackedDataExtractor
     {
         return new DataStreamInfo
         {
-            Type = ReadUInt32(data, pos, isBigEndian),
-            UnitSize = ReadUInt32(data, pos + 4, isBigEndian),
-            TotalSize = ReadUInt32(data, pos + 8, isBigEndian),
-            Stride = ReadUInt32(data, pos + 12, isBigEndian),
-            BlockIndex = ReadUInt32(data, pos + 16, isBigEndian),
-            BlockOffset = ReadUInt32(data, pos + 20, isBigEndian),
+            Type = BinaryUtils.ReadUInt32(data, pos, isBigEndian),
+            UnitSize = BinaryUtils.ReadUInt32(data, pos + 4, isBigEndian),
+            TotalSize = BinaryUtils.ReadUInt32(data, pos + 8, isBigEndian),
+            Stride = BinaryUtils.ReadUInt32(data, pos + 12, isBigEndian),
+            BlockIndex = BinaryUtils.ReadUInt32(data, pos + 16, isBigEndian),
+            BlockOffset = BinaryUtils.ReadUInt32(data, pos + 20, isBigEndian),
             Flags = data[pos + 24]
         };
     }
@@ -136,7 +136,7 @@ internal static class NifPackedDataExtractor
             return -1;
         }
 
-        var numDataBlocks = ReadUInt32(data, pos, isBigEndian);
+        var numDataBlocks = BinaryUtils.ReadUInt32(data, pos, isBigEndian);
         pos += 4;
 
         var rawDataOffset = -1;
@@ -153,8 +153,8 @@ internal static class NifPackedDataExtractor
                 break;
             }
 
-            var blockDataSize = ReadUInt32(data, pos, isBigEndian);
-            var numInnerBlocks = ReadUInt32(data, pos + 4, isBigEndian);
+            var blockDataSize = BinaryUtils.ReadUInt32(data, pos, isBigEndian);
+            var numInnerBlocks = BinaryUtils.ReadUInt32(data, pos + 4, isBigEndian);
             pos += 8;
 
             // Block offsets
@@ -165,7 +165,7 @@ internal static class NifPackedDataExtractor
                 break;
             }
 
-            var numData = ReadUInt32(data, pos, isBigEndian);
+            var numData = BinaryUtils.ReadUInt32(data, pos, isBigEndian);
             pos += 4;
 
             // Data sizes
@@ -423,9 +423,9 @@ internal static class NifPackedDataExtractor
             }
 
             // Read 3 half-floats (ignore the 4th W component)
-            result[v * 3 + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
-            result[v * 3 + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
-            result[v * 3 + 2] = HalfToFloat(ReadUInt16(data, vertexOffset + 4, isBigEndian));
+            result[v * 3 + 0] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset, isBigEndian));
+            result[v * 3 + 1] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 2, isBigEndian));
+            result[v * 3 + 2] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 4, isBigEndian));
         }
 
         return result;
@@ -485,10 +485,10 @@ internal static class NifPackedDataExtractor
             }
 
             // Read all 4 half-floats for bone weights
-            result[v * 4 + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
-            result[v * 4 + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
-            result[v * 4 + 2] = HalfToFloat(ReadUInt16(data, vertexOffset + 4, isBigEndian));
-            result[v * 4 + 3] = HalfToFloat(ReadUInt16(data, vertexOffset + 6, isBigEndian));
+            result[v * 4 + 0] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset, isBigEndian));
+            result[v * 4 + 1] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 2, isBigEndian));
+            result[v * 4 + 2] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 4, isBigEndian));
+            result[v * 4 + 3] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 6, isBigEndian));
         }
 
         return result;
@@ -511,8 +511,8 @@ internal static class NifPackedDataExtractor
                 break;
             }
 
-            result[v * 2 + 0] = HalfToFloat(ReadUInt16(data, vertexOffset, isBigEndian));
-            result[v * 2 + 1] = HalfToFloat(ReadUInt16(data, vertexOffset + 2, isBigEndian));
+            result[v * 2 + 0] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset, isBigEndian));
+            result[v * 2 + 1] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vertexOffset + 2, isBigEndian));
         }
 
         return result;
@@ -544,66 +544,6 @@ internal static class NifPackedDataExtractor
         }
 
         return result;
-    }
-
-    /// <summary>
-    ///     Read uint16 with endian handling.
-    /// </summary>
-    private static ushort ReadUInt16(byte[] data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2))
-            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset, 2));
-    }
-
-    /// <summary>
-    ///     Read uint32 with endian handling.
-    /// </summary>
-    private static uint ReadUInt32(byte[] data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
-    }
-
-    /// <summary>
-    ///     Convert half-float (16-bit) to single-precision float (32-bit).
-    /// </summary>
-    public static float HalfToFloat(ushort half)
-    {
-        var sign = (half >> 15) & 1;
-        var exp = (half >> 10) & 0x1F;
-        var mant = half & 0x3FF;
-
-        if (exp == 0)
-        {
-            // Zero or denormalized
-            if (mant == 0)
-            {
-                return sign == 0 ? 0f : -0f;
-            }
-
-            // Denormalized
-            var val = mant / 1024.0f * (float)Math.Pow(2, -14);
-            return sign == 0 ? val : -val;
-        }
-
-        if (exp == 31)
-        {
-            // Infinity or NaN
-            if (mant != 0)
-            {
-                return float.NaN;
-            }
-
-            return sign == 0 ? float.PositiveInfinity : float.NegativeInfinity;
-        }
-
-        // Normalized
-        var e = exp - 15 + 127;
-        var m = mant << 13;
-        var bits = (sign << 31) | (e << 23) | m;
-        return BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
     }
 
     private sealed record CategorizedStreams(

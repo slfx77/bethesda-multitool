@@ -1,21 +1,31 @@
-// NIF converter - Output writing methods
+// NIF converter - Output writing and in-place conversion methods
 
 using System.Buffers.Binary;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 using FalloutXbox360Utils.Core.Formats.Nif.Skinning;
+using FalloutXbox360Utils.Core.Utils;
+using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 
-internal sealed partial class NifConverter
+/// <summary>
+///     Handles the output phase of NIF conversion: writing converted headers, blocks, and footers.
+///     Supports both in-place conversion (no size changes) and full rebuild with expanded/stripped blocks.
+/// </summary>
+internal sealed class NifOutputWriter(NifConversionState state)
 {
+    private static readonly Logger Log = Logger.Instance;
+
+    private readonly NifConversionState _state = state;
+
     /// <summary>
     ///     Write the converted output with expanded geometry and removed packed blocks.
     /// </summary>
-    private void WriteConvertedOutput(byte[] input, byte[] output, NifInfo info, int[] blockRemap)
+    public void WriteConvertedOutput(byte[] input, byte[] output, NifInfo info, int[] blockRemap)
     {
         // Simple case: no expansions, no blocks to strip, and no new strings -> do in-place conversion
-        if (CanUseInPlaceConversion())
+        if (_state.CanUseInPlaceConversion)
         {
             Array.Copy(input, output, input.Length);
             ConvertInPlace(output, info, blockRemap);
@@ -24,10 +34,10 @@ internal sealed partial class NifConverter
 
         // Complex case: rebuild the file with new block sizes
         Log.Debug(
-            $"  Rebuilding file: removing {_blocksToStrip.Count} packed blocks, expanding {_geometryExpansions.Count} geometry, {_skinPartitionExpansions.Count} skin partition blocks, adding {_newStrings.Count} strings");
+            $"  Rebuilding file: removing {_state.BlocksToStrip.Count} packed blocks, expanding {_state.GeometryExpansions.Count} geometry, {_state.SkinPartitionExpansions.Count} skin partition blocks, adding {_state.NewStrings.Count} strings");
 
         var schemaConverter = new NifSchemaConverter(
-            _schema,
+            _state.Schema,
             info.BinaryVersion,
             (int)info.UserVersion,
             (int)info.BsVersion);
@@ -38,7 +48,7 @@ internal sealed partial class NifConverter
         // Write each block
         foreach (var block in info.Blocks)
         {
-            if (_blocksToStrip.Contains(block.Index))
+            if (_state.BlocksToStrip.Contains(block.Index))
             {
                 continue;
             }
@@ -61,15 +71,6 @@ internal sealed partial class NifConverter
         Log.Debug($"  Final output size: {outPos} (buffer size: {output.Length})");
     }
 
-    private bool CanUseInPlaceConversion()
-    {
-        return _blocksToStrip.Count == 0 &&
-               _geometryExpansions.Count == 0 &&
-               _havokExpansions.Count == 0 &&
-               _skinPartitionExpansions.Count == 0 &&
-               _newStrings.Count == 0;
-    }
-
     private (int newPos, int expectedSize) WriteBlockByType(
         byte[] input,
         byte[] output,
@@ -78,21 +79,21 @@ internal sealed partial class NifConverter
         NifSchemaConverter schemaConverter,
         int[] blockRemap)
     {
-        if (_geometryExpansions.TryGetValue(block.Index, out var expansion))
+        if (_state.GeometryExpansions.TryGetValue(block.Index, out var expansion))
         {
             var pos = WriteExpandedGeometryBlockWithMaps(input, output, outPos, block, expansion);
             return (pos, expansion.NewSize);
         }
 
-        if (_havokExpansions.TryGetValue(block.Index, out var havokExpansion))
+        if (_state.HavokExpansions.TryGetValue(block.Index, out var havokExpansion))
         {
-            var pos = WriteExpandedHavokBlock(input, output, outPos, block);
+            var pos = NifGeometryWriter.WriteExpandedHavokBlock(input, output, outPos, block);
             return (pos, havokExpansion.NewSize);
         }
 
-        if (_skinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))
+        if (_state.SkinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))
         {
-            var packedData = _skinPartitionToPackedData[block.Index];
+            var packedData = _state.SkinPartitionToPackedData[block.Index];
             var pos = NifSkinPartitionExpander.WriteExpanded(skinPartExpansion.ParsedData, packedData, output, outPos);
             return (pos, skinPartExpansion.NewSize);
         }
@@ -109,27 +110,27 @@ internal sealed partial class NifConverter
         BlockInfo block,
         GeometryBlockExpansion expansion)
     {
-        var packedData = _packedGeometryByBlock[expansion.PackedBlockIndex];
+        var packedData = _state.PackedGeometryByBlock[expansion.PackedBlockIndex];
 
         // Check if this geometry block has a vertex map for skinned mesh remapping
         ushort[]? vertexMap = null;
         ushort[]? triangles = null;
 
-        if (_geometryToSkinPartition.TryGetValue(block.Index, out var skinPartitionIndex))
+        if (_state.GeometryToSkinPartition.TryGetValue(block.Index, out var skinPartitionIndex))
         {
-            _vertexMaps.TryGetValue(skinPartitionIndex, out vertexMap);
-            _skinPartitionTriangles.TryGetValue(skinPartitionIndex, out triangles);
+            _state.VertexMaps.TryGetValue(skinPartitionIndex, out vertexMap);
+            _state.SkinPartitionTriangles.TryGetValue(skinPartitionIndex, out triangles);
             LogVertexMapAndTriangles(block.Index, skinPartitionIndex, vertexMap, triangles);
         }
 
         // For NiTriStripsData without skin partition, use triangles extracted from strips
-        if (triangles == null && _geometryStripTriangles.TryGetValue(block.Index, out var stripTriangles))
+        if (triangles == null && _state.GeometryStripTriangles.TryGetValue(block.Index, out var stripTriangles))
         {
             triangles = stripTriangles;
             Log.Debug($"    Block {block.Index}: Using {triangles.Length / 3} triangles from NiTriStripsData strips");
         }
 
-        return WriteExpandedGeometryBlock(input, output, outPos, block, packedData, vertexMap, triangles);
+        return NifGeometryWriter.WriteExpandedGeometryBlock(input, output, outPos, block, packedData, vertexMap, triangles);
     }
 
     private static void LogVertexMapAndTriangles(int blockIndex, int skinPartitionIndex, ushort[]? vertexMap,
@@ -200,7 +201,7 @@ internal sealed partial class NifConverter
         outPos += 4;
 
         // Num blocks (4 bytes) - write new count (LE)
-        var newBlockCount = info.BlockCount - _blocksToStrip.Count;
+        var newBlockCount = info.BlockCount - _state.BlocksToStrip.Count;
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), (uint)newBlockCount);
         srcPos += 4;
         outPos += 4;
@@ -256,7 +257,7 @@ internal sealed partial class NifConverter
     private static (int srcPos, int outPos) WriteBlockTypeInfo(byte[] input, byte[] output, int srcPos, int outPos)
     {
         // Num Block Types (ushort) - convert BE to LE
-        var numBlockTypes = ReadUInt16BE(input, srcPos);
+        var numBlockTypes = BinaryUtils.ReadUInt16BE(input, srcPos);
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numBlockTypes);
         srcPos += 2;
         outPos += 2;
@@ -282,7 +283,7 @@ internal sealed partial class NifConverter
         // Block type indices (ushort[numBlocks]) - skip removed blocks, convert BE to LE
         foreach (var block in info.Blocks)
         {
-            if (!_blocksToStrip.Contains(block.Index))
+            if (!_state.BlocksToStrip.Contains(block.Index))
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), block.TypeIndex);
                 outPos += 2;
@@ -294,9 +295,9 @@ internal sealed partial class NifConverter
         // Block sizes (uint[numBlocks]) - skip removed, update expanded, convert BE to LE
         foreach (var block in info.Blocks)
         {
-            if (!_blocksToStrip.Contains(block.Index))
+            if (!_state.BlocksToStrip.Contains(block.Index))
             {
-                var size = GetBlockOutputSize(block);
+                var size = _state.GetBlockOutputSize(block);
                 BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), (uint)size);
                 outPos += 4;
             }
@@ -307,38 +308,18 @@ internal sealed partial class NifConverter
         return (srcPos, outPos);
     }
 
-    private int GetBlockOutputSize(BlockInfo block)
-    {
-        if (_geometryExpansions.TryGetValue(block.Index, out var expansion))
-        {
-            return expansion.NewSize;
-        }
-
-        if (_havokExpansions.TryGetValue(block.Index, out var havokExpansion))
-        {
-            return havokExpansion.NewSize;
-        }
-
-        if (_skinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))
-        {
-            return skinPartExpansion.NewSize;
-        }
-
-        return block.Size;
-    }
-
     private (int srcPos, int outPos) WriteStringsSection(byte[] input, byte[] output, int srcPos, int outPos)
     {
         // Num strings (uint) - add new strings count
         var numStrings = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
-        var newNumStrings = numStrings + (uint)_newStrings.Count;
+        var newNumStrings = numStrings + (uint)_state.NewStrings.Count;
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), newNumStrings);
         srcPos += 4;
         outPos += 4;
 
         // Max string length (uint) - update if we have longer strings
         var maxStrLen = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
-        maxStrLen = Math.Max(maxStrLen, (uint)_newStrings.Select(s => s.Length).DefaultIfEmpty(0).Max());
+        maxStrLen = Math.Max(maxStrLen, (uint)_state.NewStrings.Select(s => s.Length).DefaultIfEmpty(0).Max());
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), maxStrLen);
         srcPos += 4;
         outPos += 4;
@@ -357,7 +338,7 @@ internal sealed partial class NifConverter
         }
 
         // Write new strings for node names
-        foreach (var str in _newStrings)
+        foreach (var str in _state.NewStrings)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), (uint)str.Length);
             outPos += 4;
@@ -438,15 +419,208 @@ internal sealed partial class NifConverter
         }
 
         // Restore node name if we have one from the palette
-        if (_nodeNameStringIndices.TryGetValue(block.Index, out var stringIndex))
+        if (_state.NodeNameStringIndices.TryGetValue(block.Index, out var stringIndex))
         {
             // The Name field is at offset 0 for NiNode/BSFadeNode (first field after AVObject inheritance)
             // It's a StringIndex which is a 4-byte int
             BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(outPos), stringIndex);
             Log.Debug(
-                $"    Block {block.Index} ({block.TypeName}): Set Name to string index {stringIndex} ('{_nodeNamesByBlock[block.Index]}')");
+                $"    Block {block.Index} ({block.TypeName}): Set Name to string index {stringIndex} ('{_state.NodeNamesByBlock[block.Index]}')");
         }
 
         return outPos + block.Size;
+    }
+
+    /// <summary>
+    ///     Convert the NIF in place (no size changes).
+    /// </summary>
+    public void ConvertInPlace(byte[] buf, NifInfo info, int[] blockRemap)
+    {
+        // Convert header
+        ConvertHeader(buf, info);
+
+        // Create schema converter
+        var schemaConverter = new NifSchemaConverter(
+            _state.Schema,
+            info.BinaryVersion,
+            (int)info.UserVersion,
+            (int)info.BsVersion);
+
+        // Convert each block using schema
+        foreach (var block in info.Blocks)
+        {
+            if (_state.BlocksToStrip.Contains(block.Index))
+            {
+                Log.Debug($"  Block {block.Index}: {block.TypeName} - skipping (will be removed)");
+                continue;
+            }
+
+            Log.Debug($"  Block {block.Index}: {block.TypeName} at offset {block.DataOffset:X}, size {block.Size}");
+
+            if (!schemaConverter.TryConvert(buf, block.DataOffset, block.Size, block.TypeName, blockRemap))
+            {
+                // Fallback: bulk swap all 4-byte values (may break some data)
+                Log.Debug("    -> Using fallback bulk swap");
+                BulkSwap32(buf, block.DataOffset, block.Size);
+            }
+        }
+
+        // Convert footer
+        ConvertFooter(buf, info);
+    }
+
+    /// <summary>
+    ///     Convert header endianness.
+    /// </summary>
+    private static void ConvertHeader(byte[] buf, NifInfo info)
+    {
+        // The header string and version are always little-endian
+        // Only the endian byte needs to change from 0 (BE) to 1 (LE)
+
+        // Find the endian byte position (after header string + binary version)
+        var pos = info.HeaderString.Length + 1 + 4; // +1 for newline, +4 for binary version
+
+        // Change endian byte from 0 to 1
+        if (buf[pos] == 0)
+        {
+            buf[pos] = 1;
+        }
+
+        // Swap header fields
+        SwapHeaderFields(buf, info);
+    }
+
+    /// <summary>
+    ///     Convert footer endianness.
+    /// </summary>
+    private static void ConvertFooter(byte[] buf, NifInfo info)
+    {
+        // Footer is at the end of the file after all blocks
+        // Structure: Num Roots (uint) + Root indices (int[Num Roots])
+
+        // Calculate footer position
+        var lastBlock = info.Blocks[^1];
+        var footerPos = lastBlock.DataOffset + lastBlock.Size;
+
+        if (footerPos + 4 > buf.Length)
+        {
+            return;
+        }
+
+        // Swap num roots
+        SwapUInt32InPlace(buf, footerPos);
+        var numRoots = BinaryUtils.ReadUInt32LE(buf, footerPos);
+        footerPos += 4;
+
+        // Swap root indices
+        for (var i = 0; i < numRoots && footerPos + 4 <= buf.Length; i++)
+        {
+            SwapUInt32InPlace(buf, footerPos);
+            footerPos += 4;
+        }
+    }
+
+    /// <summary>
+    ///     Swap all header fields from big-endian to little-endian.
+    /// </summary>
+    private static void SwapHeaderFields(byte[] buf, NifInfo info)
+    {
+        // Position after header string + newline + binary version + endian byte
+        var pos = info.HeaderString.Length + 1 + 4 + 1;
+
+        // User version (4 bytes) - already LE in Bethesda
+        pos += 4;
+
+        // Num blocks (4 bytes) - already LE in Bethesda
+        pos += 4;
+
+        // BS Header (Bethesda specific)
+        // BS Version (4 bytes) - already LE
+        var bsVersion = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos, 4));
+        pos += 4;
+
+        // Author string (1 byte length + chars)
+        var authorLen = buf[pos];
+        pos += 1 + authorLen;
+
+        // Unknown int if bsVersion > 130
+        if (bsVersion > 130)
+        {
+            pos += 4;
+        }
+
+        // Process Script if bsVersion < 131
+        if (bsVersion < 131)
+        {
+            var psLen = buf[pos];
+            pos += 1 + psLen;
+        }
+
+        // Export Script
+        var esLen = buf[pos];
+        pos += 1 + esLen;
+
+        // Max Filepath if bsVersion >= 103
+        if (bsVersion >= 103)
+        {
+            var mfLen = buf[pos];
+            pos += 1 + mfLen;
+        }
+
+        // Now we're at Num Block Types (ushort) - needs swap
+        SwapUInt16InPlace(buf, pos);
+        var numBlockTypes = BinaryUtils.ReadUInt16LE(buf, pos);
+        pos += 2;
+
+        // Block type strings (SizedString: uint length + chars)
+        for (var i = 0; i < numBlockTypes; i++)
+        {
+            SwapUInt32InPlace(buf, pos);
+            var strLen = BinaryUtils.ReadUInt32LE(buf, pos);
+            pos += 4 + (int)strLen;
+        }
+
+        // Block type indices (ushort[numBlocks])
+        for (var i = 0; i < info.BlockCount; i++)
+        {
+            SwapUInt16InPlace(buf, pos);
+            pos += 2;
+        }
+
+        // Block sizes (uint[numBlocks])
+        for (var i = 0; i < info.BlockCount; i++)
+        {
+            SwapUInt32InPlace(buf, pos);
+            pos += 4;
+        }
+
+        // Num strings (uint)
+        SwapUInt32InPlace(buf, pos);
+        var numStrings = BinaryUtils.ReadUInt32LE(buf, pos);
+        pos += 4;
+
+        // Max string length (uint)
+        SwapUInt32InPlace(buf, pos);
+        pos += 4;
+
+        // Strings (SizedString: uint length + chars)
+        for (var i = 0; i < numStrings; i++)
+        {
+            SwapUInt32InPlace(buf, pos);
+            var strLen = BinaryUtils.ReadUInt32LE(buf, pos);
+            pos += 4 + (int)strLen;
+        }
+
+        // Num groups (uint)
+        SwapUInt32InPlace(buf, pos);
+        var numGroups = BinaryUtils.ReadUInt32LE(buf, pos);
+        pos += 4;
+
+        // Groups (uint[numGroups])
+        for (var i = 0; i < numGroups; i++)
+        {
+            SwapUInt32InPlace(buf, pos);
+            pos += 4;
+        }
     }
 }

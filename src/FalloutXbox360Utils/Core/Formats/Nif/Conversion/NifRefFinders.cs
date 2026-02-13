@@ -1,17 +1,14 @@
-// NIF converter - Reference finding utilities
-// Methods for finding references (Skin Instance, Data) in geometry blocks
-
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 
-internal sealed partial class NifConverter
+internal static class NifRefFinders
 {
     /// <summary>
     ///     Parse hkPackedNiTriStripsData to check if it has compressed vertices.
     /// </summary>
-    private static HavokBlockExpansion? ParseHavokBlock(byte[] data, BlockInfo block, bool isBigEndian)
+    internal static HavokBlockExpansion? ParseHavokBlock(byte[] data, BlockInfo block, bool isBigEndian)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -85,7 +82,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Find the Skin Instance ref in a NiTriShape/NiTriStrips block.
     /// </summary>
-    private static int FindSkinInstanceRef(byte[] data, BlockInfo block, NifInfo info)
+    internal static int FindSkinInstanceRef(byte[] data, BlockInfo block, NifInfo info)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -184,7 +181,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Find the Data ref in a NiTriShape/NiTriStrips block.
     /// </summary>
-    private static int FindDataRef(byte[] data, BlockInfo block, NifInfo info)
+    internal static int FindDataRef(byte[] data, BlockInfo block, NifInfo info)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;

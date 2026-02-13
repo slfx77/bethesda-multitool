@@ -1,18 +1,17 @@
-// NIF converter - Geometry block expansion and writing
-
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 
-internal sealed partial class NifConverter
+internal static class NifGeometryWriter
 {
     /// <summary>
     ///     Write a geometry block with expanded packed data.
     ///     If vertexMap is provided (for skinned meshes), vertices are remapped from partition order to mesh order.
     ///     If triangles is provided, triangles are written for NiTriShapeData (converted from NiSkinPartition strips).
     /// </summary>
-    private static int WriteExpandedGeometryBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
+    internal static int WriteExpandedGeometryBlock(byte[] input, byte[] output, int outPos, BlockInfo block,
         PackedGeometryData packedData, ushort[]? vertexMap, ushort[]? triangles)
     {
         var srcPos = block.DataOffset;
@@ -24,7 +23,7 @@ internal sealed partial class NifConverter
         outPos += 4;
 
         // numVertices (ushort BE -> LE)
-        var numVertices = ReadUInt16BE(input, srcPos);
+        var numVertices = BinaryUtils.ReadUInt16BE(input, srcPos);
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numVertices);
         srcPos += 2;
         outPos += 2;
@@ -45,7 +44,7 @@ internal sealed partial class NifConverter
         outPos = WriteVertices(ctx, srcPos, outPos, origHasVertices, newHasVertices, out srcPos);
 
         // bsDataFlags - update flags based on packed data
-        var origBsDataFlags = ReadUInt16BE(input, srcPos);
+        var origBsDataFlags = BinaryUtils.ReadUInt16BE(input, srcPos);
         var newBsDataFlags = origBsDataFlags;
         if (packedData.Tangents != null)
         {
@@ -87,7 +86,7 @@ internal sealed partial class NifConverter
 
         // consistency (ushort BE -> LE)
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-            ReadUInt16BE(input, srcPos));
+            BinaryUtils.ReadUInt16BE(input, srcPos));
         srcPos += 2;
         outPos += 2;
 
@@ -109,7 +108,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write vertex positions from packed data or copy existing.
     /// </summary>
-    private static int WriteVertices(GeometryWriteContext ctx, int srcPos, int outPos,
+    internal static int WriteVertices(GeometryWriteContext ctx, int srcPos, int outPos,
         byte origHasVertices, byte newHasVertices, out int newSrcPos)
     {
         // Always prefer packed data when available - Xbox 360 files set hasVertices=1
@@ -129,7 +128,7 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private static int WriteVerticesFromPackedData(GeometryWriteContext ctx, int outPos)
+    internal static int WriteVerticesFromPackedData(GeometryWriteContext ctx, int outPos)
     {
         if (ctx.VertexMap is { Length: > 0 })
         {
@@ -139,7 +138,7 @@ internal sealed partial class NifConverter
         return WriteSequentialVertices(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Positions!);
     }
 
-    private static int WriteRemappedVertices(GeometryWriteContext ctx, int outPos)
+    internal static int WriteRemappedVertices(GeometryWriteContext ctx, int outPos)
     {
         var vertexDataSize = ctx.NumVertices * 12;
         var basePos = outPos;
@@ -166,7 +165,7 @@ internal sealed partial class NifConverter
         return outPos + vertexDataSize;
     }
 
-    private static int WriteSequentialVertices(byte[] output, int outPos, ushort numVertices, float[] positions)
+    internal static int WriteSequentialVertices(byte[] output, int outPos, ushort numVertices, float[] positions)
     {
         var packedVertexCount = Math.Min(numVertices, positions.Length / 3);
         for (var v = 0; v < packedVertexCount; v++)
@@ -190,7 +189,7 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private static int CopyAndConvertVertices(byte[] input, byte[] output, int srcPos, int outPos,
+    internal static int CopyAndConvertVertices(byte[] input, byte[] output, int srcPos, int outPos,
         ushort numVertices, out int newSrcPos)
     {
         for (var v = 0; v < numVertices * 3; v++)
@@ -208,7 +207,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write normals, tangents, and bitangents from packed data or copy existing.
     /// </summary>
-    private static int WriteNormalsAndTangents(GeometryWriteContext ctx, int srcPos, int outPos,
+    internal static int WriteNormalsAndTangents(GeometryWriteContext ctx, int srcPos, int outPos,
         GeometryFlags flags, out int newSrcPos)
     {
         // Always prefer packed data when available - Xbox 360 files set hasNormals=1
@@ -229,7 +228,7 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private static int WriteNormalsFromPackedData(GeometryWriteContext ctx, int outPos, ushort newBsDataFlags)
+    internal static int WriteNormalsFromPackedData(GeometryWriteContext ctx, int outPos, ushort newBsDataFlags)
     {
         // Write unpacked normals (with optional vertex map remapping for skinned meshes)
         outPos = WriteVec3Array(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.Normals!, ctx.VertexMap);
@@ -249,7 +248,7 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private static int CopyAndConvertNormals(byte[] input, byte[] output, int srcPos, int outPos,
+    internal static int CopyAndConvertNormals(byte[] input, byte[] output, int srcPos, int outPos,
         ushort numVertices, ushort origBsDataFlags, out int newSrcPos)
     {
         // Copy and convert existing normals
@@ -280,7 +279,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write a vec3 array with optional vertex map remapping.
     /// </summary>
-    private static int WriteVec3Array(byte[] output, int outPos, ushort numVertices, float[] data, ushort[]? vertexMap)
+    internal static int WriteVec3Array(byte[] output, int outPos, ushort numVertices, float[] data, ushort[]? vertexMap)
     {
         if (vertexMap is { Length: > 0 })
         {
@@ -322,7 +321,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write vertex colors from packed data or copy existing.
     /// </summary>
-    private static int WriteVertexColors(GeometryWriteContext ctx, int srcPos, int outPos, out int newSrcPos)
+    internal static int WriteVertexColors(GeometryWriteContext ctx, int srcPos, int outPos, out int newSrcPos)
     {
         // hasVertexColors (byte) - set to 1 if we have colors from packed data
         // NOTE: For skinned meshes, ubyte4 stream is bone indices, NOT vertex colors!
@@ -348,7 +347,7 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private static int WriteVertexColorsFromPackedData(GeometryWriteContext ctx, int outPos)
+    internal static int WriteVertexColorsFromPackedData(GeometryWriteContext ctx, int outPos)
     {
         if (ctx.VertexMap is { Length: > 0 })
         {
@@ -358,7 +357,7 @@ internal sealed partial class NifConverter
         return WriteSequentialVertexColors(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.VertexColors!);
     }
 
-    private static int WriteRemappedVertexColors(GeometryWriteContext ctx, int outPos)
+    internal static int WriteRemappedVertexColors(GeometryWriteContext ctx, int outPos)
     {
         var colorDataSize = ctx.NumVertices * 16;
         var basePos = outPos;
@@ -386,7 +385,7 @@ internal sealed partial class NifConverter
         return outPos + colorDataSize;
     }
 
-    private static int WriteSequentialVertexColors(byte[] output, int outPos, ushort numVertices, byte[] colors)
+    internal static int WriteSequentialVertexColors(byte[] output, int outPos, ushort numVertices, byte[] colors)
     {
         for (var v = 0; v < numVertices; v++)
         {
@@ -405,7 +404,7 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private static (float r, float g, float b, float a) ExtractArgbAsRgba(byte[] colors, int index)
+    internal static (float r, float g, float b, float a) ExtractArgbAsRgba(byte[] colors, int index)
     {
         var a = colors[index * 4 + 0] / 255.0f;
         var r = colors[index * 4 + 1] / 255.0f;
@@ -414,7 +413,7 @@ internal sealed partial class NifConverter
         return (r, g, b, a);
     }
 
-    private static int CopyAndConvertVertexColors(byte[] input, byte[] output, int srcPos, int outPos,
+    internal static int CopyAndConvertVertexColors(byte[] input, byte[] output, int srcPos, int outPos,
         ushort numVertices, out int newSrcPos)
     {
         for (var v = 0; v < numVertices * 4; v++)
@@ -432,7 +431,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write UV coordinates from packed data or copy existing.
     /// </summary>
-    private static int WriteUVSets(GeometryWriteContext ctx, int srcPos, int outPos,
+    internal static int WriteUVSets(GeometryWriteContext ctx, int srcPos, int outPos,
         ushort origBsDataFlags, ushort newBsDataFlags, out int newSrcPos)
     {
         var origNumUVSets = origBsDataFlags & 1;
@@ -453,7 +452,7 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private static int WriteUVsFromPackedData(GeometryWriteContext ctx, int outPos)
+    internal static int WriteUVsFromPackedData(GeometryWriteContext ctx, int outPos)
     {
         if (ctx.VertexMap is { Length: > 0 })
         {
@@ -463,7 +462,7 @@ internal sealed partial class NifConverter
         return WriteSequentialUVs(ctx.Output, outPos, ctx.NumVertices, ctx.PackedData.UVs!);
     }
 
-    private static int WriteRemappedUVs(GeometryWriteContext ctx, int outPos)
+    internal static int WriteRemappedUVs(GeometryWriteContext ctx, int outPos)
     {
         var uvDataSize = ctx.NumVertices * 8;
         var basePos = outPos;
@@ -488,7 +487,7 @@ internal sealed partial class NifConverter
         return outPos + uvDataSize;
     }
 
-    private static int WriteSequentialUVs(byte[] output, int outPos, ushort numVertices, float[] uvs)
+    internal static int WriteSequentialUVs(byte[] output, int outPos, ushort numVertices, float[] uvs)
     {
         for (var v = 0; v < numVertices; v++)
         {
@@ -501,7 +500,7 @@ internal sealed partial class NifConverter
         return outPos;
     }
 
-    private static int CopyAndConvertUVs(byte[] input, byte[] output, int srcPos, int outPos,
+    internal static int CopyAndConvertUVs(byte[] input, byte[] output, int srcPos, int outPos,
         ushort numVertices, out int newSrcPos)
     {
         for (var v = 0; v < numVertices * 2; v++)
@@ -519,19 +518,19 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write NiTriStripsData or NiTriShapeData specific fields.
     /// </summary>
-    private static int WriteTriStripSpecificData(byte[] input, byte[] output, int srcPos, int outPos, string blockType,
+    internal static int WriteTriStripSpecificData(byte[] input, byte[] output, int srcPos, int outPos, string blockType,
         ushort[]? triangles)
     {
         if (blockType == "NiTriStripsData")
         {
             // numTriangles (ushort)
             BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                ReadUInt16BE(input, srcPos));
+                BinaryUtils.ReadUInt16BE(input, srcPos));
             srcPos += 2;
             outPos += 2;
 
             // numStrips (ushort)
-            var numStrips = ReadUInt16BE(input, srcPos);
+            var numStrips = BinaryUtils.ReadUInt16BE(input, srcPos);
             BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numStrips);
             srcPos += 2;
             outPos += 2;
@@ -540,7 +539,7 @@ internal sealed partial class NifConverter
             var stripLengths = new ushort[numStrips];
             for (var i = 0; i < numStrips; i++)
             {
-                stripLengths[i] = ReadUInt16BE(input, srcPos);
+                stripLengths[i] = BinaryUtils.ReadUInt16BE(input, srcPos);
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), stripLengths[i]);
                 srcPos += 2;
                 outPos += 2;
@@ -558,7 +557,7 @@ internal sealed partial class NifConverter
                     for (var j = 0; j < stripLengths[i]; j++)
                     {
                         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                            ReadUInt16BE(input, srcPos));
+                            BinaryUtils.ReadUInt16BE(input, srcPos));
                         srcPos += 2;
                         outPos += 2;
                     }
@@ -576,11 +575,11 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write NiTriShapeData triangles section.
     /// </summary>
-    private static int WriteNiTriShapeDataTriangles(byte[] input, byte[] output, int srcPos, int outPos,
+    internal static int WriteNiTriShapeDataTriangles(byte[] input, byte[] output, int srcPos, int outPos,
         ushort[]? triangles, out int newSrcPos)
     {
         // Read source values
-        var srcNumTriangles = ReadUInt16BE(input, srcPos);
+        var srcNumTriangles = BinaryUtils.ReadUInt16BE(input, srcPos);
         srcPos += 2;
         var srcNumTrianglePoints = BinaryPrimitives.ReadUInt32BigEndian(input.AsSpan(srcPos));
         srcPos += 4;
@@ -631,7 +630,7 @@ internal sealed partial class NifConverter
                 for (var i = 0; i < srcNumTriangles * 3; i++)
                 {
                     BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                        ReadUInt16BE(input, srcPos));
+                        BinaryUtils.ReadUInt16BE(input, srcPos));
                     srcPos += 2;
                     outPos += 2;
                 }
@@ -639,7 +638,7 @@ internal sealed partial class NifConverter
         }
 
         // numMatchGroups (ushort)
-        var numMatchGroups = ReadUInt16BE(input, srcPos);
+        var numMatchGroups = BinaryUtils.ReadUInt16BE(input, srcPos);
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), numMatchGroups);
         srcPos += 2;
         outPos += 2;
@@ -648,7 +647,7 @@ internal sealed partial class NifConverter
         for (var i = 0; i < numMatchGroups; i++)
         {
             // numVertices in this match group (ushort)
-            var groupNumVertices = ReadUInt16BE(input, srcPos);
+            var groupNumVertices = BinaryUtils.ReadUInt16BE(input, srcPos);
             BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos), groupNumVertices);
             srcPos += 2;
             outPos += 2;
@@ -657,7 +656,7 @@ internal sealed partial class NifConverter
             for (var j = 0; j < groupNumVertices; j++)
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(outPos),
-                    ReadUInt16BE(input, srcPos));
+                    BinaryUtils.ReadUInt16BE(input, srcPos));
                 srcPos += 2;
                 outPos += 2;
             }
@@ -670,7 +669,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Write a Havok collision block with decompressed vertices (HalfVector3 -> Vector3).
     /// </summary>
-    private static int WriteExpandedHavokBlock(byte[] input, byte[] output, int outPos, BlockInfo block)
+    internal static int WriteExpandedHavokBlock(byte[] input, byte[] output, int outPos, BlockInfo block)
     {
         var srcPos = block.DataOffset;
 
@@ -725,9 +724,9 @@ internal sealed partial class NifConverter
             srcPos += 6;
 
             // Convert to full floats
-            var x = HalfToFloat(hx);
-            var y = HalfToFloat(hy);
-            var z = HalfToFloat(hz);
+            var x = BinaryUtils.HalfToFloat(hx);
+            var y = BinaryUtils.HalfToFloat(hy);
+            var z = BinaryUtils.HalfToFloat(hz);
 
             // Write as little-endian floats (12 bytes)
             BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), x);
@@ -770,7 +769,7 @@ internal sealed partial class NifConverter
     /// <summary>
     ///     Context for geometry writing operations, reducing parameter count.
     /// </summary>
-    private readonly record struct GeometryWriteContext(
+    internal readonly record struct GeometryWriteContext(
         byte[] Input,
         byte[] Output,
         ushort NumVertices,

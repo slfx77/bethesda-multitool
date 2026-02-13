@@ -1,9 +1,8 @@
-using System.Buffers.Binary;
-
 namespace FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 
 /// <summary>
-///     Utility methods for endian conversion.
+///     NIF-specific endian utilities: in-place byte swapping, bulk swap, version formatting, and hex dump.
+///     Generic read methods live in <see cref="Core.Utils.BinaryUtils" />.
 /// </summary>
 internal static class NifEndianUtils
 {
@@ -50,129 +49,15 @@ internal static class NifEndianUtils
     }
 
     /// <summary>
-    ///     Reads a little-endian uint16 from the buffer.
+    ///     Bulk-swaps 32-bit values in-place from big-endian to little-endian.
     /// </summary>
-    public static ushort ReadUInt16LE(byte[] buf, int pos)
+    public static void BulkSwap32(byte[] buf, int start, int size)
     {
-        return BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(pos, 2));
-    }
-
-    /// <summary>
-    ///     Reads a little-endian uint32 from the buffer.
-    /// </summary>
-    public static uint ReadUInt32LE(byte[] buf, int pos)
-    {
-        return BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(pos, 4));
-    }
-
-    /// <summary>
-    ///     Reads a uint16 with endianness support.
-    /// </summary>
-    public static ushort ReadUInt16(byte[] data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset))
-            : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset));
-    }
-
-    /// <summary>
-    ///     Reads a uint16 with endianness support from a span.
-    /// </summary>
-    public static ushort ReadUInt16(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset, 2))
-            : BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(offset, 2));
-    }
-
-    /// <summary>
-    ///     Reads an int16 with endianness support from a span.
-    /// </summary>
-    public static short ReadInt16(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadInt16BigEndian(data.Slice(offset, 2))
-            : BinaryPrimitives.ReadInt16LittleEndian(data.Slice(offset, 2));
-    }
-
-    /// <summary>
-    ///     Reads a uint32 with endianness support.
-    /// </summary>
-    public static uint ReadUInt32(byte[] data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset));
-    }
-
-    /// <summary>
-    ///     Reads a uint32 with endianness support from a span.
-    /// </summary>
-    public static uint ReadUInt32(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset, 4))
-            : BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, 4));
-    }
-
-    /// <summary>
-    ///     Reads an int32 with endianness support from a span.
-    /// </summary>
-    public static int ReadInt32(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-    {
-        return bigEndian
-            ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(offset, 4))
-            : BinaryPrimitives.ReadInt32LittleEndian(data.Slice(offset, 4));
-    }
-
-    /// <summary>
-    ///     Reads a float with endianness support from a span.
-    /// </summary>
-    public static float ReadFloat(ReadOnlySpan<byte> data, int offset, bool bigEndian)
-    {
-        if (bigEndian)
+        var end = Math.Min(start + size, buf.Length - 3);
+        for (var i = start; i < end; i += 4)
         {
-            Span<byte> temp = stackalloc byte[4];
-            data.Slice(offset, 4).CopyTo(temp);
-            temp.Reverse();
-            return BitConverter.ToSingle(temp);
+            SwapUInt32InPlace(buf, i);
         }
-
-        return BitConverter.ToSingle(data.Slice(offset, 4));
-    }
-
-    /// <summary>
-    ///     Converts IEEE 754 half-precision float to single-precision.
-    /// </summary>
-    public static float HalfToFloat(ushort half)
-    {
-        var sign = (half >> 15) & 1;
-        var exp = (half >> 10) & 0x1F;
-        var mant = half & 0x3FF;
-
-        if (exp == 0)
-        {
-            if (mant == 0)
-            {
-                return sign == 1 ? -0.0f : 0.0f;
-            }
-
-            var value = (float)Math.Pow(2, -14) * (mant / 1024.0f);
-            return sign == 1 ? -value : value;
-        }
-
-        if (exp == 31)
-        {
-            if (mant == 0)
-            {
-                return sign == 1 ? float.NegativeInfinity : float.PositiveInfinity;
-            }
-
-            return float.NaN;
-        }
-
-        var normalizedValue = (float)Math.Pow(2, exp - 15) * (1 + mant / 1024.0f);
-        return sign == 1 ? -normalizedValue : normalizedValue;
     }
 
     /// <summary>
