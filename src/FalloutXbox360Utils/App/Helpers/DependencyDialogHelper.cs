@@ -13,6 +13,9 @@ namespace FalloutXbox360Utils;
 /// </summary>
 internal static class DependencyDialogHelper
 {
+    // WinUI 3 only allows a single ContentDialog at a time — serialize all dialog calls.
+    private static readonly SemaphoreSlim s_dialogLock = new(1, 1);
+
     /// <summary>
     ///     Shows a dialog listing missing dependencies with download links.
     /// </summary>
@@ -23,22 +26,30 @@ internal static class DependencyDialogHelper
     {
         if (result.AllAvailable) return true;
 
-        var missingDeps = result.Missing.ToList();
-        var availableDeps = result.Available.ToList();
-
-        var content = CreateDialogContent(missingDeps, availableDeps);
-
-        var dialog = new ContentDialog
+        await s_dialogLock.WaitAsync();
+        try
         {
-            Title = $"{result.TabName} - Missing Dependencies",
-            Content = content,
-            CloseButtonText = "OK",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = xamlRoot
-        };
+            var missingDeps = result.Missing.ToList();
+            var availableDeps = result.Available.ToList();
 
-        await dialog.ShowAsync();
-        return false;
+            var content = CreateDialogContent(missingDeps, availableDeps);
+
+            var dialog = new ContentDialog
+            {
+                Title = $"{result.TabName} - Missing Dependencies",
+                Content = content,
+                CloseButtonText = "OK",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = xamlRoot
+            };
+
+            await dialog.ShowAsync();
+            return false;
+        }
+        finally
+        {
+            s_dialogLock.Release();
+        }
     }
 
     /// <summary>
@@ -46,18 +57,26 @@ internal static class DependencyDialogHelper
     /// </summary>
     public static async Task ShowStatusAsync(TabDependencyResult result, XamlRoot xamlRoot)
     {
-        var content = CreateStatusContent(result);
-
-        var dialog = new ContentDialog
+        await s_dialogLock.WaitAsync();
+        try
         {
-            Title = $"{result.TabName} - Dependency Status",
-            Content = content,
-            CloseButtonText = "OK",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = xamlRoot
-        };
+            var content = CreateStatusContent(result);
 
-        await dialog.ShowAsync();
+            var dialog = new ContentDialog
+            {
+                Title = $"{result.TabName} - Dependency Status",
+                Content = content,
+                CloseButtonText = "OK",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = xamlRoot
+            };
+
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            s_dialogLock.Release();
+        }
     }
 
     private static StackPanel CreateDialogContent(

@@ -103,6 +103,16 @@ public sealed partial class SingleFileTab
                 msg += $"\nHeightmaps: {summary.HeightmapsExported} exported";
             }
 
+            if (summary.RuntimeTexturesExported > 0)
+            {
+                msg += $"\nRuntime textures: {summary.RuntimeTexturesExported} exported as DDS";
+            }
+
+            if (summary.RuntimeMeshesExported > 0)
+            {
+                msg += $"\nRuntime meshes: {summary.RuntimeMeshesExported} exported as OBJ";
+            }
+
             await ShowDialogAsync("Extraction Complete", msg + $"\n\nOutput: {outputPath}");
         }
         catch (Exception ex)
@@ -123,48 +133,9 @@ public sealed partial class SingleFileTab
     #region Semantic Reconstruction
 
     /// <summary>
-    ///     Starts semantic reconstruction on a background thread immediately after analysis.
-    ///     Progress updates are dispatched to the UI thread. The task is stored in
-    ///     <see cref="_semanticReconstructionTask" /> so any sub-tab can await it.
-    /// </summary>
-    private void StartSemanticReconstructionInBackground()
-    {
-        if (_session.SemanticResult != null) return;
-        if (!_session.HasEsmRecords || !_session.HasAccessor) return;
-
-        var result = _session.AnalysisResult!;
-        var accessor = _session.Accessor!;
-        var fileSize = _session.FileSize;
-
-        var progress = new Progress<(int percent, string phase)>(p =>
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                _reconstructionProgressHandler?.Invoke(p.percent, p.phase);
-                StatusTextBlock.Text = p.phase;
-            }));
-
-        _semanticReconstructionTask = Task.Run(() =>
-        {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            var reconstructor = new RecordParser(
-                result.EsmRecords!,
-                result.FormIdMap,
-                accessor,
-                fileSize,
-                result.MinidumpInfo);
-            var records = reconstructor.ReconstructAll(progress);
-            sw.Stop();
-            Logger.Instance.Info($"[Semantic Reconstruction] Wall-clock: {sw.Elapsed}");
-            return records;
-        });
-    }
-
-    /// <summary>
-    ///     Ensures semantic reconstruction is complete before proceeding.
-    ///     If reconstruction is already running in the background, awaits it.
-    ///     If already complete, returns immediately.
-    ///     Callers should set up _reconstructionProgressHandler and their own progress bar
-    ///     before calling this method.
+    ///     Safety guard: ensures semantic reconstruction is complete before proceeding.
+    ///     Under the unified flow, reconstruction completes eagerly during AnalyzeButton_Click,
+    ///     so this should return immediately. Retained as a guard for edge cases.
     /// </summary>
     private async Task EnsureSemanticReconstructionAsync()
     {

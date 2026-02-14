@@ -439,7 +439,7 @@ public static class CoverageAnalyzer
         // Check for ESM-like signatures
         if (ContainsEsmSignatures(buffer))
         {
-            return GapClassification.EsmLike;
+            return GapClassification.RecordSignature;
         }
 
         return GapClassification.BinaryData;

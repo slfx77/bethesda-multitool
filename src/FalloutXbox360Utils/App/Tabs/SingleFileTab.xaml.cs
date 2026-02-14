@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -239,6 +240,10 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                     "Asset Strings" => Strings.Status_ScanningAssetStrings,
                     "Runtime EditorIDs" => Strings.Status_ExtractingRuntimeEditorIds,
                     "FormIDs" => Strings.Status_CorrelatingFormIdNames,
+                    "Geometry Scan" => "Scanning for NIF geometry...",
+                    "Texture Scan" => "Scanning for runtime textures...",
+                    "Scene Graph" => "Walking scene graph...",
+                    "Runtime Assets" => $"Runtime assets detected ({p.FilesFound} total files)",
                     "Complete" => Strings.Status_AnalysisComplete(p.FilesFound),
                     _ => $"{p.Phase}..."
                 };
@@ -300,28 +305,69 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             UpdateFileInfoCard();
             await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
 
-            // Start semantic reconstruction eagerly in background so sub-tabs load faster
+            // Store runtime asset data in session for extraction
+            _session.RuntimeMeshes = _analysisResult.RuntimeMeshes;
+            _session.RuntimeTextures = _analysisResult.RuntimeTextures;
+            _session.SceneGraphMap = _analysisResult.SceneGraphMap;
+
+            // Unified flow: run semantic reconstruction eagerly with visible progress
             if (_session.HasEsmRecords)
             {
-                StartSemanticReconstructionInBackground();
+                StatusTextBlock.Text = "Running semantic reconstruction...";
+                AnalysisProgressBar.Visibility = Visibility.Visible;
+                AnalysisProgressBar.IsIndeterminate = false;
+
+                var reconProgress = new Progress<(int percent, string phase)>(p =>
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        // Map reconstruction progress (0-100) into the 82-95 range
+                        AnalysisProgressBar.Value = 82 + p.percent * 0.13;
+                        StatusTextBlock.Text = p.phase;
+                    }));
+
+                _semanticReconstructionTask = Task.Run(() =>
+                {
+                    var reconstructor = new RecordParser(
+                        _analysisResult.EsmRecords!,
+                        _analysisResult.FormIdMap,
+                        _session.Accessor!,
+                        _session.FileSize,
+                        _analysisResult.MinidumpInfo);
+                    return reconstructor.ReconstructAll(reconProgress);
+                });
+
+                try
+                {
+                    _session.SemanticResult = await _semanticReconstructionTask;
+                    if (_session.SemanticResult != null)
+                    {
+                        _session.Resolver = _session.SemanticResult.CreateResolver();
+
+                        // Add TESForm struct regions to the memory map
+                        AddTesFormStructRegions(_analysisResult);
+
+                        // Add runtime terrain mesh regions from enriched LAND records
+                        AddRuntimeTerrainMeshRegions(_analysisResult);
+
+                        // Refresh carved files list with the new entries
+                        RefreshCarvedFilesList();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
+                        $"{ex.GetType().Name}: {ex.Message}", true);
+                }
             }
 
-            // If already on Data Browser tab, auto-reconstruct
-            if (_session.HasEsmRecords && ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
-            {
-                ReconstructButton_Click(sender, e);
-            }
-
-            // If already on Reports tab, auto-generate reports
-            if (_session.HasEsmRecords && ReferenceEquals(SubTabView.SelectedItem, ReportsTab))
-            {
-                await GenerateReportsAsync();
-            }
+            // Auto-populate whichever tab is currently selected
+            await AutoPopulateCurrentTabAsync(sender, e);
 
             // Run coverage analysis (best-effort, doesn't block other functionality)
             try
             {
                 StatusTextBlock.Text = Strings.Status_RunningCoverageAnalysis;
+                AnalysisProgressBar.Value = 96;
                 _session.CoverageResult = await Task.Run(() =>
                     CoverageAnalyzer.Analyze(_session.AnalysisResult!, _session.Accessor!));
 
@@ -389,20 +435,10 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private async void ReconstructButton_Click(object sender, RoutedEventArgs e)
     {
+        // Safety guard: await reconstruction if it hasn't completed yet (normally a no-op)
         if (_session.SemanticResult == null)
         {
-            ReconstructButton.IsEnabled = false;
-            ReconstructProgressBar.Visibility = Visibility.Visible;
-            ReconstructProgressBar.IsIndeterminate = false;
-            _reconstructionProgressHandler = (percent, phase) =>
-            {
-                ReconstructProgressBar.Value = percent;
-                ReconstructStatusText.Text = phase;
-            };
             await EnsureSemanticReconstructionAsync();
-            _reconstructionProgressHandler = null;
-            ReconstructProgressBar.Visibility = Visibility.Collapsed;
-            ReconstructButton.IsEnabled = true;
         }
 
         if (_session.SemanticResult != null)
@@ -529,6 +565,126 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         _sorter.CycleSortState(col);
         UpdateSortIcons();
         RefreshSortedList();
+    }
+
+    #endregion
+
+    #region Unified Analysis Helpers
+
+    private static void AddTesFormStructRegions(AnalysisResult result)
+    {
+        if (result.EsmRecords == null) return;
+
+        var shift = RuntimeBuildOffsets.GetPdbShift(null);
+        foreach (var entry in result.EsmRecords.RuntimeEditorIds)
+        {
+            if (entry.TesFormOffset is not > 0) continue;
+
+            var typeCode = RuntimeBuildOffsets.GetRecordTypeCode(entry.FormType);
+            var structSize = RuntimeBuildOffsets.GetStructSize(entry.FormType, shift);
+
+            result.CarvedFiles.Add(new CarvedFileInfo
+            {
+                Offset = entry.TesFormOffset.Value,
+                Length = structSize,
+                FileType = typeCode != null ? $"TESForm: {typeCode}" : $"TESForm: 0x{entry.FormType:X2}",
+                FileName = entry.EditorId,
+                SignatureId = "tesform_struct",
+                Category = FileCategory.Struct
+            });
+        }
+    }
+
+    private static void AddRuntimeTerrainMeshRegions(AnalysisResult result)
+    {
+        if (result.EsmRecords == null) return;
+
+        foreach (var land in result.EsmRecords.LandRecords)
+        {
+            if (land.RuntimeTerrainMesh is { VertexDataOffset: > 0 })
+            {
+                result.CarvedFiles.Add(new CarvedFileInfo
+                {
+                    Offset = land.RuntimeTerrainMesh.VertexDataOffset,
+                    Length = 33 * 33 * 3 * 4, // 33x33 grid, 3 floats (x,y,z) each
+                    FileType = "Terrain Mesh",
+                    FileName = land.Header.FormId > 0 ? $"LAND {land.Header.FormId:X8}" : null,
+                    SignatureId = "terrain_mesh",
+                    Category = FileCategory.Model
+                });
+            }
+        }
+    }
+
+    private void RefreshCarvedFilesList()
+    {
+        if (_analysisResult == null) return;
+
+        // Rebuild the full list from scratch to include new CarvedFileInfo entries
+        _allCarvedFiles.Clear();
+
+        foreach (var entry in _analysisResult.CarvedFiles)
+        {
+            _allCarvedFiles.Add(new CarvedFileEntry
+            {
+                Offset = entry.Offset,
+                Length = entry.Length,
+                FileType = entry.FileType,
+                FileName = entry.FileName
+            });
+        }
+
+        if (_analysisResult.EsmRecords?.MainRecords != null)
+        {
+            foreach (var esmRecord in _analysisResult.EsmRecords.MainRecords)
+            {
+                _allCarvedFiles.Add(new CarvedFileEntry
+                {
+                    Offset = esmRecord.Offset,
+                    Length = esmRecord.DataSize + 24,
+                    FileType = "ESM Record",
+                    EsmRecordType = esmRecord.RecordType,
+                    FormId = esmRecord.FormId,
+                    FileName = _analysisResult.FormIdMap.GetValueOrDefault(esmRecord.FormId),
+                    Status = ExtractionStatus.Skipped
+                });
+            }
+        }
+
+        _allCarvedFiles.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+        _carvedFiles.Clear();
+        foreach (var item in _allCarvedFiles)
+        {
+            _carvedFiles.Add(item);
+        }
+    }
+
+    private async Task AutoPopulateCurrentTabAsync(object sender, RoutedEventArgs e)
+    {
+        if (!_session.HasEsmRecords) return;
+
+        var selected = SubTabView.SelectedItem;
+
+        if (ReferenceEquals(selected, SummaryTab) && _session.SemanticResult != null)
+        {
+            PopulateRecordBreakdown();
+        }
+        else if (ReferenceEquals(selected, DataBrowserTab))
+        {
+            ReconstructButton_Click(sender, e);
+        }
+        else if (ReferenceEquals(selected, DialogueViewerTab))
+        {
+            _ = PopulateDialogueViewerAsync();
+        }
+        else if (ReferenceEquals(selected, WorldMapTab))
+        {
+            _ = PopulateWorldMapAsync();
+        }
+        else if (ReferenceEquals(selected, ReportsTab))
+        {
+            await GenerateReportsAsync();
+        }
     }
 
     #endregion

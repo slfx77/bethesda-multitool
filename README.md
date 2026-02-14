@@ -46,7 +46,7 @@ A .NET 10.0 toolkit for Xbox 360 memory dump analysis, ESM/NIF format conversion
 | Audio | XMA (Xbox Media Audio), LIP (lip sync) |
 | Scripts | ObScript bytecode (decompilation + comparison) |
 | Executables | XEX (Xbox Executable) |
-| UI | XUI (Xbox UI), XDBF (Xbox Dashboard) |
+| UI | XDBF (Xbox Dashboard) |
 | Crash dumps | Xbox 360 minidumps with PDB-aware struct reading |
 
 ## Installation
@@ -189,10 +189,6 @@ tools/
 
 Some features require external tools. The GUI shows a notification on startup if any are missing.
 
-### Microsoft XNA Framework 4.0 (DDX conversion)
-
-DDX texture conversion requires `XnaNative.dll` from the [Microsoft XNA Framework Redistributable 4.0](https://www.microsoft.com/en-us/download/details.aspx?id=20914). Without it, DDX files are extracted but not converted to DDS.
-
 ### FFmpeg (XMA audio conversion)
 
 XMA to WAV conversion requires [FFmpeg](https://www.ffmpeg.org/download.html) on PATH or at `C:\ffmpeg\bin\`. Without it, XMA files are extracted but not converted to WAV.
@@ -214,15 +210,11 @@ MIT License - See [LICENSE](LICENSE) for details.
 | Component | License | Usage |
 | --- | --- | --- |
 | [DDXConv](https://github.com/GamesPastOrg/DDXConv) | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE) | DDX to DDS texture conversion (forked, built-in) |
-| [XCompression](https://github.com/gibbed/XCompression) | [zlib](https://github.com/gibbed/XCompression/blob/vs2017/LICENSE.txt) | LZX decompression (submodule, subprocess) |
-| [XUIHelper](https://github.com/SGCSam/XUIHelper) | [GPLv3](https://github.com/SGCSam/XUIHelper/blob/main/LICENSE) | XUR to XUI conversion (subprocess, not linked) |
 | [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema (embedded) |
 
 ## Acknowledgments
 
 - [AlexxEG/BSA_Browser](https://github.com/AlexxEG/BSA_Browser) - BSA format reference
 - [GamesPastOrg/DDXConv](https://github.com/GamesPastOrg/DDXConv) - DDX texture conversion (MIT, Copyright 2026 Kran)
-- [gibbed/XCompression](https://github.com/gibbed/XCompression) - Xbox LZX decompression (zlib, Copyright 2018 Rick)
-- [SGCSam/XUIHelper](https://github.com/SGCSam/XUIHelper) - Xbox UI format conversion (GPLv3)
 - [fo76utils/NifSkope](https://github.com/fo76utils/nifskope) - NIF format schema (BSD-3-Clause)
 - [Xenia](https://github.com/xenia-project/xenia) - Format documentation and research

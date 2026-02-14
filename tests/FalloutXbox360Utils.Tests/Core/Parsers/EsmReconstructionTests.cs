@@ -37,7 +37,7 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
     [Fact]
     public void NpcReconstruction_CompressedRecord_ShouldParseAllFields()
     {
-        Skip.If(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
+        Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
         var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
         _output.WriteLine($"File size: {fileData.Length:N0} bytes");
@@ -68,7 +68,7 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
     [Fact]
     public void CreatureReconstruction_ShouldParseSubrecords()
     {
-        Skip.If(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
+        Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
         var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
         var scanResult = BuildScanResultFromParser(fileData);

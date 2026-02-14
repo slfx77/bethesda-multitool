@@ -102,13 +102,16 @@ public static class MinidumpExtractor
             }
         }
 
-        // Generate ESM reports and heightmaps if requested and analysis data is available
+        // Generate ESM reports, heightmaps, and runtime asset exports
         var esmReportGenerated = false;
         var heightmapsExported = 0;
         var scriptsExtracted = 0;
+        var runtimeTexturesExported = 0;
+        var runtimeMeshesExported = 0;
         if (options.GenerateEsmReports && analysisResult?.EsmRecords != null)
         {
-            (esmReportGenerated, heightmapsExported, scriptsExtracted) = await GenerateEsmOutputsAsync(
+            (esmReportGenerated, heightmapsExported, scriptsExtracted,
+                runtimeTexturesExported, runtimeMeshesExported) = await GenerateEsmOutputsAsync(
                 analysisResult, filePath, extractDir, progress);
         }
 
@@ -118,8 +121,6 @@ public static class MinidumpExtractor
             TotalExtracted = entries.Count + moduleCount,
             DdxConverted = ddxConverted,
             DdxFailed = ddxFailed,
-            XurConverted = carver.XurConvertedCount,
-            XurFailed = carver.XurConvertFailedCount,
             TypeCounts = carver.Stats.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
             ExtractedOffsets = extractedOffsets,
             FailedConversionOffsets = failedConversionOffsets,
@@ -127,7 +128,9 @@ public static class MinidumpExtractor
             ModulesExtracted = moduleCount,
             EsmReportGenerated = esmReportGenerated,
             HeightmapsExported = heightmapsExported,
-            ScriptsExtracted = scriptsExtracted
+            ScriptsExtracted = scriptsExtracted,
+            RuntimeTexturesExported = runtimeTexturesExported,
+            RuntimeMeshesExported = runtimeMeshesExported
         };
     }
 
@@ -317,9 +320,10 @@ public static class MinidumpExtractor
     }
 
     /// <summary>
-    ///     Generate ESM semantic report and heightmap images.
+    ///     Generate ESM semantic report, heightmap images, and runtime asset exports.
     /// </summary>
-    private static async Task<(bool reportGenerated, int heightmapsExported, int scriptsExtracted)>
+    private static async Task<(bool reportGenerated, int heightmapsExported, int scriptsExtracted,
+        int runtimeTexturesExported, int runtimeMeshesExported)>
         GenerateEsmOutputsAsync(
             AnalysisResult analysisResult,
             string filePath,
@@ -329,10 +333,13 @@ public static class MinidumpExtractor
         var reportGenerated = false;
         var heightmapsExported = 0;
         var scriptsExtracted = 0;
+        var runtimeTexturesExported = 0;
+        var runtimeMeshesExported = 0;
 
         if (analysisResult.EsmRecords == null)
         {
-            return (reportGenerated, heightmapsExported, scriptsExtracted);
+            return (reportGenerated, heightmapsExported, scriptsExtracted,
+                runtimeTexturesExported, runtimeMeshesExported);
         }
 
         progress?.Report(new ExtractionProgress
@@ -428,6 +435,38 @@ public static class MinidumpExtractor
                 }
             }
 
+            // Export runtime in-memory textures as DDS
+            if (analysisResult.RuntimeTextures is { Count: > 0 })
+            {
+                progress?.Report(new ExtractionProgress
+                {
+                    PercentComplete = 96,
+                    CurrentOperation = $"Exporting {analysisResult.RuntimeTextures.Count} runtime textures..."
+                });
+
+                var texturesDir = Path.Combine(extractDir, "textures");
+                DdsExporter.ExportAll(analysisResult.RuntimeTextures, texturesDir);
+                runtimeTexturesExported = analysisResult.RuntimeTextures.Count;
+            }
+
+            // Export runtime in-memory meshes as OBJ
+            if (analysisResult.RuntimeMeshes is { Count: > 0 })
+            {
+                progress?.Report(new ExtractionProgress
+                {
+                    PercentComplete = 97,
+                    CurrentOperation = $"Exporting {analysisResult.RuntimeMeshes.Count} runtime meshes..."
+                });
+
+                var objDir = Path.Combine(extractDir, "obj");
+                Directory.CreateDirectory(objDir);
+                MeshObjExporter.ExportMultiple(analysisResult.RuntimeMeshes,
+                    Path.Combine(objDir, "meshes.obj"));
+                MeshObjExporter.ExportSummary(analysisResult.RuntimeMeshes,
+                    Path.Combine(objDir, "meshes_summary.csv"));
+                runtimeMeshesExported = analysisResult.RuntimeMeshes.Count;
+            }
+
             progress?.Report(new ExtractionProgress
             {
                 PercentComplete = 98,
@@ -440,7 +479,8 @@ public static class MinidumpExtractor
             Console.WriteLine($"[ESM] Report generation failed: {ex.Message}");
         }
 
-        return (reportGenerated, heightmapsExported, scriptsExtracted);
+        return (reportGenerated, heightmapsExported, scriptsExtracted,
+            runtimeTexturesExported, runtimeMeshesExported);
     }
 
     /// <summary>

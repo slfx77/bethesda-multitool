@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils;
 
@@ -16,7 +15,6 @@ public static class DependencyChecker
 
     // Cache dependency status to avoid repeated checks
     private static DependencyStatus? _ffmpegStatus;
-    private static DependencyStatus? _xuiHelperStatus;
 
     // Track which dependency sets have been shown to user
 
@@ -57,30 +55,6 @@ public static class DependencyChecker
     }
 
     /// <summary>
-    ///     Checks if XUIHelper.CLI is available.
-    ///     This is a built-in tool for XUR -> XUI conversion.
-    /// </summary>
-    public static DependencyStatus CheckXuiHelper(bool forceRecheck = false)
-    {
-        if (_xuiHelperStatus != null && !forceRecheck) return _xuiHelperStatus;
-
-        var (isAvailable, path) = FindXuiHelper();
-
-        _xuiHelperStatus = new DependencyStatus
-        {
-            Name = "XUIHelper",
-            Description = "Built-in XUR to XUI converter",
-            IsAvailable = isAvailable,
-            Path = path,
-            DownloadUrl = null,
-            InstallInstructions = "XUIHelper should be included with this application. " +
-                                  "Try rebuilding the solution or check that all projects compiled successfully."
-        };
-
-        return _xuiHelperStatus;
-    }
-
-    /// <summary>
     ///     Checks all dependencies required by the Single File / Batch Mode tabs.
     /// </summary>
     public static TabDependencyResult CheckCarverDependencies()
@@ -90,8 +64,7 @@ public static class DependencyChecker
             TabName = "Memory Carver",
             Dependencies =
             [
-                CheckFfmpeg(),
-                CheckXuiHelper()
+                CheckFfmpeg()
             ]
         };
     }
@@ -128,7 +101,6 @@ public static class DependencyChecker
     public static void ResetCache()
     {
         _ffmpegStatus = null;
-        _xuiHelperStatus = null;
     }
 
     /// <summary>
@@ -223,41 +195,6 @@ public static class DependencyChecker
         }
 
         return "unknown";
-    }
-
-    private static (bool isAvailable, string? path) FindXuiHelper()
-    {
-        const string exeName = "XUIHelper.CLI.exe";
-        const string folderName = "XUIHelper";
-        const string cliProject = "XUIHelper.CLI";
-        const string targetFramework = "net8.0";
-
-        var assemblyDir = AppContext.BaseDirectory;
-
-        // Try common locations
-        var candidates = new List<string>
-        {
-            Path.Combine(assemblyDir, exeName),
-            Path.Combine(assemblyDir, "..", folderName, exeName)
-        };
-
-        // Add workspace-relative paths
-        var workspaceRoot = ToolPathFinder.FindWorkspaceRoot(assemblyDir);
-        if (!string.IsNullOrEmpty(workspaceRoot))
-        {
-            candidates.Add(Path.Combine(workspaceRoot, "src", folderName, cliProject, "bin", "Release",
-                targetFramework, exeName));
-            candidates.Add(Path.Combine(workspaceRoot, "src", folderName, cliProject, "bin", "Debug",
-                targetFramework, exeName));
-        }
-
-        foreach (var candidate in candidates)
-        {
-            var fullPath = Path.GetFullPath(candidate);
-            if (File.Exists(fullPath)) return (true, fullPath);
-        }
-
-        return (false, null);
     }
 
     #endregion

@@ -1,16 +1,5 @@
 <Project>
-  <!-- Skip all build customizations for external submodules (XUIHelper) -->
-  <PropertyGroup
-    Condition="$(MSBuildProjectDirectory.Contains('XUIHelper'))">
-    <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
-    <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-  </PropertyGroup>
-
-  <PropertyGroup
-    Condition="!$(MSBuildProjectDirectory.Contains('XUIHelper'))">
+  <PropertyGroup>
     <!-- Enable .NET analyzers -->
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>

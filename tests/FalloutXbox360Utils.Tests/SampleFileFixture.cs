@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Tests;
 
 /// <summary>
 ///     Assembly-level fixture that checks sample file availability once per test run.
-///     Tests inject this via constructor and call Skip.If() for proper skip reporting.
+///     Tests inject this via constructor and call Assert.SkipWhen() for proper skip reporting.
 /// </summary>
 public class SampleFileFixture
 {

@@ -368,7 +368,7 @@ public static class CoverageCommand
             GapClassification.StringPool => "aqua",
             GapClassification.PointerDense => "red",
             GapClassification.AssetManagement => "magenta",
-            GapClassification.EsmLike => "green",
+            GapClassification.RecordSignature => "green",
             GapClassification.BinaryData => "yellow",
             _ => "white"
         };

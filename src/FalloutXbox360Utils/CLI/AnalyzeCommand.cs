@@ -50,13 +50,13 @@ public static class AnalyzeCommand
         {
             Description = "Run terrain mesh data quality diagnostic (requires -e)"
         };
-        var extractMeshesOpt = new Option<string?>("--extract-meshes")
+        var extractMeshesOpt = new Option<string?>("--export-meshes")
         {
-            Description = "Extract runtime NIF geometry (NiTriShapeData/NiTriStripsData) to directory"
+            Description = "Export runtime NIF geometry (NiTriShapeData/NiTriStripsData) to directory"
         };
-        var extractTexturesOpt = new Option<string?>("--extract-textures")
+        var extractTexturesOpt = new Option<string?>("--export-textures")
         {
-            Description = "Extract runtime textures (NiPixelData) as DDS files to directory"
+            Description = "Export runtime textures (NiPixelData) as DDS files to directory"
         };
 
         command.Arguments.Add(inputArg);
@@ -173,12 +173,12 @@ public static class AnalyzeCommand
             }
         }
 
-        if (!string.IsNullOrEmpty(opts.ExtractMeshes) && result.MinidumpInfo != null)
+        if (!string.IsNullOrEmpty(opts.ExtractMeshes))
         {
             await ExtractRuntimeMeshesAsync(opts.Input, opts.ExtractMeshes, result);
         }
 
-        if (!string.IsNullOrEmpty(opts.ExtractTextures) && result.MinidumpInfo != null)
+        if (!string.IsNullOrEmpty(opts.ExtractTextures))
         {
             await ExtractRuntimeTexturesAsync(opts.Input, opts.ExtractTextures, result);
         }
@@ -542,66 +542,22 @@ public static class AnalyzeCommand
         AnsiConsole.MarkupLine($"  CSV exported: {csvPath}");
     }
 
-    private static async Task ExtractRuntimeMeshesAsync(
+    private static Task ExtractRuntimeMeshesAsync(
         string inputPath, string outputDir, AnalysisResult result)
     {
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[blue]Scanning for runtime NIF geometry (NiTriShapeData/NiTriStripsData)...[/]");
+        AnsiConsole.MarkupLine("[blue]Exporting runtime NIF geometry...[/]");
+
+        var meshes = result.RuntimeMeshes;
+        var sceneGraph = result.SceneGraphMap ?? new Dictionary<long, SceneGraphInfo>();
+
+        if (meshes == null || meshes.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No runtime meshes found in analysis results.[/]");
+            return Task.CompletedTask;
+        }
 
         Directory.CreateDirectory(outputDir);
-        List<ExtractedMesh> meshes;
-        var sceneGraph = new Dictionary<long, SceneGraphInfo>();
-
-        using (var mmf = MemoryMappedFile.CreateFromFile(inputPath, FileMode.Open, null, 0,
-                   MemoryMappedFileAccess.Read))
-        using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
-        {
-            var context = new RuntimeMemoryContext(accessor, result.FileSize, result.MinidumpInfo!);
-            var scanner = new RuntimeGeometryScanner(context);
-
-            meshes = [];
-
-            await AnsiConsole.Progress()
-                .AutoClear(false)
-                .Columns(
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new PercentageColumn(),
-                    new SpinnerColumn())
-                .StartAsync(_ =>
-                {
-                    var progressTask = _.AddTask("[green]Scanning for meshes[/]", maxValue: result.FileSize);
-
-                    var progress = new Progress<(long Scanned, long Total)>(p =>
-                    {
-                        progressTask.Value = p.Scanned;
-                        progressTask.Description =
-                            $"[green]Scanning[/] [grey]({scanner.MeshesFound} meshes found)[/]";
-                    });
-
-                    meshes = scanner.ScanForMeshes(progress);
-                    progressTask.Value = result.FileSize;
-                    progressTask.Description =
-                        $"[green]Complete[/] [grey]({meshes.Count} meshes)[/]";
-
-                    return Task.CompletedTask;
-                });
-
-            // Walk scene graph to find NiTriShape parents and node names
-            if (meshes.Count > 0)
-            {
-                AnsiConsole.MarkupLine("[blue]Walking scene graph for mesh naming...[/]");
-                var walker = new RuntimeSceneGraphWalker(context);
-                sceneGraph = walker.WalkSceneGraph(meshes);
-                AnsiConsole.MarkupLine($"  Resolved {sceneGraph.Count}/{meshes.Count} meshes to scene graph nodes");
-            }
-        }
-
-        if (meshes.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No runtime meshes found in dump.[/]");
-            return;
-        }
 
         // Classify: 3D meshes have normals (lit geometry), UI meshes don't (text, HUD)
         var meshes3D = meshes.Where(m => m.Is3D).ToList();
@@ -628,7 +584,7 @@ public static class AnalyzeCommand
         var triShapes = meshes.Count(m => m.Type == MeshType.TriShape);
         var triStrips = meshes.Count(m => m.Type == MeshType.TriStrips);
 
-        AnsiConsole.MarkupLine($"[green]Extracted {meshes.Count} meshes[/] " +
+        AnsiConsole.MarkupLine($"[green]Exported {meshes.Count} meshes[/] " +
                                $"({meshes3D.Count} 3D, {meshesUI.Count} UI)");
         AnsiConsole.MarkupLine($"  {totalVertices:N0} vertices, {totalTriangles:N0} triangles");
         AnsiConsole.MarkupLine($"  Types: {triShapes} TriShape, {triStrips} TriStrips");
@@ -640,6 +596,7 @@ public static class AnalyzeCommand
         AnsiConsole.MarkupLine($"  3D individual: {Path.Combine(outputDir, "3d")}/");
         AnsiConsole.MarkupLine($"  UI individual: {Path.Combine(outputDir, "ui")}/");
         AnsiConsole.MarkupLine($"  Summary CSV: {summaryPath}");
+        return Task.CompletedTask;
     }
 
     private static void ExportMeshSubdirectory(
@@ -720,58 +677,22 @@ public static class AnalyzeCommand
         File.WriteAllText(outputPath, sb.ToString());
     }
 
-    private static async Task ExtractRuntimeTexturesAsync(
+    private static Task ExtractRuntimeTexturesAsync(
         string inputPath, string outputDir, AnalysisResult result)
     {
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[blue]Scanning for runtime textures (NiPixelData + NiSourceTexture)...[/]");
+        AnsiConsole.MarkupLine("[blue]Exporting runtime textures...[/]");
+
+        var textures = result.RuntimeTextures;
+
+        if (textures == null || textures.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No runtime textures found in analysis results.[/]");
+            AnsiConsole.MarkupLine("  (Most Xbox 360 textures are in GPU memory not captured in minidumps.)");
+            return Task.CompletedTask;
+        }
 
         Directory.CreateDirectory(outputDir);
-        List<ExtractedTexture> textures;
-
-        using (var mmf = MemoryMappedFile.CreateFromFile(inputPath, FileMode.Open, null, 0,
-                   MemoryMappedFileAccess.Read))
-        using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
-        {
-            var context = new RuntimeMemoryContext(accessor, result.FileSize, result.MinidumpInfo!);
-            var scanner = new RuntimeTextureScanner(context);
-
-            textures = [];
-
-            await AnsiConsole.Progress()
-                .AutoClear(false)
-                .Columns(
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new PercentageColumn(),
-                    new SpinnerColumn())
-                .StartAsync(_ =>
-                {
-                    var progressTask = _.AddTask("[green]Scanning for textures[/]", maxValue: result.FileSize);
-
-                    var progress = new Progress<(long Scanned, long Total)>(p =>
-                    {
-                        progressTask.Value = p.Scanned;
-                        progressTask.Description =
-                            $"[green]Scanning[/] [grey]({scanner.TexturesFound} textures found)[/]";
-                    });
-
-                    // Combined single-pass scan: finds NiPixelData and resolves NiSourceTexture filenames
-                    textures = scanner.ScanForTextures(progress);
-                    progressTask.Value = result.FileSize;
-                    progressTask.Description =
-                        $"[green]Complete[/] [grey]({textures.Count} textures)[/]";
-
-                    return Task.CompletedTask;
-                });
-        }
-
-        if (textures.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No runtime textures found in dump.[/]");
-            AnsiConsole.MarkupLine("  (Most Xbox 360 textures are in GPU memory not captured in minidumps.)");
-            return;
-        }
 
         var named = textures.Count(t => t.Filename != null);
         if (named > 0)
@@ -789,12 +710,13 @@ public static class AnalyzeCommand
             .Select(g => $"{g.Count()} {g.Key}")
             .ToArray();
 
-        AnsiConsole.MarkupLine($"[green]Extracted {textures.Count} textures[/] " +
+        AnsiConsole.MarkupLine($"[green]Exported {textures.Count} textures[/] " +
                                $"({compressed} compressed, {textures.Count - compressed} uncompressed)");
         AnsiConsole.MarkupLine($"  Total data: {totalBytes:N0} bytes");
         AnsiConsole.MarkupLine($"  Formats: {string.Join(", ", formats)}");
         AnsiConsole.MarkupLine($"  Output: {outputDir}/");
         AnsiConsole.MarkupLine($"  Summary CSV: {Path.Combine(outputDir, "texture_summary.csv")}");
+        return Task.CompletedTask;
     }
 
     private static string CsvEscapeValue(string? value)

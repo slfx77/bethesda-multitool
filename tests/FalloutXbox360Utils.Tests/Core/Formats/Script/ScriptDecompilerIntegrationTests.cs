@@ -20,7 +20,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     [Fact]
     public void Decompile_AllScptRecords_NoExceptions()
     {
-        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
         var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
@@ -80,7 +80,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     [Fact]
     public void Decompile_ScptRecords_StructurallyCorrect()
     {
-        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
         var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
@@ -143,7 +143,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     [Fact]
     public void Decompile_SampleScripts_DetailedComparison()
     {
-        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
         var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
@@ -220,7 +220,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     [Fact]
     public void Decompile_DiagnoseMismatches()
     {
-        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
         var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
@@ -325,7 +325,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     [Trait("Category", "Slow")]
     public void Decompile_EsmScripts_SemanticComparison()
     {
-        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
         var fileData = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);

@@ -5,21 +5,18 @@ namespace FalloutXbox360Utils.Core.Formats.Xui;
 /// <summary>
 ///     Xbox XUI (Xbox User Interface) format module.
 ///     Handles both XUIS (scene) and XUIB (binary) formats.
-///     Supports conversion to readable XML via XUIHelper.
+///     Signature scanning is disabled — XUI files are identified but not carved.
 /// </summary>
-public sealed class XuiFormat : FileFormatBase, IFileConverter
+public sealed class XuiFormat : FileFormatBase
 {
-    private int _convertedCount;
-    private XurSubprocessConverter? _converter;
-    private int _failedCount;
-
     public override string FormatId => "xui";
     public override string DisplayName => "XUI";
-    public override string Extension => ".xur"; // Output as .xur (binary format)
+    public override string Extension => ".xur";
     public override FileCategory Category => FileCategory.Xbox;
-    public override string OutputFolder => "xur"; // Changed to xur folder
+    public override string OutputFolder => "xur";
     public override int MinSize => 24;
     public override int MaxSize => 5 * 1024 * 1024;
+    public override bool EnableSignatureScanning => false;
 
     public override IReadOnlyList<FormatSignature> Signatures { get; } =
     [
@@ -95,66 +92,4 @@ public sealed class XuiFormat : FileFormatBase, IFileConverter
     {
         return signatureId == "xui_binary" ? "XUI Binary" : "XUI Scene";
     }
-
-    #region IFileConverter
-
-    public string TargetExtension => ".xui"; // Converted output is readable XML
-    public string TargetFolder => "xui";
-    public bool IsInitialized => _converter != null;
-    public int ConvertedCount => _convertedCount;
-    public int FailedCount => _failedCount;
-
-    public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
-    {
-        try
-        {
-            _converter = new XurSubprocessConverter();
-            return true;
-        }
-        catch (FileNotFoundException ex)
-        {
-            Logger.Instance.Debug($"Warning: {ex.Message}");
-
-            return false;
-        }
-    }
-
-    public bool CanConvert(string signatureId, IReadOnlyDictionary<string, object>? metadata)
-    {
-        // XUIHelper only supports XUIB format (XUR v5/v8), not XUIS (Scene format)
-        // XUIS appears to be a different scene format not supported by XUIHelper
-        return signatureId == "xui_binary";
-    }
-
-    public async Task<ConversionResult> ConvertAsync(byte[] data,
-        IReadOnlyDictionary<string, object>? metadata = null)
-    {
-        if (_converter == null)
-        {
-            return new ConversionResult { Success = false, Notes = "Converter not initialized" };
-        }
-
-        var result = await _converter.ConvertFromMemoryWithResultAsync(data);
-
-        if (result.Success)
-        {
-            Interlocked.Increment(ref _convertedCount);
-            return new ConversionResult
-            {
-                Success = true,
-                OutputData = result.XuiData, // Using OutputData to hold XUI XML data
-                Notes = $"XUR v{result.XurVersion} -> XUI v12"
-            };
-        }
-
-        Interlocked.Increment(ref _failedCount);
-        return new ConversionResult
-        {
-            Success = false,
-            Notes = result.Notes,
-            ConsoleOutput = result.ConsoleOutput
-        };
-    }
-
-    #endregion
 }

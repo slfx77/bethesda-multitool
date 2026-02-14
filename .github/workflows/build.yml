@@ -109,4 +109,4 @@ jobs:
             FalloutXbox360Utils-Windows-CLI-x64.zip
             FalloutXbox360Utils-Linux-CLI-x64.tar.gz
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') || contains(github.ref, 'pre') }}

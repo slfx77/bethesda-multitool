@@ -50,6 +50,11 @@ internal sealed class AnalysisSessionState : IDisposable
     // ── Reports derived data ──
     public StringPoolSummary? StringPool { get; set; }
 
+    // ── Runtime asset data ──
+    public List<ExtractedMesh>? RuntimeMeshes { get; set; }
+    public List<ExtractedTexture>? RuntimeTextures { get; set; }
+    public Dictionary<long, Core.Formats.Esm.SceneGraphInfo>? SceneGraphMap { get; set; }
+
     // ── Summary derived data ──
     public bool RecordBreakdownPopulated { get; set; }
 
@@ -99,6 +104,11 @@ internal sealed class AnalysisSessionState : IDisposable
 
         // Reports
         StringPool = null;
+
+        // Runtime assets
+        RuntimeMeshes = null;
+        RuntimeTextures = null;
+        SceneGraphMap = null;
 
         // Summary
         RecordBreakdownPopulated = false;

@@ -622,7 +622,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     [Fact]
     public void ReconstructAll_WithSampleFile_ProducesNonEmptyResults()
     {
-        Skip.If(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
+        Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
         var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);

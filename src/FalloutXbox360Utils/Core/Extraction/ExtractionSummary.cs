@@ -8,8 +8,6 @@ public class ExtractionSummary
     public int TotalExtracted { get; init; }
     public int DdxConverted { get; init; }
     public int DdxFailed { get; init; }
-    public int XurConverted { get; init; }
-    public int XurFailed { get; init; }
     public int ModulesExtracted { get; init; }
     public int ScriptsExtracted { get; init; }
     public int ScriptQuestsGrouped { get; init; }
@@ -36,4 +34,14 @@ public class ExtractionSummary
     ///     Number of heightmap PNG images exported.
     /// </summary>
     public int HeightmapsExported { get; init; }
+
+    /// <summary>
+    ///     Number of runtime in-memory textures exported as DDS.
+    /// </summary>
+    public int RuntimeTexturesExported { get; init; }
+
+    /// <summary>
+    ///     Number of runtime in-memory meshes exported as OBJ.
+    /// </summary>
+    public int RuntimeMeshesExported { get; init; }
 }

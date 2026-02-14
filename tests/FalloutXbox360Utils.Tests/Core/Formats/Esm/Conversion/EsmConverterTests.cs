@@ -253,7 +253,7 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
     [Fact]
     public void ConvertToLittleEndian_RealEsm_ProducesValidOutput()
     {
-        Skip.If(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
         var input = File.ReadAllBytes(samples.Xbox360FinalEsm!);
         _output.WriteLine($"Input: {input.Length:N0} bytes");

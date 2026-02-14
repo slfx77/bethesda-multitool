@@ -326,23 +326,51 @@ public static class FormatRegistry
 
     private static FrozenDictionary<FileCategory, uint> BuildCategoryColors()
     {
-        // Evenly-spaced hue spectrum (S=70%, V=88%) for maximum distinction.
-        // 15 total categories (9 file + 6 gap) share a unified rainbow:
-        //   Header(0°), Module(24°), Texture(48°), Image(72°), Audio(96°),
-        //   Model(120°), Script(144°), EsmData(168°), Xbox(192°),
-        //   then gap classifications continue from 216°.
-        return new Dictionary<FileCategory, uint>
+        // Header is hardcoded steel gray; all other categories get evenly-spaced
+        // hue colors (S=70%, V=88%) generated dynamically from the enum.
+        var dynamicCategories = Enum.GetValues<FileCategory>()
+            .Where(c => c != FileCategory.Header)
+            .ToArray();
+
+        var hueStep = 360.0 / dynamicCategories.Length;
+        var colors = new Dictionary<FileCategory, uint>
         {
-            [FileCategory.Header] = 0xFF708090, // Steel gray (minidump header)
-            [FileCategory.Module] = 0xFFE08243, // Hue  24° Orange
-            [FileCategory.Texture] = 0xFFE0C043, // Hue  48° Gold
-            [FileCategory.Image] = 0xFFC0E043, // Hue  72° Yellow-green
-            [FileCategory.Audio] = 0xFF82E043, // Hue  96° Lime
-            [FileCategory.Model] = 0xFF43E043, // Hue 120° Green
-            [FileCategory.Script] = 0xFF43E082, // Hue 144° Spring green
-            [FileCategory.EsmData] = 0xFF43E0C0, // Hue 168° Aquamarine
-            [FileCategory.Xbox] = 0xFF43C0E0, // Hue 192° Sky blue
-            [FileCategory.Video] = 0xFF8243E0 // Hue 264° Violet (rarely used)
-        }.ToFrozenDictionary();
+            [FileCategory.Header] = 0xFF708090 // Steel gray (minidump header)
+        };
+
+        for (var i = 0; i < dynamicCategories.Length; i++)
+        {
+            colors[dynamicCategories[i]] = HsvToArgb(i * hueStep, 0.70, 0.88);
+        }
+
+        return colors.ToFrozenDictionary();
+    }
+
+    /// <summary>
+    ///     Converts HSV to ARGB uint. Used by FormatRegistry and MemoryMapColors for consistent color generation.
+    /// </summary>
+    public static uint HsvToArgb(double hue, double saturation, double value)
+    {
+        var h = hue / 60.0;
+        var sector = (int)Math.Floor(h);
+        var f = h - sector;
+        var p = value * (1 - saturation);
+        var q = value * (1 - saturation * f);
+        var t = value * (1 - saturation * (1 - f));
+
+        var (r, g, b) = (sector % 6) switch
+        {
+            0 => (value, t, p),
+            1 => (q, value, p),
+            2 => (p, value, t),
+            3 => (p, q, value),
+            4 => (t, p, value),
+            _ => (value, p, q)
+        };
+
+        return 0xFF000000
+               | ((uint)(r * 255) << 16)
+               | ((uint)(g * 255) << 8)
+               | (uint)(b * 255);
     }
 }

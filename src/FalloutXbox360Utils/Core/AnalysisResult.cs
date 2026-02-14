@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core;
@@ -25,4 +26,9 @@ public class AnalysisResult
     // ESM record data
     public EsmRecordScanResult? EsmRecords { get; set; }
     public Dictionary<uint, string> FormIdMap { get; set; } = [];
+
+    // Runtime asset scanning results (DMP only)
+    public List<ExtractedMesh>? RuntimeMeshes { get; set; }
+    public Dictionary<long, SceneGraphInfo>? SceneGraphMap { get; set; }
+    public List<ExtractedTexture>? RuntimeTextures { get; set; }
 }

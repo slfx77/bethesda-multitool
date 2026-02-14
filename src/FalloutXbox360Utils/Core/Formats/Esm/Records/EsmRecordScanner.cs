@@ -128,6 +128,10 @@ internal static class EsmRecordScanner
     private static readonly HashSet<uint> RuntimeRecordMagicLE = BuildMagicSet(false);
     private static readonly HashSet<uint> RuntimeRecordMagicBE = BuildMagicSet(true);
 
+    // GRUP magic values (structural container, not a main record — separate validation)
+    private const uint SigGrupLE = 0x50555247; // "GRUP" as LE uint32
+    private const uint SigGrupBE = 0x47525550; // "GRUP" as BE uint32
+
     private static readonly string[] KnownFalsePositivePatterns =
     [
         "VGT_", // GPU Vertex Grouper/Tessellator debug (VGT_DEBUG_*)
@@ -650,6 +654,49 @@ internal static class EsmRecordScanner
         return header with { Offset = baseOffset + i };
     }
 
+    /// <summary>
+    ///     Try to parse a GRUP header at position i. GRUP has a different layout than main records:
+    ///     offset 4 = total group size (including header), offset 8 = label, offset 12 = group type (0–10).
+    ///     Returns a DetectedMainRecord with DataSize=0 (only the 24-byte header is highlighted).
+    /// </summary>
+    private static DetectedMainRecord? TryParseGrupHeader(byte[] data, int i, int dataLength, bool isBigEndian)
+    {
+        if (i + 24 > dataLength)
+        {
+            return null;
+        }
+
+        // Read group type at offset 12 (where FormID would be for main records)
+        var groupType = isBigEndian
+            ? BinaryUtils.ReadUInt32BE(data, i + 12)
+            : BinaryUtils.ReadUInt32LE(data, i + 12);
+
+        // Group type must be 0–10 (defined by the ESM format)
+        if (groupType > 10)
+        {
+            return null;
+        }
+
+        // Read total group size at offset 4 — must be at least 24 (header-only group)
+        var groupSize = isBigEndian
+            ? BinaryUtils.ReadUInt32BE(data, i + 4)
+            : BinaryUtils.ReadUInt32LE(data, i + 4);
+
+        if (groupSize < 24)
+        {
+            return null;
+        }
+
+        // Read label at offset 8 (FormID, record type, or block coords depending on group type)
+        var label = isBigEndian
+            ? BinaryUtils.ReadUInt32BE(data, i + 8)
+            : BinaryUtils.ReadUInt32LE(data, i + 8);
+
+        // DataSize = 0: only the 24-byte GRUP header gets highlighted,
+        // not the group contents (which contain separately-detected records)
+        return new DetectedMainRecord("GRUP", 0, groupType, label, i, isBigEndian);
+    }
+
     private static void TryAddMainRecordHeader(byte[] data, int i, int dataLength,
         List<DetectedMainRecord> records, HashSet<long> seenOffsets)
     {
@@ -685,6 +732,19 @@ internal static class EsmRecordScanner
             if (header != null && seenOffsets.Add(i))
             {
                 records.Add(header);
+            }
+
+            return;
+        }
+
+        // Try GRUP (structural container — different header layout than main records)
+        if (magic is SigGrupLE or SigGrupBE)
+        {
+            var isBigEndian = magic == SigGrupBE;
+            var grup = TryParseGrupHeader(data, i, dataLength, isBigEndian);
+            if (grup != null && seenOffsets.Add(i))
+            {
+                records.Add(grup);
             }
         }
     }
@@ -735,6 +795,24 @@ internal static class EsmRecordScanner
                 records.Add(header);
                 // Return total record size: 24-byte header + data size
                 return 24 + (int)header.DataSize;
+            }
+
+            return 0;
+        }
+
+        // Try GRUP (structural container — different header layout than main records)
+        if (magic is SigGrupLE or SigGrupBE)
+        {
+            var isBigEndian = magic == SigGrupBE;
+            var grup = TryParseGrupHeader(data, i, dataLength, isBigEndian);
+            if (grup != null)
+            {
+                var grupWithOffset = grup with { Offset = globalOffset };
+                if (seenOffsets.Add(globalOffset))
+                {
+                    records.Add(grupWithOffset);
+                    return 24; // GRUP header only (contents are separate records)
+                }
             }
         }
 

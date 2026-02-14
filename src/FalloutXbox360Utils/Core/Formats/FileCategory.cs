@@ -14,5 +14,7 @@ public enum FileCategory
     Script,
     Xbox,
     Header,
-    EsmData
+    EsmData,
+    Strings,
+    Struct
 }

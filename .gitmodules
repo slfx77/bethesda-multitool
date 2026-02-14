@@ -1,6 +1,3 @@
 [submodule "DDXConv"]
 	path = src/DDXConv
 	url = https://github.com/slfx77/DDXConv.git
-[submodule "src/XUIHelper"]
-	path = src/XUIHelper
-	url = https://github.com/SGCSam/XUIHelper.git

@@ -216,7 +216,6 @@ public static class CarveCommand
         }
 
         PrintDdxConversionStats(summary);
-        PrintXurConversionStats(summary);
     }
 
     private static void PrintDdxConversionStats(ExtractionSummary summary)
@@ -230,18 +229,6 @@ public static class CarveCommand
         var converted = FormatSuccessCount(summary.DdxConverted);
         var failed = FormatFailedCount(summary.DdxFailed);
         AnsiConsole.MarkupLine($"DDX -> DDS conversions: {converted}, {failed}");
-    }
-
-    private static void PrintXurConversionStats(ExtractionSummary summary)
-    {
-        if (summary is { XurConverted: 0, XurFailed: 0 })
-        {
-            return;
-        }
-
-        var converted = FormatSuccessCount(summary.XurConverted);
-        var failed = FormatFailedCount(summary.XurFailed);
-        AnsiConsole.MarkupLine($"XUR -> XUI conversions: {converted}, {failed}");
     }
 
     private static string FormatSuccessCount(int count)

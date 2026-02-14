@@ -7,6 +7,6 @@ public enum GapClassification
     StringPool,
     PointerDense,
     AssetManagement,
-    EsmLike,
+    RecordSignature,
     BinaryData
 }

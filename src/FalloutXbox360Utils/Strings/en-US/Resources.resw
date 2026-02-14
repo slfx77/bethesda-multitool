@@ -511,7 +511,7 @@
     <value>Convert Formats</value>
   </data>
   <data name="Checkbox_ConvertFormats.ToolTipService.ToolTip" xml:space="preserve">
-    <value>Convert DDX -> DDS textures and XUR -> XUI interfaces</value>
+    <value>Convert DDX -> DDS textures</value>
   </data>
   <data name="Checkbox_SaveAtlas.Content" xml:space="preserve">
     <value>Save Atlas Files</value>

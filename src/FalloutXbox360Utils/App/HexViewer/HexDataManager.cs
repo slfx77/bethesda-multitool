@@ -108,7 +108,7 @@ internal sealed class HexDataManager : IDisposable
     /// <summary>
     ///     Adds classified gap regions from coverage analysis to the file region list.
     ///     Call after Load() to color-code unknown areas by their classification.
-    ///     Most gap types are collapsed to a single "Gap" label; only ESM-like and
+    ///     Most gap types are collapsed to a single "Gap" label; only RecordSignature and
     ///     AssetManagement retain distinct labels (they have semantic meaning).
     /// </summary>
     public void AddCoverageGapRegions(CoverageResult coverage)
@@ -133,7 +133,7 @@ internal sealed class HexDataManager : IDisposable
             // Simplified display name for memory map
             var typeName = gap.Classification switch
             {
-                GapClassification.EsmLike => $"ESM-like ({FormatGapSize(gap.Size)})",
+                GapClassification.RecordSignature => $"Record Signatures ({FormatGapSize(gap.Size)})",
                 GapClassification.AssetManagement => $"Asset Mgmt ({FormatGapSize(gap.Size)})",
                 _ => $"Gap ({FormatGapSize(gap.Size)})"
             };
