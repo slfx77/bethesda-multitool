@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -244,7 +245,7 @@ public sealed partial class SingleFileTab
         // Ensure all children are loaded before filtering (lazy loading)
         if (!_flatListBuilt)
         {
-            StatusTextBlock.Text = "Building search index...";
+            StatusTextBlock.Text = Strings.Status_BuildingSearchIndex;
             var resolver = _session.Resolver;
             var tree = _esmBrowserTree;
             await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver), token);

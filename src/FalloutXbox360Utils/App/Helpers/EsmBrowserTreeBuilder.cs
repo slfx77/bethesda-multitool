@@ -72,7 +72,10 @@ internal static partial class EsmBrowserTreeBuilder
         // World sub-categories
         ["Worldspaces"] = "\uE909", // Globe
         ["Cells"] = "\uE707", // MapPin
-        ["Map Markers"] = "\uE707" // MapPin
+        ["Map Markers"] = "\uE707", // MapPin
+
+        // AI sub-categories
+        ["AI Packages"] = "\uE8AB" // Clock
     };
 
     /// <summary>
@@ -152,7 +155,8 @@ internal static partial class EsmBrowserTreeBuilder
         [typeof(DoorRecord)] = "DOOR",
         [typeof(StaticRecord)] = "STAT",
         [typeof(FurnitureRecord)] = "FURN",
-        [typeof(ScriptRecord)] = "SCPT"
+        [typeof(ScriptRecord)] = "SCPT",
+        [typeof(PackageRecord)] = "PACK"
     };
 
     /// <summary>
@@ -210,6 +214,10 @@ internal static partial class EsmBrowserTreeBuilder
             ("Races", result.Races),
             ("Factions", result.Factions),
             ("Classes", result.Classes)
+        ]);
+
+        AddCategory(root, "AI", "\uE8AB", [
+            ("AI Packages", result.Packages)
         ]);
 
         // Dialog Topics and Dialogues are in the Dialogue Viewer tab
@@ -357,6 +365,12 @@ internal static partial class EsmBrowserTreeBuilder
                 // Dialogue records: show response text with quest/topic context
                 displayName = BuildDialogueDisplayName(dialogue, formIdHex, resolver);
                 detail = BuildDialogueDetail(dialogue, formIdHex, resolver);
+            }
+            else if (record is PackageRecord pkg)
+            {
+                // AI Packages: show EditorId with type name in parens
+                displayName = pkg.EditorId ?? formIdHex;
+                detail = $"({pkg.TypeName})";
             }
             else if (!string.IsNullOrEmpty(fullName) && !string.IsNullOrEmpty(editorId))
             {
@@ -569,6 +583,8 @@ internal static partial class EsmBrowserTreeBuilder
 
         // Record-type flags for special handling
         var isCreature = record is CreatureRecord;
+        var isPackage = record is PackageRecord;
+        var scriptRecord = record as ScriptRecord;
 
         foreach (var prop in GetCachedProperties(type))
         {
@@ -580,6 +596,13 @@ internal static partial class EsmBrowserTreeBuilder
             // Skip creature-specific properties in default loop - handled explicitly below
             if (isCreature && prop.Name is "CreatureType" or "CreatureTypeName"
                     or "CombatSkill" or "MagicSkill" or "StealthSkill" or "AttackDamage")
+            {
+                continue;
+            }
+
+            // Skip package-specific properties - handled in custom block below
+            if (isPackage && prop.Name is "Data" or "Schedule" or "Location" or "Location2"
+                    or "Target" or "Target2" or "TypeName")
             {
                 continue;
             }
@@ -747,12 +770,18 @@ internal static partial class EsmBrowserTreeBuilder
                     new() { Name = "", Value = textContent }
                 };
 
+                // Expand SourceText by default; fall back to DecompiledText when no source
+                var expandByDefault = scriptRecord != null &&
+                    (prop.Name == "SourceText" ||
+                     (prop.Name == "DecompiledText" && !scriptRecord.HasSource));
+
                 properties.Add(new EsmPropertyEntry
                 {
                     Name = displayName,
                     Value = $"{lines.Length} lines",
                     Category = "General",
                     IsExpandable = true,
+                    IsExpandedByDefault = expandByDefault,
                     SubItems = subItems
                 });
                 continue;
@@ -949,6 +978,83 @@ internal static partial class EsmBrowserTreeBuilder
                 properties.Add(new EsmPropertyEntry
                     { Name = "Attack Damage", Value = crea.AttackDamage.ToString(), Category = "Attributes" });
             }
+        }
+
+        // Package-specific: expand Data, Schedule, Location, Target into human-readable fields
+        if (record is PackageRecord pkgRecord)
+        {
+            if (pkgRecord.Data != null)
+            {
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Package Type",
+                    Value = pkgRecord.Data.TypeName,
+                    Category = "General"
+                });
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "General Flags",
+                    Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.GeneralFlags,
+                        FlagRegistry.PackageGeneralFlags),
+                    Category = "General"
+                });
+                if (pkgRecord.Data.FalloutBehaviorFlags != 0)
+                {
+                    properties.Add(new EsmPropertyEntry
+                    {
+                        Name = "Fallout Behaviors",
+                        Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.FalloutBehaviorFlags,
+                            FlagRegistry.PackageFOBehaviorFlags),
+                        Category = "General"
+                    });
+                }
+
+                if (pkgRecord.Data.TypeSpecificFlags != 0)
+                {
+                    properties.Add(new EsmPropertyEntry
+                    {
+                        Name = "Type-Specific Flags",
+                        Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.TypeSpecificFlags,
+                            FlagRegistry.PackageTypeSpecificFlags),
+                        Category = "General"
+                    });
+                }
+            }
+
+            if (pkgRecord.Schedule != null)
+            {
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Schedule",
+                    Value = pkgRecord.Schedule.Summary,
+                    Category = "General"
+                });
+            }
+
+            if (pkgRecord.IsRepeatable)
+            {
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Repeatable",
+                    Value = "Yes",
+                    Category = "General"
+                });
+            }
+
+            if (pkgRecord.IsStartingLocationLinkedRef)
+            {
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Starting Location",
+                    Value = "At Linked Reference",
+                    Category = "General"
+                });
+            }
+
+            AddPackageLocationProperty(properties, "Location", pkgRecord.Location, resolver);
+            AddPackageLocationProperty(properties, "Location 2", pkgRecord.Location2, resolver);
+            AddPackageTargetProperty(properties, "Target", pkgRecord.Target, resolver);
+            AddPackageTargetProperty(properties, "Target 2", pkgRecord.Target2, resolver);
         }
 
         // Add Derived Stats section for NPCs (computed from S.P.E.C.I.A.L. and Level)
@@ -1361,6 +1467,118 @@ internal static partial class EsmBrowserTreeBuilder
             // Nothing
             (false, false, false) => "Unknown"
         };
+    }
+
+    private static readonly string[] LocationTypeNames =
+    [
+        "Near Reference", "In Cell", "Near Current", "Near Editor",
+        "Object ID", "Object Type", "Near Linked Reference", "At Package Location",
+        "", "", "", "",
+        "Near Linked Ref"
+    ];
+
+    private static void AddPackageLocationProperty(
+        List<EsmPropertyEntry> properties,
+        string label,
+        PackageLocation? location,
+        FormIdResolver? resolver)
+    {
+        if (location == null)
+        {
+            return;
+        }
+
+        var typeName = location.Type < LocationTypeNames.Length
+            ? LocationTypeNames[location.Type]
+            : $"Unknown ({location.Type})";
+
+        var editorId = resolver?.GetEditorId(location.Union);
+        var displayName = resolver?.GetDisplayName(location.Union);
+
+        // Chain through REFR → base object if direct lookup fails
+        if (editorId == null && displayName == null && resolver != null)
+        {
+            var baseFormId = resolver.GetBaseFormId(location.Union);
+            if (baseFormId.HasValue)
+            {
+                editorId = resolver.GetEditorId(baseFormId.Value);
+                displayName = resolver.GetDisplayName(baseFormId.Value);
+            }
+        }
+
+        var formIdStr = location.Union != 0
+            ? FormatFormIdReference(location.Union, editorId, displayName)
+            : "None";
+
+        var value = location.Radius > 0
+            ? $"{typeName}: {formIdStr} (radius: {location.Radius})"
+            : $"{typeName}: {formIdStr}";
+
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = label,
+            Value = value,
+            Category = "General",
+            LinkedFormId = location.Union != 0 ? location.Union : null
+        });
+    }
+
+    private static void AddPackageTargetProperty(
+        List<EsmPropertyEntry> properties,
+        string label,
+        PackageTarget? target,
+        FormIdResolver? resolver)
+    {
+        if (target == null)
+        {
+            return;
+        }
+
+        string formIdStr;
+        uint? linkedFormId = null;
+
+        if (target.Type is 0 or 1 && target.FormIdOrType != 0)
+        {
+            // Specific Reference or Object ID — FormID reference
+            var editorId = resolver?.GetEditorId(target.FormIdOrType);
+            var dispName = resolver?.GetDisplayName(target.FormIdOrType);
+
+            // Chain through REFR → base object if direct lookup fails
+            if (editorId == null && dispName == null && resolver != null)
+            {
+                var baseFormId = resolver.GetBaseFormId(target.FormIdOrType);
+                if (baseFormId.HasValue)
+                {
+                    editorId = resolver.GetEditorId(baseFormId.Value);
+                    dispName = resolver.GetDisplayName(baseFormId.Value);
+                }
+            }
+
+            formIdStr = FormatFormIdReference(target.FormIdOrType, editorId, dispName);
+            linkedFormId = target.FormIdOrType;
+        }
+        else if (target.Type == 2)
+        {
+            formIdStr = $"Type {target.FormIdOrType}";
+        }
+        else
+        {
+            formIdStr = target.FormIdOrType != 0 ? $"0x{target.FormIdOrType:X8}" : "None";
+        }
+
+        var parts = new List<string> { $"{target.TypeName}: {formIdStr}" };
+        if (target.CountDistance != 0)
+        {
+            parts.Add($"count/dist: {target.CountDistance}");
+        }
+
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = label,
+            Value = string.Join(", ", parts),
+            Category = "General",
+            LinkedFormId = linkedFormId
+        });
     }
 
     private static string CategorizeProperty(string name)

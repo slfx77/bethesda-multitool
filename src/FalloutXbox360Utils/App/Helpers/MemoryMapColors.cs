@@ -17,11 +17,14 @@ public static class MemoryMapColors
     public static readonly Color GapColor = Color.FromArgb(255, 50, 50, 50);
 
     // Gap classifications that get distinct rainbow colors (generated independently)
+    // AssetManagement uses OKLCH at hue 216° (dark desaturated blue-gray) — sits in
+    // the largest gap of the golden-angle category palette, and clearly distinct
+    // from file categories via lower lightness (0.60) and chroma (0.06).
     private static readonly FrozenDictionary<GapClassification, Color> GapRainbowColors =
         new Dictionary<GapClassification, Color>
         {
             [GapClassification.RecordSignature] = Color.FromArgb(255, 255, 255, 255), // White
-            [GapClassification.AssetManagement] = ArgbToColor(FormatRegistry.HsvToArgb(288, 0.70, 0.88))
+            [GapClassification.AssetManagement] = ArgbToColor(FormatRegistry.OklchToArgb(0.60, 0.06, 216))
         }.ToFrozenDictionary();
 
     /// <summary>
@@ -83,9 +86,9 @@ public static class MemoryMapColors
         // Gap rainbow categories
         foreach (var (classification, name) in GapDisplayNames)
         {
-            if (GapRainbowColors.ContainsKey(classification))
+            if (GapRainbowColors.TryGetValue(classification, out var color))
             {
-                legend.Add(new LegendCategory(name, GapRainbowColors[classification]));
+                legend.Add(new LegendCategory(name, color));
             }
         }
 
@@ -99,6 +102,7 @@ public static class MemoryMapColors
         FileCategory.Image => "PNG",
         FileCategory.EsmData => "ESM Data",
         FileCategory.Xbox => "Xbox/XUI",
+        FileCategory.SaveGame => "Save Files",
         _ => category.ToString()
     };
 

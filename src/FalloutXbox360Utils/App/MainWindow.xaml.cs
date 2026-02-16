@@ -81,6 +81,9 @@ public sealed partial class MainWindow : Window
         // Set the custom title bar as the drag region
         SetTitleBar(AppTitleBar);
 
+        // Hide the default system icon from the title bar
+        AppWindow.TitleBar.IconShowOptions = IconShowOptions.HideIconAndSystemMenu;
+
         // Configure caption button colors based on theme
         UpdateCaptionButtonColors();
 
@@ -127,6 +130,41 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
     }
 
+    // ── Pane open/close: shift title bar to avoid overlapping the expanded pane ──
+
+    private void NavView_PaneOpened(NavigationView sender, object args)
+    {
+        AppTitleBar.Margin = new Thickness(sender.OpenPaneLength, 0, 0, 0);
+    }
+
+    private void NavView_PaneClosed(NavigationView sender, object args)
+    {
+        AppTitleBar.Margin = new Thickness(48, 0, 0, 0);
+    }
+
+    // ── Title bar navigation buttons ──
+
+    private void NavBack_Click(object sender, RoutedEventArgs e)
+    {
+        SingleFileTabContent.UnifiedBack_Click(sender, e);
+    }
+
+    private void NavForward_Click(object sender, RoutedEventArgs e)
+    {
+        SingleFileTabContent.UnifiedForward_Click(sender, e);
+    }
+
+    internal void SetNavButtonStates(bool backEnabled, bool forwardEnabled)
+    {
+        NavBackButton.IsEnabled = backEnabled;
+        NavForwardButton.IsEnabled = forwardEnabled;
+    }
+
+    private void UpdateNavButtonVisibility(string? tag)
+    {
+        NavButtonPanel.Visibility = tag == "SingleFile" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void NavView_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
         if (args.InvokedItemContainer is NavigationViewItem { Tag: "Settings" })
@@ -170,6 +208,9 @@ public sealed partial class MainWindow : Window
 
             // Clear status bar when switching tabs
             SetStatus("");
+
+            // Show/hide title bar nav buttons based on active tab
+            UpdateNavButtonVisibility(tag);
 
             // Show selected content
             switch (tag)

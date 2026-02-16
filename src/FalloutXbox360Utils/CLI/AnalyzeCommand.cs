@@ -175,12 +175,12 @@ public static class AnalyzeCommand
 
         if (!string.IsNullOrEmpty(opts.ExtractMeshes))
         {
-            await ExtractRuntimeMeshesAsync(opts.Input, opts.ExtractMeshes, result);
+            await ExtractRuntimeMeshesAsync(opts.ExtractMeshes, result);
         }
 
         if (!string.IsNullOrEmpty(opts.ExtractTextures))
         {
-            await ExtractRuntimeTexturesAsync(opts.Input, opts.ExtractTextures, result);
+            await ExtractRuntimeTexturesAsync(opts.ExtractTextures, result);
         }
 
     }
@@ -543,7 +543,7 @@ public static class AnalyzeCommand
     }
 
     private static Task ExtractRuntimeMeshesAsync(
-        string inputPath, string outputDir, AnalysisResult result)
+        string outputDir, AnalysisResult result)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Exporting runtime NIF geometry...[/]");
@@ -678,7 +678,7 @@ public static class AnalyzeCommand
     }
 
     private static Task ExtractRuntimeTexturesAsync(
-        string inputPath, string outputDir, AnalysisResult result)
+        string outputDir, AnalysisResult result)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Exporting runtime textures...[/]");

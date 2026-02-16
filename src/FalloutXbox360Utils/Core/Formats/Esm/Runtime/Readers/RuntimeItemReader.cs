@@ -59,7 +59,9 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
     private int ArmoValueOffset => 92 + _s;
     private int ArmoWeightOffset => 100 + _s;
     private int ArmoHealthOffset => 108 + _s;
-    private int ArmoRatingOffset => 376 + _s;
+    private int ArmoBipedFlagsOffset => 116 + _s; // TESBipedModelForm.iBipedObjectSlots
+    private int ArmoRatingOffset => 376 + _s; // OBJ_ARMO.sRating (DamageResistance, UInt16)
+    private int ArmoDamageThresholdOffset => 380 + _s; // OBJ_ARMO.fDamageThreshold (Float32)
 
     // TESObjectAMMO: PDB size ~220, Debug dump ~224, Release dump 236
     private int AmmoStructSize => 220 + _s;
@@ -69,6 +71,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
     private int AlchStructSize => 216 + _s;
     private int AlchWeightOffset => 152 + _s;
     private int AlchValueOffset => 184 + _s;
+    private int AlchFlagsOffset => 188 + _s; // AlchemyItemData.iFlags (byte)
 
     // TESObjectMISC / TESKey: PDB size 172, Debug dump 176, Release dump 188
     private int MiscStructSize => 172 + _s;
@@ -230,8 +233,14 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             health = 0;
         }
 
-        var armorRatingRaw = BinaryUtils.ReadUInt16BE(buffer, ArmoRatingOffset);
-        var damageThreshold = armorRatingRaw / 100.0f;
+        // BipedFlags: TESBipedModelForm.iBipedObjectSlots (uint32 at offset 116)
+        var bipedFlags = BinaryUtils.ReadUInt32BE(buffer, ArmoBipedFlagsOffset);
+
+        // DamageResistance: OBJ_ARMO.sRating (uint16 at offset 376)
+        var damageResistance = (int)BinaryUtils.ReadUInt16BE(buffer, ArmoRatingOffset);
+
+        // DamageThreshold: OBJ_ARMO.fDamageThreshold (float32 at offset 380)
+        var damageThreshold = RuntimeMemoryContext.ReadValidatedFloat(buffer, ArmoDamageThresholdOffset, 0, 100);
 
         return new ArmorRecord
         {
@@ -241,6 +250,8 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             Value = value,
             Weight = weight,
             Health = health,
+            BipedFlags = bipedFlags,
+            DamageResistance = damageResistance,
             DamageThreshold = damageThreshold,
             Offset = offset,
             IsBigEndian = true
@@ -516,6 +527,9 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             value = 0;
         }
 
+        // ENIT flags: AlchemyItemData.iFlags (byte at offset 188)
+        var flags = (uint)buffer[AlchFlagsOffset];
+
         return new ConsumableRecord
         {
             FormId = entry.FormId,
@@ -523,6 +537,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             FullName = entry.DisplayName,
             Value = (uint)value,
             Weight = weight,
+            Flags = flags,
             Offset = offset,
             IsBigEndian = true
         };

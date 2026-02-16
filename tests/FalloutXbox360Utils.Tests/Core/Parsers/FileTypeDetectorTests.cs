@@ -131,7 +131,7 @@ public class FileTypeDetectorTests
     [Fact]
     public void Detect_ValidTempEsmFile_ReturnsEsmFile()
     {
-        var tempFile = Path.GetTempFileName();
+        var tempFile = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         try
         {
             File.WriteAllBytes(tempFile, [(byte)'T', (byte)'E', (byte)'S', (byte)'4', 0x00, 0x00, 0x00, 0x00]);
@@ -146,7 +146,7 @@ public class FileTypeDetectorTests
     [Fact]
     public void Detect_TooSmallFile_ReturnsUnknown()
     {
-        var tempFile = Path.GetTempFileName();
+        var tempFile = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         try
         {
             File.WriteAllBytes(tempFile, [0x54, 0x45]); // Only 2 bytes

@@ -347,34 +347,34 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFil
         var reportPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
             "TestOutput", "semantic-comparison.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
-        using (var writer = new StreamWriter(reportPath))
+        await using (var writer = new StreamWriter(reportPath))
         {
-            writer.WriteLine($"=== Semantic Comparison Results ===");
-            writer.WriteLine($"Total lines compared: {totalLines:N0}");
-            writer.WriteLine($"Matching lines: {totalMatches:N0} (includes {totalTolerated:N0} tolerated)");
-            writer.WriteLine($"Mismatched lines: {totalMismatches:N0}");
-            writer.WriteLine($"Overall match rate: {overallMatchRate:F1}%");
-            writer.WriteLine();
-            writer.WriteLine($"--- Mismatch Categories ---");
+            await writer.WriteLineAsync($"=== Semantic Comparison Results ===");
+            await writer.WriteLineAsync($"Total lines compared: {totalLines:N0}");
+            await writer.WriteLineAsync($"Matching lines: {totalMatches:N0} (includes {totalTolerated:N0} tolerated)");
+            await writer.WriteLineAsync($"Mismatched lines: {totalMismatches:N0}");
+            await writer.WriteLineAsync($"Overall match rate: {overallMatchRate:F1}%");
+            await writer.WriteLineAsync();
+            await writer.WriteLineAsync($"--- Mismatch Categories ---");
             foreach (var (category, count) in aggregateMismatches.OrderByDescending(kv => kv.Value))
             {
                 var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
-                writer.WriteLine($"  {category,-25} {count,6:N0}  ({pct:F1}%)");
+                await writer.WriteLineAsync($"  {category,-25} {count,6:N0}  ({pct:F1}%)");
             }
 
             if (aggregateTolerated.Count > 0)
             {
-                writer.WriteLine();
-                writer.WriteLine($"--- Tolerated Differences (counted as matches) ---");
+                await writer.WriteLineAsync();
+                await writer.WriteLineAsync($"--- Tolerated Differences (counted as matches) ---");
                 foreach (var (category, count) in aggregateTolerated.OrderByDescending(kv => kv.Value))
                 {
                     var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
-                    writer.WriteLine($"  {category,-25} {count,6:N0}  ({pct:F1}%)");
+                    await writer.WriteLineAsync($"  {category,-25} {count,6:N0}  ({pct:F1}%)");
                 }
             }
 
-            writer.WriteLine();
-            writer.WriteLine("--- All Mismatch Examples (first 10 per script) ---");
+            await writer.WriteLineAsync();
+            await writer.WriteLineAsync("--- All Mismatch Examples (first 10 per script) ---");
             foreach (var script in scriptsWithBoth)
             {
                 var result = ScriptComparer.CompareScripts(
@@ -384,13 +384,13 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFil
                     continue;
                 }
 
-                writer.WriteLine(
+                await writer.WriteLineAsync(
                     $"\n  {script.EditorId ?? $"0x{script.FormId:X8}"} ({result.MatchRate:F1}% match, {result.TotalMismatches} mismatches):");
                 foreach (var (source, decompiled, category) in result.Examples)
                 {
-                    writer.WriteLine($"    [{category}]");
-                    writer.WriteLine($"      SCTX: {source}");
-                    writer.WriteLine($"      SCDA: {decompiled}");
+                    await writer.WriteLineAsync($"    [{category}]");
+                    await writer.WriteLineAsync($"      SCTX: {source}");
+                    await writer.WriteLineAsync($"      SCDA: {decompiled}");
                 }
             }
         }

@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats;
+using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core.Carving;
 
@@ -18,7 +19,8 @@ internal static class CarveExtractor
         long offset,
         string signatureId,
         IFileFormat format,
-        string outputPath)
+        string outputPath,
+        MinidumpInfo? minidumpInfo = null)
     {
         // Read data before and after the signature for context
         const int preReadSize = 512;
@@ -64,15 +66,61 @@ internal static class CarveExtractor
                 parseResult.OutputFolderOverride, parseResult.ExtensionOverride);
 
             // Read the actual file data (including any leading bytes)
-            var fileData = new byte[adjustedSize];
-            accessor.ReadArray(adjustedOffset, fileData, 0, adjustedSize);
+            // For minidumps, reassemble from VA-mapped regions; otherwise flat read
+            var (fileData, isTruncated, coverage) =
+                ReadFileData(accessor, adjustedOffset, adjustedSize, minidumpInfo);
 
-            return new ExtractionData(outputFile, fileData, adjustedSize, originalPath, metadata);
+            return new ExtractionData(outputFile, fileData, adjustedSize, originalPath, metadata,
+                isTruncated, coverage);
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    /// <summary>
+    ///     Read file data, using VA-aware reassembly for minidumps or flat read otherwise.
+    /// </summary>
+    private static (byte[] data, bool isTruncated, double coverage) ReadFileData(
+        MemoryMappedViewAccessor accessor,
+        long adjustedOffset,
+        int adjustedSize,
+        MinidumpInfo? minidumpInfo)
+    {
+        if (minidumpInfo is { IsValid: true, MemoryRegions.Count: > 0 })
+        {
+            var matchVa = minidumpInfo.FileOffsetToVirtualAddress(adjustedOffset);
+            if (matchVa != null)
+            {
+                var startVa = matchVa.Value;
+                var endVa = startVa + adjustedSize;
+                var regions = minidumpInfo.GetRegionsInRange(startVa, endVa);
+
+                var fileData = new byte[adjustedSize]; // zero-filled for unmapped gaps
+                long bytesPresent = 0;
+
+                foreach (var region in regions)
+                {
+                    var overlapStart = Math.Max(region.VirtualAddress, startVa);
+                    var overlapEnd = Math.Min(region.VirtualAddress + region.Size, endVa);
+                    var overlapSize = (int)(overlapEnd - overlapStart);
+                    var bufferOffset = (int)(overlapStart - startVa);
+                    var regionFileOffset = region.FileOffset + (overlapStart - region.VirtualAddress);
+
+                    accessor.ReadArray(regionFileOffset, fileData, bufferOffset, overlapSize);
+                    bytesPresent += overlapSize;
+                }
+
+                var coverage = adjustedSize > 0 ? (double)bytesPresent / adjustedSize : 0;
+                return (fileData, coverage < 1.0, coverage);
+            }
+        }
+
+        // Not a valid minidump or VA lookup failed - flat read (current behavior)
+        var flatData = new byte[adjustedSize];
+        accessor.ReadArray(adjustedOffset, flatData, 0, adjustedSize);
+        return (flatData, false, 1.0);
     }
 
     private static (int leadingBytes, string? customFilename, string? originalPath, Dictionary<string, object>? metadata

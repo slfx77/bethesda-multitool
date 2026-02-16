@@ -40,8 +40,7 @@ public sealed partial class SingleFileTab
         if (_analysisResult == null || string.IsNullOrEmpty(outputPath)) return;
         try
         {
-            ExtractButton.IsEnabled = false;
-            AnalysisProgressBar.Visibility = Visibility.Visible;
+            SetPipelinePhase(AnalysisPipelinePhase.Extracting);
             var types = FileTypeMapping
                 .GetSignatureIds(_fileTypeCheckboxes.Where(kvp => kvp.Value.IsChecked == true).Select(kvp => kvp.Key))
                 .ToList();
@@ -122,9 +121,7 @@ public sealed partial class SingleFileTab
         }
         finally
         {
-            ExtractButton.IsEnabled = true;
-            AnalysisProgressBar.Visibility = Visibility.Collapsed;
-            AnalysisProgressBar.IsIndeterminate = true;
+            SetPipelinePhase(AnalysisPipelinePhase.Idle);
         }
     }
 
@@ -211,7 +208,7 @@ public sealed partial class SingleFileTab
 
             DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
             DataBrowserContent.Visibility = Visibility.Visible;
-            StatusTextBlock.Text = "Data browser ready. Building navigation index...";
+            StatusTextBlock.Text = Strings.Status_BuildingNavIndex;
 
             // Pre-build FormID navigation index in the background (avoids delay on first link click)
             // Tracked via _formIdBuildTask so NavigateToFormId can await it if needed

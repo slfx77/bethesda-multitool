@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -17,18 +18,21 @@ public sealed partial class SingleFileTab
         DialogueViewerPlaceholder.Visibility = Visibility.Visible;
         DialogueViewerContent.Visibility = Visibility.Collapsed;
         DialogueViewerProgressBar.Visibility = Visibility.Collapsed;
-        DialogueViewerStatusText.Text = "Run analysis on an ESM or DMP file to view dialogues";
+        DialogueViewerStatusText.Text = Strings.Empty_RunAnalysisForDialogues;
         DialoguePickerTree.RootNodes.Clear();
         DialogueConversationPanel.Children.Clear();
         DialogueChoicesPanel.Children.Clear();
         DialogueChoicesHeader.Visibility = Visibility.Collapsed;
-        DialogueHeaderText.Text = "Select a topic from the left panel";
-        _dialogueNavStack.Clear();
+        DialogueHeaderText.Text = Strings.Empty_SelectDialogueTopic;
+        DialogueBrowseMode.SelectedIndex = 0;
+        DialogueSearchBox.Text = "";
+        _dialoguePickerByQuest = true;
         _visitedTopicFormIds.Clear();
         _currentDialogueTopic = null;
+        _dialogueSpeakerFilter = null;
+        _dialogueQuestFilter = null;
         _dialogueSearchDebounceToken?.Dispose();
         _dialogueSearchDebounceToken = null;
-        DialogueBackButton.IsEnabled = false;
     }
 
     #endregion
@@ -46,6 +50,9 @@ public sealed partial class SingleFileTab
             return false;
         }
 
+        // Push current location before switching tabs (NavigateToFormId already pushed once,
+        // but that was before we knew we'd end up in Dialogue instead of Data Browser)
+
         // Switch to Dialogue Viewer tab
         SubTabView.SelectedItem = DialogueViewerTab;
 
@@ -54,6 +61,10 @@ public sealed partial class SingleFileTab
         {
             _ = PopulateDialogueViewerAsync();
         }
+
+        // Cross-tab navigation: clear filters
+        _dialogueSpeakerFilter = null;
+        _dialogueQuestFilter = null;
 
         // Navigate to the topic
         NavigateToDialogueTopic(topic, pushToStack: _currentDialogueTopic != null);
@@ -64,17 +75,19 @@ public sealed partial class SingleFileTab
 
     #region Dialogue Viewer Fields
 
-    private readonly Stack<DialogueNavState> _dialogueNavStack = new();
-    private const int DialogueNavStackLimit = 50;
     private readonly HashSet<uint> _visitedTopicFormIds = new();
-
 
     private bool _dialoguePickerByQuest = true;
     private TopicDialogueNode? _currentDialogueTopic;
+    private uint? _dialogueSpeakerFilter;
+    private uint? _dialogueQuestFilter;
     private CancellationTokenSource? _dialogueSearchDebounceToken;
 
-    /// <summary>Lightweight snapshot for dialogue back-navigation.</summary>
-    private sealed record DialogueNavState(TopicDialogueNode Topic, double ScrollPosition);
+    // Typed wrappers for TreeView DataObject to disambiguate quest vs NPC picker context
+    private sealed record QuestPickerData(uint QuestFormId, List<TopicDialogueNode> Topics);
+    private sealed record SpeakerPickerData(uint SpeakerFormId, List<TopicDialogueNode> Topics);
+    private sealed record QuestTopicPickerData(uint QuestFormId, TopicDialogueNode Topic);
+    private sealed record SpeakerTopicPickerData(uint SpeakerFormId, TopicDialogueNode Topic);
 
     #endregion
 
@@ -89,7 +102,9 @@ public sealed partial class SingleFileTab
 
         // Show progress
         DialogueViewerProgressBar.Visibility = Visibility.Visible;
-        DialogueViewerStatusText.Text = "Reconstructing dialogue data...";
+        DialogueViewerStatusText.Text = _session.IsEsmFile
+            ? Strings.Status_LoadingDialogueData
+            : Strings.Status_ReconstructingDialogueData;
 
         try
         {
@@ -97,23 +112,17 @@ public sealed partial class SingleFileTab
             if (_session.SemanticResult == null)
             {
                 DialogueViewerProgressBar.IsIndeterminate = false;
-                _reconstructionProgressHandler = (percent, phase) =>
-                {
-                    DialogueViewerProgressBar.Value = percent;
-                    DialogueViewerStatusText.Text = phase;
-                };
                 await EnsureSemanticReconstructionAsync();
-                _reconstructionProgressHandler = null;
             }
 
             var result = _session.SemanticResult;
             if (result?.DialogueTree == null)
             {
-                DialogueViewerStatusText.Text = "No dialogue data found in this file.";
+                DialogueViewerStatusText.Text = Strings.Status_NoDialogueData;
                 return;
             }
 
-            DialogueViewerStatusText.Text = "Building dialogue viewer...";
+            DialogueViewerStatusText.Text = Strings.Status_BuildingDialogueViewer;
 
             _session.DialogueTree = result.DialogueTree;
 
@@ -294,14 +303,14 @@ public sealed partial class SingleFileTab
                 NodeType = "Category",
                 IconGlyph = "\uE8BD",
                 HasUnrealizedChildren = true,
-                DataObject = matchingTopics
+                DataObject = new QuestPickerData(quest.QuestFormId, matchingTopics)
             };
 
             var treeNode = new TreeViewNode { Content = questNode, HasUnrealizedChildren = true };
             DialoguePickerTree.RootNodes.Add(treeNode);
         }
 
-        // Orphan topics
+        // Orphan topics (no quest context)
         var orphanTopics = FilterTopics(tree.OrphanTopics, searchQuery);
         if (orphanTopics.Count > 0)
         {
@@ -312,7 +321,7 @@ public sealed partial class SingleFileTab
                 NodeType = "Category",
                 IconGlyph = "\uE8BD",
                 HasUnrealizedChildren = true,
-                DataObject = orphanTopics
+                DataObject = orphanTopics // No quest context for orphans
             };
 
             var treeNode = new TreeViewNode { Content = orphanNode, HasUnrealizedChildren = true };
@@ -345,7 +354,7 @@ public sealed partial class SingleFileTab
                 NodeType = "Category",
                 IconGlyph = "\uE77B",
                 HasUnrealizedChildren = true,
-                DataObject = speaker.Topics
+                DataObject = new SpeakerPickerData(speaker.FormId, speaker.Topics)
             };
 
             var treeNode = new TreeViewNode { Content = speakerNode, HasUnrealizedChildren = true };
@@ -391,60 +400,142 @@ public sealed partial class SingleFileTab
     private void DialoguePickerTree_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
 #pragma warning restore CA1822
     {
-        if (args.Node.HasUnrealizedChildren && args.Node.Content is EsmBrowserNode node &&
-            node.DataObject is List<TopicDialogueNode> topics)
+        if (!args.Node.HasUnrealizedChildren || args.Node.Content is not EsmBrowserNode node)
         {
-            foreach (var topic in topics.OrderBy(t => t.TopicName ?? "", StringComparer.OrdinalIgnoreCase))
+            return;
+        }
+
+        // Extract topics and optional context from DataObject
+        List<TopicDialogueNode> topics;
+        uint? speakerFormId = null;
+        uint? questFormId = null;
+        if (node.DataObject is SpeakerPickerData speakerData)
+        {
+            topics = speakerData.Topics;
+            speakerFormId = speakerData.SpeakerFormId;
+        }
+        else if (node.DataObject is QuestPickerData questData)
+        {
+            topics = questData.Topics;
+            questFormId = questData.QuestFormId;
+        }
+        else if (node.DataObject is List<TopicDialogueNode> orphanTopics)
+        {
+            topics = orphanTopics;
+        }
+        else
+        {
+            return;
+        }
+
+        foreach (var topic in topics.OrderBy(t => t.TopicName ?? "", StringComparer.OrdinalIgnoreCase))
+        {
+            var topicName = topic.TopicName ?? topic.Topic?.EditorId ?? $"0x{topic.TopicFormId:X8}";
+            var infoCount = topic.InfoChain.Count;
+            var topicType = topic.Topic?.TopicTypeName;
+
+            // NPC view: show first response text; Quest view: show topic name
+            string displayName;
+            string detail;
+            if (!_dialoguePickerByQuest)
             {
-                var topicName = topic.TopicName ?? topic.Topic?.EditorId ?? $"0x{topic.TopicFormId:X8}";
-                var infoCount = topic.InfoChain.Count;
-                var topicType = topic.Topic?.TopicTypeName;
+                var firstText = topic.InfoChain
+                    .SelectMany(info => info.Info.Responses)
+                    .Select(r => r.Text)
+                    .FirstOrDefault(t => !string.IsNullOrEmpty(t));
 
-                // NPC view: show first response text; Quest view: show topic name
-                string displayName;
-                string detail;
-                if (!_dialoguePickerByQuest)
+                // Use response text only if it differs substantially from the topic name
+                if (firstText != null && !IsSimilarText(firstText, topicName))
                 {
-                    var firstText = topic.InfoChain
-                        .SelectMany(info => info.Info.Responses)
-                        .Select(r => r.Text)
-                        .FirstOrDefault(t => !string.IsNullOrEmpty(t));
-
-                    var truncatedText = firstText?.Length > 80 ? firstText[..77] + "..." : firstText;
-                    displayName = truncatedText ?? topicName;
-
-                    detail = topicType != null
-                        ? $"{topicName} \u00B7 {topicType} ({infoCount})"
-                        : $"{topicName} ({infoCount})";
+                    displayName = firstText.Length > 80 ? firstText[..77] + "..." : firstText;
                 }
                 else
                 {
                     displayName = topicName;
-                    detail = topicType != null ? $"{topicType} ({infoCount})" : $"({infoCount})";
                 }
 
-                var topicNode = new EsmBrowserNode
-                {
-                    DisplayName = displayName,
-                    Detail = detail,
-                    NodeType = "Record",
-                    IconGlyph = GetTopicTypeIcon(topic.Topic?.TopicType ?? 0),
-                    DataObject = topic
-                };
-
-                args.Node.Children.Add(new TreeViewNode { Content = topicNode });
+                // Don't repeat topic name in detail — just show type and count
+                detail = topicType != null ? $"{topicType} ({infoCount})" : $"({infoCount})";
+            }
+            else
+            {
+                displayName = topicName;
+                detail = topicType != null ? $"{topicType} ({infoCount})" : $"({infoCount})";
             }
 
-            args.Node.HasUnrealizedChildren = false;
+            // Propagate context to topic leaf nodes
+            object topicDataObject;
+            if (speakerFormId.HasValue)
+            {
+                topicDataObject = new SpeakerTopicPickerData(speakerFormId.Value, topic);
+            }
+            else if (questFormId.HasValue)
+            {
+                topicDataObject = new QuestTopicPickerData(questFormId.Value, topic);
+            }
+            else
+            {
+                topicDataObject = topic;
+            }
+
+            var topicNode = new EsmBrowserNode
+            {
+                DisplayName = displayName,
+                Detail = detail,
+                NodeType = "Record",
+                IconGlyph = GetTopicTypeIcon(topic.Topic?.TopicType ?? 0),
+                DataObject = topicDataObject
+            };
+
+            args.Node.Children.Add(new TreeViewNode { Content = topicNode });
         }
+
+        args.Node.HasUnrealizedChildren = false;
     }
 
     private void DialoguePickerTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
     {
-        if (args.InvokedItem is TreeViewNode { Content: EsmBrowserNode { DataObject: TopicDialogueNode topic } })
+        if (args.InvokedItem is not TreeViewNode { Content: EsmBrowserNode browserNode })
         {
+            return;
+        }
+
+        if (browserNode.DataObject is SpeakerTopicPickerData speakerData)
+        {
+            // NPC mode: filter InfoChain to this speaker
+            _dialogueSpeakerFilter = speakerData.SpeakerFormId;
+            _dialogueQuestFilter = null;
+            NavigateToDialogueTopic(speakerData.Topic, pushToStack: false);
+        }
+        else if (browserNode.DataObject is QuestTopicPickerData questData)
+        {
+            // Quest mode: filter InfoChain to this quest
+            _dialogueSpeakerFilter = null;
+            _dialogueQuestFilter = questData.QuestFormId;
+            NavigateToDialogueTopic(questData.Topic, pushToStack: false);
+        }
+        else if (browserNode.DataObject is TopicDialogueNode topic)
+        {
+            // Orphan topic: no filters
+            _dialogueSpeakerFilter = null;
+            _dialogueQuestFilter = null;
             NavigateToDialogueTopic(topic, pushToStack: false);
         }
+    }
+
+    /// <summary>
+    ///     Checks whether two strings are similar enough that showing both would look duplicated.
+    ///     Returns true if one starts with the other (case-insensitive).
+    /// </summary>
+    private static bool IsSimilarText(string a, string b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+        {
+            return false;
+        }
+
+        return a.StartsWith(b, StringComparison.OrdinalIgnoreCase) ||
+               b.StartsWith(a, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetTopicTypeIcon(byte topicType)
@@ -469,23 +560,10 @@ public sealed partial class SingleFileTab
 
     private void NavigateToDialogueTopic(TopicDialogueNode topic, bool pushToStack)
     {
-        // Push current state onto back stack
-        if (pushToStack && _currentDialogueTopic != null)
+        // Push current state onto unified back stack
+        if (pushToStack && _currentDialogueTopic != null && !_isNavigating)
         {
-            if (_dialogueNavStack.Count >= DialogueNavStackLimit)
-            {
-                // Drop oldest entries by rebuilding the stack
-                var items = _dialogueNavStack.Reverse().Skip(1).ToArray();
-                _dialogueNavStack.Clear();
-                foreach (var item in items)
-                {
-                    _dialogueNavStack.Push(item);
-                }
-            }
-
-            _dialogueNavStack.Push(new DialogueNavState(
-                _currentDialogueTopic,
-                DialogueConversationScroller.VerticalOffset));
+            PushUnifiedNav();
         }
 
         _currentDialogueTopic = topic;
@@ -500,11 +578,70 @@ public sealed partial class SingleFileTab
         // Build player choices
         BuildPlayerChoices(topic);
 
-        // Update navigation state
-        DialogueBackButton.IsEnabled = _dialogueNavStack.Count > 0;
-
         // Scroll to top
         DialogueConversationScroller.ChangeView(null, 0, null, disableAnimation: true);
+
+        // Sync the left panel tree selection to the current topic
+        SyncDialogueTreeSelection(topic);
+    }
+
+    private void SyncDialogueTreeSelection(TopicDialogueNode topic)
+    {
+        foreach (var rootNode in DialoguePickerTree.RootNodes)
+        {
+            if (rootNode.Content is not EsmBrowserNode categoryNode)
+            {
+                continue;
+            }
+
+            // Check if this category contains the topic (without expanding)
+            var containsTopic = categoryNode.DataObject switch
+            {
+                QuestPickerData qd => qd.Topics.Any(t => t.TopicFormId == topic.TopicFormId),
+                SpeakerPickerData sd => sd.Topics.Any(t => t.TopicFormId == topic.TopicFormId),
+                List<TopicDialogueNode> list => list.Any(t => t.TopicFormId == topic.TopicFormId),
+                _ => false
+            };
+
+            if (!containsTopic)
+            {
+                continue;
+            }
+
+            // Expand the category if needed so child nodes are realized
+            if (rootNode.HasUnrealizedChildren)
+            {
+                rootNode.IsExpanded = true;
+            }
+
+            // Search children for the matching topic
+            foreach (var child in rootNode.Children)
+            {
+                if (child.Content is not EsmBrowserNode topicNode)
+                {
+                    continue;
+                }
+
+                var childTopicFormId = topicNode.DataObject switch
+                {
+                    QuestTopicPickerData qt => qt.Topic.TopicFormId,
+                    SpeakerTopicPickerData st => st.Topic.TopicFormId,
+                    TopicDialogueNode t => t.TopicFormId,
+                    _ => (uint?)null
+                };
+
+                if (childTopicFormId == topic.TopicFormId)
+                {
+                    DialoguePickerTree.SelectedNode = child;
+                    var container = DialoguePickerTree.ContainerFromNode(child) as UIElement;
+                    container?.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true });
+                    return;
+                }
+            }
+
+            // Topic found in data but not in tree children (shouldn't happen after expansion)
+            return;
+        }
     }
 
     private void UpdateDialogueHeader(TopicDialogueNode topic)
@@ -528,11 +665,20 @@ public sealed partial class SingleFileTab
         DialogueHeaderText.Text = string.Join(" \u203A ", parts);
     }
 
+    /// <summary>
+    ///     Returns the topic's InfoChain filtered by the current speaker filter (NPC mode),
+    ///     or the full chain if no filter is active.
+    /// </summary>
+    private List<InfoDialogueNode> GetFilteredInfoChain(TopicDialogueNode topic)
+    {
+        return DialogueViewerHelper.FilterInfoChain(topic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter);
+    }
+
     private void BuildConversationDisplay(TopicDialogueNode topic)
     {
         DialogueConversationPanel.Children.Clear();
 
-        var infoChain = topic.InfoChain;
+        var infoChain = GetFilteredInfoChain(topic);
         if (infoChain.Count == 0)
         {
             var emptyText = new TextBlock
@@ -651,7 +797,7 @@ public sealed partial class SingleFileTab
             if (response.EmotionType != 0) // Not Neutral
             {
                 var sign = response.EmotionValue >= 0 ? "+" : "";
-                tags.Children.Add(CreateMetadataTag($"{response.EmotionName} {sign}{response.EmotionValue}"));
+                tags.Children.Add(CreateMetadataTag($"Emotion: {response.EmotionName} {sign}{response.EmotionValue}"));
                 hasTag = true;
             }
         }
@@ -886,49 +1032,60 @@ public sealed partial class SingleFileTab
     {
         DialogueChoicesPanel.Children.Clear();
 
-        // Collect all linked topics from all INFOs, deduplicate by FormId
-        var linkedTopics = new Dictionary<uint, (TopicDialogueNode Topic, InfoDialogueNode SourceInfo)>();
-
-        foreach (var infoNode in topic.InfoChain)
-        {
-            foreach (var linked in infoNode.LinkedTopics)
-            {
-                linkedTopics.TryAdd(linked.TopicFormId, (linked, infoNode));
-            }
-        }
+        // Collect all linked topics from filtered INFOs, excluding self-references
+        var filteredInfoChain = GetFilteredInfoChain(topic);
+        var linkedTopics = DialogueViewerHelper.CollectLinkedTopics(filteredInfoChain, topic.TopicFormId);
 
         if (linkedTopics.Count == 0)
         {
             // Check if all responses are goodbye
-            var allGoodbye = topic.InfoChain.All(i => i.Info.IsGoodbye);
+            var allGoodbye = filteredInfoChain.Count > 0 && filteredInfoChain.All(i => i.Info.IsGoodbye);
 
-            var endText = new TextBlock
+            if (allGoodbye)
             {
-                Text = allGoodbye ? "End of conversation (Goodbye)" : "No further dialogue options",
-                FontSize = 12,
-                FontStyle = Windows.UI.Text.FontStyle.Italic,
-                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-                Margin = new Thickness(0, 4, 0, 0)
-            };
-            DialogueChoicesPanel.Children.Add(endText);
+                var endText = new TextBlock
+                {
+                    Text = "End of conversation (Goodbye)",
+                    FontSize = 12,
+                    FontStyle = Windows.UI.Text.FontStyle.Italic,
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                    Margin = new Thickness(0, 4, 0, 0)
+                };
+                DialogueChoicesPanel.Children.Add(endText);
 
-            // Add "Return to topic list" button
-            var returnButton = new HyperlinkButton
+                // Viewer-only navigation aid
+                AddReturnToPickerLink();
+            }
+            else
             {
-                Content = new TextBlock { Text = "Return to topic list", FontSize = 12 },
-                Padding = new Thickness(0, 4, 0, 0)
-            };
-            returnButton.Click += (_, _) =>
-            {
-                _currentDialogueTopic = null;
-                _dialogueNavStack.Clear();
-                DialogueBackButton.IsEnabled = false;
-                DialogueConversationPanel.Children.Clear();
-                DialogueChoicesPanel.Children.Clear();
-                DialogueChoicesHeader.Visibility = Visibility.Collapsed;
-                DialogueHeaderText.Text = "Select a topic from the left panel";
-            };
-            DialogueChoicesPanel.Children.Add(returnButton);
+                // Non-goodbye, no linked topics: in-game, returns player to the parent topic's choices
+                var parentTopic = FindParentTopic(topic);
+                if (parentTopic != null)
+                {
+                    // Collect parent's linked topics, excluding the current topic to prevent cycles
+                    var parentLinkedTopics = DialogueViewerHelper.CollectLinkedTopics(parentTopic.InfoChain, topic.TopicFormId);
+
+                    if (parentLinkedTopics.Count > 0)
+                    {
+                        DialogueChoicesHeader.Visibility = Visibility.Visible;
+                        foreach (var (_, (linked, sourceInfo)) in parentLinkedTopics)
+                        {
+                            DialogueChoicesPanel.Children.Add(
+                                CreatePlayerChoiceWithDetails(linked, sourceInfo));
+                        }
+                    }
+                    else
+                    {
+                        AddReturnToPickerLink();
+                    }
+                }
+                else
+                {
+                    // No parent found (user came from the picker, or orphan topic)
+                    AddReturnToPickerLink();
+                }
+            }
+
             return;
         }
 
@@ -936,14 +1093,13 @@ public sealed partial class SingleFileTab
 
         foreach (var (_, (linked, sourceInfo)) in linkedTopics)
         {
-            var choiceButton = CreatePlayerChoiceButton(linked, sourceInfo);
-            DialogueChoicesPanel.Children.Add(choiceButton);
+            DialogueChoicesPanel.Children.Add(CreatePlayerChoiceWithDetails(linked, sourceInfo));
         }
     }
 
     private Button CreatePlayerChoiceButton(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
     {
-        var promptText = ResolvePromptText(sourceInfo, linkedTopic);
+        var promptText = DialogueViewerHelper.ResolvePromptText(sourceInfo, linkedTopic);
         var isVisited = _visitedTopicFormIds.Contains(linkedTopic.TopicFormId);
 
         // Check if any INFO in the linked topic is a speech challenge
@@ -1044,47 +1200,128 @@ public sealed partial class SingleFileTab
         return button;
     }
 
-    private static string ResolvePromptText(InfoDialogueNode sourceInfo, TopicDialogueNode linkedTopic)
+    private StackPanel CreatePlayerChoiceWithDetails(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
     {
-        // 1. Source INFO prompt text (the line that leads to this topic)
-        if (!string.IsNullOrEmpty(sourceInfo.Info.PromptText))
+        var container = new StackPanel();
+        container.Children.Add(CreatePlayerChoiceButton(linkedTopic, sourceInfo));
+        container.Children.Add(BuildTopicDetailPanel(linkedTopic, sourceInfo));
+        return container;
+    }
+
+    private Border BuildTopicDetailPanel(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
+    {
+        var detailGrid = new Grid { Visibility = Visibility.Collapsed, Margin = new Thickness(30, 0, 0, 0) };
+        detailGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        detailGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var row = 0;
+
+        void AddRow(string name, string? value, uint? linkFormId = null)
         {
-            return sourceInfo.Info.PromptText;
+            if (string.IsNullOrEmpty(value) && linkFormId is null or 0)
+            {
+                return;
+            }
+
+            detailGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var nameBlock = new TextBlock
+            {
+                Text = name,
+                FontSize = 11,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                Padding = new Thickness(0, 1, 12, 1)
+            };
+            Grid.SetRow(nameBlock, row);
+            Grid.SetColumn(nameBlock, 0);
+            detailGrid.Children.Add(nameBlock);
+
+            if (linkFormId is > 0)
+            {
+                var link = CreateFormIdLink(value ?? $"0x{linkFormId.Value:X8}", linkFormId.Value, 11, monospace: true);
+                Grid.SetRow(link, row);
+                Grid.SetColumn(link, 1);
+                detailGrid.Children.Add(link);
+            }
+            else
+            {
+                var valueBlock = new TextBlock
+                {
+                    Text = value ?? "",
+                    FontSize = 11,
+                    FontFamily = new FontFamily("Consolas"),
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true,
+                    Padding = new Thickness(0, 1, 0, 1)
+                };
+                Grid.SetRow(valueBlock, row);
+                Grid.SetColumn(valueBlock, 1);
+                detailGrid.Children.Add(valueBlock);
+            }
+
+            row++;
         }
 
-        // 2. First INFO in linked topic with prompt text
-        var firstWithPrompt = linkedTopic.InfoChain
-            .FirstOrDefault(i => !string.IsNullOrEmpty(i.Info.PromptText));
-        if (firstWithPrompt != null)
+        // Topic metadata
+        AddRow("Topic FormID", $"0x{linkedTopic.TopicFormId:X8}");
+        AddRow("Topic EditorID", linkedTopic.Topic?.EditorId);
+        AddRow("Topic Name", linkedTopic.Topic?.FullName);
+        AddRow("Topic Type", linkedTopic.Topic?.TopicTypeName);
+        AddRow("INFO Count", linkedTopic.InfoChain.Count.ToString());
+
+        // Quest link
+        if (linkedTopic.Topic?.QuestFormId is > 0)
         {
-            return firstWithPrompt.Info.PromptText!;
+            var questName = ResolveFormName(linkedTopic.Topic.QuestFormId.Value);
+            AddRow("Quest", questName, linkedTopic.Topic.QuestFormId.Value);
         }
 
-        // 3. Topic-level dummy prompt
-        if (!string.IsNullOrEmpty(linkedTopic.Topic?.DummyPrompt))
+        // Source INFO that leads here
+        AddRow("Source INFO", $"0x{sourceInfo.Info.FormId:X8}");
+        if (!string.IsNullOrEmpty(sourceInfo.Info.EditorId))
         {
-            return linkedTopic.Topic.DummyPrompt;
+            AddRow("Source EditorID", sourceInfo.Info.EditorId);
         }
 
-        // 4. Topic display name
-        if (!string.IsNullOrEmpty(linkedTopic.Topic?.FullName))
+        // Toggle header
+        var toggleIcon = new TextBlock
         {
-            return linkedTopic.Topic.FullName;
-        }
-
-        // 5. Topic name (from tree node)
-        if (!string.IsNullOrEmpty(linkedTopic.TopicName))
+            Text = "\u25B6",
+            FontSize = 9,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4, 0)
+        };
+        var toggleText = new TextBlock
         {
-            return linkedTopic.TopicName;
-        }
-
-        // 6. EditorId fallback
-        if (!string.IsNullOrEmpty(linkedTopic.Topic?.EditorId))
+            Text = "Record Details",
+            FontSize = 11,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+        };
+        var togglePanel = new StackPanel
         {
-            return linkedTopic.Topic.EditorId;
-        }
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(30, 0, 0, 0)
+        };
+        togglePanel.Children.Add(toggleIcon);
+        togglePanel.Children.Add(toggleText);
+        togglePanel.PointerPressed += (_, _) =>
+        {
+            var isCollapsed = detailGrid.Visibility == Visibility.Collapsed;
+            detailGrid.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
+            toggleIcon.Text = isCollapsed ? "\u25BC" : "\u25B6";
+        };
 
-        return "[Continue]";
+        var container = new StackPanel();
+        container.Children.Add(togglePanel);
+        container.Children.Add(detailGrid);
+
+        return new Border
+        {
+            Child = container,
+            Margin = new Thickness(0, 0, 0, 2)
+        };
     }
 
     private string ResolveSpeakerName(uint? formId)
@@ -1097,24 +1334,70 @@ public sealed partial class SingleFileTab
         return _session.Resolver?.GetBestNameWithRefChain(formId.Value) ?? $"0x{formId.Value:X8}";
     }
 
+    /// <summary>
+    ///     Finds the topic that links TO the given topic (the "parent" in the dialogue menu hierarchy).
+    ///     When a response ends without linked topics or goodbye, the game returns the player to the
+    ///     parent topic's choices.
+    /// </summary>
+    private TopicDialogueNode? FindParentTopic(TopicDialogueNode currentTopic)
+    {
+        if (_session.DialogueTree == null)
+        {
+            return null;
+        }
+
+        // When quest filter is active, search only within that quest first
+        if (_dialogueQuestFilter.HasValue &&
+            _session.DialogueTree.QuestTrees.TryGetValue(_dialogueQuestFilter.Value, out var filteredQuest))
+        {
+            var result = DialogueViewerHelper.FindParentTopicIn(currentTopic, filteredQuest.Topics);
+            if (result != null)
+            {
+                return result;
+            }
+        }
+        else
+        {
+            // Search all quest topics
+            foreach (var quest in _session.DialogueTree.QuestTrees.Values)
+            {
+                var result = DialogueViewerHelper.FindParentTopicIn(currentTopic, quest.Topics);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+        }
+
+        // Also check orphan topics
+        return DialogueViewerHelper.FindParentTopicIn(currentTopic, _session.DialogueTree.OrphanTopics);
+    }
+
+    /// <summary>
+    ///     Adds a "Return to topic list" hyperlink that clears the view back to the picker.
+    ///     Used as a fallback when no parent topic can be found, or after Goodbye.
+    /// </summary>
+    private void AddReturnToPickerLink()
+    {
+        var returnButton = new HyperlinkButton
+        {
+            Content = new TextBlock { Text = "\u2190 Return to topic list", FontSize = 12 },
+            Padding = new Thickness(0, 4, 0, 0)
+        };
+        returnButton.Click += (_, _) =>
+        {
+            _currentDialogueTopic = null;
+            DialogueConversationPanel.Children.Clear();
+            DialogueChoicesPanel.Children.Clear();
+            DialogueChoicesHeader.Visibility = Visibility.Collapsed;
+            DialogueHeaderText.Text = Strings.Empty_SelectDialogueTopic;
+        };
+        DialogueChoicesPanel.Children.Add(returnButton);
+    }
+
     #endregion
 
     #region Dialogue Viewer Events
-
-    private void DialogueBack_Click(object sender, RoutedEventArgs e)
-    {
-        if (_dialogueNavStack.Count == 0)
-        {
-            return;
-        }
-
-        var state = _dialogueNavStack.Pop();
-        _currentDialogueTopic = null; // Prevent pushing current onto stack
-        NavigateToDialogueTopic(state.Topic, pushToStack: false);
-
-        // Restore scroll position
-        DialogueConversationScroller.ChangeView(null, state.ScrollPosition, null, disableAnimation: true);
-    }
 
     private void DialogueBrowseMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

@@ -131,7 +131,7 @@ public static class ConvertNifCommand
     /// </summary>
     private static async Task ProcessFilesAsync(ConversionContext context)
     {
-        var converter = new NifConverter(context.Verbose);
+        if (context.Verbose) Core.Logger.Instance.Level = Core.LogLevel.Debug;
 
         await AnsiConsole.Progress()
             .AutoClear(false)
@@ -149,7 +149,7 @@ public static class ConvertNifCommand
                     var fileName = Path.GetFileName(file);
                     task.Description = $"[yellow]{fileName}[/]";
 
-                    await ProcessSingleFileAsync(context, converter, file, fileName);
+                    await ProcessSingleFileAsync(context, file, fileName);
                     task.Increment(1);
                 }
 
@@ -162,7 +162,6 @@ public static class ConvertNifCommand
     /// </summary>
     private static async Task ProcessSingleFileAsync(
         ConversionContext context,
-        NifConverter converter,
         string file,
         string fileName)
     {
@@ -175,7 +174,7 @@ public static class ConvertNifCommand
                 return;
             }
 
-            await ConvertFileAsync(context, converter, file, fileName, outputPath);
+            await ConvertFileAsync(context, file, fileName, outputPath);
         }
         catch (Exception ex)
         {
@@ -233,13 +232,12 @@ public static class ConvertNifCommand
     /// </summary>
     private static async Task ConvertFileAsync(
         ConversionContext context,
-        NifConverter converter,
         string file,
         string fileName,
         string outputPath)
     {
         var data = await File.ReadAllBytesAsync(file);
-        var result = converter.Convert(data);
+        var result = NifConverter.Convert(data);
 
         if (result is { Success: true, OutputData: not null })
         {

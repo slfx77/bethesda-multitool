@@ -11,7 +11,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
     <!-- Application icon for both CLI and GUI executables -->
-    <ApplicationIcon>converter.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Single-file and trimming options for CLI builds -->
@@ -86,6 +86,11 @@
   <!-- Embedded resources -->
   <ItemGroup>
     <EmbeddedResource Include="Core\Formats\Nif\nif.xml" LogicalName="FalloutXbox360Utils.nif.xml" />
+  </ItemGroup>
+
+  <!-- App icon for title bar (unpackaged apps need explicit Content inclusion) -->
+  <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
+    <Content Include="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Exclude GUI code from cross-platform build -->

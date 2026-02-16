@@ -297,12 +297,77 @@
     <comment>{0} = record count</comment>
   </data>
   <data name="Status_FoundFilesToCarve" xml:space="preserve">
-    <value>Found {0:N0} files to carve. Coverage: {1:F1}%</value>
-    <comment>{0} = file count, {1} = coverage percentage</comment>
+    <value>Found {0:N0} entries ({2:N0} files, {3:N0} records). Coverage: {1:F1}%</value>
+    <comment>{0} = total count, {1} = coverage percentage, {2} = file count, {3} = record count</comment>
+  </data>
+  <data name="Status_FoundRecords" xml:space="preserve">
+    <value>Found {0:N0} records</value>
+    <comment>{0} = record count</comment>
   </data>
   <data name="Status_CoverageAnalysisFailed" xml:space="preserve">
     <value>Coverage analysis failed: {0}</value>
     <comment>{0} = error message</comment>
+  </data>
+
+  <!-- Geometry/Texture scanning phases -->
+  <data name="Status_ScanningGeometry" xml:space="preserve">
+    <value>Scanning for NIF geometry...</value>
+  </data>
+  <data name="Status_ScanningTextures" xml:space="preserve">
+    <value>Scanning for runtime textures...</value>
+  </data>
+  <data name="Status_WalkingSceneGraph" xml:space="preserve">
+    <value>Walking scene graph...</value>
+  </data>
+
+  <!-- Dialogue Viewer -->
+  <data name="Status_LoadingDialogueData" xml:space="preserve">
+    <value>Loading dialogue data...</value>
+  </data>
+  <data name="Status_ReconstructingDialogueData" xml:space="preserve">
+    <value>Reconstructing dialogue data...</value>
+  </data>
+  <data name="Status_NoDialogueData" xml:space="preserve">
+    <value>No dialogue data found in this file.</value>
+  </data>
+  <data name="Status_BuildingDialogueViewer" xml:space="preserve">
+    <value>Building dialogue viewer...</value>
+  </data>
+  <data name="Empty_RunAnalysisForDialogues" xml:space="preserve">
+    <value>Run analysis on an ESM or DMP file to view dialogues</value>
+  </data>
+  <data name="Empty_SelectDialogueTopic" xml:space="preserve">
+    <value>Select a topic from the left panel</value>
+  </data>
+
+  <!-- World Map -->
+  <data name="Status_LoadingWorldData" xml:space="preserve">
+    <value>Loading world data...</value>
+  </data>
+  <data name="Status_ReconstructingWorldData" xml:space="preserve">
+    <value>Reconstructing world data...</value>
+  </data>
+  <data name="Status_NoWorldData" xml:space="preserve">
+    <value>No world data found in this file.</value>
+  </data>
+  <data name="Status_BuildingWorldIndex" xml:space="preserve">
+    <value>Building world data index...</value>
+  </data>
+  <data name="Empty_RunAnalysisForWorldMap" xml:space="preserve">
+    <value>Run analysis to view world data</value>
+  </data>
+
+  <!-- Data Browser -->
+  <data name="Status_BuildingNavIndex" xml:space="preserve">
+    <value>Data browser ready. Building navigation index...</value>
+  </data>
+  <data name="Status_BuildingSearchIndex" xml:space="preserve">
+    <value>Building search index...</value>
+  </data>
+
+  <!-- Reports -->
+  <data name="Status_GeneratingReports" xml:space="preserve">
+    <value>Generating reports...</value>
   </data>
 
   <!-- ===== Dialog Titles ===== -->
@@ -409,7 +474,7 @@
     <value>Type</value>
   </data>
   <data name="Col_Filename.Text" xml:space="preserve">
-    <value>Filename</value>
+    <value>Name</value>
   </data>
   <data name="Col_FileOffset.Text" xml:space="preserve">
     <value>File Offset</value>

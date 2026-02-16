@@ -49,8 +49,8 @@ public sealed partial class NifFormat
         try
         {
             var verbose = metadata?.TryGetValue("verbose", out var v) == true && v is true;
-            var converter = new NifConverter(verbose);
-            var nifResult = converter.Convert(data);
+            if (verbose) Logger.Instance.Level = LogLevel.Debug;
+            var nifResult = NifConverter.Convert(data);
 
             if (nifResult.Success)
             {

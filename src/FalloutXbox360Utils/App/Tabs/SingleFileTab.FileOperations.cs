@@ -26,7 +26,7 @@ public sealed partial class SingleFileTab
             await EnsureSemanticReconstructionAsync();
             if (_session.SemanticResult == null) return;
 
-            StatusTextBlock.Text = "Generating reports...";
+            StatusTextBlock.Text = Strings.Status_GeneratingReports;
 
             // Extract string pool data for minidump files (requires coverage + accessor)
             if (_session.StringPool == null && !_session.IsEsmFile
@@ -127,6 +127,28 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Report Tab Reset
+
+    private void ResetReportsTab()
+    {
+        _reportEntries.Clear();
+        ReportPreviewTextBox.Text = "";
+        _reportLines = [];
+        _reportLineOffsets = [];
+        _reportFullContent = "";
+        ReportViewerScrollBar.Maximum = 0;
+        ReportViewerScrollBar.Value = 0;
+        _reportSearchMatches = [];
+        _reportSearchIndex = 0;
+        _reportSearchQuery = "";
+        ReportSearchBox.Text = "";
+        ReportSearchStatus.Text = "";
+        ExportAllReportsButton.IsEnabled = false;
+        ExportSelectedReportButton.IsEnabled = false;
+    }
+
+    #endregion
+
     #region Report Viewer
 
     private void ReportListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -166,12 +188,56 @@ public sealed partial class SingleFileTab
             offset += _reportLines[i].Length + 1; // +1 for \n
         }
 
-        // Configure scrollbar
+        // Configure scrollbar with current viewport size
+        ReportViewerScrollBar.Value = 0;
+        RecalculateReportViewport();
+
+        // Deferred recalculation: SizeChanged may not have fired yet if the TextBox
+        // hasn't rendered. Queue a layout pass to measure the actual height.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            var textBoxHeight = ReportPreviewTextBox.ActualHeight;
+            if (textBoxHeight > 0)
+            {
+                RecalculateReportViewport(textBoxHeight);
+            }
+        });
+    }
+
+    /// <summary>
+    ///     Recalculates the report viewport line count and scrollbar parameters.
+    ///     If <paramref name="textBoxHeight"/> is provided, updates the viewport count
+    ///     from the actual rendered height; otherwise uses the current value.
+    /// </summary>
+    private void RecalculateReportViewport(double textBoxHeight = 0)
+    {
+        if (textBoxHeight > 0)
+        {
+            // Measure actual line height from font metrics (cached after first call)
+            if (_measuredLineHeight <= 0)
+            {
+                var measure = new Microsoft.UI.Xaml.Controls.TextBlock
+                {
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                    FontSize = 11,
+                    Text = "Xg"
+                };
+                measure.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+                _measuredLineHeight = measure.DesiredSize.Height;
+            }
+
+            _reportViewportLineCount = Math.Max(10, (int)(textBoxHeight / _measuredLineHeight) - 1);
+        }
+
         var maxTop = Math.Max(0, _reportLines.Length - _reportViewportLineCount);
         ReportViewerScrollBar.Maximum = maxTop;
         ReportViewerScrollBar.ViewportSize = _reportViewportLineCount;
         ReportViewerScrollBar.LargeChange = Math.Max(1, _reportViewportLineCount - 2);
-        ReportViewerScrollBar.Value = 0;
+
+        if (ReportViewerScrollBar.Value > maxTop)
+        {
+            ReportViewerScrollBar.Value = maxTop;
+        }
 
         UpdateReportViewport();
     }
@@ -202,33 +268,7 @@ public sealed partial class SingleFileTab
     {
         if (e.NewSize.Height <= 0) return;
 
-        // Measure actual line height from font metrics (cached after first call)
-        if (_measuredLineHeight <= 0)
-        {
-            var measure = new Microsoft.UI.Xaml.Controls.TextBlock
-            {
-                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                FontSize = 11,
-                Text = "Xg" // Characters with ascenders and descenders
-            };
-            measure.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-            _measuredLineHeight = measure.DesiredSize.Height;
-        }
-
-        _reportViewportLineCount = Math.Max(10, (int)(e.NewSize.Height / _measuredLineHeight) - 1);
-
-        // Update scrollbar to reflect new viewport size
-        var maxTop = Math.Max(0, _reportLines.Length - _reportViewportLineCount);
-        ReportViewerScrollBar.Maximum = maxTop;
-        ReportViewerScrollBar.ViewportSize = _reportViewportLineCount;
-        ReportViewerScrollBar.LargeChange = Math.Max(1, _reportViewportLineCount - 2);
-
-        if (ReportViewerScrollBar.Value > maxTop)
-        {
-            ReportViewerScrollBar.Value = maxTop;
-        }
-
-        UpdateReportViewport();
+        RecalculateReportViewport(e.NewSize.Height);
     }
 
     private void ReportPreviewTextBox_PointerWheelChanged(object sender, PointerRoutedEventArgs e)

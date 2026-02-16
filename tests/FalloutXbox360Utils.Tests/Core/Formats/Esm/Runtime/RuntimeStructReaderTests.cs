@@ -12,7 +12,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 ///     Tests for RuntimeStructReader using synthetic memory-mapped data that simulates
 ///     an Xbox 360 memory dump with heap memory at VA 0x40000000.
 /// </summary>
-public class RuntimeStructReaderTests(ITestOutputHelper output) : IDisposable
+public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDisposable
 {
     private readonly ITestOutputHelper _output = output;
 
@@ -27,11 +27,9 @@ public class RuntimeStructReaderTests(ITestOutputHelper output) : IDisposable
     private const uint HeapBaseVa = 0x40000000;
 
     // Struct constants mirrored from RuntimeStructReader for test clarity
-    private const int AmmoStructSize = 236;
     private const int AmmoValueOffset = 140;
     private const byte AmmoFormType = 0x29;
 
-    private const int MiscStructSize = 188;
     private const int MiscValueOffset = 136;
     private const int MiscWeightOffset = 144;
     private const byte MiscFormType = 0x1F;
@@ -50,7 +48,7 @@ public class RuntimeStructReaderTests(ITestOutputHelper output) : IDisposable
     /// </summary>
     private RuntimeStructReader CreateReader(byte[] data)
     {
-        _tempFilePath = Path.GetTempFileName();
+        _tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         File.WriteAllBytes(_tempFilePath, data);
 
         _mmf = MemoryMappedFile.CreateFromFile(_tempFilePath, FileMode.Open, null, data.Length,
@@ -721,6 +719,7 @@ public class RuntimeStructReaderTests(ITestOutputHelper output) : IDisposable
 
     public void Dispose()
     {
+        GC.SuppressFinalize(this);
         _accessor?.Dispose();
         _mmf?.Dispose();
 

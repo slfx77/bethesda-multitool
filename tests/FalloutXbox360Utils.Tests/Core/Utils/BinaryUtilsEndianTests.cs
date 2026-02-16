@@ -270,7 +270,7 @@ public class BinaryUtilsEndianTests
     public void HalfToFloat_NegativeZero_ReturnsNegativeZero()
     {
         var result = BinaryUtils.HalfToFloat(0x8000);
-        Assert.True(float.IsNegativeInfinity(1.0f / result) || result == -0.0f);
+        Assert.True(float.IsNegativeInfinity(1.0f / result));
     }
 
     [Fact]

@@ -13,6 +13,9 @@ public sealed class EsmPropertyEntry
     /// <summary>Whether this entry is expandable (contains sub-items).</summary>
     public bool IsExpandable { get; init; }
 
+    /// <summary>Whether this expandable entry should render expanded initially.</summary>
+    public bool IsExpandedByDefault { get; init; }
+
     /// <summary>Sub-items for expandable entries (list contents).</summary>
     public List<EsmPropertyEntry>? SubItems { get; init; }
 

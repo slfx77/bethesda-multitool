@@ -8,4 +8,6 @@ internal readonly record struct ExtractionData(
     byte[] Data,
     int FileSize,
     string? OriginalPath,
-    Dictionary<string, object>? Metadata);
+    Dictionary<string, object>? Metadata,
+    bool IsTruncated = false,
+    double Coverage = 1.0);

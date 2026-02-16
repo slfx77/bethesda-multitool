@@ -163,13 +163,13 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         for (var i = 0; i < 50; i++)
         {
             var filePath = Path.Combine(_tempDir, $"xbox_{i:D3}.nif");
-            await File.WriteAllBytesAsync(filePath, xbox360Header);
+            await File.WriteAllBytesAsync(filePath, xbox360Header, TestContext.Current.CancellationToken);
         }
 
         for (var i = 0; i < 50; i++)
         {
             var filePath = Path.Combine(_tempDir, $"pc_{i:D3}.nif");
-            await File.WriteAllBytesAsync(filePath, pcHeader);
+            await File.WriteAllBytesAsync(filePath, pcHeader, TestContext.Current.CancellationToken);
         }
 
         // Act

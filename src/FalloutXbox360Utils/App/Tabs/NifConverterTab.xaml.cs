@@ -336,7 +336,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
         var overwrite = OverwriteExistingCheckBox.IsChecked == true;
         var verbose = VerboseOutputCheckBox.IsChecked == true;
 
-        var converter = new NifConverter(verbose);
+        if (verbose) Core.Logger.Instance.Level = Core.LogLevel.Debug;
 
         _cts = new CancellationTokenSource();
         UpdateButtonStates();
@@ -387,7 +387,7 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
                     // Read and convert
                     var inputData = await File.ReadAllBytesAsync(file.FullPath, _cts.Token);
-                    var result = await Task.Run(() => converter.Convert(inputData), _cts.Token);
+                    var result = await Task.Run(() => NifConverter.Convert(inputData), _cts.Token);
 
                     if (result.Success && result.OutputData != null)
                     {

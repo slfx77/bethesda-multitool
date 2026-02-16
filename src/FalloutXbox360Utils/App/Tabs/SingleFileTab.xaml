@@ -91,15 +91,21 @@
 
             <controls:ContentPresenter Grid.Column="1" />
 
-            <!--  Files Table  -->
-            <Border Grid.Column="2"
-                    VerticalAlignment="Stretch"
-                    Style="{StaticResource CardBorderStyle}">
-              <Grid VerticalAlignment="Stretch">
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+            <!--  Files Table + Filter  -->
+            <Grid Grid.Column="2">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+
+              <Border Grid.Row="0"
+                      VerticalAlignment="Stretch"
+                      Style="{StaticResource CardBorderStyle}">
+                <Grid VerticalAlignment="Stretch">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                  </Grid.RowDefinitions>
 
                 <!--  Column headers  -->
                 <Grid Grid.Row="0"
@@ -215,8 +221,44 @@
                     </DataTemplate>
                   </ListView.ItemTemplate>
                 </ListView>
+
               </Grid>
-            </Border>
+              </Border>
+
+              <!--  Type filter dropdown (below the card)  -->
+              <DropDownButton x:Name="FilterDropDown"
+                              Grid.Row="1"
+                              Content="Filter: All types"
+                              FontSize="11"
+                              HorizontalAlignment="Left"
+                              Margin="0,4,0,0"
+                              Visibility="Collapsed">
+                <DropDownButton.Flyout>
+                  <Flyout Placement="BottomEdgeAlignedLeft">
+                    <Flyout.FlyoutPresenterStyle>
+                      <Style TargetType="FlyoutPresenter">
+                        <Setter Property="Background"
+                                Value="{ThemeResource CardBackgroundSolidBrush}" />
+                      </Style>
+                    </Flyout.FlyoutPresenterStyle>
+                    <StackPanel Spacing="4" MinWidth="240">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <HyperlinkButton Content="Select all" Padding="0"
+                                         FontSize="11"
+                                         Click="FilterSelectAll_Click" />
+                        <HyperlinkButton Content="Clear" Padding="0"
+                                         FontSize="11"
+                                         Click="FilterSelectNone_Click" />
+                      </StackPanel>
+                      <ScrollViewer MaxHeight="400"
+                                    VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="ResultsFilterPanel" Spacing="0" />
+                      </ScrollViewer>
+                    </StackPanel>
+                  </Flyout>
+                </DropDownButton.Flyout>
+              </DropDownButton>
+            </Grid>
           </Grid>
         </controls:TabViewItem>
 
@@ -325,16 +367,6 @@
                     <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
                   <StackPanel Orientation="Horizontal" Grid.Row="0" Spacing="0">
-                    <Button x:Name="NavBackButton" Width="32" Height="32" Padding="0"
-                            IsEnabled="False" Click="NavigateBack_Click"
-                            ToolTipService.ToolTip="Back">
-                      <FontIcon Glyph="&#xE72B;" FontSize="12" />
-                    </Button>
-                    <Button x:Name="NavForwardButton" Width="32" Height="32" Padding="0"
-                            Margin="2,0,8,0" IsEnabled="False" Click="NavigateForward_Click"
-                            ToolTipService.ToolTip="Forward">
-                      <FontIcon Glyph="&#xE72A;" FontSize="12" />
-                    </Button>
                     <TextBlock x:Name="SelectedRecordTitle" x:Uid="Empty_SelectRecord"
                                Style="{StaticResource SubtitleTextBlockStyle}"
                                VerticalAlignment="Center"
@@ -462,15 +494,10 @@
                 <!--  Header with back button  -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="0"
                             Margin="0,0,0,8">
-                  <Button x:Name="DialogueBackButton" Width="32" Height="32" Padding="0"
-                          IsEnabled="False" Click="DialogueBack_Click"
-                          ToolTipService.ToolTip="Back">
-                    <FontIcon Glyph="&#xE72B;" FontSize="12" />
-                  </Button>
                   <TextBlock x:Name="DialogueHeaderText"
                              Text="Select a topic from the left panel"
                              Style="{StaticResource SubtitleTextBlockStyle}"
-                             VerticalAlignment="Center" Margin="8,0,0,0"
+                             VerticalAlignment="Center"
                              TextWrapping="Wrap" MaxLines="2"
                              TextTrimming="CharacterEllipsis" />
                 </StackPanel>
@@ -486,14 +513,17 @@
                 <!--  Player choices panel  -->
                 <Border Grid.Row="2"
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        CornerRadius="4" Padding="8" Margin="0,8,0,0">
-                  <StackPanel x:Name="DialogueChoicesPanel" Spacing="4">
-                    <TextBlock x:Name="DialogueChoicesHeader"
-                               Text="Your responses:"
-                               FontSize="12" FontWeight="SemiBold"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               Visibility="Collapsed" />
-                  </StackPanel>
+                        CornerRadius="4" Padding="8" Margin="0,8,0,0"
+                        MaxHeight="350">
+                  <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="DialogueChoicesPanel" Spacing="4">
+                      <TextBlock x:Name="DialogueChoicesHeader"
+                                 Text="Your responses:"
+                                 FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                 Visibility="Collapsed" />
+                    </StackPanel>
+                  </ScrollViewer>
                 </Border>
               </Grid>
             </Grid>
@@ -541,12 +571,14 @@
                            Style="{StaticResource SubtitleTextBlockStyle}"
                            Margin="0,0,0,8" />
 
-                <Button x:Name="ViewInMapButton" Grid.Row="1"
-                        Content="View Cell"
-                        Click="ViewInMap_Click"
-                        Visibility="Collapsed"
-                        Margin="0,0,0,8"
-                        ToolTipService.ToolTip="View this cell in detail mode" />
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
+                            Margin="0,0,0,8">
+                  <Button x:Name="ViewBaseInBrowserButton"
+                          Content="View in Data Browser"
+                          Click="ViewBaseInBrowser_Click"
+                          Visibility="Collapsed"
+                          ToolTipService.ToolTip="View the base record in the Data Browser" />
+                </StackPanel>
 
                 <Border Grid.Row="2" CornerRadius="4"
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">

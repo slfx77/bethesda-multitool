@@ -16,6 +16,9 @@ public class SampleFileFixture
     /// <summary>Xbox 360 proto ESM (development build).</summary>
     public string? Xbox360ProtoEsm { get; } = FindSamplePath(@"Sample\ESM\360_proto\FalloutNV.esm");
 
+    /// <summary>PC final ESM (retail).</summary>
+    public string? PcFinalEsm { get; } = FindSamplePath(@"Sample\ESM\pc_final\FalloutNV.esm");
+
     /// <summary>Debug build memory dump.</summary>
     public string? DebugDump { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Debug.xex.dmp");
 

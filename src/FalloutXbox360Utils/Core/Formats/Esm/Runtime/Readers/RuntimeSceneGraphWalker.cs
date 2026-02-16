@@ -270,25 +270,16 @@ public record SceneGraphInfo
         get
         {
             // Prefer a parent that contains a .NIF path (indicates the model file)
-            foreach (var parent in ParentNames)
+            var nifParent = ParentNames.FirstOrDefault(p =>
+                p.Contains(".NIF", StringComparison.OrdinalIgnoreCase));
+            if (nifParent != null)
             {
-                if (parent.Contains(".NIF", StringComparison.OrdinalIgnoreCase))
-                {
-                    return parent;
-                }
+                return nifParent;
             }
 
             // Skip generic engine nodes, find first meaningful name
             // ParentNames is leaf-to-root, so earlier entries are more specific
-            foreach (var parent in ParentNames)
-            {
-                if (!IsGenericNodeName(parent))
-                {
-                    return parent;
-                }
-            }
-
-            return NodeName;
+            return ParentNames.FirstOrDefault(p => !IsGenericNodeName(p)) ?? NodeName;
         }
     }
 

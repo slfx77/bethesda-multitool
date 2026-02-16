@@ -22,7 +22,7 @@ public class NifConverterTests
     public void HalfToFloat_NegativeZero_ReturnsNegativeZero()
     {
         var result = BinaryUtils.HalfToFloat(0x8000);
-        Assert.True(float.IsNegativeInfinity(1.0f / result) || result == -0.0f);
+        Assert.True(float.IsNegativeInfinity(1.0f / result));
     }
 
     [Fact]
@@ -85,8 +85,7 @@ public class NifConverterTests
     [Fact]
     public void Convert_InvalidData_ReturnsFailure()
     {
-        var converter = new NifConverter();
-        var result = converter.Convert([0x00, 0x01, 0x02, 0x03]);
+        var result = NifConverter.Convert([0x00, 0x01, 0x02, 0x03]);
 
         Assert.False(result.Success);
         Assert.NotNull(result.ErrorMessage);
@@ -117,10 +116,9 @@ public class NifConverterTests
         data[pos++] = 0x00;
         data[pos++] = 0x00;
         data[pos++] = 0x00;
-        data[pos++] = 0x00;
+        data[pos] = 0x00;
 
-        var converter = new NifConverter();
-        var result = converter.Convert(data);
+        var result = NifConverter.Convert(data);
 
         Assert.True(result.Success);
         Assert.NotNull(result.ErrorMessage);
@@ -131,8 +129,7 @@ public class NifConverterTests
     [Fact]
     public void Convert_EmptyArray_ReturnsFailure()
     {
-        var converter = new NifConverter();
-        var result = converter.Convert([]);
+        var result = NifConverter.Convert([]);
 
         Assert.False(result.Success);
     }

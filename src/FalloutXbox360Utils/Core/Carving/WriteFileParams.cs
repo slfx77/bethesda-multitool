@@ -10,4 +10,6 @@ internal sealed record WriteFileParams(
     string SignatureId,
     int FileSize,
     string? OriginalPath,
-    Dictionary<string, object>? Metadata);
+    Dictionary<string, object>? Metadata,
+    bool IsTruncated = false,
+    double Coverage = 1.0);

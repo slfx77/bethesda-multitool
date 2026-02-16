@@ -439,16 +439,14 @@ public static class SubrecordSchemaProcessor
     }
 
     /// <summary>
-    ///     Converts PKDT (12 bytes) with Xbox-specific byte ordering.
-    ///     Layout (PC):
-    ///     [0] Flags1 (byte)
-    ///     [1-2] Flags2 (uint16)
-    ///     [3] Type (byte)
-    ///     [4-5] Unused (bytes)
-    ///     [6-7] FalloutBehaviorFlags (uint16)
-    ///     [8-9] TypeSpecificFlags (uint16)
+    ///     Converts PKDT (12 bytes) — Xbox 360 to PC byte order.
+    ///     Layout (from PDB PACKAGE_DATA):
+    ///     [0-3] iPackFlags (uint32) — endian swap (swap [0]↔[3] + swap [1]↔[2])
+    ///     [4]   cPackType (byte) — no swap needed
+    ///     [5]   Unused (byte)
+    ///     [6-7] iFOBehaviorFlags (uint16) — endian swap
+    ///     [8-9] iPackageSpecificFlags (uint16) — endian swap
     ///     [10-11] Unknown (bytes)
-    ///     Xbox stores Flags1/Type swapped within the first 4 bytes, plus BE uint16s.
     /// </summary>
     private static void ConvertPkdt(byte[] data)
     {

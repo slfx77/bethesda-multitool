@@ -202,15 +202,13 @@ public static partial class SubrecordSchemaRegistry
         // PACKAGE SCHEMAS (PACK)
         // ========================================================================
 
-        // PKDT - Package Data (12 bytes)
+        // PKDT - Package Data (12 bytes, from PDB PACKAGE_DATA)
         schemas[new SchemaKey("PKDT", null, 12)] = new SubrecordSchema(
-            F.UInt8("Flags1"),
-            F.UInt16("Flags2"),
-            F.UInt8("Type"),
-            F.UInt8("Unused1"),
-            F.UInt8("Unused2"),
-            F.UInt16("FalloutBehaviorFlags"),
-            F.UInt16("TypeSpecificFlags"),
+            F.UInt32("iPackFlags"),
+            F.UInt8("cPackType"),
+            F.UInt8("Unused"),
+            F.UInt16("iFOBehaviorFlags"),
+            F.UInt16("iPackageSpecificFlags"),
             F.UInt8("Unknown1"),
             F.UInt8("Unknown2"))
         {

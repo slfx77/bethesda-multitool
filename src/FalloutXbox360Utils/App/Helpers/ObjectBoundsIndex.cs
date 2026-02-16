@@ -39,12 +39,16 @@ internal static class ObjectBoundsIndex
         Process(records.MiscItems, m => (m.FormId, m.Bounds), PlacedObjectCategory.Item, bounds, categories);
         Process(records.Books, b => (b.FormId, b.Bounds), PlacedObjectCategory.Item, bounds, categories);
 
-        // Promote statics with tree/plant model paths to Plant category
+        // Promote statics with known GECK folder categories
         foreach (var s in records.Statics)
         {
-            if (s.ModelPath != null && s.ModelPath.Contains("trees", StringComparison.OrdinalIgnoreCase))
+            if (s.ModelPath != null)
             {
-                categories[s.FormId] = PlacedObjectCategory.Plant;
+                var folderCategory = GetStaticCategoryFromModelPath(s.ModelPath);
+                if (folderCategory.HasValue)
+                {
+                    categories[s.FormId] = folderCategory.Value;
+                }
             }
         }
 
@@ -64,7 +68,105 @@ internal static class ObjectBoundsIndex
             categories.TryAdd(r.FormId, PlacedObjectCategory.Container);
         }
 
+        // Leveled lists: LVLN → Npc, LVLC → Creature
+        foreach (var ll in records.LeveledLists)
+        {
+            if (ll.ListType == "LVLN")
+            {
+                categories.TryAdd(ll.FormId, PlacedObjectCategory.Npc);
+            }
+            else if (ll.ListType == "LVLC")
+            {
+                categories.TryAdd(ll.FormId, PlacedObjectCategory.Creature);
+            }
+        }
+
         return (bounds, categories);
+    }
+
+    /// <summary>
+    ///     Determines a PlacedObjectCategory from the GECK model path top-level folder.
+    ///     Strips the meshes\ prefix and any DLC subdirectory prefix (DLC01\, DLC02\, etc.).
+    /// </summary>
+    internal static PlacedObjectCategory? GetStaticCategoryFromModelPath(string modelPath)
+    {
+        var path = modelPath.AsSpan();
+
+        // Strip "meshes\" or "meshes/" prefix
+        if (path.Length > 7 &&
+            path[..7].Equals("meshes\\", StringComparison.OrdinalIgnoreCase) ||
+            path[..7].Equals("meshes/", StringComparison.OrdinalIgnoreCase))
+        {
+            path = path[7..];
+        }
+
+        // Strip DLC directory prefix (e.g., "DLC01\", "DLC02\", "DLC03\", "DLC04\")
+        if (path.Length > 6 &&
+            path[..3].Equals("dlc", StringComparison.OrdinalIgnoreCase) &&
+            path[3] >= '0' && path[3] <= '9' &&
+            path[4] >= '0' && path[4] <= '9' &&
+            (path[5] == '\\' || path[5] == '/'))
+        {
+            path = path[6..];
+        }
+
+        // Find the first path segment
+        var sepIndex = path.IndexOfAny('\\', '/');
+        if (sepIndex <= 0)
+        {
+            return null;
+        }
+
+        var folder = path[..sepIndex];
+
+        // Match against GECK folder categories
+        if (folder.Equals("architecture", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlacedObjectCategory.Architecture;
+        }
+
+        if (folder.Equals("landscape", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("rocks", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("trees", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("plants", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("shrubs", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("flowers", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("cactus", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("grass", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("bushes", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("tumbleweed", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlacedObjectCategory.Landscape;
+        }
+
+        if (folder.Equals("clutter", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlacedObjectCategory.Clutter;
+        }
+
+        if (folder.Equals("dungeon", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("dungeons", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlacedObjectCategory.Dungeon;
+        }
+
+        if (folder.Equals("effects", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("decals", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlacedObjectCategory.Effects;
+        }
+
+        if (folder.Equals("vehicles", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlacedObjectCategory.Vehicles;
+        }
+
+        if (folder.Equals("traps", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlacedObjectCategory.Traps;
+        }
+
+        return null;
     }
 
     private static void Process<T>(

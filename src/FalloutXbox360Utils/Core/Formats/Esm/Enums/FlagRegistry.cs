@@ -434,6 +434,73 @@ public static class FlagRegistry
         new(0x00000010, "Up")
     ];
 
+    // ================================================================
+    // PACK - Package General Flags (iPackFlags uint32)
+    // Source: UESP + PDB TESPackage getters
+    // ================================================================
+
+    public static readonly FlagBit[] PackageGeneralFlags =
+    [
+        new(0x00000001, "Offers Services"),
+        new(0x00000002, "Must Reach Location"),
+        new(0x00000004, "Must Complete"),
+        new(0x00000008, "Lock Doors at Start"),
+        new(0x00000010, "Lock Doors at End"),
+        new(0x00000020, "Lock Doors at Location"),
+        new(0x00000040, "Unlock Doors at Start"),
+        new(0x00000080, "Unlock Doors at End"),
+        new(0x00000100, "Unlock Doors at Location"),
+        new(0x00000200, "Continue if PC Near"),
+        new(0x00000400, "Once Per Day"),
+        new(0x00001000, "Skip Fallout Behavior"),
+        new(0x00002000, "Always Run"),
+        new(0x00020000, "Always Sneak"),
+        new(0x00040000, "Allow Swimming"),
+        new(0x00080000, "Allow Falls"),
+        new(0x00200000, "Weapons Unequipped"),
+        new(0x00400000, "Defensive Combat"),
+        new(0x00800000, "Weapon Drawn"),
+        new(0x01000000, "No Idle Anims"),
+        new(0x02000000, "No Head Track"),
+        new(0x04000000, "Pretend in Combat"),
+        new(0x08000000, "Continue During Combat"),
+        new(0x10000000, "No Combat Alert")
+    ];
+
+    // ================================================================
+    // PACK - Fallout Behavior Flags (iFOBehaviorFlags uint16)
+    // Source: PDB FOEnable* getters + GECK wiki
+    // ================================================================
+
+    public static readonly FlagBit[] PackageFOBehaviorFlags =
+    [
+        new(0x0001, "Hellos to Player"),
+        new(0x0002, "Random Conversations"),
+        new(0x0004, "Observe Combat"),
+        new(0x0008, "Greet Corpse"),
+        new(0x0010, "React to Player Actions"),
+        new(0x0020, "Friendly Fire Comments"),
+        new(0x0040, "Aggro Radius Behavior"),
+        new(0x0080, "Idle Chatter"),
+        new(0x0100, "Avoid Radiation")
+    ];
+
+    // ================================================================
+    // PACK - Type-Specific Flags (iPackageSpecificFlags uint16)
+    // Source: PDB Sandbox* getters (Sandbox interpretation; other types reuse bits)
+    // ================================================================
+
+    public static readonly FlagBit[] PackageTypeSpecificFlags =
+    [
+        new(0x0001, "Location Is Linked Ref"),
+        new(0x0002, "Allow Eating"),
+        new(0x0004, "Allow Sleeping"),
+        new(0x0008, "Allow Conversation"),
+        new(0x0010, "Allow Idle Markers"),
+        new(0x0020, "Allow Furniture"),
+        new(0x0040, "Allow Wandering")
+    ];
+
     /// <summary>
     ///     Decode a flags value into a comma-separated list of set flag names.
     ///     Returns "None" if no recognized bits are set.

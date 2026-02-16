@@ -32,10 +32,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
     private bool _legendExpanded = true;
 
-    // --- Navigation history ---
-    private readonly Stack<WorldNavState> _navBack = new();
-    private readonly Stack<WorldNavState> _navForward = new();
-    private bool _isRestoringNav;
+    // --- Navigation ---
+    /// <summary>Raised before any internal navigation so the parent can push unified nav state.</summary>
+    internal event Action? BeforeNavigate;
+    private bool _suppressNavEvents;
 
     // --- Cell grid lookup (built when worldspace changes) ---
     private Dictionary<(int x, int y), CellRecord>? _cellGridLookup;
@@ -78,6 +78,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private int _worldHmMinX, _worldHmMaxY;
     private int _worldHmPixelWidth, _worldHmPixelHeight;
 
+    // --- Heightmap tinting ---
+    private HeightmapColorScheme _currentColorScheme = HeightmapColorScheme.Amber;
+    private bool _showWater = true;
+    private byte[]? _cachedGrayscale;
+    private byte[]? _cachedWaterMask;
+    private int _cachedHmWidth, _cachedHmHeight;
+
     // --- Pan/Zoom ---
     private float _zoom = 0.05f;
 
@@ -94,6 +101,24 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         _data = data;
         _worldHeightmapDirty = true;
+        _currentColorScheme = HeightmapColorScheme.DefaultForFile(data.SourceFilePath);
+        _cachedGrayscale = data.HeightmapGrayscale;
+        _cachedWaterMask = data.HeightmapWaterMask;
+        _cachedHmWidth = data.HeightmapPixelWidth;
+        _cachedHmHeight = data.HeightmapPixelHeight;
+
+        // Populate color scheme combo box
+        ColorSchemeComboBox.Items.Clear();
+        foreach (var scheme in HeightmapColorScheme.Presets)
+        {
+            ColorSchemeComboBox.Items.Add(scheme.Name);
+        }
+
+        var defaultIdx = Array.IndexOf(HeightmapColorScheme.Presets, _currentColorScheme);
+        if (defaultIdx >= 0)
+        {
+            ColorSchemeComboBox.SelectedIndex = defaultIdx;
+        }
 
         WorldspaceComboBox.Items.Clear();
         foreach (var ws in data.Worldspaces)
@@ -133,7 +158,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         LegendPanel.Children.Clear();
         var grayBorder = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 100, 100, 100));
-        var grayFill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(30, 128, 128, 128));
+        var grayFill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(40, 128, 128, 128));
         var graySwatchBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 100, 100, 100));
         var whiteBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Colors.White);
         var dimTextBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(128, 255, 255, 255));
@@ -143,7 +168,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var color = GetCategoryColor(category);
             var colorBorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
             var colorFillBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                Color.FromArgb(30, color.R, color.G, color.B));
+                Color.FromArgb(60, color.R, color.G, color.B));
             var colorSwatchBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
 
             var swatch = new Border
@@ -182,8 +207,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             var enabled = true;
             var capturedCategory = category;
-            item.Tapped += (_, _) =>
+
+            // Use PointerPressed (handled) to prevent the canvas from capturing the pointer,
+            // and PointerReleased for the toggle. Using Tapped alone is unreliable because
+            // the canvas's PointerPressed handler calls CapturePointer, which can steal the
+            // release event and prevent the Tapped gesture from completing.
+            item.PointerPressed += (_, args) => args.Handled = true;
+            item.PointerReleased += (_, args) =>
             {
+                args.Handled = true;
                 enabled = !enabled;
                 if (enabled)
                 {
@@ -207,6 +239,78 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             LegendPanel.Children.Add(item);
         }
+
+        // Water toggle
+        var waterColor = Color.FromArgb(255, 30, 55, 120);
+        var waterBorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(waterColor);
+        var waterFillBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+            Color.FromArgb(60, waterColor.R, waterColor.G, waterColor.B));
+        var waterSwatchBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(waterColor);
+
+        var waterSwatch = new Border
+        {
+            Width = 10,
+            Height = 10,
+            CornerRadius = new CornerRadius(2),
+            Background = waterSwatchBrush
+        };
+        var waterLabel = new TextBlock
+        {
+            Text = "Water",
+            FontSize = 10,
+            Foreground = whiteBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 0, 0, 0)
+        };
+        var waterContent = new StackPanel
+        {
+            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        waterContent.Children.Add(waterSwatch);
+        waterContent.Children.Add(waterLabel);
+
+        var waterItem = new Border
+        {
+            Child = waterContent,
+            BorderBrush = waterBorderBrush,
+            Background = waterFillBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 3, 8, 3),
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        waterItem.PointerPressed += (_, args) => args.Handled = true;
+        waterItem.PointerReleased += (_, args) =>
+        {
+            args.Handled = true;
+            _showWater = !_showWater;
+            if (_showWater)
+            {
+                waterItem.BorderBrush = waterBorderBrush;
+                waterItem.Background = waterFillBrush;
+                waterSwatch.Background = waterSwatchBrush;
+                waterLabel.Foreground = whiteBrush;
+            }
+            else
+            {
+                waterItem.BorderBrush = grayBorder;
+                waterItem.Background = grayFill;
+                waterSwatch.Background = graySwatchBrush;
+                waterLabel.Foreground = dimTextBrush;
+            }
+
+            // Dispose bitmaps and rebuild with new water setting
+            _worldHeightmapBitmap?.Dispose();
+            _worldHeightmapBitmap = null;
+            _cellHeightmapBitmap?.Dispose();
+            _cellHeightmapBitmap = null;
+            _worldHeightmapDirty = true;
+            MapCanvas.Invalidate();
+        };
+
+        LegendPanel.Children.Add(waterItem);
     }
 
     private void SetCanvasMode(bool canvasVisible)
@@ -232,15 +336,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _mode = ViewMode.WorldOverview;
         _activeBrowser = BrowserMode.None;
         _hiddenCategories.Clear();
-        _navBack.Clear();
-        _navForward.Clear();
         _worldHeightmapDirty = true;
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
         WorldspaceComboBox.Items.Clear();
-        BackButton.Visibility = Visibility.Collapsed;
         MapCanvas.Invalidate();
     }
 
@@ -276,7 +377,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _mode = ViewMode.WorldOverview;
             _activeBrowser = BrowserMode.None;
             _selectedCell = null;
-            BackButton.Visibility = Visibility.Collapsed;
+
             _worldHeightmapBitmap?.Dispose();
             _worldHeightmapBitmap = null;
             _worldHeightmapDirty = true;
@@ -299,7 +400,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _mode = ViewMode.WorldOverview;
             _activeBrowser = BrowserMode.None;
             _selectedCell = null;
-            BackButton.Visibility = Visibility.Collapsed;
+
             _worldHeightmapBitmap?.Dispose();
             _worldHeightmapBitmap = null;
             _worldHeightmapDirty = true;
@@ -315,63 +416,35 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
     }
 
-    private void BackButton_Click(object sender, RoutedEventArgs e)
+    private void ColorSchemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_navBack.Count > 0)
+        var idx = ColorSchemeComboBox.SelectedIndex;
+        if (idx < 0 || idx >= HeightmapColorScheme.Presets.Length)
         {
-            _navForward.Push(CaptureNavState());
-            _isRestoringNav = true;
-            RestoreNavState(_navBack.Pop());
-            _isRestoringNav = false;
-            UpdateNavButtons();
             return;
         }
 
-        // Fallback: simple back behavior
-        _selectedCell = null;
+        _currentColorScheme = HeightmapColorScheme.Presets[idx];
+
+        // Re-tint without recomputing grayscale — dispose bitmaps and rebuild
+        _worldHeightmapBitmap?.Dispose();
+        _worldHeightmapBitmap = null;
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
-        HoverInfoText.Text = "";
-
-        if (_activeBrowser != BrowserMode.None)
-        {
-            _mode = ViewMode.CellBrowser;
-            SetCanvasMode(false);
-            UpdateNavButtons();
-            return;
-        }
-
-        _mode = ViewMode.WorldOverview;
-        if (GetActiveCells().Count > 0)
-        {
-            ZoomToFitWorldspace();
-        }
-
+        _worldHeightmapDirty = true;
         MapCanvas.Invalidate();
-        UpdateNavButtons();
     }
 
-    private void ForwardButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_navForward.Count == 0)
-        {
-            return;
-        }
-
-        _navBack.Push(CaptureNavState());
-        _isRestoringNav = true;
-        RestoreNavState(_navForward.Pop());
-        _isRestoringNav = false;
-        UpdateNavButtons();
-    }
-
-    private WorldNavState CaptureNavState() => new(
+    /// <summary>Captures the current World Map state for unified navigation.</summary>
+    internal WorldNavState CaptureNavState() => new(
         _mode, _activeBrowser,
         WorldspaceComboBox.SelectedIndex,
         _selectedCell?.FormId);
 
-    private void RestoreNavState(WorldNavState state)
+    /// <summary>Restores a previously captured World Map state.</summary>
+    internal void RestoreNavState(WorldNavState state)
     {
+        _suppressNavEvents = true;
         _selectedCell = null;
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
@@ -419,6 +492,17 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
                 break;
         }
+
+        _suppressNavEvents = false;
+    }
+
+    /// <summary>Fires BeforeNavigate unless suppressed (during restore).</summary>
+    private void NotifyBeforeNavigate()
+    {
+        if (!_suppressNavEvents)
+        {
+            BeforeNavigate?.Invoke();
+        }
     }
 
     private CellRecord? FindCellByFormId(uint formId)
@@ -437,15 +521,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         return _data?.AllCells.Find(c => c.FormId == formId);
     }
 
-    private void UpdateNavButtons()
-    {
-        BackButton.Visibility = _navBack.Count > 0 || _mode == ViewMode.CellDetail
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        ForwardButton.Visibility = _navForward.Count > 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-    }
+    // Navigation buttons are now managed by the parent unified navigation system.
 
     private void ZoomFit_Click(object sender, RoutedEventArgs e)
     {
@@ -468,11 +544,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return;
         }
 
-        if (!_isRestoringNav)
-        {
-            _navForward.Clear();
-            _navBack.Push(CaptureNavState());
-        }
+        NotifyBeforeNavigate();
 
         _selectedWorldspace = null;
         _unlinkedCells = null;
@@ -484,7 +556,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         FilterHasObjects.IsChecked = false;
         FilterNamedOnly.IsChecked = false;
         PopulateInteriorCellBrowser();
-        UpdateNavButtons();
     }
 
     private void AllCellsButton_Click(object sender, RoutedEventArgs e)
@@ -494,11 +565,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return;
         }
 
-        if (!_isRestoringNav)
-        {
-            _navForward.Clear();
-            _navBack.Push(CaptureNavState());
-        }
+        NotifyBeforeNavigate();
 
         _selectedWorldspace = null;
         _unlinkedCells = null;
@@ -510,7 +577,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         FilterHasObjects.IsChecked = false;
         FilterNamedOnly.IsChecked = false;
         PopulateCellBrowser();
-        UpdateNavButtons();
     }
 
     private void CellFilter_Changed(object sender, RoutedEventArgs e)
@@ -675,10 +741,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // 4. Map markers (always visible)
         DrawMapMarkers(ds);
 
+        // 4b. NPC/Creature dots (always visible)
+        DrawActorDots(ds);
+
         // 5. Selected object highlight
         if (_selectedObject != null)
         {
             DrawSelectedObjectHighlight(ds, _selectedObject);
+            DrawSpawnOverlay(ds, _selectedObject);
         }
 
         // 6. Hovered object highlight (overview)
@@ -812,6 +882,70 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
     }
 
+    private void DrawActorDots(CanvasDrawingSession ds)
+    {
+        if (_data == null)
+        {
+            return;
+        }
+
+        var npcHidden = _hiddenCategories.Contains(PlacedObjectCategory.Npc);
+        var creatureHidden = _hiddenCategories.Contains(PlacedObjectCategory.Creature);
+        if (npcHidden && creatureHidden)
+        {
+            return;
+        }
+
+        var (tlWorld, brWorld) = GetVisibleWorldBounds();
+        var dotRadius = 5f / _zoom;
+        var outlineWidth = 1f / _zoom;
+        var npcColor = GetCategoryColor(PlacedObjectCategory.Npc);
+        var creatureColor = GetCategoryColor(PlacedObjectCategory.Creature);
+
+        foreach (var cell in GetActiveCells())
+        {
+            // For grid cells, only draw at moderate zoom to avoid clutter
+            if (cell.GridX.HasValue && cell.GridY.HasValue)
+            {
+                if (_zoom <= 0.02f || !IsCellVisible(cell, tlWorld, brWorld))
+                {
+                    continue;
+                }
+            }
+
+            foreach (var obj in cell.PlacedObjects)
+            {
+                if (obj.IsMapMarker)
+                {
+                    continue;
+                }
+
+                Color color;
+                if (obj.RecordType == "ACHR" && !npcHidden)
+                {
+                    color = npcColor;
+                }
+                else if (obj.RecordType == "ACRE" && !creatureHidden)
+                {
+                    color = creatureColor;
+                }
+                else
+                {
+                    continue;
+                }
+
+                var pos = new Vector2(obj.X, -obj.Y);
+                if (!IsPointInView(pos.X, pos.Y, tlWorld, brWorld, dotRadius * 2))
+                {
+                    continue;
+                }
+
+                ds.FillCircle(pos, dotRadius, WithAlpha(color, 180));
+                ds.DrawCircle(pos, dotRadius, Colors.White, outlineWidth);
+            }
+        }
+    }
+
     // ========================================================================
     // Cell Detail Rendering
     // ========================================================================
@@ -869,6 +1003,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         if (_selectedObject != null)
         {
             DrawSelectedObjectHighlight(ds, _selectedObject);
+            DrawSpawnOverlay(ds, _selectedObject);
         }
 
         // 5. Hovered object highlight
@@ -1053,6 +1188,89 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         ds.DrawCircle(pos, 14f / _zoom, selectColor, 4f / _zoom);
     }
 
+    private void DrawSpawnOverlay(CanvasDrawingSession ds, PlacedReference selectedObj)
+    {
+        if (_data?.SpawnIndex == null)
+        {
+            return;
+        }
+
+        var spawnIndex = _data.SpawnIndex;
+        var isAchr = selectedObj.RecordType == "ACHR";
+        var isAcre = selectedObj.RecordType == "ACRE";
+        if (!isAchr && !isAcre)
+        {
+            return;
+        }
+
+        // Color: green for NPC sources, red for Creature sources
+        var overlayColor = isAchr
+            ? Color.FromArgb(50, 0, 200, 0)
+            : Color.FromArgb(50, 220, 50, 50);
+        var overlayBorder = isAchr
+            ? Color.FromArgb(120, 0, 200, 0)
+            : Color.FromArgb(120, 220, 50, 50);
+
+        // Resolve actors from leveled list or direct placement
+        var actorFormIds = new List<uint>();
+        if (spawnIndex.LeveledListEntries.TryGetValue(selectedObj.BaseFormId, out var resolved))
+        {
+            actorFormIds.AddRange(resolved.Distinct());
+        }
+        else
+        {
+            actorFormIds.Add(selectedObj.BaseFormId);
+        }
+
+        // Draw InCell package highlights
+        foreach (var actorFid in actorFormIds)
+        {
+            if (!spawnIndex.ActorToPackageCells.TryGetValue(actorFid, out var cells))
+            {
+                continue;
+            }
+
+            foreach (var cellFid in cells.Distinct())
+            {
+                if (_data.CellByFormId.TryGetValue(cellFid, out var cell) &&
+                    cell.GridX.HasValue && cell.GridY.HasValue)
+                {
+                    var originX = cell.GridX.Value * CellWorldSize;
+                    var originY = -(cell.GridY.Value + 1) * CellWorldSize;
+                    ds.FillRectangle(
+                        new Rect(originX, originY, CellWorldSize, CellWorldSize),
+                        overlayColor);
+                    ds.DrawRectangle(
+                        new Rect(originX, originY, CellWorldSize, CellWorldSize),
+                        overlayBorder, 2f / _zoom);
+                }
+            }
+        }
+
+        // Draw NearRef package circles
+        if (_data.RefPositionIndex != null)
+        {
+            foreach (var actorFid in actorFormIds)
+            {
+                if (!spawnIndex.ActorToPackageRefs.TryGetValue(actorFid, out var refs))
+                {
+                    continue;
+                }
+
+                foreach (var refLoc in refs)
+                {
+                    if (_data.RefPositionIndex.TryGetValue(refLoc.RefFormId, out var refPos))
+                    {
+                        var center = new Vector2(refPos.X, -refPos.Y);
+                        var radius = refLoc.Radius > 0 ? (float)refLoc.Radius : 500f;
+                        ds.FillCircle(center, radius, overlayColor);
+                        ds.DrawCircle(center, radius, overlayBorder, 2f / _zoom);
+                    }
+                }
+            }
+        }
+    }
+
     // ========================================================================
     // Heightmap Bitmap Building
     // ========================================================================
@@ -1062,18 +1280,21 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
 
-        // Use pre-computed pixel data from background thread when available
-        if (_data?.HeightmapPixels != null && _data.HeightmapPixelWidth > 0 &&
-            _selectedWorldspace != null && _data.Worldspaces.Count > 0 &&
+        // Use pre-computed grayscale/waterMask from background thread when available
+        if (_cachedGrayscale != null && _cachedHmWidth > 0 &&
+            _selectedWorldspace != null && _data?.Worldspaces.Count > 0 &&
             ReferenceEquals(_selectedWorldspace, _data.Worldspaces[0]))
         {
+            var pixels = ApplyTintAndWater(
+                _cachedGrayscale, _cachedWaterMask!, _cachedHmWidth, _cachedHmHeight,
+                _currentColorScheme, _showWater);
             _worldHeightmapBitmap = CanvasBitmap.CreateFromBytes(
-                canvas, _data.HeightmapPixels, _data.HeightmapPixelWidth, _data.HeightmapPixelHeight,
+                canvas, pixels, _cachedHmWidth, _cachedHmHeight,
                 Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
             _worldHmMinX = _data.HeightmapMinCellX;
             _worldHmMaxY = _data.HeightmapMaxCellY;
-            _worldHmPixelWidth = _data.HeightmapPixelWidth;
-            _worldHmPixelHeight = _data.HeightmapPixelHeight;
+            _worldHmPixelWidth = _cachedHmWidth;
+            _worldHmPixelHeight = _cachedHmHeight;
             return;
         }
 
@@ -1084,15 +1305,17 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return;
         }
 
-        var result = ComputeHeightmapPixels(activeCells, _currentDefaultWaterHeight);
+        var result = ComputeHeightmapData(activeCells, _currentDefaultWaterHeight);
         if (result == null)
         {
             return;
         }
 
-        var (pixels, imgW, imgH, minX, maxY) = result.Value;
+        var (grayscale, waterMask, imgW, imgH, minX, maxY) = result.Value;
+        var tintedPixels = ApplyTintAndWater(grayscale, waterMask, imgW, imgH,
+            _currentColorScheme, _showWater);
         _worldHeightmapBitmap = CanvasBitmap.CreateFromBytes(
-            canvas, pixels, imgW, imgH,
+            canvas, tintedPixels, imgW, imgH,
             Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
         _worldHmMinX = minX;
         _worldHmMaxY = maxY;
@@ -1101,10 +1324,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     }
 
     /// <summary>
-    ///     Computes RGBA heightmap pixel data from a list of cells. Can be called from a background thread.
+    ///     Computes grayscale heightmap and water mask from a list of cells.
+    ///     Stage 1 of the two-stage pipeline. Can be called from a background thread.
     /// </summary>
-    internal static (byte[] Pixels, int Width, int Height, int MinCellX, int MaxCellY)?
-        ComputeHeightmapPixels(List<CellRecord> cellSource, float? defaultWaterHeight = null)
+    internal static (byte[] Grayscale, byte[] WaterMask, int Width, int Height, int MinCellX, int MaxCellY)?
+        ComputeHeightmapData(List<CellRecord> cellSource, float? defaultWaterHeight = null)
     {
         var cells = cellSource
             .Where(c => c.Heightmap != null && c.GridX.HasValue && c.GridY.HasValue)
@@ -1157,15 +1381,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             globalRange = 1f;
         }
 
-        // Render RGBA pixels
-        var pixels = new byte[imgW * imgH * 4];
-        for (var i = 0; i < pixels.Length; i += 4)
-        {
-            pixels[i] = 20;
-            pixels[i + 1] = 20;
-            pixels[i + 2] = 25;
-            pixels[i + 3] = 255;
-        }
+        // Compute grayscale and water mask
+        var grayscale = new byte[imgW * imgH];
+        var waterMask = new byte[imgW * imgH];
 
         foreach (var cell in cells)
         {
@@ -1173,39 +1391,119 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var imgCellX = cell.GridX!.Value - minX;
             var imgCellY = maxY - cell.GridY!.Value;
 
+            // Determine effective water height: cell-specific or worldspace default
+            var waterH = cell.WaterHeight;
+            if (!waterH.HasValue || waterH.Value is not (> -1e6f and < 1e6f))
+            {
+                waterH = defaultWaterHeight;
+            }
+
             for (var py = 0; py < HmGridSize; py++)
             {
                 for (var px = 0; px < HmGridSize; px++)
                 {
                     var height = heights[HmGridSize - 1 - py, px];
                     var normalized = (height - globalMin) / globalRange;
-                    var (r, g, b) = HeightToColor(normalized);
-
-                    // Use cell water height; fall back to worldspace default for sentinel values
-                    var waterH = cell.WaterHeight;
-                    if (!waterH.HasValue || waterH.Value is not (> -1e6f and < 1e6f))
-                    {
-                        waterH = defaultWaterHeight;
-                    }
-
-                    if (waterH.HasValue && waterH.Value is > -1e6f and < 1e6f &&
-                        height < waterH.Value)
-                    {
-                        (r, g, b) = ApplyWaterTint(r, g, b, height, waterH.Value);
-                    }
+                    var gray = (byte)(Math.Clamp(normalized, 0f, 1f) * 255);
 
                     var imgX = imgCellX * HmGridSize + px;
                     var imgY = imgCellY * HmGridSize + py;
-                    var idx = (imgY * imgW + imgX) * 4;
-                    pixels[idx] = r;
-                    pixels[idx + 1] = g;
-                    pixels[idx + 2] = b;
-                    pixels[idx + 3] = 255;
+                    var idx = imgY * imgW + imgX;
+                    grayscale[idx] = gray;
+
+                    // Solid water: binary below/above
+                    if (waterH.HasValue && waterH.Value is > -1e6f and < 1e6f &&
+                        height < waterH.Value)
+                    {
+                        waterMask[idx] = 180;
+                    }
                 }
             }
         }
 
-        return (pixels, imgW, imgH, minX, maxY);
+        BlurWaterMask(waterMask, imgW, imgH);
+
+        return (grayscale, waterMask, imgW, imgH, minX, maxY);
+    }
+
+    /// <summary>
+    ///     Applies color tint and water overlay to grayscale heightmap data.
+    ///     Stage 2 of the two-stage pipeline. Fast enough for UI thread (no height recalculation).
+    /// </summary>
+    internal static byte[] ApplyTintAndWater(
+        byte[] grayscale, byte[] waterMask, int width, int height,
+        HeightmapColorScheme scheme, bool showWater, byte alpha = 255)
+    {
+        var pixelCount = width * height;
+        var rgba = new byte[pixelCount * 4];
+
+        // Pre-compute tint multipliers (0..1 range)
+        var tR = scheme.R / 255f;
+        var tG = scheme.G / 255f;
+        var tB = scheme.B / 255f;
+
+        // Water color (untinted)
+        const byte waterR = 30, waterG = 55, waterB = 120;
+
+        for (var i = 0; i < pixelCount; i++)
+        {
+            var gray = grayscale[i];
+
+            // Apply tint: grayscale * tint color
+            var r = (byte)(gray * tR);
+            var g = (byte)(gray * tG);
+            var b = (byte)(gray * tB);
+
+            // Apply water overlay (untinted, proportional blend from blurred mask)
+            if (showWater && waterMask[i] > 0)
+            {
+                var waterFactor = waterMask[i] / 255f;
+                r = (byte)(r + (waterR - r) * waterFactor);
+                g = (byte)(g + (waterG - g) * waterFactor);
+                b = (byte)(b + (waterB - b) * waterFactor);
+            }
+
+            var idx = i * 4;
+            rgba[idx] = r;
+            rgba[idx + 1] = g;
+            rgba[idx + 2] = b;
+            rgba[idx + 3] = alpha;
+        }
+
+        return rgba;
+    }
+
+    /// <summary>
+    ///     Applies a 3x3 box blur to the water mask to smooth hard binary edges.
+    /// </summary>
+    internal static void BlurWaterMask(byte[] mask, int width, int height)
+    {
+        var blurred = new byte[mask.Length];
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var sum = 0;
+                var count = 0;
+                var y0 = Math.Max(0, y - 1);
+                var y1 = Math.Min(height - 1, y + 1);
+                var x0 = Math.Max(0, x - 1);
+                var x1 = Math.Min(width - 1, x + 1);
+
+                for (var ny = y0; ny <= y1; ny++)
+                {
+                    for (var nx = x0; nx <= x1; nx++)
+                    {
+                        sum += mask[ny * width + nx];
+                        count++;
+                    }
+                }
+
+                blurred[y * width + x] = (byte)(sum / count);
+            }
+        }
+
+        Array.Copy(blurred, mask, mask.Length);
     }
 
     private void BuildCellHeightmapBitmap(CanvasControl canvas, CellRecord cell)
@@ -1244,35 +1542,37 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             range = 1f;
         }
 
-        var pixels = new byte[HmGridSize * HmGridSize * 4];
+        // Determine effective water height
+        var waterH = cell.WaterHeight;
+        if (!waterH.HasValue || waterH.Value is not (> -1e6f and < 1e6f))
+        {
+            waterH = _currentDefaultWaterHeight;
+        }
+
+        var grayscale = new byte[HmGridSize * HmGridSize];
+        var waterMask = new byte[HmGridSize * HmGridSize];
+
         for (var py = 0; py < HmGridSize; py++)
         {
             for (var px = 0; px < HmGridSize; px++)
             {
                 var height = heights[HmGridSize - 1 - py, px];
                 var normalized = (height - minH) / range;
-                var (r, g, b) = HeightToColor(normalized);
-
-                // Use cell water height; fall back to worldspace default for sentinel values
-                var waterH = cell.WaterHeight;
-                if (!waterH.HasValue || waterH.Value is not (> -1e6f and < 1e6f))
-                {
-                    waterH = _currentDefaultWaterHeight;
-                }
+                var idx = py * HmGridSize + px;
+                grayscale[idx] = (byte)(Math.Clamp(normalized, 0f, 1f) * 255);
 
                 if (waterH.HasValue && waterH.Value is > -1e6f and < 1e6f &&
                     height < waterH.Value)
                 {
-                    (r, g, b) = ApplyWaterTint(r, g, b, height, waterH.Value);
+                    waterMask[idx] = 180;
                 }
-
-                var idx = (py * HmGridSize + px) * 4;
-                pixels[idx] = r;
-                pixels[idx + 1] = g;
-                pixels[idx + 2] = b;
-                pixels[idx + 3] = 200; // Slightly transparent so objects are more visible
             }
         }
+
+        BlurWaterMask(waterMask, HmGridSize, HmGridSize);
+
+        var pixels = ApplyTintAndWater(grayscale, waterMask, HmGridSize, HmGridSize,
+            _currentColorScheme, _showWater, alpha: 200);
 
         _cellHeightmapBitmap = CanvasBitmap.CreateFromBytes(
             canvas, pixels, HmGridSize, HmGridSize,
@@ -1497,11 +1797,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     public void NavigateToCell(CellRecord cell)
     {
-        if (!_isRestoringNav)
-        {
-            _navForward.Clear();
-            _navBack.Push(CaptureNavState());
-        }
+        NotifyBeforeNavigate();
 
         _selectedCell = cell;
         _mode = ViewMode.CellDetail;
@@ -1515,7 +1811,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         ZoomToFitCell(cell);
         MapCanvas.Invalidate();
-        UpdateNavButtons();
     }
 
     // ========================================================================
@@ -1589,7 +1884,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private PlacedReference? HitTestPlacedObjectInOverview(Vector2 worldPos)
     {
-        if (_data == null || _zoom < 0.05f || GetActiveCells().Count == 0)
+        if (_data == null || _zoom < 0.02f || GetActiveCells().Count == 0)
         {
             return null;
         }
@@ -1615,6 +1910,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 foreach (var obj in cell!.PlacedObjects)
                 {
                     if (_hiddenCategories.Contains(GetObjectCategory(obj)))
+                    {
+                        continue;
+                    }
+
+                    // At low zoom, only actors and map markers are rendered, skip other types
+                    if (_zoom < 0.05f && obj.RecordType is not ("ACHR" or "ACRE") && !obj.IsMapMarker)
                     {
                         continue;
                     }
@@ -1654,6 +1955,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             foreach (var obj in cell.PlacedObjects)
             {
                 if (obj.IsMapMarker || _hiddenCategories.Contains(GetObjectCategory(obj)))
+                {
+                    continue;
+                }
+
+                // At low zoom, only actors are rendered via DrawActorDots, skip other types
+                if (_zoom < 0.05f && obj.RecordType is not ("ACHR" or "ACRE"))
                 {
                     continue;
                 }
@@ -1772,7 +2079,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         {
             _mode = ViewMode.WorldOverview;
             _selectedCell = null;
-            BackButton.Visibility = Visibility.Collapsed;
+
             _cellHeightmapBitmap?.Dispose();
             _cellHeightmapBitmap = null;
         }
@@ -2140,6 +2447,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         PlacedObjectCategory.Npc => "NPC",
         PlacedObjectCategory.MapMarker => "Map Marker",
+        PlacedObjectCategory.Landscape => "Landscape",
+        PlacedObjectCategory.Effects => "Effects",
+        PlacedObjectCategory.Vehicles => "Vehicles",
+        PlacedObjectCategory.Traps => "Traps",
         _ => category.ToString()
     };
 
@@ -2150,7 +2461,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private static Color GetCategoryColor(PlacedObjectCategory category) => category switch
     {
         PlacedObjectCategory.Static => Color.FromArgb(255, 160, 160, 160),
-        PlacedObjectCategory.Plant => Color.FromArgb(255, 60, 140, 40),
+        PlacedObjectCategory.Architecture => Color.FromArgb(255, 180, 180, 180),
+        PlacedObjectCategory.Landscape => Color.FromArgb(255, 60, 140, 40),
+        PlacedObjectCategory.Clutter => Color.FromArgb(255, 140, 130, 110),
+        PlacedObjectCategory.Dungeon => Color.FromArgb(255, 100, 70, 130),
+        PlacedObjectCategory.Effects => Color.FromArgb(255, 220, 220, 80),
+        PlacedObjectCategory.Vehicles => Color.FromArgb(255, 100, 140, 180),
+        PlacedObjectCategory.Traps => Color.FromArgb(255, 200, 100, 40),
         PlacedObjectCategory.Door => Color.FromArgb(255, 255, 165, 0),
         PlacedObjectCategory.Activator => Color.FromArgb(255, 0, 200, 200),
         PlacedObjectCategory.Light => Color.FromArgb(255, 255, 255, 100),
@@ -2216,119 +2533,23 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         return fullName ?? editorId ?? $"0x{ws.FormId:X8}";
     }
 
-    // ========================================================================
-    // HeightToColor — ported from HeightmapPngExporter
-    // ========================================================================
+    // HeightToColor and HslToRgb removed — replaced by grayscale + tint pipeline
 
-    internal static (byte r, byte g, byte b) HeightToColor(float normalizedHeight)
-    {
-        normalizedHeight = Math.Clamp(normalizedHeight, 0f, 1f);
-
-        float h, s, l;
-
-        if (normalizedHeight < 0.30f)
-        {
-            // Low: very dark brown/black → dark brown
-            var t = normalizedHeight / 0.30f;
-            h = 30f;
-            s = 0.30f + t * 0.05f;
-            l = 0.05f + t * 0.15f;
-        }
-        else if (normalizedHeight < 0.65f)
-        {
-            // Mid: dark brown → warm tan
-            var t = (normalizedHeight - 0.30f) / 0.35f;
-            h = 30f + t * 5f;
-            s = 0.35f - t * 0.15f;
-            l = 0.20f + t * 0.35f;
-        }
-        else
-        {
-            // High: warm tan → near-white
-            var t = (normalizedHeight - 0.65f) / 0.35f;
-            h = 35f + t * 5f;
-            s = 0.20f - t * 0.15f;
-            l = 0.55f + t * 0.40f;
-        }
-
-        return HslToRgb(h, s, l);
-    }
-
-    private static (byte r, byte g, byte b) ApplyWaterTint(
-        byte r, byte g, byte b, float height, float waterHeight)
-    {
-        var depth = waterHeight - height;
-        var waterBlend = Math.Clamp(depth / 500f, 0f, 0.85f);
-        return (
-            (byte)(r + (30 - r) * waterBlend),
-            (byte)(g + (55 - g) * waterBlend),
-            (byte)(b + (120 - b) * waterBlend));
-    }
-
-    internal static (byte r, byte g, byte b) HslToRgb(float h, float s, float l)
-    {
-        if (s < 0.001f)
-        {
-            var gray = (byte)(l * 255);
-            return (gray, gray, gray);
-        }
-
-        h /= 360f;
-        var q = l < 0.5f ? l * (1 + s) : l + s - l * s;
-        var p = 2 * l - q;
-
-        var r = HueToRgb(p, q, h + 1f / 3f);
-        var g = HueToRgb(p, q, h);
-        var b = HueToRgb(p, q, h - 1f / 3f);
-
-        return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
-    }
-
-    private static float HueToRgb(float p, float q, float t)
-    {
-        if (t < 0)
-        {
-            t += 1;
-        }
-
-        if (t > 1)
-        {
-            t -= 1;
-        }
-
-        if (t < 1f / 6f)
-        {
-            return p + (q - p) * 6 * t;
-        }
-
-        if (t < 1f / 2f)
-        {
-            return q;
-        }
-
-        if (t < 2f / 3f)
-        {
-            return p + (q - p) * (2f / 3f - t) * 6;
-        }
-
-        return p;
-    }
-
-    private enum ViewMode
+    internal enum ViewMode
     {
         WorldOverview,
         CellDetail,
         CellBrowser
     }
 
-    private enum BrowserMode
+    internal enum BrowserMode
     {
         None,
         Interiors,
         AllCells
     }
 
-    private record WorldNavState(
+    internal record WorldNavState(
         ViewMode Mode,
         BrowserMode Browser,
         int WorldspaceComboIndex,

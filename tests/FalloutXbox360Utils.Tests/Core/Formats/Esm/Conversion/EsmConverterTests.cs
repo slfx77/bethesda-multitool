@@ -62,7 +62,7 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
     ///     Writes a big-endian EDID subrecord at the specified offset.
     ///     Subrecord: [SIG:4 reversed][SIZE:2 BE][DATA:N]
     /// </summary>
-    private static int WriteBESubrecord(byte[] buffer, int offset, string signature, byte[] data)
+    private static void WriteBESubrecord(byte[] buffer, int offset, string signature, byte[] data)
     {
         buffer[offset + 0] = (byte)signature[3];
         buffer[offset + 1] = (byte)signature[2];
@@ -70,7 +70,6 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
         buffer[offset + 3] = (byte)signature[0];
         BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(offset + 4), (ushort)data.Length);
         Array.Copy(data, 0, buffer, offset + 6, data.Length);
-        return offset + 6 + data.Length;
     }
 
     /// <summary>

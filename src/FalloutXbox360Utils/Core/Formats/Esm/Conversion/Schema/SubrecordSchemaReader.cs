@@ -140,14 +140,29 @@ public static class SubrecordSchemaReader
             return null;
         }
 
-        return (
-            BinaryUtils.ReadFloat(data, 0, bigEndian),
-            BinaryUtils.ReadFloat(data, 4, bigEndian),
-            BinaryUtils.ReadFloat(data, 8, bigEndian),
-            BinaryUtils.ReadFloat(data, 12, bigEndian),
-            BinaryUtils.ReadFloat(data, 16, bigEndian),
-            BinaryUtils.ReadFloat(data, 20, bigEndian)
-        );
+        var x = BinaryUtils.ReadFloat(data, 0, bigEndian);
+        var y = BinaryUtils.ReadFloat(data, 4, bigEndian);
+        var z = BinaryUtils.ReadFloat(data, 8, bigEndian);
+        var rotX = BinaryUtils.ReadFloat(data, 12, bigEndian);
+        var rotY = BinaryUtils.ReadFloat(data, 16, bigEndian);
+        var rotZ = BinaryUtils.ReadFloat(data, 20, bigEndian);
+
+        // Validate: reject NaN, infinity, or extreme values from corrupted DMP data.
+        // Matches the validation in EsmWorldExtractor.TryParsePositionData().
+        const float maxCoord = 500_000f;
+        const float maxRot = 100f; // Well beyond 2*PI but catches garbage
+
+        if (float.IsNaN(x) || float.IsInfinity(x) || Math.Abs(x) > maxCoord ||
+            float.IsNaN(y) || float.IsInfinity(y) || Math.Abs(y) > maxCoord ||
+            float.IsNaN(z) || float.IsInfinity(z) || Math.Abs(z) > maxCoord ||
+            float.IsNaN(rotX) || float.IsInfinity(rotX) || Math.Abs(rotX) > maxRot ||
+            float.IsNaN(rotY) || float.IsInfinity(rotY) || Math.Abs(rotY) > maxRot ||
+            float.IsNaN(rotZ) || float.IsInfinity(rotZ) || Math.Abs(rotZ) > maxRot)
+        {
+            return null;
+        }
+
+        return (x, y, z, rotX, rotY, rotZ);
     }
 
     /// <summary>

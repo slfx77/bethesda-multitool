@@ -321,6 +321,40 @@ public class MinidumpInfo
     }
 
     /// <summary>
+    ///     Find all memory regions overlapping the virtual address range [startVa, endVa).
+    ///     Uses the sorted VA index for O(log n) initial lookup.
+    /// </summary>
+    public List<MinidumpMemoryRegion> GetRegionsInRange(long startVa, long endVa)
+    {
+        EnsureVaIndex();
+        var result = new List<MinidumpMemoryRegion>();
+
+        // Binary search for the first region that could overlap
+        var idx = Array.BinarySearch(_sortedVaStarts!, startVa);
+        if (idx < 0)
+        {
+            idx = Math.Max(0, ~idx - 1);
+        }
+
+        for (var i = idx; i < _sortedRegionIndex!.Length; i++)
+        {
+            var region = _sortedRegionIndex[i];
+            if (region.VirtualAddress >= endVa)
+            {
+                break;
+            }
+
+            var regionEnd = region.VirtualAddress + region.Size;
+            if (regionEnd > startVa)
+            {
+                result.Add(region);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     ///     Get the number of contiguous bytes available starting from a file offset.
     ///     Useful for determining maximum safe read size before hitting a VA gap.
     /// </summary>

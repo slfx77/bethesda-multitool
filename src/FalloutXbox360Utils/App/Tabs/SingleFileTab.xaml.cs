@@ -36,6 +36,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         ReportListView.ItemsSource = _reportEntries;
         InitializeFileTypeCheckboxes();
         SetupTextBoxContextMenus();
+        WorldMapControl.BeforeNavigate += WorldMap_BeforeNavigate;
+        KeyDown += SingleFileTab_KeyDown;
         Loaded += SingleFileTab_Loaded;
         Unloaded += SingleFileTab_Unloaded;
     }
@@ -64,7 +66,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private async void SubTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (e.AddedItems.Count == 0) return;
+        if (e.AddedItems.Count == 0 || _pipelinePhase != AnalysisPipelinePhase.Idle) return;
         var selected = SubTabView.SelectedItem;
 
         if (ReferenceEquals(selected, SummaryTab) && !_session.RecordBreakdownPopulated && _session.HasEsmRecords)
@@ -137,12 +139,12 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private int _reportSearchIndex;
     private List<int> _reportSearchMatches = [];
     private string _reportSearchQuery = "";
-    private int _reportViewportLineCount = 50;
+    private int _reportViewportLineCount = 20;
     private double _measuredLineHeight;
     private EsmBrowserNode? _selectedBrowserNode;
-    private Action<int, string>? _reconstructionProgressHandler;
     private Task<RecordCollection>? _semanticReconstructionTask;
     private string _currentSearchQuery = "";
+    private AnalysisPipelinePhase _pipelinePhase;
 
     #endregion
 
@@ -173,6 +175,26 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         _session.Dispose();
     }
 
+    private void SingleFileTab_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var altDown = Microsoft.UI.Input.InputKeyboardSource
+            .GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+        if (!altDown) return;
+
+        if (e.Key == Windows.System.VirtualKey.Left)
+        {
+            UnifiedBack_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
+        else if (e.Key == Windows.System.VirtualKey.Right)
+        {
+            UnifiedForward_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
+    }
+
     #endregion
 
     #region Main Button Event Handlers
@@ -183,8 +205,9 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         if (string.IsNullOrEmpty(filePath)) return;
         try
         {
-            AnalyzeButton.IsEnabled = false;
-            AnalysisProgressBar.Visibility = Visibility.Visible;
+            // Save selected tab before disabling — SelectedItem may not be readable while disabled
+            var selectedTabForAutoPopulate = SubTabView.SelectedItem;
+            SetPipelinePhase(AnalysisPipelinePhase.Scanning);
             _carvedFiles.Clear();
             _allCarvedFiles.Clear();
             _sorter.Reset();
@@ -213,7 +236,12 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             var progress = new Progress<AnalysisProgress>(p => DispatcherQueue.TryEnqueue(() =>
             {
                 AnalysisProgressBar.IsIndeterminate = false;
-                AnalysisProgressBar.Value = p.PercentComplete;
+                // MinidumpAnalyzer reports 0-100%; remap to 0-80% so reconstruction (80-95%)
+                // and coverage (96%) phases don't cause the progress bar to jump backwards.
+                // EsmFileAnalyzer already caps at 80% natively.
+                AnalysisProgressBar.Value = fileType == AnalysisFileType.Minidump
+                    ? p.PercentComplete * 0.8
+                    : p.PercentComplete;
 
                 // Display phase and progress in status bar
                 var phaseText = p.Phase switch
@@ -240,11 +268,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                     "Asset Strings" => Strings.Status_ScanningAssetStrings,
                     "Runtime EditorIDs" => Strings.Status_ExtractingRuntimeEditorIds,
                     "FormIDs" => Strings.Status_CorrelatingFormIdNames,
-                    "Geometry Scan" => "Scanning for NIF geometry...",
-                    "Texture Scan" => "Scanning for runtime textures...",
-                    "Scene Graph" => "Walking scene graph...",
+                    "Geometry Scan" => Strings.Status_ScanningGeometry,
+                    "Texture Scan" => Strings.Status_ScanningTextures,
+                    "Scene Graph" => Strings.Status_WalkingSceneGraph,
                     "Runtime Assets" => $"Runtime assets detected ({p.FilesFound} total files)",
-                    "Complete" => Strings.Status_AnalysisComplete(p.FilesFound),
+                    "Complete" or "Analysis Complete" => Strings.Status_AnalysisComplete(p.FilesFound),
                     _ => $"{p.Phase}..."
                 };
                 StatusTextBlock.Text = phaseText;
@@ -258,25 +286,31 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 _ => throw new NotSupportedException($"Unknown file type: {filePath}")
             };
 
-            foreach (var entry in _analysisResult.CarvedFiles)
+            // Build _allCarvedFiles but do NOT populate the observable _carvedFiles yet.
+            // The file table should only appear once all analysis (including semantic
+            // reconstruction) is complete, so the user sees the final list in one shot.
+            // For ESM files, CarvedFiles contains memory-map visualization groups ("ESM Record Group"),
+            // not user-actionable files — skip them so only individual records appear in the list.
+            if (fileType != AnalysisFileType.EsmFile)
             {
-                var item = new CarvedFileEntry
+                foreach (var entry in _analysisResult.CarvedFiles)
                 {
-                    Offset = entry.Offset,
-                    Length = entry.Length,
-                    FileType = entry.FileType,
-                    FileName = entry.FileName
-                };
-                _allCarvedFiles.Add(item);
-                _carvedFiles.Add(item);
+                    _allCarvedFiles.Add(new CarvedFileEntry
+                    {
+                        Offset = entry.Offset,
+                        Length = entry.Length,
+                        FileType = entry.FileType,
+                        FileName = entry.FileName
+                    });
+                }
             }
 
-            // Add ESM records to the list
+            // Add ESM records to the backing list
             if (_analysisResult.EsmRecords?.MainRecords != null)
             {
                 foreach (var esmRecord in _analysisResult.EsmRecords.MainRecords)
                 {
-                    var item = new CarvedFileEntry
+                    _allCarvedFiles.Add(new CarvedFileEntry
                     {
                         Offset = esmRecord.Offset,
                         Length = esmRecord.DataSize + 24,
@@ -284,44 +318,36 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                         EsmRecordType = esmRecord.RecordType,
                         FormId = esmRecord.FormId,
                         FileName = _analysisResult.FormIdMap.GetValueOrDefault(esmRecord.FormId),
-                        Status = ExtractionStatus.Skipped // ESM records start as Skipped
-                    };
-                    _allCarvedFiles.Add(item);
+                        Status = ExtractionStatus.Skipped
+                    });
                 }
 
                 _allCarvedFiles.Sort((a, b) => a.Offset.CompareTo(b.Offset));
-                _carvedFiles.Clear();
-                foreach (var item in _allCarvedFiles)
-                {
-                    _carvedFiles.Add(item);
-                }
             }
 
-            // Enable extract button immediately after successful analysis
-            UpdateButtonStates();
-
-            // Open shared session and load hex viewer with shared accessor
+            // Open shared session (needed for accessor before reconstruction)
             _session.Open(filePath, _analysisResult, fileType);
             UpdateFileInfoCard();
-            await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
 
             // Store runtime asset data in session for extraction
             _session.RuntimeMeshes = _analysisResult.RuntimeMeshes;
             _session.RuntimeTextures = _analysisResult.RuntimeTextures;
             _session.SceneGraphMap = _analysisResult.SceneGraphMap;
 
-            // Unified flow: run semantic reconstruction eagerly with visible progress
+            // Run semantic reconstruction BEFORE loading HexViewer so the memory map
+            // includes TESForm struct regions and terrain mesh regions from the start
             if (_session.HasEsmRecords)
             {
-                StatusTextBlock.Text = "Running semantic reconstruction...";
-                AnalysisProgressBar.Visibility = Visibility.Visible;
-                AnalysisProgressBar.IsIndeterminate = false;
+                SetPipelinePhase(AnalysisPipelinePhase.Reconstructing);
+                StatusTextBlock.Text = _session.IsEsmFile
+                    ? Strings.Status_ParsingEsmRecords
+                    : Strings.Status_ReconstructingRecords;
 
                 var reconProgress = new Progress<(int percent, string phase)>(p =>
                     DispatcherQueue.TryEnqueue(() =>
                     {
-                        // Map reconstruction progress (0-100) into the 82-95 range
-                        AnalysisProgressBar.Value = 82 + p.percent * 0.13;
+                        // Map reconstruction progress (0-100) into the 80-95 range
+                        AnalysisProgressBar.Value = 80 + p.percent * 0.15;
                         StatusTextBlock.Text = p.phase;
                     }));
 
@@ -351,6 +377,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
                         // Refresh carved files list with the new entries
                         RefreshCarvedFilesList();
+                        BuildResultsFilterCheckboxes();
                     }
                 }
                 catch (Exception ex)
@@ -360,30 +387,57 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 }
             }
 
-            // Auto-populate whichever tab is currently selected
-            await AutoPopulateCurrentTabAsync(sender, e);
-
-            // Run coverage analysis (best-effort, doesn't block other functionality)
-            try
+            // Populate the observable file table now that all analysis is complete.
+            // For ESM files, RefreshCarvedFilesList() already ran above and rebuilt the list;
+            // for non-ESM files (or if reconstruction was skipped/failed), flush here.
+            if (_carvedFiles.Count == 0 && _allCarvedFiles.Count > 0)
             {
-                StatusTextBlock.Text = Strings.Status_RunningCoverageAnalysis;
-                AnalysisProgressBar.Value = 96;
-                _session.CoverageResult = await Task.Run(() =>
-                    CoverageAnalyzer.Analyze(_session.AnalysisResult!, _session.Accessor!));
-
-                if (_session.CoverageResult.Error == null)
+                foreach (var item in _allCarvedFiles)
                 {
-                    await HexViewer.AddCoverageGapRegionsAsync(_session.CoverageResult);
+                    _carvedFiles.Add(item);
                 }
             }
-            catch (Exception coverageEx)
+
+            // Build type filter checkboxes (idempotent - safe to call even if ESM path already called it)
+            BuildResultsFilterCheckboxes();
+
+            // Load HexViewer AFTER all analysis and reconstruction is complete
+            // so the memory map renders with all regions from the start
+            SetPipelinePhase(AnalysisPipelinePhase.LoadingMap);
+            await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
+
+            // Auto-populate whichever tab is currently selected
+            await AutoPopulateCurrentTabAsync(selectedTabForAutoPopulate);
+
+            // Run coverage analysis for memory dumps only (not meaningful for ESM files)
+            if (!_session.IsEsmFile)
             {
-                StatusTextBlock.Text = Strings.Status_CoverageAnalysisFailed(coverageEx.Message);
+                try
+                {
+                    SetPipelinePhase(AnalysisPipelinePhase.Coverage);
+                    StatusTextBlock.Text = Strings.Status_RunningCoverageAnalysis;
+                    AnalysisProgressBar.Value = 96;
+                    _session.CoverageResult = await Task.Run(() =>
+                        CoverageAnalyzer.Analyze(_session.AnalysisResult!, _session.Accessor!));
+
+                    if (_session.CoverageResult.Error == null)
+                    {
+                        await HexViewer.AddCoverageGapRegionsAsync(_session.CoverageResult);
+                    }
+                }
+                catch (Exception coverageEx)
+                {
+                    StatusTextBlock.Text = Strings.Status_CoverageAnalysisFailed(coverageEx.Message);
+                }
             }
 
-            var fileCount = _allCarvedFiles.Count;
+            var totalCount = _allCarvedFiles.Count;
+            var fileCount = _allCarvedFiles.Count(f => !f.IsEsmRecord);
+            var recordCount = _allCarvedFiles.Count(f => f.IsEsmRecord);
             var coveragePct = _session.CoverageResult?.RecognizedPercent ?? 0;
-            StatusTextBlock.Text = Strings.Status_FoundFilesToCarve(fileCount, coveragePct);
+            StatusTextBlock.Text = fileCount > 0
+                ? Strings.Status_FoundFilesToCarve(totalCount, coveragePct, fileCount, recordCount)
+                : Strings.Status_FoundRecords(recordCount);
         }
         catch (Exception ex)
         {
@@ -392,9 +446,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
         finally
         {
-            AnalyzeButton.IsEnabled = true;
-            AnalysisProgressBar.Visibility = Visibility.Collapsed;
-            AnalysisProgressBar.IsIndeterminate = true;
+            SetPipelinePhase(AnalysisPipelinePhase.Idle);
         }
     }
 
@@ -599,20 +651,18 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     {
         if (result.EsmRecords == null) return;
 
-        foreach (var land in result.EsmRecords.LandRecords)
+        foreach (var land in result.EsmRecords.LandRecords
+                     .Where(l => l.RuntimeTerrainMesh is { VertexDataOffset: > 0 }))
         {
-            if (land.RuntimeTerrainMesh is { VertexDataOffset: > 0 })
+            result.CarvedFiles.Add(new CarvedFileInfo
             {
-                result.CarvedFiles.Add(new CarvedFileInfo
-                {
-                    Offset = land.RuntimeTerrainMesh.VertexDataOffset,
-                    Length = 33 * 33 * 3 * 4, // 33x33 grid, 3 floats (x,y,z) each
-                    FileType = "Terrain Mesh",
-                    FileName = land.Header.FormId > 0 ? $"LAND {land.Header.FormId:X8}" : null,
-                    SignatureId = "terrain_mesh",
-                    Category = FileCategory.Model
-                });
-            }
+                Offset = land.RuntimeTerrainMesh!.VertexDataOffset,
+                Length = 33 * 33 * 3 * 4, // 33x33 grid, 3 floats (x,y,z) each
+                FileType = "Terrain Mesh",
+                FileName = land.Header.FormId > 0 ? $"LAND {land.Header.FormId:X8}" : null,
+                SignatureId = "terrain_mesh",
+                Category = FileCategory.Model
+            });
         }
     }
 
@@ -620,18 +670,22 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     {
         if (_analysisResult == null) return;
 
-        // Rebuild the full list from scratch to include new CarvedFileInfo entries
+        // Rebuild the full list from scratch to include new CarvedFileInfo entries.
+        // For ESM files, CarvedFiles contains memory-map visualization groups, not user results.
         _allCarvedFiles.Clear();
 
-        foreach (var entry in _analysisResult.CarvedFiles)
+        if (!_session.IsEsmFile)
         {
-            _allCarvedFiles.Add(new CarvedFileEntry
+            foreach (var entry in _analysisResult.CarvedFiles)
             {
-                Offset = entry.Offset,
-                Length = entry.Length,
-                FileType = entry.FileType,
-                FileName = entry.FileName
-            });
+                _allCarvedFiles.Add(new CarvedFileEntry
+                {
+                    Offset = entry.Offset,
+                    Length = entry.Length,
+                    FileType = entry.FileType,
+                    FileName = entry.FileName
+                });
+            }
         }
 
         if (_analysisResult.EsmRecords?.MainRecords != null)
@@ -659,11 +713,12 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
     }
 
-    private async Task AutoPopulateCurrentTabAsync(object sender, RoutedEventArgs e)
+    private async Task AutoPopulateCurrentTabAsync(object? selectedTab)
     {
         if (!_session.HasEsmRecords) return;
 
-        var selected = SubTabView.SelectedItem;
+        // Use the passed-in tab reference (saved before SubTabView was disabled)
+        var selected = selectedTab;
 
         if (ReferenceEquals(selected, SummaryTab) && _session.SemanticResult != null)
         {
@@ -671,7 +726,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
         else if (ReferenceEquals(selected, DataBrowserTab))
         {
-            ReconstructButton_Click(sender, e);
+            ReconstructButton_Click(this, new RoutedEventArgs());
         }
         else if (ReferenceEquals(selected, DialogueViewerTab))
         {

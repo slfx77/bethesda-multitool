@@ -73,13 +73,12 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
     ///     Build a synthetic FULL subrecord at the specified offset.
     ///     Layout: [FULL:4][Length:2][NullTermString]
     /// </summary>
-    private static int WriteFullSubrecord(byte[] buf, int offset, string displayName)
+    private static void WriteFullSubrecord(byte[] buf, int offset, string displayName)
     {
         WriteSig(buf, offset, "FULL");
         var text = Encoding.ASCII.GetBytes(displayName + "\0");
         WriteUInt16LE(buf, offset + 4, (ushort)text.Length);
         Array.Copy(text, 0, buf, offset + 6, text.Length);
-        return 6 + text.Length;
     }
 
     /// <summary>

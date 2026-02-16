@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -10,6 +11,7 @@ namespace FalloutXbox360Utils;
 public sealed partial class SingleFileTab
 {
     private CellRecord? _selectedWorldCell;
+    private PlacedReference? _selectedWorldObject;
 
     private async Task PopulateWorldMapAsync()
     {
@@ -20,7 +22,9 @@ public sealed partial class SingleFileTab
 
         // Show progress
         WorldMapProgressBar.Visibility = Visibility.Visible;
-        WorldMapStatusText.Text = "Reconstructing record data...";
+        WorldMapStatusText.Text = _session.IsEsmFile
+            ? Strings.Status_LoadingWorldData
+            : Strings.Status_ReconstructingWorldData;
 
         try
         {
@@ -28,41 +32,36 @@ public sealed partial class SingleFileTab
             if (_session.SemanticResult == null)
             {
                 WorldMapProgressBar.IsIndeterminate = false;
-                _reconstructionProgressHandler = (percent, phase) =>
-                {
-                    WorldMapProgressBar.Value = percent;
-                    WorldMapStatusText.Text = phase;
-                };
                 await EnsureSemanticReconstructionAsync();
-                _reconstructionProgressHandler = null;
             }
 
             var semantic = _session.SemanticResult;
             if (semantic == null)
             {
-                WorldMapStatusText.Text = "No world data found in this file.";
+                WorldMapStatusText.Text = Strings.Status_NoWorldData;
                 return;
             }
 
-            WorldMapStatusText.Text = "Building world data index...";
+            WorldMapStatusText.Text = Strings.Status_BuildingWorldIndex;
 
             // Build world data on background thread
             var worldData = await Task.Run(() =>
             {
                 var (boundsIndex, categoryIndex) = ObjectBoundsIndex.BuildCombined(semantic);
 
-                // Pre-compute heightmap pixels for the first (default) worldspace
-                byte[]? hmPixels = null;
+                // Pre-compute grayscale heightmap and water mask for the first (default) worldspace
+                byte[]? hmGrayscale = null;
+                byte[]? hmWaterMask = null;
                 int hmWidth = 0, hmHeight = 0, hmMinX = 0, hmMaxY = 0;
                 float? defaultWaterHeight = null;
                 if (semantic.Worldspaces.Count > 0 && semantic.Worldspaces[0].Cells.Count > 0)
                 {
                     defaultWaterHeight = semantic.Worldspaces[0].DefaultWaterHeight;
-                    var result = WorldMapControl.ComputeHeightmapPixels(
+                    var result = WorldMapControl.ComputeHeightmapData(
                         semantic.Worldspaces[0].Cells, defaultWaterHeight);
                     if (result.HasValue)
                     {
-                        (hmPixels, hmWidth, hmHeight, hmMinX, hmMaxY) = result.Value;
+                        (hmGrayscale, hmWaterMask, hmWidth, hmHeight, hmMinX, hmMaxY) = result.Value;
                     }
                 }
 
@@ -106,13 +105,21 @@ public sealed partial class SingleFileTab
 
                 // Build reverse index: placed reference FormID → parent cell
                 var refrToCellIndex = new Dictionary<uint, CellRecord>();
+                var refPositionIndex = new Dictionary<uint, (float X, float Y)>();
                 foreach (var cell in semantic.Cells)
                 {
                     foreach (var obj in cell.PlacedObjects)
                     {
                         refrToCellIndex.TryAdd(obj.FormId, cell);
+                        if (obj.FormId != 0)
+                        {
+                            refPositionIndex.TryAdd(obj.FormId, (obj.X, obj.Y));
+                        }
                     }
                 }
+
+                // Build spawn resolution index
+                var spawnIndex = SpawnResolutionIndex.Build(semantic);
 
                 return new WorldViewData
                 {
@@ -128,11 +135,15 @@ public sealed partial class SingleFileTab
                     MapMarkers = semantic.MapMarkers,
                     MarkersByWorldspace = markersByWorldspace,
                     DefaultWaterHeight = defaultWaterHeight,
-                    HeightmapPixels = hmPixels,
+                    HeightmapGrayscale = hmGrayscale,
+                    HeightmapWaterMask = hmWaterMask,
                     HeightmapPixelWidth = hmWidth,
                     HeightmapPixelHeight = hmHeight,
                     HeightmapMinCellX = hmMinX,
-                    HeightmapMaxCellY = hmMaxY
+                    HeightmapMaxCellY = hmMaxY,
+                    SourceFilePath = _session.FilePath,
+                    SpawnIndex = spawnIndex,
+                    RefPositionIndex = refPositionIndex
                 };
             });
 
@@ -153,10 +164,10 @@ public sealed partial class SingleFileTab
     private void WorldMap_InspectCell(object? sender, CellRecord cell)
     {
         _selectedWorldCell = cell;
+        _selectedWorldObject = null;
+        ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
         WorldMapControl?.SelectObject(null);
 
-        // Show "View Cell" button for all cells (exterior and interior)
-        ViewInMapButton.Visibility = Visibility.Visible;
 
         var name = cell.EditorId ?? cell.FullName ?? $"0x{cell.FormId:X8}";
         if (cell.GridX.HasValue && cell.GridY.HasValue)
@@ -402,10 +413,10 @@ public sealed partial class SingleFileTab
                         return new EsmPropertyEntry
                         {
                             Col1 = baseName,
-                            Col3 = $"0x{obj.FormId:X8}",
-                            Col3FormId = obj.FormId,
+                            Col3 = $"0x{obj.BaseFormId:X8}",
+                            Col3FormId = obj.BaseFormId,
                             Name = baseName,
-                            Value = $"0x{obj.FormId:X8}"
+                            Value = $"0x{obj.BaseFormId:X8}"
                         };
                     }).ToList()
                 });
@@ -429,39 +440,40 @@ public sealed partial class SingleFileTab
         BuildWorldPropertyPanel(properties);
     }
 
-    private void ViewInMap_Click(object sender, RoutedEventArgs e)
+    private void ViewBaseInBrowser_Click(object sender, RoutedEventArgs e)
     {
-        if (_selectedWorldCell == null || _session.WorldViewData == null)
+        if (_selectedWorldObject?.BaseFormId is > 0)
         {
-            return;
+            NavigateToFormId(_selectedWorldObject.BaseFormId);
         }
-
-        var wsFormId = _selectedWorldCell.WorldspaceFormId;
-        if (wsFormId is > 0)
-        {
-            var wsIdx = _session.WorldViewData.Worldspaces.FindIndex(ws => ws.FormId == wsFormId.Value);
-            if (wsIdx >= 0)
-            {
-                WorldMapControl.NavigateToWorldspaceAndCell(wsIdx, _selectedWorldCell);
-                return;
-            }
-        }
-
-        // Interior or unlinked cell — navigate directly to cell detail
-        WorldMapControl.NavigateToCell(_selectedWorldCell);
     }
 
     private void WorldMap_InspectObject(object? sender, PlacedReference obj)
     {
+        _selectedWorldObject = obj;
+
         if (_session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var ownerCell) == true)
         {
             _selectedWorldCell = ownerCell;
-            ViewInMapButton.Visibility = Visibility.Visible;
         }
         else
         {
             _selectedWorldCell = null;
-            ViewInMapButton.Visibility = Visibility.Collapsed;
+        }
+
+        // Show "View in Data Browser" for the base record
+        if (obj.BaseFormId > 0 && IsFormIdNavigable(obj.BaseFormId))
+        {
+            ViewBaseInBrowserButton.Visibility = Visibility.Visible;
+            ViewBaseInBrowserButton.IsEnabled = true;
+            ToolTipService.SetToolTip(ViewBaseInBrowserButton, "View the base record in the Data Browser");
+        }
+        else
+        {
+            ViewBaseInBrowserButton.Visibility = Visibility.Visible;
+            ViewBaseInBrowserButton.IsEnabled = false;
+            ToolTipService.SetToolTip(ViewBaseInBrowserButton,
+                "Base record not available in Data Browser (record type not reconstructed)");
         }
 
         WorldMapControl?.SelectObject(obj);
@@ -485,16 +497,27 @@ public sealed partial class SingleFileTab
         properties.Add(new EsmPropertyEntry
         {
             Name = "Base Form ID",
-            Value = _session.Resolver?.FormatFull(obj.BaseFormId) ?? $"0x{obj.BaseFormId:X8}",
+            Value = $"0x{obj.BaseFormId:X8}",
             Category = "Identity",
             LinkedFormId = obj.BaseFormId
         });
-        if (!string.IsNullOrEmpty(obj.BaseEditorId))
+        var baseEditorId = obj.BaseEditorId ?? _session.Resolver?.GetEditorId(obj.BaseFormId);
+        if (!string.IsNullOrEmpty(baseEditorId))
         {
             properties.Add(new EsmPropertyEntry
             {
                 Name = "Base Editor ID",
-                Value = obj.BaseEditorId,
+                Value = baseEditorId,
+                Category = "Identity"
+            });
+        }
+        var baseFullName = _session.Resolver?.GetDisplayName(obj.BaseFormId);
+        if (!string.IsNullOrEmpty(baseFullName))
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Base Name",
+                Value = baseFullName,
                 Category = "Identity"
             });
         }
@@ -633,6 +656,9 @@ public sealed partial class SingleFileTab
             }
         }
 
+        // Spawn Info (for ACHR/ACRE placing leveled lists or direct actors)
+        AddSpawnInfo(properties, obj);
+
         // Metadata
         properties.Add(new EsmPropertyEntry
         {
@@ -648,6 +674,137 @@ public sealed partial class SingleFileTab
         });
 
         BuildWorldPropertyPanel(properties);
+    }
+
+    private void AddSpawnInfo(List<EsmPropertyEntry> properties, PlacedReference obj)
+    {
+        var spawnIndex = _session.WorldViewData?.SpawnIndex;
+        if (spawnIndex == null)
+        {
+            return;
+        }
+
+        var isLeveled = spawnIndex.LeveledListTypes.ContainsKey(obj.BaseFormId);
+        var isAchr = obj.RecordType == "ACHR";
+        var isAcre = obj.RecordType == "ACRE";
+
+        if (!isAchr && !isAcre)
+        {
+            return;
+        }
+
+        // Update title with [Leveled] prefix if applicable
+        if (isLeveled)
+        {
+            var name = obj.BaseEditorId
+                       ?? _session.Resolver?.GetBestName(obj.BaseFormId)
+                       ?? $"0x{obj.BaseFormId:X8}";
+            WorldObjectTitle.Text = $"{obj.RecordType}: [Leveled] {name}";
+        }
+
+        // Resolve actors from leveled list or direct placement
+        var actorFormIds = new List<uint>();
+        if (isLeveled && spawnIndex.LeveledListEntries.TryGetValue(obj.BaseFormId, out var resolved))
+        {
+            actorFormIds.AddRange(resolved);
+
+            // Show possible spawns
+            var label = isAchr ? "Possible NPCs" : "Possible Creatures";
+            var distinct = resolved.Distinct().ToList();
+            var names = distinct.Select(fid =>
+            {
+                var n = _session.Resolver?.GetBestName(fid);
+                return n ?? $"0x{fid:X8}";
+            }).ToList();
+
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = label,
+                Value = $"{distinct.Count} entries",
+                Category = "Spawn Info",
+                IsExpandable = true,
+                SubItems = distinct.Select((fid, i) => new EsmPropertyEntry
+                {
+                    Name = names[i],
+                    Value = $"0x{fid:X8}",
+                    Col1 = names[i],
+                    Col3 = $"0x{fid:X8}",
+                    LinkedFormId = fid
+                }).ToList()
+            });
+        }
+        else
+        {
+            // Direct placement — the actor is the base form
+            actorFormIds.Add(obj.BaseFormId);
+        }
+
+        // Collect AI package cells and refs from all resolved actors
+        var packageCells = new List<uint>();
+        var packageRefs = new List<PackageRefLocation>();
+        foreach (var actorFid in actorFormIds.Distinct())
+        {
+            if (spawnIndex.ActorToPackageCells.TryGetValue(actorFid, out var cells))
+            {
+                packageCells.AddRange(cells);
+            }
+
+            if (spawnIndex.ActorToPackageRefs.TryGetValue(actorFid, out var refs))
+            {
+                packageRefs.AddRange(refs);
+            }
+        }
+
+        // Show AI package cells
+        if (packageCells.Count > 0)
+        {
+            var distinctCells = packageCells.Distinct().ToList();
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "AI Package Cells",
+                Value = $"{distinctCells.Count} cells",
+                Category = "Spawn Info",
+                IsExpandable = true,
+                SubItems = distinctCells.Select(cellFid =>
+                {
+                    var cellName = _session.Resolver?.GetBestName(cellFid) ?? $"0x{cellFid:X8}";
+                    return new EsmPropertyEntry
+                    {
+                        Name = cellName,
+                        Value = $"0x{cellFid:X8}",
+                        Col1 = cellName,
+                        Col3 = $"0x{cellFid:X8}",
+                        CellNavigationFormId = cellFid
+                    };
+                }).ToList()
+            });
+        }
+
+        // Show AI package refs
+        if (packageRefs.Count > 0)
+        {
+            var distinctRefs = packageRefs.DistinctBy(r => r.RefFormId).ToList();
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "AI Package Refs",
+                Value = $"{distinctRefs.Count} locations",
+                Category = "Spawn Info",
+                IsExpandable = true,
+                SubItems = distinctRefs.Select(r =>
+                {
+                    var refName = _session.Resolver?.GetBestName(r.RefFormId) ?? $"0x{r.RefFormId:X8}";
+                    var radiusStr = r.Radius > 0 ? $" (radius: {r.Radius})" : "";
+                    return new EsmPropertyEntry
+                    {
+                        Name = refName,
+                        Value = $"0x{r.RefFormId:X8}{radiusStr}",
+                        Col1 = refName,
+                        Col3 = $"0x{r.RefFormId:X8}{radiusStr}",
+                        LinkedFormId = r.RefFormId
+                    };
+                }).ToList()
+            });
+        }
     }
 
     private void BuildWorldPropertyPanel(List<EsmPropertyEntry> properties)
@@ -962,10 +1119,19 @@ public sealed partial class SingleFileTab
             return category switch
             {
                 PlacedObjectCategory.Static => "Statics",
+                PlacedObjectCategory.Architecture => "Architecture",
+                PlacedObjectCategory.Landscape => "Landscape",
+                PlacedObjectCategory.Clutter => "Clutter",
+                PlacedObjectCategory.Dungeon => "Dungeon",
+                PlacedObjectCategory.Effects => "Effects",
+                PlacedObjectCategory.Vehicles => "Vehicles",
+                PlacedObjectCategory.Traps => "Traps",
                 PlacedObjectCategory.Door => "Doors",
                 PlacedObjectCategory.Activator => "Activators",
                 PlacedObjectCategory.Light => "Lights",
                 PlacedObjectCategory.Furniture => "Furniture",
+                PlacedObjectCategory.Npc => "NPCs",
+                PlacedObjectCategory.Creature => "Creatures",
                 PlacedObjectCategory.Container => "Containers",
                 PlacedObjectCategory.Item => "Items",
                 _ => "Other"
@@ -1015,6 +1181,7 @@ public sealed partial class SingleFileTab
             return;
         }
 
+        PushUnifiedNav();
         SubTabView.SelectedItem = WorldMapTab;
         WorldMapControl.NavigateToWorldspace(wsIdx);
     }
@@ -1022,9 +1189,11 @@ public sealed partial class SingleFileTab
     private void ResetWorldMap()
     {
         _selectedWorldCell = null;
-        ViewInMapButton.Visibility = Visibility.Collapsed;
+        _selectedWorldObject = null;
+        ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
         WorldMapPlaceholder.Visibility = Visibility.Visible;
         WorldMapProgressBar.Visibility = Visibility.Collapsed;
+        WorldMapStatusText.Text = Strings.Empty_RunAnalysisForWorldMap;
         WorldMapContent.Visibility = Visibility.Collapsed;
         WorldMapControl?.Reset();
     }

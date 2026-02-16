@@ -49,6 +49,33 @@ public static class Strings
     public static string Status_ExtractingRuntimeEditorIds => Get("Status_ExtractingRuntimeEditorIds");
     public static string Status_CorrelatingFormIdNames => Get("Status_CorrelatingFormIdNames");
 
+    // ===== Geometry/Texture scanning phases =====
+    public static string Status_ScanningGeometry => Get("Status_ScanningGeometry");
+    public static string Status_ScanningTextures => Get("Status_ScanningTextures");
+    public static string Status_WalkingSceneGraph => Get("Status_WalkingSceneGraph");
+
+    // ===== Dialogue Viewer =====
+    public static string Status_LoadingDialogueData => Get("Status_LoadingDialogueData");
+    public static string Status_ReconstructingDialogueData => Get("Status_ReconstructingDialogueData");
+    public static string Status_NoDialogueData => Get("Status_NoDialogueData");
+    public static string Status_BuildingDialogueViewer => Get("Status_BuildingDialogueViewer");
+    public static string Empty_RunAnalysisForDialogues => Get("Empty_RunAnalysisForDialogues");
+    public static string Empty_SelectDialogueTopic => Get("Empty_SelectDialogueTopic");
+
+    // ===== World Map =====
+    public static string Status_LoadingWorldData => Get("Status_LoadingWorldData");
+    public static string Status_ReconstructingWorldData => Get("Status_ReconstructingWorldData");
+    public static string Status_NoWorldData => Get("Status_NoWorldData");
+    public static string Status_BuildingWorldIndex => Get("Status_BuildingWorldIndex");
+    public static string Empty_RunAnalysisForWorldMap => Get("Empty_RunAnalysisForWorldMap");
+
+    // ===== Data Browser =====
+    public static string Status_BuildingNavIndex => Get("Status_BuildingNavIndex");
+    public static string Status_BuildingSearchIndex => Get("Status_BuildingSearchIndex");
+
+    // ===== Reports =====
+    public static string Status_GeneratingReports => Get("Status_GeneratingReports");
+
     // ===== Dialog Titles (code-behind usage) =====
     public static string Dialog_AnalysisFailed_Title => Get("Dialog_AnalysisFailed_Title");
     public static string Dialog_ExtractionComplete_Title => Get("Dialog_ExtractionComplete_Title");
@@ -107,8 +134,11 @@ public static class Strings
     public static string Status_ReconstructedRecords(int count) => GetFormat("Status_ReconstructedRecords", count);
     public static string Status_ParsedEsmRecords(int count) => GetFormat("Status_ParsedEsmRecords", count);
 
-    public static string Status_FoundFilesToCarve(int count, double coverage) =>
-        GetFormat("Status_FoundFilesToCarve", count, coverage);
+    public static string Status_FoundFilesToCarve(int totalCount, double coverage, int fileCount, int recordCount) =>
+        GetFormat("Status_FoundFilesToCarve", totalCount, coverage, fileCount, recordCount);
+
+    public static string Status_FoundRecords(int recordCount) =>
+        GetFormat("Status_FoundRecords", recordCount);
 
     public static string Status_CoverageAnalysisFailed(string message) =>
         GetFormat("Status_CoverageAnalysisFailed", message);

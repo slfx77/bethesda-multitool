@@ -214,52 +214,34 @@ public sealed class RecordParser
         if (_context.RuntimeReader != null)
         {
             var runtimeObjectToScript = new Dictionary<uint, uint>();
-            foreach (var npc in npcs)
+            foreach (var npc in npcs.Where(n => n.Script is > 0))
             {
-                if (npc.Script is > 0)
-                {
-                    runtimeObjectToScript.TryAdd(npc.FormId, npc.Script.Value);
-                }
+                runtimeObjectToScript.TryAdd(npc.FormId, npc.Script!.Value);
             }
 
-            foreach (var creature in creatures)
+            foreach (var creature in creatures.Where(c => c.Script is > 0))
             {
-                if (creature.Script is > 0)
-                {
-                    runtimeObjectToScript.TryAdd(creature.FormId, creature.Script.Value);
-                }
+                runtimeObjectToScript.TryAdd(creature.FormId, creature.Script!.Value);
             }
 
-            foreach (var container in containers)
+            foreach (var container in containers.Where(c => c.Script is > 0))
             {
-                if (container.Script is > 0)
-                {
-                    runtimeObjectToScript.TryAdd(container.FormId, container.Script.Value);
-                }
+                runtimeObjectToScript.TryAdd(container.FormId, container.Script!.Value);
             }
 
-            foreach (var activator in activators)
+            foreach (var activator in activators.Where(a => a.Script is > 0))
             {
-                if (activator.Script is > 0)
-                {
-                    runtimeObjectToScript.TryAdd(activator.FormId, activator.Script.Value);
-                }
+                runtimeObjectToScript.TryAdd(activator.FormId, activator.Script!.Value);
             }
 
-            foreach (var door in doors)
+            foreach (var door in doors.Where(d => d.Script is > 0))
             {
-                if (door.Script is > 0)
-                {
-                    runtimeObjectToScript.TryAdd(door.FormId, door.Script.Value);
-                }
+                runtimeObjectToScript.TryAdd(door.FormId, door.Script!.Value);
             }
 
-            foreach (var furn in furniture)
+            foreach (var furn in furniture.Where(f => f.Script is > 0))
             {
-                if (furn.Script is > 0)
-                {
-                    runtimeObjectToScript.TryAdd(furn.FormId, furn.Script.Value);
-                }
+                runtimeObjectToScript.TryAdd(furn.FormId, furn.Script!.Value);
             }
 
             if (runtimeObjectToScript.Count > 0)

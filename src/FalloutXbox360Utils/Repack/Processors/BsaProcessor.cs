@@ -464,8 +464,7 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
                     if (nifInfo != null && nifInfo.IsBigEndian)
                     {
                         // Convert big-endian NIF to little-endian
-                        var converter = new NifConverter();
-                        var result = converter.Convert(nifData);
+                        var result = NifConverter.Convert(nifData);
 
                         if (result.Success && result.OutputData != null)
                         {

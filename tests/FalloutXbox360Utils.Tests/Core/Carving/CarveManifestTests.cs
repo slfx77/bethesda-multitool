@@ -114,7 +114,7 @@ public sealed class CarveManifestTests : IDisposable
 
         // Assert
         var manifestPath = Path.Combine(_testDir, "manifest.json");
-        var json = await File.ReadAllTextAsync(manifestPath);
+        var json = await File.ReadAllTextAsync(manifestPath, TestContext.Current.CancellationToken);
         var parsed = JsonSerializer.Deserialize<List<CarveEntry>>(json);
         Assert.NotNull(parsed);
         Assert.Single(parsed);
@@ -131,7 +131,7 @@ public sealed class CarveManifestTests : IDisposable
 
         // Assert
         var manifestPath = Path.Combine(_testDir, "manifest.json");
-        var json = await File.ReadAllTextAsync(manifestPath);
+        var json = await File.ReadAllTextAsync(manifestPath, TestContext.Current.CancellationToken);
         Assert.Equal("[]", json.Trim());
     }
 
@@ -151,7 +151,7 @@ public sealed class CarveManifestTests : IDisposable
 
         // Assert
         var manifestPath = Path.Combine(_testDir, "manifest.json");
-        var json = await File.ReadAllTextAsync(manifestPath);
+        var json = await File.ReadAllTextAsync(manifestPath, TestContext.Current.CancellationToken);
         var parsed = JsonSerializer.Deserialize<List<CarveEntry>>(json);
         Assert.NotNull(parsed);
         Assert.Equal(3, parsed.Count);
@@ -188,7 +188,7 @@ public sealed class CarveManifestTests : IDisposable
     {
         // Arrange
         var manifestPath = Path.Combine(_testDir, "manifest.json");
-        await File.WriteAllTextAsync(manifestPath, "[]");
+        await File.WriteAllTextAsync(manifestPath, "[]", TestContext.Current.CancellationToken);
 
         // Act
         var loaded = await CarveManifest.LoadAsync(manifestPath);

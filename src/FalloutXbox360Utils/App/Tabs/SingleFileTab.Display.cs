@@ -252,7 +252,7 @@ public sealed partial class SingleFileTab
 
                 var expandIcon = new TextBlock
                 {
-                    Text = "\u25B6",
+                    Text = prop.IsExpandedByDefault ? "\u25BC" : "\u25B6",
                     FontSize = 10,
                     Width = 18,
                     Padding = new Thickness(4, 3, 0, 2),
@@ -293,7 +293,10 @@ public sealed partial class SingleFileTab
                 currentRow++;
 
                 // Create a separate grid for sub-items (isolates column widths from mainGrid)
-                var subItemsGrid = new Grid { Visibility = Visibility.Collapsed };
+                var subItemsGrid = new Grid
+                {
+                    Visibility = prop.IsExpandedByDefault ? Visibility.Visible : Visibility.Collapsed
+                };
                 subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col1: EditorID
                 subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col2: FullName
                 subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Col3: FormID
@@ -403,10 +406,11 @@ public sealed partial class SingleFileTab
                             Padding = new Thickness(0, 1, 0, 1)
                         };
 
-                        // For large multi-line content (scripts), add a dedicated ScrollViewer
-                        // so the content doesn't dominate the property panel
+                        // For large multi-line content, add a dedicated ScrollViewer
+                        // so the content doesn't dominate the property panel.
+                        // Skip for entries expanded by default (scripts) to avoid double scrollbar.
                         FrameworkElement element;
-                        if (sub.Value != null && sub.Value.Contains('\n'))
+                        if (sub.Value != null && sub.Value.Contains('\n') && !prop.IsExpandedByDefault)
                         {
                             element = new ScrollViewer
                             {
@@ -561,10 +565,82 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Pipeline Phase State
+
+    /// <summary>
+    ///     Represents the current phase of the analysis pipeline.
+    ///     Used by <see cref="SetPipelinePhase"/> to centralize all UI control state transitions.
+    /// </summary>
+    private enum AnalysisPipelinePhase
+    {
+        Idle,
+        Scanning,
+        Reconstructing,
+        LoadingMap,
+        Coverage,
+        Extracting
+    }
+
+    /// <summary>
+    ///     Centralized UI state transition for the analysis/extraction pipeline.
+    ///     Sets all control enabled/disabled/visibility states based on the current phase.
+    ///     Dynamic content (progress values, status text) remains in the pipeline callbacks.
+    /// </summary>
+    private void SetPipelinePhase(AnalysisPipelinePhase phase)
+    {
+        _pipelinePhase = phase;
+        var isBusy = phase != AnalysisPipelinePhase.Idle;
+
+        // Input controls
+        MinidumpPathTextBox.IsEnabled = !isBusy;
+        OutputPathTextBox.IsEnabled = !isBusy;
+        SubTabView.IsEnabled = !isBusy;
+
+        // Progress bar
+        switch (phase)
+        {
+            case AnalysisPipelinePhase.Idle:
+                AnalysisProgressBar.Visibility = Visibility.Collapsed;
+                AnalysisProgressBar.IsIndeterminate = true;
+                break;
+            case AnalysisPipelinePhase.Scanning:
+                AnalysisProgressBar.Visibility = Visibility.Visible;
+                break;
+            case AnalysisPipelinePhase.Reconstructing:
+                AnalysisProgressBar.Visibility = Visibility.Visible;
+                AnalysisProgressBar.IsIndeterminate = false;
+                break;
+            case AnalysisPipelinePhase.LoadingMap:
+                AnalysisProgressBar.Visibility = Visibility.Visible;
+                AnalysisProgressBar.IsIndeterminate = true;
+                break;
+            case AnalysisPipelinePhase.Coverage:
+                AnalysisProgressBar.Visibility = Visibility.Visible;
+                AnalysisProgressBar.IsIndeterminate = false;
+                break;
+            case AnalysisPipelinePhase.Extracting:
+                AnalysisProgressBar.Visibility = Visibility.Visible;
+                break;
+        }
+
+        // Buttons (must be last — UpdateButtonStates reads _pipelinePhase)
+        UpdateButtonStates();
+    }
+
+    #endregion
+
     #region Button State Updates
 
     private void UpdateButtonStates()
     {
+        // During any active pipeline phase, buttons stay disabled
+        if (_pipelinePhase != AnalysisPipelinePhase.Idle)
+        {
+            AnalyzeButton.IsEnabled = false;
+            ExtractButton.IsEnabled = false;
+            return;
+        }
+
         var valid = !string.IsNullOrEmpty(MinidumpPathTextBox.Text) && File.Exists(MinidumpPathTextBox.Text) &&
                     FileTypeDetector.IsSupportedExtension(MinidumpPathTextBox.Text);
         AnalyzeButton.IsEnabled = valid;
@@ -629,7 +705,8 @@ public sealed partial class SingleFileTab
     private void RefreshSortedList()
     {
         var selectedItem = ResultsListView.SelectedItem as CarvedFileEntry;
-        var sorted = _sorter.Sort(_allCarvedFiles);
+        var filtered = ApplyResultsFilter(_allCarvedFiles);
+        var sorted = _sorter.Sort(filtered);
         _carvedFiles.Clear();
         foreach (var f in sorted) _carvedFiles.Add(f);
         if (selectedItem != null && _carvedFiles.Contains(selectedItem))
@@ -747,6 +824,10 @@ public sealed partial class SingleFileTab
             [
                 ("NPCs", r.Npcs.Count), ("Creatures", r.Creatures.Count), ("Races", r.Races.Count),
                 ("Factions", r.Factions.Count)
+            ]),
+            ("AI",
+            [
+                ("AI Packages", r.Packages.Count)
             ]),
             ("Quests & Dialogue",
             [
@@ -889,24 +970,125 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Results Type Filter
+
+    private readonly Dictionary<string, CheckBox> _resultsFilterCheckboxes = [];
+
+    private void BuildResultsFilterCheckboxes()
+    {
+        _resultsFilterCheckboxes.Clear();
+
+        var typeCounts = _allCarvedFiles
+            .GroupBy(f => f.DisplayType)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (typeCounts.Count == 0)
+        {
+            FilterDropDown.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        ResultsFilterPanel.Children.Clear();
+        foreach (var group in typeCounts)
+        {
+            var cb = new CheckBox
+            {
+                Content = $"{group.Key} ({group.Count()})",
+                IsChecked = true,
+                IsThreeState = false,
+                FontSize = 11,
+                MinWidth = 0,
+                Tag = group.Key
+            };
+            cb.Checked += ResultsFilterCheckbox_Changed;
+            cb.Unchecked += ResultsFilterCheckbox_Changed;
+            _resultsFilterCheckboxes[group.Key] = cb;
+            ResultsFilterPanel.Children.Add(cb);
+        }
+
+        UpdateFilterButtonText();
+        FilterDropDown.Visibility = Visibility.Visible;
+    }
+
+    private List<CarvedFileEntry> ApplyResultsFilter(List<CarvedFileEntry> source)
+    {
+        if (_resultsFilterCheckboxes.Count == 0)
+        {
+            return source;
+        }
+
+        return source
+            .Where(f => _resultsFilterCheckboxes.TryGetValue(f.DisplayType, out var cb) && cb.IsChecked == true)
+            .ToList();
+    }
+
+    private void UpdateFilterButtonText()
+    {
+        var total = _resultsFilterCheckboxes.Count;
+        var checkedCount = _resultsFilterCheckboxes.Values.Count(cb => cb.IsChecked == true);
+        FilterDropDown.Content = checkedCount == total
+            ? "Filter: All types"
+            : checkedCount == 0
+                ? "Filter: None"
+                : $"Filter: {checkedCount} of {total} types";
+    }
+
+    private void ResultsFilterCheckbox_Changed(object sender, RoutedEventArgs e)
+    {
+        UpdateFilterButtonText();
+        RefreshSortedList();
+    }
+
+    private void FilterSelectAll_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var cb in _resultsFilterCheckboxes.Values)
+        {
+            cb.IsChecked = true;
+        }
+    }
+
+    private void FilterSelectNone_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var cb in _resultsFilterCheckboxes.Values)
+        {
+            cb.IsChecked = false;
+        }
+    }
+
+    #endregion
+
     #region Reset/Initialize
 
+    /// <summary>
+    ///     Resets all sub-tab state when a new file is loaded or analysis restarts.
+    ///     Each tab has its own reset method (in the corresponding partial class file)
+    ///     so all controls for a given tab are easy to locate and maintain.
+    /// </summary>
     private void ResetSubTabs()
     {
         _session.Dispose();
         _semanticReconstructionTask = null;
-        _reconstructionProgressHandler = null;
-        SummaryRecordPanel.Visibility = Visibility.Collapsed;
-        _reportEntries.Clear();
-        ReportPreviewTextBox.Text = "";
-        _reportLines = [];
-        _reportLineOffsets = [];
-        _reportFullContent = "";
-        ReportViewerScrollBar.Maximum = 0;
-        ReportViewerScrollBar.Value = 0;
-        _reportSearchMatches = [];
-        _reportSearchIndex = 0;
-        _reportSearchQuery = "";
+
+        ResetMemoryMapTab();
+        ResetDataBrowser();
+        ResetDialogueViewer();
+        ResetWorldMap();
+        ResetReportsTab();
+        ResetSummaryTab();
+        ResetCoverageTab();
+        ResetNavigation();
+    }
+
+    private void ResetMemoryMapTab()
+    {
+        _resultsFilterCheckboxes.Clear();
+        ResultsFilterPanel.Children.Clear();
+        FilterDropDown.Visibility = Visibility.Collapsed;
+    }
+
+    private void ResetDataBrowser()
+    {
         DataBrowserPlaceholder.Visibility = Visibility.Visible;
         DataBrowserContent.Visibility = Visibility.Collapsed;
         ReconstructStatusText.Text = Strings.Empty_RunAnalysisForEsm;
@@ -915,15 +1097,26 @@ public sealed partial class SingleFileTab
         _esmBrowserTree = null;
         _currentSearchQuery = "";
         EsmSearchBox.Text = "";
+        EsmSortComboBox.SelectedIndex = 0;
         PropertyPanel.Children.Clear();
         SelectedRecordTitle.Text = Strings.Empty_SelectARecord;
         GoToOffsetButton.Visibility = Visibility.Collapsed;
         ViewWorldspaceButton.Visibility = Visibility.Collapsed;
-        ResetNavigation();
-        ResetDialogueViewer();
-        ResetWorldMap();
-        ExportAllReportsButton.IsEnabled = false;
-        ExportSelectedReportButton.IsEnabled = false;
+    }
+
+    private void ResetSummaryTab()
+    {
+        SummaryRecordPanel.Visibility = Visibility.Collapsed;
+        RecordBreakdownPanel.Children.Clear();
+    }
+
+    private void ResetCoverageTab()
+    {
+        CoverageSummaryText.Text = "Run analysis to see coverage data.";
+        CoverageClassificationText.Text = "";
+        CoverageGapListView.ItemsSource = null;
+        _coverageGapSortColumn = CoverageGapSortColumn.Index;
+        _coverageGapSortAscending = true;
     }
 
     private void InitializeFileTypeCheckboxes()
@@ -950,13 +1143,11 @@ public sealed partial class SingleFileTab
 
     private void SelectBrowserNode(EsmBrowserNode browserNode)
     {
-        // Push to navigation history when user clicks a different record (not during programmatic navigation)
+        // Push to unified navigation history when user clicks a different record
         if (!_isNavigating && _selectedBrowserNode?.NodeType == "Record" && browserNode.NodeType == "Record"
             && _selectedBrowserNode != browserNode)
         {
-            _navBackStack.Push(_selectedBrowserNode);
-            _navForwardStack.Clear();
-            UpdateNavButtons();
+            PushUnifiedNav();
         }
 
         _selectedBrowserNode = browserNode;

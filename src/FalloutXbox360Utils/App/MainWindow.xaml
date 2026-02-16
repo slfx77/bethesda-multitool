@@ -8,30 +8,6 @@
   Title="Fallout Xbox 360 Utils">
 
   <Grid>
-    <!--  Title bar with app name (behind NavigationView so expanded pane covers it)  -->
-    <Grid
-      x:Name="AppTitleBar"
-      Height="32"
-      Margin="33,0,0,0"
-      HorizontalAlignment="Stretch"
-      VerticalAlignment="Top"
-      Background="Transparent">
-      <StackPanel
-        Orientation="Horizontal"
-        VerticalAlignment="Center">
-        <Image
-          Width="16"
-          Height="16"
-          Margin="8,0,8,0"
-          VerticalAlignment="Center"
-          Source="Assets/StoreLogo.png" />
-        <TextBlock
-          x:Uid="AppTitle"
-          VerticalAlignment="Center"
-          FontSize="12" />
-      </StackPanel>
-    </Grid>
-
     <!--  Navigation View with hamburger menu - fills entire window  -->
     <NavigationView
       x:Name="NavView"
@@ -39,11 +15,13 @@
       IsBackButtonVisible="Collapsed"
       IsPaneToggleButtonVisible="True"
       IsSettingsVisible="False"
-      IsTitleBarAutoPaddingEnabled="True"
+      IsTitleBarAutoPaddingEnabled="False"
       OpenPaneLength="200"
       PaneDisplayMode="LeftCompact"
       ItemInvoked="NavView_ItemInvoked"
-      SelectionChanged="NavView_SelectionChanged">
+      SelectionChanged="NavView_SelectionChanged"
+      PaneOpened="NavView_PaneOpened"
+      PaneClosed="NavView_PaneClosed">
 
       <!--  Make NavigationView content area transparent so Mica shows in title bar  -->
       <NavigationView.Resources>
@@ -187,5 +165,59 @@
         </Grid>
       </Grid>
     </NavigationView>
+
+    <!--  Title bar drag region — rendered AFTER NavigationView so it's on top in z-order.
+          Interactive controls (buttons) are auto-excluded from the drag region by WinUI.  -->
+    <Grid
+      x:Name="AppTitleBar"
+      Height="32"
+      Margin="48,0,0,0"
+      HorizontalAlignment="Stretch"
+      VerticalAlignment="Top"
+      Background="Transparent">
+      <StackPanel
+        Orientation="Horizontal"
+        VerticalAlignment="Center">
+        <Image
+          Width="16"
+          Height="16"
+          Margin="8,1,8,0"
+          VerticalAlignment="Center"
+          Source="ms-appx:///Assets/AppIcon.png" />
+        <TextBlock
+          x:Name="AppTitleText"
+          x:Uid="AppTitle"
+          VerticalAlignment="Center"
+          FontSize="12" />
+
+        <!--  Nav buttons: inside the title bar so WinUI auto-excludes them from drag  -->
+        <StackPanel
+          x:Name="NavButtonPanel"
+          Orientation="Horizontal"
+          Margin="12,0,0,0"
+          Visibility="Collapsed">
+          <Button
+            x:Name="NavBackButton"
+            Width="28" Height="24" Padding="0"
+            VerticalAlignment="Center"
+            IsEnabled="False"
+            Click="NavBack_Click"
+            ToolTipService.ToolTip="Back (Alt+Left)"
+            Background="Transparent" BorderBrush="Transparent">
+            <FontIcon Glyph="&#xE72B;" FontSize="11" />
+          </Button>
+          <Button
+            x:Name="NavForwardButton"
+            Width="28" Height="24" Padding="0" Margin="2,0,0,0"
+            VerticalAlignment="Center"
+            IsEnabled="False"
+            Click="NavForward_Click"
+            ToolTipService.ToolTip="Forward (Alt+Right)"
+            Background="Transparent" BorderBrush="Transparent">
+            <FontIcon Glyph="&#xE72A;" FontSize="11" />
+          </Button>
+        </StackPanel>
+      </StackPanel>
+    </Grid>
   </Grid>
 </Window>

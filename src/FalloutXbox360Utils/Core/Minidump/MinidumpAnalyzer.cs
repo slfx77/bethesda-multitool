@@ -548,20 +548,17 @@ public sealed partial class MinidumpAnalyzer
     /// </summary>
     private static void AddHeightmapRegions(AnalysisResult result, EsmRecordScanResult esmRecords)
     {
-        foreach (var land in esmRecords.LandRecords)
+        foreach (var land in esmRecords.LandRecords.Where(l => l.Heightmap is { Offset: > 0 }))
         {
-            if (land.Heightmap is { Offset: > 0 })
+            result.CarvedFiles.Add(new CarvedFileInfo
             {
-                result.CarvedFiles.Add(new CarvedFileInfo
-                {
-                    Offset = land.Heightmap.Offset,
-                    Length = 1089, // Standard VHGT size: 4-byte offset + 33x33 heights + padding
-                    FileType = "VHGT Heightmap",
-                    FileName = land.Header.FormId > 0 ? $"LAND {land.Header.FormId:X8}" : null,
-                    SignatureId = "vhgt_heightmap",
-                    Category = FileCategory.Model
-                });
-            }
+                Offset = land.Heightmap!.Offset,
+                Length = 1089, // Standard VHGT size: 4-byte offset + 33x33 heights + padding
+                FileType = "VHGT Heightmap",
+                FileName = land.Header.FormId > 0 ? $"LAND {land.Header.FormId:X8}" : null,
+                SignatureId = "vhgt_heightmap",
+                Category = FileCategory.Model
+            });
         }
     }
 

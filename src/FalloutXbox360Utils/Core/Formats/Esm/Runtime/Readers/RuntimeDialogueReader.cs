@@ -19,7 +19,7 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     ///     TESTopicInfo struct layout offsets.
     ///     All known dumps use Release/Final Debug PDB sizes (TESTopicInfo = 96 bytes).
     /// </summary>
-    private record InfoOffsets(
+    private sealed record InfoOffsets(
         int StructSize,
         int IndexOffset,
         int DataOffset,

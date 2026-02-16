@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Carving;
@@ -80,11 +81,12 @@ public sealed class MemoryCarver : IDisposable
         Reset();
 
         var fileInfo = new FileInfo(dumpPath);
+        var minidumpInfo = MinidumpParser.Parse(dumpPath);
         using var mmf = MemoryMappedFile.CreateFromFile(dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
         var matches = FindAllMatches(accessor, fileInfo.Length, progress);
-        await ExtractMatchesAsync(accessor, fileInfo.Length, matches, outputPath, progress);
+        await ExtractMatchesAsync(accessor, fileInfo.Length, matches, outputPath, minidumpInfo, progress);
         await CarveManifest.SaveAsync(outputPath, _manifest);
 
         progress?.Report(1.0);
@@ -216,6 +218,7 @@ public sealed class MemoryCarver : IDisposable
         long fileSize,
         List<(string SignatureId, long Offset)> matches,
         string outputPath,
+        MinidumpInfo minidumpInfo,
         IProgress<double>? progress)
     {
         if (matches.Count == 0)
@@ -248,7 +251,7 @@ public sealed class MemoryCarver : IDisposable
                 }
 
                 var extraction = CarveExtractor.PrepareExtraction(accessor, fileSize, match.Offset,
-                    match.SignatureId, format, outputPath);
+                    match.SignatureId, format, outputPath, minidumpInfo);
 
                 if (extraction != null)
                 {
@@ -260,7 +263,9 @@ public sealed class MemoryCarver : IDisposable
                         match.SignatureId,
                         extraction.Value.FileSize,
                         extraction.Value.OriginalPath,
-                        extraction.Value.Metadata));
+                        extraction.Value.Metadata,
+                        extraction.Value.IsTruncated,
+                        extraction.Value.Coverage));
                 }
 
                 var currentCount = Interlocked.Increment(ref processedCount);

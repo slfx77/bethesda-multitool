@@ -668,14 +668,10 @@ internal static class EsmEditorIdExtractor
         }
 
         // Build a set of known LAND FormIDs from ESM record scanning for FormType auto-detection
-        var knownLandFormIds = new HashSet<uint>();
-        foreach (var land in scanResult.LandRecords)
-        {
-            if (land.Header.FormId != 0)
-            {
-                knownLandFormIds.Add(land.Header.FormId);
-            }
-        }
+        var knownLandFormIds = scanResult.LandRecords
+            .Select(land => land.Header.FormId)
+            .Where(id => id != 0)
+            .ToHashSet();
 
         log.Debug("EditorIDs: pAllForms: {0} known LAND FormIDs from ESM scan for calibration", knownLandFormIds.Count);
 

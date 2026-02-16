@@ -14,29 +14,36 @@
     </Grid.RowDefinitions>
 
     <!-- Toolbar -->
-    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Padding="0,0,0,8">
-      <Button x:Name="BackButton" Click="BackButton_Click"
-              Visibility="Collapsed" ToolTipService.ToolTip="Back">
-        <FontIcon Glyph="&#xE72B;" FontSize="12" />
-      </Button>
-      <Button x:Name="ForwardButton" Click="ForwardButton_Click"
-              Visibility="Collapsed" ToolTipService.ToolTip="Forward">
-        <FontIcon Glyph="&#xE72A;" FontSize="12" />
-      </Button>
-      <ComboBox x:Name="WorldspaceComboBox" MinWidth="220"
+    <Grid Grid.Row="0" Padding="0,0,0,8" ColumnSpacing="8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <ComboBox x:Name="WorldspaceComboBox" Grid.Column="0" MinWidth="220"
                 SelectionChanged="WorldspaceComboBox_SelectionChanged"
                 PlaceholderText="Select Worldspace" />
-      <Button x:Name="InteriorsButton" Content="Interiors"
+      <Button x:Name="InteriorsButton" Grid.Column="1" Content="Interiors"
               Click="InteriorsButton_Click"
               ToolTipService.ToolTip="Browse interior cells" />
-      <Button x:Name="AllCellsButton" Content="All Cells"
+      <Button x:Name="AllCellsButton" Grid.Column="2" Content="All Cells"
               Click="AllCellsButton_Click"
               ToolTipService.ToolTip="Browse all cells" />
-      <Button Content="Fit" Click="ZoomFit_Click"
+      <Border Grid.Column="3" Width="1" Height="20" VerticalAlignment="Center"
+              Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+      <Button Grid.Column="4" Content="Fit" Click="ZoomFit_Click"
               ToolTipService.ToolTip="Zoom to fit" />
-      <TextBlock x:Name="ZoomLevelText" VerticalAlignment="Center" FontSize="11"
+      <TextBlock x:Name="ZoomLevelText" Grid.Column="5" VerticalAlignment="Center" FontSize="11"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-    </StackPanel>
+      <ComboBox x:Name="ColorSchemeComboBox" Grid.Column="7" MinWidth="100"
+                SelectionChanged="ColorSchemeComboBox_SelectionChanged"
+                ToolTipService.ToolTip="Heightmap color scheme" />
+    </Grid>
 
     <!-- Win2D Canvas -->
     <canvas:CanvasControl x:Name="MapCanvas" Grid.Row="1"
@@ -51,7 +58,7 @@
             VerticalAlignment="Bottom" HorizontalAlignment="Left"
             Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
             CornerRadius="4" Padding="6,4" Margin="8,0,0,8"
-            Opacity="0.92">
+            Opacity="0.95">
       <StackPanel Spacing="0">
         <Button x:Name="LegendToggleButton" Click="LegendToggle_Click"
                 HorizontalAlignment="Left"

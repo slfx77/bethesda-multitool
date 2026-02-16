@@ -55,6 +55,7 @@ public static class Program
         rootCommand.Subcommands.Add(DialogueCommand.Create());
         rootCommand.Subcommands.Add(WorldCommand.Create());
         rootCommand.Subcommands.Add(RepackCommand.Create());
+        rootCommand.Subcommands.Add(VersionTrackCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }

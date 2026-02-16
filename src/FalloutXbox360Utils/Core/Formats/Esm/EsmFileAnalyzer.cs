@@ -14,11 +14,24 @@ public static class EsmFileAnalyzer
 {
     /// <summary>
     ///     Analyzes an ESM/ESP file and returns results compatible with the existing UI.
+    ///     All heavy work runs on a thread-pool thread to keep the UI responsive.
+    ///     <see cref="IProgress{T}.Report"/> marshals progress updates back to the UI thread automatically.
     /// </summary>
     public static async Task<AnalysisResult> AnalyzeAsync(
         string filePath,
         IProgress<AnalysisProgress>? progress = null,
         CancellationToken cancellationToken = default)
+    {
+        return await Task.Run(() => AnalyzeCore(filePath, progress, cancellationToken), cancellationToken);
+    }
+
+    /// <summary>
+    ///     Synchronous core of ESM analysis. Runs entirely on the calling thread (expected to be a thread-pool thread).
+    /// </summary>
+    private static AnalysisResult AnalyzeCore(
+        string filePath,
+        IProgress<AnalysisProgress>? progress,
+        CancellationToken cancellationToken)
     {
         // Enable file logging for ESM analysis diagnostics
         var logPath = Path.Combine(Path.GetTempPath(), "esm_analysis.log");
@@ -32,11 +45,11 @@ public static class EsmFileAnalyzer
         var fileInfo = new FileInfo(filePath);
         result.FileSize = fileInfo.Length;
 
-        // Phase 1: Load file data (5%)
+        // Phase 1: Load file data (4%)
         progress?.Report(new AnalysisProgress
         {
             Phase = "Loading",
-            PercentComplete = 5,
+            PercentComplete = 4,
             TotalBytes = fileInfo.Length
         });
 
@@ -49,11 +62,11 @@ public static class EsmFileAnalyzer
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 2: Parse file header (10%)
+        // Phase 2: Parse file header (8%)
         progress?.Report(new AnalysisProgress
         {
             Phase = "Parsing Header",
-            PercentComplete = 10,
+            PercentComplete = 8,
             TotalBytes = fileInfo.Length
         });
 
@@ -63,22 +76,21 @@ public static class EsmFileAnalyzer
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 3: Enumerate all records (10-70%)
+        // Phase 3: Enumerate all records (10-55%)
         progress?.Report(new AnalysisProgress
         {
             Phase = "Scanning Records",
-            PercentComplete = 15,
+            PercentComplete = 10,
             TotalBytes = fileInfo.Length
         });
 
-        var (parsedRecords, grupHeaders) = await Task.Run(() =>
-            EsmParser.EnumerateRecordsWithGrups(fileData), cancellationToken);
+        var (parsedRecords, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(fileData);
 
         // Report progress during record processing
         progress?.Report(new AnalysisProgress
         {
             Phase = "Scanning Records",
-            PercentComplete = 70,
+            PercentComplete = 55,
             FilesFound = parsedRecords.Count,
             TotalBytes = fileInfo.Length
         });
@@ -87,18 +99,16 @@ public static class EsmFileAnalyzer
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 4: Convert to EsmRecordScanResult (70-85%)
+        // Phase 4: Convert to EsmRecordScanResult (58-68%)
         progress?.Report(new AnalysisProgress
         {
             Phase = "Building Index",
-            PercentComplete = 75,
+            PercentComplete = 58,
             FilesFound = parsedRecords.Count
         });
 
-        var cellToWorldspace = BuildCellToWorldspaceMap(parsedRecords, grupHeaders);
-        var landToWorldspace = BuildLandToWorldspaceMap(parsedRecords, grupHeaders);
-        var cellToRefrMap = BuildCellToRefrMap(parsedRecords, grupHeaders);
-        var topicToInfoMap = BuildTopicToInfoMap(parsedRecords, grupHeaders);
+        var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap) =
+            BuildAllMaps(parsedRecords, grupHeaders);
         Logger.Instance.Info($"[ESM Analysis] Cell\u2192Worldspace map: {cellToWorldspace.Count} cells mapped " +
                              $"(from {grupHeaders.Count(g => g.GroupType == 1)} World Children GRUPs)");
         Logger.Instance.Info($"[ESM Analysis] LAND\u2192Worldspace map: {landToWorldspace.Count} LAND records mapped");
@@ -128,21 +138,21 @@ public static class EsmFileAnalyzer
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 5: Build FormID map (85-95%)
+        // Phase 5: Build FormID map (68-72%)
         progress?.Report(new AnalysisProgress
         {
             Phase = "Mapping FormIDs",
-            PercentComplete = 85,
+            PercentComplete = 68,
             FilesFound = parsedRecords.Count
         });
 
         result.FormIdMap = BuildFormIdMap(parsedRecords);
 
-        // Phase 6: Populate carved files for Memory Map (95-100%)
+        // Phase 6: Populate carved files for Memory Map (72-78%)
         progress?.Report(new AnalysisProgress
         {
             Phase = "Building Memory Map",
-            PercentComplete = 95,
+            PercentComplete = 72,
             FilesFound = parsedRecords.Count
         });
 
@@ -153,8 +163,8 @@ public static class EsmFileAnalyzer
 
         progress?.Report(new AnalysisProgress
         {
-            Phase = "Complete",
-            PercentComplete = 100,
+            Phase = "Analysis Complete",
+            PercentComplete = 80,
             FilesFound = parsedRecords.Count
         });
 
@@ -166,7 +176,7 @@ public static class EsmFileAnalyzer
     /// <summary>
     ///     Converts parsed records to EsmRecordScanResult for compatibility with existing UI.
     /// </summary>
-    private static EsmRecordScanResult ConvertToScanResult(
+    internal static EsmRecordScanResult ConvertToScanResult(
         List<ParsedMainRecord> records,
         bool bigEndian,
         Dictionary<uint, uint>? cellToWorldspaceMap = null,
@@ -273,182 +283,100 @@ public static class EsmFileAnalyzer
     }
 
     /// <summary>
-    ///     Builds a mapping from CELL FormID to parent Worldspace FormID
-    ///     by checking which CELL records fall within World Children GRUPs (type 1).
+    ///     Builds all four record-to-GRUP mapping dictionaries in a single pass over the records list.
+    ///     Uses <see cref="SortedIntervalMap"/> for O(log n) GRUP lookups per record instead of O(n) linear scans.
     /// </summary>
-    private static Dictionary<uint, uint> BuildCellToWorldspaceMap(
-        List<ParsedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
+    internal static (
+        Dictionary<uint, uint> CellToWorldspace,
+        Dictionary<uint, uint> LandToWorldspace,
+        Dictionary<uint, List<uint>> CellToRefr,
+        Dictionary<uint, List<uint>> TopicToInfo)
+        BuildAllMaps(List<ParsedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
     {
-        var map = new Dictionary<uint, uint>();
+        var cellToWorldspace = new Dictionary<uint, uint>();
+        var landToWorldspace = new Dictionary<uint, uint>();
+        var cellToRefr = new Dictionary<uint, List<uint>>();
+        var topicToInfo = new Dictionary<uint, List<uint>>();
 
-        // Type 1 = World Children — label is the parent WRLD FormID
-        var worldChildrenGroups = grupHeaders
-            .Where(g => g.GroupType == 1)
-            .ToList();
+        // Build interval maps for each GRUP type (sorts internally)
+        // Type 1 = World Children — label is parent WRLD FormID
+        var worldChildren = new SortedIntervalMap(
+            grupHeaders.Where(g => g.GroupType == 1).ToList());
 
-        if (worldChildrenGroups.Count == 0)
+        // Types 8/9/10 = Cell Persistent/Temporary/VWD Children — label is parent CELL FormID
+        var cellChildren = new SortedIntervalMap(
+            grupHeaders.Where(g => g.GroupType is 8 or 9 or 10).ToList());
+
+        // Type 7 = Topic Children — label is parent DIAL FormID
+        var topicChildren = new SortedIntervalMap(
+            grupHeaders.Where(g => g.GroupType == 7).ToList());
+
+        // Single pass over all records
+        foreach (var record in records)
         {
-            return map;
-        }
-
-        var cellRecords = records
-            .Where(r => r.Header.Signature == "CELL")
-            .OrderBy(r => r.Offset)
-            .ToList();
-
-        foreach (var cell in cellRecords)
-        {
-            foreach (var group in worldChildrenGroups)
+            switch (record.Header.Signature)
             {
-                var groupEnd = group.Offset + group.GroupSize;
-                if (cell.Offset > group.Offset && cell.Offset < groupEnd)
+                case "CELL":
                 {
-                    // Label bytes are already normalized to LE order by ParseGroupHeader
-                    // (which reverses them for big-endian files), so always read as LE
-                    var worldFormId = BinaryPrimitives.ReadUInt32LittleEndian(group.Label);
-                    map[cell.Header.FormId] = worldFormId;
-                    break;
-                }
-            }
-        }
-
-        return map;
-    }
-
-    /// <summary>
-    ///     Builds a mapping from LAND FormID to parent Worldspace FormID
-    ///     by checking which LAND records fall within World Children GRUPs (type 1).
-    /// </summary>
-    private static Dictionary<uint, uint> BuildLandToWorldspaceMap(
-        List<ParsedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
-    {
-        var map = new Dictionary<uint, uint>();
-
-        var worldChildrenGroups = grupHeaders
-            .Where(g => g.GroupType == 1)
-            .ToList();
-
-        if (worldChildrenGroups.Count == 0)
-        {
-            return map;
-        }
-
-        var landRecords = records
-            .Where(r => r.Header.Signature == "LAND")
-            .OrderBy(r => r.Offset)
-            .ToList();
-
-        foreach (var land in landRecords)
-        {
-            foreach (var group in worldChildrenGroups)
-            {
-                var groupEnd = group.Offset + group.GroupSize;
-                if (land.Offset > group.Offset && land.Offset < groupEnd)
-                {
-                    var worldFormId = BinaryPrimitives.ReadUInt32LittleEndian(group.Label);
-                    map[land.Header.FormId] = worldFormId;
-                    break;
-                }
-            }
-        }
-
-        return map;
-    }
-
-    /// <summary>
-    ///     Builds a mapping from CELL FormID to child REFR/ACHR/ACRE FormIDs
-    ///     by checking which placed reference records fall within Cell Child GRUPs (types 8/9/10).
-    /// </summary>
-    private static Dictionary<uint, List<uint>> BuildCellToRefrMap(
-        List<ParsedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
-    {
-        var map = new Dictionary<uint, List<uint>>();
-
-        // Type 8/9/10 = Cell Persistent/Temporary/VWD Children — label is parent CELL FormID
-        var cellChildGroups = grupHeaders
-            .Where(g => g.GroupType is 8 or 9 or 10)
-            .ToList();
-
-        if (cellChildGroups.Count == 0)
-        {
-            return map;
-        }
-
-        var refrRecords = records
-            .Where(r => r.Header.Signature is "REFR" or "ACHR" or "ACRE")
-            .OrderBy(r => r.Offset)
-            .ToList();
-
-        foreach (var refr in refrRecords)
-        {
-            foreach (var group in cellChildGroups)
-            {
-                var groupEnd = group.Offset + group.GroupSize;
-                if (refr.Offset > group.Offset && refr.Offset < groupEnd)
-                {
-                    // Label bytes are already normalized to LE order by ParseGroupHeader
-                    var cellFormId = BinaryPrimitives.ReadUInt32LittleEndian(group.Label);
-                    if (!map.TryGetValue(cellFormId, out var list))
+                    var idx = worldChildren.FindContainingInterval(record.Offset);
+                    if (idx >= 0)
                     {
-                        list = [];
-                        map[cellFormId] = list;
+                        cellToWorldspace[record.Header.FormId] = worldChildren.GetLabelAsFormId(idx);
                     }
 
-                    list.Add(refr.Header.FormId);
                     break;
                 }
-            }
-        }
 
-        return map;
-    }
-
-    /// <summary>
-    ///     Builds a mapping from DIAL FormID to child INFO FormIDs
-    ///     by checking which INFO records fall within Topic Children GRUPs (type 7).
-    /// </summary>
-    private static Dictionary<uint, List<uint>> BuildTopicToInfoMap(
-        List<ParsedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
-    {
-        var map = new Dictionary<uint, List<uint>>();
-
-        // Type 7 = Topic Children — label is the parent DIAL FormID
-        var topicChildGroups = grupHeaders
-            .Where(g => g.GroupType == 7)
-            .ToList();
-
-        if (topicChildGroups.Count == 0)
-        {
-            return map;
-        }
-
-        var infoRecords = records
-            .Where(r => r.Header.Signature == "INFO")
-            .OrderBy(r => r.Offset)
-            .ToList();
-
-        foreach (var info in infoRecords)
-        {
-            foreach (var group in topicChildGroups)
-            {
-                var groupEnd = group.Offset + group.GroupSize;
-                if (info.Offset > group.Offset && info.Offset < groupEnd)
+                case "LAND":
                 {
-                    // Label bytes are already normalized to LE order by ParseGroupHeader
-                    var dialFormId = BinaryPrimitives.ReadUInt32LittleEndian(group.Label);
-                    if (!map.TryGetValue(dialFormId, out var list))
+                    var idx = worldChildren.FindContainingInterval(record.Offset);
+                    if (idx >= 0)
                     {
-                        list = [];
-                        map[dialFormId] = list;
+                        landToWorldspace[record.Header.FormId] = worldChildren.GetLabelAsFormId(idx);
                     }
 
-                    list.Add(info.Header.FormId);
+                    break;
+                }
+
+                case "REFR" or "ACHR" or "ACRE":
+                {
+                    var idx = cellChildren.FindContainingInterval(record.Offset);
+                    if (idx >= 0)
+                    {
+                        var cellFormId = cellChildren.GetLabelAsFormId(idx);
+                        if (!cellToRefr.TryGetValue(cellFormId, out var list))
+                        {
+                            list = [];
+                            cellToRefr[cellFormId] = list;
+                        }
+
+                        list.Add(record.Header.FormId);
+                    }
+
+                    break;
+                }
+
+                case "INFO":
+                {
+                    var idx = topicChildren.FindContainingInterval(record.Offset);
+                    if (idx >= 0)
+                    {
+                        var dialFormId = topicChildren.GetLabelAsFormId(idx);
+                        if (!topicToInfo.TryGetValue(dialFormId, out var list))
+                        {
+                            list = [];
+                            topicToInfo[dialFormId] = list;
+                        }
+
+                        list.Add(record.Header.FormId);
+                    }
+
                     break;
                 }
             }
         }
 
-        return map;
+        return (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo);
     }
 
     private static bool IsPositionRecord(string signature)
@@ -477,7 +405,7 @@ public static class EsmFileAnalyzer
     ///     Mirrors the logic in EsmRecordFormat.ExtractRefrFromBuffer but reads from
     ///     already-parsed subrecords instead of raw byte buffers.
     /// </summary>
-    private static void ExtractRefrRecordsFromParsed(
+    internal static void ExtractRefrRecordsFromParsed(
         EsmRecordScanResult scanResult,
         List<ParsedMainRecord> records,
         bool bigEndian)

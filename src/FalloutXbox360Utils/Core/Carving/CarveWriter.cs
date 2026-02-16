@@ -56,7 +56,8 @@ internal sealed class CarveWriter(
             SizeOutput = outputData.Length,
             Filename = Path.GetFileName(p.OutputFile),
             OriginalPath = p.OriginalPath,
-            Notes = isRepaired ? "Repaired" : null,
+            IsPartial = p.IsTruncated,
+            Notes = BuildNotes(p.IsTruncated, p.Coverage, isRepaired),
             Metadata = p.Metadata
         });
     }
@@ -104,6 +105,16 @@ internal sealed class CarveWriter(
         });
 
         return true;
+    }
+
+    private static string? BuildNotes(bool isTruncated, double coverage, bool isRepaired)
+    {
+        if (isTruncated)
+        {
+            return $"Memory coverage: {coverage:P0}";
+        }
+
+        return isRepaired ? "Repaired" : null;
     }
 
     /// <summary>

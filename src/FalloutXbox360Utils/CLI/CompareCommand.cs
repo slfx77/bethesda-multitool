@@ -82,7 +82,7 @@ public static class CompareCommand
 
         // Load DMP
         AnsiConsole.MarkupLine("[blue]Loading DMP:[/] {0}", Path.GetFileName(dmpPath));
-        var dmpResult = await LoadDmpAsync(dmpPath, cancellationToken);
+        var dmpResult = await LoadDmpAsync(dmpPath);
         if (dmpResult == null)
         {
             return;
@@ -137,7 +137,7 @@ public static class CompareCommand
 
     #region Data Loading
 
-    private static async Task<RecordCollection?> LoadDmpAsync(string path, CancellationToken ct)
+    private static async Task<RecordCollection?> LoadDmpAsync(string path)
     {
         var analyzer = new MinidumpAnalyzer();
         AnalysisResult result = null!;
@@ -225,7 +225,7 @@ public static class CompareCommand
         return index;
     }
 
-    private record CellComparisonResult
+    private sealed record CellComparisonResult
     {
         public uint CellFormId { get; init; }
         public string? EditorId { get; init; }
@@ -249,7 +249,7 @@ public static class CompareCommand
         public string GapReason { get; init; } = "";
     }
 
-    private record WorldspaceComparisonResult
+    private sealed record WorldspaceComparisonResult
     {
         public uint FormId { get; init; }
         public string? EditorId { get; init; }

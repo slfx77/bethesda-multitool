@@ -3,6 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Bik;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Fos;
 using FalloutXbox360Utils.Core.Formats.Lip;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Png;
@@ -186,6 +187,7 @@ public static class FormatRegistry
             "elder scrolls plugin" => "esp",
             "lip-sync animation" => "lip",
             "bethesda obscript (scn format)" or "script" => "script_scn",
+            "fallout 3/new vegas save file" or "save" or "savegame" or "save file" => "fos",
             "minidump header" => "minidump_header",
             _ => FallbackNormalize(lower)
         };
@@ -264,6 +266,11 @@ public static class FormatRegistry
             return "script_scn";
         }
 
+        if (lower.Contains("save", StringComparison.Ordinal))
+        {
+            return "fos";
+        }
+
         return lower.Replace(" ", "_");
     }
 
@@ -280,6 +287,7 @@ public static class FormatRegistry
             new DdsFormat(),
             new DdxFormat(),
             new EsmRecordFormat(),
+            new FosFormat(),
             new LipFormat(),
             new NifFormat(),
             new PngFormat(),
@@ -326,8 +334,15 @@ public static class FormatRegistry
 
     private static FrozenDictionary<FileCategory, uint> BuildCategoryColors()
     {
-        // Header is hardcoded steel gray; all other categories get evenly-spaced
-        // hue colors (S=70%, V=88%) generated dynamically from the enum.
+        // Even hue spacing in OKLCH gives a natural rainbow progression in the legend.
+        // Three-tier lightness cycling (0.62/0.72/0.82) ensures adjacent hue neighbors
+        // are visually distinct and puts yellow-zone hues on the bright tier (yellow
+        // needs high lightness to read as yellow rather than olive).
+        // High chroma (0.28) produces vivid, saturated colors; the gamut clamper reduces
+        // it for hues that can't reach that (e.g., cyan).
+        // Hue offset of 25° shifts OKLCH 0° (pink) to true red for the first category.
+        const double hueOffset = 25.0;
+        ReadOnlySpan<double> lightnessTiers = [0.62, 0.72, 0.78];
         var dynamicCategories = Enum.GetValues<FileCategory>()
             .Where(c => c != FileCategory.Header)
             .ToArray();
@@ -340,7 +355,8 @@ public static class FormatRegistry
 
         for (var i = 0; i < dynamicCategories.Length; i++)
         {
-            colors[dynamicCategories[i]] = HsvToArgb(i * hueStep, 0.70, 0.88);
+            var lightness = lightnessTiers[i % lightnessTiers.Length];
+            colors[dynamicCategories[i]] = OklchToArgb(lightness, 0.28, (i * hueStep + hueOffset) % 360.0);
         }
 
         return colors.ToFrozenDictionary();
@@ -372,5 +388,80 @@ public static class FormatRegistry
                | ((uint)(r * 255) << 16)
                | ((uint)(g * 255) << 8)
                | (uint)(b * 255);
+    }
+
+    /// <summary>
+    ///     Converts OKLCH (perceptually uniform) to ARGB uint with automatic gamut clamping.
+    ///     OKLCH provides equal perceived color difference for equal hue spacing,
+    ///     unlike HSV where greens and pinks look too similar.
+    /// </summary>
+    /// <param name="lightness">Perceptual lightness (0.0 = black, 1.0 = white). Typical: 0.73 or 0.83.</param>
+    /// <param name="chroma">Colorfulness (0.0 = gray, ~0.37 = maximum). Typical: 0.14.</param>
+    /// <param name="hue">Hue angle in degrees (0-360).</param>
+    public static uint OklchToArgb(double lightness, double chroma, double hue)
+    {
+        // OKLCH → OKLab (polar to cartesian)
+        var hRad = hue * Math.PI / 180.0;
+        var a = chroma * Math.Cos(hRad);
+        var b = chroma * Math.Sin(hRad);
+
+        // Gamut clamp: reduce chroma until the color fits sRGB [0,1]
+        var (sr, sg, sb) = OklabToLinearSrgb(lightness, a, b);
+        if (sr < 0 || sr > 1 || sg < 0 || sg > 1 || sb < 0 || sb > 1)
+        {
+            var lo = 0.0;
+            var hi = chroma;
+            for (var i = 0; i < 16; i++) // binary search
+            {
+                var mid = (lo + hi) / 2.0;
+                var ma = mid * Math.Cos(hRad);
+                var mb = mid * Math.Sin(hRad);
+                var (mr, mg, mbb) = OklabToLinearSrgb(lightness, ma, mb);
+                if (mr >= 0 && mr <= 1 && mg >= 0 && mg <= 1 && mbb >= 0 && mbb <= 1)
+                {
+                    lo = mid;
+                    sr = mr;
+                    sg = mg;
+                    sb = mbb;
+                }
+                else
+                {
+                    hi = mid;
+                }
+            }
+        }
+
+        // Linear sRGB → sRGB gamma
+        var rByte = (byte)Math.Clamp(LinearToSrgbGamma(sr) * 255.0 + 0.5, 0, 255);
+        var gByte = (byte)Math.Clamp(LinearToSrgbGamma(sg) * 255.0 + 0.5, 0, 255);
+        var bByte = (byte)Math.Clamp(LinearToSrgbGamma(sb) * 255.0 + 0.5, 0, 255);
+
+        return 0xFF000000 | ((uint)rByte << 16) | ((uint)gByte << 8) | bByte;
+    }
+
+    private static (double r, double g, double b) OklabToLinearSrgb(double l, double a, double b)
+    {
+        // OKLab → LMS (cube roots)
+        var l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+        var m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+        var s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+        var lCube = l_ * l_ * l_;
+        var mCube = m_ * m_ * m_;
+        var sCube = s_ * s_ * s_;
+
+        // LMS → linear sRGB
+        return (
+            +4.0767416621 * lCube - 3.3077115913 * mCube + 0.2309699292 * sCube,
+            -1.2684380046 * lCube + 2.6097574011 * mCube - 0.3413193965 * sCube,
+            -0.0041960863 * lCube - 0.7034186147 * mCube + 1.7076147010 * sCube
+        );
+    }
+
+    private static double LinearToSrgbGamma(double x)
+    {
+        return x >= 0.0031308
+            ? 1.055 * Math.Pow(x, 1.0 / 2.4) - 0.055
+            : 12.92 * x;
     }
 }

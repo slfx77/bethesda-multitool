@@ -5,22 +5,14 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 ///     Uses schema-driven conversion based on nif.xml definitions.
 ///     Handles BSPackedAdditionalGeometryData expansion for geometry blocks.
 /// </summary>
-internal sealed class NifConverter
+internal static class NifConverter
 {
     private static readonly Logger Log = Logger.Instance;
-
-    public NifConverter(bool verbose = false)
-    {
-        if (verbose)
-        {
-            Log.Level = LogLevel.Debug;
-        }
-    }
 
     /// <summary>
     ///     Converts a big-endian NIF file to little-endian.
     /// </summary>
-    public NifConversionResult Convert(byte[] data)
+    public static NifConversionResult Convert(byte[] data)
     {
         try
         {

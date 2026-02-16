@@ -33,8 +33,11 @@ internal sealed class WorldViewData
     /// <summary>Default water height for the first worldspace (WRLD DNAM fallback).</summary>
     public float? DefaultWaterHeight { get; init; }
 
-    /// <summary>Pre-computed RGBA pixel data for the default worldspace heightmap.</summary>
-    public byte[]? HeightmapPixels { get; init; }
+    /// <summary>Pre-computed grayscale heightmap (1 byte per pixel, normalized 0-255).</summary>
+    public byte[]? HeightmapGrayscale { get; init; }
+
+    /// <summary>Pre-computed water mask (0 = no water, 180 = underwater).</summary>
+    public byte[]? HeightmapWaterMask { get; init; }
 
     /// <summary>Width of the pre-computed heightmap bitmap in pixels.</summary>
     public int HeightmapPixelWidth { get; init; }
@@ -47,4 +50,13 @@ internal sealed class WorldViewData
 
     /// <summary>Maximum cell grid Y for positioning the heightmap.</summary>
     public int HeightmapMaxCellY { get; init; }
+
+    /// <summary>Source file path, used for default color scheme selection.</summary>
+    public string? SourceFilePath { get; init; }
+
+    /// <summary>Spawn resolution index for leveled list and AI package lookups.</summary>
+    public SpawnResolutionIndex? SpawnIndex { get; init; }
+
+    /// <summary>Reference FormID → world position for drawing AI package overlays.</summary>
+    public Dictionary<uint, (float X, float Y)>? RefPositionIndex { get; init; }
 }

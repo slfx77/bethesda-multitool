@@ -4,13 +4,23 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace FalloutXbox360Utils;
 
+// ── Unified Navigation Location Types ──
+
+#pragma warning disable S2094 // Abstract base for sealed record hierarchy (pattern matching)
+internal abstract record UnifiedNavLocation;
+#pragma warning restore S2094
+internal sealed record DataBrowserNavLocation(EsmBrowserNode Node) : UnifiedNavLocation;
+internal sealed record WorldMapNavLocation(WorldMapControl.WorldNavState State) : UnifiedNavLocation;
+internal sealed record DialogueNavLocation(uint TopicFormId, double ScrollPosition) : UnifiedNavLocation;
+
 /// <summary>
-///     Navigation: FormID link navigation with back/forward history stacks.
+///     Navigation: unified back/forward history across all tabs, and FormID link navigation.
 /// </summary>
 public sealed partial class SingleFileTab
 {
-    private readonly Stack<EsmBrowserNode> _navBackStack = new();
-    private readonly Stack<EsmBrowserNode> _navForwardStack = new();
+    private readonly Stack<UnifiedNavLocation> _unifiedBackStack = new();
+    private readonly Stack<UnifiedNavLocation> _unifiedForwardStack = new();
+    private const int UnifiedNavStackLimit = 100;
     private Task? _formIdBuildTask;
     private Dictionary<uint, EsmBrowserNode>? _formIdNodeIndex;
     private bool _isNavigating;
@@ -53,6 +63,145 @@ public sealed partial class SingleFileTab
         _formIdNodeIndex = index;
     }
 
+    // ── Unified Navigation ──
+
+    /// <summary>Captures the current location across all tabs.</summary>
+    private UnifiedNavLocation? CaptureCurrentLocation()
+    {
+        if (ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
+        {
+            return _selectedBrowserNode?.NodeType == "Record"
+                ? new DataBrowserNavLocation(_selectedBrowserNode)
+                : null;
+        }
+
+        if (ReferenceEquals(SubTabView.SelectedItem, WorldMapTab))
+        {
+            return new WorldMapNavLocation(WorldMapControl.CaptureNavState());
+        }
+
+        if (ReferenceEquals(SubTabView.SelectedItem, DialogueViewerTab))
+        {
+            return _currentDialogueTopic != null
+                ? new DialogueNavLocation(_currentDialogueTopic.TopicFormId,
+                    DialogueConversationScroller.VerticalOffset)
+                : null;
+        }
+
+        return null;
+    }
+
+    /// <summary>Pushes a navigation location onto the unified back stack.</summary>
+    private void PushUnifiedNav()
+    {
+        var location = CaptureCurrentLocation();
+        if (location == null)
+        {
+            return;
+        }
+
+        if (_unifiedBackStack.Count >= UnifiedNavStackLimit)
+        {
+            // Trim oldest entry
+            var items = _unifiedBackStack.Reverse().Skip(1).ToArray();
+            _unifiedBackStack.Clear();
+            foreach (var item in items)
+            {
+                _unifiedBackStack.Push(item);
+            }
+        }
+
+        _unifiedBackStack.Push(location);
+        _unifiedForwardStack.Clear();
+        UpdateUnifiedNavButtons();
+    }
+
+    internal async void UnifiedBack_Click(object sender, RoutedEventArgs e)
+    {
+        if (_unifiedBackStack.Count == 0)
+        {
+            return;
+        }
+
+        var current = CaptureCurrentLocation();
+        if (current != null)
+        {
+            _unifiedForwardStack.Push(current);
+        }
+
+        var target = _unifiedBackStack.Pop();
+        await RestoreNavLocationAsync(target);
+        UpdateUnifiedNavButtons();
+    }
+
+    internal async void UnifiedForward_Click(object sender, RoutedEventArgs e)
+    {
+        if (_unifiedForwardStack.Count == 0)
+        {
+            return;
+        }
+
+        var current = CaptureCurrentLocation();
+        if (current != null)
+        {
+            _unifiedBackStack.Push(current);
+        }
+
+        var target = _unifiedForwardStack.Pop();
+        await RestoreNavLocationAsync(target);
+        UpdateUnifiedNavButtons();
+    }
+
+    private async Task RestoreNavLocationAsync(UnifiedNavLocation location)
+    {
+        _isNavigating = true;
+        switch (location)
+        {
+            case DataBrowserNavLocation db:
+                SubTabView.SelectedItem = DataBrowserTab;
+                await SelectAndScrollToNodeAsync(db.Node);
+                break;
+
+            case WorldMapNavLocation wm:
+                SubTabView.SelectedItem = WorldMapTab;
+                WorldMapControl.RestoreNavState(wm.State);
+                break;
+
+            case DialogueNavLocation dl:
+                SubTabView.SelectedItem = DialogueViewerTab;
+                _dialogueSpeakerFilter = null; // Back-stack navigation: clear filters
+                _dialogueQuestFilter = null;
+                if (_session.DialogueFormIdIndex?.TryGetValue(dl.TopicFormId, out var topic) == true)
+                {
+                    NavigateToDialogueTopic(topic, pushToStack: false);
+                    DialogueConversationScroller.ChangeView(null, dl.ScrollPosition, null,
+                        disableAnimation: true);
+                }
+
+                break;
+        }
+
+        _isNavigating = false;
+    }
+
+    private void UpdateUnifiedNavButtons()
+    {
+        MainWindow.Instance?.SetNavButtonStates(
+            _unifiedBackStack.Count > 0,
+            _unifiedForwardStack.Count > 0);
+    }
+
+    /// <summary>Called by WorldMapControl.BeforeNavigate to push unified nav state.</summary>
+    private void WorldMap_BeforeNavigate()
+    {
+        if (!_isNavigating)
+        {
+            PushUnifiedNav();
+        }
+    }
+
+    // ── FormID Navigation ──
+
     /// <summary>
     ///     Navigates to the record with the given FormID, updating the detail panel and tree selection.
     /// </summary>
@@ -60,6 +209,12 @@ public sealed partial class SingleFileTab
     private async void NavigateToFormId(uint formId)
 #pragma warning restore S3168
     {
+        // Push current location before navigating
+        if (!_isNavigating)
+        {
+            PushUnifiedNav();
+        }
+
         // Switch to Data Browser tab so the user can see the result
         if (!ReferenceEquals(SubTabView.SelectedItem, DataBrowserTab))
         {
@@ -94,55 +249,9 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        // Push current node onto back stack
-        if (_selectedBrowserNode?.NodeType == "Record")
-        {
-            _navBackStack.Push(_selectedBrowserNode);
-        }
-
-        _navForwardStack.Clear();
         _isNavigating = true;
         await SelectAndScrollToNodeAsync(targetNode);
-        UpdateNavButtons();
         _isNavigating = false;
-    }
-
-    private async void NavigateBack_Click(object sender, RoutedEventArgs e)
-    {
-        if (_navBackStack.Count == 0) return;
-
-        if (_selectedBrowserNode?.NodeType == "Record")
-        {
-            _navForwardStack.Push(_selectedBrowserNode);
-        }
-
-        var target = _navBackStack.Pop();
-        _isNavigating = true;
-        await SelectAndScrollToNodeAsync(target);
-        UpdateNavButtons();
-        _isNavigating = false;
-    }
-
-    private async void NavigateForward_Click(object sender, RoutedEventArgs e)
-    {
-        if (_navForwardStack.Count == 0) return;
-
-        if (_selectedBrowserNode?.NodeType == "Record")
-        {
-            _navBackStack.Push(_selectedBrowserNode);
-        }
-
-        var target = _navForwardStack.Pop();
-        _isNavigating = true;
-        await SelectAndScrollToNodeAsync(target);
-        UpdateNavButtons();
-        _isNavigating = false;
-    }
-
-    private void UpdateNavButtons()
-    {
-        NavBackButton.IsEnabled = _navBackStack.Count > 0;
-        NavForwardButton.IsEnabled = _navForwardStack.Count > 0;
     }
 
     /// <summary>
@@ -165,12 +274,11 @@ public sealed partial class SingleFileTab
     /// </summary>
     private void ResetNavigation()
     {
-        _navBackStack.Clear();
-        _navForwardStack.Clear();
+        _unifiedBackStack.Clear();
+        _unifiedForwardStack.Clear();
         _formIdNodeIndex = null;
         _formIdBuildTask = null;
-        NavBackButton.IsEnabled = false;
-        NavForwardButton.IsEnabled = false;
+        UpdateUnifiedNavButtons();
     }
 
     /// <summary>

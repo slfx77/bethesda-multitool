@@ -52,6 +52,8 @@ public static class EsmCommand
             await ExecuteAsync(input, verbose, format, output, recordType, limit);
         });
 
+        command.Subcommands.Add(PackagesCommand.Create());
+
         return command;
     }
 
