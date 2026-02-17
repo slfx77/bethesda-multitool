@@ -17,7 +17,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
     /// <summary>
     ///     TESTopicInfo struct layout offsets.
-    ///     All known dumps use Release/Final Debug PDB sizes (TESTopicInfo = 96 bytes).
+    ///     TESTopicInfo inherits directly from TESForm (not TESBoundObject), so fields after
+    ///     TESForm base (+24) are shifted by only +4 in the dump, not +16.
+    ///     PDB size = 80 bytes, dump size = 84 bytes (+4 shift extends last field to +84).
     /// </summary>
     private sealed record InfoOffsets(
         int StructSize,
@@ -28,17 +30,18 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         int DifficultyOffset,
         int QuestPtrOffset);
 
-    // TESTopicInfo: Proto Debug PDB = 80 bytes, all known dumps = 96 bytes (PDB + 16 shift).
-    private static readonly InfoOffsets InfoLayout = new(96, 48, 51, 56, 76, 84, 88);
+    // TESTopicInfo: Proto Debug PDB = 80 bytes, dump = 84 bytes (PDB + 4 shift after TESForm base).
+    // PDB offsets → dump offsets: 32→36, 35→39, 40→44, 60→64, 68→72, 72→76.
+    private static readonly InfoOffsets InfoLayout = new(84, 36, 39, 44, 64, 72, 76);
 
     // TESForm field present in Release builds (not in Proto Debug PDB):
     // cFormEditorID BSStringT at offset 16 (same in both PDB and runtime — within TESForm base).
     private const int FormEditorIdOffset = 16;
 
-    // Additional TESTopicInfo offsets (adjusted = PDB + 16 shift):
-    // bSaidOnce at PDB+34 → adjusted +50, m_listAddTopics at PDB+48 → adjusted +64.
-    private const int InfoSaidOnceOffset = 50;
-    private const int InfoAddTopicsOffset = 64;
+    // Additional TESTopicInfo offsets (adjusted = PDB + 4 shift):
+    // bSaidOnce at PDB+34 → dump +38, m_listAddTopics at PDB+48 → dump +52.
+    private const int InfoSaidOnceOffset = 38;
+    private const int InfoAddTopicsOffset = 52;
 
     // TESTopic layout — consistent across all known builds (Final Debug / Release PDB, 80 bytes).
     // FullName=+44, DataType=+52, Flags=+53, Priority=+56, QuestInfoList=+60, DummyPrompt=+68.

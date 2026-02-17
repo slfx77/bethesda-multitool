@@ -340,6 +340,87 @@ public class DialogueViewerLogicTests
 
     #endregion
 
+    #region ResolveHeaderQuest Tests
+
+    [Fact]
+    public void ResolveHeaderQuest_NoFilter_UsesTopicTreeGrouping()
+    {
+        var topic = MakeTopic(1, "SharedTopic",
+            MakeInfo(100, questId: 0xBBBB));
+        var tree = new DialogueTreeResult
+        {
+            QuestTrees = new Dictionary<uint, QuestDialogueNode>
+            {
+                [0xAAAA] = new()
+                {
+                    QuestFormId = 0xAAAA,
+                    QuestName = "QuestA",
+                    Topics = [topic]
+                }
+            }
+        };
+
+        var result = DialogueViewerHelper.ResolveHeaderQuest(
+            topic, topic.InfoChain, tree, hasActiveFilter: false);
+
+        Assert.Equal(0xAAAAu, result);
+    }
+
+    [Fact]
+    public void ResolveHeaderQuest_WithFilter_UsesFilteredInfoQuest()
+    {
+        var topic = MakeTopic(1, "SharedTopic",
+            MakeInfo(100, questId: 0xAAAA),
+            MakeInfo(101, questId: 0xBBBB));
+        var tree = new DialogueTreeResult
+        {
+            QuestTrees = new Dictionary<uint, QuestDialogueNode>
+            {
+                [0xAAAA] = new()
+                {
+                    QuestFormId = 0xAAAA,
+                    QuestName = "TopicParentQuest",
+                    Topics = [topic]
+                }
+            }
+        };
+        var filteredChain = new List<InfoDialogueNode>
+        {
+            MakeInfo(101, questId: 0xBBBB)
+        };
+
+        var result = DialogueViewerHelper.ResolveHeaderQuest(
+            topic, filteredChain, tree, hasActiveFilter: true);
+
+        Assert.Equal(0xBBBBu, result);
+    }
+
+    [Fact]
+    public void ResolveHeaderQuest_WithFilter_NoQuestOnInfo_FallsBackToTree()
+    {
+        var topic = MakeTopic(1, "SharedTopic",
+            MakeInfo(100));
+        var tree = new DialogueTreeResult
+        {
+            QuestTrees = new Dictionary<uint, QuestDialogueNode>
+            {
+                [0xAAAA] = new()
+                {
+                    QuestFormId = 0xAAAA,
+                    QuestName = "FallbackQuest",
+                    Topics = [topic]
+                }
+            }
+        };
+
+        var result = DialogueViewerHelper.ResolveHeaderQuest(
+            topic, topic.InfoChain, tree, hasActiveFilter: true);
+
+        Assert.Equal(0xAAAAu, result);
+    }
+
+    #endregion
+
     #region ResolvePromptText Tests
 
     [Fact]

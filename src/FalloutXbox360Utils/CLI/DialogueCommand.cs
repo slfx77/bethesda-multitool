@@ -1185,15 +1185,16 @@ public static class DialogueCommand
             return;
         }
 
-        // TESTopicInfo struct offsets — all known dumps use Release/Final Debug layout (96 bytes).
+        // TESTopicInfo struct offsets — TESTopicInfo inherits directly from TESForm,
+        // so fields shift by +4 after TESForm base, not +16 like TESBoundObject-derived types.
         var buildType = MinidumpAnalyzer.DetectBuildType(analysisResult.MinidumpInfo!) ?? "Unknown";
-        var infoStructSize = 96;
-        var infoIndexOff = 48;
-        var infoDataOff = 51;
-        var infoPromptOff = 56;
-        var infoSpeakerOff = 76;
-        var infoDiffOff = 84;
-        var infoQuestOff = 88;
+        var infoStructSize = 84;
+        var infoIndexOff = 36;
+        var infoDataOff = 39;
+        var infoPromptOff = 44;
+        var infoSpeakerOff = 64;
+        var infoDiffOff = 72;
+        var infoQuestOff = 76;
 
         AnsiConsole.MarkupLine($"[dim]Build type: {buildType} → TESTopicInfo struct size: {infoStructSize}B[/]");
 

@@ -267,6 +267,107 @@ public sealed class RecordParser
         Logger.Instance.Debug(
             $"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
 
+        // === Quest enrichment: PathwayD backfill, variables cross-reference, related NPCs ===
+        phaseSw.Restart();
+
+        // PathwayD: backfill quests discoverable only through script OwnerQuestFormId
+        var questFormIdSet = new HashSet<uint>(quests.Select(q => q.FormId));
+        var pathwayDCount = 0;
+        foreach (var script in scripts)
+        {
+            if (script.OwnerQuestFormId is > 0 && !questFormIdSet.Contains(script.OwnerQuestFormId.Value))
+            {
+                var qfid = script.OwnerQuestFormId.Value;
+                quests.Add(new QuestRecord
+                {
+                    FormId = qfid,
+                    EditorId = _context.GetEditorId(qfid),
+                    FullName = _context.FormIdToFullName.GetValueOrDefault(qfid),
+                    Offset = 0,
+                    IsBigEndian = true
+                });
+                questFormIdSet.Add(qfid);
+                pathwayDCount++;
+            }
+        }
+
+        // Build script lookups for variable cross-referencing
+        var scriptByFormId = scripts.ToDictionary(s => s.FormId, s => s);
+        var scriptByOwnerQuest = new Dictionary<uint, ScriptRecord>();
+        foreach (var script in scripts)
+        {
+            if (script.OwnerQuestFormId is > 0)
+            {
+                scriptByOwnerQuest.TryAdd(script.OwnerQuestFormId.Value, script);
+            }
+        }
+
+        // Collect related NPCs from dialogue speaker attribution
+        var questToSpeakers = new Dictionary<uint, HashSet<uint>>();
+        foreach (var dialogue in dialogues)
+        {
+            if (dialogue.QuestFormId is > 0 && dialogue.SpeakerFormId is > 0)
+            {
+                if (!questToSpeakers.TryGetValue(dialogue.QuestFormId.Value, out var speakers))
+                {
+                    speakers = [];
+                    questToSpeakers[dialogue.QuestFormId.Value] = speakers;
+                }
+
+                speakers.Add(dialogue.SpeakerFormId.Value);
+            }
+        }
+
+        // Enrich quests with variables and related NPCs
+        var variablesLinked = 0;
+        var npcsLinked = 0;
+        for (var i = 0; i < quests.Count; i++)
+        {
+            var quest = quests[i];
+            List<ScriptVariableInfo>? variables = null;
+            List<uint>? relatedNpcs = null;
+
+            // Variables: try direct path (SCRI → SCPT), then reverse (OwnerQuestFormId)
+            if (quest.Script is > 0 && scriptByFormId.TryGetValue(quest.Script.Value, out var directScript)
+                && directScript.Variables.Count > 0)
+            {
+                variables = directScript.Variables;
+            }
+            else if (scriptByOwnerQuest.TryGetValue(quest.FormId, out var ownerScript)
+                     && ownerScript.Variables.Count > 0)
+            {
+                variables = ownerScript.Variables;
+            }
+
+            // Related NPCs from dialogue speakers
+            if (questToSpeakers.TryGetValue(quest.FormId, out var speakerSet) && speakerSet.Count > 0)
+            {
+                relatedNpcs = speakerSet.ToList();
+            }
+
+            if (variables != null || relatedNpcs != null)
+            {
+                quests[i] = quest with
+                {
+                    Variables = variables ?? quest.Variables,
+                    RelatedNpcFormIds = relatedNpcs ?? quest.RelatedNpcFormIds
+                };
+                if (variables != null)
+                {
+                    variablesLinked++;
+                }
+
+                if (relatedNpcs != null)
+                {
+                    npcsLinked++;
+                }
+            }
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] Quest enrichment: {phaseSw.Elapsed} " +
+            $"(PathwayD: {pathwayDCount}, Variables: {variablesLinked}, Related NPCs: {npcsLinked})");
+
         progress?.Report((55, "Reconstructing abilities..."));
         phaseSw.Restart();
         var perks = _effects.ReconstructPerks();

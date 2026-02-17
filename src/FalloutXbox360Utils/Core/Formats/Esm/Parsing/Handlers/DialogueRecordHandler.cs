@@ -707,6 +707,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         {
             var esmFormIds = new HashSet<uint>(quests.Select(q => q.FormId));
             var runtimeCount = 0;
+            var stubCount = 0;
             foreach (var entry in _context.ScanResult.RuntimeEditorIds)
             {
                 if (entry.FormType != 0x47 || esmFormIds.Contains(entry.FormId))
@@ -720,13 +721,27 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     quests.Add(quest);
                     runtimeCount++;
                 }
+                else
+                {
+                    // Runtime hash table confirms this is a quest (FormType 0x47),
+                    // but the TESQuest struct is unreadable (corrupted/uncaptured memory).
+                    quests.Add(new QuestRecord
+                    {
+                        FormId = entry.FormId,
+                        EditorId = entry.EditorId,
+                        FullName = _context.FormIdToFullName.GetValueOrDefault(entry.FormId),
+                        Offset = 0,
+                        IsBigEndian = true
+                    });
+                    stubCount++;
+                }
             }
 
-            if (runtimeCount > 0)
+            if (runtimeCount > 0 || stubCount > 0)
             {
                 Logger.Instance.Debug(
                     $"  [Semantic] Added {runtimeCount} quests from runtime struct reading " +
-                    $"(total: {quests.Count}, ESM: {esmFormIds.Count})");
+                    $"+ {stubCount} stubs (total: {quests.Count}, ESM: {esmFormIds.Count})");
             }
         }
 

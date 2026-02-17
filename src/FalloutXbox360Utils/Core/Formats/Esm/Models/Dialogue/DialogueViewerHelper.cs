@@ -141,4 +141,34 @@ internal static class DialogueViewerHelper
 
         return "[Continue]";
     }
+
+    /// <summary>
+    ///     Resolves the quest to display in the dialogue header. When a filter is active,
+    ///     uses the first filtered INFO's quest rather than the topic tree grouping, because
+    ///     shared topics (e.g., combat dialogue) may be grouped under a different quest than
+    ///     the filtered INFOs.
+    /// </summary>
+    public static uint? ResolveHeaderQuest(
+        TopicDialogueNode topic,
+        List<InfoDialogueNode> filteredInfoChain,
+        DialogueTreeResult dialogueTree,
+        bool hasActiveFilter)
+    {
+        // When a filter is active, prefer the quest from filtered INFOs
+        if (hasActiveFilter)
+        {
+            var questFromInfo = filteredInfoChain
+                .Select(i => i.Info.QuestFormId)
+                .FirstOrDefault(q => q is > 0);
+            if (questFromInfo is > 0)
+            {
+                return questFromInfo.Value;
+            }
+        }
+
+        // Fallback: find quest from the topic tree grouping
+        var quest = dialogueTree.QuestTrees.Values
+            .FirstOrDefault(q => q.Topics.Contains(topic));
+        return quest?.QuestFormId;
+    }
 }

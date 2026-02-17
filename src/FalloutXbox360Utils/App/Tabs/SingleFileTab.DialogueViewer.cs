@@ -648,13 +648,17 @@ public sealed partial class SingleFileTab
     {
         var parts = new List<string>();
 
-        // Try to find quest name
+        // Determine the quest to display in the header
         if (_session.DialogueTree != null)
         {
-            var quest = _session.DialogueTree.QuestTrees.Values.FirstOrDefault(q => q.Topics.Contains(topic));
-            if (quest != null)
+            var hasFilter = _dialogueSpeakerFilter != null || _dialogueQuestFilter != null;
+            var filteredInfos = hasFilter ? GetFilteredInfoChain(topic) : topic.InfoChain;
+            var questFormId = DialogueViewerHelper.ResolveHeaderQuest(
+                topic, filteredInfos, _session.DialogueTree, hasFilter);
+
+            if (questFormId is > 0)
             {
-                parts.Add(quest.QuestName ?? $"Quest 0x{quest.QuestFormId:X8}");
+                parts.Add(ResolveFormName(questFormId.Value));
             }
         }
 

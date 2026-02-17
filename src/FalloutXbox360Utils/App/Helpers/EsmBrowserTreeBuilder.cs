@@ -1745,6 +1745,7 @@ internal static partial class EsmBrowserTreeBuilder
             // Associations (references to other records)
             "Factions" or "Spells" or "Inventory" or "Packages" or "Ranks" or "Relations"
                 or "AbilityFormIds" or "HairStyleFormIds" or "EyeColorFormIds"
+                or "RelatedNpcFormIds" or "Variables"
                 => "Associations",
 
             // References (other FormID fields)

@@ -33,6 +33,12 @@ public record QuestRecord
     /// <summary>Quest objectives (QOBJ + display text).</summary>
     public List<QuestObjective> Objectives { get; init; } = [];
 
+    /// <summary>Script local variables from the quest's SCPT record (cross-referenced via SCRI).</summary>
+    public List<ScriptVariableInfo> Variables { get; init; } = [];
+
+    /// <summary>NPC FormIDs that speak in this quest's dialogue (populated from QSTI reverse lookup).</summary>
+    public List<uint> RelatedNpcFormIds { get; init; } = [];
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

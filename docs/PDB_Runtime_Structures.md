@@ -14,7 +14,7 @@ Xbox 360 crash dumps exhibit consistent offset shifts between PDB-defined offset
 | Struct Category                                | PDB Size | Dump Size | Shift                            | Cause                                                  |
 | ---------------------------------------------- | -------- | --------- | -------------------------------- | ------------------------------------------------------ |
 | TESBoundObject-derived (NPC, WEAP, ARMO, etc.) | varies   | +16       | **+16**                          | Extra vtable/debug data at struct start                |
-| TESTopicInfo (INFO)                            | 80       | 80        | **+4** on fields after offset 24 | TESForm base is 24 bytes but field offsets shift by +4 |
+| TESTopicInfo (INFO)                            | 80       | 84        | **+4** on fields after offset 24 | TESForm base is 24 bytes but field offsets shift by +4 |
 | TESTopic (DIAL)                                | 72       | 88        | **+16**                          | Same as TESBoundObject pattern                         |
 | TESForm base                                   | 24       | 24        | **0**                            | No shift on base class                                 |
 
@@ -582,7 +582,7 @@ Quest definitions with stages and objectives.
 | TESFaction    | 76       | 108       | `ReadRuntimeFaction()`      | `FactionRecord.cs`                           | `ReconstructFactions()`             |
 | TESQuest      | 108      | 140       | `ReadRuntimeQuest()`        | `QuestRecord.cs`                             | `ReconstructQuests()`               |
 | TESTopic      | 72       | 88        | `ReadRuntimeDialogTopic()`  | `RuntimeDialogTopicInfo.cs`                         | `MergeRuntimeDialogTopicData()`     |
-| TESTopicInfo  | 80       | 80        | `ReadRuntimeDialogueInfo()` | `RuntimeDialogueInfo.cs`                            | `MergeRuntimeDialogueData()`        |
+| TESTopicInfo  | 80       | 84        | `ReadRuntimeDialogueInfo()` | `RuntimeDialogueInfo.cs`                            | `MergeRuntimeDialogueData()`        |
 | TESObjectLAND | 44       | 60        | `ReadRuntimeLandData()`     | `RuntimeLoadedLandData.cs`                          | `ReadAllRuntimeLandData()`          |
 
 ---
