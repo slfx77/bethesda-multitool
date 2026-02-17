@@ -81,6 +81,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Heightmap tinting ---
     private HeightmapColorScheme _currentColorScheme = HeightmapColorScheme.Amber;
     private bool _showWater = true;
+    private bool _hideDisabledActors = true;
     private byte[]? _cachedGrayscale;
     private byte[]? _cachedWaterMask;
     private int _cachedHmWidth, _cachedHmHeight;
@@ -311,6 +312,74 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         };
 
         LegendPanel.Children.Add(waterItem);
+
+        // Initially Disabled actors toggle (default: hidden = showing initial game state)
+        var disabledColor = Color.FromArgb(255, 80, 90, 110);
+        var disabledBorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(disabledColor);
+        var disabledFillBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+            Color.FromArgb(60, disabledColor.R, disabledColor.G, disabledColor.B));
+        var disabledSwatchBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(disabledColor);
+
+        var disabledSwatch = new Border
+        {
+            Width = 10,
+            Height = 10,
+            CornerRadius = new CornerRadius(2),
+            Background = graySwatchBrush // Starts hidden (gray)
+        };
+        var disabledLabel = new TextBlock
+        {
+            Text = "Initially Disabled",
+            FontSize = 10,
+            Foreground = dimTextBrush, // Starts hidden (dim)
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 0, 0, 0)
+        };
+        var disabledContent = new StackPanel
+        {
+            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        disabledContent.Children.Add(disabledSwatch);
+        disabledContent.Children.Add(disabledLabel);
+
+        var disabledItem = new Border
+        {
+            Child = disabledContent,
+            BorderBrush = grayBorder, // Starts hidden (gray)
+            Background = grayFill,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 3, 8, 3),
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        disabledItem.PointerPressed += (_, args) => args.Handled = true;
+        disabledItem.PointerReleased += (_, args) =>
+        {
+            args.Handled = true;
+            _hideDisabledActors = !_hideDisabledActors;
+            if (!_hideDisabledActors)
+            {
+                // Showing disabled actors (active state)
+                disabledItem.BorderBrush = disabledBorderBrush;
+                disabledItem.Background = disabledFillBrush;
+                disabledSwatch.Background = disabledSwatchBrush;
+                disabledLabel.Foreground = whiteBrush;
+            }
+            else
+            {
+                // Hiding disabled actors (default state)
+                disabledItem.BorderBrush = grayBorder;
+                disabledItem.Background = grayFill;
+                disabledSwatch.Background = graySwatchBrush;
+                disabledLabel.Foreground = dimTextBrush;
+            }
+
+            MapCanvas.Invalidate();
+        };
+
+        LegendPanel.Children.Add(disabledItem);
     }
 
     private void SetCanvasMode(bool canvasVisible)
@@ -336,6 +405,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _mode = ViewMode.WorldOverview;
         _activeBrowser = BrowserMode.None;
         _hiddenCategories.Clear();
+        _hideDisabledActors = true;
         _worldHeightmapDirty = true;
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
@@ -694,6 +764,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                         continue;
                     }
 
+                    if (_hideDisabledActors && obj.IsInitiallyDisabled)
+                    {
+                        continue;
+                    }
+
                     if (!IsPointInView(obj.X, -obj.Y, tlWorld, brWorld, GetObjectViewMargin(obj)))
                     {
                         continue;
@@ -722,6 +797,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 {
                     if (obj.IsMapMarker || _hiddenCategories.Contains(GetObjectCategory(obj)) ||
                         !IsPointInView(obj.X, -obj.Y, tlWorld, brWorld, GetObjectViewMargin(obj)))
+                    {
+                        continue;
+                    }
+
+                    if (_hideDisabledActors && obj.IsInitiallyDisabled)
                     {
                         continue;
                     }
@@ -920,6 +1000,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     continue;
                 }
 
+                if (_hideDisabledActors && obj.IsInitiallyDisabled)
+                {
+                    continue;
+                }
+
                 Color color;
                 if (obj.RecordType == "ACHR" && !npcHidden)
                 {
@@ -940,8 +1025,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     continue;
                 }
 
-                ds.FillCircle(pos, dotRadius, WithAlpha(color, 180));
-                ds.DrawCircle(pos, dotRadius, Colors.White, outlineWidth);
+                var fillAlpha = obj.IsInitiallyDisabled ? (byte)60 : (byte)180;
+                var outlineAlpha = obj.IsInitiallyDisabled ? (byte)80 : (byte)255;
+                ds.FillCircle(pos, dotRadius, WithAlpha(color, fillAlpha));
+                ds.DrawCircle(pos, dotRadius, WithAlpha(Colors.White, outlineAlpha), outlineWidth);
             }
         }
     }
@@ -987,6 +1074,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         foreach (var obj in _selectedCell.PlacedObjects)
         {
             if (_hiddenCategories.Contains(GetObjectCategory(obj)))
+            {
+                continue;
+            }
+
+            if (_hideDisabledActors && obj.IsInitiallyDisabled)
             {
                 continue;
             }
@@ -1871,6 +1963,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 continue;
             }
 
+            if (_hideDisabledActors && obj.IsInitiallyDisabled)
+            {
+                continue;
+            }
+
             var dist = HitTestObjectBounds(worldPos, obj);
             if (dist < closestDist)
             {
@@ -1910,6 +2007,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 foreach (var obj in cell!.PlacedObjects)
                 {
                     if (_hiddenCategories.Contains(GetObjectCategory(obj)))
+                    {
+                        continue;
+                    }
+
+                    if (_hideDisabledActors && obj.IsInitiallyDisabled)
                     {
                         continue;
                     }
@@ -1955,6 +2057,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             foreach (var obj in cell.PlacedObjects)
             {
                 if (obj.IsMapMarker || _hiddenCategories.Contains(GetObjectCategory(obj)))
+                {
+                    continue;
+                }
+
+                if (_hideDisabledActors && obj.IsInitiallyDisabled)
                 {
                     continue;
                 }

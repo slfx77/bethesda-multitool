@@ -250,6 +250,7 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
     #region Sample-File-Based Tests
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ConvertToLittleEndian_RealEsm_ProducesValidOutput()
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");

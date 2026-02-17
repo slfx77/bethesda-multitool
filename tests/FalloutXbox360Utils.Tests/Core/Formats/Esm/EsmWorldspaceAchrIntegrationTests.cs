@@ -1,5 +1,3 @@
-using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Xunit;
 
@@ -19,33 +17,22 @@ public class EsmWorldspaceAchrIntegrationTests(ITestOutputHelper output, SampleF
     ///     Specifically checks for Veronica (ACHR 0x000E32A9) in the WastelandNV worldspace.
     /// </summary>
     [Fact]
+    [Trait("Category", "Slow")]
     public void WorldspaceReconstruction_PersistentCell_ShouldContainAchrRecords()
     {
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
-        var filePath = samples.PcFinalEsm!;
-        var fileData = File.ReadAllBytes(filePath);
-        var isBigEndian = EsmParser.IsBigEndian(fileData);
-        _output.WriteLine($"File: {filePath} ({fileData.Length:N0} bytes, BigEndian={isBigEndian})");
+        var pipeline = PcFinalEsmPipelineCache.GetOrBuild(samples.PcFinalEsm!);
+        var parsedRecords = pipeline.ParsedRecords;
+        var scanResult = pipeline.ScanResult;
+        var collection = pipeline.Collection;
 
-        // Step 1: Parse all records and GRUP headers
-        var (parsedRecords, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(fileData);
-        _output.WriteLine($"Parsed {parsedRecords.Count:N0} records, {grupHeaders.Count:N0} GRUP headers");
+        _output.WriteLine($"Parsed {parsedRecords.Count:N0} records, BigEndian={pipeline.IsBigEndian}");
 
         var achrParsed = parsedRecords.Count(r => r.Header.Signature == "ACHR");
         var acreParsed = parsedRecords.Count(r => r.Header.Signature == "ACRE");
         _output.WriteLine($"Raw parsed: ACHR={achrParsed:N0}, ACRE={acreParsed:N0}");
 
-        // Step 2: Build GRUP-based maps
-        var (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo) =
-            EsmFileAnalyzer.BuildAllMaps(parsedRecords, grupHeaders);
-        _output.WriteLine($"GRUP maps: CellToWorldspace={cellToWorldspace.Count}, " +
-                          $"CellToRefr={cellToRefr.Count} cells with {cellToRefr.Values.Sum(v => v.Count)} refs");
-
-        // Step 3: Build scan result with all maps
-        var scanResult = EsmFileAnalyzer.ConvertToScanResult(
-            parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo);
-        EsmFileAnalyzer.ExtractRefrRecordsFromParsed(scanResult, parsedRecords, isBigEndian);
         _output.WriteLine($"ScanResult: {scanResult.MainRecords.Count:N0} main records, " +
                           $"{scanResult.RefrRecords.Count:N0} REFR/ACHR/ACRE records");
 
@@ -62,11 +49,11 @@ public class EsmWorldspaceAchrIntegrationTests(ITestOutputHelper output, SampleF
 
         // Check which cell Veronica maps to via CellToRefrMap
         uint? veronicaCellFormId = null;
-        foreach (var (cellFormId, refrFormIds) in cellToRefr)
+        foreach (KeyValuePair<uint, List<uint>> entry in scanResult.CellToRefrMap)
         {
-            if (refrFormIds.Contains(0x000E32A9))
+            if (entry.Value.Contains(0x000E32A9))
             {
-                veronicaCellFormId = cellFormId;
+                veronicaCellFormId = entry.Key;
                 break;
             }
         }
@@ -78,30 +65,22 @@ public class EsmWorldspaceAchrIntegrationTests(ITestOutputHelper output, SampleF
             "Veronica's ACHR (0x000E32A9) should be mapped to a cell via CellToRefrMap");
 
         // Check if Veronica's cell is linked to a worldspace
-        cellToWorldspace.TryGetValue(veronicaCellFormId!.Value, out var veronicaWorldspace);
+        scanResult.CellToWorldspaceMap.TryGetValue(veronicaCellFormId!.Value, out var veronicaWorldspace);
         _output.WriteLine(veronicaWorldspace != 0
             ? $"Veronica's cell linked to worldspace 0x{veronicaWorldspace:X8}"
             : "WARNING: Veronica's cell NOT linked to any worldspace!");
 
-        // Step 4: Extract heightmap data (required for full pipeline)
-        using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0,
-            MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
-        EsmWorldExtractor.ExtractLandRecords(accessor, fileData.Length, scanResult);
-
-        // Step 5: Full semantic reconstruction
-        var reconstructor = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
-        var collection = reconstructor.ReconstructAll();
+        // Full semantic reconstruction results
         _output.WriteLine($"Reconstructed: {collection.Cells.Count:N0} cells, " +
                           $"{collection.Worldspaces.Count:N0} worldspaces");
 
-        // Step 6: Find WastelandNV worldspace (0x000DA726)
+        // Find WastelandNV worldspace (0x000DA726)
         var wasteland = collection.Worldspaces.FirstOrDefault(w => w.FormId == 0x000DA726);
         Assert.NotNull(wasteland);
         _output.WriteLine($"WastelandNV: FormId=0x{wasteland.FormId:X8}, EditorId={wasteland.EditorId}, " +
                           $"Cells={wasteland.Cells.Count:N0}");
 
-        // Step 7: Check 188TradingPost cell
+        // Check 188TradingPost cell
         var tradingPost = wasteland.Cells.FirstOrDefault(c => c.FormId == 0x000DDF1C);
         Assert.NotNull(tradingPost);
         Assert.Equal(7, tradingPost.GridX);
@@ -111,7 +90,7 @@ public class EsmWorldspaceAchrIntegrationTests(ITestOutputHelper output, SampleF
                           $"EditorId={tradingPost.EditorId}, " +
                           $"PlacedObjects={tradingPost.PlacedObjects.Count}");
 
-        // Step 8: Count ACHR/ACRE across all worldspace cells
+        // Count ACHR/ACRE across all worldspace cells
         var totalAchr = 0;
         var totalAcre = 0;
         var cellsWithActors = 0;
@@ -155,7 +134,7 @@ public class EsmWorldspaceAchrIntegrationTests(ITestOutputHelper output, SampleF
             .OrderByDescending(c => c.Achr + c.Acre)
             .Take(10)
             .ToList();
-        _output.WriteLine($"Top cells by actor count:");
+        _output.WriteLine("Top cells by actor count:");
         foreach (var c in cellsWithManyActors)
         {
             var refr = c.Cell.PlacedObjects.Count(o => o.RecordType == "REFR");

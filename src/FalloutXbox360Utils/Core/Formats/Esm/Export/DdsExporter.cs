@@ -91,7 +91,7 @@ public static class DdsExporter
     public static void ExportSummary(IReadOnlyList<ExtractedTexture> textures, string outputPath)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Index,Offset,Format,Width,Height,MipLevels,BPP,Faces,DataSize,Filename");
+        sb.AppendLine("Index,Offset,Format,Width,Height,MipLevels,BPP,Faces,DataSize,NonPOT,Filename");
 
         for (var i = 0; i < textures.Count; i++)
         {
@@ -99,7 +99,7 @@ public static class DdsExporter
             sb.AppendLine(CultureInfo.InvariantCulture,
                 $"{i},0x{t.SourceOffset:X},{t.Format},{t.Width},{t.Height}," +
                 $"{t.MipmapLevels},{t.BitsPerPixel},{t.Faces},{t.DataSize}," +
-                $"{CsvEscape(t.Filename)}");
+                $"{t.IsNonPowerOfTwo},{CsvEscape(t.Filename)}");
         }
 
         var dir = Path.GetDirectoryName(outputPath);

@@ -36,6 +36,15 @@ public record RuntimeDialogueInfo
     /// <summary>Player-visible prompt text (from cPrompt BSStringT).</summary>
     public string? PromptText { get; init; }
 
+    /// <summary>EditorID from TESForm.cFormEditorID BSStringT at +16 (Release build field).</summary>
+    public string? FormEditorId { get; init; }
+
     /// <summary>File offset in the dump where the TESTopicInfo struct was read.</summary>
     public long DumpOffset { get; init; }
+
+    /// <summary>Topics added to NPC's general menu (from runtime m_listAddTopics BSSimpleList).</summary>
+    public List<uint> AddTopicFormIds { get; init; } = [];
+
+    /// <summary>Whether this INFO was already said by the player (runtime bSaidOnce flag).</summary>
+    public bool SaidOnce { get; init; }
 }

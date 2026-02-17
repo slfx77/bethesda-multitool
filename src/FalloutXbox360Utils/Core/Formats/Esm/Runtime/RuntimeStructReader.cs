@@ -17,6 +17,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeEffectReader _effects;
     private readonly RuntimeScriptReader _scripts;
     private readonly RuntimeWorldReader _world;
+    private readonly RuntimePackageReader _packages;
 
     public RuntimeStructReader(
         MemoryMappedViewAccessor accessor,
@@ -30,6 +31,7 @@ public sealed class RuntimeStructReader
         _effects = new RuntimeEffectReader(_context);
         _scripts = new RuntimeScriptReader(_context);
         _world = new RuntimeWorldReader(_context);
+        _packages = new RuntimePackageReader(_context);
     }
 
     #region Actors
@@ -95,6 +97,12 @@ public sealed class RuntimeStructReader
         _world.ReadAllRuntimeLandData(entries);
 
     public int ProbeDialTopicLayout(RuntimeEditorIdEntry entry) => _world.ProbeDialTopicLayout(entry);
+
+    #endregion
+
+    #region AI Packages
+
+    public PackageRecord? ReadRuntimePackage(RuntimeEditorIdEntry entry) => _packages.ReadRuntimePackage(entry);
 
     #endregion
 

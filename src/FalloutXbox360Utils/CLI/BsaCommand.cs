@@ -23,8 +23,6 @@ public static class BsaCommand
         bsaCommand.Subcommands.Add(CreateExtractCommand());
         bsaCommand.Subcommands.Add(CreateConvertCommand());
         bsaCommand.Subcommands.Add(CreateInfoCommand());
-        bsaCommand.Subcommands.Add(CreateValidateCommand());
-        bsaCommand.Subcommands.Add(CreateCompareCommand());
 
         return bsaCommand;
     }

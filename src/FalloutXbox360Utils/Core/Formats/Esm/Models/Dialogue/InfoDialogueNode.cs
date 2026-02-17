@@ -8,6 +8,9 @@ public record InfoDialogueNode
     /// <summary>The reconstructed dialogue (INFO) record.</summary>
     public DialogueRecord Info { get; init; } = null!;
 
-    /// <summary>Topics that this response links to (from TCLT/AddTopics).</summary>
-    public List<TopicDialogueNode> LinkedTopics { get; init; } = [];
+    /// <summary>Topics presented as immediate player choices (from TCLT subrecords).</summary>
+    public List<TopicDialogueNode> ChoiceTopics { get; init; } = [];
+
+    /// <summary>Topics added to NPC's general menu for future conversations (from NAME/AddTopics subrecords).</summary>
+    public List<TopicDialogueNode> AddedTopics { get; init; } = [];
 }

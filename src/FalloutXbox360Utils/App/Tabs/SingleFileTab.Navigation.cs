@@ -11,7 +11,9 @@ internal abstract record UnifiedNavLocation;
 #pragma warning restore S2094
 internal sealed record DataBrowserNavLocation(EsmBrowserNode Node) : UnifiedNavLocation;
 internal sealed record WorldMapNavLocation(WorldMapControl.WorldNavState State) : UnifiedNavLocation;
-internal sealed record DialogueNavLocation(uint TopicFormId, double ScrollPosition) : UnifiedNavLocation;
+internal sealed record DialogueNavLocation(
+    uint TopicFormId, double ScrollPosition,
+    uint? QuestFilter, uint? SpeakerFilter) : UnifiedNavLocation;
 
 /// <summary>
 ///     Navigation: unified back/forward history across all tabs, and FormID link navigation.
@@ -84,7 +86,8 @@ public sealed partial class SingleFileTab
         {
             return _currentDialogueTopic != null
                 ? new DialogueNavLocation(_currentDialogueTopic.TopicFormId,
-                    DialogueConversationScroller.VerticalOffset)
+                    DialogueConversationScroller.VerticalOffset,
+                    _dialogueQuestFilter, _dialogueSpeakerFilter)
                 : null;
         }
 
@@ -169,8 +172,8 @@ public sealed partial class SingleFileTab
 
             case DialogueNavLocation dl:
                 SubTabView.SelectedItem = DialogueViewerTab;
-                _dialogueSpeakerFilter = null; // Back-stack navigation: clear filters
-                _dialogueQuestFilter = null;
+                _dialogueQuestFilter = dl.QuestFilter;
+                _dialogueSpeakerFilter = dl.SpeakerFilter;
                 if (_session.DialogueFormIdIndex?.TryGetValue(dl.TopicFormId, out var topic) == true)
                 {
                     NavigateToDialogueTopic(topic, pushToStack: false);

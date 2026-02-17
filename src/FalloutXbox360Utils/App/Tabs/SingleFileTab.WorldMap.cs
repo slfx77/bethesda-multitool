@@ -481,7 +481,9 @@ public sealed partial class SingleFileTab
         var name = obj.BaseEditorId
                    ?? _session.Resolver?.GetBestName(obj.BaseFormId)
                    ?? $"0x{obj.BaseFormId:X8}";
-        WorldObjectTitle.Text = $"{obj.RecordType}: {name}";
+        WorldObjectTitle.Text = obj.IsInitiallyDisabled
+            ? $"{obj.RecordType}: {name} [Disabled]"
+            : $"{obj.RecordType}: {name}";
 
         WorldPropertyPanel.Children.Clear();
 
@@ -528,6 +530,16 @@ public sealed partial class SingleFileTab
             Value = obj.RecordType,
             Category = "Identity"
         });
+
+        if (obj.IsInitiallyDisabled)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Initial State",
+                Value = "Initially Disabled",
+                Category = "Identity"
+            });
+        }
 
         if (_session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var parentCell) == true)
         {

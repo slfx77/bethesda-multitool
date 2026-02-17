@@ -620,6 +620,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     #region Sample-File-Based Tests (Skipped When Unavailable)
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ReconstructAll_WithSampleFile_ProducesNonEmptyResults()
     {
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");

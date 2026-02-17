@@ -102,7 +102,6 @@ public static class MemoryMapColors
         FileCategory.Image => "PNG",
         FileCategory.EsmData => "ESM Data",
         FileCategory.Xbox => "Xbox/XUI",
-        FileCategory.SaveGame => "Save Files",
         _ => category.ToString()
     };
 

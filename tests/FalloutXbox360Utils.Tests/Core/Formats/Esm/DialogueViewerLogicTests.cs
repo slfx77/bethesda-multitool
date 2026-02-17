@@ -29,7 +29,7 @@ public class DialogueViewerLogicTests
                 QuestFormId = questId,
                 SpeakerFormId = speakerId
             },
-            LinkedTopics = linkedTopics.ToList()
+            ChoiceTopics = linkedTopics.ToList()
         };
     }
 
@@ -48,7 +48,7 @@ public class DialogueViewerLogicTests
                     .Select(t => new DialogueResponse { Text = t })
                     .ToList()
             },
-            LinkedTopics = []
+            ChoiceTopics = []
         };
     }
 
@@ -275,6 +275,69 @@ public class DialogueViewerLogicTests
         Assert.Equal(1u, result.TopicFormId);
     }
 
+    [Fact]
+    public void FindParentTopicIn_OnlyMatchesChoiceTopics_NotAddedTopics()
+    {
+        var childTopic = MakeTopic(2, "Child");
+        // Parent has child in AddedTopics, NOT ChoiceTopics
+        var parentInfo = new InfoDialogueNode
+        {
+            Info = new DialogueRecord { FormId = 100 },
+            ChoiceTopics = [],
+            AddedTopics = [childTopic]
+        };
+        var parentTopic = MakeTopic(1, "Parent", parentInfo);
+
+        var result = DialogueViewerHelper.FindParentTopicIn(childTopic, [parentTopic]);
+
+        // Should NOT find parent because child is only in AddedTopics
+        Assert.Null(result);
+    }
+
+    #endregion
+
+    #region CollectLinkedTopics TCLT/NAME Separation Tests
+
+    [Fact]
+    public void CollectLinkedTopics_OnlyCollectsChoiceTopics_NotAddedTopics()
+    {
+        var choiceTopic = MakeTopic(2, "Choice");
+        var addedTopic = MakeTopic(3, "Added");
+        var info = new InfoDialogueNode
+        {
+            Info = new DialogueRecord { FormId = 100 },
+            ChoiceTopics = [choiceTopic],
+            AddedTopics = [addedTopic]
+        };
+        var chain = new List<InfoDialogueNode> { info };
+
+        var result = DialogueViewerHelper.CollectLinkedTopics(chain, excludeTopicFormId: 1);
+
+        Assert.Single(result);
+        Assert.True(result.ContainsKey(2));
+        Assert.False(result.ContainsKey(3));
+    }
+
+    [Fact]
+    public void HasResultScript_DetectedOnDialogueRecord()
+    {
+        var record = new DialogueRecord
+        {
+            FormId = 1,
+            HasResultScript = true
+        };
+
+        Assert.True(record.HasResultScript);
+    }
+
+    [Fact]
+    public void HasResultScript_DefaultsFalse()
+    {
+        var record = new DialogueRecord { FormId = 1 };
+
+        Assert.False(record.HasResultScript);
+    }
+
     #endregion
 
     #region ResolvePromptText Tests
@@ -315,7 +378,7 @@ public class DialogueViewerLogicTests
                 FormId = 200,
                 PromptText = "What about the Gun Runners?"
             },
-            LinkedTopics = []
+            ChoiceTopics = []
         };
 
         var result = DialogueViewerHelper.ResolvePromptText(sourceInfo, topic);

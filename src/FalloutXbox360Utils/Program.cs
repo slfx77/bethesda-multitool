@@ -45,17 +45,14 @@ public static class Program
 
         var rootCommand = BuildRootCommand();
 
-        rootCommand.Subcommands.Add(AnalyzeCommand.Create());
-        rootCommand.Subcommands.Add(ModulesCommand.Create());
-        rootCommand.Subcommands.Add(CoverageCommand.Create());
-        rootCommand.Subcommands.Add(BuffersCommand.Create());
         rootCommand.Subcommands.Add(ConvertNifCommand.Create());
+        rootCommand.Subcommands.Add(ConvertDdxCommand.Create());
         rootCommand.Subcommands.Add(EsmCommand.Create());
         rootCommand.Subcommands.Add(BsaCommand.Create());
         rootCommand.Subcommands.Add(DialogueCommand.Create());
         rootCommand.Subcommands.Add(WorldCommand.Create());
         rootCommand.Subcommands.Add(RepackCommand.Create());
-        rootCommand.Subcommands.Add(VersionTrackCommand.Create());
+        rootCommand.Subcommands.Add(RttiCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }
@@ -77,10 +74,6 @@ public static class Program
         var noGuiOption = new Option<bool>("-n", "--no-gui")
         {
             Description = "Run in command-line mode without GUI (Windows only)"
-        };
-        var ddxOption = new Option<bool>("--ddx")
-        {
-            Description = "Convert DDX textures to DDS format instead of carving"
         };
         var convertDdxOption = new Option<bool>("--convert-ddx", "--convert")
         {
@@ -113,7 +106,6 @@ public static class Program
         rootCommand.Arguments.Add(inputArgument);
         rootCommand.Options.Add(outputOption);
         rootCommand.Options.Add(noGuiOption);
-        rootCommand.Options.Add(ddxOption);
         rootCommand.Options.Add(convertDdxOption);
         rootCommand.Options.Add(typesOption);
         rootCommand.Options.Add(verboseOption);

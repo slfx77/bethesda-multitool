@@ -47,6 +47,19 @@ public static class MeshObjExporter
     /// </summary>
     public static void ExportMultiple(IReadOnlyList<ExtractedMesh> meshes, string outputPath)
     {
+        ExportMultiple(meshes, outputPath, null, null);
+    }
+
+    /// <summary>
+    ///     Export multiple meshes to a single OBJ file with enriched object names
+    ///     from scene graph data and ESM EditorID correlation.
+    /// </summary>
+    public static void ExportMultiple(
+        IReadOnlyList<ExtractedMesh> meshes,
+        string outputPath,
+        Dictionary<long, SceneGraphInfo>? sceneGraph,
+        Dictionary<string, string>? modelNameIndex)
+    {
         var sb = new StringBuilder();
         sb.AppendLine(CultureInfo.InvariantCulture, $"# Extracted meshes: {meshes.Count} objects");
         sb.AppendLine(CultureInfo.InvariantCulture,
@@ -62,8 +75,8 @@ public static class MeshObjExporter
         for (var i = 0; i < meshes.Count; i++)
         {
             var mesh = meshes[i];
-            sb.AppendLine(CultureInfo.InvariantCulture,
-                $"o mesh_{i:D4}_{mesh.SourceOffset:X}");
+            var name = AssetNameResolver.ResolveMeshName(mesh, i, sceneGraph, modelNameIndex);
+            sb.AppendLine(CultureInfo.InvariantCulture, $"o {name}");
 
             AppendVertices(sb, mesh);
             AppendUVs(sb, mesh);

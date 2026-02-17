@@ -16,6 +16,5 @@ public enum FileCategory
     Header,
     EsmData,
     Strings,
-    Struct,
-    SaveGame
+    Struct
 }

@@ -42,6 +42,9 @@ public record ExtractedTexture
     /// <summary>Whether this is a cubemap (6 faces).</summary>
     public bool IsCubemap => Faces > 1;
 
+    /// <summary>Whether this texture has non-power-of-two dimensions (screenshot, render target, UI).</summary>
+    public bool IsNonPowerOfTwo => !IsPot(Width) || !IsPot(Height);
+
     /// <summary>Hash for deduplication (first 64 bytes of pixel data).</summary>
     public long DataHash { get; init; }
 
@@ -82,6 +85,8 @@ public record ExtractedTexture
             return inferred is 8 or 16 or 24 or 32 ? inferred : BitsPerPixel;
         }
     }
+
+    private static bool IsPot(int v) => v > 0 && (v & (v - 1)) == 0;
 }
 
 /// <summary>

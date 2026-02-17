@@ -20,7 +20,6 @@ public static class WorldCommand
 
         command.Subcommands.Add(CreateMarkersCommand());
         command.Subcommands.Add(CreateCellCommand());
-        command.Subcommands.Add(CompareCommand.Create());
 
         return command;
     }

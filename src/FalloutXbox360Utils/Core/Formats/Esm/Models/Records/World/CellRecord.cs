@@ -60,6 +60,9 @@ public record CellRecord
     /// <summary>Runtime terrain mesh extracted from LoadedLandData heap pointers (if available).</summary>
     public RuntimeTerrainMesh? RuntimeTerrainMesh { get; init; }
 
+    /// <summary>True for synthetic cells created to hold orphan references in DMP mode.</summary>
+    public bool IsVirtual { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

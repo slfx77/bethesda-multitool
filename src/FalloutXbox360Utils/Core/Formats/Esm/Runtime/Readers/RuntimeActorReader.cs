@@ -50,6 +50,8 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     private int NpcContainerDataOffset => 104 + _s;
     private int NpcContainerNextOffset => 108 + _s;
     private int NpcFactionListHeadOffset => 96 + _s;
+    // TESAIForm at offset 144 in TESActorBase; AIPackList (BSSimpleList<TESPackage*>) at +24 within TESAIForm
+    private int PackageListOffset => 168 + _s;
 
     #endregion
 
@@ -153,6 +155,9 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         var fgga = ReadFaceGenMorphArray(buffer, NpcFggaPointerOffset, NpcFggaCountOffset);
         var fgts = ReadFaceGenMorphArray(buffer, NpcFgtsPointerOffset, NpcFgtsCountOffset);
 
+        // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm+24)
+        var packages = ReadPackageList(buffer);
+
         return new NpcRecord
         {
             FormId = entry.FormId,
@@ -169,6 +174,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
             SpecialStats = special,
             Skills = skills,
             AiData = aiData,
+            Packages = packages,
             HairFormId = hair,
             HairLength = hairLength,
             EyesFormId = eyes,
@@ -237,6 +243,10 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         // Read ACBS (actor base stats) at +24, same structure as NPC
         var stats = ReadCreatureActorBaseStats(buffer, CreaAcbsOffset, offset);
 
+        // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm+24)
+        // TESCreature inherits TESActorBase at offset 0, same layout as TESNPC
+        var packages = ReadPackageList(buffer);
+
         return new CreatureRecord
         {
             FormId = entry.FormId,
@@ -248,6 +258,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
             MagicSkill = magicSkill,
             StealthSkill = stealthSkill,
             AttackDamage = attackDamage,
+            Packages = packages,
             Script = scriptFormId,
             ModelPath = modelPath,
             Offset = offset,
@@ -530,6 +541,68 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         }
 
         return factions;
+    }
+
+    /// <summary>
+    ///     Read AI package list from BSSimpleList&lt;TESPackage*&gt; at PackageListOffset.
+    ///     BSSimpleList is a singly-linked list: m_item (TESPackage*, 4 bytes) + m_pkNext (BSSimpleList*, 4 bytes).
+    ///     The head node is inline in the struct; subsequent nodes are heap-allocated.
+    ///     Returns a list of PACK FormIDs.
+    /// </summary>
+    private List<uint> ReadPackageList(byte[] buffer)
+    {
+        var packages = new List<uint>();
+
+        if (PackageListOffset + 8 > buffer.Length)
+        {
+            return packages;
+        }
+
+        // Read inline BSSimpleList head: m_item (TESPackage*) + m_pkNext (BSSimpleList*)
+        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, PackageListOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, PackageListOffset + 4);
+
+        // Follow first item pointer to TESPackage → read FormID at +12
+        if (itemPtr != 0 && _context.IsValidPointer(itemPtr))
+        {
+            var formId = _context.FollowPointerVaToFormId(itemPtr);
+            if (formId is > 0 and < 0x01000000)
+            {
+                packages.Add(formId.Value);
+            }
+        }
+
+        // Walk linked list (max 50 nodes to prevent infinite loops)
+        var visited = new HashSet<uint>();
+        for (var i = 0; i < 50 && nextPtr != 0 && _context.IsValidPointer(nextPtr) && !visited.Contains(nextPtr); i++)
+        {
+            visited.Add(nextPtr);
+            var nodeFileOffset = _context.VaToFileOffset(nextPtr);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            var nodeItemPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 0);
+            nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+
+            if (nodeItemPtr != 0 && _context.IsValidPointer(nodeItemPtr))
+            {
+                var formId = _context.FollowPointerVaToFormId(nodeItemPtr);
+                if (formId is > 0 and < 0x01000000)
+                {
+                    packages.Add(formId.Value);
+                }
+            }
+        }
+
+        return packages;
     }
 
     /// <summary>

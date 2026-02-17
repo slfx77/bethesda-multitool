@@ -1032,43 +1032,48 @@ public sealed partial class SingleFileTab
     {
         DialogueChoicesPanel.Children.Clear();
 
-        // Collect all linked topics from filtered INFOs, excluding self-references
+        // Collect TCLT-based player choices from filtered INFOs, excluding self-references
         var filteredInfoChain = GetFilteredInfoChain(topic);
-        var linkedTopics = DialogueViewerHelper.CollectLinkedTopics(filteredInfoChain, topic.TopicFormId);
+        var choiceTopics = DialogueViewerHelper.CollectLinkedTopics(filteredInfoChain, topic.TopicFormId);
 
-        if (linkedTopics.Count == 0)
+        if (choiceTopics.Count > 0)
         {
-            // Check if all responses are goodbye
+            // Normal case: show TCLT-linked player choices
+            DialogueChoicesHeader.Visibility = Visibility.Visible;
+            foreach (var (_, (linked, sourceInfo)) in choiceTopics)
+            {
+                DialogueChoicesPanel.Children.Add(CreatePlayerChoiceWithDetails(linked, sourceInfo));
+            }
+        }
+        else
+        {
+            // No TCLT choices — determine the end-of-dialogue reason
             var allGoodbye = filteredInfoChain.Count > 0 && filteredInfoChain.All(i => i.Info.IsGoodbye);
+            var hasResultScript = filteredInfoChain.Any(i => i.Info.HasResultScript);
 
             if (allGoodbye)
             {
-                var endText = new TextBlock
-                {
-                    Text = "End of conversation (Goodbye)",
-                    FontSize = 12,
-                    FontStyle = Windows.UI.Text.FontStyle.Italic,
-                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-                    Margin = new Thickness(0, 4, 0, 0)
-                };
-                DialogueChoicesPanel.Children.Add(endText);
-
-                // Viewer-only navigation aid
+                AddEndOfDialogueLabel("End of conversation (Goodbye)");
+                AddReturnToPickerLink();
+            }
+            else if (hasResultScript)
+            {
+                AddEndOfDialogueLabel("End of dialogue (scripted)");
                 AddReturnToPickerLink();
             }
             else
             {
-                // Non-goodbye, no linked topics: in-game, returns player to the parent topic's choices
+                // No TCLT, no scripts, not goodbye: in-game the player returns to the NPC's topic menu.
+                // Show parent topic's TCLT choices if found, otherwise return link.
                 var parentTopic = FindParentTopic(topic);
                 if (parentTopic != null)
                 {
-                    // Collect parent's linked topics, excluding the current topic to prevent cycles
-                    var parentLinkedTopics = DialogueViewerHelper.CollectLinkedTopics(parentTopic.InfoChain, topic.TopicFormId);
-
-                    if (parentLinkedTopics.Count > 0)
+                    var parentChoices = DialogueViewerHelper.CollectLinkedTopics(
+                        parentTopic.InfoChain, topic.TopicFormId);
+                    if (parentChoices.Count > 0)
                     {
                         DialogueChoicesHeader.Visibility = Visibility.Visible;
-                        foreach (var (_, (linked, sourceInfo)) in parentLinkedTopics)
+                        foreach (var (_, (linked, sourceInfo)) in parentChoices)
                         {
                             DialogueChoicesPanel.Children.Add(
                                 CreatePlayerChoiceWithDetails(linked, sourceInfo));
@@ -1076,24 +1081,82 @@ public sealed partial class SingleFileTab
                     }
                     else
                     {
+                        AddEndOfDialogueLabel("Conversation returns to topic list");
                         AddReturnToPickerLink();
                     }
                 }
                 else
                 {
-                    // No parent found (user came from the picker, or orphan topic)
+                    AddEndOfDialogueLabel("Conversation returns to topic list");
                     AddReturnToPickerLink();
                 }
             }
+        }
 
+        // Show AddedTopics (NAME) as informational section below choices
+        ShowAddedTopicsInfo(filteredInfoChain);
+    }
+
+    private void AddEndOfDialogueLabel(string text)
+    {
+        DialogueChoicesPanel.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontSize = 12,
+            FontStyle = Windows.UI.Text.FontStyle.Italic,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(0, 4, 0, 0)
+        });
+    }
+
+    private void ShowAddedTopicsInfo(List<InfoDialogueNode> filteredInfoChain)
+    {
+        var addedTopics = new Dictionary<uint, TopicDialogueNode>();
+        foreach (var infoNode in filteredInfoChain)
+        {
+            foreach (var added in infoNode.AddedTopics)
+            {
+                addedTopics.TryAdd(added.TopicFormId, added);
+            }
+        }
+
+        if (addedTopics.Count == 0)
+        {
             return;
         }
 
-        DialogueChoicesHeader.Visibility = Visibility.Visible;
-
-        foreach (var (_, (linked, sourceInfo)) in linkedTopics)
+        var header = new TextBlock
         {
-            DialogueChoicesPanel.Children.Add(CreatePlayerChoiceWithDetails(linked, sourceInfo));
+            Text = "Topics unlocked for future conversations:",
+            FontSize = 11,
+            FontStyle = Windows.UI.Text.FontStyle.Italic,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(0, 8, 0, 2)
+        };
+        DialogueChoicesPanel.Children.Add(header);
+
+        foreach (var (_, addedTopic) in addedTopics)
+        {
+            var topicName = addedTopic.Topic?.FullName
+                            ?? addedTopic.TopicName
+                            ?? addedTopic.Topic?.EditorId
+                            ?? $"0x{addedTopic.TopicFormId:X8}";
+
+            var link = new HyperlinkButton
+            {
+                Content = new TextBlock
+                {
+                    Text = $"  \u2022 {topicName}",
+                    FontSize = 11,
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+                },
+                Padding = new Thickness(0, 1, 0, 1)
+            };
+
+            var capturedTopic = addedTopic;
+            link.Click += (_, _) => NavigateToDialogueTopic(capturedTopic, pushToStack: true);
+
+            DialogueChoicesPanel.Children.Add(link);
         }
     }
 

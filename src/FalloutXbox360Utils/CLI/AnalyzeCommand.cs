@@ -158,9 +158,10 @@ public static class AnalyzeCommand
             AnsiConsole.WriteLine(report);
         }
 
+        RecordCollection? semanticResult = null;
         if (!string.IsNullOrEmpty(opts.Semantic) && result.EsmRecords != null)
         {
-            await ExportSemanticReportAsync(result, opts.Semantic, opts.TerrainObj);
+            semanticResult = await ExportSemanticReportAsync(result, opts.Semantic, opts.TerrainObj);
         }
 
         if (!string.IsNullOrEmpty(opts.ExtractEsm) && result.EsmRecords != null)
@@ -175,7 +176,7 @@ public static class AnalyzeCommand
 
         if (!string.IsNullOrEmpty(opts.ExtractMeshes))
         {
-            await ExtractRuntimeMeshesAsync(opts.ExtractMeshes, result);
+            await ExtractRuntimeMeshesAsync(opts.ExtractMeshes, result, semanticResult);
         }
 
         if (!string.IsNullOrEmpty(opts.ExtractTextures))
@@ -185,7 +186,7 @@ public static class AnalyzeCommand
 
     }
 
-    private static async Task ExportSemanticReportAsync(
+    private static async Task<RecordCollection?> ExportSemanticReportAsync(
         AnalysisResult result, string outputPath, string? terrainObjPath = null)
     {
         AnsiConsole.WriteLine();
@@ -222,6 +223,8 @@ public static class AnalyzeCommand
         {
             ExportTerrainMeshes(result.EsmRecords!, terrainObjPath);
         }
+
+        return semanticResult;
     }
 
     private static void ExportTerrainMeshes(EsmRecordScanResult scanResult, string outputPath)
@@ -543,7 +546,7 @@ public static class AnalyzeCommand
     }
 
     private static Task ExtractRuntimeMeshesAsync(
-        string outputDir, AnalysisResult result)
+        string outputDir, AnalysisResult result, RecordCollection? semanticResult = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Exporting runtime NIF geometry...[/]");
@@ -557,6 +560,15 @@ public static class AnalyzeCommand
             return Task.CompletedTask;
         }
 
+        // Build model name → EditorID reverse index if semantic data available
+        var modelNameIndex = semanticResult != null
+            ? AssetNameResolver.BuildModelNameIndex(semanticResult)
+            : null;
+        if (modelNameIndex is { Count: > 0 })
+        {
+            AnsiConsole.MarkupLine($"  Model→EditorID index: {modelNameIndex.Count} entries");
+        }
+
         Directory.CreateDirectory(outputDir);
 
         // Classify: 3D meshes have normals (lit geometry), UI meshes don't (text, HUD)
@@ -567,12 +579,12 @@ public static class AnalyzeCommand
         var combinedPath = Path.Combine(outputDir, "meshes_3d_combined.obj");
         if (meshes3D.Count > 0)
         {
-            MeshObjExporter.ExportMultiple(meshes3D, combinedPath);
+            MeshObjExporter.ExportMultiple(meshes3D, combinedPath, sceneGraph, modelNameIndex);
         }
 
         // Export individual OBJ files into 3d/ and ui/ subdirectories
-        ExportMeshSubdirectory(meshes3D, Path.Combine(outputDir, "3d"), sceneGraph);
-        ExportMeshSubdirectory(meshesUI, Path.Combine(outputDir, "ui"), sceneGraph);
+        ExportMeshSubdirectory(meshes3D, Path.Combine(outputDir, "3d"), sceneGraph, modelNameIndex);
+        ExportMeshSubdirectory(meshesUI, Path.Combine(outputDir, "ui"), sceneGraph, modelNameIndex);
 
         // Export summary CSV (all meshes with category + scene graph columns)
         var summaryPath = Path.Combine(outputDir, "mesh_summary.csv");
@@ -600,7 +612,9 @@ public static class AnalyzeCommand
     }
 
     private static void ExportMeshSubdirectory(
-        List<ExtractedMesh> meshes, string dir, Dictionary<long, SceneGraphInfo> sceneGraph)
+        List<ExtractedMesh> meshes, string dir,
+        Dictionary<long, SceneGraphInfo> sceneGraph,
+        Dictionary<string, string>? modelNameIndex = null)
     {
         if (meshes.Count == 0)
         {
@@ -611,36 +625,9 @@ public static class AnalyzeCommand
         for (var i = 0; i < meshes.Count; i++)
         {
             var mesh = meshes[i];
-            var name = GetMeshFileName(mesh, i, sceneGraph);
-            MeshObjExporter.Export(mesh, Path.Combine(dir, name), name.Replace(".obj", ""));
+            var name = AssetNameResolver.ResolveMeshName(mesh, i, sceneGraph, modelNameIndex);
+            MeshObjExporter.Export(mesh, Path.Combine(dir, $"{name}.obj"), name);
         }
-    }
-
-    private static string GetMeshFileName(
-        ExtractedMesh mesh, int index, Dictionary<long, SceneGraphInfo> sceneGraph)
-    {
-        if (sceneGraph.TryGetValue(mesh.SourceOffset, out var info))
-        {
-            // Use the scene graph path to build a meaningful name
-            var safeName = SanitizeFileName(info.ModelName ?? info.NodeName ?? $"{mesh.SourceOffset:X}");
-            return $"mesh_{index:D4}_{safeName}.obj";
-        }
-
-        return $"mesh_{index:D4}_{mesh.SourceOffset:X}.obj";
-    }
-
-    private static string SanitizeFileName(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sb = new System.Text.StringBuilder(name.Length);
-        foreach (var c in name)
-        {
-            sb.Append(invalid.Contains(c) ? '_' : c);
-        }
-
-        // Truncate to avoid overly long filenames
-        var result = sb.ToString();
-        return result.Length > 60 ? result[..60] : result;
     }
 
     private static void ExportMeshSummary(

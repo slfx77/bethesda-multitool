@@ -3,7 +3,6 @@ using FalloutXbox360Utils.Core.Formats.Bik;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Fos;
 using FalloutXbox360Utils.Core.Formats.Lip;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Png;
@@ -187,7 +186,6 @@ public static class FormatRegistry
             "elder scrolls plugin" => "esp",
             "lip-sync animation" => "lip",
             "bethesda obscript (scn format)" or "script" => "script_scn",
-            "fallout 3/new vegas save file" or "save" or "savegame" or "save file" => "fos",
             "minidump header" => "minidump_header",
             _ => FallbackNormalize(lower)
         };
@@ -266,11 +264,6 @@ public static class FormatRegistry
             return "script_scn";
         }
 
-        if (lower.Contains("save", StringComparison.Ordinal))
-        {
-            return "fos";
-        }
-
         return lower.Replace(" ", "_");
     }
 
@@ -287,7 +280,6 @@ public static class FormatRegistry
             new DdsFormat(),
             new DdxFormat(),
             new EsmRecordFormat(),
-            new FosFormat(),
             new LipFormat(),
             new NifFormat(),
             new PngFormat(),

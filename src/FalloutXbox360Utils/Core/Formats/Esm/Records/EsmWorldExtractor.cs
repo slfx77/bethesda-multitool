@@ -70,6 +70,8 @@ internal static class EsmWorldExtractor
         var scale = 1.0f;
         uint? ownerFormId = null;
         uint? destinationDoorFormId = null;
+        uint? enableParentFormId = null;
+        byte? enableParentFlags = null;
         var isMapMarker = false;
         ushort? markerType = null;
         string? markerName = null;
@@ -111,6 +113,13 @@ internal static class EsmWorldExtractor
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
                     break;
 
+                case "XESP" when sub.DataLength >= 8: // Enable Parent
+                    enableParentFormId = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    enableParentFlags = subData[4];
+                    break;
+
                 case "XMRK": // Map marker presence flag (0 bytes)
                     isMapMarker = true;
                     break;
@@ -150,6 +159,8 @@ internal static class EsmWorldExtractor
             Scale = scale,
             OwnerFormId = ownerFormId,
             DestinationDoorFormId = destinationDoorFormId,
+            EnableParentFormId = enableParentFormId,
+            EnableParentFlags = enableParentFlags,
             BaseEditorId = editorIdMap?.GetValueOrDefault(baseFormId),
             IsMapMarker = isMapMarker,
             MarkerType = markerType,
@@ -230,12 +241,14 @@ internal static class EsmWorldExtractor
 
             foreach (var land in scanResult.LandRecords)
             {
-                // Find the XCLC that is closest before this LAND record (within 500 bytes)
+                // Find the XCLC that is closest before this LAND record.
+                // In ESM structure, CELL (containing XCLC) precedes its child LAND by ~100-500 bytes.
+                // In DMP files, 10KB is generous enough without matching unrelated cells.
                 CellGridSubrecord? match = null;
                 foreach (var grid in sortedGrids)
                 {
                     var gap = land.Header.Offset - grid.Offset;
-                    if (gap is > 0 and < 100_000)
+                    if (gap is > 0 and < 10_000)
                     {
                         match = grid;
                     }

@@ -51,7 +51,6 @@ public abstract class FileFormatBase : IFileFormat
             FileCategory.Script => "Scripts",
             FileCategory.Xbox => "Files",
             FileCategory.Header => "Headers",
-            FileCategory.SaveGame => "Files",
             _ => "Files"
         };
     }

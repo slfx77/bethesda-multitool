@@ -68,6 +68,12 @@ public record DialogueRecord
     /// <summary>Topics unlocked by saying this INFO (NAME subrecords).</summary>
     public List<uint> AddTopics { get; init; } = [];
 
+    /// <summary>Whether this INFO has a result script (SCHR subrecord present).</summary>
+    public bool HasResultScript { get; init; }
+
+    /// <summary>Whether this INFO was already said by the player (runtime bSaidOnce — DMP only).</summary>
+    public bool SaidOnce { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

@@ -421,13 +421,87 @@ public record RuntimeTerrainMesh
 
     /// <summary>
     ///     Convert runtime vertex heights to a LandHeightmap (VHGT-compatible format).
-    ///     Extracts Z values from the 33×33 vertex grid and reverse-encodes them as
-    ///     cumulative sbyte deltas with a base height offset.
+    ///     Detects LOD level and interpolates to 33×33 if needed, then reverse-encodes
+    ///     as cumulative sbyte deltas with a base height offset.
     /// </summary>
     public LandHeightmap ToLandHeightmap()
     {
-        // Extract Z (height) values from vertex array into a 33×33 grid.
-        // Vertex layout is [x,y,z, x,y,z, ...] so Z is at index i*3+2.
+        // Detect LOD level: LOD 1+ terrain has fewer valid vertices in the 1089-element buffer.
+        // Reading the full buffer as 33×33 would include garbage from adjacent memory.
+        var (lodLevel, verticesPerRow, _) = DetectLodLevel();
+        if (lodLevel > 0 && verticesPerRow >= 5)
+        {
+            return ToLandHeightmapFromLod(verticesPerRow);
+        }
+
+        // LOD 0 (or detection failed): standard 33×33 grid
+        var heights = ExtractHeightsFullGrid();
+        return EncodeHeightmap(heights);
+    }
+
+    /// <summary>
+    ///     Extract heights from LOD terrain (fewer than 33 valid vertices per row).
+    ///     Extracts the sparse subgrid and bilinear-interpolates to 33×33.
+    /// </summary>
+    private LandHeightmap ToLandHeightmapFromLod(int verticesPerRow)
+    {
+        // LOD terrain uses every Nth vertex. The step between LOD vertices in the 33-wide buffer:
+        // LOD 1: 17 vertices → step 2 (indices 0,2,4,...,32)
+        // LOD 2: 9 vertices  → step 4
+        // LOD 3: 5 vertices  → step 8
+        var step = (GridSize - 1) / (verticesPerRow - 1);
+        if (step < 1)
+        {
+            step = 1;
+        }
+
+        // Extract the sparse subgrid Z values
+        var sparse = new float[verticesPerRow, verticesPerRow];
+        for (var sy = 0; sy < verticesPerRow; sy++)
+        {
+            for (var sx = 0; sx < verticesPerRow; sx++)
+            {
+                var srcIdx = (sy * step) * GridSize + (sx * step);
+                if (srcIdx < VertexCount)
+                {
+                    sparse[sy, sx] = Vertices[srcIdx * 3 + 2];
+                }
+            }
+        }
+
+        // Bilinear interpolate sparse grid to 33×33
+        var heights = new float[GridSize, GridSize];
+        for (var y = 0; y < GridSize; y++)
+        {
+            for (var x = 0; x < GridSize; x++)
+            {
+                // Map output (0..32) to sparse grid coordinates
+                var srcX = x * (verticesPerRow - 1) / (float)(GridSize - 1);
+                var srcY = y * (verticesPerRow - 1) / (float)(GridSize - 1);
+
+                var x0 = (int)MathF.Floor(srcX);
+                var y0 = (int)MathF.Floor(srcY);
+                var x1 = Math.Min(x0 + 1, verticesPerRow - 1);
+                var y1 = Math.Min(y0 + 1, verticesPerRow - 1);
+
+                var fx = srcX - x0;
+                var fy = srcY - y0;
+
+                heights[y, x] = sparse[y0, x0] * (1 - fx) * (1 - fy)
+                              + sparse[y0, x1] * fx * (1 - fy)
+                              + sparse[y1, x0] * (1 - fx) * fy
+                              + sparse[y1, x1] * fx * fy;
+            }
+        }
+
+        return EncodeHeightmap(heights);
+    }
+
+    /// <summary>
+    ///     Extract Z (height) values from the full 33×33 vertex array.
+    /// </summary>
+    private float[,] ExtractHeightsFullGrid()
+    {
         var heights = new float[GridSize, GridSize];
         for (var y = 0; y < GridSize; y++)
         {
@@ -437,9 +511,14 @@ public record RuntimeTerrainMesh
             }
         }
 
-        // Reverse-encode: convert absolute heights back to cumulative sbyte deltas.
-        // The VHGT algorithm accumulates: height += delta * 8, with each row starting
-        // from the reconstructed first column of the previous row.
+        return heights;
+    }
+
+    /// <summary>
+    ///     Encode a 33×33 height grid as a VHGT-compatible LandHeightmap with cumulative sbyte deltas.
+    /// </summary>
+    private LandHeightmap EncodeHeightmap(float[,] heights)
+    {
         var heightOffset = heights[0, 0] / 8.0f;
         var deltas = new sbyte[VertexCount];
 

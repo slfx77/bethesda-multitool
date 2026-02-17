@@ -310,9 +310,9 @@ internal static class GeckDialogueWriter
             RenderInfoNode(sb, infoNode, i + 1, continuationIndent, resolver);
 
             // Render linked topics recursively
-            for (var j = 0; j < infoNode.LinkedTopics.Count; j++)
+            for (var j = 0; j < infoNode.ChoiceTopics.Count; j++)
             {
-                var linkedTopic = infoNode.LinkedTopics[j];
+                var linkedTopic = infoNode.ChoiceTopics[j];
                 var linkIndent = continuationIndent + "        ";
                 var linkCont = continuationIndent + "        ";
                 sb.AppendLine($"{continuationIndent}      -> Links to:");

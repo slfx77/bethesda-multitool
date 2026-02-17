@@ -5,6 +5,7 @@ using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Minidump;
 
@@ -108,11 +109,18 @@ public static class MinidumpExtractor
         var scriptsExtracted = 0;
         var runtimeTexturesExported = 0;
         var runtimeMeshesExported = 0;
+        RecordCollection? semanticResult = null;
         if (options.GenerateEsmReports && analysisResult?.EsmRecords != null)
         {
             (esmReportGenerated, heightmapsExported, scriptsExtracted,
-                runtimeTexturesExported, runtimeMeshesExported) = await GenerateEsmOutputsAsync(
-                analysisResult, filePath, extractDir, progress);
+                runtimeTexturesExported, runtimeMeshesExported, semanticResult) =
+                await GenerateEsmOutputsAsync(analysisResult, filePath, extractDir, progress);
+
+            // Post-carve enrichment: rename XMA files using SOUN EditorIDs
+            if (semanticResult != null)
+            {
+                await EnrichCarvedSoundNames(entries, extractDir, semanticResult);
+            }
         }
 
         // Return summary
@@ -321,9 +329,10 @@ public static class MinidumpExtractor
 
     /// <summary>
     ///     Generate ESM semantic report, heightmap images, and runtime asset exports.
+    ///     Returns the RecordCollection for post-processing (e.g., sound/mesh name enrichment).
     /// </summary>
     private static async Task<(bool reportGenerated, int heightmapsExported, int scriptsExtracted,
-        int runtimeTexturesExported, int runtimeMeshesExported)>
+        int runtimeTexturesExported, int runtimeMeshesExported, RecordCollection? records)>
         GenerateEsmOutputsAsync(
             AnalysisResult analysisResult,
             string filePath,
@@ -339,7 +348,7 @@ public static class MinidumpExtractor
         if (analysisResult.EsmRecords == null)
         {
             return (reportGenerated, heightmapsExported, scriptsExtracted,
-                runtimeTexturesExported, runtimeMeshesExported);
+                runtimeTexturesExported, runtimeMeshesExported, null);
         }
 
         progress?.Report(new ExtractionProgress
@@ -449,7 +458,7 @@ public static class MinidumpExtractor
                 runtimeTexturesExported = analysisResult.RuntimeTextures.Count;
             }
 
-            // Export runtime in-memory meshes as OBJ
+            // Export runtime in-memory meshes as OBJ with enriched names
             if (analysisResult.RuntimeMeshes is { Count: > 0 })
             {
                 progress?.Report(new ExtractionProgress
@@ -458,10 +467,15 @@ public static class MinidumpExtractor
                     CurrentOperation = $"Exporting {analysisResult.RuntimeMeshes.Count} runtime meshes..."
                 });
 
+                // Build model name → EditorID reverse index for enriched naming
+                var modelNameIndex = AssetNameResolver.BuildModelNameIndex(semanticResult);
+
                 var objDir = Path.Combine(extractDir, "obj");
                 Directory.CreateDirectory(objDir);
                 MeshObjExporter.ExportMultiple(analysisResult.RuntimeMeshes,
-                    Path.Combine(objDir, "meshes.obj"));
+                    Path.Combine(objDir, "meshes.obj"),
+                    analysisResult.SceneGraphMap,
+                    modelNameIndex);
                 MeshObjExporter.ExportSummary(analysisResult.RuntimeMeshes,
                     Path.Combine(objDir, "meshes_summary.csv"));
                 runtimeMeshesExported = analysisResult.RuntimeMeshes.Count;
@@ -472,6 +486,9 @@ public static class MinidumpExtractor
                 PercentComplete = 98,
                 CurrentOperation = $"ESM report generated, {heightmapsExported} heightmaps exported"
             });
+
+            return (reportGenerated, heightmapsExported, scriptsExtracted,
+                runtimeTexturesExported, runtimeMeshesExported, semanticResult);
         }
         catch (Exception ex)
         {
@@ -480,7 +497,102 @@ public static class MinidumpExtractor
         }
 
         return (reportGenerated, heightmapsExported, scriptsExtracted,
-            runtimeTexturesExported, runtimeMeshesExported);
+            runtimeTexturesExported, runtimeMeshesExported, null);
+    }
+
+    /// <summary>
+    ///     Post-carve enrichment: rename carved XMA/audio files using SOUN record EditorIDs.
+    ///     Correlates CarveEntry.OriginalPath (embedded game path) with SoundRecord.FileName
+    ///     to discover the semantic EditorID, then renames the output file on disk.
+    /// </summary>
+    private static async Task EnrichCarvedSoundNames(
+        List<CarveEntry> entries,
+        string extractDir,
+        RecordCollection semanticResult)
+    {
+        var soundIndex = AssetNameResolver.BuildSoundNameIndex(semanticResult.Sounds);
+        if (soundIndex.Count == 0)
+        {
+            return;
+        }
+
+        var renamed = 0;
+        foreach (var entry in entries)
+        {
+            if (!entry.FileType.StartsWith("xma", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(entry.OriginalPath))
+            {
+                continue;
+            }
+
+            var normalizedPath = entry.OriginalPath.Replace('\\', '/').TrimStart('/');
+            if (!soundIndex.TryGetValue(normalizedPath, out var editorId))
+            {
+                continue;
+            }
+
+            // Find the actual file on disk (may be in xma/ or audio/ folder after conversion)
+            var currentPath = Path.Combine(extractDir, entry.FileType, entry.Filename);
+            if (!File.Exists(currentPath))
+            {
+                // Try the audio/ folder for converted WAV files
+                var audioDir = Path.Combine(extractDir, "audio");
+                if (Directory.Exists(audioDir))
+                {
+                    var wavName = Path.ChangeExtension(entry.Filename, ".wav");
+                    var wavPath = Path.Combine(audioDir, wavName);
+                    if (File.Exists(wavPath))
+                    {
+                        currentPath = wavPath;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            var ext = Path.GetExtension(currentPath);
+            var dir = Path.GetDirectoryName(currentPath)!;
+            var newName = SanitizeFilename(AssetNameResolver.SanitizeFileName(editorId)) + ext;
+            var newPath = Path.Combine(dir, newName);
+
+            // Handle collisions
+            var counter = 1;
+            while (File.Exists(newPath) && !string.Equals(newPath, currentPath, StringComparison.OrdinalIgnoreCase))
+            {
+                newPath = Path.Combine(dir,
+                    $"{SanitizeFilename(AssetNameResolver.SanitizeFileName(editorId))}_{counter++}{ext}");
+            }
+
+            if (!string.Equals(newPath, currentPath, StringComparison.OrdinalIgnoreCase) && File.Exists(currentPath))
+            {
+                try
+                {
+                    File.Move(currentPath, newPath);
+                    entry.Filename = Path.GetFileName(newPath);
+                    renamed++;
+                }
+                catch (IOException)
+                {
+                    // Skip files that can't be renamed (locked, etc.)
+                }
+            }
+        }
+
+        // Re-save manifest with updated filenames
+        if (renamed > 0)
+        {
+            await CarveManifest.SaveAsync(extractDir, entries);
+        }
     }
 
     /// <summary>

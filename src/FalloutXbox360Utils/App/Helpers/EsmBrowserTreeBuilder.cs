@@ -156,7 +156,17 @@ internal static partial class EsmBrowserTreeBuilder
         [typeof(StaticRecord)] = "STAT",
         [typeof(FurnitureRecord)] = "FURN",
         [typeof(ScriptRecord)] = "SCPT",
-        [typeof(PackageRecord)] = "PACK"
+        [typeof(PackageRecord)] = "PACK",
+        [typeof(SoundRecord)] = "SOUN",
+        [typeof(TextureSetRecord)] = "TXST",
+        [typeof(ArmaRecord)] = "ARMA",
+        [typeof(WaterRecord)] = "WATR",
+        [typeof(BodyPartDataRecord)] = "BPTD",
+        [typeof(ActorValueInfoRecord)] = "AVIF",
+        [typeof(CombatStyleRecord)] = "CSTY",
+        [typeof(LightingTemplateRecord)] = "LGTM",
+        [typeof(NavMeshRecord)] = "NAVM",
+        [typeof(WeatherRecord)] = "WTHR"
     };
 
     /// <summary>
@@ -213,11 +223,14 @@ internal static partial class EsmBrowserTreeBuilder
             ("Creatures", result.Creatures),
             ("Races", result.Races),
             ("Factions", result.Factions),
-            ("Classes", result.Classes)
+            ("Classes", result.Classes),
+            ("Body Part Data", result.BodyPartData),
+            ("Actor Value Info", result.ActorValueInfos)
         ]);
 
         AddCategory(root, "AI", "\uE8AB", [
-            ("AI Packages", result.Packages)
+            ("AI Packages", result.Packages),
+            ("Combat Styles", result.CombatStyles)
         ]);
 
         // Dialog Topics and Dialogues are in the Dialogue Viewer tab
@@ -233,6 +246,7 @@ internal static partial class EsmBrowserTreeBuilder
         AddCategory(root, "Items", "\uE7BF", [
             ("Weapons", result.Weapons),
             ("Armor", result.Armor),
+            ("Armor Addons", result.ArmorAddons),
             ("Ammo", result.Ammo),
             ("Consumables", result.Consumables),
             ("Misc Items", result.MiscItems),
@@ -255,7 +269,11 @@ internal static partial class EsmBrowserTreeBuilder
             ("Lights", result.Lights),
             ("Doors", result.Doors),
             ("Statics", result.Statics),
-            ("Furniture", result.Furniture)
+            ("Furniture", result.Furniture),
+            ("Water", result.Water),
+            ("Weather", result.Weather),
+            ("Nav Meshes", result.NavMeshes),
+            ("Lighting Templates", result.LightingTemplates)
         ]);
 
         AddCategory(root, "Game Data", "\uE8F1", [
@@ -270,7 +288,61 @@ internal static partial class EsmBrowserTreeBuilder
             ("Explosions", result.Explosions)
         ]);
 
+        // Add generic records grouped by type + specialized Phase 2 records into categories
+        var byType = result.GenericRecords.Count > 0
+            ? result.GenericRecords
+                .GroupBy(r => r.RecordType)
+                .ToDictionary(g => g.Key, g => (IList)g.ToList())
+            : new Dictionary<string, IList>();
+
+        var graphicsSubs = new List<(string Name, IList Records)>();
+        if (result.TextureSets.Count > 0) graphicsSubs.Add(("Texture Sets", result.TextureSets));
+        graphicsSubs.AddRange(BuildGenericSubcategories(byType,
+            ("Camera Shots", "CAMS"),
+            ("Effect Shaders", "EFSH"),
+            ("Image Space Modifiers", "IMAD")));
+        AddCategory(root, "Graphics", "\uE790", graphicsSubs.ToArray());
+
+        var audioSubs = new List<(string Name, IList Records)>();
+        if (result.Sounds.Count > 0) audioSubs.Add(("Sounds", result.Sounds));
+        audioSubs.AddRange(BuildGenericSubcategories(byType,
+            ("Acoustic Spaces", "ASPC"),
+            ("Media Sets", "MSET")));
+        AddCategory(root, "Audio", "\uE767", audioSubs.ToArray());
+
+        AddCategory(root, "Misc Data", "\uE71D", BuildGenericSubcategories(byType,
+            ("Movable Statics", "MSTT"),
+            ("Talking Activators", "TACT"),
+            ("Trees", "TREE"),
+            ("Addon Nodes", "ADDN"),
+            ("Animated Objects", "ANIO"),
+            ("Impact Data Sets", "IPDS"),
+            ("Ragdolls", "RGDL"),
+            ("Load Screens", "LSCR"),
+            ("Casino Chips", "CHIP"),
+            ("Casinos", "CSNO"),
+            ("Default Objects", "DOBJ")));
+
         return root;
+    }
+
+    /// <summary>
+    ///     Builds subcategory tuples for generic records, filtering to types that have instances.
+    /// </summary>
+    private static (string Name, IList Records)[] BuildGenericSubcategories(
+        Dictionary<string, IList> byType,
+        params (string DisplayName, string RecordType)[] mappings)
+    {
+        var result = new List<(string Name, IList Records)>();
+        foreach (var (displayName, recordType) in mappings)
+        {
+            if (byType.TryGetValue(recordType, out var records) && records.Count > 0)
+            {
+                result.Add((displayName, records));
+            }
+        }
+
+        return result.ToArray();
     }
 
     private static void AddCategory(
@@ -571,7 +643,16 @@ internal static partial class EsmBrowserTreeBuilder
         var type = record.GetType();
 
         // Add record type signature as the first Identity property
-        if (RecordTypeSignatures.TryGetValue(type, out var signature))
+        if (record is GenericEsmRecord generic)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Record Type",
+                Value = generic.RecordType,
+                Category = "Identity"
+            });
+        }
+        else if (RecordTypeSignatures.TryGetValue(type, out var signature))
         {
             properties.Add(new EsmPropertyEntry
             {
@@ -886,6 +967,36 @@ internal static partial class EsmBrowserTreeBuilder
             // Skip Cells list for WorldspaceRecord (shown as summary instead)
             if (record is WorldspaceRecord && prop.Name == "Cells")
             {
+                continue;
+            }
+
+            // Handle GenericEsmRecord Fields dictionary — expand into sub-properties
+            if (value is Dictionary<string, object?> fieldsDict && fieldsDict.Count > 0)
+            {
+                var subItems = new List<EsmPropertyEntry>();
+                foreach (var (key, fieldVal) in fieldsDict)
+                {
+                    var fieldStr = fieldVal switch
+                    {
+                        null => "null",
+                        byte[] b => $"[{b.Length} bytes]",
+                        uint fid => $"0x{fid:X8}",
+                        string s => s,
+                        Dictionary<string, object?> schemaFields => string.Join(", ",
+                            schemaFields.Select(f => $"{f.Key}={FormatSchemaFieldValue(f.Value)}")),
+                        _ => fieldVal.ToString() ?? ""
+                    };
+                    subItems.Add(new EsmPropertyEntry { Name = key, Value = fieldStr ?? "" });
+                }
+
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = $"Subrecords ({fieldsDict.Count} fields)",
+                    Value = "",
+                    Category = "General",
+                    IsExpandable = true,
+                    SubItems = subItems
+                });
                 continue;
             }
 
@@ -1466,6 +1577,24 @@ internal static partial class EsmBrowserTreeBuilder
 
             // Nothing
             (false, false, false) => "Unknown"
+        };
+    }
+
+    private static string FormatSchemaFieldValue(object? value)
+    {
+        return value switch
+        {
+            null => "null",
+            uint u => $"0x{u:X8}",
+            int i => i.ToString(),
+            ushort us => us.ToString(),
+            short s => s.ToString(),
+            float f => $"{f:F4}",
+            byte b => $"0x{b:X2}",
+            sbyte sb => sb.ToString(),
+            string str => str,
+            byte[] bytes => $"[{bytes.Length} bytes]",
+            _ => value.ToString() ?? ""
         };
     }
 

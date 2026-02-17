@@ -12,7 +12,30 @@ namespace FalloutXbox360Utils.Tests.Core.Parsers;
 /// </summary>
 public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture samples)
 {
+    private static byte[]? _cachedFileData;
+    private static EsmRecordScanResult? _cachedScanResult;
+    private static readonly Lock CacheLock = new();
     private readonly ITestOutputHelper _output = output;
+
+    private byte[] GetProtoEsmData()
+    {
+        lock (CacheLock)
+        {
+            return _cachedFileData ??= File.ReadAllBytes(samples.Xbox360ProtoEsm!);
+        }
+    }
+
+    /// <summary>
+    ///     Returns a cached scan result, avoiding redundant EnumerateRecordsWithGrups calls
+    ///     across the two test methods in this class.
+    /// </summary>
+    private EsmRecordScanResult GetScanResult(byte[] fileData)
+    {
+        lock (CacheLock)
+        {
+            return _cachedScanResult ??= BuildScanResultFromParser(fileData);
+        }
+    }
 
     /// <summary>
     ///     Builds an EsmRecordScanResult from the fast structured parser output.
@@ -35,14 +58,15 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void NpcReconstruction_CompressedRecord_ShouldParseAllFields()
     {
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
-        var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
+        var fileData = GetProtoEsmData();
         _output.WriteLine($"File size: {fileData.Length:N0} bytes");
 
-        var scanResult = BuildScanResultFromParser(fileData);
+        var scanResult = GetScanResult(fileData);
         _output.WriteLine($"Parsed {scanResult.MainRecords.Count:N0} records");
 
         using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,
@@ -66,12 +90,13 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void CreatureReconstruction_ShouldParseSubrecords()
     {
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
-        var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
-        var scanResult = BuildScanResultFromParser(fileData);
+        var fileData = GetProtoEsmData();
+        var scanResult = GetScanResult(fileData);
 
         using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,
             MemoryMappedFileAccess.Read);

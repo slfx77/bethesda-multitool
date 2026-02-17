@@ -18,6 +18,9 @@ public record DetectedMainRecord(
     /// <summary>Whether this is a deleted record.</summary>
     public bool IsDeleted => (Flags & 0x00000020) != 0;
 
+    /// <summary>Whether this record has the Initially Disabled flag (0x0800).</summary>
+    public bool IsInitiallyDisabled => (Flags & 0x00000800) != 0;
+
     /// <summary>Plugin index from FormID (upper 8 bits).</summary>
     public byte PluginIndex => (byte)(FormId >> 24);
 

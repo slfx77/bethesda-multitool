@@ -67,6 +67,12 @@ public record PlacedReference
     /// <summary>Map marker display name (FULL subrecord).</summary>
     public string? MarkerName { get; init; }
 
+    /// <summary>Whether this record has the Initially Disabled flag (0x0800) on its main record header.</summary>
+    public bool IsInitiallyDisabled { get; init; }
+
+    /// <summary>Enable parent flags byte from XESP subrecord (bit 0 = opposite state).</summary>
+    public byte? EnableParentFlags { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

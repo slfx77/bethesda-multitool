@@ -29,6 +29,12 @@ public record ExtractedRefrRecord
     /// <summary>Parent cell FormID (if known).</summary>
     public uint? ParentCellFormId { get; init; }
 
+    /// <summary>XESP - Enable Parent FormID.</summary>
+    public uint? EnableParentFormId { get; init; }
+
+    /// <summary>XESP - Enable Parent Flags (bit 0 = "Set Enable State to Opposite of Parent").</summary>
+    public byte? EnableParentFlags { get; init; }
+
     /// <summary>Editor ID of base object (if resolved).</summary>
     public string? BaseEditorId { get; init; }
 

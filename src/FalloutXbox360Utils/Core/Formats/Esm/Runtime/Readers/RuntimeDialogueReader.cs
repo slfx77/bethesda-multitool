@@ -31,6 +31,15 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     // TESTopicInfo: Proto Debug PDB = 80 bytes, all known dumps = 96 bytes (PDB + 16 shift).
     private static readonly InfoOffsets InfoLayout = new(96, 48, 51, 56, 76, 84, 88);
 
+    // TESForm field present in Release builds (not in Proto Debug PDB):
+    // cFormEditorID BSStringT at offset 16 (same in both PDB and runtime — within TESForm base).
+    private const int FormEditorIdOffset = 16;
+
+    // Additional TESTopicInfo offsets (adjusted = PDB + 16 shift):
+    // bSaidOnce at PDB+34 → adjusted +50, m_listAddTopics at PDB+48 → adjusted +64.
+    private const int InfoSaidOnceOffset = 50;
+    private const int InfoAddTopicsOffset = 64;
+
     // TESTopic layout — consistent across all known builds (Final Debug / Release PDB, 80 bytes).
     // FullName=+44, DataType=+52, Flags=+53, Priority=+56, QuestInfoList=+60, DummyPrompt=+68.
     private const int DialStructSize = 80;
@@ -231,6 +240,15 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         // Follow pOwnerQuest pointer → TESQuest* (0x47) → get Quest FormID
         var questFormId = _context.FollowPointerToFormId(buffer, _info.QuestPtrOffset, 0x47);
 
+        // Read bSaidOnce (bool8)
+        var saidOnce = buffer[InfoSaidOnceOffset] != 0;
+
+        // Walk m_listAddTopics BSSimpleList<TESTopic*>
+        var addTopicFormIds = WalkAddTopicsList(offset);
+
+        // Read cFormEditorID from TESForm base (Release build field at +16)
+        var formEditorId = _context.ReadBSStringT(offset, FormEditorIdOffset);
+
         return new RuntimeDialogueInfo
         {
             FormId = formId,
@@ -242,7 +260,10 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             SpeakerFormId = speakerFormId,
             Difficulty = difficulty,
             QuestFormId = questFormId,
-            PromptText = entry.DialogueLine
+            PromptText = entry.DialogueLine,
+            SaidOnce = saidOnce,
+            AddTopicFormIds = addTopicFormIds,
+            FormEditorId = formEditorId
         };
     }
 
@@ -314,6 +335,15 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         // Read cPrompt BSStringT
         var promptText = _context.ReadBSStringT(fileOffset.Value, _info.PromptOffset);
 
+        // Read bSaidOnce (bool8)
+        var saidOnce = buffer[InfoSaidOnceOffset] != 0;
+
+        // Walk m_listAddTopics BSSimpleList<TESTopic*>
+        var addTopicFormIds = WalkAddTopicsList(fileOffset.Value);
+
+        // Read cFormEditorID from TESForm base (Release build field at +16)
+        var formEditorId = _context.ReadBSStringT(fileOffset.Value, FormEditorIdOffset);
+
         return new RuntimeDialogueInfo
         {
             FormId = formId,
@@ -326,7 +356,10 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             Difficulty = difficulty,
             QuestFormId = questFormId,
             PromptText = promptText,
-            DumpOffset = fileOffset.Value
+            DumpOffset = fileOffset.Value,
+            SaidOnce = saidOnce,
+            AddTopicFormIds = addTopicFormIds,
+            FormEditorId = formEditorId
         };
     }
 
@@ -754,4 +787,65 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
         return results;
     }
+
+    /// <summary>
+    ///     Walk the m_listAddTopics BSSimpleList&lt;TESTopic*&gt; on a TESTopicInfo struct.
+    ///     Each list node contains a pointer to a TESTopic whose FormID we extract.
+    ///     Returns a list of topic FormIDs that this INFO adds to the NPC's topic menu.
+    /// </summary>
+    private List<uint> WalkAddTopicsList(long infoStructOffset)
+    {
+        var results = new List<uint>();
+
+        // Read the BSSimpleList inline node (8 bytes: m_item + m_pkNext) at +64
+        var listOffset = infoStructOffset + InfoAddTopicsOffset;
+        var listBuf = _context.ReadBytes(listOffset, 8);
+        if (listBuf == null)
+        {
+            return results;
+        }
+
+        var firstItem = BinaryUtils.ReadUInt32BE(listBuf); // TESTopic* pointer
+        var firstNext = BinaryUtils.ReadUInt32BE(listBuf, 4); // _Node* pointer
+
+        // Process inline first item — follow pointer to TESTopic, read FormID at +12
+        var firstFormId = _context.FollowPointerVaToFormId(firstItem);
+        if (firstFormId != null)
+        {
+            results.Add(firstFormId.Value);
+        }
+
+        // Follow BSSimpleList chain
+        var nextVA = firstNext;
+        var visited = new HashSet<uint>();
+        while (nextVA != 0 && results.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nextVA))
+        {
+            visited.Add(nextVA);
+            var nodeFileOffset = _context.VaToFileOffset(nextVA);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+            {
+                break;
+            }
+
+            var dataPtr = BinaryUtils.ReadUInt32BE(nodeBuf); // TESTopic*
+            var nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4); // _Node*
+
+            var topicFormId = _context.FollowPointerVaToFormId(dataPtr);
+            if (topicFormId != null)
+            {
+                results.Add(topicFormId.Value);
+            }
+
+            nextVA = nextPtr;
+        }
+
+        return results;
+    }
+
 }

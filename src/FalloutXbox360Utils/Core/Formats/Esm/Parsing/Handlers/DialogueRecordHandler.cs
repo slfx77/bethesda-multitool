@@ -95,6 +95,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         uint? speakerFormId = null;
         uint? previousInfo = null;
         uint difficulty = 0;
+        var hasResultScript = false;
         var responses = new List<DialogueResponse>();
         var linkToTopics = new List<uint>();
         var linkFromTopics = new List<uint>();
@@ -207,6 +208,9 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     }
 
                     break;
+                case "SCHR":
+                    hasResultScript = true;
+                    break;
                 case "CTDA" when sub.DataLength >= 28:
                 {
                     var fields = SubrecordDataReader.ReadFields("CTDA", null, subData, record.IsBigEndian);
@@ -283,6 +287,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             LinkToTopics = linkToTopics,
             LinkFromTopics = linkFromTopics,
             AddTopics = addTopics,
+            HasResultScript = hasResultScript,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -921,14 +926,18 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
 
             dialogues[i] = dialogue with
             {
-                EditorId = dialogue.EditorId ?? entry.EditorId,
+                EditorId = dialogue.EditorId ?? entry.EditorId ?? runtimeInfo.FormEditorId,
                 PromptText = runtimeInfo.PromptText ?? dialogue.PromptText,
                 InfoIndex = runtimeInfo.InfoIndex,
                 InfoFlags = runtimeInfo.InfoFlags,
                 InfoFlagsExt = runtimeInfo.InfoFlagsExt,
                 Difficulty = runtimeInfo.Difficulty > 0 ? runtimeInfo.Difficulty : dialogue.Difficulty,
                 SpeakerFormId = runtimeInfo.SpeakerFormId ?? dialogue.SpeakerFormId,
-                QuestFormId = runtimeInfo.QuestFormId ?? dialogue.QuestFormId
+                QuestFormId = runtimeInfo.QuestFormId ?? dialogue.QuestFormId,
+                SaidOnce = runtimeInfo.SaidOnce,
+                AddTopics = runtimeInfo.AddTopicFormIds.Count > 0 && dialogue.AddTopics.Count == 0
+                    ? runtimeInfo.AddTopicFormIds
+                    : dialogue.AddTopics
             };
             mergedCount++;
         }
@@ -1106,6 +1115,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         var newDialogue = new DialogueRecord
         {
             FormId = infoEntry.FormId,
+            EditorId = runtimeInfo.FormEditorId,
             TopicFormId = topicFormId,
             QuestFormId = questFormId,
             PromptText = runtimeInfo.PromptText,
@@ -1114,6 +1124,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             InfoFlagsExt = runtimeInfo.InfoFlagsExt,
             Difficulty = runtimeInfo.Difficulty,
             SpeakerFormId = runtimeInfo.SpeakerFormId,
+            SaidOnce = runtimeInfo.SaidOnce,
+            AddTopics = runtimeInfo.AddTopicFormIds,
             Offset = runtimeInfo.DumpOffset,
             IsBigEndian = true
         };
@@ -1549,7 +1561,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         // Build TopicDialogueNode for each known topic
         var topicNodes = CreateTopicDialogueNodes(infosByTopic, topics, topicById);
 
-        // Cross-link: fill in LinkedTopics for each InfoDialogueNode
+        // Cross-link: fill in ChoiceTopics (TCLT) and AddedTopics (NAME) for each InfoDialogueNode
         CrossLinkInfoNodes(topicNodes);
 
         // Group topics by quest
@@ -1624,7 +1636,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             var infoNodes = infos.Select(info => new InfoDialogueNode
             {
                 Info = info,
-                LinkedTopics = []
+                ChoiceTopics = [],
+                AddedTopics = []
             }).ToList();
 
             topicNodes[topicId] = new TopicDialogueNode
@@ -1640,7 +1653,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
     }
 
     /// <summary>
-    ///     Cross-link: fill in LinkedTopics for each InfoDialogueNode.
+    ///     Cross-link: fill in ChoiceTopics (TCLT) and AddedTopics (NAME) for each InfoDialogueNode.
     /// </summary>
     private static void CrossLinkInfoNodes(Dictionary<uint, TopicDialogueNode> topicNodes)
     {
@@ -1648,17 +1661,19 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         {
             foreach (var infoNode in topicNode.InfoChain)
             {
-                var linkedIds = new HashSet<uint>(infoNode.Info.LinkToTopics);
-                foreach (var addId in infoNode.Info.AddTopics)
+                foreach (var tcltId in infoNode.Info.LinkToTopics)
                 {
-                    linkedIds.Add(addId);
+                    if (topicNodes.TryGetValue(tcltId, out var choiceNode))
+                    {
+                        infoNode.ChoiceTopics.Add(choiceNode);
+                    }
                 }
 
-                foreach (var linkedId in linkedIds)
+                foreach (var addId in infoNode.Info.AddTopics)
                 {
-                    if (topicNodes.TryGetValue(linkedId, out var linkedNode))
+                    if (topicNodes.TryGetValue(addId, out var addedNode))
                     {
-                        infoNode.LinkedTopics.Add(linkedNode);
+                        infoNode.AddedTopics.Add(addedNode);
                     }
                 }
             }
@@ -1779,7 +1794,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             .Select(info => new InfoDialogueNode
             {
                 Info = info,
-                LinkedTopics = []
+                ChoiceTopics = [],
+                AddedTopics = []
             }).ToList();
 
         return new TopicDialogueNode

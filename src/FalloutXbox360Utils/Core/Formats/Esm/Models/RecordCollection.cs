@@ -144,6 +144,41 @@ public record RecordCollection
     /// <summary>Reconstructed AI Package (PACK) records.</summary>
     public List<PackageRecord> Packages { get; init; } = [];
 
+    // Generic
+    /// <summary>Generic ESM records for types without specialized models (MSTT, TACT, CAMS, ANIO, etc.).</summary>
+    public List<GenericEsmRecord> GenericRecords { get; init; } = [];
+
+    // Specialized Phase 2 records
+    /// <summary>Reconstructed Sound (SOUN) records.</summary>
+    public List<SoundRecord> Sounds { get; init; } = [];
+
+    /// <summary>Reconstructed Texture Set (TXST) records.</summary>
+    public List<TextureSetRecord> TextureSets { get; init; } = [];
+
+    /// <summary>Reconstructed Armor Addon (ARMA) records.</summary>
+    public List<ArmaRecord> ArmorAddons { get; init; } = [];
+
+    /// <summary>Reconstructed Water (WATR) records.</summary>
+    public List<WaterRecord> Water { get; init; } = [];
+
+    /// <summary>Reconstructed Body Part Data (BPTD) records.</summary>
+    public List<BodyPartDataRecord> BodyPartData { get; init; } = [];
+
+    /// <summary>Reconstructed Actor Value Info (AVIF) records.</summary>
+    public List<ActorValueInfoRecord> ActorValueInfos { get; init; } = [];
+
+    /// <summary>Reconstructed Combat Style (CSTY) records.</summary>
+    public List<CombatStyleRecord> CombatStyles { get; init; } = [];
+
+    /// <summary>Reconstructed Lighting Template (LGTM) records.</summary>
+    public List<LightingTemplateRecord> LightingTemplates { get; init; } = [];
+
+    /// <summary>Reconstructed Navigation Mesh (NAVM) records.</summary>
+    public List<NavMeshRecord> NavMeshes { get; init; } = [];
+
+    /// <summary>Reconstructed Weather (WTHR) records.</summary>
+    public List<WeatherRecord> Weather { get; init; } = [];
+
     /// <summary>FormID → model path (.nif) mapping from STAT, ACTI, DOOR, LIGH, FURN, WEAP, ARMO, AMMO, ALCH, MISC, BOOK, CONT records.</summary>
     public Dictionary<uint, string> ModelPathIndex { get; init; } = [];
 
@@ -168,7 +203,11 @@ public record RecordCollection
         Projectiles.Count + Explosions.Count + Messages.Count + Classes.Count +
         FormLists.Count + Activators.Count +
         Lights.Count + Doors.Count + Statics.Count + Furniture.Count +
-        Packages.Count;
+        Packages.Count +
+        GenericRecords.Count +
+        Sounds.Count + TextureSets.Count + ArmorAddons.Count + Water.Count +
+        BodyPartData.Count + ActorValueInfos.Count + CombatStyles.Count +
+        LightingTemplates.Count + NavMeshes.Count + Weather.Count;
 
     /// <summary>
     ///     Counts of record types that were detected but not fully reconstructed.

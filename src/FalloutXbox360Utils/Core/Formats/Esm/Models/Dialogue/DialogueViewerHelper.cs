@@ -16,7 +16,7 @@ internal static class DialogueViewerHelper
         var result = new Dictionary<uint, (TopicDialogueNode Topic, InfoDialogueNode SourceInfo)>();
         foreach (var infoNode in chain)
         {
-            foreach (var linked in infoNode.LinkedTopics)
+            foreach (var linked in infoNode.ChoiceTopics)
             {
                 if (linked.TopicFormId != excludeTopicFormId)
                 {
@@ -76,7 +76,7 @@ internal static class DialogueViewerHelper
             }
 
             if (candidate.InfoChain.Any(info =>
-                    info.LinkedTopics.Any(linked => linked.TopicFormId == currentTopic.TopicFormId)))
+                    info.ChoiceTopics.Any(linked => linked.TopicFormId == currentTopic.TopicFormId)))
             {
                 return candidate;
             }

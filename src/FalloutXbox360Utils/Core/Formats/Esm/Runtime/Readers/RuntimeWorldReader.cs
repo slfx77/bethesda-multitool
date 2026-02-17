@@ -283,8 +283,9 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             }
         }
 
-        // Require at least 50% valid floats (same quality gate as ReadFaceGenMorphArray)
-        if (validCount < totalFloats * 0.5)
+        // Require at least 70% valid floats to reject garbage terrain data.
+        // FaceGen uses 50% but terrain is more sensitive to corruption.
+        if (validCount < totalFloats * 0.7)
         {
             return (null, 0);
         }

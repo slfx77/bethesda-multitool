@@ -33,6 +33,7 @@ public sealed class RecordParserContext
     /// </summary>
     public Dictionary<uint, string> FormIdToFullName { get; } = new();
 
+    private readonly Dictionary<string, List<DetectedMainRecord>> _recordsByType;
     private Dictionary<uint, uint>? _refToBase;
 
     /// <summary>
@@ -63,6 +64,11 @@ public sealed class RecordParserContext
             .GroupBy(r => r.FormId)
             .ToDictionary(g => g.Key, g => g.First());
 
+        // Build record type index for O(1) GetRecordsByType lookups
+        _recordsByType = scanResult.MainRecords
+            .GroupBy(r => r.RecordType)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
         // Build EditorID lookups from ESM EDID subrecords or pre-built correlations
         FormIdToEditorId = formIdCorrelations != null
             ? new Dictionary<uint, string>(formIdCorrelations)
@@ -84,6 +90,10 @@ public sealed class RecordParserContext
         EditorIdToFormId = FormIdToEditorId
             .GroupBy(kv => kv.Value)
             .ToDictionary(g => g.Key, g => g.First().Key);
+
+        // Pre-populate FormIdToFullName from scan results so that CaptureAllFullNames()
+        // can skip already-known records instead of re-reading them from the accessor.
+        PrePopulateFullNames(scanResult);
     }
 
     #region Lookup Methods
@@ -105,7 +115,7 @@ public sealed class RecordParserContext
 
     public IEnumerable<DetectedMainRecord> GetRecordsByType(string recordType)
     {
-        return ScanResult.MainRecords.Where(r => r.RecordType == recordType);
+        return _recordsByType.TryGetValue(recordType, out var list) ? list : [];
     }
 
     #endregion
@@ -313,6 +323,36 @@ public sealed class RecordParserContext
 
     #region Private
 
+    private void PrePopulateFullNames(EsmRecordScanResult scanResult)
+    {
+        if (scanResult.FullNames.Count == 0)
+        {
+            return;
+        }
+
+        // FullNames.Offset == parent record offset (set by ConvertToScanResult).
+        // Build offset→FormId lookup from RecordsByFormId is expensive; instead use
+        // the sorted MainRecords list since offsets are unique per record.
+        var recordByOffset = new Dictionary<long, uint>(scanResult.MainRecords.Count);
+        foreach (var record in scanResult.MainRecords)
+        {
+            recordByOffset.TryAdd(record.Offset, record.FormId);
+        }
+
+        foreach (var fullName in scanResult.FullNames)
+        {
+            if (string.IsNullOrEmpty(fullName.Text))
+            {
+                continue;
+            }
+
+            if (recordByOffset.TryGetValue(fullName.Offset, out var formId) && formId != 0)
+            {
+                FormIdToFullName.TryAdd(formId, fullName.Text);
+            }
+        }
+    }
+
     private Dictionary<uint, uint> BuildRefToBase()
     {
         var map = new Dictionary<uint, uint>();
@@ -330,17 +370,41 @@ public sealed class RecordParserContext
     private static Dictionary<uint, string> BuildFormIdToEditorIdMap(EsmRecordScanResult scanResult)
     {
         var map = new Dictionary<uint, string>();
+        var records = scanResult.MainRecords;
+
+        if (records.Count == 0)
+        {
+            return map;
+        }
+
+        // Build sorted offset array for O(log N) binary search per EditorID.
+        // MainRecords are typically in file order already, but sort to guarantee.
+        var sortedRecords = records.OrderBy(r => r.Offset).ToList();
+        var offsets = new long[sortedRecords.Count];
+        for (var i = 0; i < sortedRecords.Count; i++)
+        {
+            offsets[i] = sortedRecords[i].Offset;
+        }
 
         foreach (var edid in scanResult.EditorIds)
         {
-            var nearestRecord = scanResult.MainRecords
-                .Where(r => r.Offset < edid.Offset && edid.Offset < r.Offset + r.DataSize + 24)
-                .OrderByDescending(r => r.Offset)
-                .FirstOrDefault();
-
-            if (nearestRecord != null && !map.ContainsKey(nearestRecord.FormId))
+            // Binary search for the record whose Offset is <= edid.Offset
+            var idx = Array.BinarySearch(offsets, edid.Offset);
+            if (idx < 0)
             {
-                map[nearestRecord.FormId] = edid.Name;
+                idx = ~idx - 1; // Bitwise complement gives insertion point; -1 for the record before
+            }
+
+            if (idx < 0)
+            {
+                continue;
+            }
+
+            var candidate = sortedRecords[idx];
+            // Verify EDID falls within this record's data region
+            if (edid.Offset < candidate.Offset + candidate.DataSize + 24)
+            {
+                map.TryAdd(candidate.FormId, edid.Name);
             }
         }
 

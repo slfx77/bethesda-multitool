@@ -41,6 +41,9 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 RotZ = refr.Position?.RotZ ?? 0,
                 Scale = refr.Scale,
                 OwnerFormId = refr.OwnerFormId,
+                EnableParentFormId = refr.EnableParentFormId,
+                EnableParentFlags = refr.EnableParentFlags,
+                IsInitiallyDisabled = refr.Header.IsInitiallyDisabled,
                 IsMapMarker = true,
                 MarkerType = refr.MarkerType.HasValue ? (MapMarkerType)refr.MarkerType.Value : null,
                 MarkerName = refr.MarkerName,
@@ -216,6 +219,104 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
     }
 
     /// <summary>
+    ///     DMP fallback: infer worldspace membership for exterior cells by testing grid coordinates
+    ///     against worldspace bounds (NAM0/NAM9 or MNAM cell ranges). Called when no GRUP hierarchy
+    ///     is available to provide exact cell-to-worldspace mapping.
+    /// </summary>
+    internal static void InferCellWorldspaces(List<CellRecord> cells, List<WorldspaceRecord> worldspaces)
+    {
+        if (worldspaces.Count == 0)
+        {
+            return;
+        }
+
+        // Build bounding boxes in cell grid coordinates from each worldspace's bounds data.
+        // Prefer MNAM (explicit cell ranges) over NAM0/NAM9 (world unit coordinates).
+        var worldspaceBounds = new List<(WorldspaceRecord Ws, int MinCellX, int MinCellY, int MaxCellX, int MaxCellY)>();
+        foreach (var ws in worldspaces)
+        {
+            int minCellX, minCellY, maxCellX, maxCellY;
+
+            if (ws.MapNWCellX.HasValue && ws.MapSECellX.HasValue)
+            {
+                // MNAM: explicit cell ranges (NW = top-left, SE = bottom-right)
+                minCellX = Math.Min(ws.MapNWCellX.Value, ws.MapSECellX.Value);
+                maxCellX = Math.Max(ws.MapNWCellX.Value, ws.MapSECellX.Value);
+                minCellY = Math.Min(ws.MapNWCellY!.Value, ws.MapSECellY!.Value);
+                maxCellY = Math.Max(ws.MapNWCellY.Value, ws.MapSECellY.Value);
+            }
+            else if (ws.BoundsMinX.HasValue && ws.BoundsMaxX.HasValue)
+            {
+                // NAM0/NAM9: world unit coordinates, convert to cell grid (4096 units per cell)
+                minCellX = (int)MathF.Floor(ws.BoundsMinX.Value / 4096f);
+                maxCellX = (int)MathF.Floor(ws.BoundsMaxX.Value / 4096f);
+                minCellY = (int)MathF.Floor(ws.BoundsMinY!.Value / 4096f);
+                maxCellY = (int)MathF.Floor(ws.BoundsMaxY!.Value / 4096f);
+            }
+            else
+            {
+                continue; // No bounds data available
+            }
+
+            worldspaceBounds.Add((ws, minCellX, minCellY, maxCellX, maxCellY));
+        }
+
+        if (worldspaceBounds.Count == 0)
+        {
+            // No worldspaces have bounds data; assign all exterior cells to the first worldspace
+            // as a best-effort fallback.
+            var fallback = worldspaces[0];
+            for (var i = 0; i < cells.Count; i++)
+            {
+                var cell = cells[i];
+                if (!cell.IsInterior && cell.GridX.HasValue && cell.WorldspaceFormId is null or 0)
+                {
+                    cells[i] = cell with { WorldspaceFormId = fallback.FormId };
+                }
+            }
+
+            Logger.Instance.Debug(
+                $"  [Semantic] InferCellWorldspaces: no bounds data, assigned all exterior cells to {fallback.EditorId ?? $"0x{fallback.FormId:X8}"}");
+            return;
+        }
+
+        // Sort by area descending so the largest worldspace is used as tiebreaker
+        worldspaceBounds.Sort((a, b) =>
+        {
+            var areaA = (long)(a.MaxCellX - a.MinCellX) * (a.MaxCellY - a.MinCellY);
+            var areaB = (long)(b.MaxCellX - b.MinCellX) * (b.MaxCellY - b.MinCellY);
+            return areaB.CompareTo(areaA);
+        });
+
+        var inferredCount = 0;
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var cell = cells[i];
+            if (cell.IsInterior || !cell.GridX.HasValue || cell.WorldspaceFormId is > 0)
+            {
+                continue;
+            }
+
+            var gx = cell.GridX.Value;
+            var gy = cell.GridY!.Value;
+
+            // Find matching worldspace (prefer largest by area = first in sorted list)
+            foreach (var (ws, minX, minY, maxX, maxY) in worldspaceBounds)
+            {
+                if (gx >= minX && gx <= maxX && gy >= minY && gy <= maxY)
+                {
+                    cells[i] = cell with { WorldspaceFormId = ws.FormId };
+                    inferredCount++;
+                    break;
+                }
+            }
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] InferCellWorldspaces: inferred {inferredCount} cells across {worldspaceBounds.Count} worldspaces");
+    }
+
+    /// <summary>
     ///     Links reconstructed cells to their parent worldspace's Cells list
     ///     based on CellRecord.WorldspaceFormId.
     /// </summary>
@@ -250,6 +351,92 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 worldspaces[idx] = worldspaces[idx] with { Cells = worldCells };
             }
         }
+    }
+
+    /// <summary>
+    ///     DMP fallback: create virtual cells for orphan REFR/ACHR/ACRE records that were not
+    ///     assigned to any real cell. Groups orphans by their XY-derived grid position and
+    ///     creates synthetic CellRecord entries so they appear on the world map.
+    /// </summary>
+    internal static List<CellRecord> CreateVirtualCells(
+        List<CellRecord> existingCells,
+        IReadOnlyList<ExtractedRefrRecord> allRefrs,
+        RecordParserContext context)
+    {
+        // Collect FormIDs of all refs already placed in cells
+        var placedFormIds = new HashSet<uint>();
+        foreach (var cell in existingCells)
+        {
+            foreach (var obj in cell.PlacedObjects)
+            {
+                placedFormIds.Add(obj.FormId);
+            }
+        }
+
+        // Find orphan refs (have a valid position but not in any cell)
+        var orphans = allRefrs
+            .Where(r => !placedFormIds.Contains(r.Header.FormId) && r.Position != null
+                        && (MathF.Abs(r.Position.X) > 1f || MathF.Abs(r.Position.Y) > 1f))
+            .ToList();
+
+        if (orphans.Count == 0)
+        {
+            return [];
+        }
+
+        // Group by grid cell derived from position (4096 world units per cell)
+        var groups = orphans
+            .GroupBy(r => ((int)MathF.Floor(r.Position!.X / 4096f), (int)MathF.Floor(r.Position.Y / 4096f)))
+            .Where(g => g.Count() >= 1)
+            .ToList();
+
+        var virtualCells = new List<CellRecord>();
+        var syntheticFormId = 0xFF000001u; // Synthetic FormIDs in a high range unlikely to collide
+
+        foreach (var group in groups)
+        {
+            var (gridX, gridY) = group.Key;
+            var refs = group.Select(r => new PlacedReference
+            {
+                FormId = r.Header.FormId,
+                BaseFormId = r.BaseFormId,
+                BaseEditorId = r.BaseEditorId ?? context.GetEditorId(r.BaseFormId),
+                RecordType = r.Header.RecordType,
+                X = r.Position?.X ?? 0,
+                Y = r.Position?.Y ?? 0,
+                Z = r.Position?.Z ?? 0,
+                RotX = r.Position?.RotX ?? 0,
+                RotY = r.Position?.RotY ?? 0,
+                RotZ = r.Position?.RotZ ?? 0,
+                Scale = r.Scale,
+                OwnerFormId = r.OwnerFormId,
+                EnableParentFormId = r.EnableParentFormId,
+                EnableParentFlags = r.EnableParentFlags,
+                IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
+                DestinationDoorFormId = r.DestinationDoorFormId,
+                IsMapMarker = r.IsMapMarker,
+                MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
+                MarkerName = r.MarkerName,
+                Offset = r.Header.Offset,
+                IsBigEndian = r.Header.IsBigEndian
+            }).ToList();
+
+            virtualCells.Add(new CellRecord
+            {
+                FormId = syntheticFormId++,
+                EditorId = $"[Virtual {gridX},{gridY}]",
+                GridX = gridX,
+                GridY = gridY,
+                PlacedObjects = refs,
+                IsVirtual = true,
+                IsBigEndian = refs[0].IsBigEndian
+            });
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] CreateVirtualCells: {orphans.Count} orphan refs → {virtualCells.Count} virtual cells");
+
+        return virtualCells;
     }
 
     /// <summary>
@@ -318,6 +505,9 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 RotZ = r.Position?.RotZ ?? 0,
                 Scale = r.Scale,
                 OwnerFormId = r.OwnerFormId,
+                EnableParentFormId = r.EnableParentFormId,
+                EnableParentFlags = r.EnableParentFlags,
+                IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
                 DestinationDoorFormId = r.DestinationDoorFormId,
                 IsMapMarker = r.IsMapMarker,
                 MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,

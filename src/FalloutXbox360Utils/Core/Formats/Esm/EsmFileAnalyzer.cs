@@ -422,6 +422,8 @@ public static class EsmFileAnalyzer
             var scale = 1.0f;
             uint? ownerFormId = null;
             uint? destinationDoorFormId = null;
+            uint? enableParentFormId = null;
+            byte? enableParentFlags = null;
             var isMapMarker = false;
             ushort? markerType = null;
             string? markerName = null;
@@ -452,6 +454,12 @@ public static class EsmFileAnalyzer
                         destinationDoorFormId = bigEndian
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
                             : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                        break;
+                    case "XESP" when sub.Data.Length >= 8:
+                        enableParentFormId = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                        enableParentFlags = sub.Data[4];
                         break;
                     case "XMRK":
                         isMapMarker = true;
@@ -488,6 +496,8 @@ public static class EsmFileAnalyzer
                 Scale = scale,
                 OwnerFormId = ownerFormId,
                 DestinationDoorFormId = destinationDoorFormId,
+                EnableParentFormId = enableParentFormId,
+                EnableParentFlags = enableParentFlags,
                 IsMapMarker = isMapMarker,
                 MarkerType = markerType,
                 MarkerName = markerName

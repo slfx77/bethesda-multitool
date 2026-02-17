@@ -86,7 +86,12 @@ public sealed class RecordParser
             "GLOB", "ENCH", "MGEF", "IMOD", "RCPE", "CHAL", "REPU",
             "PROJ", "EXPL", "MESG", "CLAS",
             "FLST", "ACTI", "LIGH", "DOOR", "STAT", "FURN",
-            "PACK"
+            "PACK",
+            // Generic record types (Phase 1)
+            "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
+            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
+            // Specialized record types (Phase 2)
+            "SOUN", "TXST", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR"
         };
 
         // Count all record types and compute unreconstructed counts
@@ -274,6 +279,21 @@ public sealed class RecordParser
         var cells = _world.ReconstructCells();
         var cellTime = phaseSw.Elapsed;
         var worldspaces = _world.ReconstructWorldspaces();
+
+        // DMP fallback: infer worldspace membership from cell grid coordinates when GRUP data is absent
+        if (_context.ScanResult.CellToWorldspaceMap.Count == 0 && worldspaces.Count > 0)
+        {
+            WorldRecordHandler.InferCellWorldspaces(cells, worldspaces);
+        }
+
+        // DMP fallback: create virtual cells for orphan REFR/ACHR/ACRE not assigned to any cell
+        if (_context.ScanResult.CellToRefrMap.Count == 0 && _context.ScanResult.RefrRecords.Count > 0)
+        {
+            var virtualCells = WorldRecordHandler.CreateVirtualCells(
+                cells, _context.ScanResult.RefrRecords, _context);
+            cells.AddRange(virtualCells);
+        }
+
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
         var packages = _ai.ReconstructPackages();
         var resolvedCount = SpawnPositionResolver.ResolveSpawnPositions(cells, packages, npcs, creatures);
@@ -301,6 +321,41 @@ public sealed class RecordParser
         var lights = _misc.ReconstructLights();
         var statics = _misc.ReconstructStatics();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
+
+        progress?.Report((85, "Reconstructing generic records..."));
+        phaseSw.Restart();
+        var genericTypes = new[]
+        {
+            "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
+            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD"
+        };
+        var genericRecords = new List<GenericEsmRecord>();
+        foreach (var type in genericTypes)
+        {
+            genericRecords.AddRange(_misc.ReconstructGenericRecords(type));
+        }
+
+        Logger.Instance.Debug(
+            $"  [Semantic] Generic records: {phaseSw.Elapsed} ({genericRecords.Count} across {genericTypes.Length} types)");
+
+        progress?.Report((88, "Reconstructing specialized records..."));
+        phaseSw.Restart();
+        var sounds = _misc.ReconstructSounds();
+        var textureSets = _misc.ReconstructTextureSets();
+        var armorAddons = _misc.ReconstructArmorAddons();
+        var water = _misc.ReconstructWater();
+        var bodyPartData = _misc.ReconstructBodyPartData();
+        var actorValueInfos = _misc.ReconstructActorValueInfos();
+        var combatStyles = _misc.ReconstructCombatStyles();
+        var lightingTemplates = _misc.ReconstructLightingTemplates();
+        var navMeshes = _misc.ReconstructNavMeshes();
+        var weather = _misc.ReconstructWeather();
+        Logger.Instance.Debug(
+            $"  [Semantic] Specialized records: {phaseSw.Elapsed} " +
+            $"(SOUN: {sounds.Count}, TXST: {textureSets.Count}, ARMA: {armorAddons.Count}, " +
+            $"WATR: {water.Count}, BPTD: {bodyPartData.Count}, AVIF: {actorValueInfos.Count}, " +
+            $"CSTY: {combatStyles.Count}, LGTM: {lightingTemplates.Count}, " +
+            $"NAVM: {navMeshes.Count}, WTHR: {weather.Count})");
 
         // Enrich placed references with base object bounds and model paths
         phaseSw.Restart();
@@ -389,6 +444,21 @@ public sealed class RecordParser
 
             // AI
             Packages = packages,
+
+            // Generic
+            GenericRecords = genericRecords,
+
+            // Specialized Phase 2
+            Sounds = sounds,
+            TextureSets = textureSets,
+            ArmorAddons = armorAddons,
+            Water = water,
+            BodyPartData = bodyPartData,
+            ActorValueInfos = actorValueInfos,
+            CombatStyles = combatStyles,
+            LightingTemplates = lightingTemplates,
+            NavMeshes = navMeshes,
+            Weather = weather,
 
             ModelPathIndex = modelIndex,
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),

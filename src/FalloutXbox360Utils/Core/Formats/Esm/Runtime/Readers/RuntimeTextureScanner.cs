@@ -53,6 +53,7 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
     private const int HeightPtrOffset = 88;        // m_puiHeight (uint32*)
     private const int OffsetsPtrOffset = 92;       // m_puiOffsetInBytes (uint32*)
     private const int MipmapLevelsOffset = 96;     // m_uiMipmapLevels (uint32 BE)
+    private const int PixelStrideOffset = 100;     // m_uiPixelStride (uint32 BE)
     private const int FacesOffset = 108;           // m_uiFaces (uint32 BE)
     private const int NiPixelDataSize = 116;
 
@@ -109,10 +110,11 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
                     {
                         textures.Add(texture);
                         Interlocked.Increment(ref _texturesFound);
+                        var potTag = texture.IsNonPowerOfTwo ? " [non-POT]" : "";
                         log.Debug(
-                            "  Found {0} texture at 0x{1:X}: {2}x{3}, {4} mips, {5:N0} bytes",
+                            "  Found {0} texture at 0x{1:X}: {2}x{3}, {4} mips, {5:N0} bytes{6}",
                             texture.Format, fileOffset, texture.Width, texture.Height,
-                            texture.MipmapLevels, texture.DataSize);
+                            texture.MipmapLevels, texture.DataSize, potTag);
                     }
                 }
 
@@ -341,7 +343,17 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
         var offsetsPtr = BinaryUtils.ReadUInt32BE(chunk, offset + OffsetsPtrOffset);
         var actualSize = ReadDataSizeFromOffsets(offsetsPtr, mipLevels, faces);
         var mip0Size = CalculateMipSize(format, width, height);
-        if (actualSize >= mip0Size && actualSize <= expectedSize * 2)
+        var isPot = IsPowerOfTwo((uint)width) && IsPowerOfTwo((uint)height);
+
+        if (!isPot)
+        {
+            // Non-POT textures: require exact data size match from offset array
+            if (actualSize == null || actualSize.Value != expectedSize)
+            {
+                return null;
+            }
+        }
+        else if (actualSize >= mip0Size && actualSize <= expectedSize * 2)
         {
             expectedSize = actualSize.Value;
         }
@@ -370,34 +382,127 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
 
     /// <summary>
     ///     Read and validate width/height from pointer-indirected mipmap arrays.
-    ///     Returns null if dimensions are invalid (out of range, not POT, not block-aligned).
+    ///     POT dimensions pass with standard checks. Non-POT dimensions are allowed
+    ///     for uncompressed formats with additional structural validation to catch
+    ///     screenshots, render targets, and UI textures.
     /// </summary>
     private (int Width, int Height)? ReadAndValidateDimensions(
         byte[] chunk, int offset, NiTextureFormat format)
     {
         var widthPtr = BinaryUtils.ReadUInt32BE(chunk, offset + WidthPtrOffset);
         var width = ReadUInt32AtPointer(widthPtr);
-        if (width is null or < MinDimension or > MaxDimension || !IsPowerOfTwo(width.Value))
+        if (width is null or < MinDimension or > MaxDimension)
         {
             return null;
         }
 
         var heightPtr = BinaryUtils.ReadUInt32BE(chunk, offset + HeightPtrOffset);
         var height = ReadUInt32AtPointer(heightPtr);
-        if (height is null or < MinDimension or > MaxDimension || !IsPowerOfTwo(height.Value))
+        if (height is null or < MinDimension or > MaxDimension)
         {
             return null;
         }
 
-        // Block-compressed formats require dimensions that are multiples of 4
         var isCompressed = format is NiTextureFormat.DXT1 or NiTextureFormat.DXT3 or NiTextureFormat.DXT5;
-        if (isCompressed && (width.Value % 4 != 0 || height.Value % 4 != 0))
+        var isPot = IsPowerOfTwo(width.Value) && IsPowerOfTwo(height.Value);
+
+        if (isPot)
+        {
+            // POT textures: keep existing block-alignment check for compressed formats
+            if (isCompressed && (width.Value % 4 != 0 || height.Value % 4 != 0))
+            {
+                return null;
+            }
+
+            return ((int)width.Value, (int)height.Value);
+        }
+
+        // Non-POT path: apply stricter compensating validation
+        if (!ValidateNonPotTexture(chunk, offset, format))
         {
             return null;
         }
 
         return ((int)width.Value, (int)height.Value);
     }
+
+    /// <summary>
+    ///     Additional validation for non-power-of-two textures to compensate for
+    ///     the relaxed dimension filter. Non-POT textures in Gamebryo are rare
+    ///     (screenshots, render targets, UI) and have specific structural constraints.
+    /// </summary>
+    private static bool ValidateNonPotTexture(byte[] chunk, int offset, NiTextureFormat format)
+    {
+        // Non-POT textures cannot be block-compressed (DXT requires POT or at minimum
+        // block-aligned dims, and the engine never creates non-POT DXT textures)
+        if (format is NiTextureFormat.DXT1 or NiTextureFormat.DXT3 or NiTextureFormat.DXT5)
+        {
+            return false;
+        }
+
+        // Non-POT textures should have exactly 1 mipmap level (engine doesn't
+        // generate mipchains for render targets / screenshots)
+        var mipLevels = BinaryUtils.ReadUInt32BE(chunk, offset + MipmapLevelsOffset);
+        if (mipLevels != 1)
+        {
+            return false;
+        }
+
+        // Non-POT textures should have exactly 1 face (no cubemap render targets
+        // with non-POT dims in this engine)
+        var faces = BinaryUtils.ReadUInt32BE(chunk, offset + FacesOffset);
+        if (faces != 1)
+        {
+            return false;
+        }
+
+        // Validate pixel stride matches format expectation
+        var pixelStride = BinaryUtils.ReadUInt32BE(chunk, offset + PixelStrideOffset);
+        var expectedStride = GetExpectedPixelStride(format);
+        if (expectedStride > 0 && pixelStride != expectedStride)
+        {
+            return false;
+        }
+
+        // Cross-check BPP with format
+        var bpp = chunk[offset + BitsPerPixelOffset];
+        var expectedBpp = GetExpectedBitsPerPixel(format);
+        if (expectedBpp > 0 && bpp != expectedBpp)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Expected m_uiPixelStride (bytes per pixel) for each uncompressed format.
+    ///     Returns 0 for unknown/compressed (no validation possible).
+    /// </summary>
+    private static uint GetExpectedPixelStride(NiTextureFormat format) => format switch
+    {
+        NiTextureFormat.RGB => 3,
+        NiTextureFormat.RGBA => 4,
+        NiTextureFormat.PAL or NiTextureFormat.PALA => 1,
+        NiTextureFormat.Bump => 2,
+        NiTextureFormat.OneCh => 1,
+        NiTextureFormat.TwoCh => 2,
+        NiTextureFormat.ThreeCh => 3,
+        _ => 0
+    };
+
+    /// <summary>
+    ///     Expected m_ucBitsPerPixel for each uncompressed format.
+    ///     Returns 0 for unknown/compressed (no validation possible).
+    /// </summary>
+    private static byte GetExpectedBitsPerPixel(NiTextureFormat format) => format switch
+    {
+        NiTextureFormat.RGB or NiTextureFormat.ThreeCh => 24,
+        NiTextureFormat.RGBA => 32,
+        NiTextureFormat.PAL or NiTextureFormat.PALA or NiTextureFormat.OneCh => 8,
+        NiTextureFormat.Bump or NiTextureFormat.TwoCh => 16,
+        _ => 0
+    };
 
     /// <summary>Read a null-terminated ASCII string from a pointer.</summary>
     private string? ReadNullTerminatedString(uint ptr)
