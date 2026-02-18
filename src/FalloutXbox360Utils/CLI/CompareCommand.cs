@@ -72,7 +72,7 @@ public static class CompareCommand
         uint? targetCellFormId = null;
         if (cellFilter != null)
         {
-            targetCellFormId = ParseFormId(cellFilter);
+            targetCellFormId = CliHelpers.ParseFormId(cellFilter) ?? 0;
             if (targetCellFormId == 0)
             {
                 AnsiConsole.MarkupLine("[red]Error:[/] Invalid FormID: {0}", cellFilter);
@@ -630,7 +630,7 @@ public static class CompareCommand
         {
             sb.AppendLine(string.Join(",",
                 $"0x{ws.FormId:X8}",
-                CsvEscape(ws.EditorId),
+                CliHelpers.CsvEscape(ws.EditorId),
                 ws.InDmp,
                 ws.InEsm,
                 ws.DmpCellCount,
@@ -651,10 +651,10 @@ public static class CompareCommand
         {
             sb.AppendLine(string.Join(",",
                 $"0x{c.CellFormId:X8}",
-                CsvEscape(c.EditorId),
+                CliHelpers.CsvEscape(c.EditorId),
                 c.GridX?.ToString() ?? "",
                 c.GridY?.ToString() ?? "",
-                CsvEscape(c.WorldspaceEditorId),
+                CliHelpers.CsvEscape(c.WorldspaceEditorId),
                 c.InDmp,
                 c.InEsm,
                 c.DmpObjectCount,
@@ -675,20 +675,6 @@ public static class CompareCommand
         File.WriteAllText(outputPath, sb.ToString());
     }
 
-    private static string CsvEscape(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return "";
-        }
-
-        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
-        {
-            return $"\"{value.Replace("\"", "\"\"")}\"";
-        }
-
-        return value;
-    }
 
     #endregion
 
@@ -704,13 +690,4 @@ public static class CompareCommand
         return dmpHas || esmHas ? "[green]Both[/]" : "[dim]None[/]";
     }
 
-    private static uint ParseFormId(string str)
-    {
-        if (str.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            str = str[2..];
-        }
-
-        return uint.TryParse(str, NumberStyles.HexNumber, null, out var result) ? result : 0;
-    }
 }

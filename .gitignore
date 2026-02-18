@@ -78,6 +78,9 @@ Sample/
 # SonarQube
 .sonarqube/
 
+# Ghidra reverse-engineering projects
+GhidraProject/
+
 # Reference copies (not part of the project)
 DDXConvVanilla/
 FalloutNV/

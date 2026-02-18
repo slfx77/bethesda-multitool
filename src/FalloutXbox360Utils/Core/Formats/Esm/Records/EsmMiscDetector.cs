@@ -76,7 +76,7 @@ internal static class EsmMiscDetector
             return false;
         }
 
-        if (!char.IsLetter(name[0]))
+        if (!char.IsLetterOrDigit(name[0]))
         {
             return false;
         }

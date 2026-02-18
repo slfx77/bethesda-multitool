@@ -274,6 +274,56 @@ public sealed class RecordParserContext
 
     #endregion
 
+    #region Runtime Merge
+
+    /// <summary>
+    ///     Merges runtime-only records into an existing list, deduplicating by FormID.
+    ///     Eliminates the repeated runtime merge pattern across all handler methods.
+    /// </summary>
+    public void MergeRuntimeRecords<T>(
+        List<T> records,
+        byte formType,
+        Func<T, uint> formIdSelector,
+        Func<RuntimeStructReader, RuntimeEditorIdEntry, T?> factory,
+        string typeName) where T : class
+    {
+        if (RuntimeReader == null)
+        {
+            return;
+        }
+
+        var esmFormIds = new HashSet<uint>(records.Count);
+        foreach (var record in records)
+        {
+            esmFormIds.Add(formIdSelector(record));
+        }
+
+        var runtimeCount = 0;
+        foreach (var entry in ScanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType != formType || esmFormIds.Contains(entry.FormId))
+            {
+                continue;
+            }
+
+            var item = factory(RuntimeReader, entry);
+            if (item != null)
+            {
+                records.Add(item);
+                runtimeCount++;
+            }
+        }
+
+        if (runtimeCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Added {runtimeCount} {typeName} from runtime struct reading " +
+                $"(total: {records.Count}, ESM: {esmFormIds.Count})");
+        }
+    }
+
+    #endregion
+
     #region Static Helpers
 
     public static uint ReadFormId(ReadOnlySpan<byte> data, bool bigEndian)

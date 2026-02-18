@@ -1,28 +1,30 @@
 namespace FalloutXbox360Utils;
 
 /// <summary>
-///     Handles sorting logic for the NIF files list view.
+///     Shared sorting logic for convertible file list views (DDX, NIF).
 /// </summary>
-internal sealed class NifFilesSorter : FileSorterBase<NifFileEntry, NifFilesSorter.SortColumn>
+internal sealed class ConvertibleFileSorter<TEntry>
+    : FileSorterBase<TEntry, ConvertibleSortColumn>
+    where TEntry : IConvertibleFileEntry
 {
-    protected override SortColumn NoneColumn => SortColumn.None;
+    protected override ConvertibleSortColumn NoneColumn => ConvertibleSortColumn.None;
 
-    public override IEnumerable<NifFileEntry> Sort(IList<NifFileEntry> files)
+    public override IEnumerable<TEntry> Sort(IList<TEntry> files)
     {
         return CurrentColumn switch
         {
-            SortColumn.FilePath => IsAscending
+            ConvertibleSortColumn.FilePath => IsAscending
                 ? files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
                 : files.OrderByDescending(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
-            SortColumn.Size => IsAscending
+            ConvertibleSortColumn.Size => IsAscending
                 ? files.OrderBy(f => f.FileSize)
                 : files.OrderByDescending(f => f.FileSize),
-            SortColumn.Format => IsAscending
+            ConvertibleSortColumn.Format => IsAscending
                 ? files.OrderBy(f => f.FormatDescription, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
                 : files.OrderByDescending(f => f.FormatDescription, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
-            SortColumn.Status => IsAscending
+            ConvertibleSortColumn.Status => IsAscending
                 ? files.OrderBy(f => f.Status, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
                 : files.OrderByDescending(f => f.Status, StringComparer.OrdinalIgnoreCase)
@@ -30,13 +32,24 @@ internal sealed class NifFilesSorter : FileSorterBase<NifFileEntry, NifFilesSort
             _ => files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
         };
     }
+}
 
-    public enum SortColumn
-    {
-        None,
-        FilePath,
-        Size,
-        Format,
-        Status
-    }
+internal enum ConvertibleSortColumn
+{
+    None,
+    FilePath,
+    Size,
+    Format,
+    Status
+}
+
+/// <summary>
+///     Shared interface for file entries in convertible file lists.
+/// </summary>
+internal interface IConvertibleFileEntry
+{
+    string RelativePath { get; }
+    long FileSize { get; }
+    string FormatDescription { get; set; }
+    string Status { get; set; }
 }

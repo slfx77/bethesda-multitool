@@ -181,7 +181,7 @@ public static class WorldCommand
     private static async Task RunCellAsync(
         string input, string formIdStr, string? exportObjPath, CancellationToken cancellationToken)
     {
-        var formId = ParseFormId(formIdStr);
+        var formId = CliHelpers.ParseFormId(formIdStr) ?? 0;
         if (formId == 0)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] Invalid FormID: {0}", formIdStr);
@@ -374,15 +374,4 @@ public static class WorldCommand
         return $"Yes ({string.Join(", ", parts)})";
     }
 
-    private static uint ParseFormId(string str)
-    {
-        if (str.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            str = str[2..];
-        }
-
-        return uint.TryParse(str, NumberStyles.HexNumber, null, out var result)
-            ? result
-            : 0;
-    }
 }

@@ -6,6 +6,7 @@ using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Minidump;
 
@@ -15,9 +16,6 @@ namespace FalloutXbox360Utils.Core.Minidump;
 /// </summary>
 public static class MinidumpExtractor
 {
-    // Cached invalid filename characters to avoid repeated array allocation
-    private static readonly HashSet<char> InvalidFileNameChars = [.. Path.GetInvalidFileNameChars()];
-
     /// <summary>
     ///     Extract files from a memory dump based on prior analysis.
     /// </summary>
@@ -36,7 +34,7 @@ public static class MinidumpExtractor
         Directory.CreateDirectory(options.OutputPath);
 
         var dumpName = Path.GetFileNameWithoutExtension(filePath);
-        var sanitizedName = SanitizeFilename(dumpName);
+        var sanitizedName = BinaryUtils.SanitizeFilename(dumpName);
         var extractDir = Path.Combine(options.OutputPath, sanitizedName);
 
         // Extract modules from minidump first
@@ -184,7 +182,7 @@ public static class MinidumpExtractor
         // Create modules output directory matching the MemoryCarver pattern:
         // {output_dir}/{dmp_filename}/modules/
         var dumpName = Path.GetFileNameWithoutExtension(filePath);
-        var sanitizedName = SanitizeFilename(dumpName);
+        var sanitizedName = BinaryUtils.SanitizeFilename(dumpName);
         var modulesDir = Path.Combine(options.OutputPath, sanitizedName, "modules");
         Directory.CreateDirectory(modulesDir);
 
@@ -562,7 +560,7 @@ public static class MinidumpExtractor
 
             var ext = Path.GetExtension(currentPath);
             var dir = Path.GetDirectoryName(currentPath)!;
-            var newName = SanitizeFilename(AssetNameResolver.SanitizeFileName(editorId)) + ext;
+            var newName = BinaryUtils.SanitizeFilename(AssetNameResolver.SanitizeFileName(editorId)) + ext;
             var newPath = Path.Combine(dir, newName);
 
             // Handle collisions
@@ -570,7 +568,7 @@ public static class MinidumpExtractor
             while (File.Exists(newPath) && !string.Equals(newPath, currentPath, StringComparison.OrdinalIgnoreCase))
             {
                 newPath = Path.Combine(dir,
-                    $"{SanitizeFilename(AssetNameResolver.SanitizeFileName(editorId))}_{counter++}{ext}");
+                    $"{BinaryUtils.SanitizeFilename(AssetNameResolver.SanitizeFileName(editorId))}_{counter++}{ext}");
             }
 
             if (!string.Equals(newPath, currentPath, StringComparison.OrdinalIgnoreCase) && File.Exists(currentPath))
@@ -595,17 +593,4 @@ public static class MinidumpExtractor
         }
     }
 
-    /// <summary>
-    ///     Sanitize a filename by removing invalid characters.
-    /// </summary>
-    private static string SanitizeFilename(string name)
-    {
-        var sanitized = new char[name.Length];
-        for (var i = 0; i < name.Length; i++)
-        {
-            sanitized[i] = InvalidFileNameChars.Contains(name[i]) ? '_' : name[i];
-        }
-
-        return new string(sanitized);
-    }
 }

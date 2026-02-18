@@ -49,36 +49,10 @@ internal sealed class AiRecordHandler(RecordParserContext context)
             }
         }
 
-        SupplementWithRuntimePackages(packages);
+        _context.MergeRuntimeRecords(packages, 0x49, p => p.FormId,
+            (reader, entry) => reader.ReadRuntimePackage(entry), "packages");
 
         return packages;
-    }
-
-    /// <summary>
-    ///     Supplement ESM-scanned packages with runtime PACK structs from hash table entries.
-    ///     DMPs may have PACK structs that ESM fragment scan missed.
-    /// </summary>
-    private void SupplementWithRuntimePackages(List<PackageRecord> packages)
-    {
-        if (_context.RuntimeReader == null)
-        {
-            return;
-        }
-
-        var existingFormIds = new HashSet<uint>(packages.Select(p => p.FormId));
-        foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-        {
-            if (entry.FormType != 0x49 || existingFormIds.Contains(entry.FormId))
-            {
-                continue;
-            }
-
-            var pkg = _context.RuntimeReader.ReadRuntimePackage(entry);
-            if (pkg != null)
-            {
-                packages.Add(pkg);
-            }
-        }
     }
 
     private PackageRecord ReconstructPackageFromAccessor(DetectedMainRecord record, byte[] buffer)
@@ -189,6 +163,32 @@ internal sealed class AiRecordHandler(RecordParserContext context)
             FalloutBehaviorFlags = foBehavior,
             TypeSpecificFlags = typeSpecific
         };
+    }
+
+    /// <summary>Detect and zero out uninitialized memory patterns in 32-bit flags.</summary>
+    internal static uint SanitizeFlags32(uint value)
+    {
+        // 0xCDCDCDCD = MS CRT debug heap uninitialized fill
+        if (value == 0xCDCDCDCD)
+        {
+            return 0;
+        }
+
+        return value;
+    }
+
+    /// <summary>Detect and zero out uninitialized memory patterns in 16-bit flags.</summary>
+    internal static ushort SanitizeFlags16(ushort value)
+    {
+        // High byte 0xCD or 0xCC indicates uninitialized/partially-overwritten heap memory.
+        // Patterns seen: 0xCDCD, 0xCDC5, 0xCDD1, 0xCDF5, 0xCC21, 0xCC31
+        var highByte = value >> 8;
+        if (highByte is 0xCD or 0xCC)
+        {
+            return 0;
+        }
+
+        return value;
     }
 
     /// <summary>

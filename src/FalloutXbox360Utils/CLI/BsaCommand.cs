@@ -269,13 +269,13 @@ public static class BsaCommand
             var size2 = new FileInfo(file2Path).Length;
             var sizeDiff = size2 - size1;
             AnsiConsole.MarkupLine("[bold]File Size:[/]");
-            AnsiConsole.MarkupLine("  File 1: {0}", FormatSize(size1));
-            AnsiConsole.MarkupLine("  File 2: {0}", FormatSize(size2));
+            AnsiConsole.MarkupLine("  File 1: {0}", CliHelpers.FormatSize(size1));
+            AnsiConsole.MarkupLine("  File 2: {0}", CliHelpers.FormatSize(size2));
             if (sizeDiff != 0)
             {
                 var sign = sizeDiff > 0 ? "+" : "";
                 AnsiConsole.MarkupLine("  [yellow]Difference: {0}{1} bytes ({2}{3})[/]",
-                    sign, sizeDiff, sign, FormatSize(Math.Abs(sizeDiff)));
+                    sign, sizeDiff, sign, CliHelpers.FormatSize(Math.Abs(sizeDiff)));
             }
             else
             {
@@ -583,7 +583,7 @@ public static class BsaCommand
                 var compressedStr = isCompressed ? "[green]Yes[/]" : "";
                 table.AddRow(
                     file.FullPath,
-                    FormatSize(file.Size),
+                    CliHelpers.FormatSize(file.Size),
                     compressedStr
                 );
             }
@@ -732,7 +732,7 @@ public static class BsaCommand
             var totalSize = results.Where(r => r.Success).Sum(r => r.ExtractedSize);
 
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[green]✓ Extracted:[/] {0:N0} files ({1})", succeeded, FormatSize(totalSize));
+            AnsiConsole.MarkupLine("[green]✓ Extracted:[/] {0:N0} files ({1})", succeeded, CliHelpers.FormatSize(totalSize));
 
             if (converted > 0 || ddxBatchConverted > 0)
             {
@@ -796,21 +796,6 @@ public static class BsaCommand
         return $"[yellow]Unavailable{reason}[/]";
     }
 
-    private static string FormatSize(long bytes)
-    {
-        return bytes switch
-        {
-            < 1024 => $"{bytes} B",
-            < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-            < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
-            _ => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB"
-        };
-    }
-
-    private static string FormatSize(uint bytes)
-    {
-        return FormatSize((long)bytes);
-    }
 
     private static async Task RunConvertAsync(
         string input,
@@ -975,8 +960,8 @@ public static class BsaCommand
 
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[green]Conversion complete[/]");
-            AnsiConsole.MarkupLine("  Input:  {0} ({1})", Path.GetFileName(input), FormatSize(inputSize));
-            AnsiConsole.MarkupLine("  Output: {0} ({1})", Path.GetFileName(output), FormatSize(outputSize));
+            AnsiConsole.MarkupLine("  Input:  {0} ({1})", Path.GetFileName(input), CliHelpers.FormatSize(inputSize));
+            AnsiConsole.MarkupLine("  Output: {0} ({1})", Path.GetFileName(output), CliHelpers.FormatSize(outputSize));
             AnsiConsole.MarkupLine("  Files:  {0:N0}", allFiles.Length);
 
             var conversions = new List<string>();

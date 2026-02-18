@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -319,24 +320,12 @@ public static class DdsExporter
     {
         if (texture.Filename != null)
         {
-            var safeName = SanitizeFileName(Path.GetFileNameWithoutExtension(texture.Filename));
+            var sanitized = BinaryUtils.SanitizeFilename(Path.GetFileNameWithoutExtension(texture.Filename));
+            var safeName = sanitized.Length > 60 ? sanitized[..60] : sanitized;
             return $"tex_{index:D4}_{safeName}.dds";
         }
 
         return $"tex_{index:D4}_{texture.SourceOffset:X}_{texture.Width}x{texture.Height}_{texture.Format}.dds";
-    }
-
-    private static string SanitizeFileName(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sb = new StringBuilder(name.Length);
-        foreach (var c in name)
-        {
-            sb.Append(invalid.Contains(c) ? '_' : c);
-        }
-
-        var result = sb.ToString();
-        return result.Length > 60 ? result[..60] : result;
     }
 
     private static string CsvEscape(string? value)

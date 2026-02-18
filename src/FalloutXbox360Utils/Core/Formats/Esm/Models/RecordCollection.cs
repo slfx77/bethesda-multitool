@@ -1,5 +1,8 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
+/// <summary>A single world placement of a base object in a cell.</summary>
+public record WorldPlacement(PlacedReference Ref, CellRecord Cell);
+
 /// <summary>
 ///     Aggregated semantic reconstruction result from a memory dump.
 /// </summary>
@@ -222,6 +225,35 @@ public record RecordCollection
             overrideEditorIds ?? FormIdToEditorId,
             FormIdToDisplayName,
             BuildRefToBaseMap());
+    }
+
+    /// <summary>
+    ///     Builds a reverse index: base object FormID → list of world placements.
+    ///     Used for "Use Info" in the data browser (GECK-style placement count).
+    /// </summary>
+    public Dictionary<uint, List<WorldPlacement>> BuildBaseToPlacementsMap()
+    {
+        var map = new Dictionary<uint, List<WorldPlacement>>();
+        foreach (var cell in Cells)
+        {
+            foreach (var obj in cell.PlacedObjects)
+            {
+                if (obj.BaseFormId == 0)
+                {
+                    continue;
+                }
+
+                if (!map.TryGetValue(obj.BaseFormId, out var list))
+                {
+                    list = [];
+                    map[obj.BaseFormId] = list;
+                }
+
+                list.Add(new WorldPlacement(obj, cell));
+            }
+        }
+
+        return map;
     }
 
     private Dictionary<uint, uint> BuildRefToBaseMap()

@@ -31,33 +31,8 @@ internal sealed class TextRecordHandler(RecordParserContext context)
             });
         }
 
-        // Merge terminals from runtime struct reading
-        if (_context.RuntimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(terminals.Select(t => t.FormId));
-            var runtimeCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x17 || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var terminal = _context.RuntimeReader.ReadRuntimeTerminal(entry);
-                if (terminal != null)
-                {
-                    terminals.Add(terminal);
-                    runtimeCount++;
-                }
-            }
-
-            if (runtimeCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} terminals from runtime struct reading " +
-                    $"(total: {terminals.Count}, ESM: {esmFormIds.Count})");
-            }
-        }
+        _context.MergeRuntimeRecords(terminals, 0x17, t => t.FormId,
+            (reader, entry) => reader.ReadRuntimeTerminal(entry), "terminals");
 
         return terminals;
     }
@@ -337,33 +312,8 @@ internal sealed class TextRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge notes from runtime struct reading (hash table entries not found as ESM records)
-        if (_context.RuntimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(notes.Select(n => n.FormId));
-            var runtimeCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x31 || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var note = _context.RuntimeReader.ReadRuntimeNote(entry);
-                if (note != null)
-                {
-                    notes.Add(note);
-                    runtimeCount++;
-                }
-            }
-
-            if (runtimeCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} notes from runtime struct reading " +
-                    $"(total: {notes.Count}, ESM: {esmFormIds.Count})");
-            }
-        }
+        _context.MergeRuntimeRecords(notes, 0x31, n => n.FormId,
+            (reader, entry) => reader.ReadRuntimeNote(entry), "notes");
 
         return notes;
     }

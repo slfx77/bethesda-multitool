@@ -168,55 +168,38 @@ public sealed partial class SingleFileTab
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
         WorldMapControl?.SelectObject(null);
 
-
         var name = cell.EditorId ?? cell.FullName ?? $"0x{cell.FormId:X8}";
-        if (cell.GridX.HasValue && cell.GridY.HasValue)
-        {
-            WorldObjectTitle.Text = $"Cell [{cell.GridX.Value}, {cell.GridY.Value}]: {name}";
-        }
-        else
-        {
-            WorldObjectTitle.Text = $"Cell: {name}";
-        }
+        WorldObjectTitle.Text = cell.GridX.HasValue && cell.GridY.HasValue
+            ? $"Cell [{cell.GridX.Value}, {cell.GridY.Value}]: {name}"
+            : $"Cell: {name}";
 
+        BuildWorldPropertyPanel(BuildCellProperties(cell));
+    }
+
+    private List<EsmPropertyEntry> BuildCellProperties(CellRecord cell)
+    {
         var properties = new List<EsmPropertyEntry>();
 
         // Identity
         properties.Add(new EsmPropertyEntry
-        {
-            Name = "Form ID",
-            Value = $"0x{cell.FormId:X8}",
-            Category = "Identity"
-        });
+            { Name = "Form ID", Value = $"0x{cell.FormId:X8}", Category = "Identity" });
         if (!string.IsNullOrEmpty(cell.EditorId))
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Editor ID",
-                Value = cell.EditorId,
-                Category = "Identity"
-            });
+                { Name = "Editor ID", Value = cell.EditorId, Category = "Identity" });
         }
 
         if (!string.IsNullOrEmpty(cell.FullName))
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Full Name",
-                Value = cell.FullName,
-                Category = "Identity"
-            });
+                { Name = "Full Name", Value = cell.FullName, Category = "Identity" });
         }
 
         // Grid
         if (cell.GridX.HasValue && cell.GridY.HasValue)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Grid",
-                Value = $"({cell.GridX.Value}, {cell.GridY.Value})",
-                Category = "Grid"
-            });
+                { Name = "Grid", Value = $"({cell.GridX.Value}, {cell.GridY.Value})", Category = "Grid" });
         }
 
         if (cell.WorldspaceFormId is > 0)
@@ -232,136 +215,109 @@ public sealed partial class SingleFileTab
 
         // Properties
         properties.Add(new EsmPropertyEntry
-        {
-            Name = "Interior",
-            Value = cell.IsInterior ? "Yes" : "No",
-            Category = "Properties"
-        });
+            { Name = "Interior", Value = cell.IsInterior ? "Yes" : "No", Category = "Properties" });
         if (cell.HasWater)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Has Water",
-                Value = "Yes",
-                Category = "Properties"
-            });
+                { Name = "Has Water", Value = "Yes", Category = "Properties" });
             if (cell.WaterHeight.HasValue && cell.WaterHeight.Value < 1_000_000f)
             {
                 properties.Add(new EsmPropertyEntry
-                {
-                    Name = "Water Height",
-                    Value = $"{cell.WaterHeight.Value:F1}",
-                    Category = "Properties"
-                });
+                    { Name = "Water Height", Value = $"{cell.WaterHeight.Value:F1}", Category = "Properties" });
             }
         }
 
         // Audio/Visual
-        if (cell.EncounterZoneFormId is > 0)
-        {
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Encounter Zone",
-                Value = $"0x{cell.EncounterZoneFormId.Value:X8}",
-                Category = "Audio/Visual",
-                LinkedFormId = cell.EncounterZoneFormId.Value
-            });
-        }
-
-        if (cell.MusicTypeFormId is > 0)
-        {
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Music Type",
-                Value = $"0x{cell.MusicTypeFormId.Value:X8}",
-                Category = "Audio/Visual",
-                LinkedFormId = cell.MusicTypeFormId.Value
-            });
-        }
-
-        if (cell.AcousticSpaceFormId is > 0)
-        {
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Acoustic Space",
-                Value = $"0x{cell.AcousticSpaceFormId.Value:X8}",
-                Category = "Audio/Visual",
-                LinkedFormId = cell.AcousticSpaceFormId.Value
-            });
-        }
-
-        if (cell.ImageSpaceFormId is > 0)
-        {
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Image Space",
-                Value = $"0x{cell.ImageSpaceFormId.Value:X8}",
-                Category = "Audio/Visual",
-                LinkedFormId = cell.ImageSpaceFormId.Value
-            });
-        }
+        AddFormIdProperty(properties, "Encounter Zone", cell.EncounterZoneFormId, "Audio/Visual");
+        AddFormIdProperty(properties, "Music Type", cell.MusicTypeFormId, "Audio/Visual");
+        AddFormIdProperty(properties, "Acoustic Space", cell.AcousticSpaceFormId, "Audio/Visual");
+        AddFormIdProperty(properties, "Image Space", cell.ImageSpaceFormId, "Audio/Visual");
 
         // Statistics
+        AddCellStatistics(properties, cell);
+
+        // Placed Objects (expandable by category)
+        AddCellPlacedObjects(properties, cell);
+
+        // Metadata
+        properties.Add(new EsmPropertyEntry
+            { Name = "File Offset", Value = $"0x{cell.Offset:X}", Category = "Metadata" });
         properties.Add(new EsmPropertyEntry
         {
-            Name = "Placed Objects",
-            Value = cell.PlacedObjects.Count.ToString(),
-            Category = "Statistics"
+            Name = "Endianness",
+            Value = cell.IsBigEndian ? "Big-endian (Xbox 360)" : "Little-endian (PC)",
+            Category = "Metadata"
         });
 
-        // Breakdown by type
-        var refrCount = cell.PlacedObjects.Count(p => p.RecordType == "REFR");
-        var achrCount = cell.PlacedObjects.Count(p => p.RecordType == "ACHR");
-        var acreCount = cell.PlacedObjects.Count(p => p.RecordType == "ACRE");
-        var markerCount = cell.PlacedObjects.Count(p => p.IsMapMarker);
+        return properties;
+    }
+
+    private static void AddFormIdProperty(
+        List<EsmPropertyEntry> properties, string name, uint? formId, string category)
+    {
+        if (formId is > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = name,
+                Value = $"0x{formId.Value:X8}",
+                Category = category,
+                LinkedFormId = formId.Value
+            });
+        }
+    }
+
+    private static void AddCellStatistics(List<EsmPropertyEntry> properties, CellRecord cell)
+    {
+        properties.Add(new EsmPropertyEntry
+            { Name = "Placed Objects", Value = cell.PlacedObjects.Count.ToString(), Category = "Statistics" });
+
+        int refrCount = 0, achrCount = 0, acreCount = 0, markerCount = 0;
+        foreach (var p in cell.PlacedObjects)
+        {
+            switch (p.RecordType)
+            {
+                case "REFR": refrCount++; break;
+                case "ACHR": achrCount++; break;
+                case "ACRE": acreCount++; break;
+            }
+
+            if (p.IsMapMarker)
+            {
+                markerCount++;
+            }
+        }
 
         if (refrCount > 0)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "  REFR (Objects)",
-                Value = refrCount.ToString(),
-                Category = "Statistics"
-            });
+                { Name = "  REFR (Objects)", Value = refrCount.ToString(), Category = "Statistics" });
         }
 
         if (achrCount > 0)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "  ACHR (NPCs)",
-                Value = achrCount.ToString(),
-                Category = "Statistics"
-            });
+                { Name = "  ACHR (NPCs)", Value = achrCount.ToString(), Category = "Statistics" });
         }
 
         if (acreCount > 0)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "  ACRE (Creatures)",
-                Value = acreCount.ToString(),
-                Category = "Statistics"
-            });
+                { Name = "  ACRE (Creatures)", Value = acreCount.ToString(), Category = "Statistics" });
         }
 
         if (markerCount > 0)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "  Map Markers",
-                Value = markerCount.ToString(),
-                Category = "Statistics"
-            });
+                { Name = "  Map Markers", Value = markerCount.ToString(), Category = "Statistics" });
         }
 
         properties.Add(new EsmPropertyEntry
-        {
-            Name = "Has Heightmap",
-            Value = cell.Heightmap != null ? "Yes" : "No",
-            Category = "Statistics"
-        });
+            { Name = "Has Heightmap", Value = cell.Heightmap != null ? "Yes" : "No", Category = "Statistics" });
+    }
 
+    private void AddCellPlacedObjects(List<EsmPropertyEntry> properties, CellRecord cell)
+    {
         if (cell.LinkedCellFormIds.Count > 0)
         {
             properties.Add(new EsmPropertyEntry
@@ -390,54 +346,39 @@ public sealed partial class SingleFileTab
             });
         }
 
-        // Placed Objects (expandable by category)
-        if (cell.PlacedObjects.Count > 0)
+        if (cell.PlacedObjects.Count == 0)
         {
-            var grouped = cell.PlacedObjects
-                .GroupBy(obj => GetPlacedObjectCategoryName(obj))
-                .OrderBy(g => g.Key);
-
-            foreach (var group in grouped)
-            {
-                properties.Add(new EsmPropertyEntry
-                {
-                    Name = group.Key,
-                    Value = group.Count().ToString(),
-                    Category = "Placed Objects",
-                    IsExpandable = true,
-                    SubItems = group.Select(obj =>
-                    {
-                        var baseName = obj.BaseEditorId
-                                       ?? _session.Resolver?.GetBestName(obj.BaseFormId)
-                                       ?? $"0x{obj.BaseFormId:X8}";
-                        return new EsmPropertyEntry
-                        {
-                            Col1 = baseName,
-                            Col3 = $"0x{obj.BaseFormId:X8}",
-                            Col3FormId = obj.BaseFormId,
-                            Name = baseName,
-                            Value = $"0x{obj.BaseFormId:X8}"
-                        };
-                    }).ToList()
-                });
-            }
+            return;
         }
 
-        // Metadata
-        properties.Add(new EsmPropertyEntry
-        {
-            Name = "File Offset",
-            Value = $"0x{cell.Offset:X}",
-            Category = "Metadata"
-        });
-        properties.Add(new EsmPropertyEntry
-        {
-            Name = "Endianness",
-            Value = cell.IsBigEndian ? "Big-endian (Xbox 360)" : "Little-endian (PC)",
-            Category = "Metadata"
-        });
+        var grouped = cell.PlacedObjects
+            .GroupBy(obj => GetPlacedObjectCategoryName(obj))
+            .OrderBy(g => g.Key);
 
-        BuildWorldPropertyPanel(properties);
+        foreach (var group in grouped)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = group.Key,
+                Value = group.Count().ToString(),
+                Category = "Placed Objects",
+                IsExpandable = true,
+                SubItems = group.Select(obj =>
+                {
+                    var baseName = obj.BaseEditorId
+                                   ?? _session.Resolver?.GetBestName(obj.BaseFormId)
+                                   ?? $"0x{obj.BaseFormId:X8}";
+                    return new EsmPropertyEntry
+                    {
+                        Col1 = baseName,
+                        Col3 = $"0x{obj.BaseFormId:X8}",
+                        Col3FormId = obj.BaseFormId,
+                        Name = baseName,
+                        Value = $"0x{obj.BaseFormId:X8}"
+                    };
+                }).ToList()
+            });
+        }
     }
 
     private void ViewBaseInBrowser_Click(object sender, RoutedEventArgs e)
@@ -451,30 +392,17 @@ public sealed partial class SingleFileTab
     private void WorldMap_InspectObject(object? sender, PlacedReference obj)
     {
         _selectedWorldObject = obj;
-
-        if (_session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var ownerCell) == true)
-        {
-            _selectedWorldCell = ownerCell;
-        }
-        else
-        {
-            _selectedWorldCell = null;
-        }
+        _selectedWorldCell = _session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var ownerCell) == true
+            ? ownerCell
+            : null;
 
         // Show "View in Data Browser" for the base record
-        if (obj.BaseFormId > 0 && IsFormIdNavigable(obj.BaseFormId))
-        {
-            ViewBaseInBrowserButton.Visibility = Visibility.Visible;
-            ViewBaseInBrowserButton.IsEnabled = true;
-            ToolTipService.SetToolTip(ViewBaseInBrowserButton, "View the base record in the Data Browser");
-        }
-        else
-        {
-            ViewBaseInBrowserButton.Visibility = Visibility.Visible;
-            ViewBaseInBrowserButton.IsEnabled = false;
-            ToolTipService.SetToolTip(ViewBaseInBrowserButton,
-                "Base record not available in Data Browser (record type not reconstructed)");
-        }
+        ViewBaseInBrowserButton.Visibility = Visibility.Visible;
+        var navigable = obj.BaseFormId > 0 && IsFormIdNavigable(obj.BaseFormId);
+        ViewBaseInBrowserButton.IsEnabled = navigable;
+        ToolTipService.SetToolTip(ViewBaseInBrowserButton, navigable
+            ? "View the base record in the Data Browser"
+            : "Base record not available in Data Browser (record type not reconstructed)");
 
         WorldMapControl?.SelectObject(obj);
 
@@ -486,16 +414,16 @@ public sealed partial class SingleFileTab
             : $"{obj.RecordType}: {name}";
 
         WorldPropertyPanel.Children.Clear();
+        BuildWorldPropertyPanel(BuildObjectProperties(obj));
+    }
 
+    private List<EsmPropertyEntry> BuildObjectProperties(PlacedReference obj)
+    {
         var properties = new List<EsmPropertyEntry>();
 
         // Identity
         properties.Add(new EsmPropertyEntry
-        {
-            Name = "Form ID",
-            Value = $"0x{obj.FormId:X8}",
-            Category = "Identity"
-        });
+            { Name = "Form ID", Value = $"0x{obj.FormId:X8}", Category = "Identity" });
         properties.Add(new EsmPropertyEntry
         {
             Name = "Base Form ID",
@@ -507,38 +435,23 @@ public sealed partial class SingleFileTab
         if (!string.IsNullOrEmpty(baseEditorId))
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Base Editor ID",
-                Value = baseEditorId,
-                Category = "Identity"
-            });
+                { Name = "Base Editor ID", Value = baseEditorId, Category = "Identity" });
         }
+
         var baseFullName = _session.Resolver?.GetDisplayName(obj.BaseFormId);
         if (!string.IsNullOrEmpty(baseFullName))
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Base Name",
-                Value = baseFullName,
-                Category = "Identity"
-            });
+                { Name = "Base Name", Value = baseFullName, Category = "Identity" });
         }
 
         properties.Add(new EsmPropertyEntry
-        {
-            Name = "Record Type",
-            Value = obj.RecordType,
-            Category = "Identity"
-        });
+            { Name = "Record Type", Value = obj.RecordType, Category = "Identity" });
 
         if (obj.IsInitiallyDisabled)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Initial State",
-                Value = "Initially Disabled",
-                Category = "Identity"
-            });
+                { Name = "Initial State", Value = "Initially Disabled", Category = "Identity" });
         }
 
         if (_session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var parentCell) == true)
@@ -560,71 +473,25 @@ public sealed partial class SingleFileTab
 
         // Position
         properties.Add(new EsmPropertyEntry
-        {
-            Name = "Position",
-            Value = $"({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})",
-            Category = "Position"
-        });
+            { Name = "Position", Value = $"({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})", Category = "Position" });
         properties.Add(new EsmPropertyEntry
-        {
-            Name = "Rotation",
-            Value = $"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3}) rad",
-            Category = "Position"
-        });
+            { Name = "Rotation", Value = $"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3}) rad", Category = "Position" });
         if (Math.Abs(obj.Scale - 1.0f) > 0.001f)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Scale",
-                Value = $"{obj.Scale:F3}",
-                Category = "Position"
-            });
+                { Name = "Scale", Value = $"{obj.Scale:F3}", Category = "Position" });
         }
 
-        // Bounds
         if (_session.WorldViewData?.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds) == true)
         {
             properties.Add(new EsmPropertyEntry
-            {
-                Name = "Object Bounds",
-                Value = bounds.ToString(),
-                Category = "Position"
-            });
+                { Name = "Object Bounds", Value = bounds.ToString(), Category = "Position" });
         }
 
         // References
-        if (obj.OwnerFormId is > 0)
-        {
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Owner",
-                Value = $"0x{obj.OwnerFormId.Value:X8}",
-                Category = "References",
-                LinkedFormId = obj.OwnerFormId.Value
-            });
-        }
-
-        if (obj.EnableParentFormId is > 0)
-        {
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Enable Parent",
-                Value = $"0x{obj.EnableParentFormId.Value:X8}",
-                Category = "References",
-                LinkedFormId = obj.EnableParentFormId.Value
-            });
-        }
-
-        if (obj.DestinationDoorFormId is > 0)
-        {
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Destination Door",
-                Value = $"0x{obj.DestinationDoorFormId.Value:X8}",
-                Category = "References",
-                LinkedFormId = obj.DestinationDoorFormId.Value
-            });
-        }
+        AddFormIdProperty(properties, "Owner", obj.OwnerFormId, "References");
+        AddFormIdProperty(properties, "Enable Parent", obj.EnableParentFormId, "References");
+        AddFormIdProperty(properties, "Destination Door", obj.DestinationDoorFormId, "References");
 
         if (obj.DestinationCellFormId is > 0)
         {
@@ -650,21 +517,13 @@ public sealed partial class SingleFileTab
             if (!string.IsNullOrEmpty(obj.MarkerName))
             {
                 properties.Add(new EsmPropertyEntry
-                {
-                    Name = "Marker Name",
-                    Value = obj.MarkerName,
-                    Category = "Map Marker"
-                });
+                    { Name = "Marker Name", Value = obj.MarkerName, Category = "Map Marker" });
             }
 
             if (obj.MarkerType.HasValue)
             {
                 properties.Add(new EsmPropertyEntry
-                {
-                    Name = "Marker Type",
-                    Value = obj.MarkerType.Value.ToString(),
-                    Category = "Map Marker"
-                });
+                    { Name = "Marker Type", Value = obj.MarkerType.Value.ToString(), Category = "Map Marker" });
             }
         }
 
@@ -673,11 +532,7 @@ public sealed partial class SingleFileTab
 
         // Metadata
         properties.Add(new EsmPropertyEntry
-        {
-            Name = "File Offset",
-            Value = $"0x{obj.Offset:X}",
-            Category = "Metadata"
-        });
+            { Name = "File Offset", Value = $"0x{obj.Offset:X}", Category = "Metadata" });
         properties.Add(new EsmPropertyEntry
         {
             Name = "Endianness",
@@ -685,7 +540,7 @@ public sealed partial class SingleFileTab
             Category = "Metadata"
         });
 
-        BuildWorldPropertyPanel(properties);
+        return properties;
     }
 
     private void AddSpawnInfo(List<EsmPropertyEntry> properties, PlacedReference obj)
@@ -833,10 +688,9 @@ public sealed partial class SingleFileTab
         var propertyRowIndex = 0;
         string? lastCategory = null;
 
-        // Theme-aware alternating row colors (matching Data Browser)
         var foregroundBrush = (Microsoft.UI.Xaml.Media.SolidColorBrush)
             Application.Current.Resources["TextFillColorPrimaryBrush"];
-        var altRowBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.05 };
+        var altRowBrush = CreateAlternatingRowBrush();
 
         foreach (var prop in properties)
         {
@@ -845,28 +699,7 @@ public sealed partial class SingleFileTab
             {
                 lastCategory = prop.Category;
                 propertyRowIndex = 0;
-                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                // 12% opacity background for category header
-                var categoryBgBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color)
-                    { Opacity = 0.12 };
-                var categoryBg = new Border { Background = categoryBgBrush };
-                Grid.SetRow(categoryBg, currentRow);
-                Grid.SetColumnSpan(categoryBg, 3);
-                mainGrid.Children.Add(categoryBg);
-
-                var categoryHeader = new TextBlock
-                {
-                    Text = prop.Category,
-                    FontSize = 13,
-                    FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                    Foreground =
-                        (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-                    Margin = new Thickness(8, 5, 0, 7)
-                };
-                Grid.SetRow(categoryHeader, currentRow);
-                Grid.SetColumnSpan(categoryHeader, 3);
-                mainGrid.Children.Add(categoryHeader);
+                AddCategoryHeader(mainGrid, prop.Category, currentRow, 3, foregroundBrush);
                 currentRow++;
             }
 
@@ -875,13 +708,7 @@ public sealed partial class SingleFileTab
                 // Expandable entry - header row
                 mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                if (propertyRowIndex % 2 == 1)
-                {
-                    var bgBorder = new Border { Background = altRowBrush };
-                    Grid.SetRow(bgBorder, currentRow);
-                    Grid.SetColumnSpan(bgBorder, 3);
-                    mainGrid.Children.Add(bgBorder);
-                }
+                AddAlternatingRowBackground(mainGrid, currentRow, 3, propertyRowIndex, altRowBrush);
 
                 var expandIcon = new TextBlock
                 {
@@ -1015,9 +842,9 @@ public sealed partial class SingleFileTab
                 // Toggle expand/collapse on header click
                 var capturedIcon = expandIcon;
                 var capturedSubItems = subItemsGrid;
-                nameText.Tapped += (_, _) => ToggleExpandWorldProperty(capturedIcon, capturedSubItems);
-                expandIcon.Tapped += (_, _) => ToggleExpandWorldProperty(capturedIcon, capturedSubItems);
-                countText.Tapped += (_, _) => ToggleExpandWorldProperty(capturedIcon, capturedSubItems);
+                nameText.Tapped += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
+                expandIcon.Tapped += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
+                countText.Tapped += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
 
                 currentRow++;
                 propertyRowIndex++;
@@ -1027,13 +854,7 @@ public sealed partial class SingleFileTab
                 // Normal property row
                 mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                if (propertyRowIndex % 2 == 1)
-                {
-                    var bgBorder = new Border { Background = altRowBrush };
-                    Grid.SetRow(bgBorder, currentRow);
-                    Grid.SetColumnSpan(bgBorder, 3);
-                    mainGrid.Children.Add(bgBorder);
-                }
+                AddAlternatingRowBackground(mainGrid, currentRow, 3, propertyRowIndex, altRowBrush);
 
                 // Spacer for icon column alignment
                 var spacer = new TextBlock { Width = 18, Padding = new Thickness(4, 3, 0, 2) };
@@ -1100,13 +921,6 @@ public sealed partial class SingleFileTab
         }
 
         WorldPropertyPanel.Children.Add(mainGrid);
-    }
-
-    private static void ToggleExpandWorldProperty(TextBlock expandIcon, Grid subItemsGrid)
-    {
-        var isCollapsed = subItemsGrid.Visibility == Visibility.Collapsed;
-        subItemsGrid.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
-        expandIcon.Text = isCollapsed ? "\u25BC" : "\u25B6";
     }
 
     private string GetPlacedObjectCategoryName(PlacedReference obj)

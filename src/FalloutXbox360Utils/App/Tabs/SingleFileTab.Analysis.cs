@@ -179,20 +179,23 @@ public sealed partial class SingleFileTab
                     StatusTextBlock.Text = status;
                 }));
 
-            // Build tree on background thread (fast - just category nodes)
-            var tree = await Task.Run(() =>
+            // Build tree and placement index on background thread
+            var (tree, placements) = await Task.Run(() =>
             {
                 ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
                 var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, resolver);
 
+                // Build reverse placement index for "Use Info" (base FormID → world placements)
+                var placementIndex = semanticResult.BuildBaseToPlacementsMap();
+
                 ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
-                // Apply default sort (By Name) after building
                 EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
-                return builtTree;
+                return (builtTree, placementIndex);
             });
 
             _esmBrowserTree = tree;
+            _placementIndex = placements;
             _flatListBuilt = false;
 
             StatusTextBlock.Text = Strings.Status_BuildingTreeView;

@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Data model for NIF file entries in the list.
 /// </summary>
-public sealed class NifFileEntry : INotifyPropertyChanged
+public sealed class NifFileEntry : INotifyPropertyChanged, IConvertibleFileEntry
 {
     // Brushes are created lazily on first access (which happens on UI thread via binding)
     private static SolidColorBrush? _grayBrush;

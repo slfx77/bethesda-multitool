@@ -40,7 +40,8 @@ public sealed partial class SingleFileTab
         {
             EnsureAllChildrenLoaded(
                 _esmBrowserTree,
-                _session.Resolver);
+                _session.Resolver,
+                _placementIndex);
             _flatListBuilt = true;
         }
 
@@ -216,6 +217,18 @@ public sealed partial class SingleFileTab
         if (!_isNavigating)
         {
             PushUnifiedNav();
+        }
+
+        // Ensure Data Browser tree is populated before FormID lookup.
+        // The tree lazily initializes on first tab visit via SelectionChanged,
+        // but that handler is fire-and-forget — we must await it here.
+        if (_esmBrowserTree == null && _session.HasEsmRecords)
+        {
+            await EnsureSemanticReconstructionAsync();
+            if (_session.SemanticResult != null)
+            {
+                await PopulateDataBrowserAsync();
+            }
         }
 
         // Switch to Data Browser tab so the user can see the result

@@ -413,7 +413,8 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     public static void LoadRecordTypeChildren(
         EsmBrowserNode typeNode,
-        FormIdResolver? resolver = null)
+        FormIdResolver? resolver = null,
+        Dictionary<uint, List<WorldPlacement>>? placementIndex = null)
     {
         if (typeNode.DataObject is not IList records)
         {
@@ -427,6 +428,14 @@ internal static partial class EsmBrowserTreeBuilder
         {
             var (formId, editorId, fullName, offset) = ExtractRecordIdentity(record);
             var formIdHex = $"0x{formId:X8}";
+
+            // Look up world placement count for this base object
+            int useCount = 0;
+            if (placementIndex != null && formId != 0 &&
+                placementIndex.TryGetValue(formId, out var placements))
+            {
+                useCount = placements.Count;
+            }
 
             // Build display name and detail (shown as secondary text in tree)
             string displayName;
@@ -465,6 +474,14 @@ internal static partial class EsmBrowserTreeBuilder
                 detail = null;
             }
 
+            // Append use count to detail text
+            if (useCount > 0)
+            {
+                detail = detail != null
+                    ? $"{detail} [{useCount} uses]"
+                    : $"[{useCount} uses]";
+            }
+
             var recordNode = new EsmBrowserNode
             {
                 DisplayName = displayName,
@@ -477,7 +494,7 @@ internal static partial class EsmBrowserTreeBuilder
                 ParentIconGlyph = typeNode.IconGlyph,
                 FileOffset = offset,
                 DataObject = record,
-                Properties = BuildProperties(record, resolver)
+                Properties = BuildProperties(record, resolver, placementIndex)
             };
 
             recordNodes.Add(recordNode);
@@ -637,7 +654,8 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     public static List<EsmPropertyEntry> BuildProperties(
         object record,
-        FormIdResolver? resolver = null)
+        FormIdResolver? resolver = null,
+        Dictionary<uint, List<WorldPlacement>>? placementIndex = null)
     {
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
@@ -1061,222 +1079,261 @@ internal static partial class EsmBrowserTreeBuilder
             });
         }
 
-        // Creature-specific fields (type, skills, damage)
-        if (record is CreatureRecord crea)
-        {
-            // Always show creature type (even if 0 = Animal)
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Creature Type",
-                Value = crea.CreatureTypeName,
-                Category = "Characteristics"
-            });
-
-            // Show skills if any are populated
-            if (crea.CombatSkill > 0 || crea.MagicSkill > 0 || crea.StealthSkill > 0)
-            {
-                properties.Add(new EsmPropertyEntry
-                    { Name = "Combat Skill", Value = crea.CombatSkill.ToString(), Category = "Attributes" });
-                properties.Add(new EsmPropertyEntry
-                    { Name = "Magic Skill", Value = crea.MagicSkill.ToString(), Category = "Attributes" });
-                properties.Add(new EsmPropertyEntry
-                    { Name = "Stealth Skill", Value = crea.StealthSkill.ToString(), Category = "Attributes" });
-            }
-
-            // Show attack damage if set
-            if (crea.AttackDamage != 0)
-            {
-                properties.Add(new EsmPropertyEntry
-                    { Name = "Attack Damage", Value = crea.AttackDamage.ToString(), Category = "Attributes" });
-            }
-        }
-
-        // Package-specific: expand Data, Schedule, Location, Target into human-readable fields
-        if (record is PackageRecord pkgRecord)
-        {
-            if (pkgRecord.Data != null)
-            {
-                properties.Add(new EsmPropertyEntry
-                {
-                    Name = "Package Type",
-                    Value = pkgRecord.Data.TypeName,
-                    Category = "General"
-                });
-                properties.Add(new EsmPropertyEntry
-                {
-                    Name = "General Flags",
-                    Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.GeneralFlags,
-                        FlagRegistry.PackageGeneralFlags),
-                    Category = "General"
-                });
-                if (pkgRecord.Data.FalloutBehaviorFlags != 0)
-                {
-                    properties.Add(new EsmPropertyEntry
-                    {
-                        Name = "Fallout Behaviors",
-                        Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.FalloutBehaviorFlags,
-                            FlagRegistry.PackageFOBehaviorFlags),
-                        Category = "General"
-                    });
-                }
-
-                if (pkgRecord.Data.TypeSpecificFlags != 0)
-                {
-                    properties.Add(new EsmPropertyEntry
-                    {
-                        Name = "Type-Specific Flags",
-                        Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.TypeSpecificFlags,
-                            FlagRegistry.PackageTypeSpecificFlags),
-                        Category = "General"
-                    });
-                }
-            }
-
-            if (pkgRecord.Schedule != null)
-            {
-                properties.Add(new EsmPropertyEntry
-                {
-                    Name = "Schedule",
-                    Value = pkgRecord.Schedule.Summary,
-                    Category = "General"
-                });
-            }
-
-            if (pkgRecord.IsRepeatable)
-            {
-                properties.Add(new EsmPropertyEntry
-                {
-                    Name = "Repeatable",
-                    Value = "Yes",
-                    Category = "General"
-                });
-            }
-
-            if (pkgRecord.IsStartingLocationLinkedRef)
-            {
-                properties.Add(new EsmPropertyEntry
-                {
-                    Name = "Starting Location",
-                    Value = "At Linked Reference",
-                    Category = "General"
-                });
-            }
-
-            AddPackageLocationProperty(properties, "Location", pkgRecord.Location, resolver);
-            AddPackageLocationProperty(properties, "Location 2", pkgRecord.Location2, resolver);
-            AddPackageTargetProperty(properties, "Target", pkgRecord.Target, resolver);
-            AddPackageTargetProperty(properties, "Target 2", pkgRecord.Target2, resolver);
-        }
-
-        // Add Derived Stats section for NPCs (computed from S.P.E.C.I.A.L. and Level)
-        if (record is NpcRecord npc && npc.SpecialStats?.Length >= 7 && npc.Stats != null)
-        {
-            var str = npc.SpecialStats[0];
-            var end = npc.SpecialStats[2];
-            var lck = npc.SpecialStats[6];
-            var level = npc.Stats.Level;
-            var fatigueBase = npc.Stats.FatigueBase;
-
-            // Calculate derived stats (same formulas as GeckReportGenerator)
-            var baseHealth = end * 5 + 50;
-            var calcHealth = baseHealth + level * 10;
-            var calcFatigue = fatigueBase + (str + end) * 10;
-            var critChance = (float)lck;
-            var meleeDamage = str * 0.5f;
-            var unarmedDamage = 0.5f + str * 0.1f;
-            var poisonResist = (end - 1) * 5;
-            var radResist = (end - 1) * 2;
-
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Health",
-                Value = $"{calcHealth} (Base: {baseHealth} + Level×10)",
-                Category = "Derived Stats"
-            });
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Fatigue",
-                Value = $"{calcFatigue} (Base: {fatigueBase} + (STR+END)×10)",
-                Category = "Derived Stats"
-            });
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Critical Chance",
-                Value = $"{critChance:F0}%",
-                Category = "Derived Stats"
-            });
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Melee Damage",
-                Value = $"{meleeDamage:F1}",
-                Category = "Derived Stats"
-            });
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Unarmed Damage",
-                Value = $"{unarmedDamage:F1}",
-                Category = "Derived Stats"
-            });
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Poison Resistance",
-                Value = $"{poisonResist}%",
-                Category = "Derived Stats"
-            });
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Radiation Resistance",
-                Value = $"{radResist}%",
-                Category = "Derived Stats"
-            });
-        }
-
-        // Race-specific: Skill Boosts from DATA subrecord (7 pairs of AV code + boost value)
-        if (record is RaceRecord raceRecord && raceRecord.SkillBoosts.Count > 0)
-        {
-            var boosts = raceRecord.SkillBoosts
-                .Select(b =>
-                {
-                    var name = ActorValueToSkillName(b.SkillIndex) ?? $"AV#{b.SkillIndex}";
-                    return $"{name} {b.Boost:+#;-#;0}";
-                });
-            properties.Add(new EsmPropertyEntry
-            {
-                Name = "Skill Boosts",
-                Value = string.Join(", ", boosts),
-                Category = "Attributes"
-            });
-        }
-
-        // Worldspace-specific summary (cell counts, total objects)
-        if (record is WorldspaceRecord wsRecord)
-        {
-            var gridCells = wsRecord.Cells.Count(c => c.GridX.HasValue);
-            var persistentCells = wsRecord.Cells.Count - gridCells;
-            var totalObjects = wsRecord.Cells.Sum(c => c.PlacedObjects.Count);
-
-            properties.Add(new EsmPropertyEntry
-                { Name = "Cell Count", Value = wsRecord.Cells.Count.ToString("N0"), Category = "Statistics" });
-            if (gridCells > 0)
-            {
-                properties.Add(new EsmPropertyEntry
-                    { Name = "  Grid Cells", Value = gridCells.ToString("N0"), Category = "Statistics" });
-            }
-
-            if (persistentCells > 0)
-            {
-                properties.Add(new EsmPropertyEntry
-                    { Name = "  Persistent Cells", Value = persistentCells.ToString("N0"), Category = "Statistics" });
-            }
-
-            properties.Add(new EsmPropertyEntry
-                { Name = "Total Placed Objects", Value = totalObjects.ToString("N0"), Category = "Statistics" });
-        }
+        // Type-specific property blocks
+        AddCreatureProperties(properties, record);
+        AddPackageProperties(properties, record, resolver);
+        AddNpcDerivedStats(properties, record);
+        AddRaceSkillBoosts(properties, record);
+        AddWorldspaceStats(properties, record);
+        AddWorldPlacements(properties, record, type, placementIndex);
 
         // Sort properties by category for consistent grouping
         return properties.OrderBy(p => Array.IndexOf(CategoryOrder, p.Category ?? "General"))
             .ThenBy(p => p.Category == "General" ? 1 : 0) // Unknown categories at end
             .ToList();
+    }
+
+    private static void AddCreatureProperties(List<EsmPropertyEntry> properties, object record)
+    {
+        if (record is not CreatureRecord crea)
+        {
+            return;
+        }
+
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = "Creature Type",
+            Value = crea.CreatureTypeName,
+            Category = "Characteristics"
+        });
+
+        if (crea.CombatSkill > 0 || crea.MagicSkill > 0 || crea.StealthSkill > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Combat Skill", Value = crea.CombatSkill.ToString(), Category = "Attributes" });
+            properties.Add(new EsmPropertyEntry
+                { Name = "Magic Skill", Value = crea.MagicSkill.ToString(), Category = "Attributes" });
+            properties.Add(new EsmPropertyEntry
+                { Name = "Stealth Skill", Value = crea.StealthSkill.ToString(), Category = "Attributes" });
+        }
+
+        if (crea.AttackDamage != 0)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Attack Damage", Value = crea.AttackDamage.ToString(), Category = "Attributes" });
+        }
+    }
+
+    private static void AddPackageProperties(
+        List<EsmPropertyEntry> properties, object record, FormIdResolver? resolver)
+    {
+        if (record is not PackageRecord pkgRecord)
+        {
+            return;
+        }
+
+        if (pkgRecord.Data != null)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Package Type",
+                Value = pkgRecord.Data.TypeName,
+                Category = "General"
+            });
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "General Flags",
+                Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.GeneralFlags,
+                    FlagRegistry.PackageGeneralFlags),
+                Category = "General"
+            });
+            if (pkgRecord.Data.FalloutBehaviorFlags != 0)
+            {
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Fallout Behaviors",
+                    Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.FalloutBehaviorFlags,
+                        FlagRegistry.PackageFOBehaviorFlags),
+                    Category = "General"
+                });
+            }
+
+            if (pkgRecord.Data.TypeSpecificFlags != 0)
+            {
+                properties.Add(new EsmPropertyEntry
+                {
+                    Name = "Type-Specific Flags",
+                    Value = FlagRegistry.DecodeFlagNamesWithHex(pkgRecord.Data.TypeSpecificFlags,
+                        FlagRegistry.PackageTypeSpecificFlags),
+                    Category = "General"
+                });
+            }
+        }
+
+        if (pkgRecord.Schedule != null)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Schedule",
+                Value = pkgRecord.Schedule.Summary,
+                Category = "General"
+            });
+        }
+
+        if (pkgRecord.IsRepeatable)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Repeatable", Value = "Yes", Category = "General" });
+        }
+
+        if (pkgRecord.IsStartingLocationLinkedRef)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Starting Location", Value = "At Linked Reference", Category = "General" });
+        }
+
+        AddPackageLocationProperty(properties, "Location", pkgRecord.Location, resolver);
+        AddPackageLocationProperty(properties, "Location 2", pkgRecord.Location2, resolver);
+        AddPackageTargetProperty(properties, "Target", pkgRecord.Target, resolver);
+        AddPackageTargetProperty(properties, "Target 2", pkgRecord.Target2, resolver);
+    }
+
+    private static void AddNpcDerivedStats(List<EsmPropertyEntry> properties, object record)
+    {
+        if (record is not NpcRecord npc || npc.SpecialStats?.Length < 7 || npc.Stats == null)
+        {
+            return;
+        }
+
+        var str = npc.SpecialStats[0];
+        var end = npc.SpecialStats[2];
+        var lck = npc.SpecialStats[6];
+        var level = npc.Stats.Level;
+        var fatigueBase = npc.Stats.FatigueBase;
+
+        var baseHealth = end * 5 + 50;
+        var calcHealth = baseHealth + level * 10;
+        var calcFatigue = fatigueBase + (str + end) * 10;
+        var critChance = (float)lck;
+        var meleeDamage = str * 0.5f;
+        var unarmedDamage = 0.5f + str * 0.1f;
+        var poisonResist = (end - 1) * 5;
+        var radResist = (end - 1) * 2;
+
+        properties.Add(new EsmPropertyEntry
+            { Name = "Health", Value = $"{calcHealth} (Base: {baseHealth} + Level×10)", Category = "Derived Stats" });
+        properties.Add(new EsmPropertyEntry
+            { Name = "Fatigue", Value = $"{calcFatigue} (Base: {fatigueBase} + (STR+END)×10)", Category = "Derived Stats" });
+        properties.Add(new EsmPropertyEntry
+            { Name = "Critical Chance", Value = $"{critChance:F0}%", Category = "Derived Stats" });
+        properties.Add(new EsmPropertyEntry
+            { Name = "Melee Damage", Value = $"{meleeDamage:F1}", Category = "Derived Stats" });
+        properties.Add(new EsmPropertyEntry
+            { Name = "Unarmed Damage", Value = $"{unarmedDamage:F1}", Category = "Derived Stats" });
+        properties.Add(new EsmPropertyEntry
+            { Name = "Poison Resistance", Value = $"{poisonResist}%", Category = "Derived Stats" });
+        properties.Add(new EsmPropertyEntry
+            { Name = "Radiation Resistance", Value = $"{radResist}%", Category = "Derived Stats" });
+    }
+
+    private static void AddRaceSkillBoosts(List<EsmPropertyEntry> properties, object record)
+    {
+        if (record is not RaceRecord raceRecord || raceRecord.SkillBoosts.Count == 0)
+        {
+            return;
+        }
+
+        var boosts = raceRecord.SkillBoosts
+            .Select(b =>
+            {
+                var name = ActorValueToSkillName(b.SkillIndex) ?? $"AV#{b.SkillIndex}";
+                return $"{name} {b.Boost:+#;-#;0}";
+            });
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = "Skill Boosts",
+            Value = string.Join(", ", boosts),
+            Category = "Attributes"
+        });
+    }
+
+    private static void AddWorldspaceStats(List<EsmPropertyEntry> properties, object record)
+    {
+        if (record is not WorldspaceRecord wsRecord)
+        {
+            return;
+        }
+
+        var gridCells = wsRecord.Cells.Count(c => c.GridX.HasValue);
+        var persistentCells = wsRecord.Cells.Count - gridCells;
+        var totalObjects = wsRecord.Cells.Sum(c => c.PlacedObjects.Count);
+
+        properties.Add(new EsmPropertyEntry
+            { Name = "Cell Count", Value = wsRecord.Cells.Count.ToString("N0"), Category = "Statistics" });
+        if (gridCells > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "  Grid Cells", Value = gridCells.ToString("N0"), Category = "Statistics" });
+        }
+
+        if (persistentCells > 0)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "  Persistent Cells", Value = persistentCells.ToString("N0"), Category = "Statistics" });
+        }
+
+        properties.Add(new EsmPropertyEntry
+            { Name = "Total Placed Objects", Value = totalObjects.ToString("N0"), Category = "Statistics" });
+    }
+
+    private static void AddWorldPlacements(
+        List<EsmPropertyEntry> properties, object record, Type type,
+        Dictionary<uint, List<WorldPlacement>>? placementIndex)
+    {
+        if (placementIndex == null)
+        {
+            return;
+        }
+
+        var recordFormId = (uint)(GetCachedProperty(type, "FormId")?.GetValue(record) ?? 0u);
+        if (recordFormId == 0 ||
+            !placementIndex.TryGetValue(recordFormId, out var worldPlacements) ||
+            worldPlacements.Count == 0)
+        {
+            return;
+        }
+
+        var subItems = new List<EsmPropertyEntry>(worldPlacements.Count);
+        foreach (var wp in worldPlacements)
+        {
+            var cellName = wp.Cell.FullName
+                           ?? wp.Cell.EditorId
+                           ?? $"0x{wp.Cell.FormId:X8}";
+            var pos = $"({wp.Ref.X:F0}, {wp.Ref.Y:F0}, {wp.Ref.Z:F0})";
+            var gridInfo = wp.Cell.IsInterior
+                ? "Interior"
+                : wp.Cell.GridX.HasValue
+                    ? $"Grid ({wp.Cell.GridX},{wp.Cell.GridY})"
+                    : "Exterior";
+
+            subItems.Add(new EsmPropertyEntry
+            {
+                Col1 = cellName,
+                Col2 = pos,
+                Col3 = $"{wp.Ref.RecordType} 0x{wp.Ref.FormId:X8}",
+                Col4 = gridInfo,
+                CellNavigationFormId = wp.Cell.FormId
+            });
+        }
+
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = $"World Placements ({worldPlacements.Count} uses)",
+            Value = "",
+            Category = "References",
+            IsExpandable = true,
+            SubItems = subItems
+        });
     }
 
     /// <summary>

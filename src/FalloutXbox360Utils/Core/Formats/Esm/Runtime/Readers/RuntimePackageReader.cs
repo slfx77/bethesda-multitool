@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -115,6 +116,12 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
         {
             return null;
         }
+
+        // Sanitize uninitialized heap memory (0xCD/0xCC fill from MS CRT debug allocator).
+        // The game engine allocates TESPackage structs but doesn't always initialize all fields.
+        packFlags = AiRecordHandler.SanitizeFlags32(packFlags);
+        foBehavior = AiRecordHandler.SanitizeFlags16(foBehavior);
+        typeSpecific = AiRecordHandler.SanitizeFlags16(typeSpecific);
 
         return new PackageData
         {

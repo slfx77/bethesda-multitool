@@ -52,30 +52,21 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         var creatures = new List<CreatureRecord>();
         var creatureRecords = _context.GetRecordsByType("CREA").ToList();
 
-        // Track FormIDs from ESM records to avoid duplicates when merging runtime data
-        var esmFormIds = new HashSet<uint>();
-
         if (_context.Accessor == null)
         {
-            // Without accessor, use already-parsed subrecords from scan result
             foreach (var record in creatureRecords)
             {
-                var creature = ReconstructCreatureFromScanResult(record);
-                creatures.Add(creature);
-                esmFormIds.Add(creature.FormId);
+                creatures.Add(ReconstructCreatureFromScanResult(record));
             }
         }
         else
         {
-            // With accessor, read full record data for better reconstruction
             var buffer = ArrayPool<byte>.Shared.Rent(16384);
             try
             {
                 foreach (var record in creatureRecords)
                 {
-                    var creature = ReconstructCreatureFromAccessor(record, buffer);
-                    creatures.Add(creature);
-                    esmFormIds.Add(creature.FormId);
+                    creatures.Add(ReconstructCreatureFromAccessor(record, buffer));
                 }
             }
             finally
@@ -84,32 +75,8 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge creatures from runtime struct reading
-        if (_context.RuntimeReader != null)
-        {
-            var runtimeCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x2B || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var creature = _context.RuntimeReader.ReadRuntimeCreature(entry);
-                if (creature != null)
-                {
-                    creatures.Add(creature);
-                    runtimeCount++;
-                }
-            }
-
-            if (runtimeCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} creatures from runtime struct reading " +
-                    $"(total: {creatures.Count}, ESM: {esmFormIds.Count})");
-            }
-        }
+        _context.MergeRuntimeRecords(creatures, 0x2B, c => c.FormId,
+            (reader, entry) => reader.ReadRuntimeCreature(entry), "creatures");
 
         return creatures;
     }
@@ -286,33 +253,8 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge factions from runtime struct reading
-        if (_context.RuntimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(factions.Select(f => f.FormId));
-            var runtimeCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x08 || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var faction = _context.RuntimeReader.ReadRuntimeFaction(entry);
-                if (faction != null)
-                {
-                    factions.Add(faction);
-                    runtimeCount++;
-                }
-            }
-
-            if (runtimeCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} factions from runtime struct reading " +
-                    $"(total: {factions.Count}, ESM: {esmFormIds.Count})");
-            }
-        }
+        _context.MergeRuntimeRecords(factions, 0x08, f => f.FormId,
+            (reader, entry) => reader.ReadRuntimeFaction(entry), "factions");
 
         return factions;
     }
@@ -456,25 +398,19 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         var npcs = new List<NpcRecord>();
         var npcRecords = _context.GetRecordsByType("NPC_").ToList();
 
-        // Track FormIDs from ESM records to avoid duplicates when merging runtime data
-        var esmFormIds = new HashSet<uint>();
-
         if (_context.Accessor == null)
         {
-            // Without accessor, use already-parsed subrecords from scan result
             foreach (var record in npcRecords)
             {
                 var npc = ReconstructNpcFromScanResult(record);
                 if (npc != null)
                 {
                     npcs.Add(npc);
-                    esmFormIds.Add(npc.FormId);
                 }
             }
         }
         else
         {
-            // With accessor, read full record data for better reconstruction
             var buffer = ArrayPool<byte>.Shared.Rent(16384);
             try
             {
@@ -484,7 +420,6 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     if (npc != null)
                     {
                         npcs.Add(npc);
-                        esmFormIds.Add(npc.FormId);
                     }
                 }
             }
@@ -494,32 +429,8 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge NPCs from runtime struct reading (hash table entries not found as ESM records)
-        if (_context.RuntimeReader != null)
-        {
-            var runtimeCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x2A || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var npc = _context.RuntimeReader.ReadRuntimeNpc(entry);
-                if (npc != null)
-                {
-                    npcs.Add(npc);
-                    runtimeCount++;
-                }
-            }
-
-            if (runtimeCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} NPCs from runtime struct reading " +
-                    $"(total: {npcs.Count}, ESM: {esmFormIds.Count})");
-            }
-        }
+        _context.MergeRuntimeRecords(npcs, 0x2A, n => n.FormId,
+            (reader, entry) => reader.ReadRuntimeNpc(entry), "NPCs");
 
         return npcs;
     }

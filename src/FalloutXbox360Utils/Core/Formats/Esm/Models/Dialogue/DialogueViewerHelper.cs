@@ -87,39 +87,53 @@ internal static class DialogueViewerHelper
 
     /// <summary>
     ///     Resolves the best prompt text for a player choice button, using a priority chain:
-    ///     SourceInfo PromptText → LinkedTopic INFO PromptText → DummyPrompt → FullName
-    ///     → Response text → TopicName → EditorId → "[Continue]"
+    ///     SourceInfo PromptText → shared topic chain → "[Continue]"
     /// </summary>
     public static string ResolvePromptText(InfoDialogueNode sourceInfo, TopicDialogueNode linkedTopic)
     {
-        // 1. Source INFO prompt text (the line that leads to this topic)
         if (!string.IsNullOrEmpty(sourceInfo.Info.PromptText))
         {
             return sourceInfo.Info.PromptText;
         }
 
-        // 2. First INFO in linked topic with prompt text
-        var firstWithPrompt = linkedTopic.InfoChain
+        return ResolveTopicText(linkedTopic) ?? "[Continue]";
+    }
+
+    /// <summary>
+    ///     Resolves the best display text for a topic without relying on a source INFO.
+    ///     Used for "topics unlocked" where the source INFO is the current conversation's INFO
+    ///     (not a TCLT link), so its PromptText is irrelevant.
+    /// </summary>
+    public static string ResolveTopicDisplayText(TopicDialogueNode topic)
+    {
+        return ResolveTopicText(topic) ?? $"0x{topic.TopicFormId:X8}";
+    }
+
+    /// <summary>
+    ///     Core topic text resolution chain shared by ResolvePromptText and ResolveTopicDisplayText.
+    ///     Priority: INFO PromptText → DummyPrompt → FullName → Response text → TopicName → EditorId.
+    ///     Returns null if none match, letting the caller provide a final fallback.
+    /// </summary>
+    private static string? ResolveTopicText(TopicDialogueNode topic)
+    {
+        var firstWithPrompt = topic.InfoChain
             .FirstOrDefault(i => !string.IsNullOrEmpty(i.Info.PromptText));
         if (firstWithPrompt != null)
         {
             return firstWithPrompt.Info.PromptText!;
         }
 
-        // 3. Topic-level dummy prompt
-        if (!string.IsNullOrEmpty(linkedTopic.Topic?.DummyPrompt))
+        if (!string.IsNullOrEmpty(topic.Topic?.DummyPrompt))
         {
-            return linkedTopic.Topic.DummyPrompt;
+            return topic.Topic.DummyPrompt;
         }
 
-        // 4. Topic display name (FullName)
-        if (!string.IsNullOrEmpty(linkedTopic.Topic?.FullName))
+        if (!string.IsNullOrEmpty(topic.Topic?.FullName))
         {
-            return linkedTopic.Topic.FullName;
+            return topic.Topic.FullName;
         }
 
-        // 5. First response text — more readable than EditorId for topics without FullName
-        var firstResponseText = linkedTopic.InfoChain
+        var firstResponseText = topic.InfoChain
             .SelectMany(i => i.Info.Responses)
             .Select(r => r.Text)
             .FirstOrDefault(t => !string.IsNullOrEmpty(t));
@@ -128,18 +142,17 @@ internal static class DialogueViewerHelper
             return firstResponseText.Length > 100 ? firstResponseText[..97] + "..." : firstResponseText;
         }
 
-        // 6. Topic name / EditorId fallback
-        if (!string.IsNullOrEmpty(linkedTopic.TopicName))
+        if (!string.IsNullOrEmpty(topic.TopicName))
         {
-            return linkedTopic.TopicName;
+            return topic.TopicName;
         }
 
-        if (!string.IsNullOrEmpty(linkedTopic.Topic?.EditorId))
+        if (!string.IsNullOrEmpty(topic.Topic?.EditorId))
         {
-            return linkedTopic.Topic.EditorId;
+            return topic.Topic.EditorId;
         }
 
-        return "[Continue]";
+        return null;
     }
 
     /// <summary>

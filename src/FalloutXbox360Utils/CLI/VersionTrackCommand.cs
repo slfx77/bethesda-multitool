@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Utils;
 using FalloutXbox360Utils.Core.VersionTracking.Caching;
 using FalloutXbox360Utils.Core.VersionTracking.Extraction;
 using FalloutXbox360Utils.Core.VersionTracking.Models;
@@ -726,7 +727,7 @@ public static class VersionTrackCommand
         uint? trackFormId = null;
         if (opts.FormId != null)
         {
-            trackFormId = ParseFormId(opts.FormId);
+            trackFormId = CliHelpers.ParseFormId(opts.FormId);
         }
 
         var format = opts.Format.ToLowerInvariant();
@@ -829,7 +830,7 @@ public static class VersionTrackCommand
             if (diff.TotalAdded + diff.TotalRemoved + diff.TotalChanged > 0)
             {
                 var wiki = MediaWikiTimelineWriter.WriteBuildPage(combinedDmp, baseline, diff, title, intro, isDmpPage: true, fo3LeftoverFormIds: fo3LeftoverFormIds);
-                var fileName = SanitizeFileName(title) + ".mw";
+                var fileName = BinaryUtils.SanitizeFilename(title).Replace(' ', '_') + ".mw";
                 var wikiPath = Path.Combine(opts.OutputDir, fileName);
                 await File.WriteAllTextAsync(wikiPath, wiki, cancellationToken);
                 AnsiConsole.MarkupLine($"  [green]Wiki:[/] {wikiPath}");
@@ -850,35 +851,11 @@ public static class VersionTrackCommand
                         "this build has a number of differences compared to the final release.";
 
             var wiki = MediaWikiTimelineWriter.WriteBuildPage(snapshot, baseline, diff, title, intro, isDmpPage: false, fo3LeftoverFormIds: fo3LeftoverFormIds);
-            var fileName = SanitizeFileName(title) + ".mw";
+            var fileName = BinaryUtils.SanitizeFilename(title).Replace(' ', '_') + ".mw";
             var wikiPath = Path.Combine(opts.OutputDir, fileName);
             await File.WriteAllTextAsync(wikiPath, wiki, cancellationToken);
             AnsiConsole.MarkupLine($"  [green]Wiki:[/] {wikiPath}");
         }
-    }
-
-    private static string SanitizeFileName(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sanitized = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-        return sanitized.Replace(' ', '_');
-    }
-
-    private static uint? ParseFormId(string formIdStr)
-    {
-        var str = formIdStr.Trim();
-        if (str.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            str = str[2..];
-        }
-
-        if (uint.TryParse(str, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var result))
-        {
-            return result;
-        }
-
-        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Invalid FormID: {formIdStr}");
-        return null;
     }
 
     #endregion

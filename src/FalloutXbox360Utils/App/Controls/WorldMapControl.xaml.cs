@@ -1137,17 +1137,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 return;
             }
 
-            // Build rotated rectangle corners
-            var rotation = Matrix3x2.CreateRotation(-obj.RotZ, pos);
-            Span<Vector2> corners = stackalloc Vector2[4];
-            corners[0] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y - halfH), rotation);
-            corners[1] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y - halfH), rotation);
-            corners[2] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y + halfH), rotation);
-            corners[3] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y + halfH), rotation);
-
             if (outlineOnly)
             {
                 // Fast path: 4 line draws, no geometry allocation
+                var rotation = Matrix3x2.CreateRotation(-obj.RotZ, pos);
+                Span<Vector2> corners = stackalloc Vector2[4];
+                corners[0] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y - halfH), rotation);
+                corners[1] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y - halfH), rotation);
+                corners[2] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y + halfH), rotation);
+                corners[3] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y + halfH), rotation);
                 ds.DrawLine(corners[0], corners[1], color, lineWidth);
                 ds.DrawLine(corners[1], corners[2], color, lineWidth);
                 ds.DrawLine(corners[2], corners[3], color, lineWidth);
@@ -1155,14 +1153,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             }
             else
             {
-                using var pathBuilder = new CanvasPathBuilder(ds);
-                pathBuilder.BeginFigure(corners[0]);
-                pathBuilder.AddLine(corners[1]);
-                pathBuilder.AddLine(corners[2]);
-                pathBuilder.AddLine(corners[3]);
-                pathBuilder.EndFigure(CanvasFigureLoop.Closed);
-
-                using var geometry = CanvasGeometry.CreatePath(pathBuilder);
+                using var geometry = CreateRotatedRectGeometry(ds, pos, halfW, halfH, obj.RotZ);
                 ds.FillGeometry(geometry, WithAlpha(color, 60));
                 ds.DrawGeometry(geometry, color, lineWidth);
             }
@@ -1202,45 +1193,19 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void DrawPlacedObjectHighlight(CanvasDrawingSession ds, PlacedReference obj)
     {
-        if (_data == null)
-        {
-            return;
-        }
-
-        var pos = new Vector2(obj.X, -obj.Y);
-        var highlightColor = Colors.Yellow;
-
-        if (_data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
-        {
-            var halfW = (bounds.X2 - bounds.X1) * 0.5f * obj.Scale;
-            var halfH = (bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale;
-
-            if (halfW >= 1f || halfH >= 1f)
-            {
-                var rotation = Matrix3x2.CreateRotation(-obj.RotZ, pos);
-                Span<Vector2> corners = stackalloc Vector2[4];
-                corners[0] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y - halfH), rotation);
-                corners[1] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y - halfH), rotation);
-                corners[2] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y + halfH), rotation);
-                corners[3] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y + halfH), rotation);
-
-                using var pathBuilder = new CanvasPathBuilder(ds);
-                pathBuilder.BeginFigure(corners[0]);
-                pathBuilder.AddLine(corners[1]);
-                pathBuilder.AddLine(corners[2]);
-                pathBuilder.AddLine(corners[3]);
-                pathBuilder.EndFigure(CanvasFigureLoop.Closed);
-
-                using var geometry = CanvasGeometry.CreatePath(pathBuilder);
-                ds.DrawGeometry(geometry, highlightColor, 3f / _zoom);
-                return;
-            }
-        }
-
-        ds.DrawCircle(pos, 12f / _zoom, highlightColor, 3f / _zoom);
+        DrawObjectOutline(ds, obj, Colors.Yellow, 3f, 12f);
     }
 
     private void DrawSelectedObjectHighlight(CanvasDrawingSession ds, PlacedReference obj)
+    {
+        DrawObjectOutline(ds, obj, Color.FromArgb(255, 0, 200, 255), 4f, 14f);
+    }
+
+    /// <summary>
+    ///     Draws a rotated rectangle outline (or fallback circle) around a placed object.
+    /// </summary>
+    private void DrawObjectOutline(
+        CanvasDrawingSession ds, PlacedReference obj, Color color, float strokeWidth, float fallbackRadius)
     {
         if (_data == null)
         {
@@ -1248,7 +1213,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
 
         var pos = new Vector2(obj.X, -obj.Y);
-        var selectColor = Color.FromArgb(255, 0, 200, 255); // Cyan
 
         if (_data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
         {
@@ -1257,27 +1221,36 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             if (halfW >= 1f || halfH >= 1f)
             {
-                var rotation = Matrix3x2.CreateRotation(-obj.RotZ, pos);
-                Span<Vector2> corners = stackalloc Vector2[4];
-                corners[0] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y - halfH), rotation);
-                corners[1] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y - halfH), rotation);
-                corners[2] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y + halfH), rotation);
-                corners[3] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y + halfH), rotation);
-
-                using var pathBuilder = new CanvasPathBuilder(ds);
-                pathBuilder.BeginFigure(corners[0]);
-                pathBuilder.AddLine(corners[1]);
-                pathBuilder.AddLine(corners[2]);
-                pathBuilder.AddLine(corners[3]);
-                pathBuilder.EndFigure(CanvasFigureLoop.Closed);
-
-                using var geometry = CanvasGeometry.CreatePath(pathBuilder);
-                ds.DrawGeometry(geometry, selectColor, 4f / _zoom);
+                using var geometry = CreateRotatedRectGeometry(ds, pos, halfW, halfH, obj.RotZ);
+                ds.DrawGeometry(geometry, color, strokeWidth / _zoom);
                 return;
             }
         }
 
-        ds.DrawCircle(pos, 14f / _zoom, selectColor, 4f / _zoom);
+        ds.DrawCircle(pos, fallbackRadius / _zoom, color, strokeWidth / _zoom);
+    }
+
+    /// <summary>
+    ///     Creates a rotated rectangle CanvasGeometry from center, half-extents, and rotation.
+    /// </summary>
+    private static CanvasGeometry CreateRotatedRectGeometry(
+        ICanvasResourceCreator resourceCreator, Vector2 center, float halfW, float halfH, float rotZ)
+    {
+        var rotation = Matrix3x2.CreateRotation(-rotZ, center);
+        Span<Vector2> corners = stackalloc Vector2[4];
+        corners[0] = Vector2.Transform(new Vector2(center.X - halfW, center.Y - halfH), rotation);
+        corners[1] = Vector2.Transform(new Vector2(center.X + halfW, center.Y - halfH), rotation);
+        corners[2] = Vector2.Transform(new Vector2(center.X + halfW, center.Y + halfH), rotation);
+        corners[3] = Vector2.Transform(new Vector2(center.X - halfW, center.Y + halfH), rotation);
+
+        var pathBuilder = new CanvasPathBuilder(resourceCreator);
+        pathBuilder.BeginFigure(corners[0]);
+        pathBuilder.AddLine(corners[1]);
+        pathBuilder.AddLine(corners[2]);
+        pathBuilder.AddLine(corners[3]);
+        pathBuilder.EndFigure(CanvasFigureLoop.Closed);
+
+        return CanvasGeometry.CreatePath(pathBuilder);
     }
 
     private void DrawSpawnOverlay(CanvasDrawingSession ds, PlacedReference selectedObj)

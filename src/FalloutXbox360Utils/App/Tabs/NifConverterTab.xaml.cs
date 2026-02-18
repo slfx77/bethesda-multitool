@@ -13,7 +13,7 @@ namespace FalloutXbox360Utils;
 public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSettingsDrawer
 {
     private readonly List<NifFileEntry> _allNifFiles = [];
-    private readonly NifFilesSorter _sorter = new();
+    private readonly ConvertibleFileSorter<NifFileEntry> _sorter = new();
     private CancellationTokenSource? _cts;
     private bool _dependencyCheckDone;
     private List<NifFileEntry> _nifFiles = []; // Using List instead of ObservableCollection for batch performance
@@ -441,25 +441,25 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
     private void SortByFilePath_Click(object sender, RoutedEventArgs e)
     {
-        ApplySort(NifFilesSorter.SortColumn.FilePath);
+        ApplySort(ConvertibleSortColumn.FilePath);
     }
 
     private void SortBySize_Click(object sender, RoutedEventArgs e)
     {
-        ApplySort(NifFilesSorter.SortColumn.Size);
+        ApplySort(ConvertibleSortColumn.Size);
     }
 
     private void SortByFormat_Click(object sender, RoutedEventArgs e)
     {
-        ApplySort(NifFilesSorter.SortColumn.Format);
+        ApplySort(ConvertibleSortColumn.Format);
     }
 
     private void SortByStatus_Click(object sender, RoutedEventArgs e)
     {
-        ApplySort(NifFilesSorter.SortColumn.Status);
+        ApplySort(ConvertibleSortColumn.Status);
     }
 
-    private void ApplySort(NifFilesSorter.SortColumn column)
+    private void ApplySort(ConvertibleSortColumn column)
     {
         _sorter.CycleSortState(column);
         UpdateSortIcons();
@@ -473,10 +473,10 @@ public sealed partial class NifConverterTab : UserControl, IDisposable, IHasSett
 
         var icon = _sorter.CurrentColumn switch
         {
-            NifFilesSorter.SortColumn.FilePath => FilePathSortIcon,
-            NifFilesSorter.SortColumn.Size => SizeSortIcon,
-            NifFilesSorter.SortColumn.Format => FormatSortIcon,
-            NifFilesSorter.SortColumn.Status => StatusSortIcon,
+            ConvertibleSortColumn.FilePath => FilePathSortIcon,
+            ConvertibleSortColumn.Size => SizeSortIcon,
+            ConvertibleSortColumn.Format => FormatSortIcon,
+            ConvertibleSortColumn.Status => StatusSortIcon,
             _ => null
         };
 

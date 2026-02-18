@@ -119,9 +119,9 @@ public class EsmRecordParserTests
     }
 
     [Fact]
-    public void ScanForRecords_EdidStartsWithNumber_Skipped()
+    public void ScanForRecords_EdidStartsWithNumber_Accepted()
     {
-        // Arrange - EDID starting with number (invalid)
+        // Arrange - EDID starting with number (valid - e.g., region-prefixed NPCs like "1ERaphael")
         const string editorId = "123Test";
         var editorIdBytes = Encoding.ASCII.GetBytes(editorId + "\0");
 
@@ -138,7 +138,8 @@ public class EsmRecordParserTests
         var result = EsmRecordScanner.ScanForRecords(data);
 
         // Assert
-        Assert.Empty(result.EditorIds);
+        Assert.Single(result.EditorIds);
+        Assert.Equal("123Test", result.EditorIds[0].Name);
     }
 
     [Fact]

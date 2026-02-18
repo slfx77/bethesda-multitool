@@ -651,8 +651,8 @@ public static class AnalyzeCommand
                 $"{(m.Normals != null ? "Yes" : "No")},{(m.UVs != null ? "Yes" : "No")}," +
                 $"{(m.VertexColors != null ? "Yes" : "No")}," +
                 $"{m.BoundCenterX:F2},{m.BoundCenterY:F2},{m.BoundCenterZ:F2},{m.BoundRadius:F2}," +
-                $"{CsvEscapeValue(info?.NodeName)},{CsvEscapeValue(info?.ModelName)}," +
-                $"{CsvEscapeValue(info?.FullPath)},{(info != null ? $"0x{info.RootNodeVa:X}" : "")}");
+                $"{CliHelpers.CsvEscape(info?.NodeName)},{CliHelpers.CsvEscape(info?.ModelName)}," +
+                $"{CliHelpers.CsvEscape(info?.FullPath)},{(info != null ? $"0x{info.RootNodeVa:X}" : "")}");
         }
 
         var dir = Path.GetDirectoryName(outputPath);
@@ -704,21 +704,6 @@ public static class AnalyzeCommand
         AnsiConsole.MarkupLine($"  Output: {outputDir}/");
         AnsiConsole.MarkupLine($"  Summary CSV: {Path.Combine(outputDir, "texture_summary.csv")}");
         return Task.CompletedTask;
-    }
-
-    private static string CsvEscapeValue(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return "";
-        }
-
-        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
-        {
-            return "\"" + value.Replace("\"", "\"\"") + "\"";
-        }
-
-        return value;
     }
 
     /// <summary>

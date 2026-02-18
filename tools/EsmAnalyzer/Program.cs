@@ -16,6 +16,20 @@ internal sealed class Program
 
     private static int Main(string[] args)
     {
+        // Disable ANSI if explicitly requested, output is redirected, or NO_COLOR is set
+        var noAnsi = args.Contains("--no-ansi", StringComparer.OrdinalIgnoreCase)
+                     || Console.IsOutputRedirected
+                     || Environment.GetEnvironmentVariable("NO_COLOR") != null;
+
+        if (noAnsi)
+        {
+            AnsiConsole.Profile.Capabilities.Ansi = false;
+            AnsiConsole.Profile.Capabilities.Links = false;
+        }
+
+        // Strip --no-ansi from args so System.CommandLine doesn't error on unknown option
+        args = args.Where(a => !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase)).ToArray();
+
         var rootCommand = new RootCommand("ESM Analyzer - Analyze and compare Xbox 360 and PC ESM files");
 
         // ===== Top-level commands =====

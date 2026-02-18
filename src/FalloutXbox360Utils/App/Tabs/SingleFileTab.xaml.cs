@@ -131,6 +131,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private bool _dependencyCheckDone;
     private ObservableCollection<EsmBrowserNode>? _esmBrowserTree;
     private bool _flatListBuilt;
+    private Dictionary<uint, List<WorldPlacement>>? _placementIndex;
     private CancellationTokenSource? _searchDebounceToken;
     private string? _lastInputPath;
     private string _reportFullContent = "";
@@ -289,41 +290,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // Build _allCarvedFiles but do NOT populate the observable _carvedFiles yet.
             // The file table should only appear once all analysis (including semantic
             // reconstruction) is complete, so the user sees the final list in one shot.
-            // For ESM files, CarvedFiles contains memory-map visualization groups ("ESM Record Group"),
-            // not user-actionable files — skip them so only individual records appear in the list.
-            if (fileType != AnalysisFileType.EsmFile)
-            {
-                foreach (var entry in _analysisResult.CarvedFiles)
-                {
-                    _allCarvedFiles.Add(new CarvedFileEntry
-                    {
-                        Offset = entry.Offset,
-                        Length = entry.Length,
-                        FileType = entry.FileType,
-                        FileName = entry.FileName
-                    });
-                }
-            }
-
-            // Add ESM records to the backing list
-            if (_analysisResult.EsmRecords?.MainRecords != null)
-            {
-                foreach (var esmRecord in _analysisResult.EsmRecords.MainRecords)
-                {
-                    _allCarvedFiles.Add(new CarvedFileEntry
-                    {
-                        Offset = esmRecord.Offset,
-                        Length = esmRecord.DataSize + 24,
-                        FileType = "ESM Record",
-                        EsmRecordType = esmRecord.RecordType,
-                        FormId = esmRecord.FormId,
-                        FileName = _analysisResult.FormIdMap.GetValueOrDefault(esmRecord.FormId),
-                        Status = ExtractionStatus.Skipped
-                    });
-                }
-
-                _allCarvedFiles.Sort((a, b) => a.Offset.CompareTo(b.Offset));
-            }
+            BuildCarvedFileList(isEsmFile: fileType == AnalysisFileType.EsmFile);
 
             // Open shared session (needed for accessor before reconstruction)
             _session.Open(filePath, _analysisResult, fileType);
@@ -671,10 +638,22 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         if (_analysisResult == null) return;
 
         // Rebuild the full list from scratch to include new CarvedFileInfo entries.
-        // For ESM files, CarvedFiles contains memory-map visualization groups, not user results.
         _allCarvedFiles.Clear();
+        BuildCarvedFileList(isEsmFile: _session.IsEsmFile);
+        _carvedFiles.Clear();
+        foreach (var item in _allCarvedFiles)
+        {
+            _carvedFiles.Add(item);
+        }
+    }
 
-        if (!_session.IsEsmFile)
+    /// <summary>
+    ///     Populates _allCarvedFiles from CarvedFiles and ESM MainRecords.
+    ///     For ESM files, skips CarvedFiles (visualization groups, not user-actionable).
+    /// </summary>
+    private void BuildCarvedFileList(bool isEsmFile)
+    {
+        if (!isEsmFile)
         {
             foreach (var entry in _analysisResult.CarvedFiles)
             {
@@ -706,11 +685,6 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
 
         _allCarvedFiles.Sort((a, b) => a.Offset.CompareTo(b.Offset));
-        _carvedFiles.Clear();
-        foreach (var item in _allCarvedFiles)
-        {
-            _carvedFiles.Add(item);
-        }
     }
 
     private async Task AutoPopulateCurrentTabAsync(object? selectedTab)

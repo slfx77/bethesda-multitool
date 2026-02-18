@@ -256,11 +256,15 @@ public static class DialogueCommand
             AnsiConsole.WriteLine();
         }
 
-        // INFOs per topic distribution
+        // INFOs per topic distribution — pre-build lookup to avoid O(n^2)
+        var dialogueCountByTopic = result.Dialogues
+            .GroupBy(d => d.TopicFormId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
         var infosPerTopic = result.DialogTopics
             .Select(t =>
             {
-                var count = result.Dialogues.Count(d => d.TopicFormId == t.FormId);
+                dialogueCountByTopic.TryGetValue(t.FormId, out var count);
                 return (Topic: t, InfoCount: count);
             })
             .Where(x => x.InfoCount > 0)
@@ -361,7 +365,7 @@ public static class DialogueCommand
         var tree = result.DialogueTree;
         if (!string.IsNullOrEmpty(questFilter))
         {
-            var questFormId = ParseFormId(questFilter);
+            var questFormId = CliHelpers.ParseFormId(questFilter) ?? 0;
             if (questFormId == 0)
             {
                 AnsiConsole.MarkupLine("[red]Error:[/] Invalid FormID: {0}", questFilter);
@@ -410,7 +414,7 @@ public static class DialogueCommand
 
     private static async Task RunTopicAsync(string input, string formIdStr, CancellationToken cancellationToken)
     {
-        var formId = ParseFormId(formIdStr);
+        var formId = CliHelpers.ParseFormId(formIdStr) ?? 0;
         if (formId == 0)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] Invalid FormID: {0}", formIdStr);
@@ -605,7 +609,7 @@ public static class DialogueCommand
         if (npcFilter.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
             uint.TryParse(npcFilter, NumberStyles.HexNumber, null, out _))
         {
-            targetFormId = ParseFormId(npcFilter);
+            targetFormId = CliHelpers.ParseFormId(npcFilter) ?? 0;
         }
 
         if (targetFormId == 0)
@@ -1404,17 +1408,6 @@ public static class DialogueCommand
         }
     }
 
-    private static uint ParseFormId(string str)
-    {
-        if (str.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            str = str[2..];
-        }
-
-        return uint.TryParse(str, NumberStyles.HexNumber, null, out var result)
-            ? result
-            : 0;
-    }
 
     private static bool HasAnySpeakerAttribution(DialogueRecord d)
     {
@@ -1642,23 +1635,14 @@ public static class DialogueCommand
         {
             lines.Add(string.Join(",",
                 $"0x{diff.TopicFormId:X8}",
-                CsvEscape(diff.TopicName ?? ""),
-                CsvEscape(diff.DiffType),
-                CsvEscape(diff.Detail)));
+                CliHelpers.CsvEscape(diff.TopicName ?? ""),
+                CliHelpers.CsvEscape(diff.DiffType),
+                CliHelpers.CsvEscape(diff.Detail)));
         }
 
         await File.WriteAllLinesAsync(path, lines);
     }
 
-    private static string CsvEscape(string value)
-    {
-        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
-        {
-            return "\"" + value.Replace("\"", "\"\"") + "\"";
-        }
-
-        return value;
-    }
 
     #endregion
 }

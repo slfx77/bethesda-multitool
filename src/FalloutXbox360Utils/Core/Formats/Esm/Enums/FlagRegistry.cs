@@ -457,6 +457,7 @@ public static class FlagRegistry
         new(0x00020000, "Always Sneak"),
         new(0x00040000, "Allow Swimming"),
         new(0x00080000, "Allow Falls"),
+        new(0x00100000, "Head-Tracking Off"),
         new(0x00200000, "Weapons Unequipped"),
         new(0x00400000, "Defensive Combat"),
         new(0x00800000, "Weapon Drawn"),
@@ -498,7 +499,8 @@ public static class FlagRegistry
         new(0x0008, "Allow Conversation"),
         new(0x0010, "Allow Idle Markers"),
         new(0x0020, "Allow Furniture"),
-        new(0x0040, "Allow Wandering")
+        new(0x0040, "Allow Wandering"),
+        new(0x0100, "Allow Buying")
     ];
 
     /// <summary>

@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils;
 /// <summary>
 ///     Data model for DDX file entries in the list.
 /// </summary>
-public sealed class DdxFileEntry : INotifyPropertyChanged
+public sealed class DdxFileEntry : INotifyPropertyChanged, IConvertibleFileEntry
 {
     // Brushes are created lazily on first access (which happens on UI thread via binding)
     private static SolidColorBrush? _grayBrush;

@@ -32,26 +32,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             });
         }
 
-        // Merge keys from runtime struct reading
-        if (_context.RuntimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(keys.Select(k => k.FormId));
-            var runtimeCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x2E || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var item = _context.RuntimeReader.ReadRuntimeKey(entry);
-                if (item != null)
-                {
-                    keys.Add(item);
-                    runtimeCount++;
-                }
-            }
-        }
+        _context.MergeRuntimeRecords(keys, 0x2E, k => k.FormId,
+            (reader, entry) => reader.ReadRuntimeKey(entry), "keys");
 
         return keys;
     }
@@ -70,23 +52,18 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
         var weapons = new List<WeaponRecord>();
         var weaponRecords = _context.GetRecordsByType("WEAP").ToList();
 
-        // Track FormIDs from ESM records to avoid duplicates
-        var esmFormIds = new HashSet<uint>();
-
         if (_context.Accessor == null)
         {
             foreach (var record in weaponRecords)
             {
-                var weapon = new WeaponRecord
+                weapons.Add(new WeaponRecord
                 {
                     FormId = record.FormId,
                     EditorId = _context.GetEditorId(record.FormId),
                     FullName = _context.FindFullNameNear(record.Offset),
                     Offset = record.Offset,
                     IsBigEndian = record.IsBigEndian
-                };
-                weapons.Add(weapon);
-                esmFormIds.Add(weapon.FormId);
+                });
             }
         }
         else
@@ -100,7 +77,6 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
                     if (weapon != null)
                     {
                         weapons.Add(weapon);
-                        esmFormIds.Add(weapon.FormId);
                     }
                 }
             }
@@ -110,32 +86,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge weapons from runtime struct reading (hash table entries not found as ESM records)
-        if (_context.RuntimeReader != null)
-        {
-            var runtimeCount = 0;
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x28 || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var weapon = _context.RuntimeReader.ReadRuntimeWeapon(entry);
-                if (weapon != null)
-                {
-                    weapons.Add(weapon);
-                    runtimeCount++;
-                }
-            }
-
-            if (runtimeCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} weapons from runtime struct reading " +
-                    $"(total: {weapons.Count}, ESM: {esmFormIds.Count})");
-            }
-        }
+        _context.MergeRuntimeRecords(weapons, 0x28, w => w.FormId,
+            (reader, entry) => reader.ReadRuntimeWeapon(entry), "weapons");
 
         return weapons;
     }
@@ -522,24 +474,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge armor from runtime struct reading (hash table entries not found as ESM records)
-        if (_context.RuntimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(armor.Select(a => a.FormId));
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x18 || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var item = _context.RuntimeReader.ReadRuntimeArmor(entry);
-                if (item != null)
-                {
-                    armor.Add(item);
-                }
-            }
-        }
+        _context.MergeRuntimeRecords(armor, 0x18, a => a.FormId,
+            (reader, entry) => reader.ReadRuntimeArmor(entry), "armor");
 
         return armor;
     }
@@ -707,24 +643,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge ammo from runtime struct reading (hash table entries not found as ESM records)
-        if (_context.RuntimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(ammo.Select(a => a.FormId));
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x29 || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var item = _context.RuntimeReader.ReadRuntimeAmmo(entry);
-                if (item != null)
-                {
-                    ammo.Add(item);
-                }
-            }
-        }
+        _context.MergeRuntimeRecords(ammo, 0x29, a => a.FormId,
+            (reader, entry) => reader.ReadRuntimeAmmo(entry), "ammo");
 
         return ammo;
     }
@@ -946,24 +866,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge consumables from runtime struct reading
-        if (_context.RuntimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(consumables.Select(c => c.FormId));
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x2F || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var item = _context.RuntimeReader.ReadRuntimeConsumable(entry);
-                if (item != null)
-                {
-                    consumables.Add(item);
-                }
-            }
-        }
+        _context.MergeRuntimeRecords(consumables, 0x2F, c => c.FormId,
+            (reader, entry) => reader.ReadRuntimeConsumable(entry), "consumables");
 
         return consumables;
     }
@@ -1126,24 +1030,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             }
         }
 
-        // Merge misc items from runtime struct reading
-        if (_context.RuntimeReader != null)
-        {
-            var esmFormIds = new HashSet<uint>(miscItems.Select(m => m.FormId));
-            foreach (var entry in _context.ScanResult.RuntimeEditorIds)
-            {
-                if (entry.FormType != 0x1F || esmFormIds.Contains(entry.FormId))
-                {
-                    continue;
-                }
-
-                var item = _context.RuntimeReader.ReadRuntimeMiscItem(entry);
-                if (item != null)
-                {
-                    miscItems.Add(item);
-                }
-            }
-        }
+        _context.MergeRuntimeRecords(miscItems, 0x1F, m => m.FormId,
+            (reader, entry) => reader.ReadRuntimeMiscItem(entry), "misc items");
 
         return miscItems;
     }

@@ -38,7 +38,8 @@ public sealed partial class SingleFileTab
         {
             EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                 browserNode,
-                _session.Resolver);
+                _session.Resolver,
+                _placementIndex);
         }
 
         // Add child TreeViewNodes with progressive loading for large sets
@@ -65,7 +66,8 @@ public sealed partial class SingleFileTab
                     else if (browserNode.NodeType == "RecordType" && browserNode.Children.Count == 0)
                         EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                             browserNode,
-                            _session.Resolver);
+                            _session.Resolver,
+                            _placementIndex);
                     AddChildNodesProgressively(treeNode, browserNode.Children);
                     EnsureTreeScrollViewerHooked();
                 }
@@ -248,7 +250,8 @@ public sealed partial class SingleFileTab
             StatusTextBlock.Text = Strings.Status_BuildingSearchIndex;
             var resolver = _session.Resolver;
             var tree = _esmBrowserTree;
-            await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver), token);
+            var placements = _placementIndex;
+            await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver, placements), token);
             _flatListBuilt = true;
         }
 
@@ -291,7 +294,8 @@ public sealed partial class SingleFileTab
 
     private static void EnsureAllChildrenLoaded(
         ObservableCollection<EsmBrowserNode> tree,
-        FormIdResolver? resolver)
+        FormIdResolver? resolver,
+        Dictionary<uint, List<WorldPlacement>>? placementIndex = null)
     {
         // Snapshot collections before iterating — UI thread may modify Children
         // concurrently through tree expansion (EsmTreeView_Expanding).
@@ -313,7 +317,7 @@ public sealed partial class SingleFileTab
 
                 if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
                 {
-                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver);
+                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver, placementIndex);
                 }
             }
         }

@@ -198,11 +198,9 @@ public sealed partial class SingleFileTab
         var propertyRowIndex = 0; // For alternating row colors (excludes category headers)
         string? lastCategory = null;
 
-        // Use theme-aware foreground with low opacity for subtle alternating rows
-        // This adapts to both light and dark modes automatically
         var foregroundBrush = (Microsoft.UI.Xaml.Media.SolidColorBrush)
             Application.Current.Resources["TextFillColorPrimaryBrush"];
-        var altRowBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.05 };
+        var altRowBrush = CreateAlternatingRowBrush();
 
         foreach (var prop in properties)
         {
@@ -210,29 +208,8 @@ public sealed partial class SingleFileTab
             if (prop.Category != null && prop.Category != lastCategory)
             {
                 lastCategory = prop.Category;
-                propertyRowIndex = 0; // Reset alternating for each category
-                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                // Add more visible background for category headers (distinct from row stripes)
-                var categoryBgBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color)
-                    { Opacity = 0.12 };
-                var categoryBg = new Border { Background = categoryBgBrush };
-                Grid.SetRow(categoryBg, currentRow);
-                Grid.SetColumnSpan(categoryBg, 5); // Spans all 5 columns
-                mainGrid.Children.Add(categoryBg);
-
-                var categoryHeader = new TextBlock
-                {
-                    Text = prop.Category,
-                    FontSize = 13,
-                    FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                    Foreground =
-                        (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-                    Margin = new Thickness(8, 5, 0, 7) // Vertically centered (up 1px)
-                };
-                Grid.SetRow(categoryHeader, currentRow);
-                Grid.SetColumnSpan(categoryHeader, 5); // Spans all 5 columns
-                mainGrid.Children.Add(categoryHeader);
+                propertyRowIndex = 0;
+                AddCategoryHeader(mainGrid, prop.Category, currentRow, 5, foregroundBrush);
                 currentRow++;
             }
 
@@ -241,14 +218,7 @@ public sealed partial class SingleFileTab
                 // Expandable entry - header row
                 mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                // Add alternating row background
-                if (propertyRowIndex % 2 == 1)
-                {
-                    var bgBorder = new Border { Background = altRowBrush };
-                    Grid.SetRow(bgBorder, currentRow);
-                    Grid.SetColumnSpan(bgBorder, 5);
-                    mainGrid.Children.Add(bgBorder);
-                }
+                AddAlternatingRowBackground(mainGrid, currentRow, 5, propertyRowIndex, altRowBrush);
 
                 var expandIcon = new TextBlock
                 {
@@ -308,11 +278,35 @@ public sealed partial class SingleFileTab
                 {
                     subItemsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                    // 4-column sub-item (Inventory, Factions)
+                    // 4-column sub-item (Inventory, Factions, World Placements)
                     if (sub.Col1 != null || sub.Col2 != null || sub.Col3 != null || sub.Col4 != null)
                     {
-                        // Col1: use link if LinkedFormId is set (FactionRelations use Col1 for name)
-                        if (sub.LinkedFormId is > 0 && IsFormIdNavigable(sub.LinkedFormId.Value))
+                        // Col1: cell navigation link (World Placements), FormID link, or plain text
+                        if (sub.CellNavigationFormId is > 0)
+                        {
+                            var cellLink = new HyperlinkButton
+                            {
+                                Content = new TextBlock
+                                {
+                                    Text = sub.Col1 ?? "",
+                                    FontSize = 11,
+                                    TextDecorations = Windows.UI.Text.TextDecorations.Underline
+                                },
+                                Padding = new Thickness(0, 1, 12, 1),
+                                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.CornflowerBlue)
+                            };
+                            var capturedCellFormId = sub.CellNavigationFormId.Value;
+                            cellLink.Click += async (_, _) =>
+                            {
+                                await PopulateWorldMapAsync();
+                                NavigateToCellInWorldMap(capturedCellFormId);
+                                SubTabView.SelectedItem = WorldMapTab;
+                            };
+                            Grid.SetRow(cellLink, subRow);
+                            Grid.SetColumn(cellLink, 0);
+                            subItemsGrid.Children.Add(cellLink);
+                        }
+                        else if (sub.LinkedFormId is > 0 && IsFormIdNavigable(sub.LinkedFormId.Value))
                         {
                             var col1Link = CreateFormIdLink(sub.Col1 ?? "", sub.LinkedFormId.Value, 11);
                             col1Link.Margin = new Thickness(0, 0, 12, 0);
@@ -482,16 +476,11 @@ public sealed partial class SingleFileTab
                 currentRow++;
 
                 // Click handler - make header row clickable
-                expandIcon.PointerPressed += (_, _) => ToggleSubItems();
-                nameText.PointerPressed += (_, _) => ToggleSubItems();
-                countText.PointerPressed += (_, _) => ToggleSubItems();
-
-                void ToggleSubItems()
-                {
-                    var isCollapsed = subItemsGrid.Visibility == Visibility.Collapsed;
-                    subItemsGrid.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
-                    expandIcon.Text = isCollapsed ? "\u25BC" : "\u25B6";
-                }
+                var capturedIcon = expandIcon;
+                var capturedSubItems = subItemsGrid;
+                expandIcon.PointerPressed += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
+                nameText.PointerPressed += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
+                countText.PointerPressed += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
 
                 propertyRowIndex++;
             }
@@ -500,14 +489,7 @@ public sealed partial class SingleFileTab
                 // Normal property row
                 mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                // Add alternating row background
-                if (propertyRowIndex % 2 == 1)
-                {
-                    var bgBorder = new Border { Background = altRowBrush };
-                    Grid.SetRow(bgBorder, currentRow);
-                    Grid.SetColumnSpan(bgBorder, 5);
-                    mainGrid.Children.Add(bgBorder);
-                }
+                AddAlternatingRowBackground(mainGrid, currentRow, 5, propertyRowIndex, altRowBrush);
 
                 // Empty spacer for icon column alignment
                 var spacer = new TextBlock { Width = 18, Padding = new Thickness(4, 3, 0, 2) };
@@ -1095,6 +1077,7 @@ public sealed partial class SingleFileTab
         EsmTreeView.RootNodes.Clear();
         _flatListBuilt = false;
         _esmBrowserTree = null;
+        _placementIndex = null;
         _currentSearchQuery = "";
         EsmSearchBox.Text = "";
         EsmSortComboBox.SelectedIndex = 0;

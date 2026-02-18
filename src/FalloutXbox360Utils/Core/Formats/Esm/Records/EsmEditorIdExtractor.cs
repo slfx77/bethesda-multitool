@@ -879,7 +879,7 @@ internal static class EsmEditorIdExtractor
     #region EditorID Validation
 
     /// <summary>
-    ///     Validate an Editor ID string (alphanumeric + underscore, starts with letter).
+    ///     Validate an Editor ID string (alphanumeric + underscore, starts with letter or digit).
     /// </summary>
     private static bool IsValidEditorId(string name)
     {
@@ -888,7 +888,7 @@ internal static class EsmEditorIdExtractor
             return false;
         }
 
-        if (!char.IsLetter(name[0]))
+        if (!char.IsLetterOrDigit(name[0]))
         {
             return false;
         }

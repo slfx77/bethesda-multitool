@@ -179,11 +179,13 @@ public class AssetPathAndStringTests
     }
 
     [Fact]
-    public void ScanForRecords_EdidStartsWithDigit_Rejected()
+    public void ScanForRecords_EdidStartsWithDigit_Accepted()
     {
-        var data = BuildEdidSubrecord("1Invalid");
+        // Digit-prefixed editor IDs are valid (e.g., "1ERaphael" for region-named NPCs)
+        var data = BuildEdidSubrecord("1ERaphael");
         var result = EsmRecordScanner.ScanForRecords(data);
-        Assert.Empty(result.EditorIds);
+        Assert.Single(result.EditorIds);
+        Assert.Equal("1ERaphael", result.EditorIds[0].Name);
     }
 
     [Fact]

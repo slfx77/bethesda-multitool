@@ -77,6 +77,75 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Property Panel Helpers
+
+    /// <summary>
+    ///     Adds a category header row to a property panel grid.
+    /// </summary>
+    private static void AddCategoryHeader(
+        Grid grid, string category, int row, int columnSpan,
+        Microsoft.UI.Xaml.Media.SolidColorBrush foregroundBrush)
+    {
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var categoryBgBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.12 };
+        var categoryBg = new Border { Background = categoryBgBrush };
+        Grid.SetRow(categoryBg, row);
+        Grid.SetColumnSpan(categoryBg, columnSpan);
+        grid.Children.Add(categoryBg);
+
+        var categoryHeader = new TextBlock
+        {
+            Text = category,
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+            Foreground =
+                (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(8, 5, 0, 7)
+        };
+        Grid.SetRow(categoryHeader, row);
+        Grid.SetColumnSpan(categoryHeader, columnSpan);
+        grid.Children.Add(categoryHeader);
+    }
+
+    /// <summary>
+    ///     Adds an alternating row background if the row index is odd.
+    /// </summary>
+    private static void AddAlternatingRowBackground(
+        Grid grid, int row, int columnSpan, int propertyRowIndex,
+        Microsoft.UI.Xaml.Media.SolidColorBrush altRowBrush)
+    {
+        if (propertyRowIndex % 2 == 1)
+        {
+            var bgBorder = new Border { Background = altRowBrush };
+            Grid.SetRow(bgBorder, row);
+            Grid.SetColumnSpan(bgBorder, columnSpan);
+            grid.Children.Add(bgBorder);
+        }
+    }
+
+    /// <summary>
+    ///     Toggles an expandable section's visibility and updates the icon arrow.
+    /// </summary>
+    private static void ToggleExpandSection(TextBlock expandIcon, UIElement subItemsContainer)
+    {
+        var isCollapsed = subItemsContainer.Visibility == Visibility.Collapsed;
+        subItemsContainer.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
+        expandIcon.Text = isCollapsed ? "\u25BC" : "\u25B6";
+    }
+
+    /// <summary>
+    ///     Creates theme-aware brushes for property panel alternating rows.
+    /// </summary>
+    private static Microsoft.UI.Xaml.Media.SolidColorBrush CreateAlternatingRowBrush()
+    {
+        var foregroundBrush = (Microsoft.UI.Xaml.Media.SolidColorBrush)
+            Application.Current.Resources["TextFillColorPrimaryBrush"];
+        return new Microsoft.UI.Xaml.Media.SolidColorBrush(foregroundBrush.Color) { Opacity = 0.05 };
+    }
+
+    #endregion
+
     #region Dialog Helpers
 
     private bool _isDialogOpen;

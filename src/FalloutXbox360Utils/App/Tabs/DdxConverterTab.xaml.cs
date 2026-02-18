@@ -14,7 +14,7 @@ namespace FalloutXbox360Utils;
 public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSettingsDrawer
 {
     private readonly List<DdxFileEntry> _allDdxFiles = [];
-    private readonly DdxFilesSorter _sorter = new();
+    private readonly ConvertibleFileSorter<DdxFileEntry> _sorter = new();
     private CancellationTokenSource? _cts;
     private List<DdxFileEntry> _ddxFiles = [];
     private bool _dependencyCheckDone;
@@ -513,25 +513,25 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
 
     private void SortByFilePath_Click(object sender, RoutedEventArgs e)
     {
-        ApplySort(DdxFilesSorter.SortColumn.FilePath);
+        ApplySort(ConvertibleSortColumn.FilePath);
     }
 
     private void SortBySize_Click(object sender, RoutedEventArgs e)
     {
-        ApplySort(DdxFilesSorter.SortColumn.Size);
+        ApplySort(ConvertibleSortColumn.Size);
     }
 
     private void SortByFormat_Click(object sender, RoutedEventArgs e)
     {
-        ApplySort(DdxFilesSorter.SortColumn.Format);
+        ApplySort(ConvertibleSortColumn.Format);
     }
 
     private void SortByStatus_Click(object sender, RoutedEventArgs e)
     {
-        ApplySort(DdxFilesSorter.SortColumn.Status);
+        ApplySort(ConvertibleSortColumn.Status);
     }
 
-    private void ApplySort(DdxFilesSorter.SortColumn column)
+    private void ApplySort(ConvertibleSortColumn column)
     {
         _sorter.CycleSortState(column);
         UpdateSortIcons();
@@ -545,10 +545,10 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
 
         var icon = _sorter.CurrentColumn switch
         {
-            DdxFilesSorter.SortColumn.FilePath => FilePathSortIcon,
-            DdxFilesSorter.SortColumn.Size => SizeSortIcon,
-            DdxFilesSorter.SortColumn.Format => FormatSortIcon,
-            DdxFilesSorter.SortColumn.Status => StatusSortIcon,
+            ConvertibleSortColumn.FilePath => FilePathSortIcon,
+            ConvertibleSortColumn.Size => SizeSortIcon,
+            ConvertibleSortColumn.Format => FormatSortIcon,
+            ConvertibleSortColumn.Status => StatusSortIcon,
             _ => null
         };
 

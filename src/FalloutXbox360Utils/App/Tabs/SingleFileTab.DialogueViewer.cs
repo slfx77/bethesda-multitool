@@ -434,9 +434,10 @@ public sealed partial class SingleFileTab
             var infoCount = topic.InfoChain.Count;
             var topicType = topic.Topic?.TopicTypeName;
 
+            var detail = topicType != null ? $"{topicType} ({infoCount})" : $"({infoCount})";
+
             // NPC view: show first response text; Quest view: show topic name
             string displayName;
-            string detail;
             if (!_dialoguePickerByQuest)
             {
                 var firstText = topic.InfoChain
@@ -445,22 +446,13 @@ public sealed partial class SingleFileTab
                     .FirstOrDefault(t => !string.IsNullOrEmpty(t));
 
                 // Use response text only if it differs substantially from the topic name
-                if (firstText != null && !IsSimilarText(firstText, topicName))
-                {
-                    displayName = firstText.Length > 80 ? firstText[..77] + "..." : firstText;
-                }
-                else
-                {
-                    displayName = topicName;
-                }
-
-                // Don't repeat topic name in detail — just show type and count
-                detail = topicType != null ? $"{topicType} ({infoCount})" : $"({infoCount})";
+                displayName = firstText != null && !IsSimilarText(firstText, topicName)
+                    ? firstText.Length > 80 ? firstText[..77] + "..." : firstText
+                    : topicName;
             }
             else
             {
                 displayName = topicName;
-                detail = topicType != null ? $"{topicType} ({infoCount})" : $"({infoCount})";
             }
 
             // Propagate context to topic leaf nodes
@@ -538,6 +530,27 @@ public sealed partial class SingleFileTab
                b.StartsWith(a, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    ///     Detects [SUCCEEDED] or [FAILED] prefixes in prompt text (speech challenge outcomes).
+    ///     If found, strips the prefix from the prompt text and returns the outcome label.
+    /// </summary>
+    private static string? DetectChallengeOutcome(ref string promptText)
+    {
+        if (promptText.StartsWith("[SUCCEEDED]", StringComparison.OrdinalIgnoreCase))
+        {
+            promptText = promptText["[SUCCEEDED]".Length..].TrimStart();
+            return "SUCCEEDED";
+        }
+
+        if (promptText.StartsWith("[FAILED]", StringComparison.OrdinalIgnoreCase))
+        {
+            promptText = promptText["[FAILED]".Length..].TrimStart();
+            return "FAILED";
+        }
+
+        return null;
+    }
+
     private static string GetTopicTypeIcon(byte topicType)
     {
         return topicType switch
@@ -558,7 +571,7 @@ public sealed partial class SingleFileTab
 
     #region Dialogue Conversation Navigation
 
-    private void NavigateToDialogueTopic(TopicDialogueNode topic, bool pushToStack)
+    private void NavigateToDialogueTopic(TopicDialogueNode topic, bool pushToStack, string? promptText = null)
     {
         // Push current state onto unified back stack
         if (pushToStack && _currentDialogueTopic != null && !_isNavigating)
@@ -569,14 +582,17 @@ public sealed partial class SingleFileTab
         _currentDialogueTopic = topic;
         _visitedTopicFormIds.Add(topic.TopicFormId);
 
+        // Compute filtered info chain once for all consumers
+        var filteredInfoChain = GetFilteredInfoChain(topic);
+
         // Update header
-        UpdateDialogueHeader(topic);
+        UpdateDialogueHeader(topic, filteredInfoChain);
 
         // Build conversation display
-        BuildConversationDisplay(topic);
+        BuildConversationDisplay(topic, filteredInfoChain, promptText);
 
         // Build player choices
-        BuildPlayerChoices(topic);
+        BuildPlayerChoices(topic, filteredInfoChain);
 
         // Scroll to top
         DialogueConversationScroller.ChangeView(null, 0, null, disableAnimation: true);
@@ -644,7 +660,7 @@ public sealed partial class SingleFileTab
         }
     }
 
-    private void UpdateDialogueHeader(TopicDialogueNode topic)
+    private void UpdateDialogueHeader(TopicDialogueNode topic, List<InfoDialogueNode> filteredInfoChain)
     {
         var parts = new List<string>();
 
@@ -652,9 +668,8 @@ public sealed partial class SingleFileTab
         if (_session.DialogueTree != null)
         {
             var hasFilter = _dialogueSpeakerFilter != null || _dialogueQuestFilter != null;
-            var filteredInfos = hasFilter ? GetFilteredInfoChain(topic) : topic.InfoChain;
             var questFormId = DialogueViewerHelper.ResolveHeaderQuest(
-                topic, filteredInfos, _session.DialogueTree, hasFilter);
+                topic, filteredInfoChain, _session.DialogueTree, hasFilter);
 
             if (questFormId is > 0)
             {
@@ -678,11 +693,12 @@ public sealed partial class SingleFileTab
         return DialogueViewerHelper.FilterInfoChain(topic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter);
     }
 
-    private void BuildConversationDisplay(TopicDialogueNode topic)
+    private void BuildConversationDisplay(
+        TopicDialogueNode topic, List<InfoDialogueNode> filteredInfoChain, string? promptText = null)
     {
         DialogueConversationPanel.Children.Clear();
 
-        var infoChain = GetFilteredInfoChain(topic);
+        var infoChain = filteredInfoChain;
         if (infoChain.Count == 0)
         {
             var emptyText = new TextBlock
@@ -694,6 +710,19 @@ public sealed partial class SingleFileTab
             };
             DialogueConversationPanel.Children.Add(emptyText);
             return;
+        }
+
+        // Show the player's prompt text above the NPC response
+        if (!string.IsNullOrEmpty(promptText))
+        {
+            DialogueConversationPanel.Children.Add(CreatePlayerPromptBlock(promptText));
+        }
+
+        // Show speech challenge banner if this topic is a challenge
+        var challengeInfo = infoChain.FirstOrDefault(i => i.Info.IsSpeechChallenge);
+        if (challengeInfo != null)
+        {
+            DialogueConversationPanel.Children.Add(CreateSpeechChallengeBanner(challengeInfo.Info.DifficultyName));
         }
 
         // Show alternative indicator if multiple INFOs
@@ -739,6 +768,79 @@ public sealed partial class SingleFileTab
 
             DialogueConversationPanel.Children.Add(CreateNpcResponseBlock(infoNode));
         }
+    }
+
+    private static Border CreatePlayerPromptBlock(string promptText)
+    {
+        var content = new StackPanel { Spacing = 4 };
+
+        // Player label
+        var labelPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        labelPanel.Children.Add(new FontIcon
+        {
+            Glyph = "\uE77B",
+            FontSize = 14,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
+        });
+        labelPanel.Children.Add(new TextBlock
+        {
+            Text = "Player",
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
+        });
+        content.Children.Add(labelPanel);
+
+        // Prompt text
+        content.Children.Add(new TextBlock
+        {
+            Text = $"\u201C{promptText}\u201D",
+            FontSize = 13,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            Margin = new Thickness(22, 2, 0, 2)
+        });
+
+        return new Border
+        {
+            Child = content,
+            Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(12, 8, 12, 8),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+    }
+
+    private static Border CreateSpeechChallengeBanner(string difficultyName)
+    {
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+
+        panel.Children.Add(new FontIcon
+        {
+            Glyph = "\uE8D4", // Shield icon
+            FontSize = 14,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["SystemFillColorCautionBrush"]
+        });
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Speech Challenge \u2014 {difficultyName}",
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["SystemFillColorCautionBrush"]
+        });
+
+        return new Border
+        {
+            Child = panel,
+            Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(0, 0, 0, 4)
+        };
     }
 
     private Border CreateNpcResponseBlock(InfoDialogueNode infoNode)
@@ -976,44 +1078,7 @@ public sealed partial class SingleFileTab
         AddRow("Offset", $"0x{info.Offset:X8}");
         AddRow("Endianness", info.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)");
 
-        // Toggle header
-        var toggleIcon = new TextBlock
-        {
-            Text = "\u25B6",
-            FontSize = 9,
-            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 4, 0)
-        };
-        var toggleText = new TextBlock
-        {
-            Text = "Record Details",
-            FontSize = 11,
-            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
-        };
-        var togglePanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(22, 4, 0, 0)
-        };
-        togglePanel.Children.Add(toggleIcon);
-        togglePanel.Children.Add(toggleText);
-        togglePanel.PointerPressed += (_, _) =>
-        {
-            var isCollapsed = detailGrid.Visibility == Visibility.Collapsed;
-            detailGrid.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
-            toggleIcon.Text = isCollapsed ? "\u25BC" : "\u25B6";
-        };
-
-        var container = new StackPanel();
-        container.Children.Add(togglePanel);
-        container.Children.Add(detailGrid);
-
-        return new Border
-        {
-            Child = container,
-            Margin = new Thickness(0, 2, 0, 0)
-        };
+        return WrapInTogglePanel(detailGrid, new Thickness(22, 4, 0, 0), new Thickness(0, 2, 0, 0));
     }
 
     private static Border CreateMetadataTag(string text)
@@ -1032,12 +1097,52 @@ public sealed partial class SingleFileTab
         };
     }
 
-    private void BuildPlayerChoices(TopicDialogueNode topic)
+    private static Border WrapInTogglePanel(Grid detailGrid, Thickness toggleMargin, Thickness borderMargin)
+    {
+        var toggleIcon = new TextBlock
+        {
+            Text = "\u25B6",
+            FontSize = 9,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4, 0)
+        };
+        var toggleText = new TextBlock
+        {
+            Text = "Record Details",
+            FontSize = 11,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+        };
+        var togglePanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = toggleMargin
+        };
+        togglePanel.Children.Add(toggleIcon);
+        togglePanel.Children.Add(toggleText);
+        togglePanel.PointerPressed += (_, _) =>
+        {
+            var isCollapsed = detailGrid.Visibility == Visibility.Collapsed;
+            detailGrid.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
+            toggleIcon.Text = isCollapsed ? "\u25BC" : "\u25B6";
+        };
+
+        var container = new StackPanel();
+        container.Children.Add(togglePanel);
+        container.Children.Add(detailGrid);
+
+        return new Border
+        {
+            Child = container,
+            Margin = borderMargin
+        };
+    }
+
+    private void BuildPlayerChoices(TopicDialogueNode topic, List<InfoDialogueNode> filteredInfoChain)
     {
         DialogueChoicesPanel.Children.Clear();
 
         // Collect TCLT-based player choices from filtered INFOs, excluding self-references
-        var filteredInfoChain = GetFilteredInfoChain(topic);
         var choiceTopics = DialogueViewerHelper.CollectLinkedTopics(filteredInfoChain, topic.TopicFormId);
 
         if (choiceTopics.Count > 0)
@@ -1070,23 +1175,17 @@ public sealed partial class SingleFileTab
                 // No TCLT, no scripts, not goodbye: in-game the player returns to the NPC's topic menu.
                 // Show parent topic's TCLT choices if found, otherwise return link.
                 var parentTopic = FindParentTopic(topic);
-                if (parentTopic != null)
+                var parentChoices = parentTopic != null
+                    ? DialogueViewerHelper.CollectLinkedTopics(parentTopic.InfoChain, topic.TopicFormId)
+                    : [];
+
+                if (parentChoices.Count > 0)
                 {
-                    var parentChoices = DialogueViewerHelper.CollectLinkedTopics(
-                        parentTopic.InfoChain, topic.TopicFormId);
-                    if (parentChoices.Count > 0)
+                    DialogueChoicesHeader.Visibility = Visibility.Visible;
+                    foreach (var (_, (linked, sourceInfo)) in parentChoices)
                     {
-                        DialogueChoicesHeader.Visibility = Visibility.Visible;
-                        foreach (var (_, (linked, sourceInfo)) in parentChoices)
-                        {
-                            DialogueChoicesPanel.Children.Add(
-                                CreatePlayerChoiceWithDetails(linked, sourceInfo));
-                        }
-                    }
-                    else
-                    {
-                        AddEndOfDialogueLabel("Conversation returns to topic list");
-                        AddReturnToPickerLink();
+                        DialogueChoicesPanel.Children.Add(
+                            CreatePlayerChoiceWithDetails(linked, sourceInfo));
                     }
                 }
                 else
@@ -1141,38 +1240,44 @@ public sealed partial class SingleFileTab
 
         foreach (var (_, addedTopic) in addedTopics)
         {
-            var topicName = addedTopic.Topic?.FullName
-                            ?? addedTopic.TopicName
-                            ?? addedTopic.Topic?.EditorId
-                            ?? $"0x{addedTopic.TopicFormId:X8}";
-
-            var link = new HyperlinkButton
-            {
-                Content = new TextBlock
-                {
-                    Text = $"  \u2022 {topicName}",
-                    FontSize = 11,
-                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
-                },
-                Padding = new Thickness(0, 1, 0, 1)
-            };
-
-            var capturedTopic = addedTopic;
-            link.Click += (_, _) => NavigateToDialogueTopic(capturedTopic, pushToStack: true);
-
-            DialogueChoicesPanel.Children.Add(link);
+            DialogueChoicesPanel.Children.Add(CreateAddedTopicEntry(addedTopic));
         }
+    }
+
+    private StackPanel CreateAddedTopicEntry(TopicDialogueNode addedTopic)
+    {
+        var displayText = DialogueViewerHelper.ResolveTopicDisplayText(addedTopic);
+        var button = CreateDialogueChoiceButton(displayText, addedTopic);
+
+        var container = new StackPanel();
+        container.Children.Add(button);
+        return container;
     }
 
     private Button CreatePlayerChoiceButton(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
     {
         var promptText = DialogueViewerHelper.ResolvePromptText(sourceInfo, linkedTopic);
-        var isVisited = _visitedTopicFormIds.Contains(linkedTopic.TopicFormId);
-
-        // Check if any INFO in the linked topic is a speech challenge
+        var challengeOutcome = DetectChallengeOutcome(ref promptText);
         var speechInfo = linkedTopic.InfoChain.FirstOrDefault(i => i.Info.IsSpeechChallenge);
         var isGoodbyeTopic = linkedTopic.InfoChain.Count > 0 && linkedTopic.InfoChain.All(i => i.Info.IsGoodbye);
 
+        return CreateDialogueChoiceButton(
+            promptText, linkedTopic,
+            challengeOutcome: challengeOutcome,
+            speechChallengeDifficulty: speechInfo?.Info.DifficultyName,
+            isGoodbyeTopic: isGoodbyeTopic);
+    }
+
+    /// <summary>
+    ///     Creates a dialogue choice button with consistent visual structure.
+    ///     Used by both TCLT-linked choices and added-topic entries.
+    /// </summary>
+    private Button CreateDialogueChoiceButton(
+        string displayText, TopicDialogueNode targetTopic,
+        string? challengeOutcome = null, string? speechChallengeDifficulty = null,
+        bool isGoodbyeTopic = false)
+    {
+        var isVisited = _visitedTopicFormIds.Contains(targetTopic.TopicFormId);
         var contentPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
 
         // Arrow prefix
@@ -1185,14 +1290,36 @@ public sealed partial class SingleFileTab
             Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
         });
 
+        // Challenge outcome tag (SUCCEEDED/FAILED)
+        if (challengeOutcome != null)
+        {
+            var isSuccess = challengeOutcome == "SUCCEEDED";
+            contentPanel.Children.Add(new Border
+            {
+                Child = new TextBlock
+                {
+                    Text = challengeOutcome,
+                    FontSize = 11,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = isSuccess
+                        ? (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"]
+                        : (Brush)Application.Current.Resources["SystemFillColorCriticalBrush"]
+                },
+                Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
+                CornerRadius = new CornerRadius(2),
+                Padding = new Thickness(4, 1, 4, 1),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        }
+
         // Speech challenge tag
-        if (speechInfo != null)
+        if (speechChallengeDifficulty != null)
         {
             contentPanel.Children.Add(new Border
             {
                 Child = new TextBlock
                 {
-                    Text = $"Speech {speechInfo.Info.DifficultyName}",
+                    Text = $"Speech {speechChallengeDifficulty}",
                     FontSize = 11,
                     Foreground = (Brush)Application.Current.Resources["SystemFillColorCautionBrush"]
                 },
@@ -1221,21 +1348,19 @@ public sealed partial class SingleFileTab
             });
         }
 
-        // Prompt text
-        var promptBlock = new TextBlock
+        // Display text
+        var textBlock = new TextBlock
         {
-            Text = promptText,
+            Text = displayText,
             FontSize = 13,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
         };
-
         if (isVisited)
         {
-            promptBlock.Opacity = 0.7;
+            textBlock.Opacity = 0.7;
         }
-
-        contentPanel.Children.Add(promptBlock);
+        contentPanel.Children.Add(textBlock);
 
         // Goodbye suffix
         if (isGoodbyeTopic)
@@ -1260,9 +1385,7 @@ public sealed partial class SingleFileTab
             BorderThickness = new Thickness(0)
         };
 
-        // Capture the topic for the lambda
-        var target = linkedTopic;
-        button.Click += (_, _) => NavigateToDialogueTopic(target, pushToStack: true);
+        button.Click += (_, _) => NavigateToDialogueTopic(targetTopic, pushToStack: true, promptText: displayText);
 
         return button;
     }
@@ -1351,44 +1474,7 @@ public sealed partial class SingleFileTab
             AddRow("Source EditorID", sourceInfo.Info.EditorId);
         }
 
-        // Toggle header
-        var toggleIcon = new TextBlock
-        {
-            Text = "\u25B6",
-            FontSize = 9,
-            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 4, 0)
-        };
-        var toggleText = new TextBlock
-        {
-            Text = "Record Details",
-            FontSize = 11,
-            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
-        };
-        var togglePanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(30, 0, 0, 0)
-        };
-        togglePanel.Children.Add(toggleIcon);
-        togglePanel.Children.Add(toggleText);
-        togglePanel.PointerPressed += (_, _) =>
-        {
-            var isCollapsed = detailGrid.Visibility == Visibility.Collapsed;
-            detailGrid.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
-            toggleIcon.Text = isCollapsed ? "\u25BC" : "\u25B6";
-        };
-
-        var container = new StackPanel();
-        container.Children.Add(togglePanel);
-        container.Children.Add(detailGrid);
-
-        return new Border
-        {
-            Child = container,
-            Margin = new Thickness(0, 0, 0, 2)
-        };
+        return WrapInTogglePanel(detailGrid, new Thickness(30, 0, 0, 0), new Thickness(0, 0, 0, 2));
     }
 
     private string ResolveSpeakerName(uint? formId)
