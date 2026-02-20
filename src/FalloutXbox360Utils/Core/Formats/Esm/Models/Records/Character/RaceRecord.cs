@@ -84,6 +84,25 @@ public record RaceRecord
     /// <summary>FaceGen face clamp value.</summary>
     public float FaceGenFaceClamp { get; init; }
 
+    // FaceGen base morph coefficients (per-race default face, from MNAM/FNAM sections)
+    /// <summary>Male FaceGen geometry-symmetric base coefficients (FGGS after MNAM, 50 floats).</summary>
+    public float[]? MaleFaceGenGeometrySymmetric { get; init; }
+
+    /// <summary>Male FaceGen geometry-asymmetric base coefficients (FGGA after MNAM, 30 floats).</summary>
+    public float[]? MaleFaceGenGeometryAsymmetric { get; init; }
+
+    /// <summary>Male FaceGen texture-symmetric base coefficients (FGTS after MNAM, 50 floats).</summary>
+    public float[]? MaleFaceGenTextureSymmetric { get; init; }
+
+    /// <summary>Female FaceGen geometry-symmetric base coefficients (FGGS after FNAM, 50 floats).</summary>
+    public float[]? FemaleFaceGenGeometrySymmetric { get; init; }
+
+    /// <summary>Female FaceGen geometry-asymmetric base coefficients (FGGA after FNAM, 30 floats).</summary>
+    public float[]? FemaleFaceGenGeometryAsymmetric { get; init; }
+
+    /// <summary>Female FaceGen texture-symmetric base coefficients (FGTS after FNAM, 50 floats).</summary>
+    public float[]? FemaleFaceGenTextureSymmetric { get; init; }
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

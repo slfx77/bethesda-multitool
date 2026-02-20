@@ -567,7 +567,7 @@ internal sealed class NifOutputWriter(NifConversionState state)
             pos += 1 + mfLen;
         }
 
-        // Now we're at Num Block Types (ushort) - needs swap
+        // Num Block Types (ushort) - swap for endianness
         SwapUInt16InPlace(buf, pos);
         var numBlockTypes = BinaryUtils.ReadUInt16LE(buf, pos);
         pos += 2;

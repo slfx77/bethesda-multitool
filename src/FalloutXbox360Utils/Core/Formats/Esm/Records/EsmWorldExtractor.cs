@@ -72,6 +72,7 @@ internal static class EsmWorldExtractor
         uint? destinationDoorFormId = null;
         uint? enableParentFormId = null;
         byte? enableParentFlags = null;
+        uint? linkedRefFormId = null;
         var isMapMarker = false;
         ushort? markerType = null;
         string? markerName = null;
@@ -120,6 +121,12 @@ internal static class EsmWorldExtractor
                     enableParentFlags = subData[4];
                     break;
 
+                case "XLKR" when sub.DataLength >= 4: // Linked Reference
+                    linkedRefFormId = header.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                    break;
+
                 case "XMRK": // Map marker presence flag (0 bytes)
                     isMapMarker = true;
                     break;
@@ -164,7 +171,8 @@ internal static class EsmWorldExtractor
             BaseEditorId = editorIdMap?.GetValueOrDefault(baseFormId),
             IsMapMarker = isMapMarker,
             MarkerType = markerType,
-            MarkerName = markerName
+            MarkerName = markerName,
+            LinkedRefFormId = linkedRefFormId
         };
     }
 

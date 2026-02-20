@@ -33,6 +33,11 @@ dotnet_diagnostic.ca1720.severity = none
 dotnet_diagnostic.CA1711.severity = none
 dotnet_diagnostic.S2344.severity = none
 
+# Suppress LINQ suggestions: explicit loops are preferred in performance-sensitive code
+dotnet_diagnostic.S3267.severity = none  # Loop should be simplified using LINQ
+dotnet_diagnostic.S1155.severity = none  # Use .Any() instead of .Count()
+dotnet_diagnostic.S6608.severity = none  # Use indexing instead of First()/Last()
+
 # Unused code detection (enable as warnings)
 dotnet_diagnostic.ide0051.severity = warning # Unused private member
 dotnet_diagnostic.ide0052.severity = warning # Unread private member

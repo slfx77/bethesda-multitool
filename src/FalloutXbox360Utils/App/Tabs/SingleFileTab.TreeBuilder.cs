@@ -39,7 +39,8 @@ public sealed partial class SingleFileTab
             EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                 browserNode,
                 _session.Resolver,
-                _placementIndex);
+                _placementIndex,
+                _raceLookup);
         }
 
         // Add child TreeViewNodes with progressive loading for large sets
@@ -67,7 +68,8 @@ public sealed partial class SingleFileTab
                         EsmBrowserTreeBuilder.LoadRecordTypeChildren(
                             browserNode,
                             _session.Resolver,
-                            _placementIndex);
+                            _placementIndex,
+                            _raceLookup);
                     AddChildNodesProgressively(treeNode, browserNode.Children);
                     EnsureTreeScrollViewerHooked();
                 }
@@ -251,7 +253,7 @@ public sealed partial class SingleFileTab
             var resolver = _session.Resolver;
             var tree = _esmBrowserTree;
             var placements = _placementIndex;
-            await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver, placements), token);
+            await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver, placements, _raceLookup), token);
             _flatListBuilt = true;
         }
 
@@ -295,7 +297,8 @@ public sealed partial class SingleFileTab
     private static void EnsureAllChildrenLoaded(
         ObservableCollection<EsmBrowserNode> tree,
         FormIdResolver? resolver,
-        Dictionary<uint, List<WorldPlacement>>? placementIndex = null)
+        Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
+        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null)
     {
         // Snapshot collections before iterating — UI thread may modify Children
         // concurrently through tree expansion (EsmTreeView_Expanding).
@@ -317,7 +320,7 @@ public sealed partial class SingleFileTab
 
                 if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
                 {
-                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver, placementIndex);
+                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver, placementIndex, raceLookup);
                 }
             }
         }

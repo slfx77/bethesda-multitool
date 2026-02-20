@@ -130,6 +130,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DDX Conversion**: Xbox 360 DDX textures to standard DDS format
 - **Minidump Parsing**: Extract module information from Xbox 360 minidumps
 
-[1.0.0]: https://github.com/slfx77/xbox-360-minidump-extractor/compare/v0.2.0-alpha.1...v1.0.0
-[0.2.0-alpha.1]: https://github.com/slfx77/xbox-360-minidump-extractor/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
-[0.1.0-alpha.1]: https://github.com/slfx77/xbox-360-minidump-extractor/releases/tag/v0.1.0-alpha.1
+[1.0.0]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v0.2.0-alpha.1...v1.0.0
+[0.2.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
+[0.1.0-alpha.1]: https://github.com/slfx77/fallout-xbox-360-utils/releases/tag/v0.1.0-alpha.1

@@ -325,9 +325,7 @@ public static class PackagesCommand
                     type = (int)pkg.Target.Type,
                     typeName = pkg.Target.TypeName,
                     formIdOrType = $"0x{pkg.Target.FormIdOrType:X8}",
-                    editorId = pkg.Target.Type is 0 or 1
-                        ? resolver.GetBestNameWithRefChain(pkg.Target.FormIdOrType)
-                        : null,
+                    editorId = ResolveTargetEditorId(pkg.Target, resolver),
                     countDistance = pkg.Target.CountDistance
                 }
                 : null,
@@ -347,5 +345,12 @@ public static class PackagesCommand
 
         var json = JsonSerializer.Serialize(items, JsonOptions);
         Console.WriteLine(json);
+    }
+
+    private static string? ResolveTargetEditorId(PackageTarget target, FormIdResolver resolver)
+    {
+        return target.Type is 0 or 1
+            ? resolver.GetBestNameWithRefChain(target.FormIdOrType)
+            : null;
     }
 }

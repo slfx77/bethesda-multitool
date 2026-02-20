@@ -21,9 +21,13 @@ dump <file> <type>              # Dump records of type
 trace <file> -o <offset>        # Trace structure at offset
 locate <file> <formid>          # Find record by FormID
 
-# Comparison (key for conversion work)
-compare <file1> <file2>         # Compare two ESM files
-diff <file1> <file2> -t <type>  # Diff by record type
+# Comparison
+compare land <file1> <file2>    # Compare land records
+compare cells <file1> <file2>   # Compare cell records
+compare heightmaps <f1> <f2>    # Compare heightmap data
+
+# Diff (unified command - provide 2 or 3 files)
+diff --xbox <file> --converted <file> --pc <file> -t <type> --semantic
 semdiff <file1> <file2> ...     # Semantic field-by-field diff (most useful!)
 
 # Conversion
@@ -79,23 +83,34 @@ When debugging, focus on fields showing **DIFF** in semantic comparison, not jus
 ## Key Files for ESM Conversion
 
 ```
-tools/EsmAnalyzer/
-├── Commands/
-│   ├── ConvertCommands.cs          # Convert command entry point
-│   ├── SemanticDiffCommands.cs     # semdiff implementation
-│   ├── DiffCommands*.cs            # Various diff commands
-│   └── CompareCommands*.cs         # Comparison utilities
-├── Conversion/
-│   ├── EsmConverter.cs             # Main conversion logic
-│   ├── EsmSubrecordConverter.cs    # Subrecord byte-swapping
-│   ├── EsmInfoMerger.cs            # Split INFO record merging
-│   └── Schema/
-│       ├── SubrecordSchemaRegistry.cs  # Field type definitions
-│       ├── SubrecordSchema.cs          # Schema structures
-│       └── SubrecordFieldType.cs       # Field type enum
+src/FalloutXbox360Utils/Core/Formats/Esm/Conversion/
+├── EsmConverter.cs                     # Main conversion orchestrator
+├── EsmConverterConstants.cs            # Conversion constants
+├── EsmEndianHelpers.cs                 # Endian swap utilities
+├── EsmHelpers.cs                       # Compression, general utilities
+├── Indexing/
+│   ├── EsmConversionIndexBuilder.cs    # Pre-scan index for merging
+│   └── EsmConversionStats.cs           # Conversion statistics
+├── Processing/
+│   ├── EsmGrupWriter.cs               # GRUP record writing
+│   ├── EsmInfoMerger.cs               # Split INFO record merging
+│   ├── EsmRecordWriter.cs             # Record writing
+│   ├── EsmSubrecordConverter.cs        # Subrecord byte-swapping
+│   └── EsmSubrecordConverter.Helpers.cs
+└── Schema/
+    ├── SubrecordSchemaRegistry.cs      # Field type definitions (+ partial files)
+    ├── SubrecordSchema.cs              # Schema structures
+    ├── SubrecordSchemaProcessor.cs     # Schema application logic
+    └── SubrecordFieldType.cs           # Field type enum
+
+tools/EsmAnalyzer/                      # Thin CLI wrapper over the above
+├── Commands/                           # CLI commands (38 files)
+│   ├── ConvertCommands.cs              # Convert command entry point
+│   ├── SemanticDiffCommands.cs         # semdiff implementation
+│   ├── DiffCommands*.cs               # Diff commands (Unified, ThreeWay, Header, Records)
+│   └── CompareCommands*.cs             # Compare commands (Land, Cells, Heightmap)
 └── Helpers/
-    ├── EsmHelpers.cs               # Compression, utilities
-    └── DiffHelpers.cs              # Diff utilities
+    └── DiffHelpers.cs                  # Diff display utilities
 ```
 
 ## Standard File Paths
@@ -123,13 +138,63 @@ diff --xbox ... --converted ... --pc ... -f 0x0017B37C --semantic
 ### Reference Materials
 
 - **PDB symbols**: `Sample/PDB/`
+- **MemDebug PDB**: `tools/GhidraProject/Fallout_Release_MemDebug.pdb` (100 MB, loaded into Ghidra)
+- **Decompiled output**: `tools/GhidraProject/savegame_decompiled.txt` (save game functions)
+
+## Ghidra Decompilation
+
+### Setup
+
+- **Ghidra**: `C:/Tools/ghidra_12.0.2_PUBLIC`
+- **Project**: `tools/GhidraProject/XEX360Project/FalloutNV_MemDebug` (the MemDebug XEX)
+- **Binary**: `Fallout_Release_MemDebug.xex`
+- **Language**: `PowerPC:BE:64:A2ALT-32addr` (Xbox 360 Xenon, better VMX128 support)
+- **TEXT_BASE**: `0x82250000` (MemDebug .text section base)
+
+### DO NOT RE-INVESTIGATE
+
+- **Use MemDebug XEX, not ReleaseBeta PE.** The ReleaseBeta PE (`PowerPC:BE:32:default`, 85K functions) produces `halt_baddata()` stubs due to: VMX instructions lacking pcode semantics, overlapping auto-analyzed functions, wrong SLEIGH spec.
+- **The MemDebug project has NO PDB symbols loaded** (all functions are `Function_XXXXXXXX`). Name-based lookup won't work. Use address-based lookup with cvdump-extracted addresses.
+- **PPC thunk detection**: `mfspr r12, LR` = bytes `7D 80 42 A6` (NOT `7C 6C 02 A6`). Use Ghidra instruction API (`mfspr` + `bl` mnemonic check) for reliability.
+- **globals.txt module offsets** (`S_PROCREF: module, offset`) do NOT linearly map to VAs. Use `cvdump -s` output (`S_GPROC32: [section:offset]`) instead.
+
+### Running Decompilation
+
+```bash
+# Extract function addresses from MemDebug PDB
+tools/microsoft-pdb/cvdump/cvdump.exe -s tools/GhidraProject/Fallout_Release_MemDebug.pdb | grep S_GPROC32
+
+# Run Ghidra headless (from tools/GhidraProject/)
+"C:/Tools/ghidra_12.0.2_PUBLIC/support/analyzeHeadless.bat" \
+    XEX360Project FalloutNV_MemDebug \
+    -process Fallout_Release_MemDebug.xex \
+    -noanalysis \
+    -postScript DecompileSaveTargets.java \
+    -scriptPath .
+```
+
+### Adding New Decompilation Targets
+
+1. Find the function in the PDB: `cvdump -s Fallout_Release_MemDebug.pdb | grep "FunctionName"`
+2. Extract `[0004:XXXXXXXX], Cb: YYYYYYYY` → section 4 offset and size
+3. Add to `TARGETS` array in `DecompileSaveTargets.java`: `{0xOFFSET, 0xSIZE, "Class::Method", tier}`
+4. VA = `TEXT_BASE (0x82250000) + offset`
+5. Exclude tiny stubs (Cb <= 0x10) — those are vtable redirectors
+
+### Key Scripts
+
+| Script | Purpose |
+|---|---|
+| `DecompileSaveTargets.java` | Save game function decompilation (45 functions, 5 tiers) |
+| `DecompileFaceGenMemDebug.java` | FaceGen function decompilation (28 functions) |
+| `CreatePdbFunctions.java` | Pre-analysis function creation (ReleaseBeta PE only) |
 
 ## Code Style
 
 - File-scoped namespaces: `namespace Foo;`
 - Private fields: `_camelCase`
 - Nullable reference types: Enabled
-- Always use braces for control flow
+- Prefer braces for control flow
 - Async methods: suffix with `Async`
 
 ## Build Commands

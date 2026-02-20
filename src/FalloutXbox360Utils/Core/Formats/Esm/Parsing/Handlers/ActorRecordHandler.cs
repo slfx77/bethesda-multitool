@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
@@ -36,6 +37,20 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             SubrecordDataReader.GetInt16(fields, "Disposition"),
             SubrecordDataReader.GetUInt16(fields, "TemplateFlags"),
             offset, bigEndian);
+    }
+
+    private static float[] ReadFloatArray(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        var count = data.Length / 4;
+        var result = new float[count];
+        for (var i = 0; i < count; i++)
+        {
+            result[i] = bigEndian
+                ? BinaryPrimitives.ReadSingleBigEndian(data[(i * 4)..])
+                : BinaryPrimitives.ReadSingleLittleEndian(data[(i * 4)..]);
+        }
+
+        return result;
     }
 
     #endregion
@@ -477,6 +492,9 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         uint? hairFormId = null;
         float? hairLength = null;
         uint? eyesFormId = null;
+        float[]? fggs = null;
+        float[]? fgga = null;
+        float[]? fgts = null;
         var factions = new List<FactionMembership>();
         var spells = new List<uint>();
         var inventory = new List<InventoryItem>();
@@ -572,6 +590,15 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                 case "PKID" when sub.DataLength == 4:
                     packages.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     break;
+                case "FGGS" when sub.DataLength >= 4:
+                    fggs = ReadFloatArray(subData, record.IsBigEndian);
+                    break;
+                case "FGGA" when sub.DataLength >= 4:
+                    fgga = ReadFloatArray(subData, record.IsBigEndian);
+                    break;
+                case "FGTS" when sub.DataLength >= 4:
+                    fgts = ReadFloatArray(subData, record.IsBigEndian);
+                    break;
             }
         }
 
@@ -598,6 +625,9 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             HairFormId = hairFormId,
             HairLength = hairLength,
             EyesFormId = eyesFormId,
+            FaceGenGeometrySymmetric = fggs,
+            FaceGenGeometryAsymmetric = fgga,
+            FaceGenTextureSymmetric = fgts,
             Factions = factions,
             Spells = spells,
             Inventory = inventory,
@@ -705,6 +735,12 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         float faceGenMainClamp = 0;
         float faceGenFaceClamp = 0;
 
+        // FaceGen base morph coefficients (male after MNAM, female after FNAM)
+        // Default to true: RACE records define male section first (before MNAM marker)
+        var inMaleSection = true;
+        float[]? maleFggs = null, maleFgga = null, maleFgts = null;
+        float[]? femaleFggs = null, femaleFgga = null, femaleFgts = null;
+
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
@@ -802,6 +838,45 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                 case "SPLO" when sub.DataLength == 4:
                     abilityFormIds.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     break;
+                case "MNAM" when sub.DataLength == 0:
+                    inMaleSection = true;
+                    break;
+                case "FNAM" when sub.DataLength == 0:
+                    inMaleSection = false;
+                    break;
+                case "FGGS" when sub.DataLength == 200:
+                    if (inMaleSection)
+                    {
+                        maleFggs = ReadFloatArray(subData, record.IsBigEndian);
+                    }
+                    else
+                    {
+                        femaleFggs = ReadFloatArray(subData, record.IsBigEndian);
+                    }
+
+                    break;
+                case "FGGA" when sub.DataLength == 120:
+                    if (inMaleSection)
+                    {
+                        maleFgga = ReadFloatArray(subData, record.IsBigEndian);
+                    }
+                    else
+                    {
+                        femaleFgga = ReadFloatArray(subData, record.IsBigEndian);
+                    }
+
+                    break;
+                case "FGTS" when sub.DataLength == 200:
+                    if (inMaleSection)
+                    {
+                        maleFgts = ReadFloatArray(subData, record.IsBigEndian);
+                    }
+                    else
+                    {
+                        femaleFgts = ReadFloatArray(subData, record.IsBigEndian);
+                    }
+
+                    break;
             }
         }
 
@@ -830,6 +905,12 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             EyeColorFormIds = eyeColorFormIds,
             FaceGenMainClamp = faceGenMainClamp,
             FaceGenFaceClamp = faceGenFaceClamp,
+            MaleFaceGenGeometrySymmetric = maleFggs,
+            MaleFaceGenGeometryAsymmetric = maleFgga,
+            MaleFaceGenTextureSymmetric = maleFgts,
+            FemaleFaceGenGeometrySymmetric = femaleFggs,
+            FemaleFaceGenGeometryAsymmetric = femaleFgga,
+            FemaleFaceGenTextureSymmetric = femaleFgts,
             OlderRaceFormId = olderRace != 0 ? olderRace : null,
             YoungerRaceFormId = youngerRace != 0 ? youngerRace : null,
             MaleVoiceFormId = maleVoice != 0 ? maleVoice : null,

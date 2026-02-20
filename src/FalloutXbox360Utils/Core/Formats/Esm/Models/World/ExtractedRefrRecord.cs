@@ -46,4 +46,7 @@ public record ExtractedRefrRecord
 
     /// <summary>FULL - Map marker display name.</summary>
     public string? MarkerName { get; init; }
+
+    /// <summary>XLKR - Linked reference FormID (first 4 bytes of XLKR subrecord).</summary>
+    public uint? LinkedRefFormId { get; init; }
 }

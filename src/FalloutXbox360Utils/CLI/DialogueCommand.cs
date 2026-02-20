@@ -1,3 +1,6 @@
+// Pending migration: unattributed/debug/verify commands will move to analysis tools
+#pragma warning disable IDE0051, S1144
+
 using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
@@ -258,7 +261,8 @@ public static class DialogueCommand
 
         // INFOs per topic distribution — pre-build lookup to avoid O(n^2)
         var dialogueCountByTopic = result.Dialogues
-            .GroupBy(d => d.TopicFormId)
+            .Where(d => d.TopicFormId.HasValue)
+            .GroupBy(d => d.TopicFormId!.Value)
             .ToDictionary(g => g.Key, g => g.Count());
 
         var infosPerTopic = result.DialogTopics

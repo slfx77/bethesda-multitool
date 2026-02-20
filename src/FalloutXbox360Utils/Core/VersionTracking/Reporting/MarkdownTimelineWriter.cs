@@ -639,9 +639,9 @@ public static class MarkdownTimelineWriter
 
     #region Helpers
 
-    private record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
+    private sealed record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
 
-    private record RecordHistory(
+    private sealed record RecordHistory(
         uint FormId, string? EditorId, string? FullName, string Category,
         List<ChangePoint> ChangePoints);
 

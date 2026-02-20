@@ -535,6 +535,44 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    public static string GeneratePersistentObjectsCsv(List<CellRecord> cells, FormIdResolver resolver)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            "FormID,BaseFormID,BaseEditorID,BaseDisplayName,RecordType,X,Y,Z,RotX,RotY,RotZ,Scale,CellFormID,CellEditorID,IsInitiallyDisabled,OwnerFormID,EnableParentFormID,Offset");
+
+        foreach (var cell in cells.OrderBy(c => c.EditorId ?? ""))
+        {
+            foreach (var obj in cell.PlacedObjects
+                         .Where(o => o.IsPersistent)
+                         .OrderBy(o => o.RecordType)
+                         .ThenBy(o => o.BaseEditorId ?? ""))
+            {
+                sb.AppendLine(string.Join(",",
+                    Fmt.FId(obj.FormId),
+                    Fmt.FId(obj.BaseFormId),
+                    Fmt.CsvEscape(obj.BaseEditorId ?? resolver.ResolveCsv(obj.BaseFormId)),
+                    resolver.ResolveDisplayNameCsv(obj.BaseFormId),
+                    Fmt.CsvEscape(obj.RecordType),
+                    obj.X.ToString("F2"),
+                    obj.Y.ToString("F2"),
+                    obj.Z.ToString("F2"),
+                    obj.RotX.ToString("F4"),
+                    obj.RotY.ToString("F4"),
+                    obj.RotZ.ToString("F4"),
+                    obj.Scale.ToString("F4"),
+                    Fmt.FId(cell.FormId),
+                    Fmt.CsvEscape(cell.EditorId),
+                    obj.IsInitiallyDisabled.ToString(),
+                    Fmt.FIdN(obj.OwnerFormId),
+                    Fmt.FIdN(obj.EnableParentFormId),
+                    obj.Offset.ToString()));
+            }
+        }
+
+        return sb.ToString();
+    }
+
     public static string GenerateMessagesCsv(List<MessageRecord> messages)
     {
         var sb = new StringBuilder();

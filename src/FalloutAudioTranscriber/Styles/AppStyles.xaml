@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="using:FalloutAudioTranscriber.Controls">
+
+  <!-- Value converters -->
+  <controls:TranscriptionStatusBrushConverter x:Key="TranscriptionStatusBrush" />
+
+  <!-- Card panel style -->
+  <Style x:Key="CardBorderStyle" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="16" />
+  </Style>
+
+  <!-- Monospace text for FormIDs and paths -->
+  <Style x:Key="MonoTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="Cascadia Code,Consolas,Courier New" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+
+  <!-- Secondary text for labels -->
+  <Style x:Key="SecondaryTextStyle" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <!-- Section header -->
+  <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="Margin" Value="0,0,0,8" />
+  </Style>
+
+</ResourceDictionary>

@@ -78,6 +78,13 @@ internal static class XmaWavConverter
                 return new ConversionResult { Success = false, Notes = "No audio decoded" };
             }
 
+            // FFmpeg can't seek back on a pipe, so RIFF/data sizes are invalid.
+            // Patch them with the actual byte count before NAudio or Whisper reads the header.
+            if (!PatchWavHeader(wavData))
+            {
+                return new ConversionResult { Success = false, Notes = "Invalid WAV header from FFmpeg" };
+            }
+
             var duration = EstimateWavDuration(wavData);
             Log.Debug(
                 $"[XmaWavConverter] Decoded {xmaData.Length} bytes XMA -> {wavData.Length} bytes WAV ({duration:F2}s)");
@@ -114,6 +121,50 @@ internal static class XmaWavConverter
         using var ms = new MemoryStream();
         await process.StandardOutput.BaseStream.CopyToAsync(ms);
         return ms.ToArray();
+    }
+
+    /// <summary>
+    ///     Patch RIFF and data chunk sizes in a WAV header.
+    ///     FFmpeg writes placeholder sizes when outputting to a non-seekable pipe.
+    /// </summary>
+    private static bool PatchWavHeader(byte[] wav)
+    {
+        // Validate RIFF/WAVE envelope
+        if (wav.Length < 44 ||
+            wav[0] != 'R' || wav[1] != 'I' || wav[2] != 'F' || wav[3] != 'F' ||
+            wav[8] != 'W' || wav[9] != 'A' || wav[10] != 'V' || wav[11] != 'E')
+        {
+            return false;
+        }
+
+        // RIFF chunk size = total file size - 8 (for "RIFF" tag + size field itself)
+        BitConverter.TryWriteBytes(wav.AsSpan(4), wav.Length - 8);
+
+        // Scan for the "data" subchunk (skip fmt and any other chunks)
+        var offset = 12;
+        while (offset + 8 <= wav.Length)
+        {
+            var chunkId = System.Text.Encoding.ASCII.GetString(wav, offset, 4);
+            var chunkSizeOffset = offset + 4;
+
+            if (chunkId == "data")
+            {
+                var dataSize = wav.Length - (chunkSizeOffset + 4);
+                BitConverter.TryWriteBytes(wav.AsSpan(chunkSizeOffset), dataSize);
+                return true;
+            }
+
+            // Advance past this chunk: 4 (id) + 4 (size) + chunk data length
+            var thisChunkSize = BitConverter.ToInt32(wav, chunkSizeOffset);
+            if (thisChunkSize < 0)
+            {
+                thisChunkSize = 0; // Placeholder from FFmpeg; skip just the header
+            }
+
+            offset += 8 + thisChunkSize;
+        }
+
+        return false; // No "data" chunk found
     }
 
     private static double EstimateWavDuration(byte[] wavData)

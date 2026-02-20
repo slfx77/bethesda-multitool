@@ -121,7 +121,7 @@ public static class SubrecordSchemaProcessor
         // Each 16-byte entry: Vertex0(2), Vertex1(2), Vertex2(2), Edge01(2), Edge12(2), Edge20(2), CoverFlags(2), Flags(2)
         // Xbox 360 stores: [vertices + edges as BE] + CoverFlags(BE) + Flags(BE)
         // PC stores:       [vertices + edges as LE] + Flags(LE) + CoverFlags(LE)
-        // So we must: 1) swap each uint16 for endianness, 2) swap the positions of Flags and CoverFlags
+        // Conversion: swap each uint16 for endianness, then swap CoverFlags/Flags positions
         if (signature == "NVTR" && recordType == "NAVM" && data.Length % 16 == 0)
         {
             var nvtr = data.ToArray();
@@ -135,8 +135,7 @@ public static class SubrecordSchemaProcessor
                     Swap2Bytes(nvtr, baseOffset + j * 2);
                 }
 
-                // Now swap positions of bytes 12-13 (CoverFlags) and 14-15 (Flags)
-                // After endian swap, these need to be swapped in position
+                // Swap CoverFlags (bytes 12-13) and Flags (bytes 14-15) positions
                 var temp0 = nvtr[baseOffset + 12];
                 var temp1 = nvtr[baseOffset + 13];
                 nvtr[baseOffset + 12] = nvtr[baseOffset + 14];

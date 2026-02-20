@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="FalloutAudioTranscriber.Controls.BatchProgressDrawer"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Grid Padding="16,8" RowSpacing="4">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Row 0: Summary bar -->
+    <Grid Grid.Row="0" ColumnSpacing="12">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <!-- Spinner / checkmark -->
+      <ProgressRing
+        x:Name="SpinnerRing"
+        Grid.Column="0"
+        Width="16" Height="16"
+        IsActive="True" />
+      <FontIcon
+        x:Name="CompleteIcon"
+        Grid.Column="0"
+        Glyph="&#xE73E;"
+        FontSize="16"
+        Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+        Visibility="Collapsed" />
+
+      <!-- Processed / total -->
+      <TextBlock
+        x:Name="CountText"
+        Grid.Column="1"
+        VerticalAlignment="Center"
+        FontSize="12"
+        Text="0 / 0" />
+
+      <!-- Errors -->
+      <TextBlock
+        x:Name="ErrorText"
+        Grid.Column="2"
+        VerticalAlignment="Center"
+        FontSize="12"
+        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+        Visibility="Collapsed" />
+
+      <!-- Elapsed -->
+      <TextBlock
+        x:Name="ElapsedText"
+        Grid.Column="3"
+        VerticalAlignment="Center"
+        FontSize="12"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+      <!-- Spacer -->
+
+      <!-- Expand/collapse toggle -->
+      <ToggleButton
+        x:Name="ExpandToggle"
+        Grid.Column="5"
+        Width="28" Height="28"
+        Padding="0"
+        Background="Transparent"
+        BorderBrush="Transparent"
+        Checked="ExpandToggle_Checked"
+        Unchecked="ExpandToggle_Unchecked"
+        ToolTipService.ToolTip="Show details">
+        <FontIcon x:Name="ChevronIcon" Glyph="&#xE70D;" FontSize="12" />
+      </ToggleButton>
+
+      <!-- Cancel -->
+      <Button
+        x:Name="CancelButton"
+        Grid.Column="6"
+        Content="Cancel"
+        Click="CancelButton_Click" />
+    </Grid>
+
+    <!-- Row 1: Progress bar -->
+    <ProgressBar
+      x:Name="BatchBar"
+      Grid.Row="1"
+      Minimum="0"
+      Maximum="100" />
+
+    <!-- Row 2: Collapsible file log -->
+    <Border
+      x:Name="LogPanel"
+      Grid.Row="2"
+      Visibility="Collapsed"
+      MaxHeight="200"
+      CornerRadius="4"
+      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+      BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+      BorderThickness="1"
+      Margin="0,4,0,0">
+      <ListView
+        x:Name="LogListView"
+        SelectionMode="None"
+        MaxHeight="200"
+        Padding="4">
+        <!-- Disable default theme transitions to prevent the list blanking
+             and re-animating when the virtualized panel rearranges. -->
+        <ListView.ItemContainerTransitions>
+          <TransitionCollection />
+        </ListView.ItemContainerTransitions>
+        <ListView.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnSpacing="8" Padding="2">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+
+              <!-- Status dot -->
+              <Border
+                Grid.Column="0"
+                Width="8" Height="8"
+                CornerRadius="4"
+                VerticalAlignment="Center"
+                Background="{Binding Tag}" />
+
+              <!-- Display name -->
+              <TextBlock
+                Grid.Column="1"
+                Text="{Binding DisplayName}"
+                FontSize="11"
+                TextTrimming="CharacterEllipsis"
+                VerticalAlignment="Center" />
+
+              <!-- Voice type -->
+              <TextBlock
+                Grid.Column="2"
+                Text="{Binding VoiceType}"
+                FontSize="10"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                VerticalAlignment="Center" />
+
+              <!-- Preview/status -->
+              <TextBlock
+                Grid.Column="3"
+                Text="{Binding Preview}"
+                FontSize="10"
+                FontStyle="Italic"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                MaxWidth="200"
+                TextTrimming="CharacterEllipsis"
+                VerticalAlignment="Center" />
+            </Grid>
+          </DataTemplate>
+        </ListView.ItemTemplate>
+      </ListView>
+    </Border>
+  </Grid>
+</UserControl>

@@ -179,8 +179,8 @@ public sealed partial class SingleFileTab
                     StatusTextBlock.Text = status;
                 }));
 
-            // Build tree and placement index on background thread
-            var (tree, placements) = await Task.Run(() =>
+            // Build tree, placement index, and race lookup on background thread
+            var (tree, placements, raceLookup) = await Task.Run(() =>
             {
                 ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
                 var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, resolver);
@@ -188,14 +188,22 @@ public sealed partial class SingleFileTab
                 // Build reverse placement index for "Use Info" (base FormID → world placements)
                 var placementIndex = semanticResult.BuildBaseToPlacementsMap();
 
+                // Build race lookup for FaceGen slider computation in property panels
+                var races = semanticResult.Races.Count > 0
+                    ? (IReadOnlyDictionary<uint, RaceRecord>)semanticResult.Races
+                        .DistinctBy(r => r.FormId)
+                        .ToDictionary(r => r.FormId)
+                    : null;
+
                 ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
                 EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
-                return (builtTree, placementIndex);
+                return (builtTree, placementIndex, races);
             });
 
             _esmBrowserTree = tree;
             _placementIndex = placements;
+            _raceLookup = raceLookup;
             _flatListBuilt = false;
 
             StatusTextBlock.Text = Strings.Status_BuildingTreeView;

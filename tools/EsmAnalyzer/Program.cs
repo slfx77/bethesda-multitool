@@ -42,6 +42,10 @@ internal sealed class Program
         rootCommand.Subcommands.Add(LandCommands.CreateLandSummaryCommand());
         rootCommand.Subcommands.Add(ExportCommands.CreateExportLandCommand());
         rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
+        rootCommand.Subcommands.Add(WorldMapDiagCommands.CreateWorldMapDiagCommand());
+        rootCommand.Subcommands.Add(CategoryAuditCommands.CreateCategoryAuditCommand());
+        rootCommand.Subcommands.Add(VoiceHeuristicsCommands.CreateVoiceHeuristicsCommand());
+        rootCommand.Subcommands.Add(TranscriptDiagCommands.CreateTranscriptDiagCommand());
 
         // ===== Backward compatibility aliases =====
         // Keep old command names for scripts that use them
@@ -61,6 +65,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(NaviCommands.CreateCompareNaviCommand());  // "compare-navi" at root
         rootCommand.Subcommands.Add(NaviCommands.CreateDumpNvmiCommand());     // "dump-nvmi" at root (NAVI navmesh info)
         rootCommand.Subcommands.Add(OrphanedFormIdCommands.CreateOrphanRefsCommand());  // "orphan-refs" at root
+        rootCommand.Subcommands.Add(FaceGenCommands.CreateFaceGenCommand());  // "facegen" at root
 
         // ===== compare subcommands =====
         var compareCommand = new Command("compare", "Compare ESM files (land, cells, heightmaps)");
@@ -132,6 +137,10 @@ internal sealed class Program
             _ = table.AddRow("[cyan]land-summary[/]", "Summarize LAND subrecords with human-readable interpretation");
             _ = table.AddRow("[cyan]export-land[/]", "Export LAND records as images and JSON");
             _ = table.AddRow("[cyan]worldmap[/]", "Generate worldspace heightmap by stitching LAND records");
+            _ = table.AddRow("[cyan]worldmap-diag[/]", "Diagnose world map category distribution and Unknown sources");
+            _ = table.AddRow("[cyan]category-audit[/]", "Audit Unknown map categories and suggest ObjectBoundsIndex fixes");
+            _ = table.AddRow("[cyan]voice-heuristics[/]", "Cross-reference BSA voice files against ESM records");
+            _ = table.AddRow("[cyan]transcript-diag[/]", "Diagnose .fnvtranscript.json key counts vs BSA voice files");
             _ = table.AddRow("", "");
             _ = table.AddRow("[bold yellow]compare[/]", "[bold]Compare ESM files[/]");
             _ = table.AddRow("  [cyan]compare land[/]", "Compare LAND records between Xbox 360 and PC");

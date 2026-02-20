@@ -1,4 +1,6 @@
+using System.Collections.Frozen;
 using System.Numerics;
+using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Microsoft.Graphics.Canvas;
@@ -985,12 +987,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         foreach (var cell in GetActiveCells())
         {
             // For grid cells, only draw at moderate zoom to avoid clutter
-            if (cell.GridX.HasValue && cell.GridY.HasValue)
+            if (cell.GridX.HasValue && cell.GridY.HasValue
+                && (_zoom <= 0.02f || !IsCellVisible(cell, tlWorld, brWorld)))
             {
-                if (_zoom <= 0.02f || !IsCellVisible(cell, tlWorld, brWorld))
-                {
-                    continue;
-                }
+                continue;
             }
 
             foreach (var obj in cell.PlacedObjects)
@@ -2538,27 +2538,74 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // Color Helpers
     // ========================================================================
 
-    private static Color GetCategoryColor(PlacedObjectCategory category) => category switch
+    private static readonly FrozenDictionary<PlacedObjectCategory, Color> CategoryColors =
+        BuildWorldCategoryColors();
+
+    private static Color GetCategoryColor(PlacedObjectCategory category) =>
+        CategoryColors.GetValueOrDefault(category, Color.FromArgb(255, 80, 80, 80));
+
+    /// <summary>
+    ///     Builds perceptually-uniform OKLCH colors for world map categories.
+    ///     Pins 3 semantic hues (Creature=red, Landscape=green, Npc=light blue),
+    ///     keeps MapMarker=white and Unknown=dark gray, then distributes the
+    ///     remaining 14 categories across the hue gaps with lightness cycling.
+    /// </summary>
+    private static FrozenDictionary<PlacedObjectCategory, Color> BuildWorldCategoryColors()
     {
-        PlacedObjectCategory.Static => Color.FromArgb(255, 160, 160, 160),
-        PlacedObjectCategory.Architecture => Color.FromArgb(255, 180, 180, 180),
-        PlacedObjectCategory.Landscape => Color.FromArgb(255, 60, 140, 40),
-        PlacedObjectCategory.Clutter => Color.FromArgb(255, 140, 130, 110),
-        PlacedObjectCategory.Dungeon => Color.FromArgb(255, 100, 70, 130),
-        PlacedObjectCategory.Effects => Color.FromArgb(255, 220, 220, 80),
-        PlacedObjectCategory.Vehicles => Color.FromArgb(255, 100, 140, 180),
-        PlacedObjectCategory.Traps => Color.FromArgb(255, 200, 100, 40),
-        PlacedObjectCategory.Door => Color.FromArgb(255, 255, 165, 0),
-        PlacedObjectCategory.Activator => Color.FromArgb(255, 0, 200, 200),
-        PlacedObjectCategory.Light => Color.FromArgb(255, 255, 255, 100),
-        PlacedObjectCategory.Furniture => Color.FromArgb(255, 139, 90, 43),
-        PlacedObjectCategory.Npc => Color.FromArgb(255, 0, 200, 0),
-        PlacedObjectCategory.Creature => Color.FromArgb(255, 220, 50, 50),
-        PlacedObjectCategory.Container => Color.FromArgb(255, 160, 80, 200),
-        PlacedObjectCategory.Item => Color.FromArgb(255, 80, 140, 255),
-        PlacedObjectCategory.MapMarker => Color.FromArgb(255, 255, 255, 255),
-        _ => Color.FromArgb(255, 80, 80, 80)
-    };
+        ReadOnlySpan<double> lightnessTiers = [0.62, 0.72, 0.78];
+        const double chroma = 0.22;
+        const double creatureHue = 25.0;
+        const double landscapeHue = 140.0;
+        const double npcHue = 220.0;
+
+        var colors = new Dictionary<PlacedObjectCategory, Color>
+        {
+            [PlacedObjectCategory.Creature] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, creatureHue)),
+            [PlacedObjectCategory.Landscape] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, landscapeHue)),
+            [PlacedObjectCategory.Npc] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, npcHue)),
+            [PlacedObjectCategory.MapMarker] = Color.FromArgb(255, 255, 255, 255),
+            [PlacedObjectCategory.Unknown] = Color.FromArgb(255, 80, 80, 80),
+        };
+
+        // Remaining 14 categories distributed across 3 hue arcs between pinned hues.
+        // Arc 1: 25°→140° (115°, 4 slots), Arc 2: 140°→220° (80°, 3 slots),
+        // Arc 3: 220°→385° (165°, 7 slots) — proportional to arc length.
+        PlacedObjectCategory[] remaining =
+        [
+            PlacedObjectCategory.Static, PlacedObjectCategory.Architecture,
+            PlacedObjectCategory.Clutter, PlacedObjectCategory.Dungeon,
+            PlacedObjectCategory.Effects, PlacedObjectCategory.Vehicles,
+            PlacedObjectCategory.Traps, PlacedObjectCategory.Door,
+            PlacedObjectCategory.Activator, PlacedObjectCategory.Light,
+            PlacedObjectCategory.Furniture, PlacedObjectCategory.Container,
+            PlacedObjectCategory.Item, PlacedObjectCategory.Sound,
+        ];
+
+        (double start, double end, int count)[] arcs =
+        [
+            (creatureHue, landscapeHue, 4),
+            (landscapeHue, npcHue, 3),
+            (npcHue, creatureHue + 360, 7),
+        ];
+
+        var idx = 0;
+        foreach (var (start, end, count) in arcs)
+        {
+            var step = (end - start) / (count + 1);
+            for (var i = 1; i <= count; i++)
+            {
+                var hue = (start + step * i) % 360.0;
+                var lightness = lightnessTiers[idx % lightnessTiers.Length];
+                colors[remaining[idx]] = ArgbToColor(FormatRegistry.OklchToArgb(lightness, chroma, hue));
+                idx++;
+            }
+        }
+
+        return colors.ToFrozenDictionary();
+    }
+
+    private static Color ArgbToColor(uint argb) => Color.FromArgb(
+        (byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
 
     private static string GetMarkerGlyph(MapMarkerType? markerType) => markerType switch
     {

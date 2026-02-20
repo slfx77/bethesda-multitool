@@ -17,11 +17,11 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
     private static readonly Lock CacheLock = new();
     private readonly ITestOutputHelper _output = output;
 
-    private byte[] GetProtoEsmData()
+    private static byte[] GetProtoEsmData(string path)
     {
         lock (CacheLock)
         {
-            return _cachedFileData ??= File.ReadAllBytes(samples.Xbox360ProtoEsm!);
+            return _cachedFileData ??= File.ReadAllBytes(path);
         }
     }
 
@@ -29,7 +29,7 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
     ///     Returns a cached scan result, avoiding redundant EnumerateRecordsWithGrups calls
     ///     across the two test methods in this class.
     /// </summary>
-    private EsmRecordScanResult GetScanResult(byte[] fileData)
+    private static EsmRecordScanResult GetScanResult(byte[] fileData)
     {
         lock (CacheLock)
         {
@@ -63,7 +63,7 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
     {
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
-        var fileData = GetProtoEsmData();
+        var fileData = GetProtoEsmData(samples.Xbox360ProtoEsm!);
         _output.WriteLine($"File size: {fileData.Length:N0} bytes");
 
         var scanResult = GetScanResult(fileData);
@@ -95,7 +95,7 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
     {
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
-        var fileData = GetProtoEsmData();
+        var fileData = GetProtoEsmData(samples.Xbox360ProtoEsm!);
         var scanResult = GetScanResult(fileData);
 
         using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,

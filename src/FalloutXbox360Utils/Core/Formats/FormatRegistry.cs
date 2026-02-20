@@ -6,6 +6,7 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Lip;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Png;
+using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Formats.Xdbf;
 using FalloutXbox360Utils.Core.Formats.Xma;
 using FalloutXbox360Utils.Core.Formats.Xui;
@@ -283,6 +284,7 @@ public static class FormatRegistry
             new LipFormat(),
             new NifFormat(),
             new PngFormat(),
+            new SaveGameFormat(),
             new XdbfFormat(),
             new XmaFormat(),
             new XuiFormat()

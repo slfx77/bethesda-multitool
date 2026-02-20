@@ -81,9 +81,32 @@ jobs:
           path: publish/linux-cli/
           retention-days: 30
 
+  build-audio-transcriber:
+    name: Audio Transcriber (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build and Publish Audio Transcriber
+        run: dotnet publish src/FalloutAudioTranscriber/FalloutAudioTranscriber.csproj -c Release -r win-x64 --self-contained -o publish/audio-transcriber
+
+      - name: Upload Audio Transcriber artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalloutAudioTranscriber-Windows-x64
+          path: publish/audio-transcriber/
+          retention-days: 30
+
   release:
     name: Create Release
-    needs: [build-windows-gui, build-windows-cli, build-linux-cli]
+    needs: [build-windows-gui, build-windows-cli, build-linux-cli, build-audio-transcriber]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -100,6 +123,7 @@ jobs:
           zip -r ../FalloutXbox360Utils-Windows-GUI-x64.zip FalloutXbox360Utils-Windows-GUI-x64/
           zip -r ../FalloutXbox360Utils-Windows-CLI-x64.zip FalloutXbox360Utils-Windows-CLI-x64/
           tar -czvf ../FalloutXbox360Utils-Linux-CLI-x64.tar.gz FalloutXbox360Utils-Linux-CLI-x64/
+          zip -r ../FalloutAudioTranscriber-Windows-x64.zip FalloutAudioTranscriber-Windows-x64/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -108,5 +132,6 @@ jobs:
             FalloutXbox360Utils-Windows-GUI-x64.zip
             FalloutXbox360Utils-Windows-CLI-x64.zip
             FalloutXbox360Utils-Linux-CLI-x64.tar.gz
+            FalloutAudioTranscriber-Windows-x64.zip
           generate_release_notes: true
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') || contains(github.ref, 'pre') }}

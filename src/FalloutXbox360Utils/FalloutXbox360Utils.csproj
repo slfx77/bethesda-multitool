@@ -40,6 +40,7 @@
     <InternalsVisibleTo Include="EsmAnalyzer" />
     <InternalsVisibleTo Include="NifAnalyzer" />
     <InternalsVisibleTo Include="MinidumpAnalyzer" />
+    <InternalsVisibleTo Include="FalloutAudioTranscriber" />
   </ItemGroup>
 
   <!-- Windows GUI settings -->

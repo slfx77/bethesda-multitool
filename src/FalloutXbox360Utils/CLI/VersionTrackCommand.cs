@@ -816,11 +816,12 @@ public static class VersionTrackCommand
                 .OrderBy(d => d)
                 .ToList();
 
-            var dateRange = dmpDates.Count >= 2
-                ? $"{dmpDates.First():MMM d, yyyy} – {dmpDates.Last():MMM d, yyyy}"
-                : dmpDates.Count == 1
-                    ? $"{dmpDates.First():MMM d, yyyy}"
-                    : "Unknown dates";
+            var dateRange = dmpDates.Count switch
+            {
+                >= 2 => $"{dmpDates[0]:MMM d, yyyy} – {dmpDates[^1]:MMM d, yyyy}",
+                1 => $"{dmpDates[0]:MMM d, yyyy}",
+                _ => "Unknown dates"
+            };
 
             var title = $"Memory Dump Builds ({dateRange})";
             var intro = $"Records extracted from {sourceFileCount} memory dumps across {dmpSnapshots.Count} " +

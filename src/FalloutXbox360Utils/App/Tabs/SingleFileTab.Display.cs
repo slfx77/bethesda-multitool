@@ -586,22 +586,17 @@ public sealed partial class SingleFileTab
                 AnalysisProgressBar.IsIndeterminate = true;
                 break;
             case AnalysisPipelinePhase.Scanning:
+            case AnalysisPipelinePhase.Extracting:
                 AnalysisProgressBar.Visibility = Visibility.Visible;
                 break;
             case AnalysisPipelinePhase.Reconstructing:
+            case AnalysisPipelinePhase.Coverage:
                 AnalysisProgressBar.Visibility = Visibility.Visible;
                 AnalysisProgressBar.IsIndeterminate = false;
                 break;
             case AnalysisPipelinePhase.LoadingMap:
                 AnalysisProgressBar.Visibility = Visibility.Visible;
                 AnalysisProgressBar.IsIndeterminate = true;
-                break;
-            case AnalysisPipelinePhase.Coverage:
-                AnalysisProgressBar.Visibility = Visibility.Visible;
-                AnalysisProgressBar.IsIndeterminate = false;
-                break;
-            case AnalysisPipelinePhase.Extracting:
-                AnalysisProgressBar.Visibility = Visibility.Visible;
                 break;
         }
 
@@ -1009,11 +1004,12 @@ public sealed partial class SingleFileTab
     {
         var total = _resultsFilterCheckboxes.Count;
         var checkedCount = _resultsFilterCheckboxes.Values.Count(cb => cb.IsChecked == true);
-        FilterDropDown.Content = checkedCount == total
-            ? "Filter: All types"
-            : checkedCount == 0
-                ? "Filter: None"
-                : $"Filter: {checkedCount} of {total} types";
+        FilterDropDown.Content = (checkedCount, total) switch
+        {
+            _ when checkedCount == total => "Filter: All types",
+            (0, _) => "Filter: None",
+            _ => $"Filter: {checkedCount} of {total} types"
+        };
     }
 
     private void ResultsFilterCheckbox_Changed(object sender, RoutedEventArgs e)
@@ -1078,6 +1074,7 @@ public sealed partial class SingleFileTab
         _flatListBuilt = false;
         _esmBrowserTree = null;
         _placementIndex = null;
+        _raceLookup = null;
         _currentSearchQuery = "";
         EsmSearchBox.Text = "";
         EsmSortComboBox.SelectedIndex = 0;

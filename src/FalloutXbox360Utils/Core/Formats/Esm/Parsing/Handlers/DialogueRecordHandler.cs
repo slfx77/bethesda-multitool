@@ -1579,6 +1579,9 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         // Cross-link: fill in ChoiceTopics (TCLT) and AddedTopics (NAME) for each InfoDialogueNode
         CrossLinkInfoNodes(topicNodes);
 
+        // Reverse-link: use TCLF (link-FROM) subrecords to infer missing TCLT connections
+        ReverseLinkFromTclf(topicNodes);
+
         // Group topics by quest
         var (questTrees, orphanTopics) = GroupTopicsByQuest(topicNodes, questById);
 
@@ -1689,6 +1692,76 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                     if (topicNodes.TryGetValue(addId, out var addedNode))
                     {
                         infoNode.AddedTopics.Add(addedNode);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Use TCLF (link-FROM) subrecords to infer missing TCLT choice links.
+    ///     TCLF on an INFO says "these source topics can lead to my parent topic."
+    ///     We reverse this: for each source topic, add the target topic as a choice
+    ///     on its INFOs (if not already present from TCLT).
+    /// </summary>
+    private static void ReverseLinkFromTclf(Dictionary<uint, TopicDialogueNode> topicNodes)
+    {
+        // Step 1: Build reverse index — sourceTopicFormId → set of targetTopicFormIds
+        var reverseIndex = new Dictionary<uint, HashSet<uint>>();
+
+        foreach (var (_, topicNode) in topicNodes)
+        {
+            foreach (var infoNode in topicNode.InfoChain)
+            {
+                foreach (var sourceTopicId in infoNode.Info.LinkFromTopics)
+                {
+                    if (!reverseIndex.TryGetValue(sourceTopicId, out var targets))
+                    {
+                        targets = [];
+                        reverseIndex[sourceTopicId] = targets;
+                    }
+
+                    targets.Add(topicNode.TopicFormId);
+                }
+            }
+        }
+
+        if (reverseIndex.Count == 0)
+        {
+            return;
+        }
+
+        // Step 2: For each source topic, add target topics as choices on its INFOs
+        foreach (var (sourceTopicId, targetTopicIds) in reverseIndex)
+        {
+            if (!topicNodes.TryGetValue(sourceTopicId, out var sourceTopicNode))
+            {
+                continue;
+            }
+
+            foreach (var infoNode in sourceTopicNode.InfoChain)
+            {
+                foreach (var targetTopicId in targetTopicIds)
+                {
+                    if (!topicNodes.TryGetValue(targetTopicId, out var targetTopicNode))
+                    {
+                        continue;
+                    }
+
+                    // Skip if already linked (from TCLT)
+                    var alreadyLinked = false;
+                    foreach (var existing in infoNode.ChoiceTopics)
+                    {
+                        if (existing.TopicFormId == targetTopicId)
+                        {
+                            alreadyLinked = true;
+                            break;
+                        }
+                    }
+
+                    if (!alreadyLinked)
+                    {
+                        infoNode.ChoiceTopics.Add(targetTopicNode);
                     }
                 }
             }

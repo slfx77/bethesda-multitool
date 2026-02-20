@@ -43,10 +43,12 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 OwnerFormId = refr.OwnerFormId,
                 EnableParentFormId = refr.EnableParentFormId,
                 EnableParentFlags = refr.EnableParentFlags,
+                IsPersistent = refr.Header.IsPersistent,
                 IsInitiallyDisabled = refr.Header.IsInitiallyDisabled,
                 IsMapMarker = true,
                 MarkerType = refr.MarkerType.HasValue ? (MapMarkerType)refr.MarkerType.Value : null,
                 MarkerName = refr.MarkerName,
+                LinkedRefFormId = refr.LinkedRefFormId,
                 Offset = refr.Header.Offset,
                 IsBigEndian = refr.Header.IsBigEndian
             };
@@ -387,7 +389,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         // Group by grid cell derived from position (4096 world units per cell)
         var groups = orphans
             .GroupBy(r => ((int)MathF.Floor(r.Position!.X / 4096f), (int)MathF.Floor(r.Position.Y / 4096f)))
-            .Where(g => g.Count() >= 1)
+            .Where(g => g.Any())
             .ToList();
 
         var virtualCells = new List<CellRecord>();
@@ -412,11 +414,13 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 OwnerFormId = r.OwnerFormId,
                 EnableParentFormId = r.EnableParentFormId,
                 EnableParentFlags = r.EnableParentFlags,
+                IsPersistent = r.Header.IsPersistent,
                 IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
                 DestinationDoorFormId = r.DestinationDoorFormId,
                 IsMapMarker = r.IsMapMarker,
                 MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
                 MarkerName = r.MarkerName,
+                LinkedRefFormId = r.LinkedRefFormId,
                 Offset = r.Header.Offset,
                 IsBigEndian = r.Header.IsBigEndian
             }).ToList();
@@ -507,11 +511,13 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
                 OwnerFormId = r.OwnerFormId,
                 EnableParentFormId = r.EnableParentFormId,
                 EnableParentFlags = r.EnableParentFlags,
+                IsPersistent = r.Header.IsPersistent,
                 IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
                 DestinationDoorFormId = r.DestinationDoorFormId,
                 IsMapMarker = r.IsMapMarker,
                 MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
                 MarkerName = r.MarkerName,
+                LinkedRefFormId = r.LinkedRefFormId,
                 Offset = r.Header.Offset,
                 IsBigEndian = r.Header.IsBigEndian
             })

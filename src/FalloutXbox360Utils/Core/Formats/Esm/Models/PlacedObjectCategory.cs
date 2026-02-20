@@ -22,5 +22,6 @@ internal enum PlacedObjectCategory
     Container,
     Item,
     MapMarker,
+    Sound,
     Unknown
 }

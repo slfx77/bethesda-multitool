@@ -10,7 +10,7 @@
     <IsTestProject>true</IsTestProject>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <!-- Suppress underscore naming warning for test methods (standard convention) -->
-    <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <NoWarn>$(NoWarn);CA1707;S3267;S3878</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

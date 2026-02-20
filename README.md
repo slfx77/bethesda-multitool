@@ -1,6 +1,6 @@
 # Fallout Xbox 360 Utils
 
-A .NET 10.0 toolkit for Xbox 360 memory dump analysis, ESM/NIF format conversion, file carving, and game data exploration. Features a **WinUI 3 GUI** on Windows and a **cross-platform CLI** for batch processing.
+A .NET 10.0 toolkit for Xbox 360 memory dump analysis, ESM/NIF format conversion, file carving, and game data exploration. Features a **WinUI 3 GUI** on Windows, a **cross-platform CLI** for batch processing, and a standalone **Audio Transcriber** for voice file transcription.
 
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
@@ -31,19 +31,24 @@ A .NET 10.0 toolkit for Xbox 360 memory dump analysis, ESM/NIF format conversion
 | `bsa` | Extract BSA archives |
 | `dialogue` | Browse and export NPC dialogue trees |
 | `world` | Explore worldspace data, heightmaps, and placed objects |
+| `save` | Inspect Xbox 360 Fallout NV save game files |
 | `compare` | Compare ESM files (converted vs. PC reference) |
 | `modules` | List loaded modules from memory dumps |
 | `coverage` | Analyze memory region coverage |
+
+### Audio Transcriber (Windows)
+
+A standalone companion app for transcribing Fallout: New Vegas voice files using [Whisper](https://github.com/openai/whisper) speech-to-text. See the [Audio Transcriber](#audio-transcriber) section below for details.
 
 ### Format Support
 
 | Category | Formats |
 | --- | --- |
-| Game Data | ESM/ESP (Xbox 360 and PC, with full conversion) |
+| Game Data | ESM/ESP (Xbox 360 and PC, with full conversion), FOS (save games) |
 | Models | NIF (Xbox 360 to PC conversion with geometry expansion) |
 | Archives | BSA (Bethesda Softworks Archive) |
 | Textures | DDX (3XDO/3XDR), DDS, PNG |
-| Audio | XMA (Xbox Media Audio), LIP (lip sync) |
+| Audio | XMA (Xbox Media Audio), WAV, LIP (lip sync) |
 | Scripts | ObScript bytecode (decompilation + comparison) |
 | Executables | XEX (Xbox Executable) |
 | UI | XDBF (Xbox Dashboard) |
@@ -53,13 +58,14 @@ A .NET 10.0 toolkit for Xbox 360 memory dump analysis, ESM/NIF format conversion
 
 ### Pre-built Releases
 
-Download from [Releases](https://github.com/slfx77/xbox-360-minidump-extractor/releases):
+Download from [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases):
 
 | Platform | Download |
 | --- | --- |
 | Windows GUI | `FalloutXbox360Utils-Windows-GUI-x64.zip` |
 | Windows CLI | `FalloutXbox360Utils-Windows-CLI-x64.zip` |
 | Linux CLI | `FalloutXbox360Utils-Linux-CLI-x64.tar.gz` |
+| Audio Transcriber | `FalloutAudioTranscriber-Windows-x64.zip` |
 
 ### Build from Source
 
@@ -67,8 +73,8 @@ Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```bash
 # Clone with submodules
-git clone --recursive https://github.com/slfx77/xbox-360-minidump-extractor.git
-cd xbox-360-minidump-extractor
+git clone --recursive https://github.com/slfx77/fallout-xbox-360-utils.git
+cd fallout-xbox-360-utils
 
 # Build all targets
 dotnet build -c Release
@@ -117,25 +123,43 @@ FalloutXbox360Utils dialogue dump.dmp --npc CraigBoone
 # Explore worldspace
 FalloutXbox360Utils world dump.dmp --worldspace WastelandNV
 
+# Inspect a save game
+FalloutXbox360Utils save info savegame.fos
+
 # Force CLI mode on Windows (otherwise defaults to GUI)
 FalloutXbox360Utils --no-gui dump.dmp -o output
 ```
 
-### Developer Tools
+## Audio Transcriber
 
-Standalone analysis tools for development and debugging:
+The **Fallout Audio Transcriber** is a standalone WinUI 3 application for browsing and transcribing Fallout: New Vegas voice files. It is provided as a precompiled download in [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases).
 
-```bash
-# ESM analysis and comparison
-dotnet run --project tools/EsmAnalyzer -c Release -- stats FalloutNV.esm
-dotnet run --project tools/EsmAnalyzer -c Release -- semdiff converted.esm pc_reference.esm -t NPC_
+### What it does
 
-# Memory dump script analysis
-dotnet run --project tools/MinidumpAnalyzer -- scripts dump.dmp
+- Loads voice audio files (XMA, WAV) from Bethesda BSA archives
+- Plays back voice lines with an integrated audio player
+- Transcribes speech to text using [Whisper.net](https://github.com/sandrohanea/whisper.net) (OpenAI Whisper, runs locally)
+- Cross-references voice files against the ESM to display speaker names, quest context, and existing subtitle text
+- Saves transcription projects for incremental work across sessions
 
-# NIF structure analysis
-dotnet run --project tools/NifAnalyzer -f net10.0 -- info mesh.nif
-```
+### Getting started
+
+1. Download and extract `FalloutAudioTranscriber-Windows-x64.zip` from [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases)
+2. Launch `FalloutAudioTranscriber.exe`
+3. Point it at a Fallout: New Vegas `Data` directory containing voice BSA files (e.g., `Fallout - Voices1.bsa`)
+4. The app parses all voice BSAs, cross-references with `FalloutNV.esm` if present, and presents a browsable playlist
+
+### Transcription
+
+- On first use, the Whisper model (`ggml-base.en`, ~148 MB) is automatically downloaded to `%LocalAppData%\FalloutAudioTranscriber\models\`
+- Audio is resampled to 16kHz mono before transcription
+- Transcriptions are saved alongside the Data directory and persist across sessions
+- Voice files with existing ESM subtitles (NAM1) are shown alongside Whisper transcriptions for comparison
+
+### Requirements
+
+- Windows 10 (build 17763+) or later
+- No additional dependencies required (self-contained build with Whisper runtime included)
 
 ## ESM Conversion
 
@@ -155,6 +179,40 @@ Decompiles ObScript bytecode (SCDA subrecords) back to readable script source:
 - FormID to EditorID resolution for human-readable output
 - Semantic comparison between original SCTX source and decompiled output
 
+## Developer Tools
+
+Standalone CLI tools for format analysis and debugging. These are not included in precompiled releases -- build from source with `dotnet run --project tools/<name>`.
+
+| Tool | Description |
+| --- | --- |
+| `tools/EsmAnalyzer` | ESM analysis, comparison, semantic diff, format conversion, WRLD OFST streaming analysis, worldmap visualization |
+| `tools/NifAnalyzer` | NIF mesh structure inspection, vertex/geometry comparison, skin partition and Havok physics debugging |
+| `tools/TextureAnalyzer` | DDX/DDS texture analysis, decompression, block map visualization, format conversion |
+| `tools/MinidumpAnalyzer` | Xbox 360 minidump memory region analysis, module enumeration, FaceGen extraction, script analysis |
+| `tools/BsaAnalyzer` | BSA archive inspection, file search by pattern, entry comparison, file type statistics |
+| `tools/PdbAnalyzer` | PDB symbol analysis and function extraction |
+| `tools/TerrainAnalyzer` | Terrain and heightmap analysis and visualization |
+| `tools/SignatureScanner` | File signature scanning utilities |
+| `tools/LzxVerify` | LZX compression verification |
+
+```bash
+# ESM analysis and comparison
+dotnet run --project tools/EsmAnalyzer -c Release -- stats FalloutNV.esm
+dotnet run --project tools/EsmAnalyzer -c Release -- semdiff converted.esm pc_reference.esm -t NPC_
+
+# Memory dump script analysis
+dotnet run --project tools/MinidumpAnalyzer -- scripts dump.dmp
+
+# NIF structure analysis
+dotnet run --project tools/NifAnalyzer -- info mesh.nif
+
+# Texture analysis
+dotnet run --project tools/TextureAnalyzer -- info texture.ddx
+
+# BSA file search
+dotnet run --project tools/BsaAnalyzer -- find archive.bsa "*.nif"
+```
+
 ## Project Structure
 
 ```
@@ -171,18 +229,26 @@ src/FalloutXbox360Utils/
 │   │   ├── Bsa/             #   BSA archive extraction
 │   │   ├── Ddx/             #   DDX texture parsing
 │   │   ├── Esm/             #   ESM parsing, conversion, export, runtime readers
-│   │   └── Nif/             #   NIF mesh parsing and conversion
+│   │   ├── Nif/             #   NIF mesh parsing and conversion
+│   │   └── SaveGame/        #   Xbox 360 save game (FOS/STFS) parsing
 │   ├── Minidump/            #   Xbox 360 minidump parsing
 │   └── Utils/               #   Binary utilities
 └── Repack/                  # Memory region repacking
 
-src/DDXConv/                 # DDX conversion library (submodule)
+src/FalloutAudioTranscriber/  # Whisper-based voice file transcriber (WinUI 3)
+src/DDXConv/                  # DDX conversion library (submodule)
 
 tools/
 ├── EsmAnalyzer/             # ESM comparison, semantic diff, conversion
+├── NifAnalyzer/             # NIF structure inspection and comparison
+├── TextureAnalyzer/         # DDX/DDS texture analysis
 ├── MinidumpAnalyzer/        # Runtime memory analysis, script extraction
-├── NifAnalyzer/             # NIF structure inspection
-└── ...                      # Additional analysis tools
+├── BsaAnalyzer/             # BSA archive inspection
+├── PdbAnalyzer/             # PDB symbol analysis
+├── TerrainAnalyzer/         # Terrain/heightmap analysis
+├── SignatureScanner/        # File signature scanning
+├── LzxVerify/               # LZX compression verification
+└── Shared/                  # Shared CLI strings library
 ```
 
 ## External Dependencies
@@ -200,6 +266,7 @@ XMA to WAV conversion requires [FFmpeg](https://www.ffmpeg.org/download.html) on
 - [DDX Format](docs/Xbox_360_DDX_Format.md) - DDX texture format documentation
 - [PDB Runtime Structures](docs/PDB_Runtime_Structures.md) - Gamebryo runtime struct layouts
 - [Script Bytecode Format](docs/PDB_Script_Bytecode_Format.md) - ObScript SCDA bytecode format
+- [RTTI to ESM Coverage](docs/RTTI-ESM-Coverage.md) - C++ RTTI class to ESM record type mapping
 
 ## License
 
@@ -211,6 +278,8 @@ MIT License - See [LICENSE](LICENSE) for details.
 | --- | --- | --- |
 | [DDXConv](https://github.com/GamesPastOrg/DDXConv) | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE) | DDX to DDS texture conversion (forked, built-in) |
 | [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema (embedded) |
+| [Whisper.net](https://github.com/sandrohanea/whisper.net) | [MIT](https://github.com/sandrohanea/whisper.net/blob/main/LICENSE) | Speech-to-text transcription (Audio Transcriber) |
+| [NAudio](https://github.com/naudio/NAudio) | [MIT](https://github.com/naudio/NAudio/blob/master/license.txt) | Audio playback and resampling (Audio Transcriber) |
 
 ## Acknowledgments
 

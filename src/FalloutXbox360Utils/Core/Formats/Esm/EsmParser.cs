@@ -292,7 +292,8 @@ public static class EsmParser
                         result.Add(new ParsedSubrecord
                         {
                             Signature = sig,
-                            Data = data.Slice(offset, (int)extendedSize).ToArray()
+                            Data = data.Slice(offset, (int)extendedSize).ToArray(),
+                            BigEndian = bigEndian
                         });
                         offset += (int)extendedSize;
                     }
@@ -309,7 +310,8 @@ public static class EsmParser
             result.Add(new ParsedSubrecord
             {
                 Signature = sig,
-                Data = data.Slice(offset + SubrecordHeaderSize, dataLen).ToArray()
+                Data = data.Slice(offset + SubrecordHeaderSize, dataLen).ToArray(),
+                BigEndian = bigEndian
             });
 
             offset += SubrecordHeaderSize + dataLen;

@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="FalloutAudioTranscriber.Views.PlaylistView"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="using:FalloutAudioTranscriber.Controls"
+  xmlns:models="using:FalloutAudioTranscriber.Models">
+
+  <UserControl.KeyboardAccelerators>
+    <KeyboardAccelerator Key="Enter" Modifiers="Control" Invoked="Approve_Invoked" />
+  </UserControl.KeyboardAccelerators>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="Auto" />
+    </Grid.ColumnDefinitions>
+
+    <!-- Row 0: Search/filter bar (spans both columns) -->
+    <StackPanel
+      Grid.Row="0"
+      Grid.ColumnSpan="2"
+      Padding="16,12"
+      Spacing="8">
+
+      <!-- Top row: search + actions -->
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <AutoSuggestBox
+          x:Name="SearchBox"
+          Grid.Column="0"
+          PlaceholderText="Search by FormID, topic, NPC, quest..."
+          QueryIcon="Find"
+          TextChanged="SearchBox_TextChanged" />
+
+        <Button
+          x:Name="BatchButton"
+          Grid.Column="1"
+          Content="Auto-transcribe All"
+          Click="Batch_Click"
+          IsEnabled="False" />
+
+        <Button
+          x:Name="ExportButton"
+          Grid.Column="2"
+          Click="Export_Click"
+          IsEnabled="False">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon Glyph="&#xEDE1;" FontSize="14" />
+            <TextBlock Text="Export" />
+          </StackPanel>
+        </Button>
+
+        <Button
+          x:Name="ClearWhisperButton"
+          Grid.Column="3"
+          IsEnabled="False"
+          ToolTipService.ToolTip="Clear all Whisper transcriptions">
+          <Button.Flyout>
+            <Flyout x:Name="ClearWhisperFlyout">
+              <StackPanel Spacing="12" Width="260">
+                <TextBlock TextWrapping="Wrap"
+                  Text="Remove all auto-transcribed (Whisper) entries? Accepted and ESM subtitles will be kept." />
+                <Button
+                  Content="Clear Whisper Transcriptions"
+                  Click="ClearWhisper_Click"
+                  HorizontalAlignment="Stretch" />
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon Glyph="&#xE74D;" FontSize="14" />
+            <TextBlock Text="Clear Whisper" />
+          </StackPanel>
+        </Button>
+
+        <TextBlock
+          x:Name="CountText"
+          Grid.Column="4"
+          VerticalAlignment="Center"
+          FontSize="12"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      </Grid>
+
+      <!-- Bottom row: filters -->
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <CheckBox
+          x:Name="ShowEsmCheck"
+          Content="Show ESM subtitles"
+          IsChecked="False"
+          Checked="Filter_Changed"
+          Unchecked="Filter_Changed" />
+
+        <ComboBox
+          x:Name="SpeakerFilter"
+          PlaceholderText="Speaker"
+          Width="160"
+          SelectionChanged="Filter_Changed" />
+
+        <ComboBox
+          x:Name="QuestFilter"
+          PlaceholderText="Quest"
+          Width="160"
+          SelectionChanged="Filter_Changed" />
+
+        <ComboBox
+          x:Name="VoiceTypeFilter"
+          PlaceholderText="Voice Type"
+          Width="160"
+          SelectionChanged="Filter_Changed" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Row 1: List with column headers (left column) -->
+    <Border Grid.Row="1" Grid.Column="0" CornerRadius="1">
+      <Grid Padding="16,0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Column headers -->
+        <Grid Grid.Row="0" Padding="4,4" ColumnSpacing="8"
+              BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+              BorderThickness="0,0,0,1">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="28" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="140" />
+            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <Button Grid.Column="2"
+                  Content="Name"
+                  Tag="Name"
+                  Click="ColumnHeader_Click"
+                  Background="Transparent"
+                  BorderBrush="Transparent"
+                  Padding="4,2"
+                  HorizontalAlignment="Left"
+                  FontSize="12"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+          <Button Grid.Column="3"
+                  Content="Speaker"
+                  Tag="Speaker"
+                  Click="ColumnHeader_Click"
+                  Background="Transparent"
+                  BorderBrush="Transparent"
+                  Padding="4,2"
+                  HorizontalAlignment="Left"
+                  FontSize="12"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+          <Button Grid.Column="4"
+                  Content="Quest"
+                  Tag="Quest"
+                  Click="ColumnHeader_Click"
+                  Background="Transparent"
+                  BorderBrush="Transparent"
+                  Padding="4,2"
+                  HorizontalAlignment="Left"
+                  FontSize="12"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+          <TextBlock Grid.Column="5"
+                     Text="Subtitle"
+                     FontSize="12"
+                     Padding="4,2"
+                     VerticalAlignment="Center"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Grid>
+
+        <!-- Voice file list -->
+        <ListView
+          x:Name="FileListView"
+          Grid.Row="1"
+          SelectionMode="Single"
+          SelectionChanged="FileListView_SelectionChanged">
+
+          <ListView.ItemTemplate>
+            <DataTemplate x:DataType="models:VoiceFileEntry">
+              <Grid Padding="4,6" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="28" />
+                  <ColumnDefinition Width="12" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="120" />
+                  <ColumnDefinition Width="140" />
+                  <ColumnDefinition Width="200" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Inline play button -->
+                <Button
+                  Grid.Column="0"
+                  Width="28" Height="28"
+                  Padding="0"
+                  Background="Transparent"
+                  BorderBrush="Transparent"
+                  Click="ItemPlay_Click"
+                  ToolTipService.ToolTip="Play">
+                  <FontIcon Glyph="&#xE768;" FontSize="12" />
+                </Button>
+
+                <!-- Status dot -->
+                <Border
+                  Grid.Column="1"
+                  Width="8" Height="8"
+                  CornerRadius="4"
+                  VerticalAlignment="Center"
+                  Background="{x:Bind Status, Converter={StaticResource TranscriptionStatusBrush}}" />
+
+                <!-- Name (Topic + VoiceType + StatusLabel) -->
+                <StackPanel Grid.Column="2">
+                  <TextBlock
+                    Text="{x:Bind DisplayName}"
+                    TextTrimming="CharacterEllipsis" />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                      Text="{x:Bind VoiceType}"
+                      FontSize="11"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock
+                      Text="{x:Bind StatusLabel}"
+                      FontSize="10"
+                      Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                  </StackPanel>
+                </StackPanel>
+
+                <!-- Speaker -->
+                <TextBlock
+                  Grid.Column="3"
+                  Text="{x:Bind SpeakerName}"
+                  TextTrimming="CharacterEllipsis"
+                  FontSize="12"
+                  VerticalAlignment="Center"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                <!-- Quest -->
+                <TextBlock
+                  Grid.Column="4"
+                  Text="{x:Bind QuestName}"
+                  TextTrimming="CharacterEllipsis"
+                  FontSize="12"
+                  VerticalAlignment="Center"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                <!-- Subtitle preview -->
+                <TextBlock
+                  Grid.Column="5"
+                  Text="{x:Bind SubtitleText}"
+                  TextTrimming="CharacterEllipsis"
+                  FontSize="11"
+                  FontStyle="Italic"
+                  Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                  VerticalAlignment="Center" />
+
+                <!-- Extension badge -->
+                <Border
+                  Grid.Column="6"
+                  Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                  CornerRadius="4"
+                  Padding="6,2"
+                  VerticalAlignment="Center">
+                  <TextBlock
+                    Text="{x:Bind Extension}"
+                    FontSize="10"
+                    FontFamily="Cascadia Code,Consolas" />
+                </Border>
+              </Grid>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+      </Grid>
+    </Border>
+
+    <!-- Detail panel (right column, spans rows 1-3) -->
+    <controls:VoiceFileDetailPanel
+      x:Name="DetailPanel"
+      Grid.Row="1" Grid.Column="1"
+      Grid.RowSpan="3"
+      Margin="0,0,16,12" />
+
+    <!-- Row 2: Batch progress drawer (left column, collapsed by default) -->
+    <controls:BatchProgressDrawer
+      x:Name="BatchDrawer"
+      Grid.Row="2"
+      Grid.Column="0"
+      Visibility="Collapsed" />
+
+    <!-- Row 3: Audio player (left column) -->
+    <controls:AudioPlayerControl
+      x:Name="AudioPlayer"
+      Grid.Row="3"
+      Grid.Column="0"
+      Margin="16,8,16,12" />
+  </Grid>
+</UserControl>

@@ -9,27 +9,27 @@ internal sealed class ConvertibleFileSorter<TEntry>
 {
     protected override ConvertibleSortColumn NoneColumn => ConvertibleSortColumn.None;
 
-    public override IEnumerable<TEntry> Sort(IList<TEntry> files)
+    public override IEnumerable<TEntry> Sort(IList<TEntry> items)
     {
         return CurrentColumn switch
         {
             ConvertibleSortColumn.FilePath => IsAscending
-                ? files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
-                : files.OrderByDescending(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
+                ? items.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
+                : items.OrderByDescending(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
             ConvertibleSortColumn.Size => IsAscending
-                ? files.OrderBy(f => f.FileSize)
-                : files.OrderByDescending(f => f.FileSize),
+                ? items.OrderBy(f => f.FileSize)
+                : items.OrderByDescending(f => f.FileSize),
             ConvertibleSortColumn.Format => IsAscending
-                ? files.OrderBy(f => f.FormatDescription, StringComparer.OrdinalIgnoreCase)
+                ? items.OrderBy(f => f.FormatDescription, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
-                : files.OrderByDescending(f => f.FormatDescription, StringComparer.OrdinalIgnoreCase)
+                : items.OrderByDescending(f => f.FormatDescription, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
             ConvertibleSortColumn.Status => IsAscending
-                ? files.OrderBy(f => f.Status, StringComparer.OrdinalIgnoreCase)
+                ? items.OrderBy(f => f.Status, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
-                : files.OrderByDescending(f => f.Status, StringComparer.OrdinalIgnoreCase)
+                : items.OrderByDescending(f => f.Status, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase),
-            _ => files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
+            _ => items.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
         };
     }
 }

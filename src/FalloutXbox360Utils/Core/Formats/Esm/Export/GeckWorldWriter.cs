@@ -231,6 +231,57 @@ internal static class GeckWorldWriter
         return sb.ToString();
     }
 
+    public static string GeneratePersistentObjectsReport(List<CellRecord> cells,
+        FormIdResolver? resolver = null)
+    {
+        var res = resolver ?? FormIdResolver.Empty;
+
+        var persistent = cells
+            .SelectMany(c => c.PlacedObjects.Where(o => o.IsPersistent)
+                .Select(o => (Cell: c, Obj: o)))
+            .ToList();
+
+        var sb = new StringBuilder();
+        GeckReportGenerator.AppendSectionHeader(sb, $"Persistent Objects ({persistent.Count})");
+        sb.AppendLine();
+
+        var grouped = persistent
+            .GroupBy(p => p.Obj.RecordType)
+            .OrderBy(g => g.Key switch { "ACHR" => 0, "ACRE" => 1, _ => 2 });
+
+        foreach (var group in grouped)
+        {
+            var typeName = group.Key switch
+            {
+                "ACHR" => "NPCs (ACHR)",
+                "ACRE" => "Creatures (ACRE)",
+                _ => $"Objects ({group.Key})"
+            };
+
+            sb.AppendLine($"  {typeName} ({group.Count()}):");
+            sb.AppendLine();
+
+            foreach (var (cell, obj) in group.OrderBy(p => p.Obj.BaseEditorId ?? ""))
+            {
+                var baseName = obj.BaseEditorId
+                               ?? res.GetBestName(obj.BaseFormId)
+                               ?? GeckReportGenerator.FormatFormId(obj.BaseFormId);
+                var cellName = cell.EditorId ?? GeckReportGenerator.FormatFormId(cell.FormId);
+                var scaleStr = Math.Abs(obj.Scale - 1.0f) > 0.01f ? $" scale={obj.Scale:F2}" : "";
+                var disabledStr = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
+
+                sb.AppendLine($"    {GeckReportGenerator.FormatFormId(obj.FormId)}  {baseName}{disabledStr}");
+                sb.AppendLine(
+                    $"      pos=({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})  rot=({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3}){scaleStr}");
+                sb.AppendLine($"      cell={cellName}");
+            }
+
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
     internal static void AppendExplosionsSection(StringBuilder sb, List<ExplosionRecord> explosions,
         FormIdResolver resolver)
     {

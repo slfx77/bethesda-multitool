@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>FalloutAudioTranscriber</RootNamespace>
+    <AssemblyName>FalloutAudioTranscriber</AssemblyName>
+    <Platforms>x64;AnyCPU</Platforms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+  </PropertyGroup>
+
+  <!-- WinUI 3 packages -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260101001" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+  </ItemGroup>
+
+  <!-- Audio playback -->
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+  <!-- Whisper speech-to-text -->
+  <ItemGroup>
+    <PackageReference Include="Whisper.net" Version="1.9.0" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.0" />
+  </ItemGroup>
+
+  <!-- Core library reference (BSA parsing, XMA conversion, ESM parsing) -->
+  <ItemGroup>
+    <ProjectReference Include="..\FalloutXbox360Utils\FalloutXbox360Utils.csproj" />
+  </ItemGroup>
+
+  <!-- Remove the referenced project's PRI from the PRI merge list to avoid duplicate Files/App.xbf.
+       FalloutXbox360Utils.pri already contains an embedded App.xbf resource which collides with ours.
+       We don't need its string resources, so excluding the entire PRI is safe. -->
+  <Target Name="RemoveReferencedProjectPri" BeforeTargets="_GenerateProjectPriConfigurationFiles">
+    <ItemGroup>
+      <_PriFile Remove="@(_PriFile)"
+        Condition="$([System.String]::new('%(Filename)').StartsWith('FalloutXbox360Utils'))" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Remove the referenced WinUI project's content files (App.xaml, app.manifest, etc.) from the
+       publish file list. Both WinUI projects produce these files with the same relative paths, and
+       the single-file bundler cannot handle duplicate BundleRelativePath entries. The referenced
+       project's DLL comes from its bin directory, not its source tree, so this is safe. -->
+  <Target Name="RemoveReferencedProjectPublishContent" BeforeTargets="_ComputeFilesToBundle">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="$([System.String]::new('%(FullPath)').Contains('FalloutXbox360Utils')) AND
+                   !$([System.String]::new('%(FullPath)').Contains('bin')) AND
+                   !$([System.String]::new('%(FullPath)').Contains('.nuget'))" />
+    </ItemGroup>
+  </Target>
+
+  <!-- App icon (.ico for exe/taskbar, .png for in-app title bar) -->
+  <ItemGroup>
+    <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\AppIcon.png" />
+  </ItemGroup>
+
+</Project>

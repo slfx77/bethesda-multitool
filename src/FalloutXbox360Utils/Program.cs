@@ -53,6 +53,7 @@ public static class Program
         rootCommand.Subcommands.Add(WorldCommand.Create());
         rootCommand.Subcommands.Add(RepackCommand.Create());
         rootCommand.Subcommands.Add(RttiCommand.Create());
+        rootCommand.Subcommands.Add(SaveCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }

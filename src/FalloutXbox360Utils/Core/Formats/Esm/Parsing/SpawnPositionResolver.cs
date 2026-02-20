@@ -15,13 +15,15 @@ internal static class SpawnPositionResolver
     /// <summary>
     ///     Resolves spawn positions for ACHR/ACRE records at the origin by looking up
     ///     their base NPC/creature's AI packages and extracting PLDT location data.
+    ///     Supports direct NPC_/CREA base actors and LVLN/LVLC leveled list resolution.
     /// </summary>
     /// <returns>Number of placed references that had their positions resolved.</returns>
     public static int ResolveSpawnPositions(
         List<CellRecord> cells,
         List<PackageRecord> packages,
         List<NpcRecord> npcs,
-        List<CreatureRecord> creatures)
+        List<CreatureRecord> creatures,
+        List<LeveledListRecord> leveledLists)
     {
         if (packages.Count == 0)
         {
@@ -53,7 +55,17 @@ internal static class SpawnPositionResolver
             }
         }
 
-        if (baseToPackages.Count == 0)
+        // Build leveled list → leaf actor resolution for LVLN/LVLC
+        var leveledListById = new Dictionary<uint, LeveledListRecord>();
+        foreach (var ll in leveledLists)
+        {
+            if (ll.ListType is "LVLN" or "LVLC")
+            {
+                leveledListById.TryAdd(ll.FormId, ll);
+            }
+        }
+
+        if (baseToPackages.Count == 0 && leveledListById.Count == 0)
         {
             return 0;
         }
@@ -93,7 +105,6 @@ internal static class SpawnPositionResolver
         for (var cellIdx = 0; cellIdx < cells.Count; cellIdx++)
         {
             var cell = cells[cellIdx];
-            var modified = false;
 
             for (var objIdx = 0; objIdx < cell.PlacedObjects.Count; objIdx++)
             {
@@ -104,13 +115,15 @@ internal static class SpawnPositionResolver
                     continue;
                 }
 
-                if (!baseToPackages.TryGetValue(obj.BaseFormId, out var pkgIds))
+                // Try direct actor lookup first
+                var pkgIds = FindPackageIds(obj.BaseFormId, baseToPackages, leveledListById);
+                if (pkgIds == null)
                 {
                     continue;
                 }
 
                 var resolved = TryResolvePosition(
-                    pkgIds, packageById, refrPositions, cellCenters, baseObjectPositions);
+                    pkgIds, packageById, refrPositions, cellCenters, baseObjectPositions, obj);
 
                 if (resolved == null)
                 {
@@ -119,18 +132,79 @@ internal static class SpawnPositionResolver
 
                 var (rx, ry, rz) = resolved.Value;
                 cell.PlacedObjects[objIdx] = obj with { X = rx, Y = ry, Z = rz };
-                modified = true;
                 resolvedCount++;
-            }
-
-            if (modified)
-            {
-                // CellRecord is immutable record type — but PlacedObjects is a mutable List,
-                // so in-place replacement of list elements is sufficient; no need to replace the cell.
             }
         }
 
         return resolvedCount;
+    }
+
+    /// <summary>
+    ///     Finds package IDs for a base actor, handling both direct NPC_/CREA and leveled lists.
+    /// </summary>
+    private static List<uint>? FindPackageIds(
+        uint baseFormId,
+        Dictionary<uint, List<uint>> baseToPackages,
+        Dictionary<uint, LeveledListRecord> leveledListById)
+    {
+        // Direct lookup — base is a NPC_ or CREA with PKID subrecords
+        if (baseToPackages.TryGetValue(baseFormId, out var pkgIds))
+        {
+            return pkgIds;
+        }
+
+        // Leveled list fallback — resolve LVLN/LVLC to leaf actors and try their packages
+        if (!leveledListById.ContainsKey(baseFormId))
+        {
+            return null;
+        }
+
+        var leafActors = new List<uint>();
+        var visited = new HashSet<uint>();
+        ResolveLeveledListLeaves(baseFormId, leveledListById, leafActors, visited, maxDepth: 8);
+
+        foreach (var leafFormId in leafActors)
+        {
+            if (baseToPackages.TryGetValue(leafFormId, out var leafPkgIds))
+            {
+                return leafPkgIds;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Recursively resolves a leveled list to its leaf actor FormIDs.
+    /// </summary>
+    private static void ResolveLeveledListLeaves(
+        uint formId,
+        Dictionary<uint, LeveledListRecord> leveledListById,
+        List<uint> resolved,
+        HashSet<uint> visited,
+        int maxDepth)
+    {
+        if (maxDepth <= 0 || !visited.Add(formId))
+        {
+            return;
+        }
+
+        if (!leveledListById.TryGetValue(formId, out var ll))
+        {
+            return;
+        }
+
+        foreach (var entry in ll.Entries)
+        {
+            if (leveledListById.ContainsKey(entry.FormId))
+            {
+                ResolveLeveledListLeaves(entry.FormId, leveledListById, resolved, visited, maxDepth - 1);
+            }
+            else if (entry.FormId != 0)
+            {
+                resolved.Add(entry.FormId);
+            }
+        }
     }
 
     private static (float X, float Y, float Z)? TryResolvePosition(
@@ -138,46 +212,84 @@ internal static class SpawnPositionResolver
         Dictionary<uint, PackageRecord> packageById,
         Dictionary<uint, (float X, float Y, float Z)> refrPositions,
         Dictionary<uint, (float X, float Y, float Z)> cellCenters,
-        Dictionary<uint, (float X, float Y, float Z)> baseObjectPositions)
+        Dictionary<uint, (float X, float Y, float Z)> baseObjectPositions,
+        PlacedReference actor)
     {
         foreach (var pkgId in packageIds)
         {
-            if (!packageById.TryGetValue(pkgId, out var pkg) || pkg.Location == null)
+            if (!packageById.TryGetValue(pkgId, out var pkg))
             {
                 continue;
             }
 
-            var loc = pkg.Location;
-
-            switch (loc.Type)
+            // Try primary location (PLDT), then secondary (PLD2)
+            var result = TryResolveFromLocation(
+                pkg.Location, refrPositions, cellCenters, baseObjectPositions, actor);
+            if (result != null)
             {
-                case 0: // Near Reference — Union is a placed object FormID
-                    if (refrPositions.TryGetValue(loc.Union, out var refPos))
-                    {
-                        return refPos;
-                    }
-
-                    break;
-
-                case 1: // In Cell — Union is a cell FormID
-                    if (cellCenters.TryGetValue(loc.Union, out var cellPos))
-                    {
-                        return cellPos;
-                    }
-
-                    break;
-
-                case 4: // Object ID — Union is a base object FormID
-                    if (baseObjectPositions.TryGetValue(loc.Union, out var objPos))
-                    {
-                        return objPos;
-                    }
-
-                    break;
-
-                // Types 2 (Near Current), 3 (Near Editor), 5 (Object Type), 12 (Near Linked Ref)
-                // cannot be resolved from static ESM data
+                return result;
             }
+
+            result = TryResolveFromLocation(
+                pkg.Location2, refrPositions, cellCenters, baseObjectPositions, actor);
+            if (result != null)
+            {
+                return result;
+            }
+        }
+
+        return null;
+    }
+
+    private static (float X, float Y, float Z)? TryResolveFromLocation(
+        PackageLocation? loc,
+        Dictionary<uint, (float X, float Y, float Z)> refrPositions,
+        Dictionary<uint, (float X, float Y, float Z)> cellCenters,
+        Dictionary<uint, (float X, float Y, float Z)> baseObjectPositions,
+        PlacedReference actor)
+    {
+        if (loc == null)
+        {
+            return null;
+        }
+
+        switch (loc.Type)
+        {
+            case 0: // Near Reference — Union is a placed object FormID
+                if (refrPositions.TryGetValue(loc.Union, out var refPos))
+                {
+                    return refPos;
+                }
+
+                break;
+
+            case 1: // In Cell — Union is a cell FormID
+                if (cellCenters.TryGetValue(loc.Union, out var cellPos))
+                {
+                    return cellPos;
+                }
+
+                break;
+
+            case 4: // Object ID — Union is a base object FormID
+                if (baseObjectPositions.TryGetValue(loc.Union, out var objPos))
+                {
+                    return objPos;
+                }
+
+                break;
+
+            case 12: // Near Linked Ref — resolve via actor's XLKR subrecord
+                if (actor.LinkedRefFormId.HasValue &&
+                    refrPositions.TryGetValue(actor.LinkedRefFormId.Value, out var linkedPos))
+                {
+                    return linkedPos;
+                }
+
+                break;
+
+                // Types 2 (Near Current), 3 (Near Editor), 5 (Object Type)
+                // cannot be resolved from static ESM data
         }
 
         return null;

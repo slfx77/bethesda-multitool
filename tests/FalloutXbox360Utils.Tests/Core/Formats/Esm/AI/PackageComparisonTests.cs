@@ -26,7 +26,8 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
     [Trait("Category", "Slow")]
     public async Task ComparePackages_DumpVsProtoEsm_ReportsDiscrepancies()
     {
-        File.WriteAllText(ResultFile, $"Package Comparison - {DateTime.Now}\n\n");
+        await File.WriteAllTextAsync(ResultFile, $"Package Comparison - {DateTime.Now}\n\n",
+            TestContext.Current.CancellationToken);
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
         // Find latest memory dump
@@ -139,16 +140,14 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             }
 
             // Compare schedule
-            if (esm.Schedule != null && dump.Schedule != null)
+            if (esm.Schedule != null && dump.Schedule != null &&
+                (esm.Schedule.Month != dump.Schedule.Month ||
+                 esm.Schedule.DayOfWeek != dump.Schedule.DayOfWeek ||
+                 esm.Schedule.Time != dump.Schedule.Time ||
+                 esm.Schedule.Duration != dump.Schedule.Duration))
             {
-                if (esm.Schedule.Month != dump.Schedule.Month ||
-                    esm.Schedule.DayOfWeek != dump.Schedule.DayOfWeek ||
-                    esm.Schedule.Time != dump.Schedule.Time ||
-                    esm.Schedule.Duration != dump.Schedule.Duration)
-                {
-                    scheduleMismatches++;
-                    hasMismatch = true;
-                }
+                scheduleMismatches++;
+                hasMismatch = true;
             }
 
             if (hasMismatch && (typeMismatches + flagMismatches + scheduleMismatches) <= 30)
@@ -357,27 +356,12 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             {
                 var edLower = pkg.EditorId.ToLowerInvariant();
                 bool mismatch = false;
-                if (edLower.Contains("sleep") && pkg.Data.Type != 4)
-                {
-                    mismatch = true;
-                }
-                else if (edLower.Contains("sandbox") && pkg.Data.Type != 12)
-                {
-                    mismatch = true;
-                }
-                else if (edLower.Contains("patrol") && pkg.Data.Type != 13)
-                {
-                    mismatch = true;
-                }
-                else if (edLower.Contains("guard") && pkg.Data.Type != 14 && !edLower.Contains("bodyguard"))
-                {
-                    mismatch = true;
-                }
-                else if (edLower.Contains("travel") && pkg.Data.Type != 6)
-                {
-                    mismatch = true;
-                }
-                else if (edLower.Contains("follow") && pkg.Data.Type != 1 && !edLower.Contains("following"))
+                if ((edLower.Contains("sleep") && pkg.Data.Type != 4) ||
+                    (edLower.Contains("sandbox") && pkg.Data.Type != 12) ||
+                    (edLower.Contains("patrol") && pkg.Data.Type != 13) ||
+                    (edLower.Contains("guard") && pkg.Data.Type != 14 && !edLower.Contains("bodyguard")) ||
+                    (edLower.Contains("travel") && pkg.Data.Type != 6) ||
+                    (edLower.Contains("follow") && pkg.Data.Type != 1 && !edLower.Contains("following")))
                 {
                     mismatch = true;
                 }

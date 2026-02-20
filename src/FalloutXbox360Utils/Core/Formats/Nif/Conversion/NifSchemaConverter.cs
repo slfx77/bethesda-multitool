@@ -418,8 +418,7 @@ internal sealed partial class NifSchemaConverter
             return 0;
         }
 
-        // Handle field references (e.g., "Vertex Desc #RSH# 44")
-        // For now, just handle simple cases
+        // Handle field references and simple expressions (e.g., "Vertex Desc #RSH# 44")
         try
         {
             // Try to evaluate as an expression using the condition evaluator

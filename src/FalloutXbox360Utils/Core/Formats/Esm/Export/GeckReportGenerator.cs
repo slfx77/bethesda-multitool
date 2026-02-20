@@ -46,7 +46,7 @@ public static class GeckReportGenerator
         // Characters
         if (result.Npcs.Count > 0)
         {
-            GeckActorWriter.AppendNpcsSection(sb, result.Npcs, resolver);
+            GeckActorWriter.AppendNpcsSection(sb, result.Npcs, resolver, result.Races);
         }
 
         if (result.Creatures.Count > 0)
@@ -201,7 +201,7 @@ public static class GeckReportGenerator
         if (result.Npcs.Count > 0)
         {
             files["npcs.csv"] = CsvActorWriter.GenerateNpcsCsv(result.Npcs, resolver);
-            files["npc_report.txt"] = GeckActorWriter.GenerateNpcReport(result.Npcs, resolver);
+            files["npc_report.txt"] = GeckActorWriter.GenerateNpcReport(result.Npcs, resolver, result.Races);
         }
 
         if (result.Creatures.Count > 0)
@@ -342,6 +342,15 @@ public static class GeckReportGenerator
         {
             files["map_markers.csv"] = CsvMiscWriter.GenerateMapMarkersCsv(result.MapMarkers, resolver);
             files["map_marker_report.txt"] = GeckWorldWriter.GenerateMapMarkersReport(result.MapMarkers, resolver);
+        }
+
+        // Persistent objects (flat export of all references with the Persistent flag)
+        if (result.Cells.Any(c => c.PlacedObjects.Any(o => o.IsPersistent)))
+        {
+            files["persistent_objects.csv"] =
+                CsvMiscWriter.GeneratePersistentObjectsCsv(result.Cells, resolver);
+            files["persistent_object_report.txt"] =
+                GeckWorldWriter.GeneratePersistentObjectsReport(result.Cells, resolver);
         }
 
         if (result.LeveledLists.Count > 0)

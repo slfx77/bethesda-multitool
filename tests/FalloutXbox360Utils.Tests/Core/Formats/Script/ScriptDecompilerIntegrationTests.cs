@@ -21,21 +21,21 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     private static readonly Lock CacheLock = new();
     private readonly ITestOutputHelper _output = output;
 
-    private record DecompResult(
+    private sealed record DecompResult(
         uint FormId,
         string? EditorId,
         string? SourceText,
         string Decompiled);
 
-    private byte[] GetFileData()
+    private static byte[] GetFileData(string path)
     {
         lock (CacheLock)
         {
-            return _cachedFileData ??= File.ReadAllBytes(samples.Xbox360FinalEsm!);
+            return _cachedFileData ??= File.ReadAllBytes(path);
         }
     }
 
-    private List<AnalyzerRecordInfo> GetScptRecords(byte[] fileData, bool isBigEndian)
+    private static List<AnalyzerRecordInfo> GetScptRecords(byte[] fileData, bool isBigEndian)
     {
         lock (CacheLock)
         {
@@ -48,7 +48,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     ///     Uses null resolver — the decompiler is O(B) per script; we don't need O(N*M) ESM
     ///     scans just for FormID name resolution in a test.
     /// </summary>
-    private List<DecompResult> GetDecompResults(byte[] fileData, bool isBigEndian)
+    private static List<DecompResult> GetDecompResults(byte[] fileData, bool isBigEndian)
     {
         lock (CacheLock)
         {
@@ -87,7 +87,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var fileData = GetFileData();
+        var fileData = GetFileData(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         Assert.True(isBigEndian, "Xbox 360 ESM should be big-endian");
 
@@ -128,7 +128,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var fileData = GetFileData();
+        var fileData = GetFileData(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         var results = GetDecompResults(fileData, isBigEndian);
 
@@ -185,7 +185,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
 
-        var fileData = GetFileData();
+        var fileData = GetFileData(samples.Xbox360FinalEsm!);
         var isBigEndian = EsmParser.IsBigEndian(fileData);
         var results = GetDecompResults(fileData, isBigEndian);
 

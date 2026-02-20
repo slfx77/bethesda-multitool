@@ -9,4 +9,7 @@
     <Platform Project="x64" />
   </Project>
   <Project Path="tests/FalloutXbox360Utils.Tests/FalloutXbox360Utils.Tests.csproj" />
+  <Project Path="src/FalloutAudioTranscriber/FalloutAudioTranscriber.csproj">
+    <Platform Project="x64" />
+  </Project>
 </Solution>

@@ -132,6 +132,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private ObservableCollection<EsmBrowserNode>? _esmBrowserTree;
     private bool _flatListBuilt;
     private Dictionary<uint, List<WorldPlacement>>? _placementIndex;
+    private IReadOnlyDictionary<uint, RaceRecord>? _raceLookup;
     private CancellationTokenSource? _searchDebounceToken;
     private string? _lastInputPath;
     private string _reportFullContent = "";
@@ -354,9 +355,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 }
             }
 
-            // Populate the observable file table now that all analysis is complete.
-            // For ESM files, RefreshCarvedFilesList() already ran above and rebuilt the list;
-            // for non-ESM files (or if reconstruction was skipped/failed), flush here.
+            // Flush the observable file table if it was not already populated by the ESM path.
             if (_carvedFiles.Count == 0 && _allCarvedFiles.Count > 0)
             {
                 foreach (var item in _allCarvedFiles)
@@ -653,6 +652,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     /// </summary>
     private void BuildCarvedFileList(bool isEsmFile)
     {
+        if (_analysisResult == null)
+        {
+            return;
+        }
+
         if (!isEsmFile)
         {
             foreach (var entry in _analysisResult.CarvedFiles)

@@ -14,7 +14,7 @@ internal static class PcFinalEsmPipelineCache
     private static PipelineResult? _cached;
     private static readonly Lock CacheLock = new();
 
-    internal record PipelineResult(
+    internal sealed record PipelineResult(
         List<ParsedMainRecord> ParsedRecords,
         List<GrupHeaderInfo> GrupHeaders,
         EsmRecordScanResult ScanResult,

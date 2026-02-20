@@ -158,7 +158,7 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
             offset += EsmParser.MainRecordHeaderSize + (int)header.DataSize;
         }
 
-        // Now scan flat GRUPs - Xbox 360 may have orphaned data between GRUPs
+        // Scan flat GRUPs (Xbox 360 may have orphaned data between them)
         while (offset + EsmParser.MainRecordHeaderSize <= _input.Length)
         {
             var sigBytes = _input.AsSpan(offset, 4);

@@ -129,11 +129,15 @@ public sealed partial class SingleFileTab
             // Resolver is already built in EnsureSemanticReconstructionAsync
 
             // Build speaker index for NPC browse mode
-            // Build set of NPCs with FullName to distinguish real NPCs from marker/template NPCs
+            // Build set of named actors: use FormIdToDisplayName (covers ESM FULL subrecords,
+            // runtime hash table DisplayName entries, and scan-result full names) to avoid
+            // collapsing speaker attribution onto the small ESM-only NPC set in memory dumps.
             var npcsWithFullName = new HashSet<uint>(
-                result.Npcs.Where(n => n.FullName != null).Select(n => n.FormId));
+                result.Npcs.Where(n => n.FullName != null || result.FormIdToDisplayName.ContainsKey(n.FormId))
+                    .Select(n => n.FormId));
             npcsWithFullName.UnionWith(
-                result.Creatures.Where(c => c.FullName != null).Select(c => c.FormId));
+                result.Creatures.Where(c => c.FullName != null || result.FormIdToDisplayName.ContainsKey(c.FormId))
+                    .Select(c => c.FormId));
             _session.TopicsBySpeaker = BuildTopicsBySpeaker(_session.DialogueTree, npcsWithFullName);
 
             // Build FormID → topic index for cross-tab navigation
@@ -446,9 +450,14 @@ public sealed partial class SingleFileTab
                     .FirstOrDefault(t => !string.IsNullOrEmpty(t));
 
                 // Use response text only if it differs substantially from the topic name
-                displayName = firstText != null && !IsSimilarText(firstText, topicName)
-                    ? firstText.Length > 80 ? firstText[..77] + "..." : firstText
-                    : topicName;
+                if (firstText != null && !IsSimilarText(firstText, topicName))
+                {
+                    displayName = firstText.Length > 80 ? firstText[..77] + "..." : firstText;
+                }
+                else
+                {
+                    displayName = topicName;
+                }
             }
             else
             {
@@ -589,7 +598,7 @@ public sealed partial class SingleFileTab
         UpdateDialogueHeader(topic, filteredInfoChain);
 
         // Build conversation display
-        BuildConversationDisplay(topic, filteredInfoChain, promptText);
+        BuildConversationDisplay(filteredInfoChain, promptText);
 
         // Build player choices
         BuildPlayerChoices(topic, filteredInfoChain);
@@ -694,7 +703,7 @@ public sealed partial class SingleFileTab
     }
 
     private void BuildConversationDisplay(
-        TopicDialogueNode topic, List<InfoDialogueNode> filteredInfoChain, string? promptText = null)
+        List<InfoDialogueNode> filteredInfoChain, string? promptText = null)
     {
         DialogueConversationPanel.Children.Clear();
 

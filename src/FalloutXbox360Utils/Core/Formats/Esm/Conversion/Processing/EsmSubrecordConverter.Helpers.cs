@@ -88,20 +88,13 @@ internal static partial class EsmSubrecordConverter
     /// </summary>
     internal static void ConvertNvci(byte[] data)
     {
-        // Structure: FormID Navmesh + 3 variable-length arrays of FormIDs
-        // Each array is: uint32 count + FormID[] items
-        // But the count is stored as -1 terminated (unknown count until end)
-        // Looking at 24 bytes: 4 (FormID) + 4 (count) + 4 (count) + 4 (count) + 8 remaining
-        // Actually it's likely: FormID + count1 + FormIDs... + count2 + FormIDs... + count3 + FormIDs...
+        // Layout: FormID (navmesh) + 3 count-prefixed arrays of FormIDs
+        // Each array: uint32 count, then count × FormID entries
 
         var offset = 0;
         // Navmesh FormID
         Swap4Bytes(data, offset);
         offset += 4;
-
-        // For -1 terminated arrays, we need to parse the count first to know how many FormIDs
-        // FNV uses wbArrayS with -1 which means unknown count, read until next element
-        // But in binary, each array likely has a uint32 count prefix
 
         // Standard array
         if (offset + 4 <= data.Length)

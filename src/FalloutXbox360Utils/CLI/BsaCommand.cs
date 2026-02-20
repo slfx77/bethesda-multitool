@@ -1,6 +1,9 @@
 // Copyright (c) 2026 FalloutXbox360Utils Contributors
 // Licensed under the MIT License.
 
+// Pending migration: validate/compare commands will move to analysis tools
+#pragma warning disable IDE0051, S1144
+
 using System.CommandLine;
 using System.Security.Cryptography;
 using FalloutXbox360Utils.Core.Formats.Bsa;

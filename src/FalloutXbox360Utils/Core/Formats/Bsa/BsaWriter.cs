@@ -236,8 +236,7 @@ public sealed class BsaWriter : IDisposable
                 var fileData = PrepareFileData(file.Data, file.FullPath);
                 var size = (uint)fileData.Length;
 
-                // If compression is toggled for this file (individual file toggle)
-                // For now we just use archive default, no per-file toggle
+                // Uses archive-level compression setting; per-file toggle not supported
 
                 fileRecords.Add(new FileRecordData
                 {

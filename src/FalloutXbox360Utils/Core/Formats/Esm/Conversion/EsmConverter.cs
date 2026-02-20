@@ -1003,7 +1003,7 @@ public sealed class EsmConverter : IDisposable
         var grupHeaderPosition = _writer.BaseStream.Position;
 
         // The GRUP label field is a 4-byte value stored big-endian in Xbox data.
-        // We write it little-endian for PC output, which naturally flips the byte order.
+        // Written as little-endian for PC output, naturally flipping the byte order.
         var labelValue = BinaryPrimitives.ReadUInt32BigEndian(labelBytesForWrite);
         var outputHeader = new GroupHeader
         {

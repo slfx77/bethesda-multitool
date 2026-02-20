@@ -258,7 +258,7 @@ public sealed class RttiReader
     ///     +C: pTypeDescriptor
     ///     +10: pClassHierarchyDescriptor
     /// </summary>
-    private COL? ReadCOL(uint colVA)
+    private CompleteObjectLocator? ReadCOL(uint colVA)
     {
         var signature = ReadUInt32AtVA(colVA);
         if (signature == null || signature.Value != 0)
@@ -281,7 +281,7 @@ public sealed class RttiReader
             return null;
         }
 
-        return new COL(offset.Value, cdOffset.Value, pTypeDescriptor.Value, pCHD.Value);
+        return new CompleteObjectLocator(offset.Value, cdOffset.Value, pTypeDescriptor.Value, pCHD.Value);
     }
 
     /// <summary>
@@ -430,7 +430,7 @@ public sealed class RttiReader
 
     #region Private Types
 
-    private readonly record struct COL(uint Offset, uint CdOffset, uint PTypeDescriptor, uint PClassHierarchyDescriptor);
+    private readonly record struct CompleteObjectLocator(uint Offset, uint CdOffset, uint PTypeDescriptor, uint PClassHierarchyDescriptor);
 
     private readonly record struct TypeDesc(string MangledName);
 

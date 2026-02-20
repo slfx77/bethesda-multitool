@@ -90,6 +90,7 @@ public sealed class RecordParser
             // Generic record types (Phase 1)
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
+            "IDLM", "SCOL", "PWAT",
             // Specialized record types (Phase 2)
             "SOUN", "TXST", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR"
         };
@@ -397,9 +398,10 @@ public sealed class RecordParser
 
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
         var packages = _ai.ReconstructPackages();
-        var resolvedCount = SpawnPositionResolver.ResolveSpawnPositions(cells, packages, npcs, creatures);
-        var mapMarkers = _world.ExtractMapMarkers();
         var leveledLists = _misc.ReconstructLeveledLists();
+        var resolvedCount =
+            SpawnPositionResolver.ResolveSpawnPositions(cells, packages, npcs, creatures, leveledLists);
+        var mapMarkers = _world.ExtractMapMarkers();
         Logger.Instance.Debug(
             $"  [Semantic] World: {phaseSw.Elapsed} (Cells: {cells.Count} in {cellTime}, Worldspaces: {worldspaces.Count}, Packages: {packages.Count}, SpawnResolved: {resolvedCount}, MapMarkers: {mapMarkers.Count}, LeveledLists: {leveledLists.Count})");
 
@@ -428,7 +430,8 @@ public sealed class RecordParser
         var genericTypes = new[]
         {
             "MSTT", "TACT", "CAMS", "ANIO", "IPDS", "EFSH", "RGDL", "LSCR",
-            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD"
+            "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
+            "IDLM", "SCOL", "PWAT"
         };
         var genericRecords = new List<GenericEsmRecord>();
         foreach (var type in genericTypes)
@@ -474,6 +477,11 @@ public sealed class RecordParser
         AddToIndexes(miscItems, m => m.FormId, m => m.Bounds, m => m.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(books, b => b.FormId, b => b.Bounds, b => b.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(containers, c => c.FormId, c => (ObjectBounds?)null, c => c.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(keys, k => k.FormId, k => (ObjectBounds?)null, k => k.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(notes, n => n.FormId, n => (ObjectBounds?)null, n => n.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(weaponMods, w => w.FormId, w => (ObjectBounds?)null, w => w.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(sounds, s => s.FormId, s => s.Bounds, s => (string?)null, boundsIndex, modelIndex);
+        AddToIndexes(genericRecords, g => g.FormId, g => g.Bounds, g => g.ModelPath, boundsIndex, modelIndex);
 
         WorldRecordHandler.EnrichPlacedReferences(cells, boundsIndex, modelIndex);
         foreach (var ws in worldspaces)

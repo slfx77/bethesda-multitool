@@ -7,9 +7,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 internal static class GeckActorWriter
 {
     internal static void AppendNpcsSection(StringBuilder sb, List<NpcRecord> npcs,
-        FormIdResolver resolver)
+        FormIdResolver resolver, IReadOnlyList<RaceRecord>? races = null)
     {
         GeckReportGenerator.AppendSectionHeader(sb, $"NPCs ({npcs.Count})");
+
+        var raceLookup = races?.ToDictionary(r => r.FormId);
 
         foreach (var npc in npcs.OrderBy(n => n.EditorId ?? ""))
         {
@@ -100,13 +102,53 @@ internal static class GeckActorWriter
                     sb.AppendLine($"  - {resolver.FormatFull(package)}");
                 }
             }
+
+            // FaceGen slider summary (counts only — detailed values are in the per-NPC report)
+            if (raceLookup != null && npc.FaceGenGeometrySymmetric != null)
+            {
+                var isFemale = npc.Stats != null && (npc.Stats.Flags & 1) == 1;
+                raceLookup.TryGetValue(npc.Race ?? 0, out var race);
+
+                var parts = new List<string>();
+                AppendFaceGenSliderCount(parts, "FGGS", npc.FaceGenGeometrySymmetric,
+                    m => FaceGenControls.ComputeGeometrySymmetric(m,
+                        isFemale ? race?.FemaleFaceGenGeometrySymmetric : race?.MaleFaceGenGeometrySymmetric));
+                AppendFaceGenSliderCount(parts, "FGGA", npc.FaceGenGeometryAsymmetric,
+                    m => FaceGenControls.ComputeGeometryAsymmetric(m,
+                        isFemale ? race?.FemaleFaceGenGeometryAsymmetric : race?.MaleFaceGenGeometryAsymmetric));
+                AppendFaceGenSliderCount(parts, "FGTS", npc.FaceGenTextureSymmetric,
+                    m => FaceGenControls.ComputeTextureSymmetric(m,
+                        isFemale ? race?.FemaleFaceGenTextureSymmetric : race?.MaleFaceGenTextureSymmetric));
+
+                if (parts.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"FaceGen:        {string.Join(", ", parts)}");
+                }
+            }
+        }
+    }
+
+    private static void AppendFaceGenSliderCount(
+        List<string> parts,
+        string label,
+        float[]? morphs,
+        Func<float[], (string Name, float Value)[]> computeFunc)
+    {
+        if (morphs == null || morphs.Length == 0) return;
+        var sliders = computeFunc(morphs);
+        var active = sliders.Count(s => Math.Abs(s.Value) > 0.01f);
+        if (active > 0)
+        {
+            parts.Add($"{label} {active}/{sliders.Length} active");
         }
     }
 
     internal static void AppendNpcReportEntry(
         StringBuilder sb,
         NpcRecord npc,
-        FormIdResolver resolver)
+        FormIdResolver resolver,
+        RaceRecord? race = null)
     {
         sb.AppendLine();
 
@@ -360,19 +402,26 @@ internal static class GeckActorWriter
             sb.AppendLine();
             sb.AppendLine($"  \u2500\u2500 FaceGen Morph Data {new string('\u2500', 60)}");
 
+            // NPC face data is an offset from the race's base face.
+            // Merge race base + NPC offset before projecting onto control vectors.
+            var isFemale = npc.Stats != null && (npc.Stats.Flags & 1) == 1;
+            var raceFggs = isFemale ? race?.FemaleFaceGenGeometrySymmetric : race?.MaleFaceGenGeometrySymmetric;
+            var raceFgga = isFemale ? race?.FemaleFaceGenGeometryAsymmetric : race?.MaleFaceGenGeometryAsymmetric;
+            var raceFgts = isFemale ? race?.FemaleFaceGenTextureSymmetric : race?.MaleFaceGenTextureSymmetric;
+
             AppendFaceGenControlSection(sb, "Geometry-Symmetric",
                 npc.FaceGenGeometrySymmetric,
-                FaceGenControls.ComputeGeometrySymmetric);
+                fggs => FaceGenControls.ComputeGeometrySymmetric(fggs, raceFggs));
             AppendFaceGenRawHex(sb, "FGGS", npc.FaceGenGeometrySymmetric);
 
             AppendFaceGenControlSection(sb, "Geometry-Asymmetric",
                 npc.FaceGenGeometryAsymmetric,
-                FaceGenControls.ComputeGeometryAsymmetric);
+                fgga => FaceGenControls.ComputeGeometryAsymmetric(fgga, raceFgga));
             AppendFaceGenRawHex(sb, "FGGA", npc.FaceGenGeometryAsymmetric);
 
             AppendFaceGenControlSection(sb, "Texture-Symmetric",
                 npc.FaceGenTextureSymmetric,
-                FaceGenControls.ComputeTextureSymmetric);
+                fgts => FaceGenControls.ComputeTextureSymmetric(fgts, raceFgts));
             AppendFaceGenRawHex(sb, "FGTS", npc.FaceGenTextureSymmetric);
         }
     }
@@ -380,10 +429,11 @@ internal static class GeckActorWriter
     /// <summary>
     ///     Generate a report for NPCs only.
     /// </summary>
-    public static string GenerateNpcsReport(List<NpcRecord> npcs, FormIdResolver? resolver = null)
+    public static string GenerateNpcsReport(List<NpcRecord> npcs, FormIdResolver? resolver = null,
+        IReadOnlyList<RaceRecord>? races = null)
     {
         var sb = new StringBuilder();
-        AppendNpcsSection(sb, npcs, resolver ?? FormIdResolver.Empty);
+        AppendNpcsSection(sb, npcs, resolver ?? FormIdResolver.Empty, races);
         return sb.ToString();
     }
 
@@ -393,7 +443,8 @@ internal static class GeckActorWriter
     /// </summary>
     public static string GenerateNpcReport(
         List<NpcRecord> npcs,
-        FormIdResolver resolver)
+        FormIdResolver resolver,
+        IReadOnlyList<RaceRecord>? races = null)
     {
         var sb = new StringBuilder();
         GeckReportGenerator.AppendHeader(sb, $"NPC Report ({npcs.Count:N0} NPCs)");
@@ -415,9 +466,18 @@ internal static class GeckActorWriter
         sb.AppendLine($"NPCs with factions: {withFactions:N0} ({totalFactionRows:N0} total assignments)");
         sb.AppendLine($"NPCs with inventory: {withInventory:N0} ({totalInventoryRows:N0} total items)");
 
+        // Build race lookup for FaceGen base coefficient merging
+        var raceLookup = races?.ToDictionary(r => r.FormId);
+
         foreach (var npc in npcs.OrderBy(n => n.EditorId ?? ""))
         {
-            AppendNpcReportEntry(sb, npc, resolver);
+            RaceRecord? race = null;
+            if (npc.Race.HasValue)
+            {
+                raceLookup?.TryGetValue(npc.Race.Value, out race);
+            }
+
+            AppendNpcReportEntry(sb, npc, resolver, race);
         }
 
         return sb.ToString();

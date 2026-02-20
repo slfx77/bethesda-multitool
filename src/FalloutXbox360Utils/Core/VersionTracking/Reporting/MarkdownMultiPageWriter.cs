@@ -12,16 +12,16 @@ public static class MarkdownMultiPageWriter
 {
     #region Types
 
-    private record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
+    private sealed record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
 
-    private record RecordHistory(
+    private sealed record RecordHistory(
         uint FormId, string? EditorId, string? FullName, string Category,
         List<ChangePoint> ChangePoints);
 
-    private record CutRecord(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen);
+    private sealed record CutRecord(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen);
 
     /// <summary>Defines a record category with accessors for snapshots and diffs.</summary>
-    private record CategoryDef(
+    private sealed record CategoryDef(
         string Name,
         string FileName,
         string Description,

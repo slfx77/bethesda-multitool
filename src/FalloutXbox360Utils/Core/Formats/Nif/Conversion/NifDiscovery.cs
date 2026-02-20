@@ -215,7 +215,7 @@ internal sealed class NifDiscovery(NifConversionState state)
             }
         }
 
-        // Now find all NiSkinPartition blocks that need expansion
+        // Find all NiSkinPartition blocks that need expansion
         foreach (var block in info.Blocks.Where(b => b.TypeName == "NiSkinPartition"))
         {
             if (!_state.SkinPartitionToPackedData.ContainsKey(block.Index))
@@ -358,7 +358,7 @@ internal sealed class NifDiscovery(NifConversionState state)
         // First, extract VertexMap and Triangles from all NiSkinPartition blocks
         ExtractFromSkinPartitionBlocks(data, info);
 
-        // Now build geometry -> skin partition mapping via BSDismemberSkinInstance
+        // Build geometry -> skin partition mapping via BSDismemberSkinInstance
         BuildGeometryToSkinPartitionMapping(data, info);
     }
 
@@ -532,7 +532,7 @@ internal sealed class NifDiscovery(NifConversionState state)
             return null;
         }
 
-        // Now at NiTriStripsData specific fields
+        // NiTriStripsData-specific fields
         return ExtractStripsSection(data, pos, end, isBigEndian);
     }
 

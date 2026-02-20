@@ -20,6 +20,7 @@ public static class WorldCommand
 
         command.Subcommands.Add(CreateMarkersCommand());
         command.Subcommands.Add(CreateCellCommand());
+        command.Subcommands.Add(CreatePersistentCommand());
 
         return command;
     }
@@ -374,4 +375,142 @@ public static class WorldCommand
         return $"Yes ({string.Join(", ", parts)})";
     }
 
+    #region Persistent Objects
+
+    private static Command CreatePersistentCommand()
+    {
+        var command = new Command("persistent", "List persistent references (NPCs, doors, quest objects)");
+
+        var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
+        var outputOpt = new Option<string?>("-o", "--output") { Description = "Export to CSV file" };
+        var typeOpt = new Option<string?>("-t", "--type")
+        {
+            Description = "Filter by record type (ACHR, ACRE, REFR)"
+        };
+
+        command.Arguments.Add(inputArg);
+        command.Options.Add(outputOpt);
+        command.Options.Add(typeOpt);
+
+        command.SetAction(async (parseResult, cancellationToken) =>
+        {
+            var input = parseResult.GetValue(inputArg)!;
+            var output = parseResult.GetValue(outputOpt);
+            var typeFilter = parseResult.GetValue(typeOpt);
+            await RunPersistentAsync(input, output, typeFilter, cancellationToken);
+        });
+
+        return command;
+    }
+
+    private static async Task RunPersistentAsync(
+        string input, string? outputPath, string? typeFilter, CancellationToken cancellationToken)
+    {
+        var result = await LoadAndReconstructAsync(input, cancellationToken);
+        if (result == null)
+        {
+            return;
+        }
+
+        var resolver = result.CreateResolver();
+
+        // Collect all persistent objects across all cells
+        var persistent = result.Cells
+            .SelectMany(c => c.PlacedObjects
+                .Where(o => o.IsPersistent)
+                .Select(o => (Cell: c, Obj: o)))
+            .ToList();
+
+        // Also check worldspace cells
+        foreach (var ws in result.Worldspaces)
+        {
+            foreach (var cell in ws.Cells)
+            {
+                persistent.AddRange(cell.PlacedObjects
+                    .Where(o => o.IsPersistent)
+                    .Select(o => (Cell: cell, Obj: o)));
+            }
+        }
+
+        // Apply type filter
+        if (!string.IsNullOrEmpty(typeFilter))
+        {
+            var filter = typeFilter.ToUpperInvariant();
+            persistent = persistent.Where(p => p.Obj.RecordType == filter).ToList();
+        }
+
+        if (persistent.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No persistent objects found.[/]");
+            return;
+        }
+
+        // Export to CSV if requested
+        if (outputPath != null)
+        {
+            var allCells = result.Cells
+                .Concat(result.Worldspaces.SelectMany(ws => ws.Cells))
+                .ToList();
+            var csv = CsvMiscWriter.GeneratePersistentObjectsCsv(allCells, resolver);
+            await File.WriteAllTextAsync(outputPath, csv, cancellationToken);
+            AnsiConsole.MarkupLine(
+                $"[green]Exported {persistent.Count:N0} persistent objects to:[/] {outputPath}");
+            return;
+        }
+
+        // Console output
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(new Rule($"[blue]Persistent Objects ({persistent.Count:N0})[/]").LeftJustified());
+        AnsiConsole.WriteLine();
+
+        var grouped = persistent
+            .GroupBy(p => p.Obj.RecordType)
+            .OrderBy(g => g.Key switch { "ACHR" => 0, "ACRE" => 1, _ => 2 });
+
+        foreach (var group in grouped)
+        {
+            var typeName = group.Key switch
+            {
+                "ACHR" => "NPCs (ACHR)",
+                "ACRE" => "Creatures (ACRE)",
+                _ => $"Objects ({group.Key})"
+            };
+
+            AnsiConsole.Write(new Rule(
+                $"[yellow]{typeName} ({group.Count():N0})[/]").LeftJustified());
+
+            var table = new Table().Border(TableBorder.Simple);
+            table.AddColumn("FormID");
+            table.AddColumn("Base");
+            table.AddColumn(new TableColumn("Position").RightAligned());
+            table.AddColumn(new TableColumn("Rotation").RightAligned());
+            table.AddColumn("Cell");
+
+            foreach (var (cell, obj) in group.OrderBy(p => p.Obj.BaseEditorId ?? $"0x{p.Obj.BaseFormId:X8}"))
+            {
+                var baseName = obj.BaseEditorId
+                               ?? resolver.GetBestName(obj.BaseFormId)
+                               ?? $"0x{obj.BaseFormId:X8}";
+                var pos = $"({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})";
+                var rot = $"({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3})";
+                var cellName = cell.EditorId ?? $"0x{cell.FormId:X8}";
+                var disabled = obj.IsInitiallyDisabled ? " [dim](disabled)[/]" : "";
+
+                table.AddRow(
+                    $"0x{obj.FormId:X8}",
+                    Markup.Escape(baseName) + disabled,
+                    pos,
+                    rot,
+                    Markup.Escape(cellName));
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+        }
+
+        AnsiConsole.MarkupLine(
+            $"[green]Total:[/] {persistent.Count:N0} persistent objects");
+    }
+
+    #endregion
 }

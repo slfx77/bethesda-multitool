@@ -458,7 +458,7 @@ public sealed partial class SingleFileTab
             EsmTreeView.UpdateLayout();
         }
 
-        // Now try ContainerFromNode — should succeed since we scrolled near the target
+        // Retry ContainerFromNode after scrolling near the target
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var container = EsmTreeView.ContainerFromNode(recordTreeNode) as UIElement;

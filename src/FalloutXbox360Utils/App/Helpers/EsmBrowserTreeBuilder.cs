@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -414,7 +415,8 @@ internal static partial class EsmBrowserTreeBuilder
     public static void LoadRecordTypeChildren(
         EsmBrowserNode typeNode,
         FormIdResolver? resolver = null,
-        Dictionary<uint, List<WorldPlacement>>? placementIndex = null)
+        Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
+        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null)
     {
         if (typeNode.DataObject is not IList records)
         {
@@ -494,7 +496,7 @@ internal static partial class EsmBrowserTreeBuilder
                 ParentIconGlyph = typeNode.IconGlyph,
                 FileOffset = offset,
                 DataObject = record,
-                Properties = BuildProperties(record, resolver, placementIndex)
+                Properties = BuildProperties(record, resolver, placementIndex, raceLookup)
             };
 
             recordNodes.Add(recordNode);
@@ -655,7 +657,8 @@ internal static partial class EsmBrowserTreeBuilder
     public static List<EsmPropertyEntry> BuildProperties(
         object record,
         FormIdResolver? resolver = null,
-        Dictionary<uint, List<WorldPlacement>>? placementIndex = null)
+        Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
+        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null)
     {
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
@@ -823,16 +826,80 @@ internal static partial class EsmBrowserTreeBuilder
                 continue;
             }
 
-            // Special handling for FaceGen float arrays - show raw hex in expandable panel
-            // No offsets, single selectable hex block
+            // Special handling for FaceGen float arrays
+            // NPC records: slider values panel (expanded) + raw hex panel (collapsed)
+            // Other records (Race): raw hex only
             if (prop.Name.StartsWith("FaceGen", StringComparison.Ordinal) && value is float[] morphs &&
                 morphs.Length > 0)
             {
-                // Convert floats to raw bytes
-                var rawBytes = new byte[morphs.Length * 4];
-                Buffer.BlockCopy(morphs, 0, rawBytes, 0, rawBytes.Length);
+                // For NPC records, compute and display slider values with race base merging
+                if (record is NpcRecord npc)
+                {
+                    var isFemale = npc.Stats != null && (npc.Stats.Flags & 1) == 1;
+                    RaceRecord? race = null;
+                    if (npc.Race.HasValue && raceLookup != null)
+                    {
+                        raceLookup.TryGetValue(npc.Race.Value, out race);
+                    }
 
-                // Create hex block with 16 bytes per line, no offsets
+                    float[]? raceBase = null;
+                    (string Name, float Value)[]? sliders = null;
+
+                    if (prop.Name == "FaceGenGeometrySymmetric" && morphs.Length == 50)
+                    {
+                        raceBase = isFemale ? race?.FemaleFaceGenGeometrySymmetric : race?.MaleFaceGenGeometrySymmetric;
+                        sliders = FaceGenControls.ComputeGeometrySymmetric(morphs, raceBase);
+                    }
+                    else if (prop.Name == "FaceGenGeometryAsymmetric" && morphs.Length == 30)
+                    {
+                        raceBase = isFemale ? race?.FemaleFaceGenGeometryAsymmetric : race?.MaleFaceGenGeometryAsymmetric;
+                        sliders = FaceGenControls.ComputeGeometryAsymmetric(morphs, raceBase);
+                    }
+                    else if (prop.Name == "FaceGenTextureSymmetric" && morphs.Length == 50)
+                    {
+                        raceBase = isFemale ? race?.FemaleFaceGenTextureSymmetric : race?.MaleFaceGenTextureSymmetric;
+                        sliders = FaceGenControls.ComputeTextureSymmetric(morphs, raceBase);
+                    }
+
+                    if (sliders is { Length: > 0 })
+                    {
+                        var activeSliders = sliders
+                            .Where(s => Math.Abs(s.Value) > 0.01f)
+                            .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        if (activeSliders.Count > 0)
+                        {
+                            var sliderSubItems = activeSliders
+                                .Select(s => new EsmPropertyEntry { Name = s.Name, Value = $"{s.Value:F4}" })
+                                .ToList();
+
+                            properties.Add(new EsmPropertyEntry
+                            {
+                                Name = $"{displayName} Sliders",
+                                Value = $"{activeSliders.Count} of {sliders.Length} active",
+                                Category = "Characteristics",
+                                IsExpandable = true,
+                                IsExpandedByDefault = true,
+                                SubItems = sliderSubItems
+                            });
+                        }
+                    }
+                }
+
+                // Raw hex panel (collapsed) — explicit little-endian bytes
+                var rawBytes = new byte[morphs.Length * 4];
+                for (var i = 0; i < morphs.Length; i++)
+                {
+                    var bytes = BitConverter.GetBytes(morphs[i]);
+                    if (!BitConverter.IsLittleEndian)
+                    {
+                        Array.Reverse(bytes);
+                    }
+
+                    Buffer.BlockCopy(bytes, 0, rawBytes, i * 4, 4);
+                }
+
                 var hexLines = new List<string>();
                 for (var i = 0; i < rawBytes.Length; i += 16)
                 {
@@ -841,20 +908,18 @@ internal static partial class EsmBrowserTreeBuilder
                 }
 
                 var hexBlock = string.Join("\n", hexLines);
-
-                // Single sub-item with the entire hex block (selectable as one)
-                var subItems = new List<EsmPropertyEntry>
+                var hexSubItems = new List<EsmPropertyEntry>
                 {
                     new() { Name = "", Value = hexBlock }
                 };
 
                 properties.Add(new EsmPropertyEntry
                 {
-                    Name = displayName,
-                    Value = $"{rawBytes.Length} bytes",
+                    Name = $"{displayName} Raw Hex",
+                    Value = $"{rawBytes.Length} bytes (little-endian)",
                     Category = "Characteristics",
                     IsExpandable = true,
-                    SubItems = subItems
+                    SubItems = hexSubItems
                 });
                 continue;
             }
@@ -1200,7 +1265,7 @@ internal static partial class EsmBrowserTreeBuilder
 
     private static void AddNpcDerivedStats(List<EsmPropertyEntry> properties, object record)
     {
-        if (record is not NpcRecord npc || npc.SpecialStats?.Length < 7 || npc.Stats == null)
+        if (record is not NpcRecord npc || npc.SpecialStats is not { Length: >= 7 } || npc.Stats == null)
         {
             return;
         }
@@ -1310,11 +1375,12 @@ internal static partial class EsmBrowserTreeBuilder
                            ?? wp.Cell.EditorId
                            ?? $"0x{wp.Cell.FormId:X8}";
             var pos = $"({wp.Ref.X:F0}, {wp.Ref.Y:F0}, {wp.Ref.Z:F0})";
-            var gridInfo = wp.Cell.IsInterior
-                ? "Interior"
-                : wp.Cell.GridX.HasValue
-                    ? $"Grid ({wp.Cell.GridX},{wp.Cell.GridY})"
-                    : "Exterior";
+            var gridInfo = wp.Cell switch
+            {
+                { IsInterior: true } => "Interior",
+                { GridX: not null } => $"Grid ({wp.Cell.GridX},{wp.Cell.GridY})",
+                _ => "Exterior"
+            };
 
             subItems.Add(new EsmPropertyEntry
             {

@@ -62,7 +62,7 @@ public static partial class FaceGenControls
         "Nose - region concave / convex", // [48]
         "Nose - sellion down / up", // [49]
         "Nose - sellion shallow / deep", // [50]
-        "Nose - sellion shallow / deep", // [51]
+        "Nose - sellion shallow / deep (2)", // [51]
         "Nose - sellion thin / wide", // [52]
         "Nose - short / long", // [53]
         "Nose - tilt down / up", // [54]
