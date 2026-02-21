@@ -30,7 +30,7 @@ public static class ChangedFormDecoder
             switch (form.ChangeType)
             {
                 case 0: // REFR
-                    DecodeRefr(ref reader, form.ChangeFlags, result);
+                    DecodeRefr(ref reader, form.ChangeFlags, result, form.Initial?.DataType ?? 0);
                     break;
                 case 1: // ACHR (Character)
                     DecodeActor(ref reader, form.ChangeFlags, result, isCharacter: true);
@@ -207,7 +207,7 @@ public static class ChangedFormDecoder
 
         if (HasFlag(flags, 0x40000000)) // QUEST_SCRIPT (bit 30)
         {
-            DecodeScriptData(ref r, result, "QUEST_SCRIPT");
+            DecodeScriptLocals(ref r, result, "QUEST_SCRIPT");
         }
 
         if (HasFlag(flags, 0x20000000)) // QUEST_OBJECTIVES (bit 29)
@@ -254,189 +254,20 @@ public static class ChangedFormDecoder
     //  REFR decoder (ChangeType 0) — Placed object references
     // ────────────────────────────────────────────────────────────────
 
-    private static void DecodeRefr(ref FormDataReader r, uint flags, DecodedFormData result)
+    private static void DecodeRefr(ref FormDataReader r, uint flags, DecodedFormData result, int initialDataType)
     {
-        // REFR type: FORM_FLAGS stores a uint32 value in the Data[] body
-        if (HasFlag(flags, 0x00000001))
+        // Phase 1: Initial data (written by save infrastructure BEFORE SaveGame_v2).
+        // REFR_MOVE (bit 1), REFR_HAVOK_MOVE (bit 2), REFR_CELL_CHANGED (bit 3)
+        // are NOT handled by TESObjectREFR::SaveGame_v2 — they're prepended as
+        // "initial data" by the save infrastructure (confirmed via Ghidra decompilation).
+        DecodeRefrInitialData(ref r, flags, result, initialDataType);
+
+        // Phase 2: Body data (written by TESObjectREFR::SaveGame_v2 call chain).
+        // Order from Ghidra decompilation: FORM_FLAGS → SCALE → ExtraDataList → Inventory → Animation
+
+        if (HasFlag(flags, 0x00000001)) // FORM_FLAGS (TESForm::SaveGame)
         {
             AddUInt32Field(ref r, result, "FORM_FLAGS");
-        }
-
-        DecodeRefrBase(ref r, flags, result);
-        DecodeObjectOverlay(ref r, flags, result);
-    }
-
-    private static void DecodeRefrBase(ref FormDataReader r, uint flags, DecodedFormData result)
-    {
-        // Note: FORM_FLAGS body data is handled by the caller (type-dependent).
-        // REFR writes a uint32; actors/projectiles write nothing.
-
-        if (HasFlag(flags, 0x00000002)) // REFR_MOVE
-        {
-            // Position data is written as a single block (cellRefId + 6 floats)
-            // with NO intermediate pipes — one pipe at the end of the block.
-            int startPos = r.Position;
-            if (r.HasData(27))
-            {
-                var cellRefId = r.ReadRefId();
-                float posX = r.ReadFloat();
-                float posY = r.ReadFloat();
-                float posZ = r.ReadFloat();
-                float rotX = r.ReadFloat();
-                float rotY = r.ReadFloat();
-                float rotZ = r.ReadFloat();
-                r.TrySkipPipe(); // pipe after the complete position block
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "REFR_MOVE",
-                    DisplayValue = $"Cell={cellRefId}, Pos=({posX:F1}, {posY:F1}, {posZ:F1}), Rot=({rotX:F3}, {rotY:F3}, {rotZ:F3})",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos
-                });
-            }
-        }
-
-        if (HasFlag(flags, 0x00000004)) // REFR_HAVOK_MOVE
-        {
-            int startPos = r.Position;
-            bool hasMove = HasFlag(flags, 0x00000002);
-
-            if (!hasMove && r.HasData(27))
-            {
-                // Standalone HAVOK_MOVE: position block (cellRefId + 6 floats) as
-                // a single block, then pipe, then pipe-terminated havok sub-values.
-                var cellRefId = r.ReadRefId();
-                float posX = r.ReadFloat();
-                float posY = r.ReadFloat();
-                float posZ = r.ReadFloat();
-                float rotX = r.ReadFloat();
-                float rotY = r.ReadFloat();
-                float rotZ = r.ReadFloat();
-                r.TrySkipPipe();
-
-                var havokFields = new List<DecodedField>();
-                int subIdx = 0;
-                while (r.HasData(1))
-                {
-                    int beforePeek = r.Position;
-                    byte val = r.ReadByte();
-                    if (r.Remaining == 0 || r.PeekByte() != 0x7C)
-                    {
-                        r.Seek(beforePeek);
-                        break;
-                    }
-
-                    r.TrySkipPipe();
-                    havokFields.Add(new DecodedField
-                    {
-                        Name = $"HavokParam[{subIdx++}]",
-                        DisplayValue = $"0x{val:X2}",
-                        DataOffset = beforePeek,
-                        DataLength = r.Position - beforePeek
-                    });
-                }
-
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "REFR_HAVOK_MOVE",
-                    DisplayValue = $"Cell={cellRefId}, Pos=({posX:F1}, {posY:F1}, {posZ:F1}), Rot=({rotX:F3}, {rotY:F3}, {rotZ:F3})",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos,
-                    Children = havokFields.Count > 0 ? havokFields : null
-                });
-            }
-            else if (hasMove && r.HasData(2))
-            {
-                // Combined MOVE+HAVOK: different format — havok-specific fields.
-                // uint16 flags + pipe, byte + pipe, byte + pipe,
-                // 3 floats pos + pipe, 4 floats quat + pipe, 3 floats havokPos + pipe, ...
-                ushort havokFlags = r.ReadUInt16();
-                r.TrySkipPipe();
-                byte param1 = r.HasData(1) ? r.ReadByte() : (byte)0;
-                r.TrySkipPipe();
-                byte param2 = r.HasData(1) ? r.ReadByte() : (byte)0;
-                r.TrySkipPipe();
-
-                // Reference position (3 floats as block + pipe)
-                float posX = 0, posY = 0, posZ = 0;
-                if (r.HasData(12))
-                {
-                    posX = r.ReadFloat();
-                    posY = r.ReadFloat();
-                    posZ = r.ReadFloat();
-                    r.TrySkipPipe();
-                }
-
-                // Rotation quaternion (4 floats as block + pipe)
-                float qX = 0, qY = 0, qZ = 0, qW = 0;
-                if (r.HasData(16))
-                {
-                    qX = r.ReadFloat();
-                    qY = r.ReadFloat();
-                    qZ = r.ReadFloat();
-                    qW = r.ReadFloat();
-                    r.TrySkipPipe();
-                }
-
-                // Havok world position (3 floats as block + pipe)
-                float hPosX = 0, hPosY = 0, hPosZ = 0;
-                if (r.HasData(12))
-                {
-                    hPosX = r.ReadFloat();
-                    hPosY = r.ReadFloat();
-                    hPosZ = r.ReadFloat();
-                    r.TrySkipPipe();
-                }
-
-                // Read any remaining pipe-terminated sub-values
-                var havokFields = new List<DecodedField>();
-                int subIdx = 0;
-                while (r.HasData(1))
-                {
-                    int beforePeek = r.Position;
-                    byte val = r.ReadByte();
-                    if (r.Remaining == 0 || r.PeekByte() != 0x7C)
-                    {
-                        r.Seek(beforePeek);
-                        break;
-                    }
-
-                    r.TrySkipPipe();
-                    havokFields.Add(new DecodedField
-                    {
-                        Name = $"HavokParam[{subIdx++}]",
-                        DisplayValue = $"0x{val:X2}",
-                        DataOffset = beforePeek,
-                        DataLength = r.Position - beforePeek
-                    });
-                }
-
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "REFR_HAVOK_MOVE",
-                    DisplayValue = $"Flags=0x{havokFlags:X4}, P1={param1}, P2={param2}, Pos=({posX:F1}, {posY:F1}, {posZ:F1}), Quat=({qX:F3}, {qY:F3}, {qZ:F3}, {qW:F3}), HPos=({hPosX:F1}, {hPosY:F1}, {hPosZ:F1})",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos,
-                    Children = havokFields.Count > 0 ? havokFields : null
-                });
-            }
-        }
-
-        if (HasFlag(flags, 0x00000008)) // REFR_CELL_CHANGED
-        {
-            int startPos = r.Position;
-            if (r.HasData(3))
-            {
-                var cellRefId = r.ReadRefId();
-                r.TrySkipPipe();
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "REFR_CELL_CHANGED",
-                    DisplayValue = $"NewCell={cellRefId}",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos
-                });
-            }
         }
 
         if (HasFlag(flags, 0x00000010)) // REFR_SCALE
@@ -444,187 +275,188 @@ public static class ChangedFormDecoder
             AddFloatField(ref r, result, "REFR_SCALE");
         }
 
-        if (HasFlag(flags, 0x00000020)) // REFR_INVENTORY
+        // ExtraDataList v2 — ExtraDataList::SaveGame_v2 is called ONCE when ANY
+        // bit in the non-actor mask is set. All extra data entries are written as
+        // a single ExtraDataList v2 block (vsval count + typed entries).
+        // Non-actor mask 0xa4021c40: bits 6(OWNERSHIP), 10(ITEM_DATA), 11(AMMO),
+        // 12(LOCK), 17(TELEPORT), 26(ACTIVATING_CHILDREN), 29(ENCOUNTER_ZONE), 31(GAME_ONLY)
+        const uint nonActorExtraMask = 0xa4021c40;
+        if ((flags & nonActorExtraMask) != 0)
         {
-            DecodeInventory(ref r, result);
+            DecodeExtraDataList(ref r, result, "EXTRA_DATA");
         }
 
-        if (HasFlag(flags, 0x00000040)) // REFR_EXTRA_OWNERSHIP
+        // Inventory — InventoryChanges::SaveGame_v2 called ONCE when bit 5 or bit 27 is set.
+        if ((flags & 0x08000020) != 0)
         {
-            AddRefIdField(ref r, result, "REFR_EXTRA_OWNERSHIP");
-        }
-    }
-
-    private static void DecodeObjectOverlay(ref FormDataReader r, uint flags, DecodedFormData result)
-    {
-        if (HasFlag(flags, 0x00000400)) // OBJECT_EXTRA_ITEM_DATA
-        {
-            // ExtraDataList_v2 block (from ExtraDataList::SaveGame_v2 decompilation)
-            DecodeExtraDataList(ref r, result, "OBJECT_EXTRA_ITEM_DATA");
+            string name = HasFlag(flags, 0x08000000) && !HasFlag(flags, 0x00000020)
+                ? "REFR_LEVELED_INVENTORY" : "REFR_INVENTORY";
+            DecodeInventory(ref r, result, name);
         }
 
-        if (HasFlag(flags, 0x00000800)) // OBJECT_EXTRA_AMMO
+        // Animation (bit 28, non-actor only — decompilation confirms !IsActor() gate)
+        if (HasFlag(flags, 0x10000000))
         {
-            int startPos = r.Position;
-            if (r.HasData(3))
-            {
-                var ammoRefId = r.ReadRefId();
-                r.TrySkipPipe();
-                int ammoCount = r.HasData(4) ? r.ReadInt32() : 0;
-                r.TrySkipPipe();
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "OBJECT_EXTRA_AMMO",
-                    DisplayValue = $"Ammo={ammoRefId}, Count={ammoCount}",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos
-                });
-            }
+            DecodeRefrAnimation(ref r, result);
         }
 
-        if (HasFlag(flags, 0x00001000)) // OBJECT_EXTRA_LOCK
+        // Zero-size flags — no data in save blob, just the change flag existence
+        if (HasFlag(flags, 0x00200000))
         {
-            int startPos = r.Position;
-            if (r.HasData(1))
-            {
-                byte lockLevel = r.ReadByte();
-                r.TrySkipPipe();
-                var keyRefId = r.HasData(3) ? r.ReadRefId() : default;
-                r.TrySkipPipe();
-                byte lockFlags = r.HasData(1) ? r.ReadByte() : (byte)0;
-                r.TrySkipPipe();
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "OBJECT_EXTRA_LOCK",
-                    DisplayValue = $"Level={lockLevel}, Key={keyRefId}, Flags=0x{lockFlags:X2}",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos
-                });
-            }
+            result.Fields.Add(new DecodedField { Name = "OBJECT_EMPTY", DisplayValue = "Container emptied", DataOffset = r.Position, DataLength = 0 });
         }
 
-        if (HasFlag(flags, 0x00020000)) // DOOR_EXTRA_TELEPORT
+        if (HasFlag(flags, 0x00400000))
         {
-            AddRefIdField(ref r, result, "DOOR_EXTRA_TELEPORT");
+            result.Fields.Add(new DecodedField { Name = "OBJECT_OPEN_DEFAULT_STATE", DisplayValue = "Open by default", DataOffset = r.Position, DataLength = 0 });
         }
 
-        if (HasFlag(flags, 0x00200000)) // OBJECT_EMPTY
+        if (HasFlag(flags, 0x00800000))
         {
-            result.Fields.Add(new DecodedField
-            {
-                Name = "OBJECT_EMPTY",
-                DisplayValue = "Container emptied",
-                DataOffset = r.Position,
-                DataLength = 0
-            });
+            result.Fields.Add(new DecodedField { Name = "OBJECT_OPEN_STATE", DisplayValue = "Open state", DataOffset = r.Position, DataLength = 0 });
         }
 
-        if (HasFlag(flags, 0x00400000)) // OBJECT_OPEN_DEFAULT_STATE
+        // CREATED_ONLY (bit 30) — separate ExtraDataList v2 block, NOT in the main mask
+        if (HasFlag(flags, 0x40000000))
         {
-            result.Fields.Add(new DecodedField
-            {
-                Name = "OBJECT_OPEN_DEFAULT_STATE",
-                DisplayValue = "Open by default",
-                DataOffset = r.Position,
-                DataLength = 0
-            });
-        }
-
-        if (HasFlag(flags, 0x00800000)) // OBJECT_OPEN_STATE
-        {
-            AddByteField(ref r, result, "OBJECT_OPEN_STATE");
-        }
-
-        DecodeRefrExtraFlags(ref r, flags, result);
-    }
-
-    private static void DecodeRefrExtraFlags(ref FormDataReader r, uint flags, DecodedFormData result)
-    {
-        if (HasFlag(flags, 0x04000000)) // REFR_EXTRA_ACTIVATING_CHILDREN
-        {
-            int startPos = r.Position;
-            if (r.HasData(1))
-            {
-                byte count = r.ReadByte();
-                r.TrySkipPipe();
-                var children = new List<DecodedField>();
-                for (int i = 0; i < count && r.HasData(3); i++)
-                {
-                    int childStart = r.Position;
-                    var childRefId = r.ReadRefId();
-                    r.TrySkipPipe();
-                    children.Add(new DecodedField
-                    {
-                        Name = $"Child[{i}]",
-                        DisplayValue = childRefId.ToString(),
-                        DataOffset = childStart,
-                        DataLength = r.Position - childStart
-                    });
-                }
-
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "REFR_EXTRA_ACTIVATING_CHILDREN",
-                    DisplayValue = $"{count} child ref(s)",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos,
-                    Children = children
-                });
-            }
-        }
-
-        if (HasFlag(flags, 0x08000000)) // REFR_LEVELED_INVENTORY
-        {
-            DecodeInventory(ref r, result, "REFR_LEVELED_INVENTORY");
-        }
-
-        if (HasFlag(flags, 0x10000000)) // REFR_ANIMATION
-        {
-            // From TESObjectREFR::SaveGame_v2: vsval byte-count prefix + raw animation bytes
-            int startPos = r.Position;
-            if (r.HasData(1))
-            {
-                uint byteCount = r.ReadVsval();
-                r.TrySkipPipe();
-                if (byteCount > 0 && r.HasData((int)byteCount))
-                {
-                    byte[] animData = r.ReadBytes((int)byteCount);
-                    result.Fields.Add(new DecodedField
-                    {
-                        Name = "REFR_ANIMATION",
-                        Value = animData,
-                        DisplayValue = $"Animation data ({byteCount} bytes)",
-                        DataOffset = startPos,
-                        DataLength = r.Position - startPos
-                    });
-                }
-                else
-                {
-                    result.Fields.Add(new DecodedField
-                    {
-                        Name = "REFR_ANIMATION",
-                        DisplayValue = $"Animation (count={byteCount}, 0 bytes)",
-                        DataOffset = startPos,
-                        DataLength = r.Position - startPos
-                    });
-                }
-            }
-        }
-
-        if (HasFlag(flags, 0x20000000)) // REFR_EXTRA_ENCOUNTER_ZONE
-        {
-            AddRefIdField(ref r, result, "REFR_EXTRA_ENCOUNTER_ZONE");
-        }
-
-        if (HasFlag(flags, 0x40000000)) // REFR_EXTRA_CREATED_ONLY
-        {
-            // ExtraDataList_v2 block (from ExtraDataList::SaveGame_v2 decompilation)
             DecodeExtraDataList(ref r, result, "REFR_EXTRA_CREATED_ONLY");
         }
+    }
 
-        if (HasFlag(flags, 0x80000000)) // REFR_EXTRA_GAME_ONLY
+    /// <summary>
+    ///     Decodes initial data prepended by the save infrastructure before SaveGame_v2 runs.
+    ///     Handles REFR_MOVE (bit 1), REFR_HAVOK_MOVE (bit 2), and REFR_CELL_CHANGED (bit 3).
+    ///     initialDataType: 4=basic (27B), 5=created/mobile (31B), 6=exterior (34B), 0=unknown.
+    /// </summary>
+    private static void DecodeRefrInitialData(ref FormDataReader r, uint flags, DecodedFormData result, int initialDataType = 0)
+    {
+        // ── Position flat struct ──
+        // BGSSaveLoadInitialData::SaveInitialData writes ONE flat struct (no intermediate pipes)
+        // via a single func_0x82689be0 call. Pipe only at the end.
+        // Type 4 (MOVE/HAVOK): RefID(3B) + 6 floats(24B) = 27B (0x1B)
+        // Type 5 (Created): + flags(1B) + baseFormRefId(3B) = 31B (0x1F)
+        // Type 6 (Cell Changed): + newCellRefId(3B) + gridX(2B) + gridY(2B) = 34B (0x22)
+        bool hasMove = HasFlag(flags, 0x00000002);
+        bool hasHavok = HasFlag(flags, 0x00000004);
+        bool hasCellChanged = HasFlag(flags, 0x00000008);
+        bool needsPositionBlock = hasMove || hasHavok || hasCellChanged;
+
+        if (needsPositionBlock && r.HasData(27))
         {
-            AddRawBlobField(ref r, result, "REFR_EXTRA_GAME_ONLY", "Game-only extra data");
+            int startPos = r.Position;
+            var cellRefId = r.ReadRefId();
+            float posX = r.ReadFloat();
+            float posY = r.ReadFloat();
+            float posZ = r.ReadFloat();
+            float rotX = r.ReadFloat();
+            float rotY = r.ReadFloat();
+            float rotZ = r.ReadFloat();
+
+            // Type 5 extras (Created): flags(1B) + baseFormRefId(3B) — still in the flat struct
+            string extraInfo = "";
+            if (initialDataType == 5 && r.HasData(4))
+            {
+                byte createdFlags = r.ReadByte();
+                var baseFormRef = r.ReadRefId();
+                extraInfo = $", CreatedFlags=0x{createdFlags:X2}, BaseForm={baseFormRef}";
+            }
+
+            // Type 6 extras (Cell Changed): newCell(3B) + gridX(2B) + gridY(2B) — still in the flat struct
+            if (initialDataType == 6 && r.HasData(7))
+            {
+                var newCellRef = r.ReadRefId();
+                short gridX = r.ReadInt16();
+                short gridY = r.ReadInt16();
+                extraInfo = $", NewCell={newCellRef}, Grid=({gridX}, {gridY})";
+            }
+
+            r.TrySkipPipe(); // single pipe after the entire flat struct
+
+            string name = hasMove ? "REFR_MOVE" : "REFR_HAVOK_MOVE";
+            result.Fields.Add(new DecodedField
+            {
+                Name = name,
+                DisplayValue = $"Cell={cellRefId}, Pos=({posX:F1}, {posY:F1}, {posZ:F1}), Rot=({rotX:F3}, {rotY:F3}, {rotZ:F3}){extraInfo}",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+        }
+
+        // ── Havok extra data ──
+        // BGSSaveLoadInitialData writes additional Havok state AFTER the flat struct
+        // when HAVOK_MOVE (bit 2) is set: vsval byte_count + pipe + raw bytes.
+        // From decompilation line 21855: checks bit 2, then func_0x82689948/func_0x82689990 pattern.
+        if (hasHavok && r.HasData(1))
+        {
+            int startPos = r.Position;
+            uint havokByteCount = r.ReadVsval();
+            r.TrySkipPipe();
+            if (havokByteCount > 0 && r.HasData((int)havokByteCount))
+            {
+                r.Seek(r.Position + (int)havokByteCount);
+            }
+
+            result.Fields.Add(new DecodedField
+            {
+                Name = "HAVOK_STATE",
+                DisplayValue = $"{havokByteCount} bytes",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+        }
+
+        // ── CELL_CHANGED standalone ──
+        // For Type 6, the newCell + grid are already embedded in the flat struct above.
+        // For other types (Type 4/5), CELL_CHANGED may appear separately.
+        if (hasCellChanged && initialDataType != 6 && r.HasData(3))
+        {
+            int startPos = r.Position;
+            var cellRefId = r.ReadRefId();
+            r.TrySkipPipe();
+            result.Fields.Add(new DecodedField
+            {
+                Name = "REFR_CELL_CHANGED",
+                DisplayValue = $"NewCell={cellRefId}",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+        }
+    }
+
+    /// <summary>
+    ///     Decodes REFR_ANIMATION (bit 28): vsval byte-count prefix + raw animation bytes.
+    /// </summary>
+    private static void DecodeRefrAnimation(ref FormDataReader r, DecodedFormData result)
+    {
+        int startPos = r.Position;
+        if (!r.HasData(1))
+        {
+            return;
+        }
+
+        uint byteCount = r.ReadVsval();
+        r.TrySkipPipe();
+        if (byteCount > 0 && r.HasData((int)byteCount))
+        {
+            byte[] animData = r.ReadBytes((int)byteCount);
+            result.Fields.Add(new DecodedField
+            {
+                Name = "REFR_ANIMATION",
+                Value = animData,
+                DisplayValue = $"Animation data ({byteCount} bytes)",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+        }
+        else
+        {
+            result.Fields.Add(new DecodedField
+            {
+                Name = "REFR_ANIMATION",
+                DisplayValue = $"Animation (count={byteCount}, 0 bytes)",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
         }
     }
 
@@ -662,7 +494,14 @@ public static class ChangedFormDecoder
         }
 
         // ── Layer 2: TESObjectREFR::SaveGame_v2 ───────────────────────
-        // TESForm::SaveGame_v2 handles MOVE data
+        // TESObjectREFR::SaveGame_v2 calls TESForm::SaveGame first (decompiled line 12278).
+        // When bit 0 is set, writes a uint32 of form flags.
+        if (HasFlag(flags, 0x00000001)) // FORM_FLAGS (bit 0) — TESForm::SaveGame
+        {
+            AddUInt32Field(ref r, result, "FORM_FLAGS");
+        }
+
+        // REFR_MOVE (bit 1)
         if (HasFlag(flags, 0x00000002)) // REFR_MOVE (bit 1)
         {
             int startPos = r.Position;
@@ -781,16 +620,22 @@ public static class ChangedFormDecoder
             DecodeActorValueModifierList(ref r, result, "ACTOR_MODIFIER_LIST_2");
         }
 
-        // ── Layer 7: Character/Creature tail ───────────────────────────
-        // Character::SaveGame writes 2 bytes after Actor::SaveGame_v2.
-        // Creature may have different tail (TODO: add Creature::SaveGame decompilation).
+        // ── Layer 7: ActorMover state (Actor+0x1a0, unconditional) ─────
+        // Actor::SaveGame_v2 always calls vtable[0x28] on Actor+0x1a0 = ActorMover.
+        // This writes movement/pathfinding state AFTER all flag-gated sections.
+        // Evidence: Actor::SaveGame_v2 line 13833 in savegame_decompiled.txt.
+        DecodeActorMover(ref r, result);
+
+        // ── Layer 8: Character/Creature tail ─────────────────────────
+        // Character::SaveGame writes 2 bytes (+0x1D0, +0x1D1) after Actor::SaveGame_v2.
+        // Creature::SaveGame has no known tail bytes.
         if (isCharacter)
         {
             AddByteField(ref r, result, "CHARACTER_FIELD_A");
             AddByteField(ref r, result, "CHARACTER_FIELD_B");
         }
 
-        // ── Layer 8: Remaining extra flags ─────────────────────────────
+        // ── Layer 9: Remaining extra flags ─────────────────────────────
         // Note: bit 28 (ANIMATION) is NOT saved for actors by TESObjectREFR::SaveGame_v2.
         // The decompilation shows: animation is gated on !IsActor(), so actors skip it.
         if (HasFlag(flags, 0x04000000)) // REFR_EXTRA_ACTIVATING_CHILDREN
@@ -989,6 +834,159 @@ public static class ChangedFormDecoder
         AddRefIdField(ref r, result, "MOBILE_REFID_80");   // +0x80
     }
 
+    /// <summary>
+    ///     Decodes ActorMover::SaveGame data (Actor+0x1a0 vtable call).
+    ///     Called unconditionally at the end of Actor::SaveGame_v2.
+    ///     Evidence: ActorMover::SaveGame decompilation lines 20547-20598.
+    /// </summary>
+    private static void DecodeActorMover(ref FormDataReader r, DecodedFormData result)
+    {
+        if (!r.HasData(4)) return;
+
+        // ── 19 unconditional fields ──
+
+        // Fields 1-2: uint16 × 2 (+0x40, +0x42)
+        AddUInt16Field(ref r, result, "MOVER_FIELD_40");
+        AddUInt16Field(ref r, result, "MOVER_FIELD_42");
+
+        // Field 3: byte (+0x70)
+        AddByteField(ref r, result, "MOVER_FIELD_70");
+
+        // Field 4: uint32 (+0x34)
+        AddUInt32Field(ref r, result, "MOVER_FIELD_34");
+
+        // Field 5: byte (+0x71)
+        AddByteField(ref r, result, "MOVER_FIELD_71");
+
+        // Field 6: uint32 (+0x38)
+        AddUInt32Field(ref r, result, "MOVER_FIELD_38");
+
+        // Fields 7-8: bytes (+0x72, +0x73)
+        AddByteField(ref r, result, "MOVER_FIELD_72");
+        AddByteField(ref r, result, "MOVER_FIELD_73");
+
+        // Field 9: 12 bytes (3 floats, position) at +0x04
+        if (r.HasData(12))
+        {
+            int startPos = r.Position;
+            float x = r.ReadFloat();
+            float y = r.ReadFloat();
+            float z = r.ReadFloat();
+            r.TrySkipPipe();
+            result.Fields.Add(new DecodedField
+            {
+                Name = "MOVER_GOAL_POS",
+                DisplayValue = $"({x:G}, {y:G}, {z:G})",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+        }
+
+        // Field 10: 12 bytes (3 floats, rotation/direction) at +0x10
+        if (r.HasData(12))
+        {
+            int startPos = r.Position;
+            float x = r.ReadFloat();
+            float y = r.ReadFloat();
+            float z = r.ReadFloat();
+            r.TrySkipPipe();
+            result.Fields.Add(new DecodedField
+            {
+                Name = "MOVER_GOAL_ROT",
+                DisplayValue = $"({x:G}, {y:G}, {z:G})",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+        }
+
+        // Field 11: uint32 (+0x3c)
+        AddUInt32Field(ref r, result, "MOVER_FIELD_3C");
+
+        // Fields 12-16: bytes (+0x74, +0x75, +0x77, +0x76, +0x78)
+        AddByteField(ref r, result, "MOVER_FIELD_74");
+        AddByteField(ref r, result, "MOVER_FIELD_75");
+        AddByteField(ref r, result, "MOVER_FIELD_77");
+        AddByteField(ref r, result, "MOVER_FIELD_76");
+        AddByteField(ref r, result, "MOVER_FIELD_78");
+
+        // Field 17: uint32 (+0x6c)
+        AddUInt32Field(ref r, result, "MOVER_FIELD_6C");
+
+        // Field 18: uint32 (computed: global_timer - +0x7c)
+        AddUInt32Field(ref r, result, "MOVER_TIMER_DELTA");
+
+        // Field 19: uint32 (+0x84)
+        AddUInt32Field(ref r, result, "MOVER_FIELD_84");
+
+        // ── Vtable call on embedded object at +0x44 (path handler) ──
+        // This writes variable data. From hex analysis of simple NPCs (processLevel=0xFF):
+        // 3 floats (12B) + 3 RefIDs + uint32 + uint16 + 2 bytes = 37B total with pipes.
+        // For robustness, read these as individual typed fields.
+        if (r.HasData(12))
+        {
+            int startPos = r.Position;
+            float px = r.ReadFloat();
+            float py = r.ReadFloat();
+            float pz = r.ReadFloat();
+            r.TrySkipPipe();
+            result.Fields.Add(new DecodedField
+            {
+                Name = "MOVER_PATH_TARGET",
+                DisplayValue = $"({px:G}, {py:G}, {pz:G})",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+        }
+
+        AddRefIdField(ref r, result, "MOVER_PATH_REF_0");
+        AddRefIdField(ref r, result, "MOVER_PATH_REF_1");
+        AddRefIdField(ref r, result, "MOVER_PATH_REF_2");
+        AddUInt32Field(ref r, result, "MOVER_PATH_DATA");
+        AddUInt16Field(ref r, result, "MOVER_PATH_FLAGS");
+        AddByteField(ref r, result, "MOVER_PATH_STATE_A");
+        AddByteField(ref r, result, "MOVER_PATH_STATE_B");
+
+        // ── RefID at +0x2c (SaveFormID) ──
+        AddRefIdField(ref r, result, "MOVER_TARGET_REF");
+
+        // ── Flags byte (encodes presence of combat/weapon/group state) ──
+        if (!r.HasData(1)) return;
+        int flagsStart = r.Position;
+        byte moverFlags = r.ReadByte();
+        r.TrySkipPipe();
+        result.Fields.Add(new DecodedField
+        {
+            Name = "MOVER_FLAGS",
+            DisplayValue = $"0x{moverFlags:X2}",
+            DataOffset = flagsStart,
+            DataLength = r.Position - flagsStart
+        });
+
+        // Conditional sections based on flags:
+        // bit 0: combat target state (+0x1c) — type byte + vtable LoadGame
+        if ((moverFlags & 1) != 0 && r.HasData(1))
+        {
+            AddByteField(ref r, result, "MOVER_COMBAT_TYPE");
+            // The combat target object's SaveGame writes variable data
+            AddRawBlobField(ref r, result, "MOVER_COMBAT_DATA",
+                "Combat target state (variable, undecoded)");
+        }
+
+        // bit 1: weapon state (+0x20)
+        if ((moverFlags & 2) != 0 && r.HasData(1))
+        {
+            AddRawBlobField(ref r, result, "MOVER_WEAPON_DATA",
+                "Weapon state (variable, undecoded)");
+        }
+
+        // bit 2 or bit 3: combat group (+0x24) — vtable SaveGame
+        if ((moverFlags & 0x0C) != 0 && r.HasData(1))
+        {
+            AddRawBlobField(ref r, result, "MOVER_GROUP_DATA",
+                "Combat group state (variable, undecoded)");
+        }
+    }
+
     // ────────────────────────────────────────────────────────────────
     //  NPC_ decoder (ChangeType 10) — Base NPC modifications
     // ────────────────────────────────────────────────────────────────
@@ -1014,35 +1012,9 @@ public static class ChangedFormDecoder
 
         if (HasFlag(flags, 0x00000010)) // ACTOR_BASE_SPELLLIST
         {
-            int startPos = r.Position;
-            if (r.HasData(1))
-            {
-                byte spellCount = r.ReadByte();
-                r.TrySkipPipe();
-                var spells = new List<DecodedField>();
-                for (int i = 0; i < spellCount && r.HasData(3); i++)
-                {
-                    int sStart = r.Position;
-                    var spellRef = r.ReadRefId();
-                    r.TrySkipPipe();
-                    spells.Add(new DecodedField
-                    {
-                        Name = $"Spell[{i}]",
-                        DisplayValue = spellRef.ToString(),
-                        DataOffset = sStart,
-                        DataLength = r.Position - sStart
-                    });
-                }
-
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "ACTOR_BASE_SPELLLIST",
-                    DisplayValue = $"{spellCount} spell(s)",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos,
-                    Children = spells
-                });
-            }
+            // TESSpellList::SaveGame writes two vsval-counted lists:
+            // [vsval spellCount] pipe [RefID pipe × N] [vsval leveledCount] pipe [RefID pipe × N]
+            DecodeSpellList(ref r, result);
         }
 
         if (HasFlag(flags, 0x00000020)) // ACTOR_BASE_FULLNAME
@@ -1222,35 +1194,9 @@ public static class ChangedFormDecoder
 
         if (HasFlag(flags, 0x00000010)) // ACTOR_BASE_SPELLLIST
         {
-            int startPos = r.Position;
-            if (r.HasData(1))
-            {
-                byte spellCount = r.ReadByte();
-                r.TrySkipPipe();
-                var spells = new List<DecodedField>();
-                for (int i = 0; i < spellCount && r.HasData(3); i++)
-                {
-                    int sStart = r.Position;
-                    var spellRef = r.ReadRefId();
-                    r.TrySkipPipe();
-                    spells.Add(new DecodedField
-                    {
-                        Name = $"Spell[{i}]",
-                        DisplayValue = spellRef.ToString(),
-                        DataOffset = sStart,
-                        DataLength = r.Position - sStart
-                    });
-                }
-
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "ACTOR_BASE_SPELLLIST",
-                    DisplayValue = $"{spellCount} spell(s)",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos,
-                    Children = spells
-                });
-            }
+            // TESSpellList::SaveGame writes two vsval-counted lists:
+            // [vsval spellCount] pipe [RefID pipe × N] [vsval leveledCount] pipe [RefID pipe × N]
+            DecodeSpellList(ref r, result);
         }
 
         if (HasFlag(flags, 0x00000020)) // ACTOR_BASE_FULLNAME
@@ -1283,6 +1229,68 @@ public static class ChangedFormDecoder
 
     private static void DecodeCell(ref FormDataReader r, uint flags, DecodedFormData result)
     {
+        // ── CELL initial data ──
+        // Bits 28/29/30 control a flat initial data struct (no pipes between fields).
+        // DETACHTIME (bit 30) is required; EXTERIOR_CHAR (bit 29) or EXTERIOR_SHORT (bit 28) add coords.
+        // Format per xEdit wbDefinitionsFNVSaves.pas:
+        //   Type 01 (bits 30+29): uint16 worldspaceIndex + int8 coordX + int8 coordY + uint32 detachTime
+        //   Type 02 (bits 30+28): uint16 worldspaceIndex + int16 coordX + int16 coordY + uint32 detachTime
+        //   Type 03 (bit 30 only): uint32 detachTime
+        if (HasFlag(flags, 0x40000000)) // CELL_DETACHTIME
+        {
+            if (HasFlag(flags, 0x20000000) && r.HasData(8)) // + EXTERIOR_CHAR → Type 01
+            {
+                int startPos = r.Position;
+                ushort wsIndex = r.ReadUInt16();
+                sbyte coordX = (sbyte)r.ReadByte();
+                sbyte coordY = (sbyte)r.ReadByte();
+                uint detachTime = r.ReadUInt32();
+                r.TrySkipPipe();
+                result.Fields.Add(new DecodedField
+                {
+                    Name = "CELL_DETACH_EXTERIOR_CHAR",
+                    DisplayValue = $"ws={wsIndex} ({coordX},{coordY}) detach={detachTime}",
+                    DataOffset = startPos,
+                    DataLength = r.Position - startPos,
+                    Children =
+                    [
+                        new() { Name = "WorldspaceIndex", DisplayValue = wsIndex.ToString(), DataOffset = startPos, DataLength = 2 },
+                        new() { Name = "CoordX", DisplayValue = coordX.ToString(), DataOffset = startPos + 2, DataLength = 1 },
+                        new() { Name = "CoordY", DisplayValue = coordY.ToString(), DataOffset = startPos + 3, DataLength = 1 },
+                        new() { Name = "DetachTime", DisplayValue = detachTime.ToString(), DataOffset = startPos + 4, DataLength = 4 }
+                    ]
+                });
+            }
+            else if (HasFlag(flags, 0x10000000) && r.HasData(10)) // + EXTERIOR_SHORT → Type 02
+            {
+                int startPos = r.Position;
+                ushort wsIndex = r.ReadUInt16();
+                short coordX = r.ReadInt16();
+                short coordY = r.ReadInt16();
+                uint detachTime = r.ReadUInt32();
+                r.TrySkipPipe();
+                result.Fields.Add(new DecodedField
+                {
+                    Name = "CELL_DETACH_EXTERIOR_SHORT",
+                    DisplayValue = $"ws={wsIndex} ({coordX},{coordY}) detach={detachTime}",
+                    DataOffset = startPos,
+                    DataLength = r.Position - startPos,
+                    Children =
+                    [
+                        new() { Name = "WorldspaceIndex", DisplayValue = wsIndex.ToString(), DataOffset = startPos, DataLength = 2 },
+                        new() { Name = "CoordX", DisplayValue = coordX.ToString(), DataOffset = startPos + 2, DataLength = 2 },
+                        new() { Name = "CoordY", DisplayValue = coordY.ToString(), DataOffset = startPos + 4, DataLength = 2 },
+                        new() { Name = "DetachTime", DisplayValue = detachTime.ToString(), DataOffset = startPos + 6, DataLength = 4 }
+                    ]
+                });
+            }
+            else if (r.HasData(4)) // DETACHTIME only → Type 03
+            {
+                AddUInt32Field(ref r, result, "CELL_DETACHTIME");
+            }
+        }
+
+        // ── CELL body fields ──
         // FORM_FLAGS (0x01) — no body data
 
         if (HasFlag(flags, 0x00000002)) // CELL_FLAGS
@@ -1298,77 +1306,6 @@ public static class ChangedFormDecoder
         if (HasFlag(flags, 0x00000008)) // CELL_OWNERSHIP
         {
             AddRefIdField(ref r, result, "CELL_OWNERSHIP");
-        }
-
-        if (HasFlag(flags, 0x10000000)) // CELL_EXTERIOR_SHORT
-        {
-            int startPos = r.Position;
-            if (r.HasData(1))
-            {
-                byte count = r.ReadByte();
-                r.TrySkipPipe();
-                var refs = new List<DecodedField>();
-                for (int i = 0; i < count && r.HasData(3); i++)
-                {
-                    int refStart = r.Position;
-                    var refId = r.ReadRefId();
-                    r.TrySkipPipe();
-                    refs.Add(new DecodedField
-                    {
-                        Name = $"Ref[{i}]",
-                        DisplayValue = refId.ToString(),
-                        DataOffset = refStart,
-                        DataLength = r.Position - refStart
-                    });
-                }
-
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "CELL_EXTERIOR_SHORT",
-                    DisplayValue = $"{count} ref(s)",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos,
-                    Children = refs
-                });
-            }
-        }
-
-        if (HasFlag(flags, 0x20000000)) // CELL_EXTERIOR_CHAR
-        {
-            int startPos = r.Position;
-            if (r.HasData(1))
-            {
-                byte count = r.ReadByte();
-                r.TrySkipPipe();
-                var refs = new List<DecodedField>();
-                for (int i = 0; i < count && r.HasData(3); i++)
-                {
-                    int refStart = r.Position;
-                    var refId = r.ReadRefId();
-                    r.TrySkipPipe();
-                    refs.Add(new DecodedField
-                    {
-                        Name = $"Ref[{i}]",
-                        DisplayValue = refId.ToString(),
-                        DataOffset = refStart,
-                        DataLength = r.Position - refStart
-                    });
-                }
-
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "CELL_EXTERIOR_CHAR",
-                    DisplayValue = $"{count} ref(s)",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos,
-                    Children = refs
-                });
-            }
-        }
-
-        if (HasFlag(flags, 0x40000000)) // CELL_DETACHTIME
-        {
-            AddUInt32Field(ref r, result, "CELL_DETACHTIME");
         }
 
         if (HasFlag(flags, 0x80000000)) // CELL_SEENDATA
@@ -1402,8 +1339,25 @@ public static class ChangedFormDecoder
 
     private static void DecodeProjectile(ref FormDataReader r, uint flags, DecodedFormData result)
     {
-        // Projectiles: FORM_FLAGS stores no body data (same as actors).
-        DecodeRefrBase(ref r, flags, result);
+        // Phase 1: Initial data (MOVE, HAVOK_MOVE, CELL_CHANGED)
+        DecodeRefrInitialData(ref r, flags, result);
+
+        // Phase 2: Body data — projectiles don't write FORM_FLAGS body data.
+        if (HasFlag(flags, 0x00000010)) // REFR_SCALE
+        {
+            AddFloatField(ref r, result, "REFR_SCALE");
+        }
+
+        // Bit 29: Projectile state — full MobileObject::SaveGame_v2 chain + Projectile::SaveGame data.
+        // Chain: process_level → func_0x823ae3d0(REFR v2) → 14 MobileObject fields → process →
+        //        9 floats → 3 RefIDs → 12B vector → 1 float → 1 byte → 1 uint32 →
+        //        48B matrix → 12B vector → 1 float → 3 floats → conditional FormID →
+        //        linked list → vsval list → 1 byte → [subtype tail: Missile=1 float, Flame=2 floats]
+        // func_0x823ae3d0 is NOT YET DECOMPILED — raw blob until we can fully parse.
+        if (HasFlag(flags, 0x20000000))
+        {
+            AddRawBlobField(ref r, result, "PROJECTILE_STATE", "Projectile save state (MobileObject + Projectile chain)");
+        }
 
         // Projectiles have REFR_EXTRA_GAME_ONLY directly (no object/actor overlay)
         if (HasFlag(flags, 0x80000000)) // REFR_EXTRA_GAME_ONLY
@@ -1542,7 +1496,7 @@ public static class ChangedFormDecoder
             int startPos = r.Position;
             if (r.HasData(1))
             {
-                byte count = r.ReadByte();
+                uint count = r.ReadVsval();
                 r.TrySkipPipe();
                 var reactions = new List<DecodedField>();
                 for (int i = 0; i < count && r.HasData(3); i++)
@@ -1550,12 +1504,14 @@ public static class ChangedFormDecoder
                     int rStart = r.Position;
                     var factionRef = r.ReadRefId();
                     r.TrySkipPipe();
+                    int modifier = r.HasData(4) ? r.ReadInt32() : 0;
+                    r.TrySkipPipe();
                     int reaction = r.HasData(4) ? r.ReadInt32() : 0;
                     r.TrySkipPipe();
                     reactions.Add(new DecodedField
                     {
                         Name = $"Reaction[{i}]",
-                        DisplayValue = $"Faction={factionRef}, Value={reaction}",
+                        DisplayValue = $"Faction={factionRef}, Modifier={modifier}, Reaction={reaction}",
                         DataOffset = rStart,
                         DataLength = r.Position - rStart
                     });
@@ -1817,6 +1773,20 @@ public static class ChangedFormDecoder
                     uint val2 = r.ReadUInt32();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraTypeName(type)}: 0x{val1:X8}, 0x{val2:X8}";
+                    break;
+                }
+
+                // LockData (0x4D): byte lockLevel + RefID key + byte lockFlags
+                case 0x4D:
+                {
+                    if (!r.HasData(1)) { aborted = true; break; }
+                    byte lockLevel = r.ReadByte();
+                    r.TrySkipPipe();
+                    var keyRef = r.HasData(3) ? r.ReadRefId() : default;
+                    r.TrySkipPipe();
+                    byte lockFlags = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    r.TrySkipPipe();
+                    displayValue = $"LockData: Level={lockLevel}, Key={keyRef}, Flags=0x{lockFlags:X2}";
                     break;
                 }
 
@@ -2101,12 +2071,43 @@ public static class ChangedFormDecoder
                 // These read the known prefix for diagnostics, then abort since the
                 // remainder depends on virtual dispatch or undecompiled sub-functions.
 
-                case 0x0D: // ActivateRef: RefID + opaque func_0x823e8998
+                case 0x0D: // ActivateRef: RefID + ScriptLocals::SaveGame
                 {
+                    // ExtraDataList::SaveGame_v2 line 6497: RefID + ScriptLocals::SaveGame
+                    // ScriptLocals format (decompiled from savegame_decompiled.txt line 17528):
+                    //   [vsval varCount] per var { [uint32 index + pipe]
+                    //     if index & 0x80000000: [3B RefID + pipe]
+                    //     else: [8B double + pipe] }
+                    //   [byte hasEventData + pipe]
+                    //   if hasEventData: [8B eventData + pipe]
+                    //   [byte scriptFlag + pipe]
                     if (!r.HasData(3)) { aborted = true; break; }
                     var refId = r.ReadRefId(); r.TrySkipPipe();
-                    displayValue = $"ActivateRef: {refId} (partial — sub-function data follows)";
-                    aborted = true;
+                    if (!r.HasData(1)) { displayValue = $"ActivateRef: {refId}"; break; }
+                    uint slVarCount = r.ReadVsval(); r.TrySkipPipe();
+                    for (int j = 0; j < slVarCount && r.HasData(4); j++)
+                    {
+                        uint varIdx = r.ReadUInt32(); r.TrySkipPipe();
+                        if ((varIdx & 0x80000000) != 0)
+                        {
+                            // Ref variable: 3B RefID
+                            if (r.HasData(3)) { r.ReadRefId(); r.TrySkipPipe(); }
+                        }
+                        else
+                        {
+                            // Value variable: 8B double
+                            if (r.HasData(8)) { r.ReadBytes(8); r.TrySkipPipe(); }
+                        }
+                    }
+                    // hasEventData byte
+                    byte hasEvent = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
+                    if (hasEvent != 0 && r.HasData(8))
+                    {
+                        r.ReadBytes(8); r.TrySkipPipe(); // 8B event data
+                    }
+                    // scriptFlag byte
+                    if (r.HasData(1)) { r.ReadByte(); r.TrySkipPipe(); }
+                    displayValue = $"ActivateRef: {refId}, {slVarCount} script var(s)";
                     break;
                 }
 
@@ -2275,7 +2276,7 @@ public static class ChangedFormDecoder
             0x6E => "Extra0x6E",
             0x70 => "BoundBody",
             0x73 => "Extra0x73",
-            0x74 => "Extra0x74",
+            0x74 => "EncounterZone",
             0x75 => "Extra0x75",
             0x7C => "OwnerFormIDs",
             0x89 => "Extra0x89",
@@ -2365,71 +2366,52 @@ public static class ChangedFormDecoder
     //  Script data decoding helper
     // ────────────────────────────────────────────────────────────────
 
-    private static void DecodeScriptData(ref FormDataReader r, DecodedFormData result, string name)
+    private static void DecodeScriptLocals(ref FormDataReader r, DecodedFormData result, string name)
     {
-        // Script data: each byte of the RefID is pipe-terminated individually,
-        // then variable count (byte + pipe), then variables.
+        // ScriptLocals::SaveGame format (from decompilation at line 17538):
+        //   vsval variable_count + pipe
+        //   per variable:
+        //     uint32 LE (formID, bit 31 = ref flag) + pipe
+        //     if ref: vsval(refIndex) + pipe
+        //     if value: double(8B LE) + pipe
+        //   byte hasEventList + pipe
+        //   if hasEventList: 8 raw bytes + pipe
+        //   byte hasScript + pipe
         int startPos = r.Position;
         if (!r.HasData(1))
         {
             return;
         }
 
-        // Read script RefID — each byte is pipe-terminated in the save buffer
-        byte refByte0 = r.ReadByte(); r.TrySkipPipe();
-        byte refByte1 = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
-        byte refByte2 = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
-        uint refRaw = ((uint)refByte0 << 16) | ((uint)refByte1 << 8) | refByte2;
-        var scriptRef = new SaveRefId(refRaw);
+        uint varCount = r.ReadVsval();
+        r.TrySkipPipe();
 
-        uint varCount = 0;
-        if (r.HasData(1))
-        {
-            // ScriptLocals::SaveGame uses vsval for variable count (func_0x82689990)
-            varCount = r.ReadVsval();
-            r.TrySkipPipe();
-        }
-
-        // Read variable data: each variable is type(byte+pipe) + value(type-dependent+pipe)
         var vars = new List<DecodedField>();
-        for (int i = 0; i < (int)varCount && r.HasData(1); i++)
+        for (int i = 0; i < (int)varCount && r.HasData(4); i++)
         {
             int varStart = r.Position;
-            byte varType = r.ReadByte();
+            uint formId = r.ReadUInt32();
             r.TrySkipPipe();
             string varValue;
 
-            switch (varType)
+            if ((formId & 0x80000000) != 0)
             {
-                case 0 when r.HasData(8):
-                {
-                    // Double/float64 variable — 8 bytes as a block then pipe
-                    double dblVal = BitConverter.ToDouble(r.ReadBytes(8));
-                    r.TrySkipPipe();
-                    varValue = $"double={dblVal:G}";
-                    break;
-                }
-                case 1 when r.HasData(1):
-                {
-                    // RefID variable — 3 pipe-terminated bytes
-                    byte rb0 = r.ReadByte(); r.TrySkipPipe();
-                    byte rb1 = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
-                    byte rb2 = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
-                    uint raw = ((uint)rb0 << 16) | ((uint)rb1 << 8) | rb2;
-                    var refId = new SaveRefId(raw);
-                    varValue = $"ref={refId}";
-                    break;
-                }
-                default:
-                    varValue = $"type={varType} (unknown format, stopping)";
-                    vars.Add(new DecodedField
-                    {
-                        Name = $"Var[{i}]",
-                        DisplayValue = varValue,
-                        DataOffset = varStart,
-                        DataLength = r.Position - varStart
-                    });
-                    goto doneVars;
+                // Reference-type variable: formID has bit 31 set, followed by vsval index
+                uint actualFormId = formId & 0x7FFFFFFF;
+                uint refIndex = r.HasData(1) ? r.ReadVsval() : 0;
+                r.TrySkipPipe();
+                varValue = $"ref FormID=0x{actualFormId:X8}, index={refIndex}";
+            }
+            else if (r.HasData(8))
+            {
+                // Value-type variable: formID without bit 31, followed by 8-byte double
+                double dblVal = BitConverter.ToDouble(r.ReadBytes(8));
+                r.TrySkipPipe();
+                varValue = $"FormID=0x{formId:X8}, value={dblVal:G}";
+            }
+            else
+            {
+                varValue = $"FormID=0x{formId:X8} (insufficient data for value)";
             }
 
             vars.Add(new DecodedField
@@ -2441,11 +2423,25 @@ public static class ChangedFormDecoder
             });
         }
 
-        doneVars:
+        // hasEventList byte + pipe
+        byte hasEventList = r.HasData(1) ? r.ReadByte() : (byte)0;
+        r.TrySkipPipe();
+        string eventDisplay = "no events";
+        if (hasEventList != 0 && r.HasData(8))
+        {
+            byte[] eventData = r.ReadBytes(8);
+            r.TrySkipPipe();
+            eventDisplay = $"events={Convert.ToHexString(eventData)}";
+        }
+
+        // hasScript byte + pipe
+        byte hasScript = r.HasData(1) ? r.ReadByte() : (byte)0;
+        r.TrySkipPipe();
+
         result.Fields.Add(new DecodedField
         {
             Name = name,
-            DisplayValue = $"Script={scriptRef}, {varCount} var(s)",
+            DisplayValue = $"{varCount} var(s), {eventDisplay}, hasScript={hasScript}",
             DataOffset = startPos,
             DataLength = r.Position - startPos,
             Children = vars.Count > 0 ? vars : null
@@ -2457,6 +2453,24 @@ public static class ChangedFormDecoder
     // ────────────────────────────────────────────────────────────────
 
     private static bool HasFlag(uint flags, uint mask) => (flags & mask) != 0;
+
+    private static void AddUInt16Field(ref FormDataReader r, DecodedFormData result, string name)
+    {
+        int startPos = r.Position;
+        if (r.HasData(2))
+        {
+            ushort value = r.ReadUInt16();
+            r.TrySkipPipe();
+            result.Fields.Add(new DecodedField
+            {
+                Name = name,
+                Value = value,
+                DisplayValue = $"0x{value:X4}",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+        }
+    }
 
     private static void AddUInt32Field(ref FormDataReader r, DecodedFormData result, string name)
     {
@@ -2610,6 +2624,63 @@ public static class ChangedFormDecoder
     /// <summary>
     ///     Decodes ACTOR_BASE_DATA: PDB struct = 24 bytes written as single SaveData block + pipe.
     /// </summary>
+    /// <summary>
+    ///     Decodes TESSpellList::SaveGame data: two vsval-counted RefID lists
+    ///     (spells, then leveled spells).
+    /// </summary>
+    private static void DecodeSpellList(ref FormDataReader r, DecodedFormData result)
+    {
+        int startPos = r.Position;
+        if (!r.HasData(1)) return;
+
+        uint spellCount = r.ReadVsval();
+        r.TrySkipPipe();
+        var children = new List<DecodedField>();
+
+        for (int i = 0; i < (int)spellCount && r.HasData(3); i++)
+        {
+            int sStart = r.Position;
+            var spellRef = r.ReadRefId();
+            r.TrySkipPipe();
+            children.Add(new DecodedField
+            {
+                Name = $"Spell[{i}]",
+                DisplayValue = spellRef.ToString(),
+                DataOffset = sStart,
+                DataLength = r.Position - sStart
+            });
+        }
+
+        // Second list: leveled spells (same format)
+        if (r.HasData(1))
+        {
+            uint leveledCount = r.ReadVsval();
+            r.TrySkipPipe();
+            for (int i = 0; i < (int)leveledCount && r.HasData(3); i++)
+            {
+                int sStart = r.Position;
+                var spellRef = r.ReadRefId();
+                r.TrySkipPipe();
+                children.Add(new DecodedField
+                {
+                    Name = $"LeveledSpell[{i}]",
+                    DisplayValue = spellRef.ToString(),
+                    DataOffset = sStart,
+                    DataLength = r.Position - sStart
+                });
+            }
+        }
+
+        result.Fields.Add(new DecodedField
+        {
+            Name = "ACTOR_BASE_SPELLLIST",
+            DisplayValue = $"{spellCount} spell(s)" + (children.Count > (int)spellCount ? $", {children.Count - (int)spellCount} leveled" : ""),
+            DataOffset = startPos,
+            DataLength = r.Position - startPos,
+            Children = children
+        });
+    }
+
     private static void DecodeActorBaseData(ref FormDataReader r, DecodedFormData result)
     {
         int startPos = r.Position;
