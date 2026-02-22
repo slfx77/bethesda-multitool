@@ -551,14 +551,13 @@ public static class ChangedFormDecoder
         // ── Layer 4: Process state ─────────────────────────────────────
         // Process::SaveGame_v2 vtable dispatch based on process_level.
         // For 0xFF (no process), nothing is written.
-        // For active processes, complex variable-length data is written.
+        // For active processes, the full inheritance chain is written.
         if (processLevel != 0xFF)
         {
-            // Process state is complex and variable-length. Mark remaining as blob
-            // until we implement per-level process decoders.
-            AddRawBlobField(ref r, result, "PROCESS_STATE",
-                $"Process level {processLevel} state data (undecoded)");
-            return; // Can't decode further — process state consumes unknown bytes
+            if (!DecodeProcessState(ref r, result, processLevel, flags))
+            {
+                return; // Process state hit unknown vtable dispatch — remaining bytes consumed as blob
+            }
         }
 
         // ── Layer 5: Actor unconditional reads (34 fields) ─────────────
@@ -985,6 +984,728 @@ public static class ChangedFormDecoder
             AddRawBlobField(ref r, result, "MOVER_GROUP_DATA",
                 "Combat group state (variable, undecoded)");
         }
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    //  Process state decoders (BaseProcess → LowProcess → MiddleLow →
+    //  MiddleHigh → HighProcess inheritance chain)
+    //  Decompilation reference: savegame_decompiled.txt
+    // ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    ///     Dispatches process state decoding by process level.
+    ///     Returns true if fully parsed, false if aborted (remaining bytes consumed as blob).
+    ///     Process levels: 0=High, 1=MiddleHigh, 2=MiddleLow, 3=Low, 4=Base (maybe).
+    /// </summary>
+    private static bool DecodeProcessState(ref FormDataReader r, DecodedFormData result, byte processLevel, uint flags)
+    {
+        if (!r.HasData(4)) return true; // nothing to parse
+
+        // Each level calls its parent first, then writes its own fields.
+        // We decode in inheritance order: Base → Low → MiddleLow → MiddleHigh → High
+        bool ok = processLevel switch
+        {
+            0x00 => DecodeHighProcess(ref r, result, flags),
+            0x01 => DecodeMiddleHighProcess(ref r, result, flags),
+            0x02 => DecodeMiddleLowProcess(ref r, result, flags),
+            0x03 => DecodeLowProcess(ref r, result, flags),
+            _ => false // unknown process level
+        };
+
+        if (!ok)
+        {
+            // Couldn't fully parse — consume remaining as blob
+            if (r.Remaining > 0)
+            {
+                AddRawBlobField(ref r, result, "PROCESS_STATE_TAIL",
+                    $"Remaining process state (undecoded, level {processLevel})");
+            }
+        }
+
+        return ok;
+    }
+
+    /// <summary>
+    ///     Decodes BaseProcess::SaveGame_v2 fields.
+    ///     Decompilation: 3 × uint32 + ActorPackage::SaveGame.
+    /// </summary>
+    private static bool DecodeBaseProcess(ref FormDataReader r, DecodedFormData result, uint flags)
+    {
+        // 3 × uint32 (at struct offsets +0x1C, +0x20, +0x24)
+        AddUInt32Field(ref r, result, "BASE_PROC_1C");
+        AddUInt32Field(ref r, result, "BASE_PROC_20");
+        AddUInt32Field(ref r, result, "BASE_PROC_24");
+
+        // ActorPackage::SaveGame (variable length due to vtable-dispatched procedure saves)
+        return DecodeActorPackage(ref r, result, "BASE_PROC_PACKAGE");
+    }
+
+    /// <summary>
+    ///     Decodes ActorPackage::SaveGame.
+    ///     Format: RefID + conditional(procedure_type + procedure_save + idle_type + idle_save +
+    ///     3 × uint32 + target RefID).
+    ///     Returns false if a vtable-dispatched procedure/idle save of unknown length is encountered.
+    /// </summary>
+    private static bool DecodeActorPackage(ref FormDataReader r, DecodedFormData result, string prefix)
+    {
+        if (!r.HasData(3)) return true;
+
+        int startPos = r.Position;
+        var packageRef = r.ReadRefId();
+        r.TrySkipPipe();
+
+        if (packageRef.IsNull)
+        {
+            // Null package — no further data
+            result.Fields.Add(new DecodedField
+            {
+                Name = prefix,
+                DisplayValue = "null",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            });
+            return true;
+        }
+
+        var children = new List<DecodedField>
+        {
+            new()
+            {
+                Name = "PackageFormID",
+                Value = packageRef,
+                DisplayValue = packageRef.ToString(),
+                DataOffset = startPos,
+                DataLength = r.Position - startPos
+            }
+        };
+
+        // Procedure type byte (0xFF = no procedure data)
+        if (!r.HasData(1)) goto Done;
+        int procStart = r.Position;
+        byte procType = r.ReadByte();
+        r.TrySkipPipe();
+        children.Add(new DecodedField
+        {
+            Name = "ProcedureType",
+            DisplayValue = procType == 0xFF ? "none (0xFF)" : $"0x{procType:X2}",
+            DataOffset = procStart,
+            DataLength = r.Position - procStart
+        });
+
+        if (procType != 0xFF)
+        {
+            // Vtable-dispatched procedure save — unknown length, must abort
+            result.Fields.Add(new DecodedField
+            {
+                Name = prefix,
+                DisplayValue = $"Package {packageRef} (procedure type 0x{procType:X2} — can't parse vtable save)",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos,
+                Children = children
+            });
+            return false;
+        }
+
+        // Idle procedure type byte (0xFF = no idle data)
+        if (!r.HasData(1)) goto Done;
+        int idleStart = r.Position;
+        byte idleType = r.ReadByte();
+        r.TrySkipPipe();
+        children.Add(new DecodedField
+        {
+            Name = "IdleType",
+            DisplayValue = idleType == 0xFF ? "none (0xFF)" : $"0x{idleType:X2}",
+            DataOffset = idleStart,
+            DataLength = r.Position - idleStart
+        });
+
+        if (idleType != 0xFF)
+        {
+            // Vtable-dispatched idle save — unknown length
+            result.Fields.Add(new DecodedField
+            {
+                Name = prefix,
+                DisplayValue = $"Package {packageRef} (idle type 0x{idleType:X2} — can't parse vtable save)",
+                DataOffset = startPos,
+                DataLength = r.Position - startPos,
+                Children = children
+            });
+            return false;
+        }
+
+        // 3 × uint32 fields (flags/timers at package offsets +0xC, +0x10, +0x14)
+        if (r.HasData(4)) { uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "PkgField_0C", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 }); }
+        if (r.HasData(4)) { uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "PkgField_10", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 }); }
+        if (r.HasData(4)) { uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "PkgField_14", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 }); }
+
+        // Target RefID
+        if (r.HasData(3))
+        {
+            int tStart = r.Position;
+            var targetRef = r.ReadRefId();
+            r.TrySkipPipe();
+            children.Add(new DecodedField
+            {
+                Name = "TargetRefID",
+                Value = targetRef,
+                DisplayValue = targetRef.ToString(),
+                DataOffset = tStart,
+                DataLength = r.Position - tStart
+            });
+        }
+
+        Done:
+        result.Fields.Add(new DecodedField
+        {
+            Name = prefix,
+            DisplayValue = $"Package {packageRef}",
+            DataOffset = startPos,
+            DataLength = r.Position - startPos,
+            Children = children
+        });
+        return true;
+    }
+
+    /// <summary>
+    ///     Decodes LowProcess::SaveGame_v2 fields.
+    ///     Inherits BaseProcess, then adds: 1B + uint32 + RefID + 3×uint32 + 1B + uint16 +
+    ///     CombatTimer(2 floats) + conditional RefID + 4 RefIDs + vsval RefID list +
+    ///     conditional modifier list (bit 21).
+    /// </summary>
+    private static bool DecodeLowProcess(ref FormDataReader r, DecodedFormData result, uint flags)
+    {
+        if (!DecodeBaseProcess(ref r, result, flags)) return false;
+
+        // Own fields
+        AddByteField(ref r, result, "LOW_PROC_30");     // +0x30
+        AddUInt32Field(ref r, result, "LOW_PROC_A4");    // +0xA4
+        AddRefIdField(ref r, result, "LOW_PROC_REF_34"); // +0x34
+        AddUInt32Field(ref r, result, "LOW_PROC_58");    // +0x58
+        AddUInt32Field(ref r, result, "LOW_PROC_A8");    // +0xA8
+        AddUInt32Field(ref r, result, "LOW_PROC_AC");    // +0xAC
+        AddByteField(ref r, result, "LOW_PROC_B0");      // +0xB0
+        AddUInt16Field(ref r, result, "LOW_PROC_50");    // +0x50
+
+        // CombatTimer::SaveGame — 2 floats (timer value adjusted by global game time, + duration)
+        AddFloatField(ref r, result, "LOW_PROC_COMBAT_TIMER");
+        AddFloatField(ref r, result, "LOW_PROC_COMBAT_DURATION");
+
+        // 5 RefIDs (+0x40 conditional, +0x44, +0x48, +0x4C, +0x54)
+        AddRefIdField(ref r, result, "LOW_PROC_REF_40");
+        AddRefIdField(ref r, result, "LOW_PROC_REF_44");
+        AddRefIdField(ref r, result, "LOW_PROC_REF_48");
+        AddRefIdField(ref r, result, "LOW_PROC_REF_4C");
+        AddRefIdField(ref r, result, "LOW_PROC_REF_54");
+
+        // vsval-counted list of RefIDs (linked list at +0x6C)
+        DecodeVsvalRefIdList(ref r, result, "LOW_PROC_REFID_LIST");
+
+        // Conditional modifier list: bit 21 (0x00200000) of changeFlags
+        if (HasFlag(flags, 0x00200000))
+        {
+            DecodeActorValueModifierList(ref r, result, "LOW_PROC_MODIFIER_LIST");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Decodes MiddleLowProcess::SaveGame_v2 fields.
+    ///     Inherits LowProcess, then adds: uint32 + conditional modifier list (bit 20).
+    /// </summary>
+    private static bool DecodeMiddleLowProcess(ref FormDataReader r, DecodedFormData result, uint flags)
+    {
+        if (!DecodeLowProcess(ref r, result, flags)) return false;
+
+        // Own fields
+        AddUInt32Field(ref r, result, "MIDLOW_PROC_B4"); // +0xB4
+
+        // Conditional modifier list: bit 20 (0x00100000) of changeFlags
+        if (HasFlag(flags, 0x00100000))
+        {
+            DecodeActorValueModifierList(ref r, result, "MIDLOW_PROC_MODIFIER_LIST");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Decodes MiddleHighProcess::SaveGame_v2 fields.
+    ///     Inherits MiddleLowProcess, then adds ~50 fields including scalar fields,
+    ///     RefIDs, vsval lists, a second ActorPackage, conditional Animation, and FormIDs.
+    /// </summary>
+    private static bool DecodeMiddleHighProcess(ref FormDataReader r, DecodedFormData result, uint flags)
+    {
+        if (!DecodeMiddleLowProcess(ref r, result, flags)) return false;
+
+        // ── 38 scalar fields (bytes, uint16, uint32, float[3]) ──
+        AddByteField(ref r, result, "MIDHIGH_134");
+        AddByteField(ref r, result, "MIDHIGH_135");
+        AddByteField(ref r, result, "MIDHIGH_168");
+        AddUInt32Field(ref r, result, "MIDHIGH_170");
+        AddUInt32Field(ref r, result, "MIDHIGH_174");
+        AddUInt32Field(ref r, result, "MIDHIGH_108");
+        AddByteField(ref r, result, "MIDHIGH_1DA");
+        AddFloat3Field(ref r, result, "MIDHIGH_VECTOR_FC");   // +0xFC, 3 floats
+        AddUInt32Field(ref r, result, "MIDHIGH_DC");
+        AddByteField(ref r, result, "MIDHIGH_13D");
+        AddByteField(ref r, result, "MIDHIGH_144");
+        AddByteField(ref r, result, "MIDHIGH_156");
+        AddUInt16Field(ref r, result, "MIDHIGH_154");
+        AddFloat3Field(ref r, result, "MIDHIGH_VECTOR_148");  // +0x148, 3 floats
+        AddByteField(ref r, result, "MIDHIGH_13C");
+        AddByteField(ref r, result, "MIDHIGH_E0");
+        AddByteField(ref r, result, "MIDHIGH_188");
+        AddByteField(ref r, result, "MIDHIGH_189");
+        AddUInt32Field(ref r, result, "MIDHIGH_D8");
+        AddByteField(ref r, result, "MIDHIGH_18B");
+        AddUInt32Field(ref r, result, "MIDHIGH_1D0");
+        AddUInt32Field(ref r, result, "MIDHIGH_1D4");
+        AddByteField(ref r, result, "MIDHIGH_1D8");
+        AddByteField(ref r, result, "MIDHIGH_1D9");
+        AddByteField(ref r, result, "MIDHIGH_228");
+        AddUInt16Field(ref r, result, "MIDHIGH_22A");
+        AddUInt32Field(ref r, result, "MIDHIGH_1A8");
+        AddByteField(ref r, result, "MIDHIGH_E1");
+        AddUInt32Field(ref r, result, "MIDHIGH_190");
+        AddUInt32Field(ref r, result, "MIDHIGH_198");
+        AddByteField(ref r, result, "MIDHIGH_19C");
+        AddByteField(ref r, result, "MIDHIGH_19D");
+        AddUInt32Field(ref r, result, "MIDHIGH_234");
+        AddUInt32Field(ref r, result, "MIDHIGH_238");
+        AddUInt32Field(ref r, result, "MIDHIGH_23C");
+        AddUInt32Field(ref r, result, "MIDHIGH_244");
+        AddByteField(ref r, result, "MIDHIGH_110");
+
+        // ── 4 RefIDs ──
+        AddRefIdField(ref r, result, "MIDHIGH_REF_10C");
+        AddRefIdField(ref r, result, "MIDHIGH_REF_194");
+        AddRefIdField(ref r, result, "MIDHIGH_REF_158");
+        AddRefIdField(ref r, result, "MIDHIGH_REF_140");
+
+        // Computed uint32 (0 or MagicTarget formID at +0x118)
+        AddUInt32Field(ref r, result, "MIDHIGH_MAGIC_TARGET");
+
+        // vsval-counted list of RefIDs (linked list at +0xC8)
+        DecodeVsvalRefIdList(ref r, result, "MIDHIGH_REFID_LIST");
+
+        // Second ActorPackage::SaveGame (at +0xE4)
+        if (!DecodeActorPackage(ref r, result, "MIDHIGH_PACKAGE")) return false;
+
+        // Conditional animation block: bit 28 (0x10000000) of changeFlags
+        // When present, wrapped in a vsval byte-count prefix
+        if (HasFlag(flags, 0x10000000) && r.HasData(1))
+        {
+            int animStart = r.Position;
+            uint animByteCount = r.ReadVsval();
+            r.TrySkipPipe();
+            if (animByteCount > 0 && r.HasData((int)Math.Min(animByteCount, r.Remaining)))
+            {
+                int toConsume = (int)Math.Min(animByteCount, r.Remaining);
+                r.ReadBytes(toConsume);
+                result.Fields.Add(new DecodedField
+                {
+                    Name = "MIDHIGH_ANIMATION",
+                    DisplayValue = $"Animation data ({animByteCount} bytes)",
+                    DataOffset = animStart,
+                    DataLength = r.Position - animStart
+                });
+            }
+        }
+
+        // Unknown save helper at +0x1B8 (func_0x826348f8) — writes a RefID
+        AddRefIdField(ref r, result, "MIDHIGH_REF_1B8");
+
+        // 3 conditional FormIDs (MagicItem pointers — written as FormID + pipe)
+        AddRefIdField(ref r, result, "MIDHIGH_MAGIC_ITEM_164");
+        AddRefIdField(ref r, result, "MIDHIGH_MAGIC_ITEM_160");
+        AddRefIdField(ref r, result, "MIDHIGH_MAGIC_TARGET_1BC");
+
+        // vsval-counted list of package items (linked list at +0x230)
+        // Each item is saved by func_0x827289c0 — unknown sub-function
+        DecodeVsvalCountedBlob(ref r, result, "MIDHIGH_PACKAGE_LIST");
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Decodes HighProcess::SaveGame_v2 fields.
+    ///     Inherits MiddleHighProcess, then adds ~65 scalar fields, 7 RefIDs,
+    ///     6×(RefID+byte) pairs, 3 vsval RefID lists, conditional DialogueItem,
+    ///     vsval PathingAvoidNode list, 2 vsval DetectionState lists,
+    ///     conditional DetectionEvent, and a vsval-wrapped tail block.
+    /// </summary>
+    private static bool DecodeHighProcess(ref FormDataReader r, DecodedFormData result, uint flags)
+    {
+        if (!DecodeMiddleHighProcess(ref r, result, flags)) return false;
+
+        // ── 64 scalar fields ──
+        AddByteField(ref r, result, "HIGH_32C");
+        AddByteField(ref r, result, "HIGH_340");
+        AddByteField(ref r, result, "HIGH_374");
+        AddByteField(ref r, result, "HIGH_375");
+        AddUInt16Field(ref r, result, "HIGH_2FC");
+        AddUInt32Field(ref r, result, "HIGH_2B4");
+        AddUInt32Field(ref r, result, "HIGH_2F8");
+        AddUInt32Field(ref r, result, "HIGH_310");
+        AddUInt32Field(ref r, result, "HIGH_330");
+        AddUInt32Field(ref r, result, "HIGH_334");
+        AddUInt32Field(ref r, result, "HIGH_338");
+        AddUInt32Field(ref r, result, "HIGH_34C");
+        AddUInt32Field(ref r, result, "HIGH_294");
+        AddUInt32Field(ref r, result, "HIGH_2B8");
+        AddUInt32Field(ref r, result, "HIGH_2BC");
+        AddUInt32Field(ref r, result, "HIGH_298");
+        AddUInt16Field(ref r, result, "HIGH_2C0");
+        AddUInt16Field(ref r, result, "HIGH_2C2");
+        AddUInt16Field(ref r, result, "HIGH_2C4");
+        AddByteField(ref r, result, "HIGH_349");
+        AddFloat3Field(ref r, result, "HIGH_VECTOR_300");   // +0x300, 3 floats
+        AddUInt32Field(ref r, result, "HIGH_36C");
+        AddUInt32Field(ref r, result, "HIGH_3E8");
+        AddUInt32Field(ref r, result, "HIGH_3EC");
+        AddUInt32Field(ref r, result, "HIGH_33C");
+        AddUInt32Field(ref r, result, "HIGH_2A8");
+        AddUInt32Field(ref r, result, "HIGH_378");
+        AddByteField(ref r, result, "HIGH_3A0");
+        AddUInt32Field(ref r, result, "HIGH_39C");
+        AddByteField(ref r, result, "HIGH_3A8");
+        AddUInt32Field(ref r, result, "HIGH_3A4");
+        AddByteField(ref r, result, "HIGH_420");
+        AddUInt32Field(ref r, result, "HIGH_3BC");
+        AddUInt32Field(ref r, result, "HIGH_3C0");
+        AddByteField(ref r, result, "HIGH_2C6");
+        AddUInt32Field(ref r, result, "HIGH_2D0");
+        AddUInt32Field(ref r, result, "HIGH_2D4");
+        AddUInt32Field(ref r, result, "HIGH_2D8");
+        AddByteField(ref r, result, "HIGH_3B8");
+        AddByteField(ref r, result, "HIGH_2DC_A");    // +0x2DC written 3 times in decompilation
+        AddUInt32Field(ref r, result, "HIGH_2E0");
+        AddUInt32Field(ref r, result, "HIGH_344");
+        AddByteField(ref r, result, "HIGH_2DC_B");    // +0x2DC second write
+        AddByteField(ref r, result, "HIGH_2DC_C");    // +0x2DC third write
+        AddUInt32Field(ref r, result, "HIGH_3D8");
+        AddUInt32Field(ref r, result, "HIGH_448");
+        AddByteField(ref r, result, "HIGH_29D");
+        AddUInt32Field(ref r, result, "HIGH_2B0");
+        AddUInt32Field(ref r, result, "HIGH_2C8");
+        AddUInt32Field(ref r, result, "HIGH_418");
+        AddUInt32Field(ref r, result, "HIGH_43C");
+        AddUInt32Field(ref r, result, "HIGH_440");
+        AddByteField(ref r, result, "HIGH_444");
+        AddByteField(ref r, result, "HIGH_445");
+        AddUInt32Field(ref r, result, "HIGH_450");
+        AddByteField(ref r, result, "HIGH_458");
+        AddUInt32Field(ref r, result, "HIGH_430");
+        AddByteField(ref r, result, "HIGH_3E0");
+        AddByteField(ref r, result, "HIGH_459");
+        AddUInt32Field(ref r, result, "HIGH_2A0");
+        AddByteField(ref r, result, "HIGH_3D0");
+        AddByteField(ref r, result, "HIGH_3D1");
+        AddByteField(ref r, result, "HIGH_348");
+        AddByteField(ref r, result, "HIGH_HAS_3CC"); // computed bool: 1 if *(+0x3CC)!=0
+
+        // ── 7 RefIDs ──
+        AddRefIdField(ref r, result, "HIGH_REF_30C");
+        AddRefIdField(ref r, result, "HIGH_REF_2A4");
+        AddRefIdField(ref r, result, "HIGH_REF_3F0");
+        AddRefIdField(ref r, result, "HIGH_REF_41C");
+        AddRefIdField(ref r, result, "HIGH_REF_370");
+        AddRefIdField(ref r, result, "HIGH_REF_350");
+        AddRefIdField(ref r, result, "HIGH_REF_2AC");
+
+        // ── 6 × (RefID + byte) pairs ── (array at +0x3F8, flags at +0x410)
+        for (int i = 0; i < 6 && r.HasData(4); i++)
+        {
+            AddRefIdField(ref r, result, $"HIGH_EQUIP_REF_{i}");
+            AddByteField(ref r, result, $"HIGH_EQUIP_FLAG_{i}");
+        }
+
+        // ── 3 vsval-counted RefID lists ── (+0x38C, +0x394, +0x264)
+        DecodeVsvalRefIdList(ref r, result, "HIGH_REFID_LIST_38C");
+        DecodeVsvalRefIdList(ref r, result, "HIGH_REFID_LIST_394");
+        DecodeVsvalRefIdList(ref r, result, "HIGH_REFID_LIST_264");
+
+        // ── Conditional DialogueItem ──
+        if (r.HasData(1))
+        {
+            int dlgFlagStart = r.Position;
+            byte hasDialogue = r.ReadByte();
+            r.TrySkipPipe();
+            result.Fields.Add(new DecodedField
+            {
+                Name = "HIGH_HAS_DIALOGUE",
+                DisplayValue = hasDialogue != 0 ? "yes" : "no",
+                DataOffset = dlgFlagStart,
+                DataLength = r.Position - dlgFlagStart
+            });
+
+            if (hasDialogue != 0)
+            {
+                DecodeDialogueItem(ref r, result);
+            }
+        }
+
+        // ── vsval-counted PathingAvoidNode list ── (+0x44C)
+        DecodePathingAvoidNodeList(ref r, result);
+
+        // ── 2 × vsval-counted DetectionState lists ── (+0x25C, +0x260)
+        DecodeDetectionStateList(ref r, result, "HIGH_DETECTION_LIST_25C");
+        DecodeDetectionStateList(ref r, result, "HIGH_DETECTION_LIST_260");
+
+        // ── Conditional DetectionEvent ──
+        if (r.HasData(1))
+        {
+            int evtFlagStart = r.Position;
+            byte hasEvent = r.ReadByte();
+            r.TrySkipPipe();
+            result.Fields.Add(new DecodedField
+            {
+                Name = "HIGH_HAS_DETECTION_EVENT",
+                DisplayValue = hasEvent != 0 ? "yes" : "no",
+                DataOffset = evtFlagStart,
+                DataLength = r.Position - evtFlagStart
+            });
+
+            if (hasEvent != 0)
+            {
+                DecodeDetectionEvent(ref r, result);
+            }
+        }
+
+        // ── vsval-wrapped tail block ── (func_0x8272c8c0, unknown sub-save)
+        DecodeVsvalCountedBlob(ref r, result, "HIGH_TAIL_BLOCK");
+
+        return true;
+    }
+
+    // ── Process state sub-function decoders ──────────────────────────
+
+    /// <summary>
+    ///     Reads a 3-float vector (12 bytes) + pipe as a single field.
+    /// </summary>
+    private static void AddFloat3Field(ref FormDataReader r, DecodedFormData result, string name)
+    {
+        if (!r.HasData(12)) return;
+        int startPos = r.Position;
+        float x = r.ReadFloat();
+        float y = r.ReadFloat();
+        float z = r.ReadFloat();
+        r.TrySkipPipe();
+        result.Fields.Add(new DecodedField
+        {
+            Name = name,
+            DisplayValue = $"({x:G}, {y:G}, {z:G})",
+            DataOffset = startPos,
+            DataLength = r.Position - startPos
+        });
+    }
+
+    /// <summary>
+    ///     Decodes a vsval-counted list of RefIDs.
+    ///     Format: [vsval count] [pipe] ([RefID pipe] × N).
+    /// </summary>
+    private static void DecodeVsvalRefIdList(ref FormDataReader r, DecodedFormData result, string name)
+    {
+        if (!r.HasData(1)) return;
+        int startPos = r.Position;
+        uint count = r.ReadVsval();
+        r.TrySkipPipe();
+        var items = new List<DecodedField>();
+        for (uint i = 0; i < count && r.HasData(3); i++)
+        {
+            int itemStart = r.Position;
+            var refId = r.ReadRefId();
+            r.TrySkipPipe();
+            items.Add(new DecodedField
+            {
+                Name = $"[{i}]",
+                Value = refId,
+                DisplayValue = refId.ToString(),
+                DataOffset = itemStart,
+                DataLength = r.Position - itemStart
+            });
+        }
+
+        result.Fields.Add(new DecodedField
+        {
+            Name = name,
+            DisplayValue = $"{count} RefID(s)",
+            DataOffset = startPos,
+            DataLength = r.Position - startPos,
+            Children = items.Count > 0 ? items : null
+        });
+    }
+
+    /// <summary>
+    ///     Decodes a vsval-prefixed blob of unknown internal structure.
+    ///     Reads the byte count, then consumes that many bytes as raw data.
+    /// </summary>
+    private static void DecodeVsvalCountedBlob(ref FormDataReader r, DecodedFormData result, string name)
+    {
+        if (!r.HasData(1)) return;
+        int startPos = r.Position;
+        uint byteCount = r.ReadVsval();
+        r.TrySkipPipe();
+        int toConsume = (int)Math.Min(byteCount, (uint)r.Remaining);
+        if (toConsume > 0)
+        {
+            r.ReadBytes(toConsume);
+        }
+
+        result.Fields.Add(new DecodedField
+        {
+            Name = name,
+            DisplayValue = $"{byteCount} bytes",
+            DataOffset = startPos,
+            DataLength = r.Position - startPos
+        });
+    }
+
+    /// <summary>
+    ///     Decodes DialogueItem::SaveGame.
+    ///     Format: vsval list[DialogueResponse] + uint16 + 4 RefIDs.
+    /// </summary>
+    private static void DecodeDialogueItem(ref FormDataReader r, DecodedFormData result)
+    {
+        // vsval-counted list of dialogue responses (each via func_0x82666560 — unknown sub-format)
+        DecodeVsvalCountedBlob(ref r, result, "DIALOGUE_RESPONSES");
+
+        // Current response index (0xFFFF if none)
+        AddUInt16Field(ref r, result, "DIALOGUE_CURRENT_IDX");
+
+        // 4 RefIDs: speaker, topic, quest, INFO
+        AddRefIdField(ref r, result, "DIALOGUE_SPEAKER");
+        AddRefIdField(ref r, result, "DIALOGUE_TOPIC");
+        AddRefIdField(ref r, result, "DIALOGUE_QUEST");
+        AddRefIdField(ref r, result, "DIALOGUE_INFO");
+    }
+
+    /// <summary>
+    ///     Decodes a vsval-counted list of PathingAvoidNode items.
+    ///     Each item: PathingAvoidNode::SaveGame (1B + 2×uint32 + float[3] + conditional float[3])
+    ///     + 2×uint32 + 2×RefID (from HighProcess caller).
+    /// </summary>
+    private static void DecodePathingAvoidNodeList(ref FormDataReader r, DecodedFormData result)
+    {
+        if (!r.HasData(1)) return;
+        int startPos = r.Position;
+        uint count = r.ReadVsval();
+        r.TrySkipPipe();
+        var items = new List<DecodedField>();
+        for (uint i = 0; i < count && r.HasData(10); i++)
+        {
+            int itemStart = r.Position;
+            var children = new List<DecodedField>();
+
+            // PathingAvoidNode::SaveGame
+            if (r.HasData(1))
+            {
+                byte nodeType = r.ReadByte();
+                r.TrySkipPipe();
+                children.Add(new DecodedField { Name = "NodeType", DisplayValue = $"0x{nodeType:X2}", DataOffset = itemStart, DataLength = r.Position - itemStart });
+
+                if (r.HasData(4)) { int s = r.Position; uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Field_18", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s }); }
+                if (r.HasData(4)) { int s = r.Position; uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Field_1C", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s }); }
+
+                if (r.HasData(12))
+                {
+                    int s = r.Position;
+                    float x = r.ReadFloat(), y = r.ReadFloat(), z = r.ReadFloat();
+                    r.TrySkipPipe();
+                    children.Add(new DecodedField { Name = "Position", DisplayValue = $"({x:G}, {y:G}, {z:G})", DataOffset = s, DataLength = r.Position - s });
+                }
+
+                if (nodeType == 1 && r.HasData(12))
+                {
+                    int s = r.Position;
+                    float x = r.ReadFloat(), y = r.ReadFloat(), z = r.ReadFloat();
+                    r.TrySkipPipe();
+                    children.Add(new DecodedField { Name = "Position2", DisplayValue = $"({x:G}, {y:G}, {z:G})", DataOffset = s, DataLength = r.Position - s });
+                }
+            }
+
+            // Extra fields written by HighProcess after PathingAvoidNode::SaveGame
+            if (r.HasData(4)) { int s = r.Position; uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Extra_24", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s }); }
+            if (r.HasData(4)) { int s = r.Position; uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Extra_2C", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s }); }
+            if (r.HasData(3)) { int s = r.Position; var rf = r.ReadRefId(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Extra_REF_28", Value = rf, DisplayValue = rf.ToString(), DataOffset = s, DataLength = r.Position - s }); }
+            if (r.HasData(3)) { int s = r.Position; var rf = r.ReadRefId(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Extra_REF_30", Value = rf, DisplayValue = rf.ToString(), DataOffset = s, DataLength = r.Position - s }); }
+
+            items.Add(new DecodedField
+            {
+                Name = $"AvoidNode[{i}]",
+                DisplayValue = $"node at offset 0x{itemStart:X}",
+                DataOffset = itemStart,
+                DataLength = r.Position - itemStart,
+                Children = children
+            });
+        }
+
+        result.Fields.Add(new DecodedField
+        {
+            Name = "HIGH_PATHING_AVOID_NODES",
+            DisplayValue = $"{count} node(s)",
+            DataOffset = startPos,
+            DataLength = r.Position - startPos,
+            Children = items.Count > 0 ? items : null
+        });
+    }
+
+    /// <summary>
+    ///     Decodes a vsval-counted list of DetectionState items.
+    ///     Each: RefID + 1B + uint32 + float[3] + timer(2 floats) + 3B + uint32 + 1B.
+    /// </summary>
+    private static void DecodeDetectionStateList(ref FormDataReader r, DecodedFormData result, string name)
+    {
+        if (!r.HasData(1)) return;
+        int startPos = r.Position;
+        uint count = r.ReadVsval();
+        r.TrySkipPipe();
+        for (uint i = 0; i < count && r.HasData(3); i++)
+        {
+            // DetectionState::SaveGame fields
+            AddRefIdField(ref r, result, $"DetState[{i}].Target");
+            AddByteField(ref r, result, $"DetState[{i}].Level");
+            AddUInt32Field(ref r, result, $"DetState[{i}].Value");
+            AddFloat3Field(ref r, result, $"DetState[{i}].Position");
+
+            // Timer sub-function (func_0x827b24e8) — assumed 2 floats like CombatTimer
+            AddFloatField(ref r, result, $"DetState[{i}].Timer1");
+            AddFloatField(ref r, result, $"DetState[{i}].Timer2");
+
+            // 3 bytes + uint32 + 1 byte
+            AddByteField(ref r, result, $"DetState[{i}].Field_1E");
+            AddByteField(ref r, result, $"DetState[{i}].Field_1C");
+            AddByteField(ref r, result, $"DetState[{i}].Field_1D");
+            AddUInt32Field(ref r, result, $"DetState[{i}].Field_20");
+            AddByteField(ref r, result, $"DetState[{i}].Field_1F");
+        }
+
+        // Add a summary field for the list
+        result.Fields.Add(new DecodedField
+        {
+            Name = name,
+            DisplayValue = $"{count} state(s)",
+            DataOffset = startPos,
+            DataLength = r.Position - startPos
+        });
+    }
+
+    /// <summary>
+    ///     Decodes DetectionEvent::SaveGame.
+    ///     Format: uint32 + float[3] + timer(2 floats) + uint32 + RefID.
+    /// </summary>
+    private static void DecodeDetectionEvent(ref FormDataReader r, DecodedFormData result)
+    {
+        AddUInt32Field(ref r, result, "DET_EVENT_TYPE");
+        AddFloat3Field(ref r, result, "DET_EVENT_POSITION");
+
+        // Timer sub-function — assumed 2 floats
+        AddFloatField(ref r, result, "DET_EVENT_TIMER1");
+        AddFloatField(ref r, result, "DET_EVENT_TIMER2");
+
+        AddUInt32Field(ref r, result, "DET_EVENT_DATA");
+        AddRefIdField(ref r, result, "DET_EVENT_SOURCE");
     }
 
     // ────────────────────────────────────────────────────────────────

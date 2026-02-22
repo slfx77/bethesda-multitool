@@ -37,4 +37,7 @@ public sealed class SaveFile
 
     /// <summary>Offset of the inner Savegame.dat within the STFS container (0 if not an STFS file).</summary>
     public int StfsPayloadOffset { get; init; }
+
+    /// <summary>How the payload was extracted from the STFS container (null if not STFS).</summary>
+    public string? StfsExtractionMethod { get; init; }
 }

@@ -158,7 +158,7 @@ public sealed partial class SingleFileTab
 
     private string ResolveFormName(uint formId)
     {
-        return _session.Resolver?.GetBestNameWithRefChain(formId) ?? $"0x{formId:X8}";
+        return _session.EffectiveResolver?.GetBestNameWithRefChain(formId) ?? $"0x{formId:X8}";
     }
 
     private static Dictionary<uint, List<TopicDialogueNode>> BuildTopicsBySpeaker(
@@ -448,6 +448,18 @@ public sealed partial class SingleFileTab
                     .SelectMany(info => info.Info.Responses)
                     .Select(r => r.Text)
                     .FirstOrDefault(t => !string.IsNullOrEmpty(t));
+
+                // Subtitle fallback for picker display
+                if (firstText == null)
+                {
+                    var subtitles = _session.EffectiveSubtitles;
+                    if (subtitles != null)
+                    {
+                        firstText = topic.InfoChain
+                            .Select(info => subtitles.Lookup(info.Info.FormId)?.Text)
+                            .FirstOrDefault(t => !string.IsNullOrEmpty(t));
+                    }
+                }
 
                 // Use response text only if it differs substantially from the topic name
                 if (firstText != null && !IsSimilarText(firstText, topicName))
@@ -889,8 +901,10 @@ public sealed partial class SingleFileTab
         content.Children.Add(speakerPanel);
 
         // Response texts
+        var hasResponseText = false;
         foreach (var response in info.Responses.Where(r => !string.IsNullOrEmpty(r.Text)))
         {
+            hasResponseText = true;
             content.Children.Add(new TextBlock
             {
                 Text = $"\u201C{response.Text}\u201D",
@@ -899,6 +913,31 @@ public sealed partial class SingleFileTab
                 IsTextSelectionEnabled = true,
                 Margin = new Thickness(22, 2, 0, 2)
             });
+        }
+
+        // Subtitle fallback: if no response text in the record, check subtitle index
+        if (!hasResponseText)
+        {
+            var subtitle = _session.EffectiveSubtitles?.Lookup(info.FormId);
+            if (subtitle?.Text != null)
+            {
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"\u201C{subtitle.Text}\u201D",
+                    FontSize = 13,
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true,
+                    Margin = new Thickness(22, 2, 0, 2),
+                    FontStyle = Windows.UI.Text.FontStyle.Italic
+                });
+                content.Children.Add(new TextBlock
+                {
+                    Text = "(from subtitles CSV)",
+                    FontSize = 10,
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                    Margin = new Thickness(22, 0, 0, 2)
+                });
+            }
         }
 
         // Metadata tags
@@ -1010,6 +1049,17 @@ public sealed partial class SingleFileTab
         // Identity
         AddRow("FormID", $"0x{info.FormId:X8}");
         AddRow("EditorID", info.EditorId);
+
+        // Subtitle CSV enrichment
+        var csvSubtitle = _session.EffectiveSubtitles?.Lookup(info.FormId);
+        if (csvSubtitle != null)
+        {
+            if (csvSubtitle.Text != null) AddRow("CSV Subtitle", csvSubtitle.Text);
+            if (csvSubtitle.Speaker != null) AddRow("CSV Speaker", csvSubtitle.Speaker);
+            if (csvSubtitle.Quest != null) AddRow("CSV Quest", csvSubtitle.Quest);
+            if (csvSubtitle.VoiceType != null) AddRow("CSV VoiceType", csvSubtitle.VoiceType);
+            if (csvSubtitle.Source != null) AddRow("CSV Source", csvSubtitle.Source);
+        }
 
         // Relationships (with navigable links)
         if (info.TopicFormId is > 0)
@@ -1493,7 +1543,7 @@ public sealed partial class SingleFileTab
             return "Unknown Speaker";
         }
 
-        return _session.Resolver?.GetBestNameWithRefChain(formId.Value) ?? $"0x{formId.Value:X8}";
+        return _session.EffectiveResolver?.GetBestNameWithRefChain(formId.Value) ?? $"0x{formId.Value:X8}";
     }
 
     /// <summary>

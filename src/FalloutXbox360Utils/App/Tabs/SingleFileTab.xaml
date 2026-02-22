@@ -868,6 +868,7 @@
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
@@ -935,6 +936,25 @@
           Click="ExtractButton_Click"
           IsEnabled="False"
           Style="{StaticResource AccentButtonStyle}" />
+
+        <!--  Add Data (visible after analysis)  -->
+        <Button
+          x:Name="AddDataButton"
+          Grid.Row="2"
+          Grid.Column="1"
+          Content="Add Data..."
+          Click="AddDataButton_Click"
+          Visibility="Collapsed"
+          HorizontalAlignment="Left"
+          Margin="0,4,0,0" />
+        <TextBlock
+          x:Name="AddDataStatusText"
+          Grid.Row="2"
+          Grid.Column="2"
+          Grid.ColumnSpan="2"
+          VerticalAlignment="Center"
+          FontSize="12"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       </Grid>
     </Grid>
   </Grid>

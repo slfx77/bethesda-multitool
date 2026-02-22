@@ -355,6 +355,55 @@ public class MinidumpInfo
     }
 
     /// <summary>
+    ///     Check if a virtual address range [va, va+count) falls entirely within captured memory regions.
+    ///     Regions must be contiguous in VA space (no gaps). O(log n) for the initial lookup.
+    /// </summary>
+    public bool IsVaRangeCaptured(long va, int count)
+    {
+        EnsureVaIndex();
+
+        var idx = Array.BinarySearch(_sortedVaStarts!, va);
+        if (idx < 0)
+        {
+            idx = ~idx - 1;
+        }
+
+        if (idx < 0 || idx >= _sortedRegionIndex!.Length)
+        {
+            return false;
+        }
+
+        var region = _sortedRegionIndex[idx];
+        if (va < region.VirtualAddress || va >= region.VirtualAddress + region.Size)
+        {
+            return false;
+        }
+
+        // Check if the entire range fits in this region
+        var endVa = va + count;
+        var regionEnd = region.VirtualAddress + region.Size;
+        if (endVa <= regionEnd)
+        {
+            return true;
+        }
+
+        // Range extends past this region — check contiguous following regions
+        var currentEnd = regionEnd;
+        for (var i = idx + 1; i < _sortedRegionIndex.Length && currentEnd < endVa; i++)
+        {
+            var next = _sortedRegionIndex[i];
+            if (next.VirtualAddress != currentEnd)
+            {
+                return false; // VA gap
+            }
+
+            currentEnd = next.VirtualAddress + next.Size;
+        }
+
+        return currentEnd >= endVa;
+    }
+
+    /// <summary>
     ///     Get the number of contiguous bytes available starting from a file offset.
     ///     Useful for determining maximum safe read size before hitting a VA gap.
     /// </summary>

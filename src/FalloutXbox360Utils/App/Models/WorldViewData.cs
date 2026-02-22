@@ -30,6 +30,9 @@ internal sealed class WorldViewData
     /// <summary>Exterior cells with grid coordinates that aren't linked to any worldspace (common in DMP files).</summary>
     public required List<CellRecord> UnlinkedExteriorCells { get; init; }
 
+    /// <summary>Map markers not assigned to any worldspace (common in DMP files).</summary>
+    public required List<PlacedReference> UnlinkedMapMarkers { get; init; }
+
     /// <summary>Default water height for the first worldspace (WRLD DNAM fallback).</summary>
     public float? DefaultWaterHeight { get; init; }
 
@@ -59,4 +62,10 @@ internal sealed class WorldViewData
 
     /// <summary>Reference FormID → world position for drawing AI package overlays.</summary>
     public Dictionary<uint, (float X, float Y)>? RefPositionIndex { get; init; }
+
+    /// <summary>Additional placed references from save file overlay (changed form positions).</summary>
+    public List<PlacedReference>? SaveOverlayMarkers { get; set; }
+
+    /// <summary>Player position from save file, if available.</summary>
+    public (float X, float Y, float Z)? PlayerPosition { get; set; }
 }

@@ -44,8 +44,10 @@ internal sealed class Program
         rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
         rootCommand.Subcommands.Add(WorldMapDiagCommands.CreateWorldMapDiagCommand());
         rootCommand.Subcommands.Add(CategoryAuditCommands.CreateCategoryAuditCommand());
+        rootCommand.Subcommands.Add(MapStatsCommands.CreateMapStatsCommand());
         rootCommand.Subcommands.Add(VoiceHeuristicsCommands.CreateVoiceHeuristicsCommand());
         rootCommand.Subcommands.Add(TranscriptDiagCommands.CreateTranscriptDiagCommand());
+        rootCommand.Subcommands.Add(GenFaceGenCommands.CreateGenFaceGenCommand());
 
         // ===== Backward compatibility aliases =====
         // Keep old command names for scripts that use them
@@ -66,6 +68,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(NaviCommands.CreateDumpNvmiCommand());     // "dump-nvmi" at root (NAVI navmesh info)
         rootCommand.Subcommands.Add(OrphanedFormIdCommands.CreateOrphanRefsCommand());  // "orphan-refs" at root
         rootCommand.Subcommands.Add(FaceGenCommands.CreateFaceGenCommand());  // "facegen" at root
+        rootCommand.Subcommands.Add(DmpDiagCommands.CreateDmpDiagCommand());  // "dmp-diag" at root (backward compat)
 
         // ===== compare subcommands =====
         var compareCommand = new Command("compare", "Compare ESM files (land, cells, heightmaps)");
@@ -97,6 +100,13 @@ internal sealed class Program
         rootCommand.Subcommands.Add(DiffCommands.CreateUnifiedDiffCommand());
         // Note: diff3 alias already added above for backward compatibility
 
+        // ===== cell subcommands (semantic cell inspection) =====
+        var cellCommand = new Command("cell", "Inspect cells, placed objects, and NPC placement");
+        cellCommand.Subcommands.Add(CellObjectsCommands.CreateObjectsCommand());
+        cellCommand.Subcommands.Add(CellObjectsCommands.CreateNpcTraceCommand());
+        cellCommand.Subcommands.Add(CellCommands.CreateCellChildrenCommand());   // raw GRUP-level inspection
+        rootCommand.Subcommands.Add(cellCommand);
+
         // ===== wrld subcommands (WRLD OFST streaming data) =====
         var wrldCommand = new Command("wrld", "Analyze WRLD worldspace data (OFST offset tables, streaming)");
         wrldCommand.Subcommands.Add(OfstCommands.CreateOfstCommand());
@@ -112,6 +122,18 @@ internal sealed class Program
         wrldCommand.Subcommands.Add(OfstCommands.CreateOfstImageCommand());
         wrldCommand.Subcommands.Add(OfstCommands.CreateOfstQuadtreeCommand());
         rootCommand.Subcommands.Add(wrldCommand);
+
+        // ===== dmp subcommands (minidump analysis) =====
+        var dmpCommand = new Command("dmp", "Minidump analysis, diagnostics, and script comparison");
+        dmpCommand.Subcommands.Add(DmpDiagCommands.CreateDmpDiagCommand());       // "dmp diag"
+        dmpCommand.Subcommands.Add(DmpRegionCommands.CreateRegionsCommand());     // "dmp regions"
+        dmpCommand.Subcommands.Add(DmpRegionCommands.CreateModulesCommand());     // "dmp modules"
+        dmpCommand.Subcommands.Add(DmpRegionCommands.CreateVa2OffsetCommand());   // "dmp va2offset"
+        dmpCommand.Subcommands.Add(DmpRegionCommands.CreateHexDumpCommand());     // "dmp hexdump"
+        dmpCommand.Subcommands.Add(DmpScriptCommands.CreateScriptsCommand());     // "dmp scripts ..."
+        dmpCommand.Subcommands.Add(DmpMapRenderCommands.CreateRenderMapCommand()); // "dmp render-map"
+        dmpCommand.Subcommands.Add(DmpModuleExtractCommands.CreateExtractModuleCommand()); // "dmp extract-module"
+        rootCommand.Subcommands.Add(dmpCommand);
 
         // Default action: show help
         rootCommand.SetAction(parseResult =>
@@ -139,6 +161,7 @@ internal sealed class Program
             _ = table.AddRow("[cyan]worldmap[/]", "Generate worldspace heightmap by stitching LAND records");
             _ = table.AddRow("[cyan]worldmap-diag[/]", "Diagnose world map category distribution and Unknown sources");
             _ = table.AddRow("[cyan]category-audit[/]", "Audit Unknown map categories and suggest ObjectBoundsIndex fixes");
+            _ = table.AddRow("[cyan]map-stats[/]", "Per-worldspace placed object category counts (for color scheme tuning)");
             _ = table.AddRow("[cyan]voice-heuristics[/]", "Cross-reference BSA voice files against ESM records");
             _ = table.AddRow("[cyan]transcript-diag[/]", "Diagnose .fnvtranscript.json key counts vs BSA voice files");
             _ = table.AddRow("", "");
@@ -166,6 +189,11 @@ internal sealed class Program
             _ = table.AddRow("  [cyan]diff three[/]", "Three-way diff: Xbox 360 → Converted → PC reference");
             _ = table.AddRow("  [cyan]diff semdiff[/]", "Semantic diff - human-readable field differences");
             _ = table.AddRow("", "");
+            _ = table.AddRow("[bold yellow]cell[/]", "[bold]Inspect cells and NPC placement[/]");
+            _ = table.AddRow("  [cyan]cell objects[/]", "List placed objects in a cell (with persistent overlay)");
+            _ = table.AddRow("  [cyan]cell npc-trace[/]", "Trace NPC from base FormID through ACHR to cell and position");
+            _ = table.AddRow("  [cyan]cell cell-children[/]", "Raw GRUP-level cell children inspection");
+            _ = table.AddRow("", "");
             _ = table.AddRow("[bold yellow]wrld[/]", "[bold]WRLD worldspace analysis (OFST streaming)[/]");
             _ = table.AddRow("  [cyan]wrld ofst[/]", "Extract WRLD OFST offset table for a worldspace");
             _ = table.AddRow("  [cyan]wrld ofst-compare[/]", "Compare WRLD OFST offset tables (Xbox vs PC)");
@@ -175,7 +203,21 @@ internal sealed class Program
             _ = table.AddRow("  [cyan]wrld ofst-image[/]", "Visualize WRLD OFST as an image");
 
             _ = table.AddRow("", "");
+            _ = table.AddRow("[bold yellow]dmp[/]", "[bold]Minidump analysis and diagnostics[/]");
+            _ = table.AddRow("  [cyan]dmp dmp-diag[/]", "Scan DMP files for persistent references and map markers");
+            _ = table.AddRow("  [cyan]dmp regions[/]", "List memory regions in minidump");
+            _ = table.AddRow("  [cyan]dmp modules[/]", "List loaded modules in minidump");
+            _ = table.AddRow("  [cyan]dmp va2offset[/]", "Convert virtual address to file offset");
+            _ = table.AddRow("  [cyan]dmp hexdump[/]", "Hex dump memory at an address");
+            _ = table.AddRow("  [cyan]dmp scripts list[/]", "List all scripts in memory dump");
+            _ = table.AddRow("  [cyan]dmp scripts show[/]", "Show details of a specific script");
+            _ = table.AddRow("  [cyan]dmp scripts compare[/]", "Semantic comparison of SCTX vs SCDA");
+            _ = table.AddRow("  [cyan]dmp scripts crossrefs[/]", "Cross-reference chain diagnostics");
+            _ = table.AddRow("  [cyan]dmp render-map[/]", "Render map marker overlay PNGs from DMP files");
+            _ = table.AddRow("  [cyan]dmp extract-module[/]", "Extract game executable from DMP as raw binary for Ghidra");
+            _ = table.AddRow("", "");
             _ = table.AddRow("[cyan]orphan-refs[/]", "Find FormID references to non-existent records (cut content detection)");
+            _ = table.AddRow("[cyan]gen-facegen[/]", "Parse FaceGen si.ctl and generate C# code");
 
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();
@@ -183,7 +225,7 @@ internal sealed class Program
             AnsiConsole.MarkupLine("Example: [grey]dotnet run -- stats FalloutNV.esm[/]");
             AnsiConsole.MarkupLine("Example: [grey]dotnet run -- diff three --xbox x.esm --converted c.esm --pc p.esm[/]");
             AnsiConsole.MarkupLine("");
-            AnsiConsole.MarkupLine("[dim]Backward compat aliases: diff3, semdiff, compare-land, compare-cells, hex, locate, validate-deep, ofst, ofst-compare, ofst-image[/]");
+            AnsiConsole.MarkupLine("[dim]Backward compat aliases: diff3, semdiff, compare-land, compare-cells, hex, locate, validate-deep, ofst, ofst-compare, ofst-image, dmp-diag[/]");
         });
 
         return rootCommand.Parse(args).Invoke();

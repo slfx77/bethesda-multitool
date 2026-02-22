@@ -3,12 +3,12 @@ using System.Globalization;
 using Spectre.Console;
 using FalloutXbox360Utils.Core.Minidump;
 
-namespace MinidumpAnalyzer.Commands;
+namespace EsmAnalyzer.Commands;
 
 /// <summary>
 ///     Commands for inspecting minidump memory regions and modules.
 /// </summary>
-public static class RegionCommands
+public static class DmpRegionCommands
 {
     /// <summary>
     ///     Creates the 'regions' command to list memory regions.

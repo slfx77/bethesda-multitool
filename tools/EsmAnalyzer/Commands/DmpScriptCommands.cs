@@ -7,12 +7,12 @@ using FalloutXbox360Utils.Core.Formats.Esm.Script;
 using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 
-namespace MinidumpAnalyzer.Commands;
+namespace EsmAnalyzer.Commands;
 
 /// <summary>
 ///     Commands for script analysis in memory dumps.
 /// </summary>
-public static class ScriptCommands
+public static class DmpScriptCommands
 {
     /// <summary>
     ///     Creates the 'scripts' parent command with subcommands.

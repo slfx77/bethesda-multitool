@@ -26,7 +26,18 @@ public static class FileTypeDetector
                 return AnalysisFileType.Unknown;
             }
 
-            return DetectFromMagic(header);
+            var result = DetectFromMagic(header);
+
+            // STFS-wrapped save files (.fxs) start with "CON " which is too generic,
+            // so fall back to extension-based detection for save files.
+            if (result == AnalysisFileType.Unknown &&
+                (filePath.EndsWith(".fxs", StringComparison.OrdinalIgnoreCase) ||
+                 filePath.EndsWith(".fos", StringComparison.OrdinalIgnoreCase)))
+            {
+                return AnalysisFileType.SaveFile;
+            }
+
+            return result;
         }
         catch
         {
@@ -62,6 +73,12 @@ public static class FileTypeDetector
             return AnalysisFileType.EsmFile;
         }
 
+        // Raw FO3SAVEGAME: "FO3S" (first 4 bytes of "FO3SAVEGAME" magic)
+        if (header[0] == 'F' && header[1] == 'O' && header[2] == '3' && header[3] == 'S')
+        {
+            return AnalysisFileType.SaveFile;
+        }
+
         return AnalysisFileType.Unknown;
     }
 
@@ -72,6 +89,8 @@ public static class FileTypeDetector
     {
         return filePath.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase) ||
                filePath.EndsWith(".esm", StringComparison.OrdinalIgnoreCase) ||
-               filePath.EndsWith(".esp", StringComparison.OrdinalIgnoreCase);
+               filePath.EndsWith(".esp", StringComparison.OrdinalIgnoreCase) ||
+               filePath.EndsWith(".fxs", StringComparison.OrdinalIgnoreCase) ||
+               filePath.EndsWith(".fos", StringComparison.OrdinalIgnoreCase);
     }
 }

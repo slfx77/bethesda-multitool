@@ -18,6 +18,10 @@ public class BuildLoadResult
     public Dictionary<string, BsaFileRecord> FileRecords { get; init; } = new();
 
     // ESM enrichment heuristics
+
+    /// <summary>"auto-discovered", "user-provided", or null if no ESM.</summary>
+    public string? EsmSourceDescription { get; set; }
+
     public int EsmInfoCount { get; set; }
     public int EsmNpcCount { get; set; }
     public int EsmQuestCount { get; set; }

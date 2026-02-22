@@ -11,6 +11,7 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
     <!-- Toolbar -->
@@ -23,6 +24,7 @@
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
       <ComboBox x:Name="WorldspaceComboBox" Grid.Column="0" MinWidth="220"
@@ -40,7 +42,11 @@
               ToolTipService.ToolTip="Zoom to fit" />
       <TextBlock x:Name="ZoomLevelText" Grid.Column="5" VerticalAlignment="Center" FontSize="11"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      <ComboBox x:Name="ColorSchemeComboBox" Grid.Column="7" MinWidth="100"
+      <Button x:Name="ExportButton" Grid.Column="7" Content="Export"
+              Click="ExportButton_Click"
+              ToolTipService.ToolTip="Export worldspace as PNG for comparison"
+              IsEnabled="False" />
+      <ComboBox x:Name="ColorSchemeComboBox" Grid.Column="8" MinWidth="100"
                 SelectionChanged="ColorSchemeComboBox_SelectionChanged"
                 ToolTipService.ToolTip="Heightmap color scheme" />
     </Grid>
@@ -56,9 +62,8 @@
     <!-- Legend overlay (floating above canvas, bottom-left) -->
     <Border x:Name="LegendOverlay" Grid.Row="1"
             VerticalAlignment="Bottom" HorizontalAlignment="Left"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            CornerRadius="4" Padding="6,4" Margin="8,0,0,8"
-            Opacity="0.95">
+            Background="#E6191920"
+            CornerRadius="4" Padding="6,4" Margin="8,0,0,8">
       <StackPanel Spacing="0">
         <Button x:Name="LegendToggleButton" Click="LegendToggle_Click"
                 HorizontalAlignment="Left"
@@ -138,5 +143,14 @@
       <TextBlock x:Name="CoordsText" Grid.Column="1" FontSize="11" FontFamily="Consolas"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
     </Grid>
+
+    <!-- Filter checkboxes -->
+    <StackPanel x:Name="FilterCheckboxPanel" Grid.Row="3" Orientation="Horizontal"
+                Spacing="16" Padding="0,4,0,0">
+      <CheckBox x:Name="WaterCheckBox" Content="Water" IsChecked="True"
+                Checked="WaterCheckBox_Changed" Unchecked="WaterCheckBox_Changed" />
+      <CheckBox x:Name="DisabledCheckBox" Content="Initially Disabled" IsChecked="False"
+                Checked="DisabledCheckBox_Changed" Unchecked="DisabledCheckBox_Changed" />
+    </StackPanel>
   </Grid>
 </UserControl>

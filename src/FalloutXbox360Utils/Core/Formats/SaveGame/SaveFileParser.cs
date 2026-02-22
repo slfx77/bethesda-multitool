@@ -14,30 +14,40 @@ public static class SaveFileParser
     private const byte PipeTerminator = 0x7C;
 
     /// <summary>
-    ///     STFS data blocks are grouped in sets of 170, with hash blocks between groups.
-    ///     First hash group: 4 blocks (L0 + L1 + 2 reserved). Subsequent groups: 2 blocks.
-    /// </summary>
-    private const int StfsBlocksPerGroup = 170;
-    private const int StfsFirstHashBlocks = 4;
-    private const int StfsSubsequentHashBlocks = 2;
-    private const int StfsBlockSize = 0x1000;
-    private const int StfsDataAreaStart = 0xA000;
-    private const int StfsInitialHashBlocks = 2; // L0 + L1 at 0xA000, 0xB000
-
-    /// <summary>
     ///     Parse a save file from raw bytes (may be STFS-wrapped or raw FO3SAVEGAME).
     /// </summary>
     public static SaveFile Parse(ReadOnlySpan<byte> data)
     {
-        int magicOffset = FindMagicOffset(data);
-        if (magicOffset < 0)
+        ReadOnlySpan<byte> payload;
+        int stfsPayloadOffset = 0;
+        StfsExtractionResult? stfsResult = null;
+        int? exactPayloadSize = null;
+
+        // Check for raw FO3SAVEGAME first (not STFS-wrapped)
+        if (data.Length >= Magic.Length && data[..Magic.Length].SequenceEqual(Magic))
         {
-            throw new InvalidDataException("FO3SAVEGAME magic not found in file data.");
+            payload = data;
+        }
+        else
+        {
+            // Try STFS container extraction
+            stfsResult = StfsContainer.TryExtract(data);
+            if (stfsResult.Success)
+            {
+                payload = stfsResult.Payload;
+                stfsPayloadOffset = stfsResult.FileEntry?.StartBlock > 0
+                    ? StfsContainer.DataBlockToRawOffset(stfsResult.FileEntry.StartBlock)
+                    : -1;
+                exactPayloadSize = stfsResult.FileEntry?.FileSize;
+            }
+            else
+            {
+                throw new InvalidDataException(
+                    $"Not a valid save file. {stfsResult.DiagnosticSummary}");
+            }
         }
 
-        var payload = ExtractPayload(data, magicOffset);
-
-        var header = ParseHeader(payload, out int headerEnd);
+        var header = ParseHeader(payload, out int headerEnd, exactPayloadSize);
         var locationTable = ParseFileLocationTable(payload, ref headerEnd);
 
         // FLT offsets are absolute from save payload start
@@ -86,7 +96,8 @@ public static class SaveFileParser
             VisitedWorldspaces = visitedWorldspaces,
             PlayerLocation = playerLocation,
             GlobalVariables = globalVariables,
-            StfsPayloadOffset = magicOffset
+            StfsPayloadOffset = stfsPayloadOffset,
+            StfsExtractionMethod = stfsResult?.Method.ToString()
         };
     }
 
@@ -102,7 +113,14 @@ public static class SaveFileParser
             return 0;
         }
 
-        // Search for FO3SAVEGAME magic in STFS container
+        // Try STFS extraction first
+        var stfs = StfsContainer.TryExtract(data);
+        if (stfs.Success && stfs.FileEntry != null)
+        {
+            return StfsContainer.DataBlockToRawOffset(stfs.FileEntry.StartBlock);
+        }
+
+        // Fallback: search for FO3SAVEGAME magic at block boundaries
         for (int offset = 0x1000; offset < data.Length - Magic.Length; offset += 0x1000)
         {
             if (data.Slice(offset, Magic.Length).SequenceEqual(Magic))
@@ -111,7 +129,7 @@ public static class SaveFileParser
             }
         }
 
-        // Fallback: brute-force scan
+        // Last resort: brute-force scan
         return data.IndexOf(Magic.AsSpan());
     }
 
@@ -119,9 +137,8 @@ public static class SaveFileParser
     public static int FindPayloadOffset(ReadOnlySpan<byte> data) => FindMagicOffset(data);
 
     /// <summary>
-    ///     Extract the save payload from STFS data using block-level extraction.
-    ///     Reads consecutive STFS data blocks starting from the block containing the magic,
-    ///     properly skipping hash blocks at each 170-block boundary.
+    ///     Extract the save payload from STFS data.
+    ///     Uses StfsContainer for proper extraction with file table support.
     /// </summary>
     public static byte[] ExtractPayload(ReadOnlySpan<byte> data, int magicOffset)
     {
@@ -130,101 +147,25 @@ public static class SaveFileParser
             return data.ToArray(); // Raw .fos file, no STFS wrapper
         }
 
-        // Determine which STFS data block the magic is in
-        int startBlock = RawOffsetToDataBlock(magicOffset);
-        if (startBlock < 0)
+        // Delegate to StfsContainer for proper STFS extraction
+        var stfs = StfsContainer.TryExtract(data);
+        if (stfs.Success)
         {
-            // Magic is not in a recognized data block area; fall back to contiguous
-            return data[magicOffset..].ToArray();
+            return stfs.Payload!;
         }
 
-        int expectedRaw = DataBlockToRawOffset(startBlock);
-        int blockInternalOffset = magicOffset - expectedRaw;
-
-        // Extract blocks sequentially
-        using var ms = new MemoryStream();
-        int block = startBlock;
-        while (true)
-        {
-            int rawOff = DataBlockToRawOffset(block);
-            if (rawOff + StfsBlockSize > data.Length)
-            {
-                // Partial last block
-                if (rawOff < data.Length)
-                {
-                    ms.Write(data[rawOff..]);
-                }
-
-                break;
-            }
-
-            ms.Write(data.Slice(rawOff, StfsBlockSize));
-            block++;
-        }
-
-        var result = ms.ToArray();
-
-        // Trim the offset within the first block (magic may not start at block boundary)
-        if (blockInternalOffset > 0 && blockInternalOffset < result.Length)
-        {
-            return result[blockInternalOffset..];
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    ///     Convert an STFS data block number to its raw file offset.
-    /// </summary>
-    internal static int DataBlockToRawOffset(int blockNum)
-    {
-        int area = blockNum / StfsBlocksPerGroup;
-        int hashAdj = area switch
-        {
-            0 => StfsInitialHashBlocks,
-            1 => StfsInitialHashBlocks + StfsFirstHashBlocks,
-            _ => StfsInitialHashBlocks + StfsFirstHashBlocks + StfsSubsequentHashBlocks * (area - 1)
-        };
-        return StfsDataAreaStart + (blockNum + hashAdj) * StfsBlockSize;
-    }
-
-    /// <summary>
-    ///     Convert a raw file offset to an STFS data block number.
-    ///     Returns -1 if the offset corresponds to a hash block or header area.
-    /// </summary>
-    internal static int RawOffsetToDataBlock(int rawOffset)
-    {
-        if (rawOffset < StfsDataAreaStart)
-        {
-            return -1;
-        }
-
-        int backing = (rawOffset - StfsDataAreaStart) / StfsBlockSize;
-
-        for (int area = 0; area < 100; area++)
-        {
-            int hashAdj = area switch
-            {
-                0 => StfsInitialHashBlocks,
-                1 => StfsInitialHashBlocks + StfsFirstHashBlocks,
-                _ => StfsInitialHashBlocks + StfsFirstHashBlocks + StfsSubsequentHashBlocks * (area - 1)
-            };
-
-            int block = backing - hashAdj;
-            if (block >= area * StfsBlocksPerGroup && block < (area + 1) * StfsBlocksPerGroup)
-            {
-                return block;
-            }
-        }
-
-        return -1;
+        // Fallback: read from magic offset to end
+        return data[magicOffset..].ToArray();
     }
 
     /// <summary>
     ///     Parse the save file header (everything before the body).
     ///     The File Location Table immediately follows the plugin list (no stats section in between).
     /// </summary>
-    private static SaveFileHeader ParseHeader(ReadOnlySpan<byte> data, out int position)
+    /// <param name="data">The save payload starting from FO3SAVEGAME magic.</param>
+    /// <param name="position">Set to the position after the FLT on return.</param>
+    /// <param name="payloadSize">Exact payload size from STFS file entry (bounds formVersion search).</param>
+    private static SaveFileHeader ParseHeader(ReadOnlySpan<byte> data, out int position, int? payloadSize = null)
     {
         // Magic: "FO3SAVEGAME" (11 bytes, no null terminator in these prototype builds)
         position = Magic.Length;
@@ -259,32 +200,41 @@ public static class SaveFileParser
         byte formVersion = 0;
         uint pluginInfoSize = 0;
 
+        // Bound the search to the actual payload size when known
+        int maxSearchEnd = payloadSize.HasValue
+            ? Math.Min(payloadSize.Value, data.Length)
+            : data.Length;
+
         // Try 3bpp and 4bpp screenshot sizes
         bool found = false;
         foreach (int bpp in new[] { 3, 4 })
         {
             int trySize = (int)(screenshotWidth * screenshotHeight * bpp);
             int fvPos = headerEnd + trySize;
-            if (fvPos + 5 < data.Length)
+            if (fvPos + 5 < maxSearchEnd)
             {
                 byte fv = data[fvPos];
                 uint piSize = BinaryUtils.ReadUInt32LE(data, fvPos + 1);
                 if (fv is >= 19 and <= 22 && piSize < 1000)
                 {
-                    screenshotDataSize = trySize;
-                    formVersion = fv;
-                    pluginInfoSize = piSize;
-                    position = fvPos + 5;
-                    found = true;
-                    break;
+                    // Validate: FLT after plugins should produce sane offsets
+                    if (ValidateFormVersionCandidate(data, fvPos + 5 + (int)piSize, maxSearchEnd))
+                    {
+                        screenshotDataSize = trySize;
+                        formVersion = fv;
+                        pluginInfoSize = piSize;
+                        position = fvPos + 5;
+                        found = true;
+                        break;
+                    }
                 }
             }
         }
 
-        // Fallback: search for formVersion marker validated by plugin structure (.esm/.esp)
+        // Fallback: search for formVersion marker validated by plugin structure (.esm/.esp) AND FLT
         if (!found)
         {
-            int searchEnd = Math.Min(headerEnd + (int)(screenshotWidth * screenshotHeight * 8), data.Length - 5);
+            int searchEnd = Math.Min(headerEnd + (int)(screenshotWidth * screenshotHeight * 8), maxSearchEnd - 5);
             for (int i = headerEnd; i < searchEnd; i++)
             {
                 byte fvCandidate = data[i];
@@ -301,36 +251,60 @@ public static class SaveFileParser
 
                 // Validate: plugin info section should contain .esm or .esp filename
                 int pluginRegionStart = i + 5;
-                int pluginRegionEnd = Math.Min(pluginRegionStart + (int)piSize, data.Length);
+                int pluginRegionEnd = Math.Min(pluginRegionStart + (int)piSize, maxSearchEnd);
                 if (pluginRegionEnd - pluginRegionStart < 5)
                 {
                     continue;
                 }
 
                 var pluginRegion = data[pluginRegionStart..pluginRegionEnd];
-                if (pluginRegion.IndexOf(".esm"u8) >= 0 || pluginRegion.IndexOf(".esp"u8) >= 0)
+                if (pluginRegion.IndexOf(".esm"u8) < 0 && pluginRegion.IndexOf(".esp"u8) < 0)
                 {
-                    screenshotDataSize = i - headerEnd;
+                    continue;
+                }
+
+                // Additional validation: check FLT at expected position produces sane offsets
+                int fltPosition = pluginRegionStart + (int)piSize;
+                if (!ValidateFormVersionCandidate(data, fltPosition, maxSearchEnd))
+                {
+                    continue;
+                }
+
+                screenshotDataSize = i - headerEnd;
+                formVersion = fvCandidate;
+                pluginInfoSize = piSize;
+                position = i + 5;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            // Last resort: assume 3bpp, but validate the result
+            position = headerEnd + screenshotDataSize;
+            if (position + 5 < data.Length)
+            {
+                byte fvCandidate = data[position];
+                uint piCandidate = BinaryUtils.ReadUInt32LE(data, position + 1);
+                int fltPos = position + 5 + (int)piCandidate;
+
+                if (piCandidate < 1000 && ValidateFormVersionCandidate(data, fltPos, maxSearchEnd))
+                {
                     formVersion = fvCandidate;
-                    pluginInfoSize = piSize;
-                    position = i + 5;
+                    pluginInfoSize = piCandidate;
+                    position += 5;
                     found = true;
-                    break;
                 }
             }
         }
 
         if (!found)
         {
-            // Last resort: assume 3bpp and continue
-            position = headerEnd + screenshotDataSize;
-            if (position + 5 < data.Length)
-            {
-                formVersion = data[position];
-                position++;
-                pluginInfoSize = BinaryUtils.ReadUInt32LE(data, position);
-                position += 4;
-            }
+            throw new InvalidDataException(
+                "Unable to locate formVersion in save header. " +
+                $"Screenshot {screenshotWidth}x{screenshotHeight} — no valid formVersion/FLT found at any BPP. " +
+                "The save data after the header may be corrupted.");
         }
 
         // Plugin count (uint8) followed by pipe-separated length-prefixed plugin names
@@ -373,6 +347,54 @@ public static class SaveFileParser
             ScreenshotDataOffset = screenshotDataOffset,
             ScreenshotDataSize = screenshotDataSize
         };
+    }
+
+    /// <summary>
+    ///     Validate a formVersion candidate by checking the File Location Table at the expected position.
+    ///     The FLT should produce sane offsets: ChangedFormsOffset within payload, reasonable counts.
+    /// </summary>
+    private static bool ValidateFormVersionCandidate(ReadOnlySpan<byte> data, int fltPosition, int maxPayloadSize)
+    {
+        if (fltPosition + FileLocationTable.Size > data.Length)
+        {
+            return false;
+        }
+
+        // Read key FLT fields
+        uint refIdOffset = BinaryUtils.ReadUInt32LE(data, fltPosition);
+        uint gdt1Offset = BinaryUtils.ReadUInt32LE(data, fltPosition + 8);
+        uint cfOffset = BinaryUtils.ReadUInt32LE(data, fltPosition + 12);
+        uint gdt1Count = BinaryUtils.ReadUInt32LE(data, fltPosition + 20);
+        uint cfCount = BinaryUtils.ReadUInt32LE(data, fltPosition + 28);
+
+        // Sanity checks: offsets should be within payload and in order
+        if (cfOffset == 0 || cfOffset > (uint)maxPayloadSize)
+        {
+            return false;
+        }
+
+        if (gdt1Offset >= cfOffset)
+        {
+            return false; // GDT1 should come before changed forms
+        }
+
+        if (refIdOffset <= cfOffset)
+        {
+            return false; // RefID array should come after changed forms
+        }
+
+        if (cfCount > 100_000 || gdt1Count > 100)
+        {
+            return false; // Unreasonable counts
+        }
+
+        // FLT position itself should be before the GDT1 offset
+        if ((uint)fltPosition > gdt1Offset)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

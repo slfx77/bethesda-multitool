@@ -32,6 +32,20 @@ semdiff <file1> <file2> ...     # Semantic field-by-field diff (most useful!)
 
 # Conversion
 convert <file>                  # Convert Xbox 360 ESM to PC format
+
+# DMP analysis (minidump)
+dmp dmp-diag <directory>        # Scan DMPs for persistent refs and map markers
+dmp regions <file>              # List memory regions
+dmp modules <file>              # List loaded modules
+dmp va2offset <file> <address>  # Convert VA to file offset
+dmp hexdump <file> <address>    # Hex dump at address
+dmp scripts list <file>         # List scripts in DMP
+dmp scripts show <file> <id>    # Show script details
+dmp scripts compare <file>      # Compare SCTX vs SCDA
+dmp scripts crossrefs <file>    # Cross-reference chain diagnostics
+
+# FaceGen
+gen-facegen <ctl-file>          # Generate C# code from si.ctl
 ```
 
 ### Semantic Diff (semdiff) - Primary debugging tool

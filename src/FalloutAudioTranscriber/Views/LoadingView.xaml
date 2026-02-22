@@ -53,6 +53,43 @@
           Style="{ThemeResource AccentButtonStyle}" />
       </Grid>
 
+      <!-- ESM file override (optional) -->
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <TextBlock
+          Grid.Column="0"
+          Text="ESM File"
+          VerticalAlignment="Center"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          FontSize="12" />
+
+        <TextBox
+          x:Name="EsmPathBox"
+          Grid.Column="1"
+          PlaceholderText="(auto-detect from Data folder)"
+          IsReadOnly="True"
+          FontSize="12" />
+
+        <Button
+          x:Name="EsmBrowseButton"
+          Grid.Column="2"
+          Content="Browse..."
+          Click="EsmBrowseButton_Click" />
+
+        <Button
+          x:Name="EsmClearButton"
+          Grid.Column="3"
+          Content="Clear"
+          Click="EsmClearButton_Click"
+          Visibility="Collapsed" />
+      </Grid>
+
       <!-- Load button -->
       <Button
         x:Name="LoadButton"

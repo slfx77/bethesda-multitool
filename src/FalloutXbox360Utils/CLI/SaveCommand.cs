@@ -1,6 +1,12 @@
 using System.CommandLine;
+using System.IO.MemoryMappedFiles;
 using System.Text;
+using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
+using FalloutXbox360Utils.Core.Formats.SaveGame.Export;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -11,6 +17,16 @@ namespace FalloutXbox360Utils.CLI;
 public static class SaveCommand
 {
     private const string InputArgName = "input";
+
+    /// <summary>
+    ///     Resolves a SaveRefId to a consistent 0x{FormID:X8} string for display.
+    ///     Falls back to raw RefID notation if resolution fails.
+    /// </summary>
+    private static string FormatFormId(SaveRefId refId, ReadOnlySpan<uint> formIdArray)
+    {
+        var resolved = refId.ResolveFormId(formIdArray);
+        return resolved != 0 ? $"0x{resolved:X8}" : refId.ToString();
+    }
 
     public static Command Create()
     {
@@ -91,6 +107,28 @@ public static class SaveCommand
             return Task.FromResult(ExecuteDecodeStats(input));
         });
 
+        var stfsInfoCommand = new Command("stfs-info", "Show STFS container structure and extraction diagnostics");
+        stfsInfoCommand.Arguments.Add(new Argument<string>(InputArgName) { Description = "Path to .fxs save file" });
+        stfsInfoCommand.SetAction((parseResult, _) =>
+        {
+            var input = parseResult.GetValue<string>(InputArgName)!;
+            return Task.FromResult(ExecuteStfsInfo(input));
+        });
+
+        var reportsCommand = new Command("reports", "Generate save file reports (CSV + TXT) for reconciliation");
+        reportsCommand.Arguments.Add(new Argument<string>(InputArgName) { Description = "Path to save file" });
+        var esmOpt = new Option<string?>("--esm") { Description = "ESM/DMP file for name resolution enrichment" };
+        var outputOpt = new Option<string?>("-o", "--output") { Description = "Output directory (default: ./save_reports/)" };
+        reportsCommand.Options.Add(esmOpt);
+        reportsCommand.Options.Add(outputOpt);
+        reportsCommand.SetAction((parseResult, _) =>
+        {
+            var input = parseResult.GetValue<string>(InputArgName)!;
+            var esm = parseResult.GetValue(esmOpt);
+            var output = parseResult.GetValue(outputOpt) ?? "./save_reports";
+            return Task.FromResult(ExecuteReports(input, esm, output));
+        });
+
         command.Subcommands.Add(infoCommand);
         command.Subcommands.Add(changesCommand);
         command.Subcommands.Add(playerCommand);
@@ -98,6 +136,8 @@ public static class SaveCommand
         command.Subcommands.Add(hexdumpCommand);
         command.Subcommands.Add(statsCommand);
         command.Subcommands.Add(decodeCommand);
+        command.Subcommands.Add(stfsInfoCommand);
+        command.Subcommands.Add(reportsCommand);
 
         return command;
     }
@@ -232,6 +272,7 @@ public static class SaveCommand
                 detailTable.AddColumn("Data Size");
                 detailTable.AddColumn("Position");
 
+                var formIdArray = save.FormIdArray.ToArray().AsSpan();
                 foreach (var form in displayForms)
                 {
                     string posStr = form.Initial != null
@@ -244,7 +285,7 @@ public static class SaveCommand
                         : $"0x{form.ChangeFlags:X8}";
 
                     detailTable.AddRow(
-                        Markup.Escape(form.RefId.ToString()),
+                        Markup.Escape(FormatFormId(form.RefId, formIdArray)),
                         form.TypeName,
                         flagStr,
                         $"{form.Data.Length}",
@@ -283,13 +324,15 @@ public static class SaveCommand
             AnsiConsole.MarkupLine($"  Cell: {Markup.Escape(h.PlayerCell)}");
             AnsiConsole.MarkupLine($"  Playtime: {Markup.Escape(h.SaveDuration)}");
 
+            var formIdArray = save.FormIdArray.ToArray().AsSpan();
+
             if (save.PlayerLocation != null)
             {
                 var loc = save.PlayerLocation;
                 AnsiConsole.MarkupLine($"\n[bold]World Position (Global Data Type 1):[/]");
-                AnsiConsole.MarkupLine($"  Worldspace: {loc.WorldspaceRefId}");
+                AnsiConsole.MarkupLine($"  Worldspace: {FormatFormId(loc.WorldspaceRefId, formIdArray)}");
                 AnsiConsole.MarkupLine($"  Grid: ({loc.CoordX}, {loc.CoordY})");
-                AnsiConsole.MarkupLine($"  Cell: {loc.CellRefId}");
+                AnsiConsole.MarkupLine($"  Cell: {FormatFormId(loc.CellRefId, formIdArray)}");
                 AnsiConsole.MarkupLine($"  Position: ({loc.PosX:F2}, {loc.PosY:F2}, {loc.PosZ:F2})");
             }
 
@@ -303,7 +346,7 @@ public static class SaveCommand
                 AnsiConsole.MarkupLine($"\n[bold]Actor Changed Forms with Position ({playerForms.Count}):[/]");
                 foreach (var form in playerForms.Take(10))
                 {
-                    AnsiConsole.MarkupLine($"  {Markup.Escape(form.RefId.ToString())} ({form.TypeName}): ({form.Initial!.PosX:F0}, {form.Initial.PosY:F0}, {form.Initial.PosZ:F0}) flags=0x{form.ChangeFlags:X8}");
+                    AnsiConsole.MarkupLine($"  {Markup.Escape(FormatFormId(form.RefId, formIdArray))} ({form.TypeName}): ({form.Initial!.PosX:F0}, {form.Initial.PosY:F0}, {form.Initial.PosZ:F0}) flags=0x{form.ChangeFlags:X8}");
                 }
             }
 
@@ -374,7 +417,8 @@ public static class SaveCommand
                     return 1;
                 }
 
-                AnsiConsole.MarkupLine($"[bold green]Changed Form {Markup.Escape(form.RefId.ToString())} ({form.TypeName})[/]");
+                var formIdArray = save.FormIdArray.ToArray().AsSpan();
+                AnsiConsole.MarkupLine($"[bold green]Changed Form {Markup.Escape(FormatFormId(form.RefId, formIdArray))} ({form.TypeName})[/]");
                 var flagNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
                 AnsiConsole.MarkupLine($"  Flags: 0x{form.ChangeFlags:X8}  Version: {form.Version}  Data: {form.Data.Length:N0} bytes");
                 if (flagNames.Count > 0)
@@ -602,13 +646,13 @@ public static class SaveCommand
                     if (errors.Count < 10)
                     {
                         var flagNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
-                        errors.Add($"{form.RefId} ({typeName}) flags=0x{form.ChangeFlags:X8} [{string.Join("|", flagNames)}] data={form.Data.Length}b");
+                        errors.Add($"{FormatFormId(form.RefId, formIdArray)} ({typeName}) flags=0x{form.ChangeFlags:X8} [{string.Join("|", flagNames)}] data={form.Data.Length}b");
                     }
                 }
 
                 if (result.Warnings.Count > 0 && errors.Count < 20)
                 {
-                    errors.Add($"{form.RefId} ({typeName}): {string.Join("; ", result.Warnings)}");
+                    errors.Add($"{FormatFormId(form.RefId, formIdArray)} ({typeName}): {string.Join("; ", result.Warnings)}");
                 }
 
                 typeStats[typeName] = s;
@@ -656,6 +700,59 @@ public static class SaveCommand
 
             AnsiConsole.Write(typeTable);
 
+            // List partial forms with their last decoded field
+            var partials = new List<(string RefId, string Type, uint Flags, List<string> FlagNames, int DataLen, int Consumed, string LastField)>();
+            foreach (var form in save.ChangedForms)
+            {
+                if (form.Data.Length == 0) continue;
+                var r = ChangedFormDecoder.Decode(form, formIdArray);
+                if (r is null || r.FullyDecoded || r.BytesConsumed == 0) continue;
+                var fNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
+                string lastField = r.Fields.Count > 0 ? r.Fields[^1].Name : "(none)";
+                partials.Add((FormatFormId(form.RefId, formIdArray), form.TypeName, form.ChangeFlags, fNames, form.Data.Length, r.BytesConsumed, lastField));
+            }
+
+            // Analyze fully-decoded REFR flag combos
+            Console.WriteLine("\nFully-decoded REFR flag distribution:");
+            var fullRefrs = new Dictionary<uint, (int Count, int TotalLen, List<int> Sizes)>();
+            foreach (var form in save.ChangedForms)
+            {
+                if (form.Data.Length == 0 || form.TypeName != "REFR") continue;
+                var r2 = ChangedFormDecoder.Decode(form, formIdArray);
+                if (r2 is null || !r2.FullyDecoded) continue;
+                if (!fullRefrs.TryGetValue(form.ChangeFlags, out var stat))
+                    stat = (0, 0, new List<int>());
+                stat.Count++;
+                stat.TotalLen += form.Data.Length;
+                if (stat.Sizes.Count < 3) stat.Sizes.Add(form.Data.Length);
+                fullRefrs[form.ChangeFlags] = stat;
+            }
+            foreach (var kvp in fullRefrs.OrderByDescending(x => x.Value.Count).Take(15))
+            {
+                var fNames = ChangeFlagRegistry.DescribeFlags(0x03, kvp.Key); // 0x03 = REFR type
+                int avg = kvp.Value.TotalLen / Math.Max(1, kvp.Value.Count);
+                var sizes = string.Join(",", kvp.Value.Sizes);
+                Console.WriteLine($"  flags=0x{kvp.Key:X8} count={kvp.Value.Count,5} avg_len={avg,4}b sizes=[{sizes}] [{string.Join("|", fNames)}]");
+            }
+
+            if (partials.Count > 0)
+            {
+                // Group by type and last field to show patterns
+                AnsiConsole.MarkupLine($"\n[bold yellow]Partial Decode Patterns ({partials.Count} forms):[/]\n");
+                var groups = partials
+                    .GroupBy(p => (p.Type, p.LastField))
+                    .OrderByDescending(g => g.Count());
+                foreach (var g in groups.Take(20))
+                {
+                    var sample = g.First();
+                    var flagStr = string.Join("|", sample.FlagNames);
+                    int avgRemaining = (int)g.Average(x => x.DataLen - x.Consumed);
+                    Console.WriteLine($"  {g.Count(),4}x {g.Key.Type} last={g.Key.LastField} avg_remaining={avgRemaining}b sample_flags={flagStr}");
+                    foreach (var p in g.Take(3))
+                        Console.WriteLine($"       {p.RefId} flags=0x{p.Flags:X8} data={p.DataLen}b consumed={p.Consumed}b remaining={p.DataLen - p.Consumed}b");
+                }
+            }
+
             if (errors.Count > 0)
             {
                 AnsiConsole.MarkupLine("\n[bold red]Decode Warnings:[/]");
@@ -671,6 +768,249 @@ public static class SaveCommand
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
             return 1;
+        }
+    }
+
+    private static int ExecuteStfsInfo(string path)
+    {
+        if (!File.Exists(path))
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(path)}");
+            return 1;
+        }
+
+        try
+        {
+            var data = File.ReadAllBytes(path);
+            AnsiConsole.MarkupLine($"[bold green]STFS Container:[/] {Markup.Escape(Path.GetFileName(path))}");
+            AnsiConsole.MarkupLine($"  File size: {data.Length:N0} bytes\n");
+
+            // Check for CON/LIVE/PIRS magic
+            if (data.Length < 4)
+            {
+                AnsiConsole.MarkupLine("[red]File too small[/]");
+                return 1;
+            }
+
+            string magic = Encoding.ASCII.GetString(data, 0, 4);
+            if (magic is not ("CON " or "LIVE" or "PIRS"))
+            {
+                // Check if it's a raw FO3SAVEGAME
+                if (data.Length >= 11 && Encoding.ASCII.GetString(data, 0, 11) == "FO3SAVEGAME")
+                {
+                    AnsiConsole.MarkupLine("[yellow]Not an STFS container — raw FO3SAVEGAME file[/]");
+                    AnsiConsole.MarkupLine("Use [cyan]save info[/] to inspect the save data.");
+                    return 0;
+                }
+
+                AnsiConsole.MarkupLine($"[red]Not an STFS container (magic: {Markup.Escape(magic)})[/]");
+                return 1;
+            }
+
+            // Parse header
+            var header = StfsContainer.ParseHeader(data);
+
+            var headerTable = new Table().Border(TableBorder.Rounded);
+            headerTable.AddColumn("Field");
+            headerTable.AddColumn("Value");
+            headerTable.AddRow("Magic", header.Magic.Trim());
+            headerTable.AddRow("Content Type", $"0x{header.ContentType:X8}{(header.ContentType == 1 ? " (Save Game)" : "")}");
+            headerTable.AddRow("Metadata Version", header.MetadataVersion.ToString());
+            headerTable.AddRow("Block Separation", $"{header.BlockSeparation} ({(header.BlockSeparation == 0 ? "male" : "female")})");
+            headerTable.AddRow("File Table Blocks", header.FileTableBlockCount.ToString());
+            headerTable.AddRow("File Table Start Block", header.FileTableBlockNumber.ToString());
+            headerTable.AddRow("Total Allocated", $"{header.TotalAllocatedBlocks} blocks ({header.TotalAllocatedBlocks * 4096:N0} bytes)");
+            headerTable.AddRow("Total Unallocated", $"{header.TotalUnallocatedBlocks} blocks");
+            AnsiConsole.Write(headerTable);
+
+            // Try extraction with full diagnostics
+            AnsiConsole.MarkupLine("\n[bold]Extraction Attempt:[/]\n");
+            var result = StfsContainer.TryExtract(data);
+
+            foreach (var diag in result.Diagnostics)
+            {
+                string color = diag.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                               diag.Contains("INVALID", StringComparison.OrdinalIgnoreCase) ||
+                               diag.Contains("corrupted", StringComparison.OrdinalIgnoreCase)
+                    ? "red"
+                    : diag.Contains("confirmed", StringComparison.OrdinalIgnoreCase) ||
+                      diag.Contains("Found:", StringComparison.OrdinalIgnoreCase)
+                        ? "green"
+                        : "grey";
+                AnsiConsole.MarkupLine($"  [{color}]{Markup.Escape(diag)}[/]");
+            }
+
+            AnsiConsole.MarkupLine($"\n  Method: [bold]{result.Method}[/]");
+
+            if (result.FileEntry != null)
+            {
+                var fe = result.FileEntry;
+                AnsiConsole.MarkupLine($"\n[bold]File Entry:[/]");
+                AnsiConsole.MarkupLine($"  Filename: {Markup.Escape(fe.Filename)}");
+                AnsiConsole.MarkupLine($"  File Size: {fe.FileSize:N0} bytes");
+                AnsiConsole.MarkupLine($"  Start Block: {fe.StartBlock} (offset 0x{StfsContainer.DataBlockToRawOffset(fe.StartBlock):X})");
+                AnsiConsole.MarkupLine($"  Valid Blocks: {fe.ValidBlocks}");
+                AnsiConsole.MarkupLine($"  Allocated Blocks: {fe.AllocatedBlocks}");
+                AnsiConsole.MarkupLine($"  Consecutive: {fe.IsConsecutive}");
+            }
+
+            if (result.Success)
+            {
+                AnsiConsole.MarkupLine($"\n[bold green]Payload extracted:[/] {result.Payload!.Length:N0} bytes");
+
+                // Try to parse the header from the extracted payload
+                try
+                {
+                    var save = SaveFileParser.Parse(data);
+                    var h = save.Header;
+                    AnsiConsole.MarkupLine($"\n[bold]Save Header:[/]");
+                    AnsiConsole.MarkupLine($"  Player: {Markup.Escape(h.PlayerName)} (Level {h.PlayerLevel})");
+                    AnsiConsole.MarkupLine($"  Cell: {Markup.Escape(h.PlayerCell)}");
+                    AnsiConsole.MarkupLine($"  Save #{h.SaveNumber}, Playtime: {Markup.Escape(h.SaveDuration)}");
+                    AnsiConsole.MarkupLine($"  FormVersion: {h.FormVersion}");
+                    AnsiConsole.MarkupLine($"  Screenshot: {h.ScreenshotWidth}x{h.ScreenshotHeight} ({h.ScreenshotDataSize:N0} bytes)");
+                    AnsiConsole.MarkupLine($"  Plugins: {h.Plugins.Count}");
+                    AnsiConsole.MarkupLine($"  Changed Forms: {save.ChangedForms.Count}");
+                    AnsiConsole.MarkupLine($"  FormID Array: {save.FormIdArray.Count} entries");
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"\n[yellow]Save parse failed:[/] {Markup.Escape(ex.Message)}");
+                }
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"\n[red]Extraction failed[/]");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+            return 1;
+        }
+    }
+
+    private static int ExecuteReports(string path, string? esmPath, string outputDir)
+    {
+        if (!File.Exists(path))
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(path)}");
+            return 1;
+        }
+
+        try
+        {
+            AnsiConsole.MarkupLine($"[bold green]Generating save reports...[/]");
+            var save = ParseFile(path);
+            var formIdArray = save.FormIdArray.ToArray();
+
+            // Decode all changed forms
+            AnsiConsole.MarkupLine("  Decoding changed forms...");
+            var decodedForms = new Dictionary<int, DecodedFormData>();
+            for (int i = 0; i < save.ChangedForms.Count; i++)
+            {
+                var form = save.ChangedForms[i];
+                if (form.Data.Length == 0) continue;
+                var decoded = ChangedFormDecoder.Decode(form, formIdArray);
+                if (decoded != null)
+                {
+                    decodedForms[i] = decoded;
+                }
+            }
+
+            // Optional ESM/DMP enrichment for name resolution
+            FormIdResolver? resolver = null;
+            if (!string.IsNullOrEmpty(esmPath))
+            {
+                if (!File.Exists(esmPath))
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] ESM/DMP not found: {Markup.Escape(esmPath)}");
+                }
+                else
+                {
+                    resolver = LoadResolverFromFile(esmPath);
+                }
+            }
+
+            // Generate reports
+            AnsiConsole.MarkupLine("  Generating reports...");
+            var reports = SaveReportGenerator.GenerateAllReports(save, decodedForms, resolver);
+
+            // Write to output directory
+            Directory.CreateDirectory(outputDir);
+            foreach (var (filename, content) in reports)
+            {
+                var filePath = Path.Combine(outputDir, filename);
+                File.WriteAllText(filePath, content);
+            }
+
+            AnsiConsole.MarkupLine($"\n[bold green]Generated {reports.Count} reports to {Markup.Escape(outputDir)}:[/]");
+            foreach (var (filename, content) in reports.OrderBy(kvp => kvp.Key))
+            {
+                AnsiConsole.MarkupLine($"  {filename} ({content.Length:N0} bytes)");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+            AnsiConsole.WriteException(ex);
+            return 1;
+        }
+    }
+
+    private static FormIdResolver? LoadResolverFromFile(string path)
+    {
+        try
+        {
+            AnsiConsole.MarkupLine($"  Loading ESM/DMP: {Markup.Escape(Path.GetFileName(path))}...");
+            var fileType = FileTypeDetector.Detect(path);
+
+            AnalysisResult analysisResult;
+            if (fileType == AnalysisFileType.EsmFile)
+            {
+                analysisResult = EsmFileAnalyzer.AnalyzeAsync(path, null).GetAwaiter().GetResult();
+            }
+            else if (fileType == AnalysisFileType.Minidump)
+            {
+                analysisResult = new Core.Minidump.MinidumpAnalyzer().AnalyzeAsync(path, null).GetAwaiter().GetResult();
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[yellow]  Not an ESM/DMP file, skipping enrichment.[/]");
+                return null;
+            }
+
+            if (analysisResult.EsmRecords == null)
+            {
+                AnsiConsole.MarkupLine("[yellow]  No ESM records found, skipping enrichment.[/]");
+                return null;
+            }
+
+            AnsiConsole.MarkupLine("  Reconstructing records...");
+            var fileSize = new FileInfo(path).Length;
+            using var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+
+            var parser = new RecordParser(
+                analysisResult.EsmRecords,
+                analysisResult.FormIdMap,
+                accessor,
+                fileSize,
+                analysisResult.MinidumpInfo);
+            var records = parser.ReconstructAll();
+            var resolver = records.CreateResolver();
+
+            AnsiConsole.MarkupLine($"  [green]Loaded {records.TotalRecordsReconstructed:N0} records for name resolution.[/]");
+            return resolver;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[yellow]  ESM/DMP load failed: {Markup.Escape(ex.Message)}[/]");
+            return null;
         }
     }
 

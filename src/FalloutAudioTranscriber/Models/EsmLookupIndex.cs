@@ -174,6 +174,7 @@ public class EsmLookupIndex
     public void Enrich(VoiceFileEntry entry)
     {
         entry.SubtitleText = GetSubtitleText(entry.FormId);
+        entry.EsmSubtitleText = entry.SubtitleText;
         entry.SpeakerName = GetSpeakerName(entry.FormId);
         entry.QuestName = GetQuestName(entry.FormId);
 

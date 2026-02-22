@@ -10,6 +10,7 @@ namespace FalloutAudioTranscriber.Views;
 public sealed partial class LoadingView : UserControl
 {
     private string? _selectedPath;
+    private string? _selectedEsmPath;
     private CancellationTokenSource? _cts;
 
     public LoadingView()
@@ -25,6 +26,9 @@ public sealed partial class LoadingView : UserControl
 
     /// <summary>The selected data directory path.</summary>
     public string? DataDirectory => _selectedPath;
+
+    /// <summary>User-selected ESM override path (null = auto-detect).</summary>
+    public string? EsmOverridePath => _selectedEsmPath;
 
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
     {
@@ -44,6 +48,31 @@ public sealed partial class LoadingView : UserControl
             LoadButton.IsEnabled = true;
             ResultsPanel.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private async void EsmBrowseButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileOpenPicker();
+        picker.SuggestedStartLocation = PickerLocationId.ComputerFolder;
+        picker.FileTypeFilter.Add(".esm");
+
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow.Instance!);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+        var file = await picker.PickSingleFileAsync();
+        if (file != null)
+        {
+            _selectedEsmPath = file.Path;
+            EsmPathBox.Text = file.Path;
+            EsmClearButton.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void EsmClearButton_Click(object sender, RoutedEventArgs e)
+    {
+        _selectedEsmPath = null;
+        EsmPathBox.Text = "";
+        EsmClearButton.Visibility = Visibility.Collapsed;
     }
 
     private async void LoadButton_Click(object sender, RoutedEventArgs e)
@@ -73,7 +102,8 @@ public sealed partial class LoadingView : UserControl
                 });
             });
 
-            var result = await BuildDirectoryLoader.LoadAsync(_selectedPath, progress, _cts.Token);
+            var result = await BuildDirectoryLoader.LoadAsync(
+                _selectedPath, progress, _cts.Token, esmOverridePath: _selectedEsmPath);
 
             LoadResult = result;
             var entries = result.Entries;
@@ -93,7 +123,8 @@ public sealed partial class LoadingView : UserControl
             {
                 static string Pct(int n, int total) => total > 0 ? $"{100.0 * n / total:F0}%" : "N/A";
 
-                detailLines += $"\nESM: {result.EsmInfoCount:N0} INFOs, {result.EsmNpcCount:N0} NPCs, "
+                var sourceTag = result.EsmSourceDescription ?? "unknown";
+                detailLines += $"\nESM ({sourceTag}): {result.EsmInfoCount:N0} INFOs, {result.EsmNpcCount:N0} NPCs, "
                                + $"{result.EsmQuestCount:N0} quests, {result.EsmTopicCount:N0} topics";
                 detailLines += $"\nMatch: {result.EnrichedSubtitleCount:N0} subtitles ({Pct(result.EnrichedSubtitleCount, entries.Count)}), "
                                + $"{result.EnrichedSpeakerCount:N0} speakers ({Pct(result.EnrichedSpeakerCount, entries.Count)}), "

@@ -123,6 +123,82 @@ public sealed class RecordParser
             }
         }
 
+        // Enrich placed references with runtime REFR/ACHR/ACRE data from pAllForms
+        if (_context.RuntimeReader != null && _context.ScanResult.RuntimeRefrFormEntries.Count > 0)
+        {
+            phaseSw.Restart();
+            var runtimeRefrs = _context.RuntimeReader.ReadAllRuntimeRefrs(
+                _context.ScanResult.RuntimeRefrFormEntries);
+
+            if (runtimeRefrs.Count > 0)
+            {
+                // Build index of existing ESM-scanned REFRs by FormID for merging
+                var existingByFormId = new Dictionary<uint, int>();
+                for (var i = 0; i < _context.ScanResult.RefrRecords.Count; i++)
+                {
+                    existingByFormId.TryAdd(_context.ScanResult.RefrRecords[i].Header.FormId, i);
+                }
+
+                var mergedCount = 0;
+                var addedCount = 0;
+                foreach (var (formId, runtimeRefr) in runtimeRefrs)
+                {
+                    if (existingByFormId.TryGetValue(formId, out var idx))
+                    {
+                        // Merge: prefer runtime non-null values over ESM
+                        var existing = _context.ScanResult.RefrRecords[idx];
+                        _context.ScanResult.RefrRecords[idx] = existing with
+                        {
+                            BaseFormId = runtimeRefr.BaseFormId != 0 ? runtimeRefr.BaseFormId : existing.BaseFormId,
+                            Position = runtimeRefr.Position ?? existing.Position,
+                            Scale = Math.Abs(runtimeRefr.Scale - 1.0f) > 0.001f ? runtimeRefr.Scale : existing.Scale,
+                            ParentCellFormId = runtimeRefr.ParentCellFormId ?? existing.ParentCellFormId,
+                            IsMapMarker = runtimeRefr.IsMapMarker || existing.IsMapMarker,
+                            MarkerType = runtimeRefr.MarkerType ?? existing.MarkerType,
+                            MarkerName = runtimeRefr.MarkerName ?? existing.MarkerName,
+                            EnableParentFormId = runtimeRefr.EnableParentFormId ?? existing.EnableParentFormId,
+                            EnableParentFlags = runtimeRefr.EnableParentFlags ?? existing.EnableParentFlags,
+                            LinkedRefFormId = runtimeRefr.LinkedRefFormId ?? existing.LinkedRefFormId,
+                            OwnerFormId = runtimeRefr.OwnerFormId ?? existing.OwnerFormId,
+                            DestinationDoorFormId = runtimeRefr.DestinationDoorFormId ?? existing.DestinationDoorFormId
+                        };
+                        mergedCount++;
+                    }
+                    else
+                    {
+                        _context.ScanResult.RefrRecords.Add(runtimeRefr);
+                        addedCount++;
+                    }
+                }
+
+                Logger.Instance.Debug(
+                    $"  [Semantic] Runtime REFRs: {phaseSw.Elapsed} ({runtimeRefrs.Count} read, " +
+                    $"{mergedCount} merged, {addedCount} new, " +
+                    $"{_context.ScanResult.RefrRecords.Count} total)");
+            }
+        }
+
+        // Enrich worldspace cell maps by walking TESWorldSpace pCellMap hash tables
+        if (_context.RuntimeReader != null)
+        {
+            phaseSw.Restart();
+            var wrldEntries = _context.ScanResult.RuntimeEditorIds
+                .Where(e => e.FormType == 0x41)
+                .ToList();
+
+            if (wrldEntries.Count > 0)
+            {
+                var cellMaps = _context.RuntimeReader.ReadAllWorldspaceCellMaps(wrldEntries);
+                if (cellMaps.Count > 0)
+                {
+                    _context.RuntimeWorldspaceCellMaps = cellMaps;
+                    var totalCells = cellMaps.Values.Sum(w => w.Cells.Count);
+                    Logger.Instance.Debug(
+                        $"  [Semantic] Worldspace cell maps: {phaseSw.Elapsed} ({cellMaps.Count} worldspaces, {totalCells} cells)");
+                }
+            }
+        }
+
         // Pre-scan all records for FULL subrecords (display names) so that
         // unreconstructed types (HAIR, EYES, CSTY, etc.) have names available for display
         progress?.Report((2, "Scanning display names..."));

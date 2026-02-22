@@ -75,6 +75,26 @@
               TextWrapping="Wrap" />
           </StackPanel>
 
+          <!-- ESM Reference (visible when entry has ESM subtitle text) -->
+          <StackPanel
+            x:Name="EsmReferencePanel"
+            Spacing="2"
+            Visibility="Collapsed">
+            <TextBlock Text="ESM Reference" Style="{StaticResource SecondaryTextStyle}" />
+            <Border
+              Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+              CornerRadius="4"
+              Padding="8"
+              BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+              BorderThickness="2,0,0,0">
+              <TextBlock
+                x:Name="EsmReferenceText"
+                TextWrapping="Wrap"
+                FontStyle="Italic"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Border>
+          </StackPanel>
+
           <!-- Subtitle text -->
           <StackPanel Spacing="2">
             <TextBlock Text="Subtitle" Style="{StaticResource SecondaryTextStyle}" />
@@ -157,6 +177,11 @@
                 Content="Transcribe"
                 Click="Transcribe_Click"
                 IsEnabled="False" />
+              <Button
+                x:Name="RejectButton"
+                Content="Reject"
+                Click="Reject_Click"
+                Visibility="Collapsed" />
               <Button
                 x:Name="ApproveButton"
                 Content="Approve"

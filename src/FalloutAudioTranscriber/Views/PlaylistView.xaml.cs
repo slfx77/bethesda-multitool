@@ -30,6 +30,7 @@ public sealed partial class PlaylistView : UserControl
     // Filter state
     private string _searchQuery = "";
     private bool _showEsmSubtitles;
+    private bool _transcribeEsmLines;
     private bool _filtersInitialized;
 
     // Sort state
@@ -47,6 +48,7 @@ public sealed partial class PlaylistView : UserControl
 
         DetailPanel.ApproveRequested += DetailPanel_ApproveRequested;
         DetailPanel.TranscribeRequested += DetailPanel_TranscribeRequested;
+        DetailPanel.RejectRequested += DetailPanel_RejectRequested;
     }
 
     /// <summary>
@@ -76,16 +78,16 @@ public sealed partial class PlaylistView : UserControl
 
         // Apply filters
         _filtersInitialized = true;
+        DetailPanel.SetTranscribeEsmMode(_transcribeEsmLines);
         ApplyFilters();
 
         // Enable buttons
-        var hasUntranscribed = _allEntries.Any(e => e.Status == TranscriptionStatus.Untranscribed);
-        BatchButton.IsEnabled = hasUntranscribed;
+        UpdateBatchButtonState();
         ExportButton.IsEnabled = _project?.Entries.Count > 0 || _allEntries.Any(e2 => e2.SubtitleText != null);
         ClearWhisperButton.IsEnabled = _project?.Entries.Values.Any(e => e.Source == "whisper") == true;
 
         // Initialize Whisper in background
-        if (hasUntranscribed)
+        if (HasWorkItems())
         {
             _ = InitializeWhisperAsync();
         }
@@ -182,6 +184,13 @@ public sealed partial class PlaylistView : UserControl
             return;
         }
 
+        // Prevent hiding ESM entries while transcribe-ESM mode is active
+        if (ReferenceEquals(sender, ShowEsmCheck) && ShowEsmCheck.IsChecked != true && _transcribeEsmLines)
+        {
+            ShowEsmCheck.IsChecked = true;
+            return;
+        }
+
         // Repopulate filter dropdowns when ESM checkbox changes
         if (ReferenceEquals(sender, ShowEsmCheck))
         {
@@ -191,6 +200,31 @@ public sealed partial class PlaylistView : UserControl
         }
 
         ApplyFilters();
+    }
+
+    private void TranscribeEsmCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_filtersInitialized)
+        {
+            return;
+        }
+
+        _transcribeEsmLines = TranscribeEsmCheck.IsChecked == true;
+        DetailPanel.SetTranscribeEsmMode(_transcribeEsmLines);
+
+        // When enabling transcribe-ESM mode, auto-enable Show ESM subtitles
+        if (_transcribeEsmLines && ShowEsmCheck.IsChecked != true)
+        {
+            ShowEsmCheck.IsChecked = true; // Triggers Filter_Changed → ApplyFilters
+        }
+
+        UpdateBatchButtonState();
+
+        // Re-show current entry with updated mode
+        if (FileListView.SelectedItem is VoiceFileEntry selected)
+        {
+            DetailPanel.ShowEntry(selected);
+        }
     }
 
     private void ApplyFilters()
@@ -403,10 +437,14 @@ public sealed partial class PlaylistView : UserControl
     {
         var currentIndex = FileListView.SelectedIndex;
 
+        bool IsWorkItem(VoiceFileEntry e) =>
+            e.Status is TranscriptionStatus.Untranscribed or TranscriptionStatus.Automatic
+            || (_transcribeEsmLines && e.Status == TranscriptionStatus.EsmSubtitle);
+
         // Search forward from current position
         for (var i = currentIndex + 1; i < _displayedEntries.Count; i++)
         {
-            if (_displayedEntries[i].Status is TranscriptionStatus.Untranscribed or TranscriptionStatus.Automatic)
+            if (IsWorkItem(_displayedEntries[i]))
             {
                 FileListView.SelectedIndex = i;
                 FileListView.ScrollIntoView(_displayedEntries[i]);
@@ -417,13 +455,54 @@ public sealed partial class PlaylistView : UserControl
         // Wrap around
         for (var i = 0; i < currentIndex; i++)
         {
-            if (_displayedEntries[i].Status is TranscriptionStatus.Untranscribed or TranscriptionStatus.Automatic)
+            if (IsWorkItem(_displayedEntries[i]))
             {
                 FileListView.SelectedIndex = i;
                 FileListView.ScrollIntoView(_displayedEntries[i]);
                 return;
             }
         }
+    }
+
+    private void DetailPanel_RejectRequested(object? sender, EventArgs e)
+    {
+        var selected = FileListView.SelectedItem as VoiceFileEntry;
+        if (selected?.EsmSubtitleText == null || _project == null)
+        {
+            return;
+        }
+
+        // Revert to ESM text
+        selected.SubtitleText = selected.EsmSubtitleText;
+        selected.TranscriptionSource = "esm";
+
+        // Remove the project entry
+        var key = $"{selected.VoiceType}|{selected.FormId:X8}_{selected.ResponseIndex}";
+        _project.Entries.Remove(key);
+
+        _hasUnsavedChanges = true;
+        _autoSaveTimer?.Start();
+
+        // Refresh detail panel and list
+        DetailPanel.ShowEntry(selected);
+        ApplyFilters();
+    }
+
+    private bool HasWorkItems()
+    {
+        if (_transcribeEsmLines)
+        {
+            return _allEntries.Any(e =>
+                e.Status == TranscriptionStatus.Untranscribed
+                || e.Status == TranscriptionStatus.EsmSubtitle);
+        }
+
+        return _allEntries.Any(e => e.Status == TranscriptionStatus.Untranscribed);
+    }
+
+    private void UpdateBatchButtonState()
+    {
+        BatchButton.IsEnabled = HasWorkItems();
     }
 
     private void Approve_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
@@ -447,20 +526,10 @@ public sealed partial class PlaylistView : UserControl
 
         var cleared = TranscriptionFileService.ClearBySource(_project, _allEntries, "whisper");
 
-        // Re-apply ESM enrichment for entries that lost their whisper text
-        // (ESM subtitles are set during initial load, just re-mark source)
-        foreach (var entry in _allEntries)
-        {
-            if (entry.SubtitleText != null && entry.TranscriptionSource == null)
-            {
-                entry.TranscriptionSource = "esm";
-            }
-        }
-
         await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
 
         ClearWhisperButton.IsEnabled = false;
-        BatchButton.IsEnabled = _allEntries.Any(e2 => e2.Status == TranscriptionStatus.Untranscribed);
+        UpdateBatchButtonState();
         ExportButton.IsEnabled = _project?.Entries.Count > 0 || _allEntries.Any(e2 => e2.SubtitleText != null);
 
         ApplyFilters();
@@ -512,9 +581,13 @@ public sealed partial class PlaylistView : UserControl
         // Wire drawer cancel
         BatchDrawer.CancelRequested += (_, _) => _batchCts?.Cancel();
 
-        var untranscribed = _allEntries
-            .Where(e2 => e2.Status == TranscriptionStatus.Untranscribed)
-            .ToList();
+        var untranscribed = _transcribeEsmLines
+            ? _allEntries
+                .Where(e2 => e2.Status is TranscriptionStatus.Untranscribed or TranscriptionStatus.EsmSubtitle)
+                .ToList()
+            : _allEntries
+                .Where(e2 => e2.Status == TranscriptionStatus.Untranscribed)
+                .ToList();
 
         var processed = 0;
         var errors = 0;
@@ -734,7 +807,7 @@ public sealed partial class PlaylistView : UserControl
                 await p.DisposeAsync();
             }
 
-            BatchButton.IsEnabled = _allEntries.Any(e2 => e2.Status == TranscriptionStatus.Untranscribed);
+            UpdateBatchButtonState();
             ExportButton.IsEnabled = _project?.Entries.Count > 0 || _allEntries.Any(e2 => e2.SubtitleText != null);
             _batchCts?.Dispose();
             _batchCts = null;

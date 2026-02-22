@@ -6,6 +6,7 @@ using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
@@ -82,10 +83,16 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
         // Auto-populate Data Browser when first selected
         if (ReferenceEquals(selected, DataBrowserTab) &&
-            DataBrowserContent.Visibility == Visibility.Collapsed &&
-            _session.HasEsmRecords)
+            DataBrowserContent.Visibility == Visibility.Collapsed)
         {
-            ReconstructButton_Click(sender, new RoutedEventArgs());
+            if (_session.IsSaveFile && _session.SaveData != null)
+            {
+                await PopulateSaveBrowserAsync();
+            }
+            else if (_session.HasEsmRecords)
+            {
+                ReconstructButton_Click(sender, new RoutedEventArgs());
+            }
         }
 
         // Auto-populate Dialogue Viewer when first selected
@@ -96,18 +103,18 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             _ = PopulateDialogueViewerAsync();
         }
 
-        // Auto-populate World Map when first selected
+        // Auto-populate World Map when first selected (also available for save files)
         if (ReferenceEquals(selected, WorldMapTab) &&
             !_session.WorldMapPopulated &&
-            _session.HasEsmRecords)
+            (_session.HasEsmRecords || _session.IsSaveFile))
         {
             _ = PopulateWorldMapAsync();
         }
 
-        // Auto-generate reports when first selected
+        // Auto-generate reports when first selected (ESM or save files)
         if (ReferenceEquals(selected, ReportsTab) &&
             _reportEntries.Count == 0 &&
-            _session.HasEsmRecords)
+            (_session.HasEsmRecords || _session.IsSaveFile))
         {
             _ = GenerateReportsAsync();
         }
@@ -231,9 +238,12 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 return;
             }
 
-            StatusTextBlock.Text = fileType == AnalysisFileType.EsmFile
-                ? Strings.Status_StartingEsmAnalysis
-                : Strings.Status_StartingAnalysis;
+            StatusTextBlock.Text = fileType switch
+            {
+                AnalysisFileType.EsmFile => Strings.Status_StartingEsmAnalysis,
+                AnalysisFileType.SaveFile => "Parsing save file...",
+                _ => Strings.Status_StartingAnalysis
+            };
 
             var progress = new Progress<AnalysisProgress>(p => DispatcherQueue.TryEnqueue(() =>
             {
@@ -285,13 +295,17 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             {
                 AnalysisFileType.EsmFile => await EsmFileAnalyzer.AnalyzeAsync(filePath, progress),
                 AnalysisFileType.Minidump => await new MinidumpAnalyzer().AnalyzeAsync(filePath, progress),
+                AnalysisFileType.SaveFile => await AnalyzeSaveFileAsync(filePath, progress),
                 _ => throw new NotSupportedException($"Unknown file type: {filePath}")
             };
 
             // Build _allCarvedFiles but do NOT populate the observable _carvedFiles yet.
             // The file table should only appear once all analysis (including semantic
             // reconstruction) is complete, so the user sees the final list in one shot.
-            BuildCarvedFileList(isEsmFile: fileType == AnalysisFileType.EsmFile);
+            if (fileType != AnalysisFileType.SaveFile)
+            {
+                BuildCarvedFileList(isEsmFile: fileType == AnalysisFileType.EsmFile);
+            }
 
             // Open shared session (needed for accessor before reconstruction)
             _session.Open(filePath, _analysisResult, fileType);
@@ -301,6 +315,15 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             _session.RuntimeMeshes = _analysisResult.RuntimeMeshes;
             _session.RuntimeTextures = _analysisResult.RuntimeTextures;
             _session.SceneGraphMap = _analysisResult.SceneGraphMap;
+
+            // Store save data in session (passed from AnalyzeSaveFileAsync)
+            if (_pendingSaveData != null)
+            {
+                _session.SaveData = _pendingSaveData;
+                _session.DecodedForms = _pendingDecodedForms;
+                _pendingSaveData = null;
+                _pendingDecodedForms = null;
+            }
 
             // Run semantic reconstruction BEFORE loading HexViewer so the memory map
             // includes TESForm struct regions and terrain mesh regions from the start
@@ -375,8 +398,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // Auto-populate whichever tab is currently selected
             await AutoPopulateCurrentTabAsync(selectedTabForAutoPopulate);
 
-            // Run coverage analysis for memory dumps only (not meaningful for ESM files)
-            if (!_session.IsEsmFile)
+            // Run coverage analysis for memory dumps only (not meaningful for ESM or save files)
+            if (!_session.IsEsmFile && !_session.IsSaveFile)
             {
                 try
                 {
@@ -397,13 +420,24 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 }
             }
 
-            var totalCount = _allCarvedFiles.Count;
-            var fileCount = _allCarvedFiles.Count(f => !f.IsEsmRecord);
-            var recordCount = _allCarvedFiles.Count(f => f.IsEsmRecord);
-            var coveragePct = _session.CoverageResult?.RecognizedPercent ?? 0;
-            StatusTextBlock.Text = fileCount > 0
-                ? Strings.Status_FoundFilesToCarve(totalCount, coveragePct, fileCount, recordCount)
-                : Strings.Status_FoundRecords(recordCount);
+            // Show supplementary data button after analysis completes
+            AddDataButton.Visibility = Visibility.Visible;
+
+            if (_session.IsSaveFile)
+            {
+                var formCount = _session.SaveData?.ChangedForms.Count ?? 0;
+                StatusTextBlock.Text = $"Save file loaded — {formCount:N0} changed forms";
+            }
+            else
+            {
+                var totalCount = _allCarvedFiles.Count;
+                var fileCount = _allCarvedFiles.Count(f => !f.IsEsmRecord);
+                var recordCount = _allCarvedFiles.Count(f => f.IsEsmRecord);
+                var coveragePct = _session.CoverageResult?.RecognizedPercent ?? 0;
+                StatusTextBlock.Text = fileCount > 0
+                    ? Strings.Status_FoundFilesToCarve(totalCount, coveragePct, fileCount, recordCount)
+                    : Strings.Status_FoundRecords(recordCount);
+            }
         }
         catch (Exception ex)
         {
@@ -416,12 +450,64 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
     }
 
+    /// <summary>
+    ///     Parses a save file and decodes all changed forms, returning a minimal AnalysisResult.
+    /// </summary>
+    private async Task<AnalysisResult> AnalyzeSaveFileAsync(string filePath, IProgress<AnalysisProgress> progress)
+    {
+        var result = await Task.Run(() =>
+        {
+            progress.Report(new AnalysisProgress { Phase = "Loading" });
+            var data = File.ReadAllBytes(filePath);
+
+            progress.Report(new AnalysisProgress { Phase = "Parsing save file" });
+            var save = SaveFileParser.Parse(data);
+            var formIdArray = save.FormIdArray.ToArray();
+
+            // Decode all changed forms
+            progress.Report(new AnalysisProgress { Phase = "Decoding changed forms" });
+            var decodedForms = new Dictionary<int, DecodedFormData>();
+            for (int i = 0; i < save.ChangedForms.Count; i++)
+            {
+                var form = save.ChangedForms[i];
+                if (form.Data.Length == 0) continue;
+                var decoded = ChangedFormDecoder.Decode(form, formIdArray);
+                if (decoded != null)
+                {
+                    decodedForms[i] = decoded;
+                }
+            }
+
+            // Store in session (will be picked up after this method returns)
+            // Use a tuple to return both the save and decoded forms alongside the AnalysisResult
+            return (Save: save, DecodedForms: decodedForms, Result: new AnalysisResult
+            {
+                FilePath = filePath,
+                FileSize = data.Length
+            });
+        });
+
+        // Store save data in session (session.Open is called by the caller after this returns)
+        _pendingSaveData = result.Save;
+        _pendingDecodedForms = result.DecodedForms;
+
+        progress.Report(new AnalysisProgress { Phase = "Complete", FilesFound = result.Save.ChangedForms.Count });
+        return result.Result;
+    }
+
+    // Temporary fields to pass save data from AnalyzeSaveFileAsync to the session
+    // (set before _session.Open is called, consumed after)
+    private Core.Formats.SaveGame.SaveFile? _pendingSaveData;
+    private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
+
     private async void OpenMinidumpButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add(".dmp");
         picker.FileTypeFilter.Add(".esm");
         picker.FileTypeFilter.Add(".esp");
+        picker.FileTypeFilter.Add(".fxs");
+        picker.FileTypeFilter.Add(".fos");
         InitializeWithWindow.Initialize(picker,
             WindowNative.GetWindowHandle(App.Current.MainWindow));
 
@@ -453,6 +539,13 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private async void ReconstructButton_Click(object sender, RoutedEventArgs e)
     {
+        // Save files use their own browser tree
+        if (_session.IsSaveFile && _session.SaveData != null)
+        {
+            await PopulateSaveBrowserAsync();
+            return;
+        }
+
         // Safety guard: await reconstruction if it hasn't completed yet (normally a no-op)
         if (_session.SemanticResult == null)
         {
@@ -693,6 +786,17 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private async Task AutoPopulateCurrentTabAsync(object? selectedTab)
     {
+        // Save files only support Data Browser — auto-populate it
+        if (_session.IsSaveFile)
+        {
+            if (ReferenceEquals(selectedTab, DataBrowserTab) && _session.SaveData != null)
+            {
+                await PopulateSaveBrowserAsync();
+            }
+
+            return;
+        }
+
         if (!_session.HasEsmRecords) return;
 
         // Use the passed-in tab reference (saved before SubTabView was disabled)

@@ -8,6 +8,7 @@ internal enum PlacedObjectCategory
     Static,
     Architecture,
     Landscape,
+    Plants,
     Clutter,
     Dungeon,
     Effects,

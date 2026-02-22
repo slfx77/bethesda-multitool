@@ -79,6 +79,28 @@ internal sealed class RuntimeMemoryContext(
         }
     }
 
+    /// <summary>
+    ///     Read a byte array from the dump at a given virtual address, validating that the
+    ///     entire VA range [va, va+count) falls within captured memory regions. This prevents
+    ///     reading garbage data when a struct spans a gap between non-contiguous memory regions.
+    ///     Returns null if the VA range is not fully captured or the read fails.
+    /// </summary>
+    public byte[]? ReadBytesAtVa(long va, int count)
+    {
+        if (!MinidumpInfo.IsVaRangeCaptured(va, count))
+        {
+            return null;
+        }
+
+        var fileOffset = MinidumpInfo.VirtualAddressToFileOffset(va);
+        if (!fileOffset.HasValue || fileOffset.Value + count > FileSize)
+        {
+            return null;
+        }
+
+        return ReadBytes(fileOffset.Value, count);
+    }
+
     public static int ReadInt32BE(byte[] data, int offset)
     {
         return (int)BinaryUtils.ReadUInt32BE(data, offset);

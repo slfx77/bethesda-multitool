@@ -386,8 +386,96 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             return [];
         }
 
-        // Group by grid cell derived from position (4096 world units per cell)
-        var groups = orphans
+        // Phase 1: Assign orphans to existing cells using ParentCellFormId from runtime struct reader.
+        // The proximity heuristic (ResolveCellRefs) misses many refs in DMP mode because ESM fragments
+        // are scattered across memory. ParentCellFormId from pParentCell pointer is more reliable.
+        var cellByFormId = new Dictionary<uint, CellRecord>();
+        foreach (var cell in existingCells)
+        {
+            cellByFormId.TryAdd(cell.FormId, cell);
+        }
+
+        var reassigned = 0;
+        var trueOrphans = new List<ExtractedRefrRecord>();
+        foreach (var orphan in orphans)
+        {
+            if (orphan.ParentCellFormId.HasValue &&
+                cellByFormId.TryGetValue(orphan.ParentCellFormId.Value, out var parentCell))
+            {
+                parentCell.PlacedObjects.Add(ToPlacedReference(orphan, context));
+                reassigned++;
+            }
+            else
+            {
+                trueOrphans.Add(orphan);
+            }
+        }
+
+        if (reassigned > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] CreateVirtualCells: {reassigned}/{orphans.Count} orphans reassigned to existing cells via ParentCellFormId");
+        }
+
+        if (trueOrphans.Count == 0)
+        {
+            Logger.Instance.Debug("  [Semantic] CreateVirtualCells: all orphans reassigned, no virtual cells needed");
+            return [];
+        }
+
+        // Phase 1.5: Use worldspace cell maps to resolve orphans by position → grid → real cell.
+        // The cell map from TESWorldSpace.pCellMap gives us the authoritative grid-to-cell mapping.
+        if (context.RuntimeWorldspaceCellMaps is { Count: > 0 })
+        {
+            // Build grid→CellFormId lookup across all worldspaces
+            var gridToCellFormId = new Dictionary<(int, int), uint>();
+            foreach (var (_, wsData) in context.RuntimeWorldspaceCellMaps)
+            {
+                foreach (var cellEntry in wsData.Cells)
+                {
+                    gridToCellFormId.TryAdd((cellEntry.GridX, cellEntry.GridY), cellEntry.CellFormId);
+                }
+            }
+
+            if (gridToCellFormId.Count > 0)
+            {
+                var cellMapResolved = 0;
+                var stillOrphans = new List<ExtractedRefrRecord>();
+                foreach (var orphan in trueOrphans)
+                {
+                    var gx = (int)MathF.Floor(orphan.Position!.X / 4096f);
+                    var gy = (int)MathF.Floor(orphan.Position.Y / 4096f);
+
+                    if (gridToCellFormId.TryGetValue((gx, gy), out var realCellFormId) &&
+                        cellByFormId.TryGetValue(realCellFormId, out var realCell))
+                    {
+                        realCell.PlacedObjects.Add(ToPlacedReference(orphan, context));
+                        cellMapResolved++;
+                    }
+                    else
+                    {
+                        stillOrphans.Add(orphan);
+                    }
+                }
+
+                if (cellMapResolved > 0)
+                {
+                    Logger.Instance.Debug(
+                        $"  [Semantic] CreateVirtualCells: {cellMapResolved}/{trueOrphans.Count} orphans resolved via worldspace cell maps");
+                }
+
+                trueOrphans = stillOrphans;
+
+                if (trueOrphans.Count == 0)
+                {
+                    Logger.Instance.Debug("  [Semantic] CreateVirtualCells: all orphans resolved, no virtual cells needed");
+                    return [];
+                }
+            }
+        }
+
+        // Phase 2: Group remaining orphans by grid cell derived from position (4096 world units per cell)
+        var groups = trueOrphans
             .GroupBy(r => ((int)MathF.Floor(r.Position!.X / 4096f), (int)MathF.Floor(r.Position.Y / 4096f)))
             .Where(g => g.Any())
             .ToList();
@@ -398,32 +486,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         foreach (var group in groups)
         {
             var (gridX, gridY) = group.Key;
-            var refs = group.Select(r => new PlacedReference
-            {
-                FormId = r.Header.FormId,
-                BaseFormId = r.BaseFormId,
-                BaseEditorId = r.BaseEditorId ?? context.GetEditorId(r.BaseFormId),
-                RecordType = r.Header.RecordType,
-                X = r.Position?.X ?? 0,
-                Y = r.Position?.Y ?? 0,
-                Z = r.Position?.Z ?? 0,
-                RotX = r.Position?.RotX ?? 0,
-                RotY = r.Position?.RotY ?? 0,
-                RotZ = r.Position?.RotZ ?? 0,
-                Scale = r.Scale,
-                OwnerFormId = r.OwnerFormId,
-                EnableParentFormId = r.EnableParentFormId,
-                EnableParentFlags = r.EnableParentFlags,
-                IsPersistent = r.Header.IsPersistent,
-                IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
-                DestinationDoorFormId = r.DestinationDoorFormId,
-                IsMapMarker = r.IsMapMarker,
-                MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
-                MarkerName = r.MarkerName,
-                LinkedRefFormId = r.LinkedRefFormId,
-                Offset = r.Header.Offset,
-                IsBigEndian = r.Header.IsBigEndian
-            }).ToList();
+            var refs = group.Select(r => ToPlacedReference(r, context)).ToList();
 
             virtualCells.Add(new CellRecord
             {
@@ -438,9 +501,39 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         }
 
         Logger.Instance.Debug(
-            $"  [Semantic] CreateVirtualCells: {orphans.Count} orphan refs → {virtualCells.Count} virtual cells");
+            $"  [Semantic] CreateVirtualCells: {trueOrphans.Count} true orphans → {virtualCells.Count} virtual cells");
 
         return virtualCells;
+    }
+
+    private static PlacedReference ToPlacedReference(ExtractedRefrRecord r, RecordParserContext context)
+    {
+        return new PlacedReference
+        {
+            FormId = r.Header.FormId,
+            BaseFormId = r.BaseFormId,
+            BaseEditorId = r.BaseEditorId ?? context.GetEditorId(r.BaseFormId),
+            RecordType = r.Header.RecordType,
+            X = r.Position?.X ?? 0,
+            Y = r.Position?.Y ?? 0,
+            Z = r.Position?.Z ?? 0,
+            RotX = r.Position?.RotX ?? 0,
+            RotY = r.Position?.RotY ?? 0,
+            RotZ = r.Position?.RotZ ?? 0,
+            Scale = r.Scale,
+            OwnerFormId = r.OwnerFormId,
+            EnableParentFormId = r.EnableParentFormId,
+            EnableParentFlags = r.EnableParentFlags,
+            IsPersistent = r.Header.IsPersistent,
+            IsInitiallyDisabled = r.Header.IsInitiallyDisabled,
+            DestinationDoorFormId = r.DestinationDoorFormId,
+            IsMapMarker = r.IsMapMarker,
+            MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
+            MarkerName = r.MarkerName,
+            LinkedRefFormId = r.LinkedRefFormId,
+            Offset = r.Header.Offset,
+            IsBigEndian = r.Header.IsBigEndian
+        };
     }
 
     /// <summary>
@@ -636,6 +729,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             AcousticSpaceFormId = acousticSpaceFormId,
             ImageSpaceFormId = imageSpaceFormId,
             PlacedObjects = cellRefs,
+            HasPersistentObjects = cellRefs.Exists(r => r.IsPersistent),
             Heightmap = heightmap,
             RuntimeTerrainMesh = terrainMesh,
             Offset = record.Offset,
@@ -663,6 +757,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             GridX = cellGrid?.GridX,
             GridY = cellGrid?.GridY,
             PlacedObjects = cellRefs,
+            HasPersistentObjects = cellRefs.Exists(r => r.IsPersistent),
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

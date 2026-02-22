@@ -65,6 +65,9 @@ public record EsmRecordScanResult
     // Runtime LAND form entries from pAllForms hash table (LAND records lack editor IDs)
     public List<RuntimeEditorIdEntry> RuntimeLandFormEntries { get; init; } = [];
 
+    // Runtime REFR/ACHR/ACRE form entries from pAllForms hash table
+    public List<RuntimeEditorIdEntry> RuntimeRefrFormEntries { get; init; } = [];
+
     /// <summary>Cell FormID → parent Worldspace FormID mapping (from ESM GRUP hierarchy).</summary>
     public Dictionary<uint, uint> CellToWorldspaceMap { get; init; } = [];
 

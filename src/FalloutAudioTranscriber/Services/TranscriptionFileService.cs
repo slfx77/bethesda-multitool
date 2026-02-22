@@ -52,18 +52,15 @@ public static class TranscriptionFileService
 
         foreach (var entry in entries)
         {
-            // ESM subtitles take priority — mark their source
+            // Preserve original ESM text and mark ESM entries
             if (entry.SubtitleText != null && entry.TranscriptionSource == null)
             {
+                entry.EsmSubtitleText = entry.SubtitleText;
                 entry.TranscriptionSource = "esm";
             }
 
-            // Apply saved transcription if no ESM subtitle
-            if (entry.SubtitleText != null)
-            {
-                continue;
-            }
-
+            // Always check for project overrides (even for ESM entries — a whisper
+            // transcription on an ESM line must persist across reload).
             var saved = FindSavedEntry(project, entry, out var matchedKey);
             if (saved != null)
             {
@@ -152,8 +149,17 @@ public static class TranscriptionFileService
 
         foreach (var entry in entries.Where(e => e.TranscriptionSource == source))
         {
-            entry.SubtitleText = null;
-            entry.TranscriptionSource = null;
+            // Restore ESM text if available, otherwise clear completely
+            if (entry.EsmSubtitleText != null)
+            {
+                entry.SubtitleText = entry.EsmSubtitleText;
+                entry.TranscriptionSource = "esm";
+            }
+            else
+            {
+                entry.SubtitleText = null;
+                entry.TranscriptionSource = null;
+            }
         }
 
         return keysToRemove.Count;

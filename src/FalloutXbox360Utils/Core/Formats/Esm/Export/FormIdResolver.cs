@@ -94,6 +94,31 @@ public sealed class FormIdResolver
 
     #endregion
 
+    #region Merging
+
+    /// <summary>
+    ///     Creates a new resolver that merges this resolver with a fallback.
+    ///     Entries from this resolver take precedence; the fallback fills gaps.
+    /// </summary>
+    public FormIdResolver MergeWith(FormIdResolver fallback)
+    {
+        var mergedEditorIds = new Dictionary<uint, string>(fallback.EditorIds);
+        foreach (var (k, v) in EditorIds)
+            mergedEditorIds[k] = v;
+
+        var mergedDisplayNames = new Dictionary<uint, string>(fallback.DisplayNames);
+        foreach (var (k, v) in DisplayNames)
+            mergedDisplayNames[k] = v;
+
+        var mergedRefToBase = new Dictionary<uint, uint>(fallback.RefToBase);
+        foreach (var (k, v) in RefToBase)
+            mergedRefToBase[k] = v;
+
+        return new FormIdResolver(mergedEditorIds, mergedDisplayNames, mergedRefToBase);
+    }
+
+    #endregion
+
     #region Formatting
 
     /// <summary>Formats "EditorId (0x00123456)" or just "0x00123456".</summary>

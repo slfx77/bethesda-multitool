@@ -421,12 +421,16 @@ internal static class EsmEditorIdExtractor
         {
             chainDepth++;
 
-            if (!Xbox360MemoryUtils.IsValidPointerInDump(itemVa, minidumpInfo))
+            var itemVaLong = Xbox360MemoryUtils.VaToLong(itemVa);
+
+            // Validate 12-byte NiTMapItem is fully within a captured memory region
+            if (!minidumpInfo.IsVaRangeCaptured(itemVaLong, 12))
             {
+                chainErrors++;
                 break;
             }
 
-            var itemFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(itemVa));
+            var itemFileOffset = minidumpInfo.VirtualAddressToFileOffset(itemVaLong);
             if (!itemFileOffset.HasValue || itemFileOffset.Value + 12 > fileSize)
             {
                 chainErrors++;
@@ -469,13 +473,19 @@ internal static class EsmEditorIdExtractor
             long? tesFormFileOffset = null;
             if (valVa != 0 && Xbox360MemoryUtils.IsValidPointerInDump(valVa, minidumpInfo))
             {
-                var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(valVa));
-                if (formFileOffset.HasValue && formFileOffset.Value + 24 <= fileSize)
+                var valVaLong = Xbox360MemoryUtils.VaToLong(valVa);
+
+                // Validate 24-byte TESForm header is fully within a captured memory region
+                if (minidumpInfo.IsVaRangeCaptured(valVaLong, 24))
                 {
-                    tesFormFileOffset = formFileOffset.Value;
-                    accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0, 24);
-                    formType = tesFormBuffer[4]; // Offset 0x04: cFormType
-                    formId = BinaryUtils.ReadUInt32BE(tesFormBuffer, 12); // Offset 0x0C: iFormID
+                    var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(valVaLong);
+                    if (formFileOffset.HasValue && formFileOffset.Value + 24 <= fileSize)
+                    {
+                        tesFormFileOffset = formFileOffset.Value;
+                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0, 24);
+                        formType = tesFormBuffer[4]; // Offset 0x04: cFormType
+                        formId = BinaryUtils.ReadUInt32BE(tesFormBuffer, 12); // Offset 0x0C: iFormID
+                    }
                 }
             }
 
@@ -621,10 +631,10 @@ internal static class EsmEditorIdExtractor
     }
 
     /// <summary>
-    ///     Extract LAND form entries from the pAllForms hash table (NiTMapBase&lt;uint, TESForm*&gt;).
-    ///     LAND records don't have editor IDs, so they're absent from pAllFormsByEditorID.
-    ///     The pAllForms table maps ALL FormIDs to TESForm pointers, including LAND.
-    ///     Auto-detects the LAND FormType by cross-referencing with ESM-scanned LAND FormIDs.
+    ///     Extract LAND and REFR/ACHR/ACRE form entries from the pAllForms hash table
+    ///     (NiTMapBase&lt;uint, TESForm*&gt;). These record types often lack editor IDs,
+    ///     so they're absent from pAllFormsByEditorID. The pAllForms table maps ALL FormIDs
+    ///     to TESForm pointers. Auto-detects FormTypes by cross-referencing with ESM-scanned FormIDs.
     /// </summary>
     private static void ExtractLandFormsFromAllFormsTable(
         MemoryMappedViewAccessor accessor,
@@ -634,7 +644,7 @@ internal static class EsmEditorIdExtractor
         uint allFormsVa,
         Logger log)
     {
-        log.Debug("EditorIDs: Walking pAllForms hash table at VA 0x{0:X8} for LAND entries...", allFormsVa);
+        log.Debug("EditorIDs: Walking pAllForms hash table at VA 0x{0:X8} for LAND/REFR entries...", allFormsVa);
 
         // Read NiTMapBase header: vfptr(4) + hashSize(4) + bucketArrayVa(4) + count(4) = 16 bytes
         var htFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(allFormsVa));
@@ -667,18 +677,25 @@ internal static class EsmEditorIdExtractor
             return;
         }
 
-        // Build a set of known LAND FormIDs from ESM record scanning for FormType auto-detection
+        // Build sets of known FormIDs from ESM record scanning for FormType auto-detection
         var knownLandFormIds = scanResult.LandRecords
             .Select(land => land.Header.FormId)
             .Where(id => id != 0)
             .ToHashSet();
 
-        log.Debug("EditorIDs: pAllForms: {0} known LAND FormIDs from ESM scan for calibration", knownLandFormIds.Count);
+        var knownRefrFormIds = scanResult.RefrRecords
+            .Select(refr => refr.Header.FormId)
+            .Where(id => id != 0)
+            .ToHashSet();
 
-        // Pass 1: Walk entire table, collecting FormID→FormType mappings for known LAND FormIDs
+        log.Debug("EditorIDs: pAllForms: {0} known LAND, {1} known REFR FormIDs from ESM scan for calibration",
+            knownLandFormIds.Count, knownRefrFormIds.Count);
+
+        // Pass 1: Walk entire table, collecting FormID→FormType mappings for known FormIDs
         // and building a full FormID→(FormType, FileOffset, VA) index for later filtering
         var allEntries = new List<(uint FormId, byte FormType, long FileOffset, long Va)>();
         var landFormTypeCounts = new Dictionary<byte, int>();
+        var refrFormTypeCounts = new Dictionary<byte, int>();
         var chainErrors = 0;
         var bucketBuffer = new byte[4];
 
@@ -697,7 +714,9 @@ internal static class EsmEditorIdExtractor
             {
                 WalkAllFormsBucketChainCollect(
                     accessor, fileSize, minidumpInfo, itemVa, ref chainErrors,
-                    knownLandFormIds, landFormTypeCounts, allEntries);
+                    knownLandFormIds, landFormTypeCounts,
+                    knownRefrFormIds, refrFormTypeCounts,
+                    allEntries);
             }
         }
 
@@ -718,11 +737,34 @@ internal static class EsmEditorIdExtractor
             log.Debug("EditorIDs: pAllForms: no known LAND FormIDs matched - using default 0x45");
         }
 
-        // Pass 2: Filter allEntries for the detected LAND FormType
+        // Determine REFR FormType cluster: REFR/ACHR/ACRE are consecutive (base, base+1, base+2)
+        byte refrBaseFormType = 0x3A; // Default fallback
+        if (refrFormTypeCounts.Count > 0)
+        {
+            var best = refrFormTypeCounts.MaxBy(kv => kv.Value);
+            if (best.Value >= 3)
+            {
+                refrBaseFormType = best.Key;
+                log.Debug("EditorIDs: pAllForms: detected REFR base FormType = 0x{0:X2} ({1} matches from {2} known REFR FormIDs)",
+                    refrBaseFormType, best.Value, knownRefrFormIds.Count);
+            }
+        }
+        else
+        {
+            log.Debug("EditorIDs: pAllForms: no known REFR FormIDs matched - using default 0x3A");
+        }
+
+        // Pass 2: Filter allEntries for detected FormTypes
         var landCount = 0;
+        var refrCount = 0;
         foreach (var (formId, formType, fileOffset, va) in allEntries)
         {
-            if (formType == landFormType && formId != 0)
+            if (formId == 0)
+            {
+                continue;
+            }
+
+            if (formType == landFormType)
             {
                 scanResult.RuntimeLandFormEntries.Add(new RuntimeEditorIdEntry
                 {
@@ -734,15 +776,36 @@ internal static class EsmEditorIdExtractor
                 });
                 landCount++;
             }
+            else if (formType >= refrBaseFormType && formType <= refrBaseFormType + 2)
+            {
+                // REFR (base), ACHR (base+1), ACRE (base+2)
+                var typeCode = (formType - refrBaseFormType) switch
+                {
+                    0 => "REFR",
+                    1 => "ACHR",
+                    2 => "ACRE",
+                    _ => "REFR"
+                };
+                scanResult.RuntimeRefrFormEntries.Add(new RuntimeEditorIdEntry
+                {
+                    EditorId = $"__{typeCode}_{formId:X8}",
+                    FormId = formId,
+                    FormType = formType,
+                    TesFormOffset = fileOffset,
+                    TesFormPointer = va
+                });
+                refrCount++;
+            }
         }
 
-        log.Debug("EditorIDs: pAllForms walk complete - {0:N0} LAND entries (FormType 0x{1:X2}), {2} chain errors, {3:N0} total forms",
-            landCount, landFormType, chainErrors, allEntries.Count);
+        log.Debug("EditorIDs: pAllForms walk complete - {0:N0} LAND (0x{1:X2}), {2:N0} REFR/ACHR/ACRE (0x{3:X2}-0x{4:X2}), {5} chain errors, {6:N0} total forms",
+            landCount, landFormType, refrCount, refrBaseFormType, (byte)(refrBaseFormType + 2), chainErrors, allEntries.Count);
     }
 
     /// <summary>
     ///     Walk a bucket chain collecting all FormID→FormType entries, and calibrating
-    ///     the LAND FormType by checking against known LAND FormIDs from ESM scanning.
+    ///     the LAND and REFR FormTypes by checking against known FormIDs from ESM scanning.
+    ///     Uses VA-based region validation to prevent reading garbage across memory region gaps.
     /// </summary>
     private static void WalkAllFormsBucketChainCollect(
         MemoryMappedViewAccessor accessor,
@@ -752,6 +815,8 @@ internal static class EsmEditorIdExtractor
         ref int chainErrors,
         HashSet<uint> knownLandFormIds,
         Dictionary<byte, int> landFormTypeCounts,
+        HashSet<uint> knownRefrFormIds,
+        Dictionary<byte, int> refrFormTypeCounts,
         List<(uint FormId, byte FormType, long FileOffset, long Va)> allEntries)
     {
         var chainDepth = 0;
@@ -762,12 +827,16 @@ internal static class EsmEditorIdExtractor
         {
             chainDepth++;
 
-            if (!Xbox360MemoryUtils.IsValidPointerInDump(itemVa, minidumpInfo))
+            var itemVaLong = Xbox360MemoryUtils.VaToLong(itemVa);
+
+            // Validate 12-byte NiTMapItem is fully within a captured memory region
+            if (!minidumpInfo.IsVaRangeCaptured(itemVaLong, 12))
             {
+                chainErrors++;
                 break;
             }
 
-            var itemFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(itemVa));
+            var itemFileOffset = minidumpInfo.VirtualAddressToFileOffset(itemVaLong);
             if (!itemFileOffset.HasValue || itemFileOffset.Value + 12 > fileSize)
             {
                 chainErrors++;
@@ -781,23 +850,36 @@ internal static class EsmEditorIdExtractor
 
             if (valVa != 0 && Xbox360MemoryUtils.IsValidPointerInDump(valVa, minidumpInfo))
             {
-                var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(valVa));
-                if (formFileOffset.HasValue && formFileOffset.Value + 24 <= fileSize)
+                var valVaLong = Xbox360MemoryUtils.VaToLong(valVa);
+
+                // Validate 24-byte TESForm header is fully within a captured memory region
+                if (minidumpInfo.IsVaRangeCaptured(valVaLong, 24))
                 {
-                    accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0, 24);
-                    var formType = tesFormBuffer[4];
-                    var structFormId = BinaryUtils.ReadUInt32BE(tesFormBuffer, 12);
-
-                    // Verify FormID consistency
-                    if (structFormId == keyFormId && keyFormId != 0)
+                    var formFileOffset = minidumpInfo.VirtualAddressToFileOffset(valVaLong);
+                    if (formFileOffset.HasValue && formFileOffset.Value + 24 <= fileSize)
                     {
-                        allEntries.Add((keyFormId, formType, formFileOffset.Value, Xbox360MemoryUtils.VaToLong(valVa)));
+                        accessor.ReadArray(formFileOffset.Value, tesFormBuffer, 0, 24);
+                        var formType = tesFormBuffer[4];
+                        var structFormId = BinaryUtils.ReadUInt32BE(tesFormBuffer, 12);
 
-                        // Calibrate: if this FormID is a known LAND record, record its FormType
-                        if (knownLandFormIds.Contains(keyFormId))
+                        // Verify FormID consistency
+                        if (structFormId == keyFormId && keyFormId != 0)
                         {
-                            landFormTypeCounts.TryGetValue(formType, out var count);
-                            landFormTypeCounts[formType] = count + 1;
+                            allEntries.Add((keyFormId, formType, formFileOffset.Value, valVaLong));
+
+                            // Calibrate: if this FormID is a known LAND record, record its FormType
+                            if (knownLandFormIds.Contains(keyFormId))
+                            {
+                                landFormTypeCounts.TryGetValue(formType, out var count);
+                                landFormTypeCounts[formType] = count + 1;
+                            }
+
+                            // Calibrate: if this FormID is a known REFR/ACHR/ACRE, record its FormType
+                            if (knownRefrFormIds.Contains(keyFormId))
+                            {
+                                refrFormTypeCounts.TryGetValue(formType, out var rCount);
+                                refrFormTypeCounts[formType] = rCount + 1;
+                            }
                         }
                     }
                 }

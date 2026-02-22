@@ -3,6 +3,8 @@ using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.SaveGame;
+using FalloutXbox360Utils.Core.Formats.Subtitles;
 using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils;
@@ -58,12 +60,41 @@ internal sealed class AnalysisSessionState : IDisposable
     // ── Summary derived data ──
     public bool RecordBreakdownPopulated { get; set; }
 
+    // ── Save file data ──
+    public Core.Formats.SaveGame.SaveFile? SaveData { get; set; }
+    public Dictionary<int, DecodedFormData>? DecodedForms { get; set; }
+
+    // ── Supplementary data ──
+    public SupplementaryData? Supplementary { get; set; }
+
+    /// <summary>
+    ///     Effective resolver: merges primary + supplementary ESM resolvers when both are available.
+    ///     Falls back to whichever single resolver exists, or null.
+    /// </summary>
+    public FormIdResolver? EffectiveResolver
+    {
+        get
+        {
+            var primary = Resolver;
+            var supplementary = Supplementary?.EsmResolver;
+            if (primary != null && supplementary != null)
+                return primary.MergeWith(supplementary);
+            return primary ?? supplementary;
+        }
+    }
+
+    /// <summary>Subtitle index from supplementary data, if loaded.</summary>
+    public SubtitleIndex? EffectiveSubtitles => Supplementary?.Subtitles;
+
     public bool IsAnalyzed => AnalysisResult != null;
     public bool HasAccessor => Accessor != null;
     public bool HasEsmRecords => AnalysisResult?.EsmRecords != null;
 
     /// <summary>True if analyzing a standalone ESM/ESP file (not a memory dump).</summary>
     public bool IsEsmFile => FileType == AnalysisFileType.EsmFile;
+
+    /// <summary>True if analyzing a Fallout save file (.fxs/.fos).</summary>
+    public bool IsSaveFile => FileType == AnalysisFileType.SaveFile;
 
     /// <summary>
     ///     Opens a new analysis session, disposing any previous one.
@@ -112,6 +143,14 @@ internal sealed class AnalysisSessionState : IDisposable
 
         // Summary
         RecordBreakdownPopulated = false;
+
+        // Save file data
+        SaveData = null;
+        DecodedForms = null;
+
+        // Supplementary data
+        Supplementary?.Dispose();
+        Supplementary = null;
 
         // File resources
         Accessor?.Dispose();

@@ -33,6 +33,9 @@ public class VoiceFileEntry
     /// <summary>NAM1 subtitle text from ESM (null if not found — untranscribed).</summary>
     public string? SubtitleText { get; set; }
 
+    /// <summary>Original ESM subtitle text, preserved even when overridden by Whisper.</summary>
+    public string? EsmSubtitleText { get; set; }
+
     /// <summary>Speaker NPC name or EditorID from ESM.</summary>
     public string? SpeakerName { get; set; }
 

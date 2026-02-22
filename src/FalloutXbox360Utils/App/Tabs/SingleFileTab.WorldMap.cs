@@ -1,7 +1,10 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Windows.UI.Text;
 
 namespace FalloutXbox360Utils;
 
@@ -28,6 +31,24 @@ public sealed partial class SingleFileTab
 
         try
         {
+            // Save file path: build world data from supplementary ESM or save positions
+            if (_session.IsSaveFile)
+            {
+                var worldData = await BuildSaveWorldDataAsync();
+                if (worldData == null)
+                {
+                    WorldMapStatusText.Text = "No world data available. Use Add Data to load an ESM for terrain.";
+                    return;
+                }
+
+                _session.WorldViewData = worldData;
+                _session.WorldMapPopulated = true;
+                WorldMapControl.LoadData(worldData);
+                WorldMapPlaceholder.Visibility = Visibility.Collapsed;
+                WorldMapContent.Visibility = Visibility.Visible;
+                return;
+            }
+
             // Ensure semantic reconstruction is complete
             if (_session.SemanticResult == null)
             {
@@ -45,7 +66,7 @@ public sealed partial class SingleFileTab
             WorldMapStatusText.Text = Strings.Status_BuildingWorldIndex;
 
             // Build world data on background thread
-            var worldData = await Task.Run(() =>
+            var esmWorldData = await Task.Run(() =>
             {
                 var (boundsIndex, categoryIndex) = ObjectBoundsIndex.BuildCombined(semantic);
 
@@ -96,6 +117,13 @@ public sealed partial class SingleFileTab
                                 !linkedCellFormIds.Contains(c.FormId))
                     .ToList();
 
+                // Collect map markers not assigned to any worldspace (common in DMP files)
+                var linkedMarkerFormIds = new HashSet<uint>(
+                    markersByWorldspace.Values.SelectMany(m => m).Select(m => m.FormId));
+                var unlinkedMarkers = semantic.MapMarkers
+                    .Where(m => !linkedMarkerFormIds.Contains(m.FormId))
+                    .ToList();
+
                 // Build cell FormID lookup for navigation
                 var cellByFormId = new Dictionary<uint, CellRecord>();
                 foreach (var cell in semantic.Cells)
@@ -126,6 +154,7 @@ public sealed partial class SingleFileTab
                     Worldspaces = semantic.Worldspaces,
                     InteriorCells = semantic.Cells.Where(c => c.IsInterior).ToList(),
                     UnlinkedExteriorCells = unlinkedExterior,
+                    UnlinkedMapMarkers = unlinkedMarkers,
                     AllCells = semantic.Cells,
                     CellByFormId = cellByFormId,
                     RefrToCellIndex = refrToCellIndex,
@@ -147,10 +176,10 @@ public sealed partial class SingleFileTab
                 };
             });
 
-            _session.WorldViewData = worldData;
+            _session.WorldViewData = esmWorldData;
             _session.WorldMapPopulated = true;
 
-            WorldMapControl.LoadData(worldData);
+            WorldMapControl.LoadData(esmWorldData);
 
             WorldMapPlaceholder.Visibility = Visibility.Collapsed;
             WorldMapContent.Visibility = Visibility.Visible;
@@ -159,6 +188,177 @@ public sealed partial class SingleFileTab
         {
             WorldMapProgressBar.Visibility = Visibility.Collapsed;
         }
+    }
+
+    /// <summary>
+    ///     Builds WorldViewData for a save file. Uses supplementary ESM for terrain if available,
+    ///     then overlays changed form positions from the save.
+    /// </summary>
+    private async Task<WorldViewData?> BuildSaveWorldDataAsync()
+    {
+        var save = _session.SaveData;
+        if (save == null) return null;
+
+        var suppRecords = _session.Supplementary?.EsmRecords;
+        var resolver = _session.EffectiveResolver ?? FormIdResolver.Empty;
+        var formIdArray = save.FormIdArray.ToArray();
+
+        WorldMapStatusText.Text = "Building world map from save data...";
+
+        var worldData = await Task.Run(() =>
+        {
+            // Build save overlay markers from changed forms with positions
+            var overlayMarkers = new List<PlacedReference>();
+            foreach (var form in save.ChangedForms)
+            {
+                if (form.Initial == null) continue;
+                if (form.ChangeType is not (0 or 1 or 2)) continue; // REFR, ACHR, ACRE only
+
+                var resolvedFormId = form.RefId.ResolveFormId(formIdArray);
+                var recordType = form.ChangeType switch
+                {
+                    0 => "REFR",
+                    1 => "ACHR",
+                    2 => "ACRE",
+                    _ => "REFR"
+                };
+
+                overlayMarkers.Add(new PlacedReference
+                {
+                    FormId = resolvedFormId,
+                    BaseFormId = resolvedFormId, // Save forms don't have separate base
+                    BaseEditorId = resolver.GetBestNameWithRefChain(resolvedFormId),
+                    RecordType = recordType,
+                    X = form.Initial.PosX,
+                    Y = form.Initial.PosY,
+                    Z = form.Initial.PosZ,
+                    RotX = form.Initial.RotX,
+                    RotY = form.Initial.RotY,
+                    RotZ = form.Initial.RotZ
+                });
+            }
+
+            // Player position
+            (float X, float Y, float Z)? playerPos = save.PlayerLocation != null
+                ? (save.PlayerLocation.PosX, save.PlayerLocation.PosY, save.PlayerLocation.PosZ)
+                : null;
+
+            if (suppRecords != null)
+            {
+                // Full world data from supplementary ESM
+                var (boundsIndex, categoryIndex) = ObjectBoundsIndex.BuildCombined(suppRecords);
+
+                byte[]? hmGrayscale = null;
+                byte[]? hmWaterMask = null;
+                int hmWidth = 0, hmHeight = 0, hmMinX = 0, hmMaxY = 0;
+                float? defaultWaterHeight = null;
+                if (suppRecords.Worldspaces.Count > 0 && suppRecords.Worldspaces[0].Cells.Count > 0)
+                {
+                    defaultWaterHeight = suppRecords.Worldspaces[0].DefaultWaterHeight;
+                    var hmResult = WorldMapControl.ComputeHeightmapData(
+                        suppRecords.Worldspaces[0].Cells, defaultWaterHeight);
+                    if (hmResult.HasValue)
+                    {
+                        (hmGrayscale, hmWaterMask, hmWidth, hmHeight, hmMinX, hmMaxY) = hmResult.Value;
+                    }
+                }
+
+                var markersByWorldspace = new Dictionary<uint, List<PlacedReference>>();
+                foreach (var ws in suppRecords.Worldspaces)
+                {
+                    var wsMarkers = new List<PlacedReference>();
+                    foreach (var cell in ws.Cells)
+                        wsMarkers.AddRange(cell.PlacedObjects.Where(o => o.IsMapMarker));
+                    if (wsMarkers.Count > 0)
+                        markersByWorldspace[ws.FormId] = wsMarkers;
+                }
+
+                var linkedCellFormIds = new HashSet<uint>();
+                foreach (var ws in suppRecords.Worldspaces)
+                    foreach (var cell in ws.Cells)
+                        linkedCellFormIds.Add(cell.FormId);
+
+                var unlinkedExterior = suppRecords.Cells
+                    .Where(c => !c.IsInterior && c.GridX.HasValue && c.GridY.HasValue &&
+                                !linkedCellFormIds.Contains(c.FormId))
+                    .ToList();
+
+                var linkedMarkerFormIds = new HashSet<uint>(
+                    markersByWorldspace.Values.SelectMany(m => m).Select(m => m.FormId));
+                var unlinkedMarkers = suppRecords.MapMarkers
+                    .Where(m => !linkedMarkerFormIds.Contains(m.FormId))
+                    .ToList();
+
+                var cellByFormId = new Dictionary<uint, CellRecord>();
+                foreach (var cell in suppRecords.Cells)
+                    cellByFormId.TryAdd(cell.FormId, cell);
+
+                var refrToCellIndex = new Dictionary<uint, CellRecord>();
+                var refPositionIndex = new Dictionary<uint, (float X, float Y)>();
+                foreach (var cell in suppRecords.Cells)
+                {
+                    foreach (var obj in cell.PlacedObjects)
+                    {
+                        refrToCellIndex.TryAdd(obj.FormId, cell);
+                        if (obj.FormId != 0)
+                            refPositionIndex.TryAdd(obj.FormId, (obj.X, obj.Y));
+                    }
+                }
+
+                var spawnIndex = SpawnResolutionIndex.Build(suppRecords);
+
+                return new WorldViewData
+                {
+                    Worldspaces = suppRecords.Worldspaces,
+                    InteriorCells = suppRecords.Cells.Where(c => c.IsInterior).ToList(),
+                    UnlinkedExteriorCells = unlinkedExterior,
+                    UnlinkedMapMarkers = unlinkedMarkers,
+                    AllCells = suppRecords.Cells,
+                    CellByFormId = cellByFormId,
+                    RefrToCellIndex = refrToCellIndex,
+                    BoundsIndex = boundsIndex,
+                    CategoryIndex = categoryIndex,
+                    Resolver = resolver,
+                    MapMarkers = suppRecords.MapMarkers,
+                    MarkersByWorldspace = markersByWorldspace,
+                    DefaultWaterHeight = defaultWaterHeight,
+                    HeightmapGrayscale = hmGrayscale,
+                    HeightmapWaterMask = hmWaterMask,
+                    HeightmapPixelWidth = hmWidth,
+                    HeightmapPixelHeight = hmHeight,
+                    HeightmapMinCellX = hmMinX,
+                    HeightmapMaxCellY = hmMaxY,
+                    SourceFilePath = _session.Supplementary?.EsmFilePath,
+                    SpawnIndex = spawnIndex,
+                    RefPositionIndex = refPositionIndex,
+                    SaveOverlayMarkers = overlayMarkers,
+                    PlayerPosition = playerPos
+                };
+            }
+            else
+            {
+                // Minimal world data from save positions only (no terrain)
+                return new WorldViewData
+                {
+                    Worldspaces = [],
+                    InteriorCells = [],
+                    UnlinkedExteriorCells = [],
+                    UnlinkedMapMarkers = [],
+                    AllCells = [],
+                    CellByFormId = [],
+                    RefrToCellIndex = [],
+                    BoundsIndex = [],
+                    CategoryIndex = [],
+                    Resolver = resolver,
+                    MapMarkers = [],
+                    MarkersByWorldspace = [],
+                    SaveOverlayMarkers = overlayMarkers,
+                    PlayerPosition = playerPos
+                };
+            }
+        });
+
+        return worldData;
     }
 
     private void WorldMap_InspectCell(object? sender, CellRecord cell)
@@ -406,12 +606,46 @@ public sealed partial class SingleFileTab
 
         WorldMapControl?.SelectObject(obj);
 
-        var name = obj.BaseEditorId
-                   ?? _session.Resolver?.GetBestName(obj.BaseFormId)
-                   ?? $"0x{obj.BaseFormId:X8}";
+        // Build display name: prefer marker name, then display name, then editor ID
+        string displayName;
+        if (obj.IsMapMarker && !string.IsNullOrEmpty(obj.MarkerName))
+        {
+            displayName = obj.MarkerName;
+        }
+        else
+        {
+            displayName = _session.Resolver?.GetDisplayName(obj.BaseFormId)
+                          ?? obj.BaseEditorId
+                          ?? _session.Resolver?.GetBestName(obj.BaseFormId)
+                          ?? $"0x{obj.BaseFormId:X8}";
+        }
+
+        // Category-based prefix (not raw record type)
+        string prefix;
+        if (obj.IsMapMarker)
+        {
+            prefix = "Map Marker";
+        }
+        else if (obj.RecordType == "ACHR")
+        {
+            prefix = "NPC";
+        }
+        else if (obj.RecordType == "ACRE")
+        {
+            prefix = "Creature";
+        }
+        else if (_session.WorldViewData?.CategoryIndex.TryGetValue(obj.BaseFormId, out var titleCat) == true)
+        {
+            prefix = WorldMapControl.GetCategoryDisplayName(titleCat);
+        }
+        else
+        {
+            prefix = obj.RecordType;
+        }
+
         WorldObjectTitle.Text = obj.IsInitiallyDisabled
-            ? $"{obj.RecordType}: {name} [Disabled]"
-            : $"{obj.RecordType}: {name}";
+            ? $"{prefix}: {displayName} [Disabled]"
+            : $"{prefix}: {displayName}";
 
         WorldPropertyPanel.Children.Clear();
         BuildWorldPropertyPanel(BuildObjectProperties(obj));
@@ -447,6 +681,32 @@ public sealed partial class SingleFileTab
 
         properties.Add(new EsmPropertyEntry
             { Name = "Record Type", Value = obj.RecordType, Category = "Identity" });
+
+        // Category (from ObjectBoundsIndex or record type)
+        if (_session.WorldViewData?.CategoryIndex.TryGetValue(obj.BaseFormId, out var objCategory) == true)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Category",
+                Value = WorldMapControl.GetCategoryDisplayName(objCategory),
+                Category = "Identity"
+            });
+        }
+        else if (obj.IsMapMarker)
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Category", Value = "Map Marker", Category = "Identity" });
+        }
+        else if (obj.RecordType == "ACHR")
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Category", Value = "NPC", Category = "Identity" });
+        }
+        else if (obj.RecordType == "ACRE")
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Category", Value = "Creature", Category = "Identity" });
+        }
 
         if (obj.IsInitiallyDisabled)
         {
@@ -563,10 +823,12 @@ public sealed partial class SingleFileTab
         // Update title with [Leveled] prefix if applicable
         if (isLeveled)
         {
-            var name = obj.BaseEditorId
+            var name = _session.Resolver?.GetDisplayName(obj.BaseFormId)
+                       ?? obj.BaseEditorId
                        ?? _session.Resolver?.GetBestName(obj.BaseFormId)
                        ?? $"0x{obj.BaseFormId:X8}";
-            WorldObjectTitle.Text = $"{obj.RecordType}: [Leveled] {name}";
+            var lvlPrefix = isAchr ? "NPC" : "Creature";
+            WorldObjectTitle.Text = $"{lvlPrefix}: [Leveled] {name}";
         }
 
         // Resolve actors from leveled list or direct placement
@@ -877,16 +1139,25 @@ public sealed partial class SingleFileTab
                 // Value column: cell navigation link, FormID link, or plain text
                 if (prop.CellNavigationFormId is > 0)
                 {
-                    var cellLink = new TextBlock
+                    var linkColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                        ActualTheme == ElementTheme.Light
+                            ? Windows.UI.Color.FromArgb(0xFF, 0x00, 0x66, 0xCC)
+                            : Windows.UI.Color.FromArgb(0xFF, 0x75, 0xBE, 0xFF));
+                    var linkText = new TextBlock
                     {
                         Text = prop.Value,
+                        TextDecorations = TextDecorations.Underline,
                         FontSize = 12,
-                        Padding = new Thickness(0, 3, 4, 2),
-                        Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                            Microsoft.UI.Colors.CornflowerBlue)
+                        Foreground = linkColor
+                    };
+                    var cellLink = new HyperlinkButton
+                    {
+                        Content = linkText,
+                        Padding = new Thickness(0)
                     };
                     var capturedCellFormId = prop.CellNavigationFormId.Value;
-                    cellLink.Tapped += (_, _) => NavigateToCellInWorldMap(capturedCellFormId);
+                    cellLink.Click += (_, _) => NavigateToCellInWorldMap(capturedCellFormId);
+                    cellLink.Margin = new Thickness(0, 2, 4, 2);
                     Grid.SetRow(cellLink, currentRow);
                     Grid.SetColumn(cellLink, 2);
                     mainGrid.Children.Add(cellLink);
@@ -947,6 +1218,7 @@ public sealed partial class SingleFileTab
                 PlacedObjectCategory.Static => "Statics",
                 PlacedObjectCategory.Architecture => "Architecture",
                 PlacedObjectCategory.Landscape => "Landscape",
+                PlacedObjectCategory.Plants => "Plants",
                 PlacedObjectCategory.Clutter => "Clutter",
                 PlacedObjectCategory.Dungeon => "Dungeon",
                 PlacedObjectCategory.Effects => "Effects",

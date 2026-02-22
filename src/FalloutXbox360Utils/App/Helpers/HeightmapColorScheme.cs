@@ -18,7 +18,7 @@ internal sealed record HeightmapColorScheme(string Name, byte R, byte G, byte B)
     public static readonly HeightmapColorScheme Blue = new("Blue", 100, 180, 255);
 
     /// <summary>Fallout_default.ini iSystemColorHUDAlt (power armor HUD).</summary>
-    public static readonly HeightmapColorScheme HudAlt = new("HUD Alt", 255, 67, 42);
+    public static readonly HeightmapColorScheme HudAlt = new("Red", 255, 67, 42);
 
     /// <summary>All available presets.</summary>
     public static readonly HeightmapColorScheme[] Presets = [Amber, Green, White, Blue, HudAlt];

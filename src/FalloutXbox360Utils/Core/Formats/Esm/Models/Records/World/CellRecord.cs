@@ -60,6 +60,14 @@ public record CellRecord
     /// <summary>Runtime terrain mesh extracted from LoadedLandData heap pointers (if available).</summary>
     public RuntimeTerrainMesh? RuntimeTerrainMesh { get; init; }
 
+    /// <summary>
+    ///     True when this cell contains persistent references whose world positions may be
+    ///     far from the cell's own grid coordinates.  The worldspace persistent cell typically
+    ///     has grid (0,0) but holds objects scattered across the entire map.  Rendering code
+    ///     must not cull this cell by grid bounds — it should use per-object IsPointInView instead.
+    /// </summary>
+    public bool HasPersistentObjects { get; init; }
+
     /// <summary>True for synthetic cells created to hold orphan references in DMP mode.</summary>
     public bool IsVirtual { get; init; }
 

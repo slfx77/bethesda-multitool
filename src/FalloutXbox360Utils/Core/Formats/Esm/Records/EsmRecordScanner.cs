@@ -125,9 +125,6 @@ internal static class EsmRecordScanner
         "PERK" // Perk
     ];
 
-    private static readonly HashSet<uint> RuntimeRecordMagicLE = BuildMagicSet(false);
-    private static readonly HashSet<uint> RuntimeRecordMagicBE = BuildMagicSet(true);
-
     // GRUP magic values (structural container, not a main record — separate validation)
     private const uint SigGrupLE = 0x50555247; // "GRUP" as LE uint32
     private const uint SigGrupBE = 0x47525550; // "GRUP" as BE uint32
@@ -163,56 +160,124 @@ internal static class EsmRecordScanner
         byte[] buffer, int index, int length, long offset,
         EsmRecordScanResult result, HashSet<string> seenEdids, HashSet<uint> seenFormIds);
 
-    private static readonly FrozenDictionary<uint, SubrecordHandler> SubrecordDispatch =
-        new Dictionary<uint, SubrecordHandler>
+    // ---- Unified Dispatch ----
+    // Bit-packed action flags in a single FrozenDictionary<uint, int>.
+    // One lookup per candidate position replaces 4 separate lookups.
+    //   Bit 24: main record LE
+    //   Bit 25: main record BE
+    //   Bit 26: GRUP (LE or BE, determined by magic value)
+    //   Bit 27: texture path
+    //   Bits 0-7: subrecord handler index (0xFF = no subrecord handler)
+    private const int ActionMainRecordLE = 1 << 24;
+    private const int ActionMainRecordBE = 1 << 25;
+    private const int ActionGrup = 1 << 26;
+    private const int ActionTexture = 1 << 27;
+    private const int NoHandler = 0xFF;
+
+    private static readonly SubrecordHandler[] SubrecordHandlers =
+    [
+        /* 0  */ (buf, i, len, off, res, edids, _) =>
+            EsmMiscDetector.TryAddEdidRecordWithOffset(buf, i, len, off, res.EditorIds, edids),
+        /* 1  */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddGmstRecordWithOffset(buf, i, len, off, res.GameSettings),
+        /* 2  */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddSctxRecordWithOffset(buf, i, len, off, res.ScriptSources),
+        /* 3  */ (buf, i, len, off, res, _, fids) =>
+            EsmMiscDetector.TryAddScroRecordWithOffset(buf, i, len, off, res.FormIdReferences, fids),
+        /* 4  */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddNameSubrecordWithOffset(buf, i, len, off, res.NameReferences),
+        /* 5  */ (buf, i, len, off, res, _, _) =>
+            EsmWorldExtractor.TryAddPositionSubrecordWithOffset(buf, i, len, off, res.Positions),
+        /* 6  */ (buf, i, len, off, res, _, _) =>
+            EsmActorDetector.TryAddActorBaseSubrecordWithOffset(buf, i, len, off, res.ActorBases),
+        /* 7  */ (buf, i, len, off, res, _, _) =>
+            EsmDialogueDetector.TryAddResponseTextSubrecordWithOffset(buf, i, len, off, res.ResponseTexts),
+        /* 8  */ (buf, i, len, off, res, _, _) =>
+            EsmDialogueDetector.TryAddResponseDataSubrecordWithOffset(buf, i, len, off, res.ResponseData),
+        /* 9  */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddTextSubrecordWithOffset(buf, i, len, off, "FULL", res.FullNames),
+        /* 10 */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddTextSubrecordWithOffset(buf, i, len, off, "DESC", res.Descriptions),
+        /* 11 */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddPathSubrecordWithOffset(buf, i, len, off, "MODL", res.ModelPaths),
+        /* 12 */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddPathSubrecordWithOffset(buf, i, len, off, "ICON", res.IconPaths),
+        /* 13 */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddPathSubrecordWithOffset(buf, i, len, off, "MICO", res.IconPaths),
+        /* 14 */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddFormIdSubrecordWithOffset(buf, i, len, off, "SCRI", res.ScriptRefs),
+        /* 15 */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddFormIdSubrecordWithOffset(buf, i, len, off, "ENAM", res.EffectRefs),
+        /* 16 */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddFormIdSubrecordWithOffset(buf, i, len, off, "SNAM", res.SoundRefs),
+        /* 17 */ (buf, i, len, off, res, _, _) =>
+            EsmMiscDetector.TryAddFormIdSubrecordWithOffset(buf, i, len, off, "QNAM", res.QuestRefs),
+        /* 18 */ (buf, i, len, off, res, _, _) =>
+            EsmActorDetector.TryAddConditionSubrecordWithOffset(buf, i, len, off, res.Conditions),
+        /* 19 */ (buf, i, len, off, res, _, _) =>
+            EsmWorldExtractor.TryAddVhgtHeightmapWithOffset(buf, i, len, off, false, res.Heightmaps),
+        /* 20 */ (buf, i, len, off, res, _, _) =>
+            EsmWorldExtractor.TryAddVhgtHeightmapWithOffset(buf, i, len, off, true, res.Heightmaps),
+        /* 21 */ (buf, i, len, off, res, _, _) =>
+            EsmWorldExtractor.TryAddXclcSubrecordWithOffset(buf, i, len, off, false, res.CellGrids),
+        /* 22 */ (buf, i, len, off, res, _, _) =>
+            EsmWorldExtractor.TryAddXclcSubrecordWithOffset(buf, i, len, off, true, res.CellGrids),
+    ];
+
+    /// <summary>
+    ///     Single unified dispatch table mapping every 4-byte magic (main records LE/BE,
+    ///     subrecords, GRUP, textures TX00-TX07) to a bit-packed action int.
+    ///     One FrozenDictionary lookup per candidate replaces 4+ separate lookups.
+    /// </summary>
+    private static readonly FrozenDictionary<uint, int> UnifiedDispatch = BuildUnifiedDispatch();
+
+    private static FrozenDictionary<uint, int> BuildUnifiedDispatch()
+    {
+        var dict = new Dictionary<uint, int>();
+
+        // Subrecord handlers (indexed by position in SubrecordHandlers array)
+        (uint magic, int index)[] subrecords =
+        [
+            (SigEdid, 0), (SigGmst, 1), (SigSctx, 2), (SigScro, 3),
+            (SigName, 4), (SigData, 5), (SigAcbs, 6), (SigNam1, 7),
+            (SigTrdt, 8), (SigFull, 9), (SigDesc, 10), (SigModl, 11),
+            (SigIcon, 12), (SigMico, 13), (SigScri, 14), (SigEnam, 15),
+            (SigSnam, 16), (SigQnam, 17), (SigCtda, 18), (SigVhgt, 19),
+            (SigTghv, 20), (SigXclc, 21), (SigClcx, 22),
+        ];
+
+        foreach (var (magic, index) in subrecords)
         {
-            [SigEdid] = (buf, i, len, off, res, edids, _) =>
-                EsmMiscDetector.TryAddEdidRecordWithOffset(buf, i, len, off, res.EditorIds, edids),
-            [SigGmst] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddGmstRecordWithOffset(buf, i, len, off, res.GameSettings),
-            [SigSctx] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddSctxRecordWithOffset(buf, i, len, off, res.ScriptSources),
-            [SigScro] = (buf, i, len, off, res, _, fids) =>
-                EsmMiscDetector.TryAddScroRecordWithOffset(buf, i, len, off, res.FormIdReferences, fids),
-            [SigName] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddNameSubrecordWithOffset(buf, i, len, off, res.NameReferences),
-            [SigData] = (buf, i, len, off, res, _, _) =>
-                EsmWorldExtractor.TryAddPositionSubrecordWithOffset(buf, i, len, off, res.Positions),
-            [SigAcbs] = (buf, i, len, off, res, _, _) =>
-                EsmActorDetector.TryAddActorBaseSubrecordWithOffset(buf, i, len, off, res.ActorBases),
-            [SigNam1] = (buf, i, len, off, res, _, _) =>
-                EsmDialogueDetector.TryAddResponseTextSubrecordWithOffset(buf, i, len, off, res.ResponseTexts),
-            [SigTrdt] = (buf, i, len, off, res, _, _) =>
-                EsmDialogueDetector.TryAddResponseDataSubrecordWithOffset(buf, i, len, off, res.ResponseData),
-            [SigFull] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddTextSubrecordWithOffset(buf, i, len, off, "FULL", res.FullNames),
-            [SigDesc] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddTextSubrecordWithOffset(buf, i, len, off, "DESC", res.Descriptions),
-            [SigModl] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddPathSubrecordWithOffset(buf, i, len, off, "MODL", res.ModelPaths),
-            [SigIcon] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddPathSubrecordWithOffset(buf, i, len, off, "ICON", res.IconPaths),
-            [SigMico] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddPathSubrecordWithOffset(buf, i, len, off, "MICO", res.IconPaths),
-            [SigScri] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddFormIdSubrecordWithOffset(buf, i, len, off, "SCRI", res.ScriptRefs),
-            [SigEnam] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddFormIdSubrecordWithOffset(buf, i, len, off, "ENAM", res.EffectRefs),
-            [SigSnam] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddFormIdSubrecordWithOffset(buf, i, len, off, "SNAM", res.SoundRefs),
-            [SigQnam] = (buf, i, len, off, res, _, _) =>
-                EsmMiscDetector.TryAddFormIdSubrecordWithOffset(buf, i, len, off, "QNAM", res.QuestRefs),
-            [SigCtda] = (buf, i, len, off, res, _, _) =>
-                EsmActorDetector.TryAddConditionSubrecordWithOffset(buf, i, len, off, res.Conditions),
-            [SigVhgt] = (buf, i, len, off, res, _, _) =>
-                EsmWorldExtractor.TryAddVhgtHeightmapWithOffset(buf, i, len, off, false, res.Heightmaps),
-            [SigTghv] = (buf, i, len, off, res, _, _) =>
-                EsmWorldExtractor.TryAddVhgtHeightmapWithOffset(buf, i, len, off, true, res.Heightmaps),
-            [SigXclc] = (buf, i, len, off, res, _, _) =>
-                EsmWorldExtractor.TryAddXclcSubrecordWithOffset(buf, i, len, off, false, res.CellGrids),
-            [SigClcx] = (buf, i, len, off, res, _, _) =>
-                EsmWorldExtractor.TryAddXclcSubrecordWithOffset(buf, i, len, off, true, res.CellGrids),
-        }.ToFrozenDictionary();
+            dict[magic] = index;
+        }
+
+        // Main record types (LE and BE)
+        foreach (var type in RuntimeRecordTypes)
+        {
+            var bytes = Encoding.ASCII.GetBytes(type);
+            var leMagic = BitConverter.ToUInt32(bytes, 0);
+            var beMagic = BinaryPrimitives.ReverseEndianness(leMagic);
+
+            // LE entry: may overlap with subrecord (e.g., GMST) — combine with OR
+            dict[leMagic] = dict.GetValueOrDefault(leMagic, NoHandler) | ActionMainRecordLE;
+
+            // BE entry: reversed bytes
+            dict[beMagic] = dict.GetValueOrDefault(beMagic, NoHandler) | ActionMainRecordBE;
+        }
+
+        // GRUP
+        dict[SigGrupLE] = dict.GetValueOrDefault(SigGrupLE, NoHandler) | ActionGrup;
+        dict[SigGrupBE] = dict.GetValueOrDefault(SigGrupBE, NoHandler) | ActionGrup;
+
+        // Texture signatures TX00-TX07 (8 patterns)
+        for (var d = '0'; d <= '7'; d++)
+        {
+            var txMagic = (uint)('T' | ('X' << 8) | ('0' << 16) | (d << 24));
+            dict[txMagic] = dict.GetValueOrDefault(txMagic, NoHandler) | ActionTexture;
+        }
+
+        return dict.ToFrozenDictionary();
+    }
 
     #endregion
 
@@ -373,42 +438,64 @@ internal static class EsmRecordScanner
 #pragma warning disable S127 // Loop counter modified in body - intentional skip-ahead in binary parsing
         for (var i = 0; i <= searchLimit; i++)
         {
+            // Fast-reject: every valid ESM record/subrecord signature (both LE and BE)
+            // has an uppercase ASCII letter at data[i]. Skip ~90% of byte positions.
+            var b = buffer[i];
+            if (b < 'A' || b > 'Z')
+            {
+                continue;
+            }
+
+            if (i + 4 > toRead) continue;
+            var magic = BinaryPrimitives.ReadUInt32LittleEndian(bufferSpan.Slice(i, 4));
+
+            // Single unified dispatch: one FrozenDictionary lookup for all pattern types
+            if (!UnifiedDispatch.TryGetValue(magic, out var action))
+            {
+                continue;
+            }
+
             if (IsInExcludedRange(offset + i, excludeRanges))
             {
                 continue;
             }
 
-            // Check for main record headers first - returns record size for skip-ahead
-            var recordSize = TryAddMainRecordHeaderWithOffset(buffer, i, toRead, offset,
-                result.MainRecords, dedup.SeenMainRecordOffsets);
-
-            if (recordSize > 24)
+            // Priority 1: Main record or GRUP header (triggers skip-ahead)
+            if ((action & (ActionMainRecordLE | ActionMainRecordBE | ActionGrup)) != 0)
             {
-                var skipAmount = Math.Min(recordSize - 1, searchLimit - i);
-                if (skipAmount > 0)
+                var recordSize = TryAddMainRecordHeaderWithOffset(buffer, i, toRead, offset,
+                    result.MainRecords, dedup.SeenMainRecordOffsets, action);
+
+                if (recordSize > 24)
                 {
-                    i += skipAmount;
+                    var skipAmount = Math.Min(recordSize - 1, searchLimit - i);
+                    if (skipAmount > 0)
+                    {
+                        i += skipAmount;
+                    }
+
+                    continue;
                 }
 
-                continue;
+                if (recordSize > 0)
+                {
+                    continue;
+                }
             }
 
-            // Single magic read + dispatch map replaces 22 individual signature checks
-            if (i + 4 > toRead) continue;
-            var magic = BinaryPrimitives.ReadUInt32LittleEndian(bufferSpan.Slice(i, 4));
-
-            if (SubrecordDispatch.TryGetValue(magic, out var handler))
+            // Priority 2: Subrecord handler
+            var handlerIndex = action & 0xFF;
+            if (handlerIndex != NoHandler)
             {
-                handler(buffer, i, toRead, offset, result, dedup.SeenEdids, dedup.SeenFormIds);
+                SubrecordHandlers[handlerIndex](buffer, i, toRead, offset, result,
+                    dedup.SeenEdids, dedup.SeenFormIds);
             }
-            else if (MatchesTextureSignature(buffer, i))
+            // Priority 3: Texture path
+            else if ((action & ActionTexture) != 0)
             {
                 var sig = Encoding.ASCII.GetString(buffer, i, 4);
-                EsmMiscDetector.TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, sig, result.TexturePaths);
-            }
-            else
-            {
-                EsmMiscDetector.TryAddGenericSubrecordWithOffset(buffer, i, toRead, offset, result.GenericSubrecords);
+                EsmMiscDetector.TryAddPathSubrecordWithOffset(buffer, i, toRead, offset, sig,
+                    result.TexturePaths);
             }
         }
 #pragma warning restore S127
@@ -705,16 +792,25 @@ internal static class EsmRecordScanner
             return;
         }
 
+        var magic = BinaryUtils.ReadUInt32LE(data, i);
+        if (!UnifiedDispatch.TryGetValue(magic, out var action))
+        {
+            return;
+        }
+
+        if ((action & (ActionMainRecordLE | ActionMainRecordBE | ActionGrup)) == 0)
+        {
+            return;
+        }
+
         // Reject known GPU debug patterns BEFORE parsing header
         if (IsKnownFalsePositive(data, i))
         {
             return;
         }
 
-        var magic = BinaryUtils.ReadUInt32LE(data, i);
-
         // Try little-endian (PC format)
-        if (RuntimeRecordMagicLE.Contains(magic))
+        if ((action & ActionMainRecordLE) != 0)
         {
             var header = TryParseMainRecordHeader(data, i, dataLength, false);
             if (header != null && seenOffsets.Add(i))
@@ -725,8 +821,8 @@ internal static class EsmRecordScanner
             return;
         }
 
-        // Try big-endian (Xbox 360 format) - signature bytes are reversed
-        if (RuntimeRecordMagicBE.Contains(magic))
+        // Try big-endian (Xbox 360 format)
+        if ((action & ActionMainRecordBE) != 0)
         {
             var header = TryParseMainRecordHeader(data, i, dataLength, true);
             if (header != null && seenOffsets.Add(i))
@@ -738,7 +834,7 @@ internal static class EsmRecordScanner
         }
 
         // Try GRUP (structural container — different header layout than main records)
-        if (magic is SigGrupLE or SigGrupBE)
+        if ((action & ActionGrup) != 0)
         {
             var isBigEndian = magic == SigGrupBE;
             var grup = TryParseGrupHeader(data, i, dataLength, isBigEndian);
@@ -750,12 +846,11 @@ internal static class EsmRecordScanner
     }
 
     /// <summary>
-    ///     Try to parse a main record header at position i. If successful, adds to records
-    ///     and returns the total record size (24-byte header + data size) for skip-ahead optimization.
+    ///     Try to parse a main record header at position i using pre-computed action flags
+    ///     from the unified dispatch table. Returns total record size for skip-ahead, or 0.
     /// </summary>
-    /// <returns>Total record size if a valid record was found; 0 otherwise.</returns>
     private static int TryAddMainRecordHeaderWithOffset(byte[] data, int i, int dataLength, long baseOffset,
-        List<DetectedMainRecord> records, HashSet<long> seenOffsets)
+        List<DetectedMainRecord> records, HashSet<long> seenOffsets, int action)
     {
         var globalOffset = baseOffset + i;
         if (i + 24 > dataLength || seenOffsets.Contains(globalOffset))
@@ -763,46 +858,34 @@ internal static class EsmRecordScanner
             return 0;
         }
 
-        // Reject known GPU debug patterns BEFORE parsing header
-        // These ASCII patterns look like valid 4-char signatures but are GPU register names
-        if (IsKnownFalsePositive(data, i))
-        {
-            return 0;
-        }
+        // Reject known GPU debug patterns (e.g., VGT_DEBUG)
+        if (IsKnownFalsePositive(data, i)) return 0;
 
-        var magic = BinaryUtils.ReadUInt32LE(data, i);
-
-        // Try little-endian (PC format)
-        if (RuntimeRecordMagicLE.Contains(magic))
+        // Main record LE or BE
+        if ((action & ActionMainRecordLE) != 0)
         {
             var header = TryParseMainRecordHeaderWithOffset(data, i, dataLength, baseOffset, false);
             if (header != null && seenOffsets.Add(globalOffset))
             {
                 records.Add(header);
-                // Return total record size: 24-byte header + data size
                 return 24 + (int)header.DataSize;
             }
-
-            return 0;
         }
 
-        // Try big-endian (Xbox 360 format)
-        if (RuntimeRecordMagicBE.Contains(magic))
+        if ((action & ActionMainRecordBE) != 0)
         {
             var header = TryParseMainRecordHeaderWithOffset(data, i, dataLength, baseOffset, true);
             if (header != null && seenOffsets.Add(globalOffset))
             {
                 records.Add(header);
-                // Return total record size: 24-byte header + data size
                 return 24 + (int)header.DataSize;
             }
-
-            return 0;
         }
 
-        // Try GRUP (structural container — different header layout than main records)
-        if (magic is SigGrupLE or SigGrupBE)
+        // GRUP
+        if ((action & ActionGrup) != 0)
         {
+            var magic = BinaryUtils.ReadUInt32LE(data, i);
             var isBigEndian = magic == SigGrupBE;
             var grup = TryParseGrupHeader(data, i, dataLength, isBigEndian);
             if (grup != null)
@@ -811,29 +894,12 @@ internal static class EsmRecordScanner
                 if (seenOffsets.Add(globalOffset))
                 {
                     records.Add(grupWithOffset);
-                    return 24; // GRUP header only (contents are separate records)
+                    return 24;
                 }
             }
         }
 
         return 0;
-    }
-
-    #endregion
-
-    #region Helper Methods
-
-    private static HashSet<uint> BuildMagicSet(bool bigEndian)
-    {
-        var set = new HashSet<uint>();
-        foreach (var type in RuntimeRecordTypes)
-        {
-            var bytes = Encoding.ASCII.GetBytes(type);
-            var leValue = BitConverter.ToUInt32(bytes, 0);
-            set.Add(bigEndian ? BinaryPrimitives.ReverseEndianness(leValue) : leValue);
-        }
-
-        return set;
     }
 
     #endregion

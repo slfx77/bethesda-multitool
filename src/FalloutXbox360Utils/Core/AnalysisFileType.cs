@@ -12,5 +12,8 @@ public enum AnalysisFileType
     Minidump,
 
     /// <summary>Elder Scrolls Master/Plugin file (.esm/.esp).</summary>
-    EsmFile
+    EsmFile,
+
+    /// <summary>Fallout 3/NV save file (.fxs/.fos).</summary>
+    SaveFile
 }

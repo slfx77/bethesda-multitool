@@ -158,7 +158,7 @@ internal static class ObjectBoundsIndex
             {
                 "MSTT" => PlacedObjectCategory.Static,
                 "TACT" => PlacedObjectCategory.Activator,
-                "TREE" => PlacedObjectCategory.Landscape,
+                "TREE" => PlacedObjectCategory.Plants,
                 "ADDN" => PlacedObjectCategory.Effects,
                 "CAMS" => PlacedObjectCategory.Effects,
                 "ANIO" => PlacedObjectCategory.Effects,
@@ -250,8 +250,12 @@ internal static class ObjectBoundsIndex
         }
 
         if (folder.Equals("landscape", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("rocks", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("trees", StringComparison.OrdinalIgnoreCase) ||
+            folder.Equals("rocks", StringComparison.OrdinalIgnoreCase))
+        {
+            return PlacedObjectCategory.Landscape;
+        }
+
+        if (folder.Equals("trees", StringComparison.OrdinalIgnoreCase) ||
             folder.Equals("plants", StringComparison.OrdinalIgnoreCase) ||
             folder.Equals("shrubs", StringComparison.OrdinalIgnoreCase) ||
             folder.Equals("flowers", StringComparison.OrdinalIgnoreCase) ||
@@ -260,7 +264,7 @@ internal static class ObjectBoundsIndex
             folder.Equals("bushes", StringComparison.OrdinalIgnoreCase) ||
             folder.Equals("tumbleweed", StringComparison.OrdinalIgnoreCase))
         {
-            return PlacedObjectCategory.Landscape;
+            return PlacedObjectCategory.Plants;
         }
 
         if (folder.Equals("clutter", StringComparison.OrdinalIgnoreCase))

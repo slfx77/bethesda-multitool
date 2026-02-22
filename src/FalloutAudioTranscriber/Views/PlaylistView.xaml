@@ -105,6 +105,13 @@
           Checked="Filter_Changed"
           Unchecked="Filter_Changed" />
 
+        <CheckBox
+          x:Name="TranscribeEsmCheck"
+          Content="Transcribe ESM lines"
+          IsChecked="False"
+          Checked="TranscribeEsmCheck_Changed"
+          Unchecked="TranscribeEsmCheck_Changed" />
+
         <ComboBox
           x:Name="SpeakerFilter"
           PlaceholderText="Speaker"

@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using System.Numerics;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Geometry;
@@ -13,7 +14,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
+using Windows.Storage.Pickers;
 using Windows.UI;
+using WinRT.Interop;
 
 namespace FalloutXbox360Utils;
 
@@ -25,6 +28,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Constants ---
     private const float CellWorldSize = 4096f;
     private const int HmGridSize = 33;
+
+    // --- Export ---
+    // Target the long edge at 4096px — large enough for detail, small enough to view at 1:1
+    private const int ExportLongEdge = 4096;
+    private const int ExportMaxDimension = 16384;
 
     // --- Cell browser search ---
     private List<CellListItem> _allCellItems = [];
@@ -242,153 +250,43 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             LegendPanel.Children.Add(item);
         }
-
-        // Water toggle
-        var waterColor = Color.FromArgb(255, 30, 55, 120);
-        var waterBorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(waterColor);
-        var waterFillBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-            Color.FromArgb(60, waterColor.R, waterColor.G, waterColor.B));
-        var waterSwatchBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(waterColor);
-
-        var waterSwatch = new Border
-        {
-            Width = 10,
-            Height = 10,
-            CornerRadius = new CornerRadius(2),
-            Background = waterSwatchBrush
-        };
-        var waterLabel = new TextBlock
-        {
-            Text = "Water",
-            FontSize = 10,
-            Foreground = whiteBrush,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(6, 0, 0, 0)
-        };
-        var waterContent = new StackPanel
-        {
-            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Left
-        };
-        waterContent.Children.Add(waterSwatch);
-        waterContent.Children.Add(waterLabel);
-
-        var waterItem = new Border
-        {
-            Child = waterContent,
-            BorderBrush = waterBorderBrush,
-            Background = waterFillBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(6, 3, 8, 3),
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-
-        waterItem.PointerPressed += (_, args) => args.Handled = true;
-        waterItem.PointerReleased += (_, args) =>
-        {
-            args.Handled = true;
-            _showWater = !_showWater;
-            if (_showWater)
-            {
-                waterItem.BorderBrush = waterBorderBrush;
-                waterItem.Background = waterFillBrush;
-                waterSwatch.Background = waterSwatchBrush;
-                waterLabel.Foreground = whiteBrush;
-            }
-            else
-            {
-                waterItem.BorderBrush = grayBorder;
-                waterItem.Background = grayFill;
-                waterSwatch.Background = graySwatchBrush;
-                waterLabel.Foreground = dimTextBrush;
-            }
-
-            // Dispose bitmaps and rebuild with new water setting
-            _worldHeightmapBitmap?.Dispose();
-            _worldHeightmapBitmap = null;
-            _cellHeightmapBitmap?.Dispose();
-            _cellHeightmapBitmap = null;
-            _worldHeightmapDirty = true;
-            MapCanvas.Invalidate();
-        };
-
-        LegendPanel.Children.Add(waterItem);
-
-        // Initially Disabled actors toggle (default: hidden = showing initial game state)
-        var disabledColor = Color.FromArgb(255, 80, 90, 110);
-        var disabledBorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(disabledColor);
-        var disabledFillBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-            Color.FromArgb(60, disabledColor.R, disabledColor.G, disabledColor.B));
-        var disabledSwatchBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(disabledColor);
-
-        var disabledSwatch = new Border
-        {
-            Width = 10,
-            Height = 10,
-            CornerRadius = new CornerRadius(2),
-            Background = graySwatchBrush // Starts hidden (gray)
-        };
-        var disabledLabel = new TextBlock
-        {
-            Text = "Initially Disabled",
-            FontSize = 10,
-            Foreground = dimTextBrush, // Starts hidden (dim)
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(6, 0, 0, 0)
-        };
-        var disabledContent = new StackPanel
-        {
-            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Left
-        };
-        disabledContent.Children.Add(disabledSwatch);
-        disabledContent.Children.Add(disabledLabel);
-
-        var disabledItem = new Border
-        {
-            Child = disabledContent,
-            BorderBrush = grayBorder, // Starts hidden (gray)
-            Background = grayFill,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(6, 3, 8, 3),
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-
-        disabledItem.PointerPressed += (_, args) => args.Handled = true;
-        disabledItem.PointerReleased += (_, args) =>
-        {
-            args.Handled = true;
-            _hideDisabledActors = !_hideDisabledActors;
-            if (!_hideDisabledActors)
-            {
-                // Showing disabled actors (active state)
-                disabledItem.BorderBrush = disabledBorderBrush;
-                disabledItem.Background = disabledFillBrush;
-                disabledSwatch.Background = disabledSwatchBrush;
-                disabledLabel.Foreground = whiteBrush;
-            }
-            else
-            {
-                // Hiding disabled actors (default state)
-                disabledItem.BorderBrush = grayBorder;
-                disabledItem.Background = grayFill;
-                disabledSwatch.Background = graySwatchBrush;
-                disabledLabel.Foreground = dimTextBrush;
-            }
-
-            MapCanvas.Invalidate();
-        };
-
-        LegendPanel.Children.Add(disabledItem);
     }
 
     private void SetCanvasMode(bool canvasVisible)
     {
         MapCanvas.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
         LegendOverlay.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
+        FilterCheckboxPanel.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
         CellBrowserPanel.Visibility = canvasVisible ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>
+    ///     Deselects the worldspace combo box so that re-selecting the same entry
+    ///     will fire SelectionChanged (otherwise the user can't navigate back to the
+    ///     worldspace view when there's only one worldspace).
+    /// </summary>
+    private void ClearWorldspaceSelection()
+    {
+        _suppressNavEvents = true;
+        WorldspaceComboBox.SelectedIndex = -1;
+        _suppressNavEvents = false;
+    }
+
+    private void WaterCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _showWater = WaterCheckBox.IsChecked == true;
+        _worldHeightmapBitmap?.Dispose();
+        _worldHeightmapBitmap = null;
+        _cellHeightmapBitmap?.Dispose();
+        _cellHeightmapBitmap = null;
+        _worldHeightmapDirty = true;
+        MapCanvas.Invalidate();
+    }
+
+    private void DisabledCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _hideDisabledActors = DisabledCheckBox.IsChecked != true;
+        MapCanvas.Invalidate();
     }
 
     public void SelectObject(PlacedReference? obj)
@@ -408,12 +306,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _activeBrowser = BrowserMode.None;
         _hiddenCategories.Clear();
         _hideDisabledActors = true;
+        _showWater = true;
+        WaterCheckBox.IsChecked = true;
+        DisabledCheckBox.IsChecked = false;
         _worldHeightmapDirty = true;
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
         WorldspaceComboBox.Items.Clear();
+        ExportButton.IsEnabled = false;
         MapCanvas.Invalidate();
     }
 
@@ -461,6 +363,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 .GetValueOrDefault(_selectedWorldspace.FormId) ?? [];
             BuildCellGridLookup();
             SetCanvasMode(true);
+            ExportButton.IsEnabled = true;
             ZoomToFitWorldspace();
             MapCanvas.Invalidate();
         }
@@ -480,9 +383,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _currentDefaultWaterHeight = null;
             _cellHeightmapBitmap?.Dispose();
             _cellHeightmapBitmap = null;
-            _filteredMarkers = [];
+            _filteredMarkers = _data.UnlinkedMapMarkers;
             BuildCellGridLookup();
             SetCanvasMode(true);
+            ExportButton.IsEnabled = true;
             ZoomToFitWorldspace();
             MapCanvas.Invalidate();
         }
@@ -609,6 +513,68 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         MapCanvas.Invalidate();
     }
 
+    private async void ExportButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_data == null)
+        {
+            return;
+        }
+
+        var cells = GetActiveCells();
+        var cellsWithGrid = cells.Where(c => c.GridX.HasValue && c.GridY.HasValue).ToList();
+        if (cellsWithGrid.Count == 0)
+        {
+            return;
+        }
+
+        var minGridX = cellsWithGrid.Min(c => c.GridX!.Value);
+        var maxGridX = cellsWithGrid.Max(c => c.GridX!.Value);
+        var minGridY = cellsWithGrid.Min(c => c.GridY!.Value);
+        var maxGridY = cellsWithGrid.Max(c => c.GridY!.Value);
+
+        var gridW = maxGridX - minGridX + 1;
+        var gridH = maxGridY - minGridY + 1;
+
+        // Derive image size: long edge = ExportLongEdge, short edge proportional.
+        // pixelsPerCell is deterministic from grid extent (same worldspace = same scale).
+        var maxGridDim = Math.Max(gridW, gridH);
+        var pixelsPerCell = ExportLongEdge / maxGridDim;
+        if (pixelsPerCell < 1)
+        {
+            pixelsPerCell = 1;
+        }
+
+        var imageW = gridW * pixelsPerCell;
+        var imageH = gridH * pixelsPerCell;
+
+        var wsName = _selectedWorldspace?.EditorId
+                     ?? _selectedWorldspace?.FullName
+                     ?? "worldspace";
+
+        var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.PicturesLibrary };
+        picker.FileTypeChoices.Add("PNG Image", [".png"]);
+        picker.SuggestedFileName = $"{wsName}_map";
+        InitializeWithWindow.Initialize(picker,
+            WindowNative.GetWindowHandle(App.Current.MainWindow));
+
+        var file = await picker.PickSaveFileAsync();
+        if (file == null)
+        {
+            return;
+        }
+
+        ExportButton.IsEnabled = false;
+        try
+        {
+            await ExportWorldspacePngAsync(file.Path, imageW, imageH, pixelsPerCell,
+                minGridX, maxGridX, minGridY, maxGridY);
+        }
+        finally
+        {
+            ExportButton.IsEnabled = true;
+        }
+    }
+
     private void InteriorsButton_Click(object sender, RoutedEventArgs e)
     {
         if (_data == null || _data.InteriorCells.Count == 0)
@@ -625,6 +591,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _selectedCell = null;
         _filteredMarkers = [];
         SetCanvasMode(false);
+        ExportButton.IsEnabled = false;
+        ClearWorldspaceSelection();
         FilterHasObjects.IsChecked = false;
         FilterNamedOnly.IsChecked = false;
         PopulateInteriorCellBrowser();
@@ -646,6 +614,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _selectedCell = null;
         _filteredMarkers = [];
         SetCanvasMode(false);
+        ExportButton.IsEnabled = false;
+        ClearWorldspaceSelection();
         FilterHasObjects.IsChecked = false;
         FilterNamedOnly.IsChecked = false;
         PopulateCellBrowser();
@@ -752,9 +722,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var (tlWorld, brWorld) = GetVisibleWorldBounds();
 
             // 3a. Regular cells (with grid coordinates)
+            // Note: Persistent cells (HasPersistentObjects) may have grid coords like (0,0)
+            // but hold objects scattered across the entire worldspace.  Skip grid-based culling
+            // for those cells and rely on per-object IsPointInView instead.
             foreach (var cell in activeCells)
             {
-                if (!IsCellVisible(cell, tlWorld, brWorld))
+                if (!cell.HasPersistentObjects && !IsCellVisible(cell, tlWorld, brWorld))
                 {
                     continue;
                 }
@@ -786,38 +759,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     }
                 }
             }
-
-            // 3b. Persistent cell objects (NPCs/Creatures in cells without grid coords)
-            foreach (var cell in activeCells)
-            {
-                if (cell.GridX.HasValue && cell.GridY.HasValue)
-                {
-                    continue; // Already drawn above
-                }
-
-                foreach (var obj in cell.PlacedObjects)
-                {
-                    if (obj.IsMapMarker || _hiddenCategories.Contains(GetObjectCategory(obj)) ||
-                        !IsPointInView(obj.X, -obj.Y, tlWorld, brWorld, GetObjectViewMargin(obj)))
-                    {
-                        continue;
-                    }
-
-                    if (_hideDisabledActors && obj.IsInitiallyDisabled)
-                    {
-                        continue;
-                    }
-
-                    if (_zoom > 0.07f)
-                    {
-                        DrawPlacedObjectBox(ds, obj, outlineOnly: true);
-                    }
-                    else
-                    {
-                        DrawPlacedObjectDot(ds, obj);
-                    }
-                }
-            }
         }
 
         // 4. Map markers (always visible)
@@ -825,6 +766,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         // 4b. NPC/Creature dots (always visible)
         DrawActorDots(ds);
+
+        // 4c. Save overlay markers (save file positions)
+        DrawSaveOverlay(ds);
 
         // 5. Selected object highlight
         if (_selectedObject != null)
@@ -858,6 +802,25 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         endCellX = Math.Min(endCellX, 200);
         startCellY = Math.Max(startCellY, -200);
         endCellY = Math.Min(endCellY, 200);
+
+        // When the worldspace has no heightmap data, fill existing cells with black
+        // so they look the same as heightmap gaps (black) rather than transparent.
+        if (_worldHeightmapBitmap == null && _cellGridLookup is { Count: > 0 })
+        {
+            var cellFill = Color.FromArgb(255, 8, 8, 10);
+            foreach (var ((cx, cy), _) in _cellGridLookup)
+            {
+                if (cx < startCellX || cx > endCellX)
+                {
+                    continue;
+                }
+
+                // Grid Y is inverted in world space
+                var worldLeft = cx * CellWorldSize;
+                var worldTop = -(cy + 1) * CellWorldSize;
+                ds.FillRectangle(worldLeft, worldTop, CellWorldSize, CellWorldSize, cellFill);
+            }
+        }
 
         var gridColor = Color.FromArgb(40, 255, 255, 255);
         var lineWidth = 1f / _zoom;
@@ -911,6 +874,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void DrawMapMarkers(CanvasDrawingSession ds)
     {
+        // Map markers are always visible regardless of zoom level.
         if (_data == null || _filteredMarkers.Count == 0 ||
             _hiddenCategories.Contains(PlacedObjectCategory.MapMarker))
         {
@@ -966,7 +930,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void DrawActorDots(CanvasDrawingSession ds)
     {
-        if (_data == null)
+        // All actor dots (including persistent cell NPCs/Creatures) require minimum zoom.
+        if (_data == null || _zoom <= 0.02f)
         {
             return;
         }
@@ -986,9 +951,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         foreach (var cell in GetActiveCells())
         {
-            // For grid cells, only draw at moderate zoom to avoid clutter
-            if (cell.GridX.HasValue && cell.GridY.HasValue
-                && (_zoom <= 0.02f || !IsCellVisible(cell, tlWorld, brWorld)))
+            // For grid cells, skip those not in viewport.
+            // Persistent cells hold objects scattered across the worldspace,
+            // so bypass viewport culling (per-object IsPointInView handles it).
+            if (cell.GridX.HasValue && cell.GridY.HasValue && !cell.HasPersistentObjects
+                && !IsCellVisible(cell, tlWorld, brWorld))
             {
                 continue;
             }
@@ -1029,6 +996,55 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 var outlineAlpha = obj.IsInitiallyDisabled ? (byte)80 : (byte)255;
                 ds.FillCircle(pos, dotRadius, WithAlpha(color, fillAlpha));
                 ds.DrawCircle(pos, dotRadius, WithAlpha(Colors.White, outlineAlpha), outlineWidth);
+            }
+        }
+    }
+
+    private void DrawSaveOverlay(CanvasDrawingSession ds)
+    {
+        if (_data?.SaveOverlayMarkers == null || _data.SaveOverlayMarkers.Count == 0)
+        {
+            return;
+        }
+
+        var (tlWorld, brWorld) = GetVisibleWorldBounds();
+        var dotRadius = 4f / _zoom;
+        var outlineWidth = 1f / _zoom;
+
+        var achrColor = Color.FromArgb(255, 0, 200, 200); // Teal for NPCs
+        var acreColor = Color.FromArgb(255, 255, 140, 0);  // Orange for creatures
+        var refrColor = Color.FromArgb(255, 120, 120, 120); // Gray for objects
+
+        foreach (var obj in _data.SaveOverlayMarkers)
+        {
+            var pos = new Vector2(obj.X, -obj.Y);
+            if (!IsPointInView(pos.X, pos.Y, tlWorld, brWorld, dotRadius * 2))
+            {
+                continue;
+            }
+
+            var color = obj.RecordType switch
+            {
+                "ACHR" => achrColor,
+                "ACRE" => acreColor,
+                _ => refrColor
+            };
+
+            ds.FillCircle(pos, dotRadius, WithAlpha(color, 150));
+            ds.DrawCircle(pos, dotRadius, WithAlpha(Colors.White, 200), outlineWidth);
+        }
+
+        // Player marker (prominent)
+        if (_data.PlayerPosition is var (px, py, _))
+        {
+            var playerPos = new Vector2(px, -py);
+            if (IsPointInView(playerPos.X, playerPos.Y, tlWorld, brWorld, 20f / _zoom))
+            {
+                var playerRadius = 8f / _zoom;
+                var playerOutline = 2f / _zoom;
+                ds.FillCircle(playerPos, playerRadius, Color.FromArgb(220, 255, 215, 0)); // Gold
+                ds.DrawCircle(playerPos, playerRadius, Colors.White, playerOutline);
+                ds.DrawCircle(playerPos, playerRadius * 1.5f, Color.FromArgb(100, 255, 215, 0), playerOutline);
             }
         }
     }
@@ -2019,10 +2035,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             }
         }
 
-        // Also check persistent cells (no grid coords — NPCs, creatures, etc.)
+        // Also check persistent cells — these may have grid coords (e.g., 0,0) but
+        // hold objects scattered across the entire worldspace.  Match both null-grid
+        // cells and cells flagged as having persistent objects.
         foreach (var cell in GetActiveCells())
         {
-            if (cell.GridX.HasValue && cell.GridY.HasValue)
+            if (cell.GridX.HasValue && cell.GridY.HasValue && !cell.HasPersistentObjects)
             {
                 continue;
             }
@@ -2140,8 +2158,51 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         // Switch worldspace (triggers mode change, grid rebuild, etc.)
         WorldspaceComboBox.SelectedIndex = worldspaceIndex;
-        // Then navigate to the specific cell
-        NavigateToCell(cell);
+        // Center on cell in overview instead of entering cell detail mode
+        NavigateToCellInOverview(cell);
+    }
+
+    public void NavigateToCellInOverview(CellRecord cell)
+    {
+        // Switch to overview mode if in cell detail
+        if (_mode == ViewMode.CellDetail)
+        {
+            _mode = ViewMode.WorldOverview;
+            _selectedCell = null;
+            _cellHeightmapBitmap?.Dispose();
+            _cellHeightmapBitmap = null;
+        }
+
+        SetCanvasMode(true);
+
+        if (!cell.GridX.HasValue || !cell.GridY.HasValue)
+        {
+            return;
+        }
+
+        // Center on cell's world position (each grid cell = 4096 units)
+        var cellCenterX = (cell.GridX.Value + 0.5f) * 4096f;
+        var cellCenterY = -(cell.GridY.Value + 0.5f) * 4096f; // Y inverted in view
+
+        var canvasW = (float)MapCanvas.ActualWidth;
+        var canvasH = (float)MapCanvas.ActualHeight;
+        if (canvasW < 1)
+        {
+            canvasW = 800;
+        }
+
+        if (canvasH < 1)
+        {
+            canvasH = 600;
+        }
+
+        // Zoom to show ~3x3 cells around the target
+        _zoom = Math.Min(canvasW, canvasH) / (4096f * 3f);
+        _panOffset = new Vector2(
+            canvasW / 2f - cellCenterX * _zoom,
+            canvasH / 2f - cellCenterY * _zoom);
+
+        MapCanvas.Invalidate();
     }
 
     public void NavigateToWorldspace(int worldspaceIndex)
@@ -2523,11 +2584,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         };
     }
 
-    private static string GetCategoryDisplayName(PlacedObjectCategory category) => category switch
+    internal static string GetCategoryDisplayName(PlacedObjectCategory category) => category switch
     {
         PlacedObjectCategory.Npc => "NPC",
         PlacedObjectCategory.MapMarker => "Map Marker",
         PlacedObjectCategory.Landscape => "Landscape",
+        PlacedObjectCategory.Plants => "Plants",
         PlacedObjectCategory.Effects => "Effects",
         PlacedObjectCategory.Vehicles => "Vehicles",
         PlacedObjectCategory.Traps => "Traps",
@@ -2546,45 +2608,54 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     /// <summary>
     ///     Builds perceptually-uniform OKLCH colors for world map categories.
-    ///     Pins 3 semantic hues (Creature=red, Landscape=green, Npc=light blue),
+    ///     Pins 3 semantic hues (Creature=red, Plants=green, NPC=blue),
     ///     keeps MapMarker=white and Unknown=dark gray, then distributes the
-    ///     remaining 14 categories across the hue gaps with lightness cycling.
+    ///     remaining 15 categories across 3 hue arcs with lightness cycling.
+    ///     Landscape is auto-generated (not pinned) because the default amber
+    ///     heightmap tint would make a pinned amber/yellow Landscape blend in.
     /// </summary>
     private static FrozenDictionary<PlacedObjectCategory, Color> BuildWorldCategoryColors()
     {
         ReadOnlySpan<double> lightnessTiers = [0.62, 0.72, 0.78];
         const double chroma = 0.22;
         const double creatureHue = 25.0;
-        const double landscapeHue = 140.0;
+        const double plantsHue = 140.0;
         const double npcHue = 220.0;
 
         var colors = new Dictionary<PlacedObjectCategory, Color>
         {
             [PlacedObjectCategory.Creature] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, creatureHue)),
-            [PlacedObjectCategory.Landscape] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, landscapeHue)),
+            [PlacedObjectCategory.Plants] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, plantsHue)),
             [PlacedObjectCategory.Npc] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, npcHue)),
             [PlacedObjectCategory.MapMarker] = Color.FromArgb(255, 255, 255, 255),
             [PlacedObjectCategory.Unknown] = Color.FromArgb(255, 80, 80, 80),
         };
 
-        // Remaining 14 categories distributed across 3 hue arcs between pinned hues.
-        // Arc 1: 25°→140° (115°, 4 slots), Arc 2: 140°→220° (80°, 3 slots),
-        // Arc 3: 220°→385° (165°, 7 slots) — proportional to arc length.
+        // 15 remaining categories distributed across 3 hue arcs between pinned hues.
+        // Arc 1: 25°→140° (115°, 5 slots), Arc 2: 140°→220° (80°, 3 slots),
+        // Arc 3: 220°→385° (165°, 7 slots). ~20° step in each arc.
+        // Ordering based on WastelandNV counts: top categories (Landscape 48%,
+        // Clutter 12%, Architecture 10%, Static 4%) placed in separate arcs.
         PlacedObjectCategory[] remaining =
         [
-            PlacedObjectCategory.Static, PlacedObjectCategory.Architecture,
-            PlacedObjectCategory.Clutter, PlacedObjectCategory.Dungeon,
-            PlacedObjectCategory.Effects, PlacedObjectCategory.Vehicles,
-            PlacedObjectCategory.Traps, PlacedObjectCategory.Door,
-            PlacedObjectCategory.Activator, PlacedObjectCategory.Light,
-            PlacedObjectCategory.Furniture, PlacedObjectCategory.Container,
-            PlacedObjectCategory.Item, PlacedObjectCategory.Sound,
+            // Arc 1 (25°→140°): warm orange → yellow-green
+            PlacedObjectCategory.Architecture, PlacedObjectCategory.Effects,
+            PlacedObjectCategory.Dungeon, PlacedObjectCategory.Furniture,
+            PlacedObjectCategory.Vehicles,
+            // Arc 2 (140°→220°): teal → blue
+            PlacedObjectCategory.Clutter, PlacedObjectCategory.Static,
+            PlacedObjectCategory.Sound,
+            // Arc 3 (220°→385°): blue → purple → magenta
+            PlacedObjectCategory.Landscape, PlacedObjectCategory.Item,
+            PlacedObjectCategory.Activator, PlacedObjectCategory.Container,
+            PlacedObjectCategory.Door, PlacedObjectCategory.Light,
+            PlacedObjectCategory.Traps,
         ];
 
         (double start, double end, int count)[] arcs =
         [
-            (creatureHue, landscapeHue, 4),
-            (landscapeHue, npcHue, 3),
+            (creatureHue, plantsHue, 5),
+            (plantsHue, npcHue, 3),
             (npcHue, creatureHue + 360, 7),
         ];
 
@@ -2607,31 +2678,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private static Color ArgbToColor(uint argb) => Color.FromArgb(
         (byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
 
-    private static string GetMarkerGlyph(MapMarkerType? markerType) => markerType switch
-    {
-        MapMarkerType.City => "\uE80F", // Home
-        MapMarkerType.Settlement => "\uE825", // Map
-        MapMarkerType.Encampment => "\uE7C1", // Globe
-        MapMarkerType.Cave => "\uE774", // Mountain/pin
-        MapMarkerType.Factory => "\uE8B1", // Settings/gear
-        MapMarkerType.Monument => "\uE734", // Star (favorite)
-        MapMarkerType.Military => "\uE7C8", // Shield
-        MapMarkerType.Vault => "\uE72E", // Lock
-        _ => "\uE81D" // Flag
-    };
+    private static string GetMarkerGlyph(MapMarkerType? markerType) =>
+        MapExportLayoutEngine.GetMarkerGlyph(markerType);
 
-    private static Color GetMarkerColor(MapMarkerType? markerType) => markerType switch
+    private static Color GetMarkerColor(MapMarkerType? markerType)
     {
-        MapMarkerType.City => Color.FromArgb(255, 255, 215, 0),
-        MapMarkerType.Settlement => Color.FromArgb(255, 200, 170, 80),
-        MapMarkerType.Encampment => Color.FromArgb(255, 180, 140, 60),
-        MapMarkerType.Cave => Color.FromArgb(255, 120, 100, 80),
-        MapMarkerType.Factory => Color.FromArgb(255, 180, 180, 180),
-        MapMarkerType.Monument => Color.FromArgb(255, 220, 200, 160),
-        MapMarkerType.Military => Color.FromArgb(255, 200, 60, 60),
-        MapMarkerType.Vault => Color.FromArgb(255, 80, 140, 255),
-        _ => Color.FromArgb(255, 200, 200, 200)
-    };
+        var (r, g, b) = MapExportLayoutEngine.GetMarkerColor(markerType);
+        return Color.FromArgb(255, r, g, b);
+    }
 
     private static Color WithAlpha(Color c, byte alpha) => Color.FromArgb(alpha, c.R, c.G, c.B);
 
@@ -2660,7 +2714,197 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         return fullName ?? editorId ?? $"0x{ws.FormId:X8}";
     }
 
-    // HeightToColor and HslToRgb removed — replaced by grayscale + tint pipeline
+    // ========================================================================
+    // Export Worldspace as PNG
+    // ========================================================================
+
+    private async Task ExportWorldspacePngAsync(
+        string filePath, int imageW, int imageH, int pixelsPerCell,
+        int minGridX, int maxGridX, int minGridY, int maxGridY)
+    {
+        // Ensure heightmap bitmap is built (it's lazily created on first draw)
+        if (_worldHeightmapDirty && GetActiveCells().Count > 0)
+        {
+            BuildWorldHeightmapBitmap(MapCanvas);
+            _worldHeightmapDirty = false;
+        }
+
+        // Use MapCanvas as resource creator to guarantee same device as heightmap bitmap
+        using var renderTarget = new CanvasRenderTarget(MapCanvas, imageW, imageH, 96);
+        var device = renderTarget.Device;
+
+        // Proportional sizing via shared engine
+        var longEdge = Math.Max(imageW, imageH);
+        var sizing = MapExportLayoutEngine.ComputeSizing(longEdge);
+
+        var pixelsPerWorldUnit = (float)pixelsPerCell / CellWorldSize;
+        var worldOriginX = minGridX * CellWorldSize;
+        var worldOriginY = -(maxGridY + 1) * CellWorldSize;
+        var worldMaxX = (maxGridX + 1) * CellWorldSize;
+        var worldMinY = minGridY * CellWorldSize;
+        var worldMaxY = (maxGridY + 1) * CellWorldSize;
+
+        using (var ds = renderTarget.CreateDrawingSession())
+        {
+            ds.Clear(Color.FromArgb(255, 20, 20, 25));
+
+            // World-space transform: pixel = (world - origin) * scale
+            ds.Transform = Matrix3x2.CreateTranslation(-worldOriginX, -worldOriginY)
+                           * Matrix3x2.CreateScale(pixelsPerWorldUnit);
+
+            // 1. Heightmap
+            if (_worldHeightmapBitmap != null)
+            {
+                var pixelScale = CellWorldSize / HmGridSize;
+                var bitmapWorldW = _worldHmPixelWidth * pixelScale;
+                var bitmapWorldH = _worldHmPixelHeight * pixelScale;
+                var bitmapX = _worldHmMinX * CellWorldSize;
+                var bitmapY = -(_worldHmMaxY + 1) * CellWorldSize;
+                ds.DrawImage(_worldHeightmapBitmap,
+                    new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH));
+            }
+
+            // 2. Cell grid (no viewport culling)
+            DrawExportCellGrid(ds, minGridX, maxGridX, minGridY, maxGridY, pixelsPerWorldUnit);
+
+            // 3. Map markers (circles + glyphs in world space, labels in pixel space)
+            DrawExportMapMarkers(ds, device, pixelsPerWorldUnit, imageW, imageH,
+                worldOriginX, worldMaxX, worldMinY, worldMaxY, sizing);
+        }
+
+        await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+        await renderTarget.SaveAsync(stream.AsRandomAccessStream(), CanvasBitmapFileFormat.Png);
+    }
+
+    private static void DrawExportCellGrid(CanvasDrawingSession ds,
+        int minGridX, int maxGridX, int minGridY, int maxGridY, float pixelsPerWorldUnit)
+    {
+        var gridColor = Color.FromArgb(40, 255, 255, 255);
+        var lineWidth = 0.5f / pixelsPerWorldUnit;
+
+        for (var cx = minGridX; cx <= maxGridX + 1; cx++)
+        {
+            var worldX = cx * CellWorldSize;
+            var yStart = -(maxGridY + 1) * CellWorldSize;
+            var yEnd = -minGridY * CellWorldSize;
+            ds.DrawLine(worldX, yStart, worldX, yEnd, gridColor, lineWidth);
+        }
+
+        for (var cy = minGridY; cy <= maxGridY + 1; cy++)
+        {
+            var worldY = -cy * CellWorldSize;
+            var xStart = minGridX * CellWorldSize;
+            var xEnd = (maxGridX + 1) * CellWorldSize;
+            ds.DrawLine(xStart, worldY, xEnd, worldY, gridColor, lineWidth);
+        }
+    }
+
+    private void DrawExportMapMarkers(CanvasDrawingSession ds, CanvasDevice device,
+        float pixelsPerWorldUnit, int imageW, int imageH,
+        float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
+        MapExportSizing sizing)
+    {
+        if (_filteredMarkers.Count == 0 ||
+            _hiddenCategories.Contains(PlacedObjectCategory.MapMarker))
+        {
+            return;
+        }
+
+        // Project markers to engine input
+        var inputs = _filteredMarkers
+            .Select(m => new MapMarkerInput(m.X, m.Y, m.MarkerType, m.MarkerName))
+            .ToList();
+
+        // Compute layout via shared engine (precise Win2D text measurement)
+        var layout = MapExportLayoutEngine.ComputeLayout(
+            inputs, imageW, imageH,
+            worldMinX, worldMaxX, worldMinY, worldMaxY,
+            pixelsPerWorldUnit, sizing,
+            (text, fontSize) =>
+            {
+                using var tl = new CanvasTextLayout(device, text,
+                    new CanvasTextFormat { FontSize = fontSize, FontFamily = "Segoe UI" },
+                    float.MaxValue, float.MaxValue);
+                return ((float)tl.LayoutBounds.Width, (float)tl.LayoutBounds.Height);
+            });
+
+        // Draw marker circles + glyphs in world space (transform is still active)
+        var markerWorldRadius = sizing.MarkerRadius / pixelsPerWorldUnit;
+        var outlineWidth = 1f / pixelsPerWorldUnit;
+
+        foreach (var m in layout.Markers)
+        {
+            var marker = _filteredMarkers[m.OriginalIndex];
+            DrawExportMarkerCircle(ds, marker, markerWorldRadius, outlineWidth,
+                sizing.LabelFontSize, pixelsPerWorldUnit);
+        }
+
+        // Switch to pixel space for leader lines + labels
+        ds.Transform = Matrix3x2.Identity;
+
+        // Leader lines (drawn first, behind label pills)
+        var leaderColor = Color.FromArgb(150, 255, 255, 255);
+        var leaderWidth = Math.Max(1f, sizing.MarkerRadius * 0.1f);
+
+        foreach (var lp in layout.Labels)
+        {
+            if (!lp.NeedsLeader)
+            {
+                continue;
+            }
+
+            var labelCenter = new Vector2(
+                lp.LabelX + lp.PillWidth / 2,
+                lp.LabelY + lp.PillHeight / 2);
+            var markerPixel = new Vector2(lp.MarkerPixelX, lp.MarkerPixelY);
+            var direction = Vector2.Normalize(labelCenter - markerPixel);
+            var lineStart = markerPixel + direction * (sizing.MarkerRadius + 1f);
+
+            ds.DrawLine(lineStart, labelCenter, leaderColor, leaderWidth);
+        }
+
+        // Label pills + text
+        using var labelFormat = new CanvasTextFormat
+        {
+            FontSize = sizing.LabelFontSize,
+            FontFamily = "Segoe UI"
+        };
+
+        foreach (var lp in layout.Labels)
+        {
+            // Black rounded pill background
+            using var pillGeometry = CanvasGeometry.CreateRoundedRectangle(
+                device, lp.LabelX, lp.LabelY, lp.PillWidth, lp.PillHeight, 3f, 3f);
+            ds.FillGeometry(pillGeometry, Color.FromArgb(220, 0, 0, 0));
+            ds.DrawGeometry(pillGeometry, Color.FromArgb(100, 255, 255, 255), 0.5f);
+
+            // White text
+            ds.DrawText(lp.Text, lp.LabelX + lp.PadH, lp.LabelY + lp.PadV,
+                Colors.White, labelFormat);
+        }
+    }
+
+    private static void DrawExportMarkerCircle(CanvasDrawingSession ds, PlacedReference marker,
+        float worldRadius, float outlineWidth, float labelFontSize, float pixelsPerWorldUnit)
+    {
+        var pos = new Vector2(marker.X, -marker.Y);
+        var color = GetMarkerColor(marker.MarkerType);
+        ds.FillCircle(pos, worldRadius, WithAlpha(color, 200));
+        ds.DrawCircle(pos, worldRadius, Colors.White, outlineWidth);
+
+        var glyph = GetMarkerGlyph(marker.MarkerType);
+        using var glyphFormat = new CanvasTextFormat
+        {
+            FontSize = labelFontSize / pixelsPerWorldUnit,
+            FontFamily = "Segoe MDL2 Assets",
+            HorizontalAlignment = CanvasHorizontalAlignment.Center,
+            VerticalAlignment = CanvasVerticalAlignment.Center
+        };
+        var glyphRect = new Rect(
+            pos.X - worldRadius, pos.Y - worldRadius,
+            worldRadius * 2, worldRadius * 2);
+        ds.DrawText(glyph, glyphRect, Colors.White, glyphFormat);
+    }
 
     internal enum ViewMode
     {

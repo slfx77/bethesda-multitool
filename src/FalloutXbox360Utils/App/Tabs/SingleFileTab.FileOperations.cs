@@ -1,5 +1,6 @@
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.SaveGame.Export;
 using FalloutXbox360Utils.Core.RuntimeBuffer;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
@@ -23,6 +24,34 @@ public sealed partial class SingleFileTab
 
         try
         {
+            // Save file reports path
+            if (_session.IsSaveFile && _session.SaveData != null)
+            {
+                StatusTextBlock.Text = "Generating save reports...";
+                var resolver = _session.EffectiveResolver;
+                var decodedForms = _session.DecodedForms;
+                var saveData = _session.SaveData;
+
+                var saveReports = await Task.Run(() =>
+                    SaveReportGenerator.GenerateAllReports(saveData, decodedForms, resolver));
+
+                _reportEntries.Clear();
+                foreach (var (filename, content) in saveReports.OrderBy(kvp => kvp.Key))
+                {
+                    _reportEntries.Add(new ReportEntry
+                    {
+                        FileName = filename,
+                        Content = content,
+                        ReportType = filename.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? "CSV" : "TXT"
+                    });
+                }
+
+                ExportAllReportsButton.IsEnabled = _reportEntries.Count > 0;
+                StatusTextBlock.Text = $"Generated {_reportEntries.Count} save reports.";
+                return;
+            }
+
+            // ESM/DMP reports path
             await EnsureSemanticReconstructionAsync();
             if (_session.SemanticResult == null) return;
 

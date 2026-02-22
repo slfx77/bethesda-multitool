@@ -10,19 +10,22 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 public sealed class RuntimeStructReader
 {
-    internal readonly RuntimeMemoryContext _context;
+    private readonly RuntimeMemoryContext _context;
     private readonly RuntimeActorReader _actors;
     private readonly RuntimeItemReader _items;
     private readonly RuntimeDialogueReader _dialogue;
     private readonly RuntimeEffectReader _effects;
     private readonly RuntimeScriptReader _scripts;
     private readonly RuntimeWorldReader _world;
+    private readonly RuntimeRefrReader _refrs;
     private readonly RuntimePackageReader _packages;
+    private readonly RuntimeCellReader _cells;
 
     public RuntimeStructReader(
         MemoryMappedViewAccessor accessor,
         long fileSize,
-        MinidumpInfo minidumpInfo)
+        MinidumpInfo minidumpInfo,
+        bool useProtoOffsets = false)
     {
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         _actors = new RuntimeActorReader(_context);
@@ -31,7 +34,9 @@ public sealed class RuntimeStructReader
         _effects = new RuntimeEffectReader(_context);
         _scripts = new RuntimeScriptReader(_context);
         _world = new RuntimeWorldReader(_context);
+        _refrs = new RuntimeRefrReader(_context, useProtoOffsets);
         _packages = new RuntimePackageReader(_context);
+        _cells = new RuntimeCellReader(_context, useProtoOffsets);
     }
 
     #region Actors
@@ -97,6 +102,17 @@ public sealed class RuntimeStructReader
         _world.ReadAllRuntimeLandData(entries);
 
     public int ProbeDialTopicLayout(RuntimeEditorIdEntry entry) => _world.ProbeDialTopicLayout(entry);
+
+    public ExtractedRefrRecord? ReadRuntimeRefr(RuntimeEditorIdEntry entry) =>
+        _refrs.ReadRuntimeRefr(entry);
+
+    public Dictionary<uint, ExtractedRefrRecord> ReadAllRuntimeRefrs(
+        IEnumerable<RuntimeEditorIdEntry> entries) =>
+        _refrs.ReadAllRuntimeRefrs(entries);
+
+    public Dictionary<uint, RuntimeWorldspaceData> ReadAllWorldspaceCellMaps(
+        IEnumerable<RuntimeEditorIdEntry> entries) =>
+        _cells.ReadAllWorldspaceCellMaps(entries);
 
     #endregion
 

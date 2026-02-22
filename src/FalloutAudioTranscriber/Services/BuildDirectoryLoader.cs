@@ -21,7 +21,8 @@ public static class BuildDirectoryLoader
     public static async Task<BuildLoadResult> LoadAsync(
         string dataDirectory,
         IProgress<(string message, double percent)>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? esmOverridePath = null)
     {
         // Step 1: Find BSA files
         progress?.Report(("Scanning for BSA files...", 0));
@@ -33,14 +34,26 @@ public static class BuildDirectoryLoader
                 "No Fallout - Voices*.bsa files found in the Data directory.");
         }
 
-        // Step 2: Find ESM file
-        var esmPath = FindEsm(dataDirectory);
+        // Step 2: Determine ESM file path (user override takes priority)
+        string? esmPath;
+        string? esmSourceDescription;
+        if (esmOverridePath != null)
+        {
+            esmPath = esmOverridePath;
+            esmSourceDescription = "user-provided";
+        }
+        else
+        {
+            esmPath = FindEsm(dataDirectory);
+            esmSourceDescription = esmPath != null ? "auto-discovered" : null;
+        }
 
         // Step 3: Build ESM index (if ESM exists)
         EsmLookupIndex? esmIndex = null;
         if (esmPath != null)
         {
-            progress?.Report(("Parsing ESM for cross-reference...", 10));
+            var esmName = Path.GetFileName(esmPath);
+            progress?.Report(($"Parsing ESM ({esmSourceDescription}): {esmName}...", 10));
             esmIndex = await EsmIndexBuilder.BuildAsync(
                 esmPath,
                 new Progress<string>(msg => progress?.Report((msg, 20))),
@@ -88,6 +101,7 @@ public static class BuildDirectoryLoader
         };
 
         // Populate ESM enrichment heuristics
+        result.EsmSourceDescription = esmSourceDescription;
         if (esmIndex != null)
         {
             result.EsmInfoCount = esmIndex.InfoCount;

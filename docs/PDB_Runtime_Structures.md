@@ -1,8 +1,10 @@
 # PDB Runtime Structure Reference
 
-Comprehensive documentation of all C++ runtime structures identified from the Fallout: New Vegas Xbox 360 PDB symbols (`Sample/PDB/Fallout_Debug/types_full.txt`) and implemented in the memory dump analyzer.
+Comprehensive documentation of all C++ runtime structures identified from the Fallout: New Vegas Xbox 360 PDB symbols and implemented in the memory dump analyzer.
 
-**PDB Source:** Microsoft (R) Debugging Information Dumper — Fallout New Vegas Xbox 360 executable
+**PDB Sources:**
+- **Proto Debug PDB:** `Sample/PDB/Fallout_Debug/types_full.txt` (Jul 2010, TESForm = 24 bytes) — used for base object types (NPC, WEAP, etc.)
+- **Final Debug PDB:** `Sample/PDB/Final/Fallout_Debug_Final/types_full.txt` (TESForm = 40 bytes) — used for TESObjectREFR and related types
 **Key Files:** `RuntimeStructReader.cs`, `RecordParser.cs`, `Models/`
 
 ---
@@ -17,6 +19,7 @@ Xbox 360 crash dumps exhibit consistent offset shifts between PDB-defined offset
 | TESTopicInfo (INFO)                            | 80       | 84        | **+4** on fields after offset 24 | TESForm base is 24 bytes but field offsets shift by +4 |
 | TESTopic (DIAL)                                | 72       | 88        | **+16**                          | Same as TESBoundObject pattern                         |
 | TESForm base                                   | 24       | 24        | **0**                            | No shift on base class                                 |
+| TESObjectREFR (Final PDB)                      | 120      | 120       | **0**                            | Final PDB offsets = dump offsets directly               |
 
 ### VA-to-Offset Conversion
 
@@ -560,6 +563,150 @@ Quest definitions with stages and objectives.
 
 **PDB Type:** `0x13B82` — PDB Size: 108 — Dump Size: 140 (+16 shift)
 **Code:** `RuntimeStructReader.ReadRuntimeQuest()` → `Models/QuestRecord.cs`
+
+---
+
+## Placed Reference Structures
+
+> **PDB Source:** Final Debug PDB (`Sample/PDB/Final/Fallout_Debug_Final/types_full.txt`)
+> Final PDB offsets match dump offsets directly — no shift needed.
+> All offsets verified against Ghidra decompilation of `TESObjectREFR::SaveGame_v2` / `LoadGame_v2`.
+
+### TESObjectREFR (REFR/ACHR/ACRE — FormType 0x40)
+
+The placed reference type for all objects in the game world. Every placed NPC, creature, item, activator, map marker, door, etc. is a TESObjectREFR instance (or a subclass: Character for ACHR, Creature for ACRE). This is the critical type for the world map — it holds position, rotation, scale, parent cell, base object, and the ExtraDataList which contains map marker data, persistence flags, etc.
+
+**Inheritance:** TESForm (offset 0, 40 bytes) + TESChildCell (offset 40, 4 bytes)
+
+| Offset | Type             | Size | Field                  | Description                                         |
+| ------ | ---------------- | ---- | ---------------------- | --------------------------------------------------- |
+| 0      | ptr              | 4    | vfptr                  | TESForm virtual function table                      |
+| 4      | uint8            | 1    | cFormType              | Form type (0x40 for REFR)                           |
+| 8      | uint32           | 4    | iFormFlags             | Form flags (0x0400=Persistent, 0x0020=Deleted)      |
+| 12     | uint32           | 4    | iFormID                | Unique FormID                                       |
+| 16     | BSFixedString    | 8    | cFormEditorID          | Editor ID string                                    |
+| 24     | uint32           | 4    | iVersionControl        | Version control info                                |
+| 28     | uint8            | 1    | cVCVersion             | Version control version                             |
+| 32     | ptr              | ~8   | pSourceFiles           | Source ESM file list                                |
+| 40     | ptr              | 4    | (TESChildCell vfptr)   | TESChildCell vtable                                 |
+| 44     | ptr              | 4    | pRandomSound           | Random sound pointer                                |
+| 48     | TESBoundObject\* | 4    | data.pObjectReference  | Base object (the "template" form)                   |
+| 52     | NiPoint3         | 12   | data.Angle             | Rotation (X, Y, Z radians)                          |
+| 64     | NiPoint3         | 12   | data.Location          | World position (X, Y, Z game units)                 |
+| 76     | float            | 4    | fRefScale              | Scale factor (1.0 = normal)                         |
+| 80     | TESObjectCELL\*  | 4    | pParentCell            | Parent cell pointer                                 |
+| 84     | ExtraDataList    | 32   | m_Extra                | Extra data container (see below)                    |
+| 116    | ptr              | 4    | pLoadedData            | Loaded 3D data (null when unloaded)                 |
+
+**PDB Type:** `0x0001196D` (Final PDB) — Size: 120 bytes — 517 members
+**RTTI Census:** Instances confirmed in all 50 crash dumps (class name `TESObjectREFR`).
+**Ghidra Cross-Reference:**
+- `r31+0x4C` (offset 76) confirmed as `fRefScale` — float load/store in SaveGame_v2
+- `r31+0x54` (offset 84) confirmed as `m_Extra` — ExtraDataList Save/Load calls
+- `r31+0x74` (offset 116) confirmed as `pLoadedData` — pointer dereference in SaveGame_v2
+**Validation:** TESForm base fields (+4/+8/+12) proven across 17 form types. TESObjectREFR-specific offsets validated by 3 independent Ghidra confirmations. Full DMP struct read validation pending for RuntimeRefrReader implementation.
+
+#### OBJ_REFR — Embedded data sub-struct at offset +48
+
+| Relative Offset | Type             | Size | Field            | Description                    |
+| --------------- | ---------------- | ---- | ---------------- | ------------------------------ |
+| +0              | TESBoundObject\* | 4    | pObjectReference | Base form (follow for FormID)  |
+| +4              | NiPoint3         | 12   | Angle            | Rotation (X, Y, Z as float32) |
+| +16             | NiPoint3         | 12   | Location         | Position (X, Y, Z as float32) |
+
+**PDB Type:** `0x00012387` — Size: 28 bytes
+
+#### NiPoint3
+
+| Relative Offset | Type    | Size | Field | Description         |
+| --------------- | ------- | ---- | ----- | ------------------- |
+| +0              | float32 | 4    | x     | X coordinate        |
+| +4              | float32 | 4    | y     | Y coordinate        |
+| +8              | float32 | 4    | z     | Z coordinate / axis |
+
+**PDB Type:** `0x000159E6` — Size: 12 bytes
+
+### ExtraDataList / BaseExtraList — Embedded at TESObjectREFR +84
+
+Container for all extra data attached to a reference. Inherits from BaseExtraList. Stores a linked list of BSExtraData entries and a bitfield indicating which extra types are present.
+
+| Offset (within REFR) | Type        | Size | Field  | Description                              |
+| --------------------- | ----------- | ---- | ------ | ---------------------------------------- |
+| +84                   | ptr         | 4    | vfptr  | ExtraDataList vtable                     |
+| +88                   | BSExtraData\* | 4  | pHead  | Head of linked list of extra data entries|
+| +92                   | uint8[21]   | 21   | iFlags | Bitfield: bit N set = extra type N present |
+| +113                  | —           | 3    | (pad)  | Alignment padding                        |
+
+**PDB Type:** `0x00010B8F` (ExtraDataList, 32 bytes) inherits `0x000186E0` (BaseExtraList, 32 bytes)
+**Usage:** To find a specific extra type, check `iFlags[type/8] & (1 << (type%8))`. If set, walk the linked list from `pHead` until `cEtype` matches.
+
+### BSExtraData — Base class for all extra data entries
+
+Each entry in the ExtraDataList linked list. Subclasses add type-specific data after the base fields.
+
+| Offset | Type          | Size | Field  | Description                               |
+| ------ | ------------- | ---- | ------ | ----------------------------------------- |
+| 0      | ptr           | 4    | vfptr  | Virtual function table                    |
+| 4      | uint8         | 1    | cEtype | Extra data type code                      |
+| 8      | BSExtraData\* | 4    | pNext  | Next entry in linked list (null = end)    |
+
+**PDB Type:** `0x00014279` — Size: 12 bytes
+
+### ExtraMapMarker — BSExtraData subclass (type code 0x2C / 44)
+
+Attached to REFR instances that are map markers. Contains a pointer to the MapMarkerData struct.
+
+| Offset | Type            | Size | Field    | Description                   |
+| ------ | --------------- | ---- | -------- | ----------------------------- |
+| 0-11   | —               | 12   | (BSExtraData) | Inherited base class     |
+| 12     | MapMarkerData\* | 4    | pMapData | Pointer to marker data struct |
+
+**PDB Type:** `0x0001745A` — Size: 16 bytes
+**Detection:** Check `cEtype == 0x2C` in the ExtraDataList linked list, or check bit 44 in `iFlags`.
+
+### MapMarkerData — Pointed to by ExtraMapMarker
+
+Contains the marker's display name, type icon, and visibility flags.
+
+| Offset | Type         | Size | Field          | Description                              |
+| ------ | ------------ | ---- | -------------- | ---------------------------------------- |
+| 0      | TESFullName  | 12   | LocationName   | Marker display name (see below)          |
+| 12     | uint8        | 1    | cFlags         | Visibility flags (bit 0=Visible, bit 1=CanTravel, bit 2=Hidden) |
+| 13     | uint8        | 1    | cOriginalFlags | Original flags at creation               |
+| 14     | uint16       | 2    | sType          | Marker type (icon index on game map)     |
+| 16     | ptr          | 4    | pReputation    | Reputation form pointer (or null)        |
+
+**PDB Type:** `0x0002C0AD` — Size: 20 bytes
+
+#### TESFullName — Embedded at MapMarkerData +0
+
+| Offset | Type          | Size | Field     | Description                       |
+| ------ | ------------- | ---- | --------- | --------------------------------- |
+| 0      | ptr           | 4    | vfptr     | TESFullName vtable                |
+| 4      | BSFixedString | 8    | cFullName | The display name string           |
+
+**PDB Type:** `0x00015FAA` — Size: 12 bytes
+
+### Key Relationships for World Map
+
+```
+TESObjectREFR (+120 bytes)
+├── iFormFlags (+8)          → check 0x0400 for persistence
+├── iFormID (+12)            → reference ID
+├── data.pObjectReference (+48) → base form (follow ptr → +12 for base FormID)
+├── data.Location (+64)      → world position (X, Y, Z floats)
+├── data.Angle (+52)         → rotation
+├── fRefScale (+76)          → scale
+├── pParentCell (+80)        → cell pointer (follow → +12 for cell FormID)
+└── m_Extra (+84)
+    └── pHead (+88)          → linked list of BSExtraData
+        └── BSExtraData (cEtype=0x2C)
+            └── ExtraMapMarker.pMapData (+12)
+                └── MapMarkerData
+                    ├── LocationName.cFullName (+4) → display name
+                    ├── cFlags (+12) → visible/hidden
+                    └── sType (+14) → marker icon type
+```
 
 ---
 

@@ -33,6 +33,12 @@ public sealed class RecordParserContext
     /// </summary>
     public Dictionary<uint, string> FormIdToFullName { get; } = new();
 
+    /// <summary>
+    ///     Runtime worldspace cell maps from walking TESWorldSpace pCellMap hash tables.
+    ///     Keyed by worldspace FormID. Set during RecordParser enrichment phase.
+    /// </summary>
+    public Dictionary<uint, RuntimeWorldspaceData>? RuntimeWorldspaceCellMaps { get; set; }
+
     private readonly Dictionary<string, List<DetectedMainRecord>> _recordsByType;
     private Dictionary<uint, uint>? _refToBase;
 
