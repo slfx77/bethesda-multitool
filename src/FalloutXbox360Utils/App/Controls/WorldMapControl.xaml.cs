@@ -5,6 +5,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Effects;
 using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.Graphics.Canvas.Text;
 using Microsoft.Graphics.Canvas.UI.Xaml;
@@ -87,6 +88,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private bool _worldHeightmapDirty = true;
     private int _worldHmMinX, _worldHmMaxY;
     private int _worldHmPixelWidth, _worldHmPixelHeight;
+
+    // --- Map marker icon bitmaps (loaded from embedded PNGs, tinted to scheme color) ---
+    private Dictionary<MapMarkerType, CanvasBitmap>? _markerIconBitmaps;
 
     // --- Heightmap tinting ---
     private HeightmapColorScheme _currentColorScheme = HeightmapColorScheme.Amber;
@@ -325,6 +329,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _worldHeightmapBitmap = null;
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
+        DisposeMarkerIcons();
     }
 
     // ========================================================================
@@ -881,9 +886,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return;
         }
 
+        EnsureMarkerIcons(ds);
         var (tlWorld, brWorld) = GetVisibleWorldBounds();
-        var markerRadius = 8f / _zoom;
-        var outlineWidth = 1f / _zoom;
+        var markerSize = 16f / _zoom;
 
         using var labelFormat = new CanvasTextFormat
         {
@@ -891,6 +896,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             FontFamily = "Segoe UI"
         };
 
+        // Fallback glyph format for marker types without an icon
         using var glyphFormat = new CanvasTextFormat
         {
             FontSize = 12f / _zoom,
@@ -899,31 +905,43 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             VerticalAlignment = CanvasVerticalAlignment.Center
         };
 
+        // Tint color from the current HUD color scheme
+        var tint = Color.FromArgb(255, _currentColorScheme.R, _currentColorScheme.G, _currentColorScheme.B);
+
         foreach (var marker in _filteredMarkers)
         {
             var pos = new Vector2(marker.X, -marker.Y);
 
-            if (!IsPointInView(pos.X, pos.Y, tlWorld, brWorld, markerRadius * 4))
+            if (!IsPointInView(pos.X, pos.Y, tlWorld, brWorld, markerSize * 2))
             {
                 continue;
             }
 
-            var color = GetMarkerColor(marker.MarkerType);
-            ds.FillCircle(pos, markerRadius, WithAlpha(color, 200));
-            ds.DrawCircle(pos, markerRadius, Colors.White, outlineWidth);
+            var destRect = new Rect(
+                pos.X - markerSize / 2, pos.Y - markerSize / 2,
+                markerSize, markerSize);
 
-            // Draw glyph icon centered on marker
-            var glyph = GetMarkerGlyph(marker.MarkerType);
-            var glyphRect = new Rect(
-                pos.X - markerRadius, pos.Y - markerRadius,
-                markerRadius * 2, markerRadius * 2);
-            ds.DrawText(glyph, glyphRect, Colors.White, glyphFormat);
+            // Draw icon tinted to scheme color, or fall back to colored circle + glyph
+            if (marker.MarkerType.HasValue &&
+                _markerIconBitmaps?.TryGetValue(marker.MarkerType.Value, out var icon) == true)
+            {
+                DrawTintedIcon(ds, icon, destRect, tint);
+            }
+            else
+            {
+                var color = GetMarkerColor(marker.MarkerType);
+                var radius = markerSize / 2;
+                ds.FillCircle(pos, radius, WithAlpha(color, 200));
+                ds.DrawCircle(pos, radius, Colors.White, 1f / _zoom);
+                var glyph = GetMarkerGlyph(marker.MarkerType);
+                ds.DrawText(glyph, destRect, Colors.White, glyphFormat);
+            }
 
             // Label at sufficient zoom
             if (_zoom > 0.05f && !string.IsNullOrEmpty(marker.MarkerName))
             {
-                var labelPos = new Vector2(pos.X + markerRadius * 2f, pos.Y - markerRadius);
-                ds.DrawText(marker.MarkerName, labelPos, Colors.White, labelFormat);
+                var labelPos = new Vector2(pos.X + markerSize / 2 + 2f / _zoom, pos.Y - markerSize / 4);
+                ds.DrawText(marker.MarkerName, labelPos, tint, labelFormat);
             }
         }
     }
@@ -2689,6 +2707,65 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private static Color WithAlpha(Color c, byte alpha) => Color.FromArgb(alpha, c.R, c.G, c.B);
 
+    /// <summary>Load embedded map marker icon PNGs into CanvasBitmaps (once per device).</summary>
+    private void EnsureMarkerIcons(ICanvasResourceCreator resourceCreator)
+    {
+        if (_markerIconBitmaps != null)
+        {
+            return;
+        }
+
+        _markerIconBitmaps = new Dictionary<MapMarkerType, CanvasBitmap>();
+        foreach (var type in Enum.GetValues<MapMarkerType>())
+        {
+            if (type == MapMarkerType.None)
+            {
+                continue;
+            }
+
+            var png = MapMarkerIconProvider.GetIconPng(type);
+            if (png == null)
+            {
+                continue;
+            }
+
+            using var ms = new MemoryStream(png);
+            // LoadAsync returns IAsyncOperation; .GetAwaiter().GetResult() is safe on the UI render thread
+            // because Win2D render callbacks are already synchronous.
+            var bitmap = CanvasBitmap.LoadAsync(resourceCreator, ms.AsRandomAccessStream()).GetAwaiter().GetResult();
+            _markerIconBitmaps[type] = bitmap;
+        }
+    }
+
+    /// <summary>Draw a white-on-transparent icon tinted to the given color.</summary>
+    private static void DrawTintedIcon(CanvasDrawingSession ds, CanvasBitmap icon, Rect destRect, Color tint)
+    {
+        using var tintEffect = new ColorMatrixEffect
+        {
+            Source = icon,
+            ColorMatrix = new Matrix5x4
+            {
+                // Multiply RGB by tint (white → tint color), preserve alpha
+                M11 = tint.R / 255f, M22 = tint.G / 255f, M33 = tint.B / 255f, M44 = 1f
+            }
+        };
+        var sourceRect = new Rect(0, 0, icon.SizeInPixels.Width, icon.SizeInPixels.Height);
+        ds.DrawImage(tintEffect, destRect, sourceRect);
+    }
+
+    private void DisposeMarkerIcons()
+    {
+        if (_markerIconBitmaps != null)
+        {
+            foreach (var bmp in _markerIconBitmaps.Values)
+            {
+                bmp.Dispose();
+            }
+
+            _markerIconBitmaps = null;
+        }
+    }
+
     private static int GetGroupSortOrder(string group) => group switch
     {
         "Unknown" => 2,
@@ -2828,14 +2905,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 return ((float)tl.LayoutBounds.Width, (float)tl.LayoutBounds.Height);
             });
 
-        // Draw marker circles + glyphs in world space (transform is still active)
+        // Draw marker icons (tinted to scheme color) in world space (transform is still active)
         var markerWorldRadius = sizing.MarkerRadius / pixelsPerWorldUnit;
-        var outlineWidth = 1f / pixelsPerWorldUnit;
+        var tint = Color.FromArgb(255, _currentColorScheme.R, _currentColorScheme.G, _currentColorScheme.B);
 
         foreach (var m in layout.Markers)
         {
             var marker = _filteredMarkers[m.OriginalIndex];
-            DrawExportMarkerCircle(ds, marker, markerWorldRadius, outlineWidth,
+            DrawExportMarkerIcon(ds, marker, markerWorldRadius, tint,
                 sizing.LabelFontSize, pixelsPerWorldUnit);
         }
 
@@ -2884,26 +2961,35 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
     }
 
-    private static void DrawExportMarkerCircle(CanvasDrawingSession ds, PlacedReference marker,
-        float worldRadius, float outlineWidth, float labelFontSize, float pixelsPerWorldUnit)
+    private void DrawExportMarkerIcon(CanvasDrawingSession ds, PlacedReference marker,
+        float worldRadius, Color tint, float labelFontSize, float pixelsPerWorldUnit)
     {
         var pos = new Vector2(marker.X, -marker.Y);
-        var color = GetMarkerColor(marker.MarkerType);
-        ds.FillCircle(pos, worldRadius, WithAlpha(color, 200));
-        ds.DrawCircle(pos, worldRadius, Colors.White, outlineWidth);
-
-        var glyph = GetMarkerGlyph(marker.MarkerType);
-        using var glyphFormat = new CanvasTextFormat
-        {
-            FontSize = labelFontSize / pixelsPerWorldUnit,
-            FontFamily = "Segoe MDL2 Assets",
-            HorizontalAlignment = CanvasHorizontalAlignment.Center,
-            VerticalAlignment = CanvasVerticalAlignment.Center
-        };
-        var glyphRect = new Rect(
+        var destRect = new Rect(
             pos.X - worldRadius, pos.Y - worldRadius,
             worldRadius * 2, worldRadius * 2);
-        ds.DrawText(glyph, glyphRect, Colors.White, glyphFormat);
+
+        if (marker.MarkerType.HasValue &&
+            _markerIconBitmaps?.TryGetValue(marker.MarkerType.Value, out var icon) == true)
+        {
+            DrawTintedIcon(ds, icon, destRect, tint);
+        }
+        else
+        {
+            // Fallback: colored circle + glyph for unmapped marker types
+            var color = GetMarkerColor(marker.MarkerType);
+            ds.FillCircle(pos, worldRadius, WithAlpha(color, 200));
+            ds.DrawCircle(pos, worldRadius, Colors.White, 1f / pixelsPerWorldUnit);
+            var glyph = GetMarkerGlyph(marker.MarkerType);
+            using var glyphFormat = new CanvasTextFormat
+            {
+                FontSize = labelFontSize / pixelsPerWorldUnit,
+                FontFamily = "Segoe MDL2 Assets",
+                HorizontalAlignment = CanvasHorizontalAlignment.Center,
+                VerticalAlignment = CanvasVerticalAlignment.Center
+            };
+            ds.DrawText(glyph, destRect, Colors.White, glyphFormat);
+        }
     }
 
     internal enum ViewMode

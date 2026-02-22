@@ -60,9 +60,11 @@ public sealed class RecordParserContext
         FileSize = fileSize;
 
         // Create runtime struct reader if we have both accessor and minidump info
+        // Uses probe-based auto-detection of early vs final build struct layout
         if (accessor != null && minidumpInfo != null && fileSize > 0)
         {
-            RuntimeReader = new RuntimeStructReader(accessor, fileSize, minidumpInfo);
+            RuntimeReader = RuntimeStructReader.CreateWithAutoDetect(
+                accessor, fileSize, minidumpInfo, scanResult.RuntimeRefrFormEntries);
         }
 
         // Build FormID lookup from main records

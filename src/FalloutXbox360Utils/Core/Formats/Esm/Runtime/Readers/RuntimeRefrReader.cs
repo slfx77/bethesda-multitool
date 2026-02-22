@@ -195,6 +195,49 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     }
 
     /// <summary>
+    ///     Probes a sample of REFR entries to determine whether the DMP uses early-era
+    ///     struct offsets (TESChildCell=4B, REFR=116) or final (TESChildCell=8B, REFR=120).
+    ///     Tries reading with both layouts; the one producing more valid REFRs wins.
+    ///     Returns true if early-era offsets match better, false for final.
+    /// </summary>
+    public static bool ProbeIsEarlyBuild(
+        RuntimeMemoryContext context,
+        IReadOnlyList<RuntimeEditorIdEntry> refrEntries)
+    {
+        // Sample up to 20 REFR/ACHR/ACRE entries (FormType 0x3A-0x3C), excluding Player (0x14)
+        var samples = refrEntries
+            .Where(e => e.FormType is >= 0x3A and <= 0x3C && e.FormId != 0x14)
+            .Take(20)
+            .ToList();
+
+        if (samples.Count == 0)
+        {
+            return false; // No REFRs to probe → default to final layout
+        }
+
+        var earlyReader = new RuntimeRefrReader(context, useProtoOffsets: true);
+        var finalReader = new RuntimeRefrReader(context, useProtoOffsets: false);
+
+        var earlySuccesses = 0;
+        var finalSuccesses = 0;
+
+        foreach (var entry in samples)
+        {
+            if (earlyReader.ReadRuntimeRefr(entry) != null)
+            {
+                earlySuccesses++;
+            }
+
+            if (finalReader.ReadRuntimeRefr(entry) != null)
+            {
+                finalSuccesses++;
+            }
+        }
+
+        return earlySuccesses > finalSuccesses;
+    }
+
+    /// <summary>
     ///     Read all runtime REFRs from the given entries.
     ///     Returns a dictionary mapping FormID to ExtractedRefrRecord.
     /// </summary>

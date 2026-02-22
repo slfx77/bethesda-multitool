@@ -1,4 +1,6 @@
 using System.CommandLine;
+using System.IO.MemoryMappedFiles;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -42,6 +44,10 @@ public static class DmpMapRenderCommands
         { Description = "GIF frame delay in 1/100ths of a second (default: 100 = 1s per frame)", DefaultValueFactory = _ => 100 };
         command.Options.Add(gifDelayOption);
 
+        var fo3EsmOption = new Option<string?>("--fo3-esm")
+        { Description = "Path to Fallout3.esm — markers from this ESM are excluded from output" };
+        command.Options.Add(fo3EsmOption);
+
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             var dir = parseResult.GetValue(dirArg)!;
@@ -49,14 +55,18 @@ public static class DmpMapRenderCommands
             var size = parseResult.GetValue(sizeOption);
             var scheme = parseResult.GetValue(schemeOption)!;
             var gifDelay = parseResult.GetValue(gifDelayOption);
-            await RunAsync(dir, output, size, scheme, gifDelay, cancellationToken);
+            var fo3Esm = parseResult.GetValue(fo3EsmOption);
+            await RunAsync(dir, output, size, scheme, gifDelay, fo3Esm, cancellationToken);
         });
 
         return command;
     }
 
+    private record FrameData(
+        string FileName, string Stem, List<ExtractedRefrRecord> Markers, DateTime? ModuleTimestamp);
+
     private static async Task RunAsync(string dirPath, string? outputDir, int longEdge, string schemeName,
-        int gifDelay, CancellationToken cancellationToken)
+        int gifDelay, string? fo3EsmPath, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(dirPath))
         {
@@ -80,14 +90,22 @@ public static class DmpMapRenderCommands
 
         var scheme = ParseScheme(schemeName);
 
+        // Load Fallout 3 marker exclusion set (if ESM path provided)
+        var fo3MarkerFormIds = LoadFo3MarkerFormIds(fo3EsmPath);
+
         AnsiConsole.MarkupLine($"[blue]Rendering map markers from {dmpFiles.Count} DMP files...[/]");
         AnsiConsole.MarkupLine($"  Output: [cyan]{Markup.Escape(outputDir)}[/]");
         AnsiConsole.MarkupLine($"  Size: [cyan]{longEdge}px[/] long edge");
         AnsiConsole.MarkupLine($"  Scheme: [cyan]{scheme.Name}[/]");
+        if (fo3MarkerFormIds.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"  FO3 exclusion: [cyan]{fo3MarkerFormIds.Count}[/] markers from Fallout3.esm");
+        }
+
         AnsiConsole.WriteLine();
 
         // Phase 1: Process all DMPs and collect markers
-        var frameData = new List<(string FileName, string Stem, List<ExtractedRefrRecord> Markers)>();
+        var frameData = new List<FrameData>();
         var skipped = 0;
 
         foreach (var dmpFile in dmpFiles)
@@ -100,6 +118,7 @@ public static class DmpMapRenderCommands
                 var result = DmpDiagCommands.ProcessDmp(dmpFile);
                 var markers = result.Markers
                     .Where(m => m.Position != null)
+                    .Where(m => !fo3MarkerFormIds.Contains(m.Header.FormId))
                     .ToList();
 
                 if (markers.Count == 0)
@@ -110,7 +129,7 @@ public static class DmpMapRenderCommands
                 }
 
                 var stem = Path.GetFileNameWithoutExtension(fileName);
-                frameData.Add((fileName, stem, markers));
+                frameData.Add(new FrameData(fileName, stem, markers, result.ModuleTimestamp));
             }
             catch (Exception ex)
             {
@@ -124,6 +143,15 @@ public static class DmpMapRenderCommands
             return;
         }
 
+        // Sort frames by module timestamp (chronological order for GIF timeline)
+        frameData.Sort((a, b) =>
+        {
+            if (a.ModuleTimestamp == null && b.ModuleTimestamp == null) return 0;
+            if (a.ModuleTimestamp == null) return 1;
+            if (b.ModuleTimestamp == null) return -1;
+            return a.ModuleTimestamp.Value.CompareTo(b.ModuleTimestamp.Value);
+        });
+
         // Phase 2: Compute shared world bounds across ALL frames for consistent coordinates
         var allMarkers = frameData.SelectMany(f => f.Markers).ToList();
         var bounds = ComputeWorldBounds(allMarkers);
@@ -132,17 +160,19 @@ public static class DmpMapRenderCommands
         AnsiConsole.WriteLine();
         var rendered = 0;
 
-        foreach (var (fileName, stem, markers) in frameData)
+        foreach (var frame in frameData)
         {
-            var outputPath = Path.Combine(outputDir, $"{stem}.markers.png");
-            RenderMarkerMap(markers, outputPath, longEdge, scheme, bounds, stem);
+            var outputPath = Path.Combine(outputDir, $"{frame.Stem}.markers.png");
+            var title = FormatFrameTitle(frame);
+            RenderMarkerMap(frame.Markers, outputPath, longEdge, scheme, bounds, title);
             rendered++;
 
+            var tsLabel = frame.ModuleTimestamp?.ToString("yyyy-MM-dd") ?? "no timestamp";
             AnsiConsole.MarkupLine(
-                $"  [green]{Markup.Escape(fileName)}[/]: {markers.Count} markers → [cyan]{Markup.Escape(Path.GetFileName(outputPath))}[/]");
+                $"  [green]{Markup.Escape(frame.FileName)}[/] ({tsLabel}): {frame.Markers.Count} markers → [cyan]{Markup.Escape(Path.GetFileName(outputPath))}[/]");
         }
 
-        // Phase 4: Composite animated GIF from all frames
+        // Phase 4: Composite animated GIF from all frames (already sorted by timestamp)
         if (frameData.Count >= 2)
         {
             AnsiConsole.WriteLine();
@@ -160,6 +190,51 @@ public static class DmpMapRenderCommands
         AnsiConsole.MarkupLine($"[bold]Done:[/] {rendered} images rendered, {skipped} skipped (no markers)");
 
         await Task.CompletedTask;
+    }
+
+    private static string FormatFrameTitle(FrameData frame)
+    {
+        if (frame.ModuleTimestamp.HasValue)
+        {
+            return $"{frame.Stem}\n{frame.ModuleTimestamp.Value:yyyy-MM-dd HH:mm} UTC";
+        }
+
+        return frame.Stem;
+    }
+
+    /// <summary>
+    ///     Scan Fallout3.esm for map marker REFR FormIDs.
+    ///     These are excluded from rendered maps to avoid FO3 data polluting FNV maps.
+    /// </summary>
+    private static HashSet<uint> LoadFo3MarkerFormIds(string? fo3EsmPath)
+    {
+        if (string.IsNullOrEmpty(fo3EsmPath) || !File.Exists(fo3EsmPath))
+        {
+            return [];
+        }
+
+        try
+        {
+            var fileInfo = new FileInfo(fo3EsmPath);
+            using var mmf = MemoryMappedFile.CreateFromFile(fo3EsmPath, FileMode.Open, null, 0,
+                MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+
+            var scanResult = EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, fileInfo.Length);
+            EsmWorldExtractor.ExtractRefrRecords(accessor, fileInfo.Length, scanResult);
+
+            var markerIds = scanResult.RefrRecords
+                .Where(r => r.IsMapMarker)
+                .Select(r => r.Header.FormId)
+                .ToHashSet();
+
+            return markerIds;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"  [yellow]Warning: could not parse FO3 ESM: {Markup.Escape(ex.Message)}[/]");
+            return [];
+        }
     }
 
     // ========================================================================
@@ -245,33 +320,55 @@ public static class DmpMapRenderCommands
                 .Draw(image);
         }
 
-        // Draw marker circles + glyphs
+        // Draw marker icons tinted to scheme color (fallback: colored circle + glyph)
+        var iconSize = (uint)(sizing.MarkerRadius * 2);
         var glyphFontSize = (double)sizing.MarkerRadius * 1.2;
+        var tintColor = MagickColor.FromRgb(scheme.R, scheme.G, scheme.B);
 
         foreach (var m in layout.Markers)
         {
-            new Drawables()
-                .StrokeColor(MagickColors.Transparent)
-                .FillColor(MagickColor.FromRgba(m.ColorR, m.ColorG, m.ColorB, 200))
-                .Circle(m.PixelX, m.PixelY, m.PixelX + sizing.MarkerRadius, m.PixelY)
-                .Draw(image);
+            var iconPng = m.Type.HasValue ? MapMarkerIconProvider.GetIconPng(m.Type.Value) : null;
 
-            new Drawables()
-                .StrokeColor(MagickColors.White)
-                .StrokeWidth(sizing.OutlineWidth)
-                .FillColor(MagickColors.Transparent)
-                .Circle(m.PixelX, m.PixelY, m.PixelX + sizing.MarkerRadius, m.PixelY)
-                .Draw(image);
+            if (iconPng != null)
+            {
+                using var icon = new MagickImage(iconPng);
+                icon.Resize(iconSize, iconSize);
 
-            new Drawables()
-                .Font("Segoe MDL2 Assets")
-                .FontPointSize(glyphFontSize)
-                .FillColor(MagickColors.White)
-                .StrokeColor(MagickColors.Transparent)
-                .TextAlignment(TextAlignment.Center)
-                .Gravity(Gravity.Undefined)
-                .Text(m.PixelX, m.PixelY + glyphFontSize * 0.35, m.Glyph)
-                .Draw(image);
+                // Tint white icon to scheme color (multiply RGB channels)
+                icon.Evaluate(Channels.Red, EvaluateOperator.Multiply, scheme.R / 255.0);
+                icon.Evaluate(Channels.Green, EvaluateOperator.Multiply, scheme.G / 255.0);
+                icon.Evaluate(Channels.Blue, EvaluateOperator.Multiply, scheme.B / 255.0);
+
+                var x = (int)(m.PixelX - iconSize / 2.0);
+                var y = (int)(m.PixelY - iconSize / 2.0);
+                image.Composite(icon, x, y, CompositeOperator.Over);
+            }
+            else
+            {
+                // Fallback: colored circle + glyph for unmapped marker types
+                new Drawables()
+                    .StrokeColor(MagickColors.Transparent)
+                    .FillColor(MagickColor.FromRgba(m.ColorR, m.ColorG, m.ColorB, 200))
+                    .Circle(m.PixelX, m.PixelY, m.PixelX + sizing.MarkerRadius, m.PixelY)
+                    .Draw(image);
+
+                new Drawables()
+                    .StrokeColor(MagickColors.White)
+                    .StrokeWidth(sizing.OutlineWidth)
+                    .FillColor(MagickColors.Transparent)
+                    .Circle(m.PixelX, m.PixelY, m.PixelX + sizing.MarkerRadius, m.PixelY)
+                    .Draw(image);
+
+                new Drawables()
+                    .Font("Segoe MDL2 Assets")
+                    .FontPointSize(glyphFontSize)
+                    .FillColor(MagickColors.White)
+                    .StrokeColor(MagickColors.Transparent)
+                    .TextAlignment(TextAlignment.Center)
+                    .Gravity(Gravity.Undefined)
+                    .Text(m.PixelX, m.PixelY + glyphFontSize * 0.35, m.Glyph)
+                    .Draw(image);
+            }
         }
 
         // Draw leader lines (behind labels)
@@ -320,22 +417,43 @@ public static class DmpMapRenderCommands
                 .FontPointSize(sizing.LabelFontSize)
                 .FillColor(MagickColors.White)
                 .StrokeColor(MagickColors.Transparent)
-                .TextAlignment(TextAlignment.Left)
-                .Text(lp.LabelX + lp.PadH,
+                .TextAlignment(TextAlignment.Center)
+                .Text(lp.LabelX + lp.PillWidth / 2,
                     lp.LabelY + lp.PadV + lp.TextHeight * 0.8, lp.Text)
                 .Draw(image);
         }
 
-        // Frame title at top (CLI-only)
-        var title = $"{frameTitle}  —  {markers.Count} markers";
+        // Frame title at top (CLI-only) — supports multi-line titles (name + timestamp)
+        var titleFontSize = sizing.LabelFontSize * 1.5;
+        var titleColor = MagickColor.FromRgb(scheme.R, scheme.G, scheme.B);
+        var titleLines = frameTitle.Split('\n');
+        var titleX = (double)sizing.LabelFontSize;
+        var titleY = titleFontSize * 1.3;
+
+        // First line: DMP name + marker count
         new Drawables()
             .Font("Segoe UI")
-            .FontPointSize(sizing.LabelFontSize * 1.5)
-            .FillColor(MagickColor.FromRgb(scheme.R, scheme.G, scheme.B))
+            .FontPointSize(titleFontSize)
+            .FillColor(titleColor)
             .StrokeColor(MagickColors.Transparent)
             .TextAlignment(TextAlignment.Left)
-            .Text(sizing.LabelFontSize, sizing.LabelFontSize * 2, title)
+            .Text(titleX, titleY, $"{titleLines[0]}  —  {markers.Count} markers")
             .Draw(image);
+
+        // Second line: timestamp (smaller, dimmer)
+        if (titleLines.Length > 1)
+        {
+            var subFontSize = titleFontSize * 0.7;
+            var dimColor = MagickColor.FromRgba(scheme.R, scheme.G, scheme.B, 160);
+            new Drawables()
+                .Font("Segoe UI")
+                .FontPointSize(subFontSize)
+                .FillColor(dimColor)
+                .StrokeColor(MagickColors.Transparent)
+                .TextAlignment(TextAlignment.Left)
+                .Text(titleX, titleY + titleFontSize * 1.2, titleLines[1])
+                .Draw(image);
+        }
     }
 
     // ========================================================================
@@ -343,7 +461,7 @@ public static class DmpMapRenderCommands
     // ========================================================================
 
     private static void CompositeGif(
-        List<(string FileName, string Stem, List<ExtractedRefrRecord> Markers)> frameData,
+        List<FrameData> frames,
         string gifPath, int longEdge, SchemeColor scheme, WorldBounds bounds, int gifDelay)
     {
         // Use smaller dimensions for GIF to keep file size manageable
@@ -354,10 +472,11 @@ public static class DmpMapRenderCommands
 
         using var collection = new MagickImageCollection();
 
-        foreach (var (_, stem, markers) in frameData)
+        foreach (var fd in frames)
         {
+            var title = FormatFrameTitle(fd);
             var frame = CreateBackgroundImage(imageW, imageH, scheme);
-            DrawMarkersAndLabels(frame, markers, bounds, pixelsPerUnit, imageW, imageH, sizing, scheme, stem);
+            DrawMarkersAndLabels(frame, fd.Markers, bounds, pixelsPerUnit, imageW, imageH, sizing, scheme, title);
 
             frame.AnimationDelay = (uint)gifDelay;
             frame.GifDisposeMethod = GifDisposeMethod.Background;

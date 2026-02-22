@@ -33,10 +33,10 @@ public static class ChangedFormDecoder
                     DecodeRefr(ref reader, form.ChangeFlags, result, form.Initial?.DataType ?? 0);
                     break;
                 case 1: // ACHR (Character)
-                    DecodeActor(ref reader, form.ChangeFlags, result, isCharacter: true);
+                    DecodeActor(ref reader, form.ChangeFlags, result, isCharacter: true, form.Initial?.DataType ?? 0);
                     break;
                 case 2: // ACRE (Creature)
-                    DecodeActor(ref reader, form.ChangeFlags, result, isCharacter: false);
+                    DecodeActor(ref reader, form.ChangeFlags, result, isCharacter: false, form.Initial?.DataType ?? 0);
                     break;
                 case >= 3 and <= 6: // PMIS, PGRE, PBEA, PFLA
                     DecodeProjectile(ref reader, form.ChangeFlags, result);
@@ -464,10 +464,15 @@ public static class ChangedFormDecoder
     //  ACHR/ACRE decoder (ChangeType 1, 2) — Actor instances
     // ────────────────────────────────────────────────────────────────
 
-    private static void DecodeActor(ref FormDataReader r, uint flags, DecodedFormData result, bool isCharacter)
+    private static void DecodeActor(ref FormDataReader r, uint flags, DecodedFormData result, bool isCharacter, int initialDataType)
     {
+        // ── Phase 0: Initial data (same as REFR — prepended by save infrastructure) ──
+        // The save infrastructure writes position/cell data before SaveGame_v2 runs,
+        // identically for all reference types including actors.
+        DecodeRefrInitialData(ref r, flags, result, initialDataType);
+
         // ── Layer 1: process_level (MobileObject::SaveGame_v2) ─────────
-        // First byte is ALWAYS process_level for actors.
+        // First byte after initial data is ALWAYS process_level for actors.
         // 0xFF = no process, 0x00 = HighProcess, 0x01 = MiddleHigh, etc.
         byte processLevel = 0xFF;
         if (r.HasData(1))
@@ -501,29 +506,9 @@ public static class ChangedFormDecoder
             AddUInt32Field(ref r, result, "FORM_FLAGS");
         }
 
-        // REFR_MOVE (bit 1)
-        if (HasFlag(flags, 0x00000002)) // REFR_MOVE (bit 1)
-        {
-            int startPos = r.Position;
-            if (r.HasData(27))
-            {
-                var cellRefId = r.ReadRefId();
-                float posX = r.ReadFloat();
-                float posY = r.ReadFloat();
-                float posZ = r.ReadFloat();
-                float rotX = r.ReadFloat();
-                float rotY = r.ReadFloat();
-                float rotZ = r.ReadFloat();
-                r.TrySkipPipe();
-                result.Fields.Add(new DecodedField
-                {
-                    Name = "REFR_MOVE",
-                    DisplayValue = $"Cell={cellRefId}, Pos=({posX:F1}, {posY:F1}, {posZ:F1}), Rot=({rotX:F3}, {rotY:F3}, {rotZ:F3})",
-                    DataOffset = startPos,
-                    DataLength = r.Position - startPos
-                });
-            }
-        }
+        // NOTE: REFR_MOVE (bit 1) and REFR_HAVOK_MOVE (bit 2) are handled by
+        // DecodeRefrInitialData above — they're part of the initial data prefix,
+        // NOT written by SaveGame_v2 for actors.
 
         // SCALE (bit 4) — from TESObjectREFR::SaveGame_v2 decompilation
         if (HasFlag(flags, 0x00000010))
@@ -875,7 +860,7 @@ public static class ChangedFormDecoder
             result.Fields.Add(new DecodedField
             {
                 Name = "MOVER_GOAL_POS",
-                DisplayValue = $"({x:G}, {y:G}, {z:G})",
+                DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -892,7 +877,7 @@ public static class ChangedFormDecoder
             result.Fields.Add(new DecodedField
             {
                 Name = "MOVER_GOAL_ROT",
-                DisplayValue = $"({x:G}, {y:G}, {z:G})",
+                DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -931,7 +916,7 @@ public static class ChangedFormDecoder
             result.Fields.Add(new DecodedField
             {
                 Name = "MOVER_PATH_TARGET",
-                DisplayValue = $"({px:G}, {py:G}, {pz:G})",
+                DisplayValue = $"({FormatFloat(px)}, {FormatFloat(py)}, {FormatFloat(pz)})",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -1495,7 +1480,7 @@ public static class ChangedFormDecoder
         result.Fields.Add(new DecodedField
         {
             Name = name,
-            DisplayValue = $"({x:G}, {y:G}, {z:G})",
+            DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})",
             DataOffset = startPos,
             DataLength = r.Position - startPos
         });
@@ -1613,7 +1598,7 @@ public static class ChangedFormDecoder
                     int s = r.Position;
                     float x = r.ReadFloat(), y = r.ReadFloat(), z = r.ReadFloat();
                     r.TrySkipPipe();
-                    children.Add(new DecodedField { Name = "Position", DisplayValue = $"({x:G}, {y:G}, {z:G})", DataOffset = s, DataLength = r.Position - s });
+                    children.Add(new DecodedField { Name = "Position", DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})", DataOffset = s, DataLength = r.Position - s });
                 }
 
                 if (nodeType == 1 && r.HasData(12))
@@ -1621,7 +1606,7 @@ public static class ChangedFormDecoder
                     int s = r.Position;
                     float x = r.ReadFloat(), y = r.ReadFloat(), z = r.ReadFloat();
                     r.TrySkipPipe();
-                    children.Add(new DecodedField { Name = "Position2", DisplayValue = $"({x:G}, {y:G}, {z:G})", DataOffset = s, DataLength = r.Position - s });
+                    children.Add(new DecodedField { Name = "Position2", DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})", DataOffset = s, DataLength = r.Position - s });
                 }
             }
 
@@ -3126,9 +3111,9 @@ public static class ChangedFormDecoder
             else if (r.HasData(8))
             {
                 // Value-type variable: formID without bit 31, followed by 8-byte double
-                double dblVal = BitConverter.ToDouble(r.ReadBytes(8));
+                double dblVal = BinaryPrimitives.ReadDoubleLittleEndian(r.ReadBytes(8));
                 r.TrySkipPipe();
-                varValue = $"FormID=0x{formId:X8}, value={dblVal:G}";
+                varValue = $"FormID=0x{formId:X8}, value={dblVal:F6}";
             }
             else
             {
@@ -3174,6 +3159,19 @@ public static class ChangedFormDecoder
     // ────────────────────────────────────────────────────────────────
 
     private static bool HasFlag(uint flags, uint mask) => (flags & mask) != 0;
+
+    /// <summary>
+    ///     Formats a float value for display, showing hex for unreasonable values
+    ///     (e.g. pipe-contaminated bytes read as floats by the V1 decoder).
+    /// </summary>
+    private static string FormatFloat(float value)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value))
+            return $"0x{BitConverter.SingleToUInt32Bits(value):X8}";
+        if (MathF.Abs(value) > 1e10f)
+            return $"0x{BitConverter.SingleToUInt32Bits(value):X8}";
+        return $"{value:F4}";
+    }
 
     private static void AddUInt16Field(ref FormDataReader r, DecodedFormData result, string name)
     {
@@ -3240,7 +3238,7 @@ public static class ChangedFormDecoder
             {
                 Name = name,
                 Value = value,
-                DisplayValue = $"{value:F4}",
+                DisplayValue = FormatFloat(value),
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });

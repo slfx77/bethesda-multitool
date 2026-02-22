@@ -22,4 +22,12 @@ public record BsaArchive
 
     /// <summary>Get all files as a flat list.</summary>
     public IEnumerable<BsaFileRecord> AllFiles => Folders.SelectMany(f => f.Files);
+
+    /// <summary>Find a file by its full virtual path (case-insensitive, accepts / or \).</summary>
+    public BsaFileRecord? FindFile(string path)
+    {
+        var normalized = path.Replace('/', '\\');
+        return AllFiles.FirstOrDefault(f =>
+            string.Equals(f.FullPath, normalized, StringComparison.OrdinalIgnoreCase));
+    }
 }

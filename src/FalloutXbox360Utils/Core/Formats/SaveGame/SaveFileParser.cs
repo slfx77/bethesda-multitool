@@ -682,31 +682,40 @@ public static class SaveFileParser
 
     /// <summary>
     ///     Parse player location from Global Data Type 1 (TES).
+    ///     Fields are pipe-terminated (0x7C) like changed form data.
     /// </summary>
     private static PlayerLocation? ParsePlayerLocation(ReadOnlySpan<byte> data)
     {
         try
         {
-            int pos = 0;
+            var r = new FormDataReader(data, []);
 
-            // Worldspace RefID
-            var worldspaceRefId = SaveRefId.Read(data, pos);
-            pos += 3;
+            // Worldspace RefID (3B) + unknown byte (flags/version) + pipe
+            var worldspaceRefId = r.ReadRefId();
+            if (r.HasData(1)) r.ReadByte();
+            r.TrySkipPipe();
 
-            // Coord X/Y (int32)
-            int coordX = BinaryUtils.ReadInt32LE(data, pos);
-            pos += 4;
-            int coordY = BinaryUtils.ReadInt32LE(data, pos);
-            pos += 4;
+            // Second RefID (persistent cell or parent) + pipe
+            if (r.HasData(3))
+            {
+                r.ReadRefId();
+                r.TrySkipPipe();
+            }
 
-            // Cell RefID
-            var cellRefId = SaveRefId.Read(data, pos);
-            pos += 3;
+            // Coord X/Y (int32 each, pipe-terminated)
+            int coordX = r.HasData(4) ? r.ReadInt32() : 0;
+            r.TrySkipPipe();
+            int coordY = r.HasData(4) ? r.ReadInt32() : 0;
+            r.TrySkipPipe();
 
-            // Player position
-            float posX = BinaryUtils.ReadFloatLE(data, pos); pos += 4;
-            float posY = BinaryUtils.ReadFloatLE(data, pos); pos += 4;
-            float posZ = BinaryUtils.ReadFloatLE(data, pos);
+            // Cell RefID (3B) + pipe
+            var cellRefId = r.HasData(3) ? r.ReadRefId() : default;
+            r.TrySkipPipe();
+
+            // Player position (3 floats, pipe after group)
+            float posX = r.HasData(4) ? r.ReadFloat() : 0;
+            float posY = r.HasData(4) ? r.ReadFloat() : 0;
+            float posZ = r.HasData(4) ? r.ReadFloat() : 0;
 
             return new PlayerLocation
             {
@@ -755,18 +764,22 @@ public static class SaveFileParser
 
     /// <summary>
     ///     Parse global variables from Global Data Type 3.
+    ///     Format: [vsval count + pipe] ([RefID + pipe] [float + pipe]) × N
     /// </summary>
     private static List<GlobalVariable> ParseGlobalVariables(ReadOnlySpan<byte> data)
     {
         var result = new List<GlobalVariable>();
-        int pos = 0;
+        var r = new FormDataReader(data, []);
 
-        while (pos + 7 <= data.Length)
+        uint count = r.ReadVsval();
+        r.TrySkipPipe();
+
+        for (uint i = 0; i < count && r.HasData(3); i++)
         {
-            var refId = SaveRefId.Read(data, pos);
-            pos += 3;
-            float value = BinaryUtils.ReadFloatLE(data, pos);
-            pos += 4;
+            var refId = r.ReadRefId();
+            r.TrySkipPipe();
+            float value = r.HasData(4) ? r.ReadFloat() : 0;
+            r.TrySkipPipe();
             result.Add(new GlobalVariable(refId, value));
         }
 

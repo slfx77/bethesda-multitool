@@ -21,12 +21,15 @@ public sealed class RuntimeStructReader
     private readonly RuntimePackageReader _packages;
     private readonly RuntimeCellReader _cells;
 
+    public bool IsEarlyBuild { get; }
+
     public RuntimeStructReader(
         MemoryMappedViewAccessor accessor,
         long fileSize,
         MinidumpInfo minidumpInfo,
         bool useProtoOffsets = false)
     {
+        IsEarlyBuild = useProtoOffsets;
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         _actors = new RuntimeActorReader(_context);
         _items = new RuntimeItemReader(_context);
@@ -37,6 +40,22 @@ public sealed class RuntimeStructReader
         _refrs = new RuntimeRefrReader(_context, useProtoOffsets);
         _packages = new RuntimePackageReader(_context);
         _cells = new RuntimeCellReader(_context, useProtoOffsets);
+    }
+
+    /// <summary>
+    ///     Factory that probes the DMP memory to auto-detect early vs final build layout.
+    ///     Samples REFR entries and tries both offset layouts; the one producing more valid
+    ///     reads wins. Falls back to final layout if no REFR entries are available.
+    /// </summary>
+    public static RuntimeStructReader CreateWithAutoDetect(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        IReadOnlyList<RuntimeEditorIdEntry> refrEntries)
+    {
+        var context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
+        var isEarlyBuild = RuntimeRefrReader.ProbeIsEarlyBuild(context, refrEntries);
+        return new RuntimeStructReader(accessor, fileSize, minidumpInfo, isEarlyBuild);
     }
 
     #region Actors

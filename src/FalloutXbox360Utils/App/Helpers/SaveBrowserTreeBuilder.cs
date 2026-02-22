@@ -323,7 +323,7 @@ internal static class SaveBrowserTreeBuilder
 
         var flagNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
         var flagStr = flagNames.Count > 0
-            ? string.Join(" | ", flagNames)
+            ? $"{string.Join(" | ", flagNames)} (0x{form.ChangeFlags:X8})"
             : $"0x{form.ChangeFlags:X8}";
         props.Add(new() { Name = "Change Flags", Value = flagStr, Category = "Metadata" });
         props.Add(new() { Name = "Data Size", Value = $"{form.Data.Length} bytes", Category = "Metadata" });

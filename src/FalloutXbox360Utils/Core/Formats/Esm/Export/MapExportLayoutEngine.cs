@@ -304,7 +304,9 @@ public static class MapExportLayoutEngine
         foreach (var (marker, _, sortedIdx) in namedByPriority)
         {
             var (px, py) = pixelPositions[sortedIdx];
-            var (textW, textH) = measureText(marker.Name!, sizing.LabelFontSize);
+            var labelText = marker.Name!.Trim();
+            if (labelText.Length == 0) continue;
+            var (textW, textH) = measureText(labelText, sizing.LabelFontSize);
             var pillW = textW + sizing.LabelPadH * 2;
             var pillH = textH + sizing.LabelPadV * 2;
 
@@ -312,12 +314,10 @@ public static class MapExportLayoutEngine
             float? bestY = null;
             var needsLeader = false;
 
-            // Pass 1: 4 close candidates (below, right, left, above)
+            // Pass 1: 2 close candidates (below, above) — avoids horizontal overlap
             Span<(float x, float y)> closeCandidates =
             [
                 (px - pillW / 2, py + sizing.MarkerRadius + sizing.Gap),
-                (px + sizing.MarkerRadius + sizing.Gap, py - pillH / 2),
-                (px - sizing.MarkerRadius - sizing.Gap - pillW, py - pillH / 2),
                 (px - pillW / 2, py - sizing.MarkerRadius - sizing.Gap - pillH)
             ];
 
@@ -375,7 +375,7 @@ public static class MapExportLayoutEngine
             labels.Add(new LabelLayout(
                 sortedIdx, bestX.Value, bestY.Value,
                 pillW, pillH, sizing.LabelPadH, sizing.LabelPadV,
-                textH, marker.Name!, needsLeader, px, py));
+                textH, labelText, needsLeader, px, py));
         }
 
         // 4. Grid lines

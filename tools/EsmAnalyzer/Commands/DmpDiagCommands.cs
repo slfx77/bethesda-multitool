@@ -46,7 +46,8 @@ public static class DmpDiagCommands
         List<ExtractedRefrRecord> PersistentRefs,
         List<ExtractedRefrRecord> AllRefrs,
         Dictionary<uint, RuntimeWorldspaceData> WorldspaceCellMaps,
-        bool UsedProtoOffsets = false);
+        bool UsedProtoOffsets = false,
+        DateTime? ModuleTimestamp = null);
 
     private static async Task RunAsync(string dirPath, CancellationToken cancellationToken)
     {
@@ -354,9 +355,6 @@ public static class DmpDiagCommands
         var fileName = Path.GetFileName(dmpFile);
         var fileInfo = new FileInfo(dmpFile);
 
-        // Determine build era: proto (TESForm=24) vs final (TESForm=40)
-        var useProtoOffsets = forceProto ?? RuntimeBuildOffsets.IsProtoBuild(dmpFile);
-
         using var mmf = MemoryMappedFile.CreateFromFile(dmpFile, FileMode.Open, null, 0,
             MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
@@ -369,12 +367,25 @@ public static class DmpDiagCommands
         // Step 2: Parse minidump and run runtime EditorID extraction (walks pAllForms)
         var minidumpInfo = MinidumpParser.Parse(dmpFile);
         var runtimeRefrRead = 0;
+        var useProtoOffsets = false;
         var worldspaceCellMaps = new Dictionary<uint, RuntimeWorldspaceData>();
 
         if (minidumpInfo.IsValid)
         {
             EsmEditorIdExtractor.ExtractRuntimeEditorIds(
                 accessor, fileInfo.Length, minidumpInfo, scanResult, verbose: false);
+
+            // Step 2b: Detect build era — probe REFR struct layout (or use forceProto override)
+            if (forceProto.HasValue)
+            {
+                useProtoOffsets = forceProto.Value;
+            }
+            else if (scanResult.RuntimeRefrFormEntries.Count > 0)
+            {
+                useProtoOffsets = RuntimeRefrReader.ProbeIsEarlyBuild(
+                    new RuntimeMemoryContext(accessor, fileInfo.Length, minidumpInfo),
+                    scanResult.RuntimeRefrFormEntries);
+            }
 
             var structReader = new RuntimeStructReader(accessor, fileInfo.Length, minidumpInfo, useProtoOffsets);
 
@@ -425,6 +436,14 @@ public static class DmpDiagCommands
             }
         }
 
+        // Extract module timestamp from the game executable's PE header
+        DateTime? moduleTimestamp = null;
+        var gameModule = minidumpInfo.FindGameModule();
+        if (gameModule != null && gameModule.TimeDateStamp != 0)
+        {
+            moduleTimestamp = DateTimeOffset.FromUnixTimeSeconds(gameModule.TimeDateStamp).UtcDateTime;
+        }
+
         var totalRefrs = scanResult.RefrRecords.Count;
         var persistentRefs = scanResult.RefrRecords.Where(r => r.Header.IsPersistent).ToList();
         var markers = scanResult.RefrRecords.Where(r => r.IsMapMarker).ToList();
@@ -445,6 +464,7 @@ public static class DmpDiagCommands
             PersistentRefs: persistentRefs,
             AllRefrs: scanResult.RefrRecords.ToList(),
             WorldspaceCellMaps: worldspaceCellMaps,
-            UsedProtoOffsets: useProtoOffsets);
+            UsedProtoOffsets: useProtoOffsets,
+            ModuleTimestamp: moduleTimestamp);
     }
 }

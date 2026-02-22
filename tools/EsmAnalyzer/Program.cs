@@ -48,6 +48,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(VoiceHeuristicsCommands.CreateVoiceHeuristicsCommand());
         rootCommand.Subcommands.Add(TranscriptDiagCommands.CreateTranscriptDiagCommand());
         rootCommand.Subcommands.Add(GenFaceGenCommands.CreateGenFaceGenCommand());
+        rootCommand.Subcommands.Add(BsaCommands.CreateBsaCommandGroup());
 
         // ===== Backward compatibility aliases =====
         // Keep old command names for scripts that use them
@@ -215,6 +216,10 @@ internal sealed class Program
             _ = table.AddRow("  [cyan]dmp scripts crossrefs[/]", "Cross-reference chain diagnostics");
             _ = table.AddRow("  [cyan]dmp render-map[/]", "Render map marker overlay PNGs from DMP files");
             _ = table.AddRow("  [cyan]dmp extract-module[/]", "Extract game executable from DMP as raw binary for Ghidra");
+            _ = table.AddRow("", "");
+            _ = table.AddRow("[bold yellow]bsa[/]", "[bold]BSA archive utilities[/]");
+            _ = table.AddRow("  [cyan]bsa list[/]", "List files in a BSA archive (with optional path filter)");
+            _ = table.AddRow("  [cyan]bsa extract[/]", "Extract files/directories from BSA (--png for DDS conversion)");
             _ = table.AddRow("", "");
             _ = table.AddRow("[cyan]orphan-refs[/]", "Find FormID references to non-existent records (cut content detection)");
             _ = table.AddRow("[cyan]gen-facegen[/]", "Parse FaceGen si.ctl and generate C# code");

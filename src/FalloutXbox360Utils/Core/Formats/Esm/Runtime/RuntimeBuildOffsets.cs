@@ -19,25 +19,6 @@ internal static class RuntimeBuildOffsets
     public static int GetPdbShift(string? buildType) => 16;
 
     /// <summary>
-    ///     Cutoff date for early-era builds: March 30, 2010 00:00 UTC.
-    ///     DMPs before this date have TESChildCell = 4 bytes (vtable only, REFR = 116).
-    ///     DMPs on or after this date have TESChildCell = 8 bytes (vtable + data, REFR = 120).
-    ///     Derived from empirical hex dump analysis: xex24 (March 26) has pObjectReference at +44,
-    ///     xex25 (March 30) has pObjectReference at +48.
-    /// </summary>
-    private static readonly DateTime EarlyBuildCutoff = new(2010, 3, 30, 0, 0, 0, DateTimeKind.Utc);
-
-    /// <summary>
-    ///     Determines whether a DMP file is from an early-era build based on file modification date.
-    ///     Early-era builds have REFR field offsets shifted by -4 relative to the final layout.
-    /// </summary>
-    public static bool IsProtoBuild(string dmpFilePath)
-    {
-        var fileInfo = new FileInfo(dmpFilePath);
-        return fileInfo.Exists && fileInfo.LastWriteTimeUtc < EarlyBuildCutoff;
-    }
-
-    /// <summary>
     ///     Returns the REFR field offset delta for early-era builds.
     ///     Early builds: OBJ_REFR and BSExtraList fields are 4 bytes earlier
     ///     because TESChildCell is vtable-only (4B) vs vtable+data (8B) in final.

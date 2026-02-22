@@ -1,8 +1,13 @@
 using System.CommandLine;
+using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.Json;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -52,7 +57,22 @@ public static class EsmCommand
             await ExecuteAsync(input, verbose, format, output, recordType, limit);
         });
 
+        var reportsCommand = new Command("reports", "Generate GECK-style reports (CSV + TXT) from ESM file");
+        reportsCommand.Arguments.Add(new Argument<string>("esm-input") { Description = "Path to ESM/ESP file" });
+        var reportsOutputOpt = new Option<string?>("-o", "--output")
+        {
+            Description = "Output directory (default: ./esm_reports/)"
+        };
+        reportsCommand.Options.Add(reportsOutputOpt);
+        reportsCommand.SetAction(async (parseResult, _) =>
+        {
+            var input = parseResult.GetValue<string>("esm-input")!;
+            var output = parseResult.GetValue(reportsOutputOpt) ?? "./esm_reports";
+            await ExecuteReportsAsync(input, output);
+        });
+
         command.Subcommands.Add(PackagesCommand.Create());
+        command.Subcommands.Add(reportsCommand);
 
         return command;
     }
@@ -309,6 +329,80 @@ public static class EsmCommand
         }
 
         return sb.ToString();
+    }
+
+    private static async Task ExecuteReportsAsync(string input, string outputDir)
+    {
+        if (!File.Exists(input))
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", Markup.Escape(input));
+            return;
+        }
+
+        try
+        {
+            AnsiConsole.MarkupLine("[bold green]Generating ESM reports...[/]");
+
+            // Phase 1: Analyze ESM file (record scanning + FormID map)
+            AnsiConsole.MarkupLine("  Scanning records...");
+            var analysisResult = await EsmFileAnalyzer.AnalyzeAsync(input);
+
+            if (analysisResult.EsmRecords == null)
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] No ESM records found in file.");
+                return;
+            }
+
+            // Phase 2: Semantic reconstruction
+            AnsiConsole.MarkupLine("  Reconstructing records...");
+            var fileSize = new FileInfo(input).Length;
+            RecordCollection records;
+            using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
+            using (var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read))
+            {
+                var parser = new RecordParser(
+                    analysisResult.EsmRecords,
+                    analysisResult.FormIdMap,
+                    accessor,
+                    fileSize,
+                    analysisResult.MinidumpInfo);
+                records = parser.ReconstructAll();
+            }
+
+            AnsiConsole.MarkupLine($"  [green]Reconstructed {records.TotalRecordsReconstructed:N0} records.[/]");
+
+            // Phase 3: Generate all reports
+            AnsiConsole.MarkupLine("  Generating reports...");
+            var sources = new ReportDataSources(
+                records, analysisResult.FormIdMap,
+                analysisResult.EsmRecords.AssetStrings,
+                analysisResult.EsmRecords.RuntimeEditorIds);
+            var reports = GeckReportGenerator.GenerateAllReports(sources);
+
+            // Write to output directory
+            Directory.CreateDirectory(outputDir);
+            foreach (var (filename, content) in reports)
+            {
+                var filePath = Path.Combine(outputDir, filename);
+                await File.WriteAllTextAsync(filePath, content);
+            }
+
+            AnsiConsole.MarkupLine($"\n[bold green]Generated {reports.Count} reports to {Markup.Escape(outputDir)}:[/]");
+            foreach (var (filename, content) in reports.OrderBy(kvp => kvp.Key))
+            {
+                AnsiConsole.MarkupLine($"  {filename} ({content.Length:N0} bytes)");
+            }
+
+            // Summary of key record counts
+            AnsiConsole.MarkupLine($"\n  NPCs: {records.Npcs.Count}, Weapons: {records.Weapons.Count}, " +
+                                   $"Quests: {records.Quests.Count}, Dialogue: {records.Dialogues.Count}, " +
+                                   $"Cells: {records.Cells.Count}, Worldspaces: {records.Worldspaces.Count}");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] {0}", Markup.Escape(ex.Message));
+            AnsiConsole.WriteException(ex);
+        }
     }
 
     private static string FormatJson(EsmFileScanResult result)

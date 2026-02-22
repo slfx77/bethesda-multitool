@@ -87,6 +87,7 @@
   <!-- Embedded resources -->
   <ItemGroup>
     <EmbeddedResource Include="Core\Formats\Nif\nif.xml" LogicalName="FalloutXbox360Utils.nif.xml" />
+    <EmbeddedResource Include="Assets\MapMarkers\*.png" />
   </ItemGroup>
 
   <!-- App icon for title bar (unpackaged apps need explicit Content inclusion) -->

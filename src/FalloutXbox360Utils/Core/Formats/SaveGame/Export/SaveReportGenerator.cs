@@ -42,6 +42,16 @@ public static class SaveReportGenerator
         return resolver?.GetBestNameWithRefChain(formId) ?? "";
     }
 
+    /// <summary>
+    ///     Formats a rotation float, treating float.MaxValue as a sentinel (no rotation set).
+    /// </summary>
+    private static string FormatRotation(float value)
+    {
+        return float.IsNaN(value) || float.IsInfinity(value) || MathF.Abs(value) > 1e10f
+            ? ""
+            : value.ToString("F4");
+    }
+
     private static string GenerateSummary(
         SaveFile save,
         Dictionary<int, DecodedFormData>? decodedForms,
@@ -84,7 +94,10 @@ public static class SaveReportGenerator
             sb.AppendLine("Player Location:");
             var wsFormId = loc.WorldspaceRefId.ResolveFormId(formIdArray);
             var wsName = ResolveName(wsFormId, resolver);
-            sb.AppendLine($"  Worldspace:  {FormatFormId(loc.WorldspaceRefId, formIdArray)}{(wsName != "" ? $" ({wsName})" : "")}");
+            if (wsFormId != 0)
+                sb.AppendLine($"  Worldspace:  0x{wsFormId:X8}{(wsName != "" ? $" ({wsName})" : "")}");
+            else
+                sb.AppendLine("  Worldspace:  Interior");
             sb.AppendLine($"  Grid:        ({loc.CoordX}, {loc.CoordY})");
             var cellFormId = loc.CellRefId.ResolveFormId(formIdArray);
             var cellName = ResolveName(cellFormId, resolver);
@@ -157,14 +170,15 @@ public static class SaveReportGenerator
         FormIdResolver? resolver)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("FormID,Type,Name,Flags,FlagNames,DataSize,DecodeStatus,BytesConsumed,BytesRemaining");
+        sb.AppendLine("FormID,Type,EditorID,DisplayName,Flags,FlagNames,DataSize,DecodeStatus,BytesConsumed,BytesRemaining,CellFormID,CellName,PosX,PosY,PosZ,RotX,RotY,RotZ,BaseFormID,BaseName");
 
         for (int i = 0; i < save.ChangedForms.Count; i++)
         {
             var form = save.ChangedForms[i];
             var resolved = form.RefId.ResolveFormId(formIdArray);
-            var formIdStr = resolved != 0 ? $"0x{resolved:X8}" : form.RefId.ToString();
-            var name = resolved != 0 ? ResolveName(resolved, resolver) : "";
+            var formIdStr = Fmt.FId(resolved);
+            var editorId = resolved != 0 && resolver != null ? resolver.ResolveCsv(resolved) : "";
+            var displayName = resolved != 0 && resolver != null ? resolver.ResolveDisplayNameCsv(resolved) : "";
             var flagNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
             var flagStr = flagNames.Count > 0 ? string.Join("|", flagNames) : "";
 
@@ -177,16 +191,46 @@ public static class SaveReportGenerator
                 status = decoded.FullyDecoded ? "Full" : decoded.BytesConsumed > 0 ? "Partial" : "Failed";
             }
 
+            // Position/cell data from InitialData (reference types only)
+            var init = form.Initial;
+            string cellFormId = "", cellName = "", posX = "", posY = "", posZ = "";
+            string rotX = "", rotY = "", rotZ = "", baseFormId = "", baseName = "";
+            if (init != null)
+            {
+                var cellResolved = init.CellRefId.ResolveFormId(formIdArray);
+                cellFormId = Fmt.FId(cellResolved);
+                cellName = cellResolved != 0 && resolver != null ? Fmt.CsvEscape(resolver.GetBestNameWithRefChain(cellResolved) ?? "") : "";
+                posX = init.PosX.ToString("F2");
+                posY = init.PosY.ToString("F2");
+                posZ = init.PosZ.ToString("F2");
+                rotX = FormatRotation(init.RotX);
+                rotY = FormatRotation(init.RotY);
+                rotZ = FormatRotation(init.RotZ);
+                if (init.BaseFormRefId != null)
+                {
+                    var baseResolved = init.BaseFormRefId.Value.ResolveFormId(formIdArray);
+                    baseFormId = Fmt.FId(baseResolved);
+                    baseName = baseResolved != 0 && resolver != null ? Fmt.CsvEscape(resolver.GetBestNameWithRefChain(baseResolved) ?? "") : "";
+                }
+            }
+
             sb.AppendLine(string.Join(",",
                 formIdStr,
                 form.TypeName,
-                Fmt.CsvEscape(name),
+                Fmt.CsvEscape(editorId),
+                Fmt.CsvEscape(displayName),
                 $"0x{form.ChangeFlags:X8}",
                 Fmt.CsvEscape(flagStr),
                 form.Data.Length,
                 status,
                 consumed,
-                remaining));
+                remaining,
+                cellFormId,
+                cellName,
+                posX, posY, posZ,
+                rotX, rotY, rotZ,
+                baseFormId,
+                baseName));
         }
 
         return sb.ToString();
@@ -286,8 +330,15 @@ public static class SaveReportGenerator
         {
             var loc = save.PlayerLocation;
             sb.AppendLine("World Position:");
-            sb.AppendLine($"  Worldspace:  {FormatFormId(loc.WorldspaceRefId, formIdArray)}");
-            sb.AppendLine($"  Cell:        {FormatFormId(loc.CellRefId, formIdArray)}");
+            var wsFormId2 = loc.WorldspaceRefId.ResolveFormId(formIdArray);
+            var wsName2 = ResolveName(wsFormId2, resolver);
+            if (wsFormId2 != 0)
+                sb.AppendLine($"  Worldspace:  0x{wsFormId2:X8}{(wsName2 != "" ? $" ({wsName2})" : "")}");
+            else
+                sb.AppendLine("  Worldspace:  Interior");
+            var cellFormId2 = loc.CellRefId.ResolveFormId(formIdArray);
+            var cellName2 = ResolveName(cellFormId2, resolver);
+            sb.AppendLine($"  Cell:        {FormatFormId(loc.CellRefId, formIdArray)}{(cellName2 != "" ? $" ({cellName2})" : "")}");
             sb.AppendLine($"  Grid:        ({loc.CoordX}, {loc.CoordY})");
             sb.AppendLine($"  Position:    ({loc.PosX:F2}, {loc.PosY:F2}, {loc.PosZ:F2})");
             sb.AppendLine();
@@ -382,14 +433,15 @@ public static class SaveReportGenerator
         FormIdResolver? resolver)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("FormID,Name,Value");
+        sb.AppendLine("FormID,EditorID,DisplayName,Value");
 
         foreach (var gv in save.GlobalVariables)
         {
             var resolved = gv.RefId.ResolveFormId(formIdArray);
-            var formIdStr = resolved != 0 ? $"0x{resolved:X8}" : gv.RefId.ToString();
-            var name = resolved != 0 ? ResolveName(resolved, resolver) : "";
-            sb.AppendLine($"{formIdStr},{Fmt.CsvEscape(name)},{gv.Value:G}");
+            var formIdStr = Fmt.FId(resolved);
+            var editorId = resolved != 0 && resolver != null ? resolver.ResolveCsv(resolved) : "";
+            var displayName = resolved != 0 && resolver != null ? resolver.ResolveDisplayNameCsv(resolved) : "";
+            sb.AppendLine($"{formIdStr},{Fmt.CsvEscape(editorId)},{Fmt.CsvEscape(displayName)},{gv.Value}");
         }
 
         return sb.ToString();
@@ -400,13 +452,14 @@ public static class SaveReportGenerator
         FormIdResolver? resolver)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("FormID,Name");
+        sb.AppendLine("FormID,EditorID,DisplayName");
 
         foreach (var wsFormId in save.VisitedWorldspaces)
         {
-            var formIdStr = $"0x{wsFormId:X8}";
-            var name = ResolveName(wsFormId, resolver);
-            sb.AppendLine($"{formIdStr},{Fmt.CsvEscape(name)}");
+            var formIdStr = Fmt.FId(wsFormId);
+            var editorId = resolver != null ? resolver.ResolveCsv(wsFormId) : "";
+            var displayName = resolver != null ? resolver.ResolveDisplayNameCsv(wsFormId) : "";
+            sb.AppendLine($"{formIdStr},{Fmt.CsvEscape(editorId)},{Fmt.CsvEscape(displayName)}");
         }
 
         return sb.ToString();
