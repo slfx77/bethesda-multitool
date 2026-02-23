@@ -341,31 +341,7 @@ internal static class EsmWorldExtractor
 
     internal static void TryAddPositionSubrecord(byte[] data, int i, int dataLength, List<PositionSubrecord> records)
     {
-        if (i + 30 > dataLength) // 4 sig + 2 len + 24 data
-        {
-            return;
-        }
-
-        var len = BinaryUtils.ReadUInt16LE(data, i + 4);
-        if (len != 24) // Position data is exactly 24 bytes (6 floats)
-        {
-            return;
-        }
-
-        // Try little-endian first
-        var pos = TryParsePositionData(data, i + 6, false);
-        if (pos != null)
-        {
-            records.Add(pos with { Offset = i });
-            return;
-        }
-
-        // Try big-endian
-        pos = TryParsePositionData(data, i + 6, true);
-        if (pos != null)
-        {
-            records.Add(pos with { Offset = i });
-        }
+        TryAddPositionSubrecordWithOffset(data, i, dataLength, 0, records);
     }
 
     internal static void TryAddPositionSubrecordWithOffset(byte[] data, int i, int dataLength, long baseOffset,
@@ -419,10 +395,9 @@ internal static class EsmWorldExtractor
             rotZ = BinaryUtils.ReadFloatLE(data, offset + 20);
         }
 
-        // Validate position values are reasonable for Fallout NV world
-        // World coordinates typically range from -200000 to +200000
-        // Rotation values are in radians, typically -2pi to +2pi
-        if (!IsValidPosition(x, y, z) || !IsValidRotation(rotX, rotY, rotZ))
+        // Validate: world coordinates typically -300K to +300K, rotation in radians ~-2pi to +2pi
+        if (!IsValidCoord(x) || !IsValidCoord(y) || !IsValidCoord(z)
+            || !IsValidRot(rotX) || !IsValidRot(rotY) || !IsValidRot(rotZ))
         {
             return null;
         }
@@ -430,51 +405,11 @@ internal static class EsmWorldExtractor
         return new PositionSubrecord(x, y, z, rotX, rotY, rotZ, 0, isBigEndian);
     }
 
-    private static bool IsValidPosition(float x, float y, float z)
-    {
-        // Fallout NV world coordinates are typically in range -300000 to +300000
-        const float maxCoord = 500000f;
+    private static bool IsValidCoord(float v) =>
+        !float.IsNaN(v) && !float.IsInfinity(v) && Math.Abs(v) <= 500000f;
 
-        if (float.IsNaN(x) || float.IsInfinity(x) || Math.Abs(x) > maxCoord)
-        {
-            return false;
-        }
-
-        if (float.IsNaN(y) || float.IsInfinity(y) || Math.Abs(y) > maxCoord)
-        {
-            return false;
-        }
-
-        if (float.IsNaN(z) || float.IsInfinity(z) || Math.Abs(z) > maxCoord)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsValidRotation(float rotX, float rotY, float rotZ)
-    {
-        // Rotation values in radians, typically -2pi to +2pi, but allow some margin
-        const float maxRot = 10f;
-
-        if (float.IsNaN(rotX) || float.IsInfinity(rotX) || Math.Abs(rotX) > maxRot)
-        {
-            return false;
-        }
-
-        if (float.IsNaN(rotY) || float.IsInfinity(rotY) || Math.Abs(rotY) > maxRot)
-        {
-            return false;
-        }
-
-        if (float.IsNaN(rotZ) || float.IsInfinity(rotZ) || Math.Abs(rotZ) > maxRot)
-        {
-            return false;
-        }
-
-        return true;
-    }
+    private static bool IsValidRot(float v) =>
+        !float.IsNaN(v) && !float.IsInfinity(v) && Math.Abs(v) <= 10f;
 
     #endregion
 
@@ -488,9 +423,7 @@ internal static class EsmWorldExtractor
             return;
         }
 
-        var len = isBigEndian
-            ? BinaryUtils.ReadUInt16BE(data, i + 4)
-            : BinaryUtils.ReadUInt16LE(data, i + 4);
+        var len = isBigEndian ? BinaryUtils.ReadUInt16BE(data, i + 4) : BinaryUtils.ReadUInt16LE(data, i + 4);
 
         // VHGT is 1089 bytes (4 byte offset + 33x33 height deltas + 3 padding)
         if (len != 1089 || i + 6 + len > dataLength)
@@ -498,10 +431,7 @@ internal static class EsmWorldExtractor
             return;
         }
 
-        var heightOffset = isBigEndian
-            ? BinaryUtils.ReadFloatBE(data, i + 6)
-            : BinaryUtils.ReadFloatLE(data, i + 6);
-
+        var heightOffset = isBigEndian ? BinaryUtils.ReadFloatBE(data, i + 6) : BinaryUtils.ReadFloatLE(data, i + 6);
         if (float.IsNaN(heightOffset) || float.IsInfinity(heightOffset))
         {
             return;
@@ -524,9 +454,7 @@ internal static class EsmWorldExtractor
             return;
         }
 
-        var len = isBigEndian
-            ? BinaryUtils.ReadUInt16BE(data, i + 4)
-            : BinaryUtils.ReadUInt16LE(data, i + 4);
+        var len = isBigEndian ? BinaryUtils.ReadUInt16BE(data, i + 4) : BinaryUtils.ReadUInt16LE(data, i + 4);
 
         // XCLC is 12 bytes (X: int32, Y: int32, flags: uint32)
         if (len != 12 || i + 6 + len > dataLength)
@@ -534,17 +462,8 @@ internal static class EsmWorldExtractor
             return;
         }
 
-        int gridX, gridY;
-        if (isBigEndian)
-        {
-            gridX = (int)BinaryUtils.ReadUInt32BE(data, i + 6);
-            gridY = (int)BinaryUtils.ReadUInt32BE(data, i + 10);
-        }
-        else
-        {
-            gridX = (int)BinaryUtils.ReadUInt32LE(data, i + 6);
-            gridY = (int)BinaryUtils.ReadUInt32LE(data, i + 10);
-        }
+        var gridX = (int)(isBigEndian ? BinaryUtils.ReadUInt32BE(data, i + 6) : BinaryUtils.ReadUInt32LE(data, i + 6));
+        var gridY = (int)(isBigEndian ? BinaryUtils.ReadUInt32BE(data, i + 10) : BinaryUtils.ReadUInt32LE(data, i + 10));
 
         // Validate grid coordinates (typical range is -100 to +100 for exterior cells)
         if (gridX is < -200 or > 200 || gridY is < -200 or > 200)
@@ -560,101 +479,6 @@ internal static class EsmWorldExtractor
             Offset = baseOffset + i,
             IsBigEndian = isBigEndian
         });
-    }
-
-    #endregion
-
-    #region Land Record Enrichment
-
-    /// <summary>
-    ///     Enrich LAND records with runtime data from TESForm pointers.
-    /// </summary>
-    internal static void EnrichLandRecordsWithRuntimeData(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        EsmRecordScanResult scanResult,
-        Dictionary<uint, string>? editorIdMap)
-    {
-        // This method can be extended to read additional runtime data
-        // from TESForm pointers associated with LAND records
-        _ = accessor;
-        _ = fileSize;
-        _ = scanResult;
-        _ = editorIdMap;
-    }
-
-    /// <summary>
-    ///     Enrich LAND records with runtime data loaded from memory.
-    /// </summary>
-    internal static void EnrichLandRecordsWithRuntimeData(
-        EsmRecordScanResult scanResult,
-        Dictionary<uint, RuntimeLoadedLandData> runtimeLandData)
-    {
-        // Match runtime land data with detected LAND records by FormId
-        // ExtractedLandRecord is immutable, so we replace entries with updated versions
-        var existingFormIds = new HashSet<uint>(scanResult.LandRecords.Select(l => l.Header.FormId));
-
-        for (var i = 0; i < scanResult.LandRecords.Count; i++)
-        {
-            var landRecord = scanResult.LandRecords[i];
-            if (runtimeLandData.TryGetValue(landRecord.Header.FormId, out var runtimeData))
-            {
-                // Create new record with runtime cell coordinates and terrain mesh
-                scanResult.LandRecords[i] = landRecord with
-                {
-                    RuntimeCellX = runtimeData.CellX,
-                    RuntimeCellY = runtimeData.CellY,
-                    RuntimeTerrainMesh = runtimeData.TerrainMesh
-                };
-            }
-        }
-
-        // Add synthetic LAND records for runtime entries that don't match any ESM record
-        // (common: ESM scan finds few LAND records, but runtime has many loaded terrain cells)
-        foreach (var (formId, data) in runtimeLandData)
-        {
-            if (!existingFormIds.Contains(formId))
-            {
-                scanResult.LandRecords.Add(new ExtractedLandRecord
-                {
-                    Header = new DetectedMainRecord("LAND", 0, 0, formId, data.LandOffset, true),
-                    RuntimeCellX = data.CellX,
-                    RuntimeCellY = data.CellY,
-                    RuntimeBaseHeight = data.BaseHeight,
-                    RuntimeTerrainMesh = data.TerrainMesh
-                });
-            }
-        }
-
-        // Sanitize runtime terrain mesh vertex data (replace garbage Z values with
-        // neighbor interpolation or zeros) before any downstream processing.
-        for (var i = 0; i < scanResult.LandRecords.Count; i++)
-        {
-            var record = scanResult.LandRecords[i];
-            if (record.RuntimeTerrainMesh != null)
-            {
-                var sanitized = record.RuntimeTerrainMesh.SanitizeVertices();
-                if (sanitized != record.RuntimeTerrainMesh)
-                {
-                    scanResult.LandRecords[i] = record with { RuntimeTerrainMesh = sanitized };
-                }
-            }
-        }
-
-        // Synthesize or upgrade heightmaps from runtime terrain meshes.
-        // When a RuntimeTerrainMesh exists, always use it — ToLandHeightmap() sets ExactHeights
-        // which bypasses lossy VHGT delta decoding in CalculateHeights().
-        for (var i = 0; i < scanResult.LandRecords.Count; i++)
-        {
-            var record = scanResult.LandRecords[i];
-            if (record.RuntimeTerrainMesh != null)
-            {
-                scanResult.LandRecords[i] = record with
-                {
-                    Heightmap = record.RuntimeTerrainMesh.ToLandHeightmap()
-                };
-            }
-        }
     }
 
     #endregion

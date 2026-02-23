@@ -27,7 +27,7 @@ internal static class RuntimeDataEnricher
         if (runtimeLandData.Count > 0)
         {
             var existingCount = context.ScanResult.LandRecords.Count;
-            EsmWorldExtractor.EnrichLandRecordsWithRuntimeData(context.ScanResult, runtimeLandData);
+            EsmLandEnricher.EnrichLandRecordsWithRuntimeData(context.ScanResult, runtimeLandData);
             var addedCount = context.ScanResult.LandRecords.Count - existingCount;
             Logger.Instance.Debug(
                 $"  [Semantic] Enriched LAND records: {runtimeLandData.Count} with terrain data " +
