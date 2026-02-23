@@ -33,6 +33,8 @@ public sealed class RecordParser
 
         _actors = new ActorRecordHandler(_context);
         _items = new ItemRecordHandler(_context);
+        _weapons = new WeaponRecordHandler(_context);
+        _consumables = new ConsumableRecordHandler(_context);
         _dialogue = new DialogueRecordHandler(_context);
         _text = new TextRecordHandler(_context);
         _scripts = new ScriptRecordHandler(_context);
@@ -204,12 +206,12 @@ public sealed class RecordParser
 
         progress?.Report((15, "Reconstructing items..."));
         phaseSw.Restart();
-        var weapons = _items.ReconstructWeapons();
-        var ammo = _items.ReconstructAmmo();
-        _items.EnrichAmmoWithProjectileModels(weapons, ammo);
-        _items.EnrichWeaponsWithProjectileData(weapons);
+        var weapons = _weapons.ReconstructWeapons();
+        var ammo = _consumables.ReconstructAmmo();
+        _consumables.EnrichAmmoWithProjectileModels(weapons, ammo);
+        _weapons.EnrichWeaponsWithProjectileData(weapons);
         var armor = _items.ReconstructArmor();
-        var consumables = _items.ReconstructConsumables();
+        var consumables = _consumables.ReconstructConsumables();
         var miscItems = _items.ReconstructMiscItems();
         var keys = _items.ReconstructKeys();
         var containers = _items.ReconstructContainers();
@@ -691,6 +693,8 @@ public sealed class RecordParser
     // Domain-specific handlers
     private readonly ActorRecordHandler _actors;
     private readonly ItemRecordHandler _items;
+    private readonly WeaponRecordHandler _weapons;
+    private readonly ConsumableRecordHandler _consumables;
     private readonly DialogueRecordHandler _dialogue;
     private readonly TextRecordHandler _text;
     private readonly ScriptRecordHandler _scripts;
@@ -758,7 +762,7 @@ public sealed class RecordParser
     // Items
     public List<WeaponRecord> ReconstructWeapons()
     {
-        return _items.ReconstructWeapons();
+        return _weapons.ReconstructWeapons();
     }
 
     public List<ArmorRecord> ReconstructArmor()
@@ -768,12 +772,12 @@ public sealed class RecordParser
 
     public List<AmmoRecord> ReconstructAmmo()
     {
-        return _items.ReconstructAmmo();
+        return _consumables.ReconstructAmmo();
     }
 
     public List<ConsumableRecord> ReconstructConsumables()
     {
-        return _items.ReconstructConsumables();
+        return _consumables.ReconstructConsumables();
     }
 
     public List<MiscItemRecord> ReconstructMiscItems()
