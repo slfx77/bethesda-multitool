@@ -1,0 +1,439 @@
+using System.Buffers;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Utils;
+
+namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+
+internal sealed class MiscGameSystemHandler(RecordParserContext context)
+{
+    private readonly RecordParserContext _context = context;
+
+    #region Actor Value Infos
+
+    /// <summary>
+    ///     Reconstruct all Actor Value Info (AVIF) records.
+    /// </summary>
+    internal List<ActorValueInfoRecord> ReconstructActorValueInfos()
+    {
+        var infos = new List<ActorValueInfoRecord>();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in _context.GetRecordsByType("AVIF"))
+            {
+                infos.Add(new ActorValueInfoRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+
+            return infos;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(2048);
+        try
+        {
+            foreach (var record in _context.GetRecordsByType("AVIF"))
+            {
+                var recordData = _context.ReadRecordData(record, buffer);
+                if (recordData == null)
+                {
+                    infos.Add(new ActorValueInfoRecord
+                    {
+                        FormId = record.FormId,
+                        EditorId = _context.GetEditorId(record.FormId),
+                        FullName = _context.FormIdToFullName.GetValueOrDefault(record.FormId),
+                        Offset = record.Offset,
+                        IsBigEndian = record.IsBigEndian
+                    });
+                    continue;
+                }
+
+                var (data, dataSize) = recordData.Value;
+
+                string? editorId = null, fullName = null, description = null, icon = null, abbreviation = null;
+
+                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                {
+                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = EsmStringUtils.ReadNullTermString(subData);
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _context.FormIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "FULL":
+                            fullName = EsmStringUtils.ReadNullTermString(subData);
+                            break;
+                        case "DESC":
+                            description = EsmStringUtils.ReadNullTermString(subData);
+                            break;
+                        case "ICON":
+                            icon = EsmStringUtils.ReadNullTermString(subData);
+                            break;
+                        case "ANAM":
+                            abbreviation = EsmStringUtils.ReadNullTermString(subData);
+                            break;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(fullName))
+                {
+                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
+                }
+
+                infos.Add(new ActorValueInfoRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    FullName = fullName,
+                    Description = description,
+                    Icon = icon,
+                    Abbreviation = abbreviation,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return infos;
+    }
+
+    #endregion
+
+    #region Combat Styles
+
+    /// <summary>
+    ///     Reconstruct all Combat Style (CSTY) records.
+    /// </summary>
+    internal List<CombatStyleRecord> ReconstructCombatStyles()
+    {
+        var styles = new List<CombatStyleRecord>();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in _context.GetRecordsByType("CSTY"))
+            {
+                styles.Add(new CombatStyleRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+
+            return styles;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(2048);
+        try
+        {
+            foreach (var record in _context.GetRecordsByType("CSTY"))
+            {
+                var recordData = _context.ReadRecordData(record, buffer);
+                if (recordData == null)
+                {
+                    styles.Add(new CombatStyleRecord
+                    {
+                        FormId = record.FormId,
+                        EditorId = _context.GetEditorId(record.FormId),
+                        Offset = record.Offset,
+                        IsBigEndian = record.IsBigEndian
+                    });
+                    continue;
+                }
+
+                var (data, dataSize) = recordData.Value;
+
+                string? editorId = null;
+                Dictionary<string, object?>? styleData = null;
+                Dictionary<string, object?>? advancedData = null;
+                Dictionary<string, object?>? simpleData = null;
+
+                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                {
+                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = EsmStringUtils.ReadNullTermString(subData);
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _context.FormIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "CSTD":
+                        {
+                            var fields = SubrecordDataReader.ReadFields("CSTD", "CSTY", subData, record.IsBigEndian);
+                            if (fields.Count > 0)
+                            {
+                                styleData = fields;
+                            }
+
+                            break;
+                        }
+                        case "CSAD":
+                        {
+                            var fields = SubrecordDataReader.ReadFields("CSAD", "CSTY", subData, record.IsBigEndian);
+                            if (fields.Count > 0)
+                            {
+                                advancedData = fields;
+                            }
+
+                            break;
+                        }
+                        case "CSSD":
+                        {
+                            var fields = SubrecordDataReader.ReadFields("CSSD", "CSTY", subData, record.IsBigEndian);
+                            if (fields.Count > 0)
+                            {
+                                simpleData = fields;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                styles.Add(new CombatStyleRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    StyleData = styleData,
+                    AdvancedData = advancedData,
+                    SimpleData = simpleData,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return styles;
+    }
+
+    #endregion
+
+    #region Lighting Templates
+
+    /// <summary>
+    ///     Reconstruct all Lighting Template (LGTM) records.
+    /// </summary>
+    internal List<LightingTemplateRecord> ReconstructLightingTemplates()
+    {
+        var templates = new List<LightingTemplateRecord>();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in _context.GetRecordsByType("LGTM"))
+            {
+                templates.Add(new LightingTemplateRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+
+            return templates;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(1024);
+        try
+        {
+            foreach (var record in _context.GetRecordsByType("LGTM"))
+            {
+                var recordData = _context.ReadRecordData(record, buffer);
+                if (recordData == null)
+                {
+                    templates.Add(new LightingTemplateRecord
+                    {
+                        FormId = record.FormId,
+                        EditorId = _context.GetEditorId(record.FormId),
+                        Offset = record.Offset,
+                        IsBigEndian = record.IsBigEndian
+                    });
+                    continue;
+                }
+
+                var (data, dataSize) = recordData.Value;
+
+                string? editorId = null;
+                Dictionary<string, object?>? lightingData = null;
+
+                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                {
+                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = EsmStringUtils.ReadNullTermString(subData);
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _context.FormIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "DATA" when sub.DataLength == 40:
+                        {
+                            var fields = SubrecordDataReader.ReadFields("DATA", "LGTM", subData, record.IsBigEndian);
+                            if (fields.Count > 0)
+                            {
+                                lightingData = fields;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                templates.Add(new LightingTemplateRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    LightingData = lightingData,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return templates;
+    }
+
+    #endregion
+
+    #region Navigation Meshes
+
+    /// <summary>
+    ///     Reconstruct all Navigation Mesh (NAVM) records.
+    /// </summary>
+    internal List<NavMeshRecord> ReconstructNavMeshes()
+    {
+        var meshes = new List<NavMeshRecord>();
+
+        if (_context.Accessor == null)
+        {
+            foreach (var record in _context.GetRecordsByType("NAVM"))
+            {
+                meshes.Add(new NavMeshRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = _context.GetEditorId(record.FormId),
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+
+            return meshes;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(8192);
+        try
+        {
+            foreach (var record in _context.GetRecordsByType("NAVM"))
+            {
+                var recordData = _context.ReadRecordData(record, buffer);
+                if (recordData == null)
+                {
+                    meshes.Add(new NavMeshRecord
+                    {
+                        FormId = record.FormId,
+                        EditorId = _context.GetEditorId(record.FormId),
+                        Offset = record.Offset,
+                        IsBigEndian = record.IsBigEndian
+                    });
+                    continue;
+                }
+
+                var (data, dataSize) = recordData.Value;
+
+                string? editorId = null;
+                uint cellFormId = 0, vertexCount = 0, triangleCount = 0;
+                var doorPortalCount = 0;
+
+                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                {
+                    var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+                    switch (sub.Signature)
+                    {
+                        case "EDID":
+                            editorId = EsmStringUtils.ReadNullTermString(subData);
+                            if (!string.IsNullOrEmpty(editorId))
+                            {
+                                _context.FormIdToEditorId[record.FormId] = editorId;
+                            }
+
+                            break;
+                        case "DATA" when sub.DataLength >= 20:
+                        {
+                            var fields = SubrecordDataReader.ReadFields("DATA", "NAVM", subData, record.IsBigEndian);
+                            if (fields.Count > 0)
+                            {
+                                cellFormId = SubrecordDataReader.GetUInt32(fields, "Cell");
+                                vertexCount = SubrecordDataReader.GetUInt32(fields, "VertexCount");
+                                triangleCount = SubrecordDataReader.GetUInt32(fields, "TriangleCount");
+                            }
+
+                            break;
+                        }
+                        case "NVDP":
+                            // Each door portal is 8 bytes
+                            if (sub.DataLength >= 8)
+                            {
+                                doorPortalCount = sub.DataLength / 8;
+                            }
+
+                            break;
+                    }
+                }
+
+                meshes.Add(new NavMeshRecord
+                {
+                    FormId = record.FormId,
+                    EditorId = editorId ?? _context.GetEditorId(record.FormId),
+                    CellFormId = cellFormId,
+                    VertexCount = vertexCount,
+                    TriangleCount = triangleCount,
+                    DoorPortalCount = doorPortalCount,
+                    Offset = record.Offset,
+                    IsBigEndian = record.IsBigEndian
+                });
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return meshes;
+    }
+
+    #endregion
+}

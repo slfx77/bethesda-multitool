@@ -39,6 +39,13 @@ public sealed class RecordParser
         _effects = new EffectRecordHandler(_context);
         _world = new WorldRecordHandler(_context);
         _misc = new MiscRecordHandler(_context);
+        _miscBasicTypes = new MiscBasicTypeHandler(_context);
+        _miscItems = new MiscItemHandler(_context);
+        _miscWorldObjects = new MiscWorldObjectHandler(_context);
+        _miscStaticObjects = new MiscStaticObjectHandler(_context);
+        _miscEnvironment = new MiscEnvironmentHandler(_context);
+        _miscGameSystems = new MiscGameSystemHandler(_context);
+        _miscCollections = new MiscCollectionHandler(_context);
         _ai = new AiRecordHandler(_context);
     }
 
@@ -263,9 +270,9 @@ public sealed class RecordParser
 
         // Reconstruct ACTI/DOOR/FURN early so their Script FormIDs are available
         // for cross-reference chain building below.
-        var activators = _misc.ReconstructActivators();
-        var doors = _misc.ReconstructDoors();
-        var furniture = _misc.ReconstructFurniture();
+        var activators = _miscWorldObjects.ReconstructActivators();
+        var doors = _miscWorldObjects.ReconstructDoors();
+        var furniture = _miscStaticObjects.ReconstructFurniture();
 
         // Build runtime object→script mappings for DMP cross-reference chains.
         // In memory dumps, ESM records are freed at load time so the ESM-based
@@ -452,7 +459,7 @@ public sealed class RecordParser
 
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
         var packages = _ai.ReconstructPackages();
-        var leveledLists = _misc.ReconstructLeveledLists();
+        var leveledLists = _miscCollections.ReconstructLeveledLists();
         var resolvedCount =
             SpawnPositionResolver.ResolveSpawnPositions(cells, packages, npcs, creatures, leveledLists);
         var mapMarkers = _world.ExtractMapMarkers();
@@ -462,21 +469,21 @@ public sealed class RecordParser
         progress?.Report((80, "Reconstructing game data..."));
         phaseSw.Restart();
         var gameSettings = _misc.ReconstructGameSettings();
-        var globals = _misc.ReconstructGlobals();
+        var globals = _miscBasicTypes.ReconstructGlobals();
         var enchantments = _effects.ReconstructEnchantments();
         var baseEffects = _effects.ReconstructBaseEffects();
-        var weaponMods = _misc.ReconstructWeaponMods();
-        var recipes = _misc.ReconstructRecipes();
-        var challenges = _misc.ReconstructChallenges();
-        var reputations = _misc.ReconstructReputations();
+        var weaponMods = _miscItems.ReconstructWeaponMods();
+        var recipes = _miscItems.ReconstructRecipes();
+        var challenges = _miscBasicTypes.ReconstructChallenges();
+        var reputations = _miscBasicTypes.ReconstructReputations();
         var projectiles = _effects.ReconstructProjectiles();
         var explosions = _effects.ReconstructExplosions();
         var messages = _text.ReconstructMessages();
-        var classes = _misc.ReconstructClasses();
-        var formLists = _misc.ReconstructFormLists();
+        var classes = _miscBasicTypes.ReconstructClasses();
+        var formLists = _miscCollections.ReconstructFormLists();
         // activators, doors, furniture already reconstructed above (before script cross-ref chains)
-        var lights = _misc.ReconstructLights();
-        var statics = _misc.ReconstructStatics();
+        var lights = _miscWorldObjects.ReconstructLights();
+        var statics = _miscStaticObjects.ReconstructStatics();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
 
         progress?.Report((85, "Reconstructing generic records..."));
@@ -498,16 +505,16 @@ public sealed class RecordParser
 
         progress?.Report((88, "Reconstructing specialized records..."));
         phaseSw.Restart();
-        var sounds = _misc.ReconstructSounds();
-        var textureSets = _misc.ReconstructTextureSets();
-        var armorAddons = _misc.ReconstructArmorAddons();
-        var water = _misc.ReconstructWater();
-        var bodyPartData = _misc.ReconstructBodyPartData();
-        var actorValueInfos = _misc.ReconstructActorValueInfos();
-        var combatStyles = _misc.ReconstructCombatStyles();
-        var lightingTemplates = _misc.ReconstructLightingTemplates();
-        var navMeshes = _misc.ReconstructNavMeshes();
-        var weather = _misc.ReconstructWeather();
+        var sounds = _miscEnvironment.ReconstructSounds();
+        var textureSets = _miscEnvironment.ReconstructTextureSets();
+        var armorAddons = _miscItems.ReconstructArmorAddons();
+        var water = _miscEnvironment.ReconstructWater();
+        var bodyPartData = _miscItems.ReconstructBodyPartData();
+        var actorValueInfos = _miscGameSystems.ReconstructActorValueInfos();
+        var combatStyles = _miscGameSystems.ReconstructCombatStyles();
+        var lightingTemplates = _miscGameSystems.ReconstructLightingTemplates();
+        var navMeshes = _miscGameSystems.ReconstructNavMeshes();
+        var weather = _miscEnvironment.ReconstructWeather();
         Logger.Instance.Debug(
             $"  [Semantic] Specialized records: {phaseSw.Elapsed} " +
             $"(SOUN: {sounds.Count}, TXST: {textureSets.Count}, ARMA: {armorAddons.Count}, " +
@@ -690,6 +697,13 @@ public sealed class RecordParser
     private readonly EffectRecordHandler _effects;
     private readonly WorldRecordHandler _world;
     private readonly MiscRecordHandler _misc;
+    private readonly MiscBasicTypeHandler _miscBasicTypes;
+    private readonly MiscItemHandler _miscItems;
+    private readonly MiscWorldObjectHandler _miscWorldObjects;
+    private readonly MiscStaticObjectHandler _miscStaticObjects;
+    private readonly MiscEnvironmentHandler _miscEnvironment;
+    private readonly MiscGameSystemHandler _miscGameSystems;
+    private readonly MiscCollectionHandler _miscCollections;
     private readonly AiRecordHandler _ai;
 
     #endregion
@@ -883,67 +897,67 @@ public sealed class RecordParser
 
     public List<GlobalRecord> ReconstructGlobals()
     {
-        return _misc.ReconstructGlobals();
+        return _miscBasicTypes.ReconstructGlobals();
     }
 
     public List<WeaponModRecord> ReconstructWeaponMods()
     {
-        return _misc.ReconstructWeaponMods();
+        return _miscItems.ReconstructWeaponMods();
     }
 
     public List<RecipeRecord> ReconstructRecipes()
     {
-        return _misc.ReconstructRecipes();
+        return _miscItems.ReconstructRecipes();
     }
 
     public List<ChallengeRecord> ReconstructChallenges()
     {
-        return _misc.ReconstructChallenges();
+        return _miscBasicTypes.ReconstructChallenges();
     }
 
     public List<ReputationRecord> ReconstructReputations()
     {
-        return _misc.ReconstructReputations();
+        return _miscBasicTypes.ReconstructReputations();
     }
 
     public List<ClassRecord> ReconstructClasses()
     {
-        return _misc.ReconstructClasses();
+        return _miscBasicTypes.ReconstructClasses();
     }
 
     public List<LeveledListRecord> ReconstructLeveledLists()
     {
-        return _misc.ReconstructLeveledLists();
+        return _miscCollections.ReconstructLeveledLists();
     }
 
     public List<FormListRecord> ReconstructFormLists()
     {
-        return _misc.ReconstructFormLists();
+        return _miscCollections.ReconstructFormLists();
     }
 
     public List<ActivatorRecord> ReconstructActivators()
     {
-        return _misc.ReconstructActivators();
+        return _miscWorldObjects.ReconstructActivators();
     }
 
     public List<LightRecord> ReconstructLights()
     {
-        return _misc.ReconstructLights();
+        return _miscWorldObjects.ReconstructLights();
     }
 
     public List<DoorRecord> ReconstructDoors()
     {
-        return _misc.ReconstructDoors();
+        return _miscWorldObjects.ReconstructDoors();
     }
 
     public List<StaticRecord> ReconstructStatics()
     {
-        return _misc.ReconstructStatics();
+        return _miscStaticObjects.ReconstructStatics();
     }
 
     public List<FurnitureRecord> ReconstructFurniture()
     {
-        return _misc.ReconstructFurniture();
+        return _miscStaticObjects.ReconstructFurniture();
     }
 
     // AI

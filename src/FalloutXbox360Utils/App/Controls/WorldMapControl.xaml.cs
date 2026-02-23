@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using System.Numerics;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
@@ -33,13 +32,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Export ---
     // Target the long edge at 4096px — large enough for detail, small enough to view at 1:1
     private const int ExportLongEdge = 4096;
-
-    // ========================================================================
-    // Color Helpers
-    // ========================================================================
-
-    private static readonly FrozenDictionary<PlacedObjectCategory, Color> CategoryColors =
-        BuildWorldCategoryColors();
 
     // --- Legend category visibility ---
     private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
@@ -144,7 +136,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         WorldspaceComboBox.Items.Clear();
         foreach (var ws in data.Worldspaces)
         {
-            var name = FormatWorldspaceName(ws);
+            var name = WorldMapColors.FormatWorldspaceName(ws);
             WorldspaceComboBox.Items.Add($"{name} \u2014 {ws.Cells.Count} cells");
         }
 
@@ -186,7 +178,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         foreach (var category in Enum.GetValues<PlacedObjectCategory>())
         {
-            var color = GetCategoryColor(category);
+            var color = WorldMapColors.GetCategoryColor(category);
             var colorBorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
             var colorFillBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
                 Color.FromArgb(60, color.R, color.G, color.B));
@@ -201,7 +193,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             };
             var label = new TextBlock
             {
-                Text = GetCategoryDisplayName(category),
+                Text = WorldMapColors.GetCategoryDisplayName(category),
                 FontSize = 10,
                 Foreground = whiteBrush,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -931,15 +923,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             if (marker.MarkerType.HasValue &&
                 _markerIconBitmaps?.TryGetValue(marker.MarkerType.Value, out var icon) == true)
             {
-                DrawTintedIcon(ds, icon, destRect, tint);
+                WorldMapDrawingHelper.DrawTintedIcon(ds, icon, destRect, tint);
             }
             else
             {
-                var color = GetMarkerColor(marker.MarkerType);
+                var color = WorldMapColors.GetMarkerColor(marker.MarkerType);
                 var radius = markerSize / 2;
-                ds.FillCircle(pos, radius, WithAlpha(color, 200));
+                ds.FillCircle(pos, radius, WorldMapColors.WithAlpha(color, 200));
                 ds.DrawCircle(pos, radius, Colors.White, 1f / _zoom);
-                var glyph = GetMarkerGlyph(marker.MarkerType);
+                var glyph = WorldMapColors.GetMarkerGlyph(marker.MarkerType);
                 ds.DrawText(glyph, destRect, Colors.White, glyphFormat);
             }
 
@@ -970,8 +962,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var (tlWorld, brWorld) = GetVisibleWorldBounds();
         var dotRadius = 5f / _zoom;
         var outlineWidth = 1f / _zoom;
-        var npcColor = GetCategoryColor(PlacedObjectCategory.Npc);
-        var creatureColor = GetCategoryColor(PlacedObjectCategory.Creature);
+        var npcColor = WorldMapColors.GetCategoryColor(PlacedObjectCategory.Npc);
+        var creatureColor = WorldMapColors.GetCategoryColor(PlacedObjectCategory.Creature);
 
         foreach (var cell in GetActiveCells())
         {
@@ -1018,8 +1010,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
                 var fillAlpha = obj.IsInitiallyDisabled ? (byte)60 : (byte)180;
                 var outlineAlpha = obj.IsInitiallyDisabled ? (byte)80 : (byte)255;
-                ds.FillCircle(pos, dotRadius, WithAlpha(color, fillAlpha));
-                ds.DrawCircle(pos, dotRadius, WithAlpha(Colors.White, outlineAlpha), outlineWidth);
+                ds.FillCircle(pos, dotRadius, WorldMapColors.WithAlpha(color, fillAlpha));
+                ds.DrawCircle(pos, dotRadius, WorldMapColors.WithAlpha(Colors.White, outlineAlpha), outlineWidth);
             }
         }
     }
@@ -1054,8 +1046,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 _ => refrColor
             };
 
-            ds.FillCircle(pos, dotRadius, WithAlpha(color, 150));
-            ds.DrawCircle(pos, dotRadius, WithAlpha(Colors.White, 200), outlineWidth);
+            ds.FillCircle(pos, dotRadius, WorldMapColors.WithAlpha(color, 150));
+            ds.DrawCircle(pos, dotRadius, WorldMapColors.WithAlpha(Colors.White, 200), outlineWidth);
         }
 
         // Player marker (prominent)
@@ -1160,7 +1152,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 "ACRE" => PlacedObjectCategory.Creature,
                 _ => _data.CategoryIndex.GetValueOrDefault(obj.BaseFormId, PlacedObjectCategory.Unknown)
             };
-        var color = GetCategoryColor(category);
+        var color = WorldMapColors.GetCategoryColor(category);
         var pos = new Vector2(obj.X, -obj.Y);
         var lineWidth = 1f / _zoom;
 
@@ -1172,7 +1164,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             // Skip degenerate bounds
             if (halfW < 1f && halfH < 1f)
             {
-                ds.FillCircle(pos, 6f / _zoom, WithAlpha(color, 120));
+                ds.FillCircle(pos, 6f / _zoom, WorldMapColors.WithAlpha(color, 120));
                 ds.DrawCircle(pos, 6f / _zoom, color, lineWidth);
                 return;
             }
@@ -1193,8 +1185,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             }
             else
             {
-                using var geometry = CreateRotatedRectGeometry(ds, pos, halfW, halfH, obj.RotZ);
-                ds.FillGeometry(geometry, WithAlpha(color, 60));
+                using var geometry = WorldMapDrawingHelper.CreateRotatedRectGeometry(ds, pos, halfW, halfH, obj.RotZ);
+                ds.FillGeometry(geometry, WorldMapColors.WithAlpha(color, 60));
                 ds.DrawGeometry(geometry, color, lineWidth);
             }
         }
@@ -1202,7 +1194,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         {
             // No OBND - fallback circle
             var radius = 12f / _zoom;
-            ds.FillCircle(pos, radius, WithAlpha(color, 80));
+            ds.FillCircle(pos, radius, WorldMapColors.WithAlpha(color, 80));
             ds.DrawCircle(pos, radius, color, lineWidth);
         }
 
@@ -1225,7 +1217,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             "ACRE" => PlacedObjectCategory.Creature,
             _ => _data.CategoryIndex.GetValueOrDefault(obj.BaseFormId, PlacedObjectCategory.Unknown)
         };
-        var color = GetCategoryColor(category);
+        var color = WorldMapColors.GetCategoryColor(category);
         var pos = new Vector2(obj.X, -obj.Y);
         var radius = 4f / _zoom;
         ds.FillCircle(pos, radius, color);
@@ -1261,36 +1253,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             if (halfW >= 1f || halfH >= 1f)
             {
-                using var geometry = CreateRotatedRectGeometry(ds, pos, halfW, halfH, obj.RotZ);
+                using var geometry = WorldMapDrawingHelper.CreateRotatedRectGeometry(ds, pos, halfW, halfH, obj.RotZ);
                 ds.DrawGeometry(geometry, color, strokeWidth / _zoom);
                 return;
             }
         }
 
         ds.DrawCircle(pos, fallbackRadius / _zoom, color, strokeWidth / _zoom);
-    }
-
-    /// <summary>
-    ///     Creates a rotated rectangle CanvasGeometry from center, half-extents, and rotation.
-    /// </summary>
-    private static CanvasGeometry CreateRotatedRectGeometry(
-        ICanvasResourceCreator resourceCreator, Vector2 center, float halfW, float halfH, float rotZ)
-    {
-        var rotation = Matrix3x2.CreateRotation(-rotZ, center);
-        Span<Vector2> corners = stackalloc Vector2[4];
-        corners[0] = Vector2.Transform(new Vector2(center.X - halfW, center.Y - halfH), rotation);
-        corners[1] = Vector2.Transform(new Vector2(center.X + halfW, center.Y - halfH), rotation);
-        corners[2] = Vector2.Transform(new Vector2(center.X + halfW, center.Y + halfH), rotation);
-        corners[3] = Vector2.Transform(new Vector2(center.X - halfW, center.Y + halfH), rotation);
-
-        var pathBuilder = new CanvasPathBuilder(resourceCreator);
-        pathBuilder.BeginFigure(corners[0]);
-        pathBuilder.AddLine(corners[1]);
-        pathBuilder.AddLine(corners[2]);
-        pathBuilder.AddLine(corners[3]);
-        pathBuilder.EndFigure(CanvasFigureLoop.Closed);
-
-        return CanvasGeometry.CreatePath(pathBuilder);
     }
 
     private void DrawSpawnOverlay(CanvasDrawingSession ds, PlacedReference selectedObj)
@@ -1390,7 +1359,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _selectedWorldspace != null && _data?.Worldspaces.Count > 0 &&
             ReferenceEquals(_selectedWorldspace, _data.Worldspaces[0]))
         {
-            var pixels = ApplyTintAndWater(
+            var pixels = HeightmapRenderer.ApplyTintAndWater(
                 _cachedGrayscale, _cachedWaterMask!, _cachedHmWidth, _cachedHmHeight,
                 _currentColorScheme, _showWater);
             _worldHeightmapBitmap = CanvasBitmap.CreateFromBytes(
@@ -1410,14 +1379,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return;
         }
 
-        var result = ComputeHeightmapData(activeCells, _currentDefaultWaterHeight);
+        var result = HeightmapRenderer.ComputeHeightmapData(activeCells, _currentDefaultWaterHeight);
         if (result == null)
         {
             return;
         }
 
         var (grayscale, waterMask, imgW, imgH, minX, maxY) = result.Value;
-        var tintedPixels = ApplyTintAndWater(grayscale, waterMask, imgW, imgH,
+        var tintedPixels = HeightmapRenderer.ApplyTintAndWater(grayscale, waterMask, imgW, imgH,
             _currentColorScheme, _showWater);
         _worldHeightmapBitmap = CanvasBitmap.CreateFromBytes(
             canvas, tintedPixels, imgW, imgH,
@@ -1426,189 +1395,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _worldHmMaxY = maxY;
         _worldHmPixelWidth = imgW;
         _worldHmPixelHeight = imgH;
-    }
-
-    /// <summary>
-    ///     Computes grayscale heightmap and water mask from a list of cells.
-    ///     Stage 1 of the two-stage pipeline. Can be called from a background thread.
-    /// </summary>
-    internal static (byte[] Grayscale, byte[] WaterMask, int Width, int Height, int MinCellX, int MaxCellY)?
-        ComputeHeightmapData(List<CellRecord> cellSource, float? defaultWaterHeight = null)
-    {
-        var cells = cellSource
-            .Where(c => c.Heightmap != null && c.GridX.HasValue && c.GridY.HasValue)
-            .ToList();
-
-        if (cells.Count == 0)
-        {
-            return null;
-        }
-
-        var minX = cells.Min(c => c.GridX!.Value);
-        var maxX = cells.Max(c => c.GridX!.Value);
-        var minY = cells.Min(c => c.GridY!.Value);
-        var maxY = cells.Max(c => c.GridY!.Value);
-        var gridW = maxX - minX + 1;
-        var gridH = maxY - minY + 1;
-        var imgW = gridW * HmGridSize;
-        var imgH = gridH * HmGridSize;
-
-        // Compute global height range
-        var globalMin = float.MaxValue;
-        var globalMax = float.MinValue;
-        var heightCache = new Dictionary<CellRecord, float[,]>();
-
-        foreach (var cell in cells)
-        {
-            var heights = cell.Heightmap!.CalculateHeights();
-            heightCache[cell] = heights;
-            for (var y = 0; y < HmGridSize; y++)
-            {
-                for (var x = 0; x < HmGridSize; x++)
-                {
-                    var h = heights[y, x];
-                    if (h < globalMin)
-                    {
-                        globalMin = h;
-                    }
-
-                    if (h > globalMax)
-                    {
-                        globalMax = h;
-                    }
-                }
-            }
-        }
-
-        var globalRange = globalMax - globalMin;
-        if (globalRange < 0.001f)
-        {
-            globalRange = 1f;
-        }
-
-        // Compute grayscale and water mask
-        var grayscale = new byte[imgW * imgH];
-        var waterMask = new byte[imgW * imgH];
-
-        foreach (var cell in cells)
-        {
-            var heights = heightCache[cell];
-            var imgCellX = cell.GridX!.Value - minX;
-            var imgCellY = maxY - cell.GridY!.Value;
-
-            // Determine effective water height: cell-specific or worldspace default
-            var waterH = cell.WaterHeight;
-            if (!waterH.HasValue || waterH.Value is not (> -1e6f and < 1e6f))
-            {
-                waterH = defaultWaterHeight;
-            }
-
-            for (var py = 0; py < HmGridSize; py++)
-            {
-                for (var px = 0; px < HmGridSize; px++)
-                {
-                    var height = heights[HmGridSize - 1 - py, px];
-                    var normalized = (height - globalMin) / globalRange;
-                    var gray = (byte)(Math.Clamp(normalized, 0f, 1f) * 255);
-
-                    var imgX = imgCellX * HmGridSize + px;
-                    var imgY = imgCellY * HmGridSize + py;
-                    var idx = imgY * imgW + imgX;
-                    grayscale[idx] = gray;
-
-                    // Solid water: binary below/above
-                    if (waterH.HasValue && waterH.Value is > -1e6f and < 1e6f &&
-                        height < waterH.Value)
-                    {
-                        waterMask[idx] = 180;
-                    }
-                }
-            }
-        }
-
-        BlurWaterMask(waterMask, imgW, imgH);
-
-        return (grayscale, waterMask, imgW, imgH, minX, maxY);
-    }
-
-    /// <summary>
-    ///     Applies color tint and water overlay to grayscale heightmap data.
-    ///     Stage 2 of the two-stage pipeline. Fast enough for UI thread (no height recalculation).
-    /// </summary>
-    internal static byte[] ApplyTintAndWater(
-        byte[] grayscale, byte[] waterMask, int width, int height,
-        HeightmapColorScheme scheme, bool showWater, byte alpha = 255)
-    {
-        var pixelCount = width * height;
-        var rgba = new byte[pixelCount * 4];
-
-        // Pre-compute tint multipliers (0..1 range)
-        var tR = scheme.R / 255f;
-        var tG = scheme.G / 255f;
-        var tB = scheme.B / 255f;
-
-        // Water color (untinted)
-        const byte waterR = 30, waterG = 55, waterB = 120;
-
-        for (var i = 0; i < pixelCount; i++)
-        {
-            var gray = grayscale[i];
-
-            // Apply tint: grayscale * tint color
-            var r = (byte)(gray * tR);
-            var g = (byte)(gray * tG);
-            var b = (byte)(gray * tB);
-
-            // Apply water overlay (untinted, proportional blend from blurred mask)
-            if (showWater && waterMask[i] > 0)
-            {
-                var waterFactor = waterMask[i] / 255f;
-                r = (byte)(r + (waterR - r) * waterFactor);
-                g = (byte)(g + (waterG - g) * waterFactor);
-                b = (byte)(b + (waterB - b) * waterFactor);
-            }
-
-            var idx = i * 4;
-            rgba[idx] = r;
-            rgba[idx + 1] = g;
-            rgba[idx + 2] = b;
-            rgba[idx + 3] = alpha;
-        }
-
-        return rgba;
-    }
-
-    /// <summary>
-    ///     Applies a 3x3 box blur to the water mask to smooth hard binary edges.
-    /// </summary>
-    internal static void BlurWaterMask(byte[] mask, int width, int height)
-    {
-        var blurred = new byte[mask.Length];
-        for (var y = 0; y < height; y++)
-        {
-            for (var x = 0; x < width; x++)
-            {
-                var sum = 0;
-                var count = 0;
-                var y0 = Math.Max(0, y - 1);
-                var y1 = Math.Min(height - 1, y + 1);
-                var x0 = Math.Max(0, x - 1);
-                var x1 = Math.Min(width - 1, x + 1);
-
-                for (var ny = y0; ny <= y1; ny++)
-                {
-                    for (var nx = x0; nx <= x1; nx++)
-                    {
-                        sum += mask[ny * width + nx];
-                        count++;
-                    }
-                }
-
-                blurred[y * width + x] = (byte)(sum / count);
-            }
-        }
-
-        Array.Copy(blurred, mask, mask.Length);
     }
 
     private void BuildCellHeightmapBitmap(CanvasControl canvas, CellRecord cell)
@@ -1674,9 +1460,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             }
         }
 
-        BlurWaterMask(waterMask, HmGridSize, HmGridSize);
+        HeightmapRenderer.BlurWaterMask(waterMask, HmGridSize, HmGridSize);
 
-        var pixels = ApplyTintAndWater(grayscale, waterMask, HmGridSize, HmGridSize,
+        var pixels = HeightmapRenderer.ApplyTintAndWater(grayscale, waterMask, HmGridSize, HmGridSize,
             _currentColorScheme, _showWater, alpha: 200);
 
         _cellHeightmapBitmap = CanvasBitmap.CreateFromBytes(
@@ -2373,7 +2159,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         // Sort by group, then by grid coordinates
         var sorted = items
-            .OrderBy(i => GetGroupSortOrder(i.Group))
+            .OrderBy(i => WorldMapColors.GetGroupSortOrder(i.Group))
             .ThenBy(i => i.Group)
             .ThenBy(i => i.Cell.GridX ?? int.MaxValue)
             .ThenBy(i => i.Cell.GridY ?? int.MaxValue);
@@ -2608,104 +2394,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         };
     }
 
-    internal static string GetCategoryDisplayName(PlacedObjectCategory category) => category switch
-    {
-        PlacedObjectCategory.Npc => "NPC",
-        PlacedObjectCategory.MapMarker => "Map Marker",
-        PlacedObjectCategory.Landscape => "Landscape",
-        PlacedObjectCategory.Plants => "Plants",
-        PlacedObjectCategory.Effects => "Effects",
-        PlacedObjectCategory.Vehicles => "Vehicles",
-        PlacedObjectCategory.Traps => "Traps",
-        _ => category.ToString()
-    };
-
-    private static Color GetCategoryColor(PlacedObjectCategory category) =>
-        CategoryColors.GetValueOrDefault(category, Color.FromArgb(255, 80, 80, 80));
-
-    /// <summary>
-    ///     Builds perceptually-uniform OKLCH colors for world map categories.
-    ///     Pins 3 semantic hues (Creature=red, Plants=green, NPC=blue),
-    ///     keeps MapMarker=white and Unknown=dark gray, then distributes the
-    ///     remaining 15 categories across 3 hue arcs with lightness cycling.
-    ///     Landscape is auto-generated (not pinned) because the default amber
-    ///     heightmap tint would make a pinned amber/yellow Landscape blend in.
-    /// </summary>
-    private static FrozenDictionary<PlacedObjectCategory, Color> BuildWorldCategoryColors()
-    {
-        ReadOnlySpan<double> lightnessTiers = [0.62, 0.72, 0.78];
-        const double chroma = 0.22;
-        const double creatureHue = 25.0;
-        const double plantsHue = 140.0;
-        const double npcHue = 220.0;
-
-        var colors = new Dictionary<PlacedObjectCategory, Color>
-        {
-            [PlacedObjectCategory.Creature] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, creatureHue)),
-            [PlacedObjectCategory.Plants] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, plantsHue)),
-            [PlacedObjectCategory.Npc] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, npcHue)),
-            [PlacedObjectCategory.MapMarker] = Color.FromArgb(255, 255, 255, 255),
-            [PlacedObjectCategory.Unknown] = Color.FromArgb(255, 80, 80, 80)
-        };
-
-        // 15 remaining categories distributed across 3 hue arcs between pinned hues.
-        // Arc 1: 25°→140° (115°, 5 slots), Arc 2: 140°→220° (80°, 3 slots),
-        // Arc 3: 220°→385° (165°, 7 slots). ~20° step in each arc.
-        // Ordering based on WastelandNV counts: top categories (Landscape 48%,
-        // Clutter 12%, Architecture 10%, Static 4%) placed in separate arcs.
-        PlacedObjectCategory[] remaining =
-        [
-            // Arc 1 (25°→140°): warm orange → yellow-green
-            PlacedObjectCategory.Architecture, PlacedObjectCategory.Effects,
-            PlacedObjectCategory.Dungeon, PlacedObjectCategory.Furniture,
-            PlacedObjectCategory.Vehicles,
-            // Arc 2 (140°→220°): teal → blue
-            PlacedObjectCategory.Clutter, PlacedObjectCategory.Static,
-            PlacedObjectCategory.Sound,
-            // Arc 3 (220°→385°): blue → purple → magenta
-            PlacedObjectCategory.Landscape, PlacedObjectCategory.Item,
-            PlacedObjectCategory.Activator, PlacedObjectCategory.Container,
-            PlacedObjectCategory.Door, PlacedObjectCategory.Light,
-            PlacedObjectCategory.Traps
-        ];
-
-        (double start, double end, int count)[] arcs =
-        [
-            (creatureHue, plantsHue, 5),
-            (plantsHue, npcHue, 3),
-            (npcHue, creatureHue + 360, 7)
-        ];
-
-        var idx = 0;
-        foreach (var (start, end, count) in arcs)
-        {
-            var step = (end - start) / (count + 1);
-            for (var i = 1; i <= count; i++)
-            {
-                var hue = (start + step * i) % 360.0;
-                var lightness = lightnessTiers[idx % lightnessTiers.Length];
-                colors[remaining[idx]] = ArgbToColor(FormatRegistry.OklchToArgb(lightness, chroma, hue));
-                idx++;
-            }
-        }
-
-        return colors.ToFrozenDictionary();
-    }
-
-    private static Color ArgbToColor(uint argb) => Color.FromArgb(
-        (byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
-
-    private static string GetMarkerGlyph(MapMarkerType? markerType) =>
-        MapExportLayoutEngine.GetMarkerGlyph(markerType);
-
-    private static Color GetMarkerColor(MapMarkerType? markerType)
-    {
-        var (r, g, b) = MapExportLayoutEngine.GetMarkerColor(markerType);
-        return Color.FromArgb(255, r, g, b);
-    }
-
-    private static Color WithAlpha(Color c, byte alpha) => Color.FromArgb(alpha, c.R, c.G, c.B);
-
     /// <summary>Load embedded map marker icon PNGs into CanvasBitmaps (once per device).</summary>
     private void EnsureMarkerIcons(ICanvasResourceCreator resourceCreator)
     {
@@ -2737,21 +2425,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     }
 
     /// <summary>Draw a white-on-transparent icon tinted to the given color.</summary>
-    private static void DrawTintedIcon(CanvasDrawingSession ds, CanvasBitmap icon, Rect destRect, Color tint)
-    {
-        using var tintEffect = new ColorMatrixEffect
-        {
-            Source = icon,
-            ColorMatrix = new Matrix5x4
-            {
-                // Multiply RGB by tint (white → tint color), preserve alpha
-                M11 = tint.R / 255f, M22 = tint.G / 255f, M33 = tint.B / 255f, M44 = 1f
-            }
-        };
-        var sourceRect = new Rect(0, 0, icon.SizeInPixels.Width, icon.SizeInPixels.Height);
-        ds.DrawImage(tintEffect, destRect, sourceRect);
-    }
-
     private void DisposeMarkerIcons()
     {
         if (_markerIconBitmaps != null)
@@ -2763,31 +2436,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             _markerIconBitmaps = null;
         }
-    }
-
-    private static int GetGroupSortOrder(string group) => group switch
-    {
-        "Unknown" => 2,
-        "Interior" => 1,
-        _ => 0
-    };
-
-    /// <summary>
-    ///     Format worldspace name as "Display Name (EditorId)" when both are available
-    ///     and different, otherwise just the best available name.
-    /// </summary>
-    private static string FormatWorldspaceName(WorldspaceRecord ws)
-    {
-        var fullName = ws.FullName;
-        var editorId = ws.EditorId;
-
-        if (!string.IsNullOrEmpty(fullName) && !string.IsNullOrEmpty(editorId) &&
-            !string.Equals(fullName, editorId, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"{fullName} ({editorId})";
-        }
-
-        return fullName ?? editorId ?? $"0x{ws.FormId:X8}";
     }
 
     // ========================================================================
@@ -2841,7 +2489,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             }
 
             // 2. Cell grid (no viewport culling)
-            DrawExportCellGrid(ds, minGridX, maxGridX, minGridY, maxGridY, pixelsPerWorldUnit);
+            WorldMapDrawingHelper.DrawExportCellGrid(ds, minGridX, maxGridX, minGridY, maxGridY, pixelsPerWorldUnit);
 
             // 3. Map markers (circles + glyphs in world space, labels in pixel space)
             DrawExportMapMarkers(ds, device, pixelsPerWorldUnit, imageW, imageH,
@@ -2850,29 +2498,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
         await renderTarget.SaveAsync(stream.AsRandomAccessStream(), CanvasBitmapFileFormat.Png);
-    }
-
-    private static void DrawExportCellGrid(CanvasDrawingSession ds,
-        int minGridX, int maxGridX, int minGridY, int maxGridY, float pixelsPerWorldUnit)
-    {
-        var gridColor = Color.FromArgb(40, 255, 255, 255);
-        var lineWidth = 0.5f / pixelsPerWorldUnit;
-
-        for (var cx = minGridX; cx <= maxGridX + 1; cx++)
-        {
-            var worldX = cx * CellWorldSize;
-            var yStart = -(maxGridY + 1) * CellWorldSize;
-            var yEnd = -minGridY * CellWorldSize;
-            ds.DrawLine(worldX, yStart, worldX, yEnd, gridColor, lineWidth);
-        }
-
-        for (var cy = minGridY; cy <= maxGridY + 1; cy++)
-        {
-            var worldY = -cy * CellWorldSize;
-            var xStart = minGridX * CellWorldSize;
-            var xEnd = (maxGridX + 1) * CellWorldSize;
-            ds.DrawLine(xStart, worldY, xEnd, worldY, gridColor, lineWidth);
-        }
     }
 
     private void DrawExportMapMarkers(CanvasDrawingSession ds, CanvasDevice device,
@@ -2971,15 +2596,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         if (marker.MarkerType.HasValue &&
             _markerIconBitmaps?.TryGetValue(marker.MarkerType.Value, out var icon) == true)
         {
-            DrawTintedIcon(ds, icon, destRect, tint);
+            WorldMapDrawingHelper.DrawTintedIcon(ds, icon, destRect, tint);
         }
         else
         {
             // Fallback: colored circle + glyph for unmapped marker types
-            var color = GetMarkerColor(marker.MarkerType);
-            ds.FillCircle(pos, worldRadius, WithAlpha(color, 200));
+            var color = WorldMapColors.GetMarkerColor(marker.MarkerType);
+            ds.FillCircle(pos, worldRadius, WorldMapColors.WithAlpha(color, 200));
             ds.DrawCircle(pos, worldRadius, Colors.White, 1f / pixelsPerWorldUnit);
-            var glyph = GetMarkerGlyph(marker.MarkerType);
+            var glyph = WorldMapColors.GetMarkerGlyph(marker.MarkerType);
             using var glyphFormat = new CanvasTextFormat
             {
                 FontSize = labelFontSize / pixelsPerWorldUnit,

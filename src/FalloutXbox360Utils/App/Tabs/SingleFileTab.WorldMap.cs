@@ -78,7 +78,7 @@ public sealed partial class SingleFileTab
                 if (semantic.Worldspaces.Count > 0 && semantic.Worldspaces[0].Cells.Count > 0)
                 {
                     defaultWaterHeight = semantic.Worldspaces[0].DefaultWaterHeight;
-                    var result = WorldMapControl.ComputeHeightmapData(
+                    var result = HeightmapRenderer.ComputeHeightmapData(
                         semantic.Worldspaces[0].Cells, defaultWaterHeight);
                     if (result.HasValue)
                     {
@@ -255,7 +255,7 @@ public sealed partial class SingleFileTab
                 if (suppRecords.Worldspaces.Count > 0 && suppRecords.Worldspaces[0].Cells.Count > 0)
                 {
                     defaultWaterHeight = suppRecords.Worldspaces[0].DefaultWaterHeight;
-                    var hmResult = WorldMapControl.ComputeHeightmapData(
+                    var hmResult = HeightmapRenderer.ComputeHeightmapData(
                         suppRecords.Worldspaces[0].Cells, defaultWaterHeight);
                     if (hmResult.HasValue)
                     {
@@ -640,7 +640,7 @@ public sealed partial class SingleFileTab
         }
         else if (_session.WorldViewData?.CategoryIndex.TryGetValue(obj.BaseFormId, out var titleCat) == true)
         {
-            prefix = WorldMapControl.GetCategoryDisplayName(titleCat);
+            prefix = WorldMapColors.GetCategoryDisplayName(titleCat);
         }
         else
         {
@@ -692,7 +692,7 @@ public sealed partial class SingleFileTab
             properties.Add(new EsmPropertyEntry
             {
                 Name = "Category",
-                Value = WorldMapControl.GetCategoryDisplayName(objCategory),
+                Value = WorldMapColors.GetCategoryDisplayName(objCategory),
                 Category = "Identity"
             });
         }
