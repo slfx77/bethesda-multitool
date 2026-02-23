@@ -22,7 +22,7 @@ internal static class GeckWorldWriter
             var baseStr = !string.IsNullOrEmpty(obj.BaseEditorId)
                 ? obj.BaseEditorId
                 : resolver.GetBestName(obj.BaseFormId)
-                  ?? GeckReportGenerator.FormatFormId(obj.BaseFormId);
+                  ?? GeckReportHelpers.FormatFormId(obj.BaseFormId);
             var scaleStr = Math.Abs(obj.Scale - 1.0f) > 0.01f ? $" scale={obj.Scale:F2}" : "";
             sb.AppendLine($"  - {baseStr} ({obj.RecordType})");
             sb.Append($"      at ({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1}){scaleStr}");
@@ -44,7 +44,7 @@ internal static class GeckWorldWriter
 
     internal static void AppendCellsSection(StringBuilder sb, List<CellRecord> cells, FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Cells ({cells.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Cells ({cells.Count})");
 
         // Separate interior and exterior cells
         var exteriorCells = cells.Where(c => !c.IsInterior && c.GridX.HasValue).ToList();
@@ -58,9 +58,9 @@ internal static class GeckWorldWriter
             foreach (var cell in exteriorCells.OrderBy(c => c.GridX).ThenBy(c => c.GridY))
             {
                 var gridStr = $"({cell.GridX}, {cell.GridY})";
-                GeckReportGenerator.AppendRecordHeader(sb, $"CELL {gridStr}", cell.EditorId);
+                GeckReportHelpers.AppendRecordHeader(sb, $"CELL {gridStr}", cell.EditorId);
 
-                sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(cell.FormId)}");
+                sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(cell.FormId)}");
                 sb.AppendLine($"Editor ID:      {cell.EditorId ?? "(none)"}");
                 sb.AppendLine($"Display Name:   {cell.FullName ?? "(none)"}");
                 sb.AppendLine($"Grid:           {cell.GridX}, {cell.GridY}");
@@ -86,9 +86,9 @@ internal static class GeckWorldWriter
 
             foreach (var cell in interiorCells.OrderBy(c => c.EditorId ?? ""))
             {
-                GeckReportGenerator.AppendRecordHeader(sb, "CELL (Interior)", cell.EditorId);
+                GeckReportHelpers.AppendRecordHeader(sb, "CELL (Interior)", cell.EditorId);
 
-                sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(cell.FormId)}");
+                sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(cell.FormId)}");
                 sb.AppendLine($"Editor ID:      {cell.EditorId ?? "(none)"}");
                 sb.AppendLine($"Display Name:   {cell.FullName ?? "(none)"}");
                 sb.AppendLine($"Flags:          0x{cell.Flags:X2}");
@@ -113,13 +113,13 @@ internal static class GeckWorldWriter
     internal static void AppendWorldspacesSection(StringBuilder sb, List<WorldspaceRecord> worldspaces,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Worldspaces ({worldspaces.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Worldspaces ({worldspaces.Count})");
 
         foreach (var wrld in worldspaces.OrderBy(w => w.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "WRLD", wrld.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "WRLD", wrld.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(wrld.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(wrld.FormId)}");
             sb.AppendLine($"Editor ID:      {wrld.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {wrld.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(wrld.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -186,7 +186,7 @@ internal static class GeckWorldWriter
     internal static void AppendMapMarkersSection(StringBuilder sb, List<PlacedReference> markers,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Map Markers ({markers.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Map Markers ({markers.Count})");
         sb.AppendLine();
 
         var byType = markers.Where(m => m.MarkerType != null)
@@ -215,10 +215,10 @@ internal static class GeckWorldWriter
             var name = marker.MarkerName
                        ?? marker.BaseEditorId
                        ?? resolver.GetBestName(marker.BaseFormId)
-                       ?? GeckReportGenerator.FormatFormId(marker.FormId);
+                       ?? GeckReportHelpers.FormatFormId(marker.FormId);
             var typeName = marker.MarkerType?.ToString() ?? "(unknown)";
             sb.AppendLine(
-                $"  {GeckReportGenerator.Truncate(name, 32),-32} {typeName,-18} {marker.X,10:F1} {marker.Y,10:F1} {marker.Z,8:F1}  [{GeckReportGenerator.FormatFormId(marker.FormId)}]");
+                $"  {GeckReportHelpers.Truncate(name, 32),-32} {typeName,-18} {marker.X,10:F1} {marker.Y,10:F1} {marker.Z,8:F1}  [{GeckReportHelpers.FormatFormId(marker.FormId)}]");
         }
 
         sb.AppendLine();
@@ -243,7 +243,7 @@ internal static class GeckWorldWriter
             .ToList();
 
         var sb = new StringBuilder();
-        GeckReportGenerator.AppendSectionHeader(sb, $"Persistent Objects ({persistent.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Persistent Objects ({persistent.Count})");
         sb.AppendLine();
 
         var grouped = persistent
@@ -266,12 +266,12 @@ internal static class GeckWorldWriter
             {
                 var baseName = obj.BaseEditorId
                                ?? res.GetBestName(obj.BaseFormId)
-                               ?? GeckReportGenerator.FormatFormId(obj.BaseFormId);
-                var cellName = cell.EditorId ?? GeckReportGenerator.FormatFormId(cell.FormId);
+                               ?? GeckReportHelpers.FormatFormId(obj.BaseFormId);
+                var cellName = cell.EditorId ?? GeckReportHelpers.FormatFormId(cell.FormId);
                 var scaleStr = Math.Abs(obj.Scale - 1.0f) > 0.01f ? $" scale={obj.Scale:F2}" : "";
                 var disabledStr = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
 
-                sb.AppendLine($"    {GeckReportGenerator.FormatFormId(obj.FormId)}  {baseName}{disabledStr}");
+                sb.AppendLine($"    {GeckReportHelpers.FormatFormId(obj.FormId)}  {baseName}{disabledStr}");
                 sb.AppendLine(
                     $"      pos=({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1})  rot=({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3}){scaleStr}");
                 sb.AppendLine($"      cell={cellName}");
@@ -286,7 +286,7 @@ internal static class GeckWorldWriter
     internal static void AppendExplosionsSection(StringBuilder sb, List<ExplosionRecord> explosions,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Explosions ({explosions.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Explosions ({explosions.Count})");
         sb.AppendLine();
 
         sb.AppendLine($"Total Explosions: {explosions.Count:N0}");
@@ -306,7 +306,7 @@ internal static class GeckWorldWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  EXPLOSION: {expl.EditorId ?? "(none)"} \u2014 {expl.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(expl.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(expl.FormId)}");
             sb.AppendLine($"  \u2500\u2500 Stats {new string('\u2500', 70)}");
             sb.AppendLine($"  Force:       {expl.Force:F1}");
             sb.AppendLine($"  Damage:      {expl.Damage:F1}");
@@ -362,7 +362,7 @@ internal static class GeckWorldWriter
     internal static void AppendProjectilesSection(StringBuilder sb, List<ProjectileRecord> projectiles,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Projectiles ({projectiles.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Projectiles ({projectiles.Count})");
         sb.AppendLine();
 
         var byType = projectiles.GroupBy(p => p.TypeName).OrderByDescending(g => g.Count()).ToList();
@@ -385,7 +385,7 @@ internal static class GeckWorldWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  PROJECTILE: {proj.EditorId ?? "(none)"} \u2014 {proj.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:       {GeckReportGenerator.FormatFormId(proj.FormId)}");
+            sb.AppendLine($"  FormID:       {GeckReportHelpers.FormatFormId(proj.FormId)}");
             sb.AppendLine($"  Type:         {proj.TypeName}");
             sb.AppendLine($"  \u2500\u2500 Physics {new string('\u2500', 68)}");
             sb.AppendLine($"  Speed:        {proj.Speed:F1}");

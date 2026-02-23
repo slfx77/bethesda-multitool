@@ -126,7 +126,7 @@ internal static class DialogueTreeCommand
         }
 
         var resolver = result.CreateResolver(lookup);
-        var report = GeckReportGenerator.GenerateDialogueTreeReport(tree, resolver);
+        var report = GeckDialogueWriter.GenerateDialogueTreeReport(tree, resolver);
 
         if (!string.IsNullOrEmpty(output))
         {

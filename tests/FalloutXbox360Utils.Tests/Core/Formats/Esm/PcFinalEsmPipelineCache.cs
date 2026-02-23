@@ -31,10 +31,10 @@ internal static class PcFinalEsmPipelineCache
         var (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo) =
             EsmFileAnalyzer.BuildAllMaps(parsedRecords, grupHeaders);
 
-        var scanResult = EsmFileAnalyzer.ConvertToScanResult(
+        var scanResult = EsmDataExtractor.ConvertToScanResult(
             parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo);
 
-        EsmFileAnalyzer.ExtractRefrRecordsFromParsed(scanResult, parsedRecords, isBigEndian);
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, parsedRecords, isBigEndian);
 
         using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0,
             MemoryMappedFileAccess.Read);

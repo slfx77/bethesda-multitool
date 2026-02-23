@@ -1,48 +1,15 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
-using System.CommandLine;
 using System.Text;
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class CompareCommands
+/// <summary>
+///     Compare CELL FormIDs between two ESM files (flat scan).
+/// </summary>
+internal static class CompareCellsCommand
 {
-    public static Command CreateCompareCellsCommand() => CreateCompareCellsCommandCore("compare-cells", "Compare CELL FormIDs between two ESM files (flat scan)");
-
-    /// <summary>Creates a compare-cells command named "cells" for use as a subcommand.</summary>
-    public static Command CreateCellsCommand() => CreateCompareCellsCommandCore("cells", "Compare CELL FormIDs between two ESM files (flat scan)");
-
-    private static Command CreateCompareCellsCommandCore(string name, string description)
-    {
-        var command = new Command(name, description);
-
-        var leftArg = new Argument<string>("left") { Description = "Path to the first ESM file" };
-        var rightArg = new Argument<string>("right") { Description = "Path to the second ESM file" };
-        var limitOption = new Option<int>("-l", "--limit")
-        {
-            Description = "Maximum missing cells to display per side (0 = unlimited)",
-            DefaultValueFactory = _ => 50
-        };
-        var outputOption = new Option<string?>("-o", "--output")
-        {
-            Description = "Write missing cells to a TSV file"
-        };
-
-        command.Arguments.Add(leftArg);
-        command.Arguments.Add(rightArg);
-        command.Options.Add(limitOption);
-        command.Options.Add(outputOption);
-
-        command.SetAction(parseResult => CompareCells(
-            parseResult.GetValue(leftArg)!,
-            parseResult.GetValue(rightArg)!,
-            parseResult.GetValue(limitOption),
-            parseResult.GetValue(outputOption)));
-
-        return command;
-    }
-
-    private static int CompareCells(string leftPath, string rightPath, int limit, string? outputPath)
+    internal static int CompareCells(string leftPath, string rightPath, int limit, string? outputPath)
     {
         var (left, right) = EsmFileLoader.LoadPair(leftPath, rightPath, false);
         if (left == null || right == null)

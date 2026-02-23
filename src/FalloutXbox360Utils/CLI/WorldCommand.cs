@@ -450,7 +450,7 @@ public static class WorldCommand
             var allCells = result.Cells
                 .Concat(result.Worldspaces.SelectMany(ws => ws.Cells))
                 .ToList();
-            var csv = CsvMiscWriter.GeneratePersistentObjectsCsv(allCells, resolver);
+            var csv = CsvSupplementalWriter.GeneratePersistentObjectsCsv(allCells, resolver);
             await File.WriteAllTextAsync(outputPath, csv, cancellationToken);
             AnsiConsole.MarkupLine(
                 $"[green]Exported {persistent.Count:N0} persistent objects to:[/] {outputPath}");

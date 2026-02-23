@@ -17,6 +17,10 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
+    // Shared layouts for weapon/container field reading.
+    private RuntimeItemLayouts? _layouts;
+    private RuntimeItemLayouts Layouts => _layouts ??= new RuntimeItemLayouts(_s);
+
     /// <summary>
     ///     Read extended weapon data from a runtime TESObjectWEAP struct.
     ///     Returns a WeaponRecord with combat stats, or null if validation fails.
@@ -29,7 +33,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
         }
 
         var offset = entry.TesFormOffset.Value;
-        if (offset + WeapStructSize > _context.FileSize)
+        if (offset + Layouts.WeapStructSize > _context.FileSize)
         {
             return null;
         }

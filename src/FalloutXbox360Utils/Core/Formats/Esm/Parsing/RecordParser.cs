@@ -39,6 +39,7 @@ public sealed class RecordParser
         _text = new TextRecordHandler(_context);
         _scripts = new ScriptRecordHandler(_context);
         _effects = new EffectRecordHandler(_context);
+        _combatEffects = new CombatEffectHandler(_context);
         _world = new WorldRecordHandler(_context);
         _misc = new MiscRecordHandler(_context);
         _miscBasicTypes = new MiscBasicTypeHandler(_context);
@@ -478,8 +479,8 @@ public sealed class RecordParser
         var recipes = _miscItems.ReconstructRecipes();
         var challenges = _miscBasicTypes.ReconstructChallenges();
         var reputations = _miscBasicTypes.ReconstructReputations();
-        var projectiles = _effects.ReconstructProjectiles();
-        var explosions = _effects.ReconstructExplosions();
+        var projectiles = _combatEffects.ReconstructProjectiles();
+        var explosions = _combatEffects.ReconstructExplosions();
         var messages = _text.ReconstructMessages();
         var classes = _miscBasicTypes.ReconstructClasses();
         var formLists = _miscCollections.ReconstructFormLists();
@@ -699,6 +700,7 @@ public sealed class RecordParser
     private readonly TextRecordHandler _text;
     private readonly ScriptRecordHandler _scripts;
     private readonly EffectRecordHandler _effects;
+    private readonly CombatEffectHandler _combatEffects;
     private readonly WorldRecordHandler _world;
     private readonly MiscRecordHandler _misc;
     private readonly MiscBasicTypeHandler _miscBasicTypes;
@@ -869,12 +871,12 @@ public sealed class RecordParser
 
     public List<ProjectileRecord> ReconstructProjectiles()
     {
-        return _effects.ReconstructProjectiles();
+        return _combatEffects.ReconstructProjectiles();
     }
 
     public List<ExplosionRecord> ReconstructExplosions()
     {
-        return _effects.ReconstructExplosions();
+        return _combatEffects.ReconstructExplosions();
     }
 
     // World

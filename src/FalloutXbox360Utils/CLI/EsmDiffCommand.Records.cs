@@ -2,6 +2,7 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using Spectre.Console;
 using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.DiffHelpers;
+using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.DiffPatternAnalyzer;
 
 namespace FalloutXbox360Utils.CLI;
 

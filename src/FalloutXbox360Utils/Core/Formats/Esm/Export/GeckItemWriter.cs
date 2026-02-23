@@ -12,13 +12,13 @@ internal static class GeckItemWriter
     internal static void AppendWeaponsSection(StringBuilder sb, List<WeaponRecord> weapons,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Weapons ({weapons.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Weapons ({weapons.Count})");
 
         foreach (var weapon in weapons.OrderBy(w => w.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "WEAP", weapon.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "WEAP", weapon.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(weapon.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(weapon.FormId)}");
             sb.AppendLine($"Editor ID:      {weapon.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {weapon.FullName ?? "(none)"}");
             sb.AppendLine($"Type:           {weapon.WeaponTypeName}");
@@ -174,13 +174,13 @@ internal static class GeckItemWriter
         var title = !string.IsNullOrEmpty(weapon.FullName)
             ? $"WEAPON: {weapon.EditorId ?? "(unknown)"} \u2014 {weapon.FullName}"
             : $"WEAPON: {weapon.EditorId ?? "(unknown)"}";
-        sb.AppendLine(new string(GeckReportGenerator.SeparatorChar, GeckReportGenerator.SeparatorWidth));
-        var padding = (GeckReportGenerator.SeparatorWidth - title.Length) / 2;
+        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
+        var padding = (GeckReportHelpers.SeparatorWidth - title.Length) / 2;
         sb.AppendLine(new string(' ', Math.Max(0, padding)) + title);
-        sb.AppendLine(new string(GeckReportGenerator.SeparatorChar, GeckReportGenerator.SeparatorWidth));
+        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
 
         // Identity
-        sb.AppendLine($"  FormID:         {GeckReportGenerator.FormatFormId(weapon.FormId)}");
+        sb.AppendLine($"  FormID:         {GeckReportHelpers.FormatFormId(weapon.FormId)}");
         sb.AppendLine($"  Editor ID:      {weapon.EditorId ?? "(none)"}");
         sb.AppendLine($"  Display Name:   {weapon.FullName ?? "(none)"}");
         sb.AppendLine($"  Type:           {weapon.WeaponTypeName}");
@@ -331,15 +331,15 @@ internal static class GeckItemWriter
             sb.AppendLine();
             sb.AppendLine($"  \u2500\u2500 Sound Effects {new string('\u2500', 65)}");
 
-            GeckReportGenerator.AppendSoundLine(sb, "Fire (3D):", weapon.FireSound3DFormId, resolver);
-            GeckReportGenerator.AppendSoundLine(sb, "Fire (Distant):", weapon.FireSoundDistFormId, resolver);
-            GeckReportGenerator.AppendSoundLine(sb, "Fire (2D):", weapon.FireSound2DFormId, resolver);
-            GeckReportGenerator.AppendSoundLine(sb, "Dry Fire:", weapon.DryFireSoundFormId, resolver);
-            GeckReportGenerator.AppendSoundLine(sb, "Idle:", weapon.IdleSoundFormId, resolver);
-            GeckReportGenerator.AppendSoundLine(sb, "Equip:", weapon.EquipSoundFormId, resolver);
-            GeckReportGenerator.AppendSoundLine(sb, "Unequip:", weapon.UnequipSoundFormId, resolver);
-            GeckReportGenerator.AppendSoundLine(sb, "Pickup:", weapon.PickupSoundFormId, resolver);
-            GeckReportGenerator.AppendSoundLine(sb, "Putdown:", weapon.PutdownSoundFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Fire (3D):", weapon.FireSound3DFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Fire (Distant):", weapon.FireSoundDistFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Fire (2D):", weapon.FireSound2DFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Dry Fire:", weapon.DryFireSoundFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Idle:", weapon.IdleSoundFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Equip:", weapon.EquipSoundFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Unequip:", weapon.UnequipSoundFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Pickup:", weapon.PickupSoundFormId, resolver);
+            GeckReportHelpers.AppendSoundLine(sb, "Putdown:", weapon.PutdownSoundFormId, resolver);
         }
 
         // Model
@@ -371,7 +371,7 @@ internal static class GeckItemWriter
         FormIdResolver resolver)
     {
         var sb = new StringBuilder();
-        GeckReportGenerator.AppendHeader(sb, $"Weapon Report ({weapons.Count:N0} Weapons)");
+        GeckReportHelpers.AppendHeader(sb, $"Weapon Report ({weapons.Count:N0} Weapons)");
         sb.AppendLine();
         sb.AppendLine($"Total Weapons: {weapons.Count:N0}");
 
@@ -408,13 +408,13 @@ internal static class GeckItemWriter
 
     internal static void AppendArmorSection(StringBuilder sb, List<ArmorRecord> armor)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Armor ({armor.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Armor ({armor.Count})");
 
         foreach (var item in armor.OrderBy(a => a.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "ARMO", item.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "ARMO", item.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(item.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(item.FormId)}");
             sb.AppendLine($"Editor ID:      {item.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {item.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(item.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -447,13 +447,13 @@ internal static class GeckItemWriter
     internal static void AppendAmmoSection(StringBuilder sb, List<AmmoRecord> ammo,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Ammunition ({ammo.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Ammunition ({ammo.Count})");
 
         foreach (var item in ammo.OrderBy(a => a.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "AMMO", item.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "AMMO", item.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(item.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(item.FormId)}");
             sb.AppendLine($"Editor ID:      {item.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {item.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(item.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -491,13 +491,13 @@ internal static class GeckItemWriter
     internal static void AppendConsumablesSection(StringBuilder sb, List<ConsumableRecord> consumables,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Consumables ({consumables.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Consumables ({consumables.Count})");
 
         foreach (var item in consumables.OrderBy(c => c.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "ALCH", item.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "ALCH", item.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(item.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(item.FormId)}");
             sb.AppendLine($"Editor ID:      {item.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {item.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(item.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -544,13 +544,13 @@ internal static class GeckItemWriter
 
     internal static void AppendMiscItemsSection(StringBuilder sb, List<MiscItemRecord> miscItems)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Miscellaneous Items ({miscItems.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Miscellaneous Items ({miscItems.Count})");
 
         foreach (var item in miscItems.OrderBy(m => m.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "MISC", item.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "MISC", item.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(item.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(item.FormId)}");
             sb.AppendLine($"Editor ID:      {item.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {item.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(item.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -581,13 +581,13 @@ internal static class GeckItemWriter
 
     internal static void AppendKeysSection(StringBuilder sb, List<KeyRecord> keys)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Keys ({keys.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Keys ({keys.Count})");
 
         foreach (var key in keys.OrderBy(k => k.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "KEYM", key.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "KEYM", key.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(key.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(key.FormId)}");
             sb.AppendLine($"Editor ID:      {key.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {key.FullName ?? "(none)"}");
             sb.AppendLine($"Value:          {key.Value} caps");
@@ -610,13 +610,13 @@ internal static class GeckItemWriter
     internal static void AppendContainersSection(StringBuilder sb, List<ContainerRecord> containers,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Containers ({containers.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Containers ({containers.Count})");
 
         foreach (var container in containers.OrderBy(c => c.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "CONT", container.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "CONT", container.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(container.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(container.FormId)}");
             sb.AppendLine($"Editor ID:      {container.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {container.FullName ?? "(none)"}");
             sb.AppendLine($"Respawns:       {(container.Respawns ? "Yes" : "No")}");
@@ -647,13 +647,13 @@ internal static class GeckItemWriter
         var title = !string.IsNullOrEmpty(container.FullName)
             ? $"CONTAINER: {container.EditorId ?? "(unknown)"} \u2014 {container.FullName}"
             : $"CONTAINER: {container.EditorId ?? "(unknown)"}";
-        sb.AppendLine(new string(GeckReportGenerator.SeparatorChar, GeckReportGenerator.SeparatorWidth));
-        var padding = (GeckReportGenerator.SeparatorWidth - title.Length) / 2;
+        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
+        var padding = (GeckReportHelpers.SeparatorWidth - title.Length) / 2;
         sb.AppendLine(new string(' ', Math.Max(0, padding)) + title);
-        sb.AppendLine(new string(GeckReportGenerator.SeparatorChar, GeckReportGenerator.SeparatorWidth));
+        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
 
         // Basic info
-        sb.AppendLine($"  FormID:         {GeckReportGenerator.FormatFormId(container.FormId)}");
+        sb.AppendLine($"  FormID:         {GeckReportHelpers.FormatFormId(container.FormId)}");
         sb.AppendLine($"  Editor ID:      {container.EditorId ?? "(none)"}");
         sb.AppendLine($"  Display Name:   {container.FullName ?? "(none)"}");
         sb.AppendLine($"  Respawns:       {(container.Respawns ? "Yes" : "No")}");
@@ -672,7 +672,7 @@ internal static class GeckItemWriter
                 var editorId = resolver.ResolveEditorId(item.ItemFormId);
                 var displayName = resolver.ResolveDisplayName(item.ItemFormId);
                 sb.AppendLine(
-                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {item.Count,5}");
+                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {item.Count,5}");
             }
         }
 
@@ -714,7 +714,7 @@ internal static class GeckItemWriter
         FormIdResolver resolver)
     {
         var sb = new StringBuilder();
-        GeckReportGenerator.AppendHeader(sb, $"Container Report ({containers.Count:N0} Containers)");
+        GeckReportHelpers.AppendHeader(sb, $"Container Report ({containers.Count:N0} Containers)");
         sb.AppendLine();
         sb.AppendLine($"Total Containers: {containers.Count:N0}");
         sb.AppendLine();
@@ -741,7 +741,7 @@ internal static class GeckItemWriter
     internal static void AppendRecipesSection(StringBuilder sb, List<RecipeRecord> recipes,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Recipes ({recipes.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Recipes ({recipes.Count})");
         sb.AppendLine();
 
         sb.AppendLine($"Total Recipes: {recipes.Count:N0}");
@@ -755,7 +755,7 @@ internal static class GeckItemWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  RECIPE: {recipe.EditorId ?? "(none)"} \u2014 {recipe.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:         {GeckReportGenerator.FormatFormId(recipe.FormId)}");
+            sb.AppendLine($"  FormID:         {GeckReportHelpers.FormatFormId(recipe.FormId)}");
             if (recipe.RequiredSkill >= 0)
             {
                 sb.AppendLine($"  Required Skill: {recipe.RequiredSkill} (level {recipe.RequiredSkillLevel})");
@@ -782,7 +782,7 @@ internal static class GeckItemWriter
                     var itemName = ing.ItemFormId != 0
                         ? resolver.FormatFull(ing.ItemFormId)
                         : "(none)";
-                    sb.AppendLine($"  {GeckReportGenerator.Truncate(itemName, 50),-50} {ing.Count,6}");
+                    sb.AppendLine($"  {GeckReportHelpers.Truncate(itemName, 50),-50} {ing.Count,6}");
                 }
             }
 
@@ -797,7 +797,7 @@ internal static class GeckItemWriter
                     var itemName = output.ItemFormId != 0
                         ? resolver.FormatFull(output.ItemFormId)
                         : "(none)";
-                    sb.AppendLine($"  {GeckReportGenerator.Truncate(itemName, 50),-50} {output.Count,6}");
+                    sb.AppendLine($"  {GeckReportHelpers.Truncate(itemName, 50),-50} {output.Count,6}");
                 }
             }
 
@@ -815,7 +815,7 @@ internal static class GeckItemWriter
 
     internal static void AppendWeaponModsSection(StringBuilder sb, List<WeaponModRecord> mods)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Weapon Mods ({mods.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Weapon Mods ({mods.Count})");
         sb.AppendLine();
 
         sb.AppendLine($"Total Weapon Mods: {mods.Count:N0}");
@@ -829,7 +829,7 @@ internal static class GeckItemWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  MOD: {mod.EditorId ?? "(none)"} \u2014 {mod.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(mod.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(mod.FormId)}");
             sb.AppendLine($"  Value:       {mod.Value}");
             sb.AppendLine($"  Weight:      {mod.Weight:F2}");
             if (!string.IsNullOrEmpty(mod.Description))

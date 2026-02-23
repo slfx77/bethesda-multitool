@@ -9,13 +9,13 @@ internal static class GeckFactionWriter
     internal static void AppendFactionsSection(StringBuilder sb, List<FactionRecord> factions,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Factions ({factions.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Factions ({factions.Count})");
 
         foreach (var faction in factions.OrderBy(f => f.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "FACT", faction.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "FACT", faction.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(faction.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(faction.FormId)}");
             sb.AppendLine($"Editor ID:      {faction.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {faction.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(faction.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -66,7 +66,7 @@ internal static class GeckFactionWriter
 
     internal static void AppendReputationsSection(StringBuilder sb, List<ReputationRecord> reputations)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Reputations ({reputations.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Reputations ({reputations.Count})");
         sb.AppendLine();
 
         sb.AppendLine($"Total Reputations: {reputations.Count:N0}");
@@ -76,9 +76,9 @@ internal static class GeckFactionWriter
 
         foreach (var rep in reputations.OrderBy(r => r.EditorId, StringComparer.OrdinalIgnoreCase))
         {
-            var name = rep.FullName ?? rep.EditorId ?? GeckReportGenerator.FormatFormId(rep.FormId);
+            var name = rep.FullName ?? rep.EditorId ?? GeckReportHelpers.FormatFormId(rep.FormId);
             sb.AppendLine(
-                $"  {GeckReportGenerator.Truncate(name, 40),-40} {rep.PositiveValue,10:F2} {rep.NegativeValue,10:F2}  [{GeckReportGenerator.FormatFormId(rep.FormId)}]");
+                $"  {GeckReportHelpers.Truncate(name, 40),-40} {rep.PositiveValue,10:F2} {rep.NegativeValue,10:F2}  [{GeckReportHelpers.FormatFormId(rep.FormId)}]");
         }
 
         sb.AppendLine();
@@ -94,7 +94,7 @@ internal static class GeckFactionWriter
     internal static void AppendChallengesSection(StringBuilder sb, List<ChallengeRecord> challenges,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Challenges ({challenges.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Challenges ({challenges.Count})");
         sb.AppendLine();
 
         var byType = challenges.GroupBy(c => c.TypeName).OrderByDescending(g => g.Count()).ToList();
@@ -111,7 +111,7 @@ internal static class GeckFactionWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  CHALLENGE: {chal.EditorId ?? "(none)"} \u2014 {chal.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(chal.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(chal.FormId)}");
             sb.AppendLine($"  Type:        {chal.TypeName}");
             sb.AppendLine($"  Threshold:   {chal.Threshold}");
             if (chal.Interval != 0)

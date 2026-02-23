@@ -4,9 +4,9 @@ namespace EsmAnalyzer.Commands;
 
 /// <summary>
 ///     Specialized comparison commands for ESM files.
-///     General comparison functionality is now in DiffCommands.
+///     Implementation methods are delegated to standalone command classes.
 /// </summary>
-public static partial class CompareCommands
+public static class CompareCommands
 {
     public static Command CreateCompareHeightmapsCommand() => CreateCompareHeightmapsCommandCore("compare-heightmaps", "Compare terrain heightmaps between two ESM files and generate teleport commands");
 
@@ -41,7 +41,7 @@ public static partial class CompareCommands
         command.Options.Add(maxOption);
         command.Options.Add(statsOption);
 
-        command.SetAction(parseResult => CompareHeightmaps(
+        command.SetAction(parseResult => CompareHeightmapsCommand.CompareHeightmaps(
             parseResult.GetValue(file1Arg)!,
             parseResult.GetValue(file2Arg)!,
             parseResult.GetValue(worldspaceOption),
@@ -73,11 +73,46 @@ public static partial class CompareCommands
         command.Options.Add(formIdOption);
         command.Options.Add(allOption);
 
-        command.SetAction(parseResult => CompareLand(
+        command.SetAction(parseResult => CompareLandCommand.CompareLand(
             parseResult.GetValue(xbox360Arg)!,
             parseResult.GetValue(pcArg)!,
             parseResult.GetValue(formIdOption),
             parseResult.GetValue(allOption)));
+
+        return command;
+    }
+
+    public static Command CreateCompareCellsCommand() => CreateCompareCellsCommandCore("compare-cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+
+    /// <summary>Creates a compare-cells command named "cells" for use as a subcommand.</summary>
+    public static Command CreateCellsCommand() => CreateCompareCellsCommandCore("cells", "Compare CELL FormIDs between two ESM files (flat scan)");
+
+    private static Command CreateCompareCellsCommandCore(string name, string description)
+    {
+        var command = new Command(name, description);
+
+        var leftArg = new Argument<string>("left") { Description = "Path to the first ESM file" };
+        var rightArg = new Argument<string>("right") { Description = "Path to the second ESM file" };
+        var limitOption = new Option<int>("-l", "--limit")
+        {
+            Description = "Maximum missing cells to display per side (0 = unlimited)",
+            DefaultValueFactory = _ => 50
+        };
+        var outputOption = new Option<string?>("-o", "--output")
+        {
+            Description = "Write missing cells to a TSV file"
+        };
+
+        command.Arguments.Add(leftArg);
+        command.Arguments.Add(rightArg);
+        command.Options.Add(limitOption);
+        command.Options.Add(outputOption);
+
+        command.SetAction(parseResult => CompareCellsCommand.CompareCells(
+            parseResult.GetValue(leftArg)!,
+            parseResult.GetValue(rightArg)!,
+            parseResult.GetValue(limitOption),
+            parseResult.GetValue(outputOption)));
 
         return command;
     }

@@ -9,13 +9,13 @@ internal static class GeckDialogueWriter
     internal static void AppendQuestsSection(StringBuilder sb, List<QuestRecord> quests,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Quests ({quests.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Quests ({quests.Count})");
 
         foreach (var quest in quests.OrderBy(q => q.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "QUEST", quest.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "QUEST", quest.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(quest.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(quest.FormId)}");
             sb.AppendLine($"Editor ID:      {quest.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {quest.FullName ?? "(none)"}");
             sb.AppendLine($"Flags:          0x{quest.Flags:X2}");
@@ -70,13 +70,13 @@ internal static class GeckDialogueWriter
     internal static void AppendDialogTopicsSection(StringBuilder sb, List<DialogTopicRecord> topics,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Dialog Topics ({topics.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Dialog Topics ({topics.Count})");
 
         foreach (var topic in topics.OrderBy(t => t.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "DIAL", topic.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "DIAL", topic.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(topic.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(topic.FormId)}");
             sb.AppendLine($"Editor ID:      {topic.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {topic.FullName ?? "(none)"}");
             sb.AppendLine($"Type:           {topic.TopicTypeName}");
@@ -109,7 +109,7 @@ internal static class GeckDialogueWriter
     internal static void AppendDialogueSection(StringBuilder sb, List<DialogueRecord> dialogues,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Dialogue Responses ({dialogues.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Dialogue Responses ({dialogues.Count})");
 
         // Group by quest if possible
         var grouped = dialogues
@@ -126,9 +126,9 @@ internal static class GeckDialogueWriter
 
             foreach (var dialogue in group.OrderBy(d => d.EditorId ?? ""))
             {
-                GeckReportGenerator.AppendRecordHeader(sb, "INFO", dialogue.EditorId);
+                GeckReportHelpers.AppendRecordHeader(sb, "INFO", dialogue.EditorId);
 
-                sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(dialogue.FormId)}");
+                sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(dialogue.FormId)}");
                 sb.AppendLine($"Editor ID:      {dialogue.EditorId ?? "(none)"}");
 
                 if (dialogue.TopicFormId.HasValue)
@@ -216,7 +216,7 @@ internal static class GeckDialogueWriter
             .SelectMany(q => q.Topics)
             .Sum(t => t.InfoChain.Count) + tree.OrphanTopics.Sum(t => t.InfoChain.Count);
 
-        GeckReportGenerator.AppendHeader(sb, "Dialogue Tree");
+        GeckReportHelpers.AppendHeader(sb, "Dialogue Tree");
         sb.AppendLine();
         sb.AppendLine($"  Quests:     {totalQuests:N0}");
         sb.AppendLine($"  Topics:     {totalTopics:N0}");
@@ -233,9 +233,9 @@ internal static class GeckDialogueWriter
         if (tree.OrphanTopics.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine(new string('=', GeckReportGenerator.SeparatorWidth));
+            sb.AppendLine(new string('=', GeckReportHelpers.SeparatorWidth));
             sb.AppendLine("  Orphan Topics (no quest link)");
-            sb.AppendLine(new string('=', GeckReportGenerator.SeparatorWidth));
+            sb.AppendLine(new string('=', GeckReportHelpers.SeparatorWidth));
 
             var visited = new HashSet<uint>();
             foreach (var topic in tree.OrphanTopics)
@@ -251,10 +251,10 @@ internal static class GeckDialogueWriter
         FormIdResolver resolver)
     {
         sb.AppendLine();
-        var questLabel = questNode.QuestName ?? GeckReportGenerator.FormatFormId(questNode.QuestFormId);
-        sb.AppendLine($"{"",3}{new string('=', GeckReportGenerator.SeparatorWidth - 6)}");
-        sb.AppendLine($"{"",3}Quest: {questLabel} ({GeckReportGenerator.FormatFormId(questNode.QuestFormId)})");
-        sb.AppendLine($"{"",3}{new string('=', GeckReportGenerator.SeparatorWidth - 6)}");
+        var questLabel = questNode.QuestName ?? GeckReportHelpers.FormatFormId(questNode.QuestFormId);
+        sb.AppendLine($"{"",3}{new string('=', GeckReportHelpers.SeparatorWidth - 6)}");
+        sb.AppendLine($"{"",3}Quest: {questLabel} ({GeckReportHelpers.FormatFormId(questNode.QuestFormId)})");
+        sb.AppendLine($"{"",3}{new string('=', GeckReportHelpers.SeparatorWidth - 6)}");
 
         var visited = new HashSet<uint>();
         for (var i = 0; i < questNode.Topics.Count; i++)
@@ -278,7 +278,7 @@ internal static class GeckDialogueWriter
         {
             sb.AppendLine();
             sb.AppendLine(
-                $"{indent}Topic: {topic.TopicName ?? GeckReportGenerator.FormatFormId(topic.TopicFormId)} (see above)");
+                $"{indent}Topic: {topic.TopicName ?? GeckReportHelpers.FormatFormId(topic.TopicFormId)} (see above)");
             return;
         }
 
@@ -287,7 +287,7 @@ internal static class GeckDialogueWriter
         // Topic header
         var topicLabel = topic.TopicName ?? "(unnamed topic)";
         var topicTypeStr = topic.Topic != null ? $" [{topic.Topic.TopicTypeName}]" : "";
-        var formIdStr = topic.TopicFormId != 0 ? $" ({GeckReportGenerator.FormatFormId(topic.TopicFormId)})" : "";
+        var formIdStr = topic.TopicFormId != 0 ? $" ({GeckReportHelpers.FormatFormId(topic.TopicFormId)})" : "";
         sb.AppendLine($"{indent}Topic: {topicLabel}{formIdStr}{topicTypeStr}");
 
         // Topic metadata
@@ -356,7 +356,7 @@ internal static class GeckDialogueWriter
         else if (string.IsNullOrEmpty(info.PromptText))
         {
             // No prompt and no responses — show FormID reference
-            sb.AppendLine($"{indent}  [{index}] {GeckReportGenerator.FormatFormId(info.FormId)} (no text recovered)");
+            sb.AppendLine($"{indent}  [{index}] {GeckReportHelpers.FormatFormId(info.FormId)} (no text recovered)");
         }
 
         // Flags line
@@ -384,13 +384,13 @@ internal static class GeckDialogueWriter
 
     internal static void AppendNotesSection(StringBuilder sb, List<NoteRecord> notes)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Notes ({notes.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Notes ({notes.Count})");
 
         foreach (var note in notes.OrderBy(n => n.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "NOTE", note.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "NOTE", note.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(note.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(note.FormId)}");
             sb.AppendLine($"Editor ID:      {note.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {note.FullName ?? "(none)"}");
             sb.AppendLine($"Type:           {note.NoteTypeName}");
@@ -422,13 +422,13 @@ internal static class GeckDialogueWriter
 
     internal static void AppendBooksSection(StringBuilder sb, List<BookRecord> books)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Books ({books.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Books ({books.Count})");
 
         foreach (var book in books.OrderBy(b => b.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "BOOK", book.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "BOOK", book.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(book.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(book.FormId)}");
             sb.AppendLine($"Editor ID:      {book.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {book.FullName ?? "(none)"}");
             sb.AppendLine($"Value:          {book.Value} caps");
@@ -465,13 +465,13 @@ internal static class GeckDialogueWriter
 
     internal static void AppendTerminalsSection(StringBuilder sb, List<TerminalRecord> terminals)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Terminals ({terminals.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Terminals ({terminals.Count})");
 
         foreach (var terminal in terminals.OrderBy(t => t.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "TERM", terminal.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "TERM", terminal.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(terminal.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(terminal.FormId)}");
             sb.AppendLine($"Editor ID:      {terminal.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {terminal.FullName ?? "(none)"}");
             sb.AppendLine($"Difficulty:     {terminal.DifficultyName}");
@@ -514,7 +514,7 @@ internal static class GeckDialogueWriter
     internal static void AppendMessagesSection(StringBuilder sb, List<MessageRecord> messages,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Messages ({messages.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Messages ({messages.Count})");
         sb.AppendLine();
 
         var messageBoxes = messages.Count(m => m.IsMessageBox);
@@ -532,7 +532,7 @@ internal static class GeckDialogueWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  MESSAGE: {msg.EditorId ?? "(none)"} \u2014 {msg.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(msg.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(msg.FormId)}");
             var flags = new List<string>();
             if (msg.IsMessageBox)
             {

@@ -304,7 +304,7 @@ public static class EsmRecordExporter
             return;
         }
 
-        var report = GeckReportGenerator.GenerateRuntimeEditorIdsReport(runtimeEditorIds);
+        var report = GeckMiscWriter.GenerateRuntimeEditorIdsReport(runtimeEditorIds);
         var path = Path.Combine(outputDir, "runtime_editorids.csv");
         await File.WriteAllTextAsync(path, report);
 
@@ -320,7 +320,7 @@ public static class EsmRecordExporter
             return;
         }
 
-        var report = GeckReportGenerator.GenerateAssetListReport(assetStrings);
+        var report = GeckMiscWriter.GenerateAssetListReport(assetStrings);
         var path = Path.Combine(outputDir, "assets.txt");
         await File.WriteAllTextAsync(path, report);
 

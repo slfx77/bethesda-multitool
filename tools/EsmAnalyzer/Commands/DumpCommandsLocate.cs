@@ -1,4 +1,4 @@
-﻿using Spectre.Console;
+using Spectre.Console;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -9,9 +9,12 @@ using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.RecordTravers
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class DumpCommands
+/// <summary>
+///     Locate commands: find records by file offset or FormID ancestry.
+/// </summary>
+internal static class DumpCommandsLocate
 {
-    private static int Locate(string filePath, string offsetStr)
+    internal static int Locate(string filePath, string offsetStr)
     {
         var targetOffset = EsmFileLoader.ParseOffset(offsetStr);
         if (!targetOffset.HasValue)
@@ -94,7 +97,7 @@ public static partial class DumpCommands
         return 0;
     }
 
-    private static int LocateFormId(string filePath, string formIdStr, string? filterType, string? comparePath,
+    internal static int LocateFormId(string filePath, string formIdStr, string? filterType, string? comparePath,
         bool showAll)
     {
         var targetFormId = EsmFileLoader.ParseFormId(formIdStr);
@@ -128,13 +131,13 @@ public static partial class DumpCommands
             .Start("Scanning for records...",
                 _ =>
                 {
-                    matches = ScanForFormId(esm.Data, esm.IsBigEndian, esm.FirstGrupOffset, targetFormId.Value,
-                        filterType);
+                    matches = DumpCommandsFormIdSearch.ScanForFormId(esm.Data, esm.IsBigEndian, esm.FirstGrupOffset,
+                        targetFormId.Value, filterType);
 
                     if (compareEsm != null)
                     {
-                        compareMatches = ScanForFormId(compareEsm.Data, compareEsm.IsBigEndian, compareEsm.FirstGrupOffset,
-                            targetFormId.Value, filterType);
+                        compareMatches = DumpCommandsFormIdSearch.ScanForFormId(compareEsm.Data, compareEsm.IsBigEndian,
+                            compareEsm.FirstGrupOffset, targetFormId.Value, filterType);
                     }
                 });
 

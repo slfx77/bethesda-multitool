@@ -237,7 +237,7 @@ public class ReportGeneratorTests
             new() { Path = @"textures\armor\helmet.dds", Category = AssetCategory.Texture }
         };
 
-        var report = GeckReportGenerator.GenerateAssetListReport(assets);
+        var report = GeckMiscWriter.GenerateAssetListReport(assets);
         Assert.Contains("weapons", report);
         Assert.Contains("pistol.nif", report);
         Assert.Contains("helmet.dds", report);

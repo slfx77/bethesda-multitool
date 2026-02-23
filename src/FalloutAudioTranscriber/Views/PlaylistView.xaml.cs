@@ -90,11 +90,11 @@ public sealed partial class PlaylistView : UserControl
 
         // Enable buttons
         UpdateBatchButtonState();
-        ExportButton.IsEnabled = _project?.Entries.Count > 0 || _allEntries.Any(e2 => e2.SubtitleText != null);
+        ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
         ClearWhisperButton.IsEnabled = _project?.Entries.Values.Any(e => e.Source == "whisper") == true;
 
         // Initialize Whisper in background
-        if (HasWorkItems())
+        if (PlaylistFilterHelper.HasWorkItems(_allEntries, _transcribeEsmLines))
         {
             _ = InitializeWhisperAsync();
         }
@@ -106,32 +106,13 @@ public sealed partial class PlaylistView : UserControl
             ? _allEntries
             : _allEntries.Where(e => e.Status != TranscriptionStatus.EsmSubtitle).ToList();
 
-        var speakers = source
-            .Select(e => e.SpeakerName ?? "(Unknown)")
-            .Distinct()
-            .OrderBy(s => s)
-            .Prepend("All Speakers")
-            .ToList();
-        SpeakerFilter.ItemsSource = speakers;
+        SpeakerFilter.ItemsSource = PlaylistFilterHelper.BuildSpeakerList(source);
         SpeakerFilter.SelectedIndex = 0;
 
-        var quests = source
-            .Select(e => e.QuestName ?? "(No Quest)")
-            .Distinct()
-            .OrderBy(q => q)
-            .Prepend("All Quests")
-            .ToList();
-        QuestFilter.ItemsSource = quests;
+        QuestFilter.ItemsSource = PlaylistFilterHelper.BuildQuestList(source);
         QuestFilter.SelectedIndex = 0;
 
-        var voiceTypes = source
-            .Select(e => e.VoiceType)
-            .Where(v => !string.IsNullOrEmpty(v))
-            .Distinct()
-            .OrderBy(v => v)
-            .Prepend("All Voice Types")
-            .ToList();
-        VoiceTypeFilter.ItemsSource = voiceTypes;
+        VoiceTypeFilter.ItemsSource = PlaylistFilterHelper.BuildVoiceTypeList(source);
         VoiceTypeFilter.SelectedIndex = 0;
     }
 
@@ -222,7 +203,7 @@ public sealed partial class PlaylistView : UserControl
         // When enabling transcribe-ESM mode, auto-enable Show ESM subtitles
         if (_transcribeEsmLines && ShowEsmCheck.IsChecked != true)
         {
-            ShowEsmCheck.IsChecked = true; // Triggers Filter_Changed → ApplyFilters
+            ShowEsmCheck.IsChecked = true; // Triggers Filter_Changed -> ApplyFilters
         }
 
         UpdateBatchButtonState();
@@ -243,67 +224,15 @@ public sealed partial class PlaylistView : UserControl
 
         _showEsmSubtitles = ShowEsmCheck.IsChecked == true;
 
-        var filtered = _allEntries.AsEnumerable();
-
-        // ESM subtitle checkbox
-        if (!_showEsmSubtitles)
-        {
-            filtered = filtered.Where(e => e.Status != TranscriptionStatus.EsmSubtitle);
-        }
-
-        // Speaker filter
-        var speakerSelection = SpeakerFilter.SelectedItem as string;
-        if (speakerSelection != null && speakerSelection != "All Speakers")
-        {
-            var match = speakerSelection == "(Unknown)" ? null : speakerSelection;
-            filtered = filtered.Where(e => e.SpeakerName == match);
-        }
-
-        // Quest filter
-        var questSelection = QuestFilter.SelectedItem as string;
-        if (questSelection != null && questSelection != "All Quests")
-        {
-            var match = questSelection == "(No Quest)" ? null : questSelection;
-            filtered = filtered.Where(e => e.QuestName == match);
-        }
-
-        // Voice type filter
-        var voiceTypeSelection = VoiceTypeFilter.SelectedItem as string;
-        if (voiceTypeSelection != null && voiceTypeSelection != "All Voice Types")
-        {
-            filtered = filtered.Where(e => e.VoiceType == voiceTypeSelection);
-        }
-
-        // Search query
-        if (!string.IsNullOrEmpty(_searchQuery))
-        {
-            var query = _searchQuery;
-            filtered = filtered.Where(e =>
-                e.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                e.VoiceType.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                e.FormId.ToString("X8").Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                (e.SpeakerName?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (e.QuestName?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (e.SubtitleText?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
-
-        // Sort by selected column
-        var sorted = _sortColumn switch
-        {
-            "Name" => _sortAscending
-                ? filtered.OrderBy(e => e.TopicEditorId).ThenBy(e => e.FormId)
-                : filtered.OrderByDescending(e => e.TopicEditorId).ThenByDescending(e => e.FormId),
-            "Speaker" => _sortAscending
-                ? filtered.OrderBy(e => e.SpeakerName ?? "\uffff").ThenBy(e => e.TopicEditorId)
-                : filtered.OrderByDescending(e => e.SpeakerName ?? "").ThenBy(e => e.TopicEditorId),
-            "Quest" => _sortAscending
-                ? filtered.OrderBy(e => e.QuestName ?? "\uffff").ThenBy(e => e.TopicEditorId)
-                : filtered.OrderByDescending(e => e.QuestName ?? "").ThenBy(e => e.TopicEditorId),
-            _ => _sortAscending // "Status" default
-                ? filtered.OrderBy(e => (int)e.Status).ThenBy(e => e.VoiceType).ThenBy(e => e.TopicEditorId)
-                : filtered.OrderByDescending(e => (int)e.Status).ThenBy(e => e.VoiceType).ThenBy(e => e.TopicEditorId)
-        };
-        var results = sorted.ToList();
+        var results = PlaylistFilterHelper.ApplyFiltersAndSort(
+            _allEntries,
+            _showEsmSubtitles,
+            SpeakerFilter.SelectedItem as string,
+            QuestFilter.SelectedItem as string,
+            VoiceTypeFilter.SelectedItem as string,
+            _searchQuery,
+            _sortColumn,
+            _sortAscending);
 
         _displayedEntries.Clear();
         foreach (var entry in results)
@@ -366,24 +295,16 @@ public sealed partial class PlaylistView : UserControl
                 }
 
                 // Save as automatic (pending review)
-                selected.SubtitleText = text;
-                selected.TranscriptionSource = "whisper";
-
                 if (_project != null)
                 {
-                    var key = $"{selected.VoiceType}|{selected.FormId:X8}_{selected.ResponseIndex}";
-                    _project.Entries[key] = new TranscriptionEntry
-                    {
-                        Text = text,
-                        Source = "whisper",
-                        VoiceType = selected.VoiceType,
-                        SpeakerName = selected.SpeakerName,
-                        QuestName = selected.QuestName,
-                        TranscribedAt = DateTimeOffset.UtcNow
-                    };
-
+                    BatchOperationHelper.ApplyTranscription(selected, text, "whisper", _project);
                     _hasUnsavedChanges = true;
                     _autoSaveTimer?.Start();
+                }
+                else
+                {
+                    selected.SubtitleText = text;
+                    selected.TranscriptionSource = "whisper";
                 }
             }
         }
@@ -415,20 +336,7 @@ public sealed partial class PlaylistView : UserControl
             return;
         }
 
-        // Save with "accepted" source
-        var key = $"{selected.VoiceType}|{selected.FormId:X8}_{selected.ResponseIndex}";
-        _project.Entries[key] = new TranscriptionEntry
-        {
-            Text = text,
-            Source = "accepted",
-            VoiceType = selected.VoiceType,
-            SpeakerName = selected.SpeakerName,
-            QuestName = selected.QuestName,
-            TranscribedAt = DateTimeOffset.UtcNow
-        };
-
-        selected.SubtitleText = text;
-        selected.TranscriptionSource = "accepted";
+        BatchOperationHelper.ApplyTranscription(selected, text, "accepted", _project);
 
         _hasUnsavedChanges = true;
         _autoSaveTimer?.Start();
@@ -444,16 +352,10 @@ public sealed partial class PlaylistView : UserControl
     {
         var currentIndex = FileListView.SelectedIndex;
 
-        bool IsWorkItem(VoiceFileEntry e)
-        {
-            return e.Status is TranscriptionStatus.Untranscribed or TranscriptionStatus.Automatic
-                   || (_transcribeEsmLines && e.Status == TranscriptionStatus.EsmSubtitle);
-        }
-
         // Search forward from current position
         for (var i = currentIndex + 1; i < _displayedEntries.Count; i++)
         {
-            if (IsWorkItem(_displayedEntries[i]))
+            if (PlaylistFilterHelper.IsWorkItem(_displayedEntries[i], _transcribeEsmLines))
             {
                 FileListView.SelectedIndex = i;
                 FileListView.ScrollIntoView(_displayedEntries[i]);
@@ -464,7 +366,7 @@ public sealed partial class PlaylistView : UserControl
         // Wrap around
         for (var i = 0; i < currentIndex; i++)
         {
-            if (IsWorkItem(_displayedEntries[i]))
+            if (PlaylistFilterHelper.IsWorkItem(_displayedEntries[i], _transcribeEsmLines))
             {
                 FileListView.SelectedIndex = i;
                 FileListView.ScrollIntoView(_displayedEntries[i]);
@@ -476,18 +378,15 @@ public sealed partial class PlaylistView : UserControl
     private void DetailPanel_RejectRequested(object? sender, EventArgs e)
     {
         var selected = FileListView.SelectedItem as VoiceFileEntry;
-        if (selected?.EsmSubtitleText == null || _project == null)
+        if (selected == null || _project == null)
         {
             return;
         }
 
-        // Revert to ESM text
-        selected.SubtitleText = selected.EsmSubtitleText;
-        selected.TranscriptionSource = "esm";
-
-        // Remove the project entry
-        var key = $"{selected.VoiceType}|{selected.FormId:X8}_{selected.ResponseIndex}";
-        _project.Entries.Remove(key);
+        if (!BatchOperationHelper.RevertToEsm(selected, _project))
+        {
+            return;
+        }
 
         _hasUnsavedChanges = true;
         _autoSaveTimer?.Start();
@@ -497,21 +396,9 @@ public sealed partial class PlaylistView : UserControl
         ApplyFilters();
     }
 
-    private bool HasWorkItems()
-    {
-        if (_transcribeEsmLines)
-        {
-            return _allEntries.Any(e =>
-                e.Status == TranscriptionStatus.Untranscribed
-                || e.Status == TranscriptionStatus.EsmSubtitle);
-        }
-
-        return _allEntries.Any(e => e.Status == TranscriptionStatus.Untranscribed);
-    }
-
     private void UpdateBatchButtonState()
     {
-        BatchButton.IsEnabled = HasWorkItems();
+        BatchButton.IsEnabled = PlaylistFilterHelper.HasWorkItems(_allEntries, _transcribeEsmLines);
     }
 
     private void Approve_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
@@ -539,7 +426,7 @@ public sealed partial class PlaylistView : UserControl
 
         ClearWhisperButton.IsEnabled = false;
         UpdateBatchButtonState();
-        ExportButton.IsEnabled = _project?.Entries.Count > 0 || _allEntries.Any(e2 => e2.SubtitleText != null);
+        ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
 
         ApplyFilters();
         MainWindow.Instance?.SetStatus($"Cleared {cleared} Whisper transcriptions");
@@ -584,18 +471,11 @@ public sealed partial class PlaylistView : UserControl
         // Wire drawer cancel
         BatchDrawer.CancelRequested += (_, _) => _batchCts?.Cancel();
 
-        var untranscribed = _transcribeEsmLines
-            ? _allEntries
-                .Where(e2 => e2.Status is TranscriptionStatus.Untranscribed or TranscriptionStatus.EsmSubtitle)
-                .ToList()
-            : _allEntries
-                .Where(e2 => e2.Status == TranscriptionStatus.Untranscribed)
-                .ToList();
-
+        var untranscribed = BatchOperationHelper.GetBatchWorkItems(_allEntries, _transcribeEsmLines);
         var processed = 0;
         var errors = 0;
         var total = untranscribed.Count;
-        var workerCount = Math.Max(1, Environment.ProcessorCount / 2);
+        var workerCount = BatchOperationHelper.GetWorkerCount();
         var stopwatch = Stopwatch.StartNew();
 
         // Show drawer
@@ -638,13 +518,9 @@ public sealed partial class PlaylistView : UserControl
                                 Interlocked.Increment(ref errors);
                                 DispatcherQueue.TryEnqueue(() =>
                                 {
-                                    BatchDrawer.AddResult(new BatchProgressItem
-                                    {
-                                        DisplayName = entry.DisplayName,
-                                        VoiceType = entry.VoiceType,
-                                        ItemStatus = BatchItemStatus.Error,
-                                        TranscriptionPreview = "extraction returned null"
-                                    });
+                                    BatchDrawer.AddResult(
+                                        BatchOperationHelper.CreateProgressItem(
+                                            entry, BatchItemStatus.Error, "extraction returned null"));
                                     BatchDrawer.UpdateStats(count, total, errors, stopwatch.Elapsed);
                                 });
                             }
@@ -655,13 +531,9 @@ public sealed partial class PlaylistView : UserControl
                             Interlocked.Increment(ref errors);
                             DispatcherQueue.TryEnqueue(() =>
                             {
-                                BatchDrawer.AddResult(new BatchProgressItem
-                                {
-                                    DisplayName = entry.DisplayName,
-                                    VoiceType = entry.VoiceType,
-                                    ItemStatus = BatchItemStatus.Error,
-                                    TranscriptionPreview = ex.Message
-                                });
+                                BatchDrawer.AddResult(
+                                    BatchOperationHelper.CreateProgressItem(
+                                        entry, BatchItemStatus.Error, ex.Message));
                                 BatchDrawer.UpdateStats(count, total, errors, stopwatch.Elapsed);
                             });
                         }
@@ -697,16 +569,10 @@ public sealed partial class PlaylistView : UserControl
 
                                 lock (_projectLock)
                                 {
-                                    _project!.Entries[$"{entry.VoiceType}|{entry.FormId:X8}_{entry.ResponseIndex}"] =
-                                        new TranscriptionEntry
-                                        {
-                                            Text = transcribedText,
-                                            Source = "whisper",
-                                            VoiceType = entry.VoiceType,
-                                            SpeakerName = entry.SpeakerName,
-                                            QuestName = entry.QuestName,
-                                            TranscribedAt = DateTimeOffset.UtcNow
-                                        };
+                                    var key = BatchOperationHelper.BuildProjectKey(entry);
+                                    _project!.Entries[key] =
+                                        BatchOperationHelper.CreateTranscriptionEntry(
+                                            transcribedText, "whisper", entry);
                                 }
                             }
                         }
@@ -724,13 +590,9 @@ public sealed partial class PlaylistView : UserControl
 
                         DispatcherQueue.TryEnqueue(() =>
                         {
-                            BatchDrawer.AddResult(new BatchProgressItem
-                            {
-                                DisplayName = entry.DisplayName,
-                                VoiceType = entry.VoiceType,
-                                ItemStatus = capturedStatus,
-                                TranscriptionPreview = capturedText
-                            });
+                            BatchDrawer.AddResult(
+                                BatchOperationHelper.CreateProgressItem(
+                                    entry, capturedStatus, capturedText));
                             BatchDrawer.UpdateStats(count, total, capturedErrors, stopwatch.Elapsed);
                         });
 
@@ -743,14 +605,8 @@ public sealed partial class PlaylistView : UserControl
                                 snapshotEntries = new Dictionary<string, TranscriptionEntry>(_project!.Entries);
                             }
 
-                            var projectSnapshot = new TranscriptionProject
-                            {
-                                GameName = _project!.GameName,
-                                DataDirectory = _project.DataDirectory,
-                                CreatedAt = _project.CreatedAt,
-                                ModifiedAt = DateTimeOffset.UtcNow,
-                                Entries = snapshotEntries
-                            };
+                            var projectSnapshot =
+                                BatchOperationHelper.CreateProjectSnapshot(_project!, snapshotEntries);
 
                             try
                             {
@@ -765,7 +621,7 @@ public sealed partial class PlaylistView : UserControl
                 }
                 catch (OperationCanceledException)
                 {
-                    // Expected on cancellation — exit gracefully so the processor can be disposed
+                    // Expected on cancellation -- exit gracefully so the processor can be disposed
                 }
             }, CancellationToken.None)).ToArray(); // CancellationToken.None: let consumers drain gracefully
 
@@ -776,57 +632,33 @@ public sealed partial class PlaylistView : UserControl
             // Final save
             stopwatch.Stop();
             await TranscriptionFileService.SaveAsync(_dataDirectory, _project, ct);
-            BatchDrawer.CompleteBatch($"Done! {processed:N0} entries, {errors} errors, {stopwatch.Elapsed:m\\:ss}");
+            BatchDrawer.CompleteBatch(
+                BatchOperationHelper.FormatCompletionMessage(processed, errors, stopwatch.Elapsed));
         }
         catch (OperationCanceledException)
         {
             stopwatch.Stop();
-
-            // Wait for consumers to finish their current item before disposing processors
-            if (consumerTasks != null)
-            {
-                try
-                {
-                    await Task.WhenAll(consumerTasks);
-                }
-                catch
-                {
-                    /* consumers already handle their own errors */
-                }
-            }
-
+            await BatchOperationHelper.DrainConsumersAsync(consumerTasks);
             await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
-            BatchDrawer.CompleteBatch($"Cancelled after {processed:N0} entries");
+            BatchDrawer.CompleteBatch(BatchOperationHelper.FormatCancellationMessage(processed));
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
-
-            if (consumerTasks != null)
-            {
-                try
-                {
-                    await Task.WhenAll(consumerTasks);
-                }
-                catch
-                {
-                    /* consumers already handle their own errors */
-                }
-            }
-
+            await BatchOperationHelper.DrainConsumersAsync(consumerTasks);
             await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
             BatchDrawer.CompleteBatch($"Error: {ex.Message}");
         }
         finally
         {
-            // All consumers are done — safe to dispose processors
+            // All consumers are done -- safe to dispose processors
             foreach (var p in processors)
             {
                 await p.DisposeAsync();
             }
 
             UpdateBatchButtonState();
-            ExportButton.IsEnabled = _project?.Entries.Count > 0 || _allEntries.Any(e2 => e2.SubtitleText != null);
+            ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
             _batchCts?.Dispose();
             _batchCts = null;
 
@@ -840,10 +672,7 @@ public sealed partial class PlaylistView : UserControl
 
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
-        var hasTranscriptions = _project != null && _project.Entries.Count > 0;
-        var hasEsm = _showEsmSubtitles && _allEntries.Any(e2 => e2.TranscriptionSource == "esm");
-
-        if (!hasTranscriptions && !hasEsm)
+        if (!BatchOperationHelper.HasExportableContent(_project, _showEsmSubtitles, _allEntries))
         {
             return;
         }

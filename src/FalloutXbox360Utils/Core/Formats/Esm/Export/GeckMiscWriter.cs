@@ -14,12 +14,12 @@ internal static class GeckMiscWriter
     internal static string GenerateAssetListReport(List<DetectedAssetString> assets)
     {
         var sb = new StringBuilder();
-        GeckReportGenerator.AppendHeader(sb, "Runtime Asset String Pool");
+        GeckReportHelpers.AppendHeader(sb, "Runtime Asset String Pool");
         sb.AppendLine();
 
         var validAssets = assets
             .Where(a => a.Path.Length > 0 && char.IsLetterOrDigit(a.Path[0]))
-            .Select(a => a with { Path = GeckReportGenerator.CleanAssetPath(a.Path) })
+            .Select(a => a with { Path = GeckReportHelpers.CleanAssetPath(a.Path) })
             .ToList();
 
         sb.AppendLine($"Total Assets: {validAssets.Count:N0} (filtered from {assets.Count:N0})");
@@ -33,11 +33,11 @@ internal static class GeckMiscWriter
 
         foreach (var (category, paths) in byCategory)
         {
-            sb.AppendLine(new string('-', GeckReportGenerator.SeparatorWidth));
+            sb.AppendLine(new string('-', GeckReportHelpers.SeparatorWidth));
             sb.AppendLine($"  {category} ({paths.Count:N0})");
-            sb.AppendLine(new string('-', GeckReportGenerator.SeparatorWidth));
+            sb.AppendLine(new string('-', GeckReportHelpers.SeparatorWidth));
 
-            GeckReportGenerator.AppendPathTree(sb, paths, "  ");
+            GeckReportHelpers.AppendPathTree(sb, paths, "  ");
             sb.AppendLine();
         }
 
@@ -53,12 +53,12 @@ internal static class GeckMiscWriter
         {
             var formId = entry.FormId != 0 ? $"{entry.FormId:X8}" : "";
             var formType = entry.FormId != 0 ? $"{entry.FormType:D3}" : "";
-            var displayName = GeckReportGenerator.CsvEscape(entry.DisplayName);
-            var dialogueLine = GeckReportGenerator.CsvEscape(entry.DialogueLine);
+            var displayName = GeckReportHelpers.CsvEscape(entry.DisplayName);
+            var dialogueLine = GeckReportHelpers.CsvEscape(entry.DialogueLine);
             var offset = entry.TesFormOffset?.ToString() ?? "";
 
             sb.AppendLine(
-                $"{GeckReportGenerator.CsvEscape(entry.EditorId)},{formId},{formType},{displayName},{dialogueLine},{offset}");
+                $"{GeckReportHelpers.CsvEscape(entry.EditorId)},{formId},{formType},{displayName},{dialogueLine},{offset}");
         }
 
         return sb.ToString();
@@ -67,11 +67,11 @@ internal static class GeckMiscWriter
     internal static void AppendStringPoolSection(StringBuilder sb, StringPoolSummary sp)
     {
         sb.AppendLine();
-        GeckReportGenerator.AppendHeader(sb, "String Pool Data (from Runtime Memory)");
+        GeckReportHelpers.AppendHeader(sb, "String Pool Data (from Runtime Memory)");
         sb.AppendLine();
         sb.AppendLine($"  Total strings:     {sp.TotalStrings,10:N0} ({sp.UniqueStrings:N0} unique)");
         sb.AppendLine(
-            $"  Across:            {sp.RegionCount,10:N0} regions ({GeckReportGenerator.FormatPoolSize(sp.TotalBytes)})");
+            $"  Across:            {sp.RegionCount,10:N0} regions ({GeckReportHelpers.FormatPoolSize(sp.TotalBytes)})");
         sb.AppendLine();
         sb.AppendLine($"  File paths:        {sp.FilePaths,10:N0}");
 
@@ -106,7 +106,7 @@ internal static class GeckMiscWriter
 
     internal static void AppendGlobalsSection(StringBuilder sb, List<GlobalRecord> globals)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Global Variables ({globals.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Global Variables ({globals.Count})");
         sb.AppendLine();
 
         var byType = globals.GroupBy(g => g.TypeName).OrderBy(g => g.Key).ToList();
@@ -123,7 +123,7 @@ internal static class GeckMiscWriter
             foreach (var g in group.OrderBy(x => x.EditorId, StringComparer.OrdinalIgnoreCase))
             {
                 sb.AppendLine(
-                    $"  {g.EditorId ?? "(none)",-50} = {g.DisplayValue,12}  [{GeckReportGenerator.FormatFormId(g.FormId)}]");
+                    $"  {g.EditorId ?? "(none)",-50} = {g.DisplayValue,12}  [{GeckReportHelpers.FormatFormId(g.FormId)}]");
             }
 
             sb.AppendLine();
@@ -139,7 +139,7 @@ internal static class GeckMiscWriter
 
     internal static void AppendGameSettingsSection(StringBuilder sb, List<GameSettingRecord> settings)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Game Settings ({settings.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Game Settings ({settings.Count})");
 
         sb.AppendLine();
         sb.AppendLine($"Total Game Settings: {settings.Count:N0}");
@@ -161,7 +161,7 @@ internal static class GeckMiscWriter
             foreach (var setting in floatSettings.OrderBy(s => s.EditorId, StringComparer.OrdinalIgnoreCase))
             {
                 sb.AppendLine(
-                    $"  {setting.EditorId,-60} = {setting.DisplayValue,12}  [{GeckReportGenerator.FormatFormId(setting.FormId)}]");
+                    $"  {setting.EditorId,-60} = {setting.DisplayValue,12}  [{GeckReportHelpers.FormatFormId(setting.FormId)}]");
             }
 
             sb.AppendLine();
@@ -173,7 +173,7 @@ internal static class GeckMiscWriter
             foreach (var setting in intSettings.OrderBy(s => s.EditorId, StringComparer.OrdinalIgnoreCase))
             {
                 sb.AppendLine(
-                    $"  {setting.EditorId,-60} = {setting.DisplayValue,12}  [{GeckReportGenerator.FormatFormId(setting.FormId)}]");
+                    $"  {setting.EditorId,-60} = {setting.DisplayValue,12}  [{GeckReportHelpers.FormatFormId(setting.FormId)}]");
             }
 
             sb.AppendLine();
@@ -185,7 +185,7 @@ internal static class GeckMiscWriter
             foreach (var setting in boolSettings.OrderBy(s => s.EditorId, StringComparer.OrdinalIgnoreCase))
             {
                 sb.AppendLine(
-                    $"  {setting.EditorId,-60} = {setting.DisplayValue,12}  [{GeckReportGenerator.FormatFormId(setting.FormId)}]");
+                    $"  {setting.EditorId,-60} = {setting.DisplayValue,12}  [{GeckReportHelpers.FormatFormId(setting.FormId)}]");
             }
 
             sb.AppendLine();
@@ -200,7 +200,7 @@ internal static class GeckMiscWriter
                     ? setting.StringValue[..47] + "..."
                     : setting.StringValue;
                 sb.AppendLine(
-                    $"  {setting.EditorId,-60} = \"{displayValue}\"  [{GeckReportGenerator.FormatFormId(setting.FormId)}]");
+                    $"  {setting.EditorId,-60} = \"{displayValue}\"  [{GeckReportHelpers.FormatFormId(setting.FormId)}]");
             }
 
             sb.AppendLine();
@@ -217,7 +217,7 @@ internal static class GeckMiscWriter
     internal static void AppendLeveledListsSection(StringBuilder sb, List<LeveledListRecord> lists,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Leveled Lists ({lists.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Leveled Lists ({lists.Count})");
         sb.AppendLine();
 
         var byType = lists.GroupBy(l => l.ListType).OrderBy(g => g.Key).ToList();
@@ -236,7 +236,7 @@ internal static class GeckMiscWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  LIST: {list.EditorId ?? "(none)"}");
-            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(list.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(list.FormId)}");
             sb.AppendLine($"  Type:        {list.ListType}");
             sb.AppendLine($"  Chance None: {list.ChanceNone}%");
             if (!string.IsNullOrEmpty(list.FlagsDescription))
@@ -261,7 +261,7 @@ internal static class GeckMiscWriter
                         ? resolver.FormatFull(entry.FormId)
                         : "(none)";
                     sb.AppendLine(
-                        $"  {entry.Level,7}  {GeckReportGenerator.Truncate(itemName, 50),-50} {entry.Count,6}");
+                        $"  {entry.Level,7}  {GeckReportHelpers.Truncate(itemName, 50),-50} {entry.Count,6}");
                 }
             }
 

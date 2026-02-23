@@ -1,4 +1,4 @@
-﻿using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
@@ -11,9 +11,12 @@ using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.RecordTravers
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class DumpCommands
+/// <summary>
+///     Search and hex dump commands.
+/// </summary>
+internal static class DumpCommandsSearchHex
 {
-    private static int Search(string filePath, string pattern, int limit, int contextBytes, bool locate)
+    internal static int Search(string filePath, string pattern, int limit, int contextBytes, bool locate)
     {
         var esm = EsmFileLoader.Load(filePath, false);
         if (esm == null)
@@ -93,7 +96,7 @@ public static partial class DumpCommands
         return 0;
     }
 
-    private static int HexDump(string filePath, string offsetStr, int length)
+    internal static int HexDump(string filePath, string offsetStr, int length)
     {
         if (!File.Exists(filePath))
         {

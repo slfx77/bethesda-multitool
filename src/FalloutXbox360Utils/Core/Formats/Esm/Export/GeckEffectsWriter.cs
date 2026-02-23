@@ -9,13 +9,13 @@ internal static class GeckEffectsWriter
     internal static void AppendPerksSection(StringBuilder sb, List<PerkRecord> perks,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Perks ({perks.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Perks ({perks.Count})");
 
         foreach (var perk in perks.OrderBy(p => p.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "PERK", perk.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "PERK", perk.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(perk.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(perk.FormId)}");
             sb.AppendLine($"Editor ID:      {perk.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {perk.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(perk.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -71,13 +71,13 @@ internal static class GeckEffectsWriter
     internal static void AppendSpellsSection(StringBuilder sb, List<SpellRecord> spells,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Spells/Abilities ({spells.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Spells/Abilities ({spells.Count})");
 
         foreach (var spell in spells.OrderBy(s => s.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "SPEL", spell.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "SPEL", spell.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(spell.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(spell.FormId)}");
             sb.AppendLine($"Editor ID:      {spell.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {spell.FullName ?? "(none)"}");
             sb.AppendLine($"Type:           {spell.TypeName}");
@@ -115,7 +115,7 @@ internal static class GeckEffectsWriter
     internal static void AppendEnchantmentsSection(StringBuilder sb, List<EnchantmentRecord> enchantments,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Enchantments ({enchantments.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Enchantments ({enchantments.Count})");
         sb.AppendLine();
 
         var byType = enchantments.GroupBy(e => e.TypeName).OrderBy(g => g.Key).ToList();
@@ -133,7 +133,7 @@ internal static class GeckEffectsWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  ENCHANTMENT: {ench.EditorId ?? "(none)"} \u2014 {ench.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(ench.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(ench.FormId)}");
             sb.AppendLine($"  Type:        {ench.TypeName}");
             sb.AppendLine($"  Charge:      {ench.ChargeAmount}");
             sb.AppendLine($"  Cost:        {ench.EnchantCost}");
@@ -185,7 +185,7 @@ internal static class GeckEffectsWriter
     internal static void AppendBaseEffectsSection(StringBuilder sb, List<BaseEffectRecord> effects,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Base Effects ({effects.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Base Effects ({effects.Count})");
         sb.AppendLine();
 
         var byArchetype = effects.GroupBy(e => e.ArchetypeName).OrderByDescending(g => g.Count()).ToList();
@@ -202,7 +202,7 @@ internal static class GeckEffectsWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  EFFECT: {effect.EditorId ?? "(none)"} \u2014 {effect.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(effect.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(effect.FormId)}");
             sb.AppendLine($"  Archetype:   {effect.ArchetypeName}");
             sb.AppendLine($"  Base Cost:   {effect.BaseCost:F2}");
             if (!string.IsNullOrEmpty(effect.EffectCode))

@@ -771,7 +771,7 @@ public static class ToftCommands
     }
 
 
-    private sealed record ToftEntry(int Offset, string Signature, uint FormId, uint DataSize, bool HasPrimary)
+    internal sealed record ToftEntry(int Offset, string Signature, uint FormId, uint DataSize, bool HasPrimary)
     {
         public int TotalSize => (int)DataSize + EsmParser.MainRecordHeaderSize;
     }

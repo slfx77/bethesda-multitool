@@ -1,4 +1,4 @@
-﻿using Spectre.Console;
+using Spectre.Console;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -9,9 +9,12 @@ using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.RecordTravers
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class DumpCommands
+/// <summary>
+///     Trace and validation commands.
+/// </summary>
+internal static class DumpCommandsTrace
 {
-    private static int Trace(string filePath, string? offsetStr, string? stopStr, int? filterDepth, int limit)
+    internal static int Trace(string filePath, string? offsetStr, string? stopStr, int? filterDepth, int limit)
     {
         var esm = EsmFileLoader.Load(filePath);
         if (esm == null)
@@ -62,7 +65,7 @@ public static partial class DumpCommands
         return 0;
     }
 
-    private static int Validate(string filePath, string? startStr, string? stopStr)
+    internal static int Validate(string filePath, string? startStr, string? stopStr)
     {
         var esm = EsmFileLoader.Load(filePath);
         if (esm == null)
@@ -132,7 +135,7 @@ public static partial class DumpCommands
         return 0;
     }
 
-    private static int ValidateDeep(string filePath, string? startStr, string? stopStr, int limit)
+    internal static int ValidateDeep(string filePath, string? startStr, string? stopStr, int limit)
     {
         var esm = EsmFileLoader.Load(filePath);
         if (esm == null)

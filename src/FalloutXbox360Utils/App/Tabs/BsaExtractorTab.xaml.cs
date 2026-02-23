@@ -4,10 +4,7 @@
 #if WINDOWS_GUI
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Threading.Channels;
 using Windows.Storage.Pickers;
-using FalloutXbox360Utils.Core.Formats;
-using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -139,9 +136,9 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
             // Populate extension filter
             var extensions = _allFiles
                 .Select(f => f.Extension)
-                .Where(e => !string.IsNullOrEmpty(e))
+                .Where(ext => !string.IsNullOrEmpty(ext))
                 .Distinct()
-                .OrderBy(e => e)
+                .OrderBy(ext => ext)
                 .ToList();
 
             ExtensionFilterCombo.Items.Clear();
@@ -228,7 +225,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         var selectedSize = selectedFiles.Sum(f => f.Size);
 
         SelectedCountText.Text = $"{selectedCount:N0} selected";
-        SelectedSizeText.Text = FormatSize(selectedSize);
+        SelectedSizeText.Text = BsaExtractionEngine.FormatSize(selectedSize);
         ExtractButton.IsEnabled = selectedCount > 0;
     }
 
@@ -336,7 +333,6 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         var convertFiles = ConvertFilesCheckbox.IsChecked == true;
 
         // Enable conversions if requested
-        // DDX uses batch conversion (much faster), XMA/NIF use per-file conversion workers
         var ddxConversionAvailable = false;
         var xmaConversionAvailable = false;
         var nifConversionAvailable = false;
@@ -346,38 +342,8 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
             xmaConversionAvailable = _extractor.EnableXmaConversion(true);
             nifConversionAvailable = _extractor.EnableNifConversion(true);
 
-            // Check what's unavailable (DDX and NIF are always available as they're built-in)
-            var unavailable = new List<string>();
-            if (!xmaConversionAvailable) unavailable.Add("XMA->WAV (FFmpeg not found)");
-
-            if (unavailable.Count == 2)
-            {
-                var warningDialog = new ContentDialog
-                {
-                    Title = "Limited Conversion Support",
-                    Content = "External conversion tools unavailable:\n" +
-                              string.Join("\n", unavailable.Select(u => "- " + u)) + "\n\n" +
-                              "NIF conversion (Xbox 360 to PC) is available.\n" +
-                              "DDX and XMA files will be extracted without conversion.",
-                    CloseButtonText = "Continue",
-                    XamlRoot = XamlRoot
-                };
-                await warningDialog.ShowAsync();
-            }
-            else if (unavailable.Count > 0)
-            {
-                var warningDialog = new ContentDialog
-                {
-                    Title = "Partial Conversion Support",
-                    Content = "Some external tools are unavailable:\n" +
-                              string.Join("\n", unavailable.Select(u => "- " + u)) + "\n\n" +
-                              "NIF conversion is always available.\n" +
-                              "Other available conversions will be applied.",
-                    CloseButtonText = "Continue",
-                    XamlRoot = XamlRoot
-                };
-                await warningDialog.ShowAsync();
-            }
+            var unavailable = BsaExtractionEngine.CheckConversionAvailability(xmaConversionAvailable);
+            await ShowConversionWarningsAsync(unavailable);
         }
 
         // Reset all statuses
@@ -394,287 +360,33 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         ExtractionProgress.Visibility = Visibility.Visible;
         ExtractionProgress.Value = 0;
 
-        var succeeded = 0;
-        var failed = 0;
-        var converted = 0;
-        long totalSize = 0;
+        var options = new BsaExtractionEngine.ExtractionOptions
+        {
+            OutputDir = folder.Path,
+            ConvertFiles = convertFiles,
+            DdxConversionAvailable = ddxConversionAvailable,
+            XmaConversionAvailable = xmaConversionAvailable,
+            NifConversionAvailable = nifConversionAvailable
+        };
+
+        var counters = new BsaExtractionEngine.ExtractionCounters();
+        var callbacks = CreateProgressCallbacks();
 
         try
         {
-            // Create a channel for files that need per-file conversion (XMA, NIF only)
-            // DDX uses batch conversion after extraction for much better performance
-            var conversionChannel =
-                Channel.CreateBounded<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)>(
-                    new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.Wait });
-
-            var total = selectedEntries.Count;
-            var processed = 0;
-
-            // Track DDX files for batch conversion after extraction
-            var ddxEntries = new Dictionary<string, BsaFileEntry>(StringComparer.OrdinalIgnoreCase);
-
-            // Start conversion workers for XMA/NIF (run concurrently with extraction)
-            var conversionTask = Task.CompletedTask;
-            if (convertFiles && (xmaConversionAvailable || nifConversionAvailable))
-            {
-                conversionTask = RunConversionWorkersAsync(
-                    conversionChannel.Reader,
-                    _extractor,
-                    () => Interlocked.Increment(ref converted),
-                    _cts.Token);
-            }
-
-            // Extract files - can run multiple extractions in parallel
-            var extractionTasks = new List<Task>();
-            var semaphore = new SemaphoreSlim(4); // Limit concurrent extractions
-
-            foreach (var entry in selectedEntries)
-            {
-                _cts.Token.ThrowIfCancellationRequested();
-
-                await semaphore.WaitAsync(_cts.Token);
-
-                var task = Task.Run(async () =>
-                {
-                    var extractionSucceeded = false;
-                    var statusMessage = "Extracted";
-                    try
-                    {
-                        // Update status on UI thread
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            try
-                            {
-                                entry.Status = BsaExtractionStatus.Extracting;
-                            }
-                            catch
-                            {
-                                /* ignore UI errors */
-                            }
-                        });
-
-                        var extension = Path.GetExtension(entry.FileName).ToLowerInvariant();
-                        var needsDdxConversion = convertFiles && ddxConversionAvailable && extension == ".ddx";
-                        var needsXmaConversion = convertFiles && xmaConversionAvailable && extension == ".xma";
-                        var needsNifConversion = convertFiles && nifConversionAvailable && extension == ".nif";
-                        // DDX goes to batch after extraction, XMA/NIF go to conversion channel
-                        var needsChannelConversion = needsXmaConversion || needsNifConversion;
-                        var outputPath = Path.Combine(folder.Path, entry.FullPath);
-
-                        if (needsXmaConversion)
-                        {
-                            outputPath = Path.ChangeExtension(outputPath, ".wav");
-                        }
-                        // NIF and DDX keep same extension during extraction
-
-                        // Extract to memory
-                        var data = _extractor.ExtractFile(entry.Record);
-
-                        if (needsDdxConversion)
-                        {
-                            // Write raw DDX to disk — batch conversion happens after extraction
-                            var dir = Path.GetDirectoryName(outputPath)!;
-                            Directory.CreateDirectory(dir);
-                            await File.WriteAllBytesAsync(outputPath, data, _cts.Token);
-
-                            // Track for batch conversion
-                            lock (ddxEntries)
-                            {
-                                ddxEntries[entry.FullPath] = entry;
-                            }
-
-                            Interlocked.Add(ref totalSize, data.Length);
-                            extractionSucceeded = true;
-                            // Status will be updated during batch conversion
-                        }
-                        else if (needsChannelConversion)
-                        {
-                            // Queue XMA/NIF for per-file conversion
-                            DispatcherQueue.TryEnqueue(() =>
-                            {
-                                try
-                                {
-                                    entry.Status = BsaExtractionStatus.Converting;
-                                }
-                                catch
-                                {
-                                    /* ignore UI errors */
-                                }
-                            });
-                            var conversionType = needsXmaConversion ? "xma" : "nif";
-                            await conversionChannel.Writer.WriteAsync((entry, data, outputPath, conversionType),
-                                _cts.Token);
-                            extractionSucceeded = true;
-                        }
-                        else
-                        {
-                            // Write directly
-                            var dir = Path.GetDirectoryName(outputPath)!;
-                            Directory.CreateDirectory(dir);
-                            await File.WriteAllBytesAsync(outputPath, data, _cts.Token);
-
-                            Interlocked.Add(ref totalSize, data.Length);
-                            Interlocked.Increment(ref succeeded);
-                            extractionSucceeded = true;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Interlocked.Increment(ref failed);
-                        statusMessage = ex.Message;
-                        extractionSucceeded = false;
-                    }
-
-                    // Update progress
-                    var current = Interlocked.Increment(ref processed);
-                    DispatcherQueue.TryEnqueue(() =>
-                    {
-                        try
-                        {
-                            ExtractionProgress.Value = (double)current / total * 100;
-                            FilterStatusText.Text = $"Extracting: {entry.FileName} ({current}/{total})";
-
-                            // Only update status for files not pending conversion
-                            var ext = Path.GetExtension(entry.FileName).ToLowerInvariant();
-                            var pendingConversion =
-                                (convertFiles && ddxConversionAvailable && ext == ".ddx") ||
-                                (convertFiles && xmaConversionAvailable && ext == ".xma") ||
-                                (convertFiles && nifConversionAvailable && ext == ".nif");
-                            if (!pendingConversion)
-                            {
-                                entry.Status =
-                                    extractionSucceeded ? BsaExtractionStatus.Done : BsaExtractionStatus.Failed;
-                                entry.StatusMessage = statusMessage;
-                            }
-                        }
-                        catch
-                        {
-                            /* ignore UI update errors */
-                        }
-                    });
-
-                    semaphore.Release();
-                }, _cts.Token);
-
-                extractionTasks.Add(task);
-            }
-
-            // Wait for all extractions to complete
-            await Task.WhenAll(extractionTasks);
-
-            // Signal completion to XMA/NIF conversion workers
-            conversionChannel.Writer.Complete();
-
-            // Wait for XMA/NIF conversions to finish
-            await conversionTask;
+            // Run extraction (parallel file extraction + XMA/NIF conversion workers)
+            var ddxEntries = await BsaExtractionEngine.RunExtractionAsync(
+                selectedEntries, _extractor, options, counters, callbacks, _cts.Token);
 
             // Batch DDX conversion (much faster than per-file subprocess spawning)
-            var ddxBatchConverted = 0;
-            if (convertFiles && ddxConversionAvailable && ddxEntries.Count > 0)
+            if (convertFiles && ddxConversionAvailable)
             {
-                var ddxOutputDir = Path.Combine(Path.GetTempPath(), $"ddx_batch_{Guid.NewGuid():N}");
-                try
-                {
-                    // Set all DDX entries to "Converting" status
-                    DispatcherQueue.TryEnqueue(() =>
-                    {
-                        FilterStatusText.Text =
-                            $"Converting {ddxEntries.Count:N0} DDX textures (batch)...";
-                        foreach (var ddxEntry in ddxEntries.Values)
-                        {
-                            ddxEntry.Status = BsaExtractionStatus.Converting;
-                        }
-                    });
-
-                    var converter = new DdxSubprocessConverter();
-                    await converter.ConvertBatchAsync(
-                        folder.Path, ddxOutputDir,
-                        (inputPath, status, error) =>
-                        {
-                            // Map batch callback to UI entry via relative path
-                            var relativePath = Path.GetRelativePath(folder.Path, inputPath);
-                            BsaFileEntry? ddxEntry;
-                            lock (ddxEntries)
-                            {
-                                ddxEntries.TryGetValue(relativePath, out ddxEntry);
-                            }
-
-                            if (ddxEntry != null)
-                            {
-                                var isSuccess = status == "OK";
-                                if (isSuccess)
-                                {
-                                    Interlocked.Increment(ref ddxBatchConverted);
-                                }
-
-                                DispatcherQueue.TryEnqueue(() =>
-                                {
-                                    try
-                                    {
-                                        ddxEntry.Status = isSuccess
-                                            ? BsaExtractionStatus.Done
-                                            : BsaExtractionStatus.Failed;
-                                        ddxEntry.StatusMessage = isSuccess
-                                            ? "Converted"
-                                            : $"DDX failed ({error ?? status})";
-                                    }
-                                    catch
-                                    {
-                                        /* ignore UI errors */
-                                    }
-                                });
-                            }
-                        },
-                        _cts.Token, pcFriendly: true);
-
-                    // Merge converted DDS files back into output dir, delete raw DDX
-                    DdxBatchHelper.MergeConversions(folder.Path, ddxOutputDir);
-                }
-                catch (FileNotFoundException)
-                {
-                    // DDXConv not available (shouldn't happen since we checked)
-                }
-                finally
-                {
-                    if (Directory.Exists(ddxOutputDir))
-                    {
-                        Directory.Delete(ddxOutputDir, true);
-                    }
-                }
+                await BsaExtractionEngine.RunDdxBatchConversionAsync(
+                    folder.Path, ddxEntries, counters, callbacks, _cts.Token);
             }
-
-            // Update stats from conversions
-            succeeded += converted + ddxBatchConverted;
 
             // Summary
-            var totalConverted = converted + ddxBatchConverted;
-            var message = $"Successfully extracted {succeeded:N0} files ({FormatSize(totalSize)})";
-            if (totalConverted > 0)
-            {
-                message += $"\n{totalConverted:N0} files converted";
-                if (ddxBatchConverted > 0)
-                {
-                    message += $" ({ddxBatchConverted:N0} DDX batch";
-                    if (converted > 0)
-                    {
-                        message += $", {converted:N0} XMA/NIF";
-                    }
-
-                    message += ")";
-                }
-                else
-                {
-                    message += " (XMA->WAV, NIF endian swap)";
-                }
-
-                message += ".";
-            }
-
-            if (failed > 0)
-            {
-                message += $"\n{failed:N0} files failed.";
-            }
-
+            var message = BsaExtractionEngine.BuildSummaryMessage(counters);
             var dialog = new ContentDialog
             {
                 Title = "Extraction Complete",
@@ -718,116 +430,91 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         }
     }
 
-    /// <summary>
-    ///     Run conversion workers that process XMA and NIF files from the channel.
-    ///     DDX files use batch conversion separately for better performance.
-    /// </summary>
-    private async Task RunConversionWorkersAsync(
-        ChannelReader<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)> reader,
-        BsaExtractor extractor,
-        Action onConverted,
-        CancellationToken cancellationToken)
+    private BsaExtractionEngine.ProgressCallbacks CreateProgressCallbacks()
     {
-        // Run multiple conversion workers in parallel
-        const int workerCount = 2;
-        var workers = new Task[workerCount];
-
-        for (var i = 0; i < workerCount; i++)
+        return new BsaExtractionEngine.ProgressCallbacks
         {
-            workers[i] = Task.Run(async () =>
+            OnStatusChanged = (entry, status) =>
             {
-                await foreach (var (entry, data, outputPath, conversionType) in reader.ReadAllAsync(cancellationToken))
+                DispatcherQueue.TryEnqueue(() =>
                 {
-                    var conversionSucceeded = false;
-                    var statusMessage = "Converted";
-
+                    try { entry.Status = status; }
+                    catch { /* ignore UI errors */ }
+                });
+            },
+            OnProgress = (current, total, fileName) =>
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
                     try
                     {
-                        ConversionResult result;
-                        string originalExtension;
-
-                        switch (conversionType)
-                        {
-                            case "xma":
-                                result = await extractor.ConvertXmaAsync(data);
-                                originalExtension = ".xma";
-                                break;
-                            case "nif":
-                                result = await extractor.ConvertNifAsync(data);
-                                originalExtension = ".nif";
-                                break;
-                            default:
-                                result = new ConversionResult
-                                {
-                                    Success = false, Notes =
-                                        $"Unknown conversion type: {conversionType}"
-                                };
-                                originalExtension = "";
-                                break;
-                        }
-
-                        var dir = Path.GetDirectoryName(outputPath)!;
-                        Directory.CreateDirectory(dir);
-
-                        if (result.Success && result.OutputData != null)
-                        {
-                            await File.WriteAllBytesAsync(outputPath, result.OutputData, cancellationToken);
-                            onConverted();
-                            conversionSucceeded = true;
-                            statusMessage = "Converted";
-                        }
-                        else
-                        {
-                            // Conversion failed - save original file
-                            var fallbackPath = conversionType == "nif"
-                                ? outputPath // NIF keeps same extension
-                                : Path.ChangeExtension(outputPath, originalExtension);
-                            await File.WriteAllBytesAsync(fallbackPath, data, cancellationToken);
-                            conversionSucceeded = true; // File was saved, just not converted
-                            statusMessage =
-                                $"Saved as {originalExtension.ToUpperInvariant().TrimStart('.')} ({result.Notes})";
-                        }
+                        ExtractionProgress.Value = (double)current / total * 100;
+                        FilterStatusText.Text = $"Extracting: {fileName} ({current}/{total})";
                     }
-                    catch (Exception ex)
+                    catch { /* ignore UI errors */ }
+                });
+            },
+            OnStatusMessage = message =>
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    try { FilterStatusText.Text = message; }
+                    catch { /* ignore UI errors */ }
+                });
+            },
+            OnFileComplete = (entry, succeeded, statusMessage, pendingConversion) =>
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    try
                     {
-                        conversionSucceeded = false;
-                        statusMessage = ex.Message;
-                    }
-
-                    // Update UI status (outside try-catch to not fail extraction due to UI errors)
-                    DispatcherQueue.TryEnqueue(() =>
-                    {
-                        try
+                        if (!pendingConversion)
                         {
-                            entry.Status = conversionSucceeded ? BsaExtractionStatus.Done : BsaExtractionStatus.Failed;
+                            entry.Status = succeeded ? BsaExtractionStatus.Done : BsaExtractionStatus.Failed;
                             entry.StatusMessage = statusMessage;
                         }
-                        catch
-                        {
-                            /* ignore UI update errors */
-                        }
-                    });
-                }
-            }, cancellationToken);
-        }
+                    }
+                    catch { /* ignore UI errors */ }
+                });
+            }
+        };
+    }
 
-        await Task.WhenAll(workers);
+    private async Task ShowConversionWarningsAsync(List<string> unavailable)
+    {
+        if (unavailable.Count == 2)
+        {
+            var warningDialog = new ContentDialog
+            {
+                Title = "Limited Conversion Support",
+                Content = "External conversion tools unavailable:\n" +
+                          string.Join("\n", unavailable.Select(u => "- " + u)) + "\n\n" +
+                          "NIF conversion (Xbox 360 to PC) is available.\n" +
+                          "DDX and XMA files will be extracted without conversion.",
+                CloseButtonText = "Continue",
+                XamlRoot = XamlRoot
+            };
+            await warningDialog.ShowAsync();
+        }
+        else if (unavailable.Count > 0)
+        {
+            var warningDialog = new ContentDialog
+            {
+                Title = "Partial Conversion Support",
+                Content = "Some external tools are unavailable:\n" +
+                          string.Join("\n", unavailable.Select(u => "- " + u)) + "\n\n" +
+                          "NIF conversion is always available.\n" +
+                          "Other available conversions will be applied.",
+                CloseButtonText = "Continue",
+                XamlRoot = XamlRoot
+            };
+            await warningDialog.ShowAsync();
+        }
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
-    }
-
-    private static string FormatSize(long bytes)
-    {
-        return bytes switch
-        {
-            < 1024 => $"{bytes} B",
-            < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-            < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
-            _ => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB"
-        };
     }
 }
 

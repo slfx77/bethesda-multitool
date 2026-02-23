@@ -11,7 +11,7 @@ internal static class GeckScriptWriter
     internal static void AppendScriptsSection(StringBuilder sb, List<ScriptRecord> scripts,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Scripts ({scripts.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Scripts ({scripts.Count})");
 
         var byType = scripts.GroupBy(s => s.ScriptType).OrderBy(g => g.Key).ToList();
         sb.AppendLine();
@@ -35,9 +35,9 @@ internal static class GeckScriptWriter
 
         foreach (var script in scripts.OrderBy(s => s.EditorId ?? "", StringComparer.OrdinalIgnoreCase))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "SCPT", script.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "SCPT", script.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(script.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(script.FormId)}");
             sb.AppendLine($"Editor ID:      {script.EditorId ?? "(none)"}");
             sb.AppendLine($"Type:           {script.ScriptType}");
             sb.AppendLine($"Variables:      {script.Variables.Count}");

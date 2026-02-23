@@ -3,11 +3,14 @@ using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class CompareCommands
+/// <summary>
+///     Compare LAND records between Xbox 360 and PC ESM files.
+/// </summary>
+internal static class CompareLandCommand
 {
     private const int VhgtDataLength = 1093;
 
-    private static int CompareLand(string xboxPath, string pcPath, string? formIdStr, bool compareAll)
+    internal static int CompareLand(string xboxPath, string pcPath, string? formIdStr, bool compareAll)
     {
         var targetFormId = EsmFileLoader.ParseFormId(formIdStr);
         if (!string.IsNullOrWhiteSpace(formIdStr) && targetFormId == null)

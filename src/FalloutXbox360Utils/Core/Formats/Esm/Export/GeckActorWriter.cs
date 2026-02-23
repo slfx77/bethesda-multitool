@@ -9,15 +9,15 @@ internal static class GeckActorWriter
     internal static void AppendNpcsSection(StringBuilder sb, List<NpcRecord> npcs,
         FormIdResolver resolver, IReadOnlyList<RaceRecord>? races = null)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"NPCs ({npcs.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"NPCs ({npcs.Count})");
 
         var raceLookup = races?.ToDictionary(r => r.FormId);
 
         foreach (var npc in npcs.OrderBy(n => n.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "NPC", npc.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "NPC", npc.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(npc.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(npc.FormId)}");
             sb.AppendLine($"Editor ID:      {npc.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {npc.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(npc.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -156,13 +156,13 @@ internal static class GeckActorWriter
         var title = !string.IsNullOrEmpty(npc.FullName)
             ? $"NPC: {npc.EditorId ?? "(unknown)"} \u2014 {npc.FullName}"
             : $"NPC: {npc.EditorId ?? "(unknown)"}";
-        sb.AppendLine(new string(GeckReportGenerator.SeparatorChar, GeckReportGenerator.SeparatorWidth));
-        var padding = (GeckReportGenerator.SeparatorWidth - title.Length) / 2;
+        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
+        var padding = (GeckReportHelpers.SeparatorWidth - title.Length) / 2;
         sb.AppendLine(new string(' ', Math.Max(0, padding)) + title);
-        sb.AppendLine(new string(GeckReportGenerator.SeparatorChar, GeckReportGenerator.SeparatorWidth));
+        sb.AppendLine(new string(GeckReportHelpers.SeparatorChar, GeckReportHelpers.SeparatorWidth));
 
         // Basic info
-        sb.AppendLine($"  FormID:         {GeckReportGenerator.FormatFormId(npc.FormId)}");
+        sb.AppendLine($"  FormID:         {GeckReportHelpers.FormatFormId(npc.FormId)}");
         sb.AppendLine($"  Editor ID:      {npc.EditorId ?? "(none)"}");
         sb.AppendLine($"  Display Name:   {npc.FullName ?? "(none)"}");
 
@@ -240,7 +240,7 @@ internal static class GeckActorWriter
             }
 
             sb.AppendLine(
-                $"  {"Karma:",-18}{npc.Stats.KarmaAlignment:F2}{GeckReportGenerator.FormatKarmaLabel(npc.Stats.KarmaAlignment)}");
+                $"  {"Karma:",-18}{npc.Stats.KarmaAlignment:F2}{GeckReportHelpers.FormatKarmaLabel(npc.Stats.KarmaAlignment)}");
             sb.AppendLine(
                 $"  {"Disposition:",-18}{npc.Stats.DispositionBase,-10}{"Barter Gold:",-22}{npc.Stats.BarterGold}");
         }
@@ -343,7 +343,7 @@ internal static class GeckActorWriter
                 var editorId = resolver.ResolveEditorId(faction.FactionFormId);
                 var displayName = resolver.ResolveDisplayName(faction.FactionFormId);
                 sb.AppendLine(
-                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {faction.Rank,4}");
+                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {faction.Rank,4}");
             }
         }
 
@@ -360,7 +360,7 @@ internal static class GeckActorWriter
                 var editorId = resolver.ResolveEditorId(item.ItemFormId);
                 var displayName = resolver.ResolveDisplayName(item.ItemFormId);
                 sb.AppendLine(
-                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {item.Count,5}");
+                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32} {item.Count,5}");
             }
         }
 
@@ -377,7 +377,7 @@ internal static class GeckActorWriter
                 var editorId = resolver.ResolveEditorId(spellId);
                 var displayName = resolver.ResolveDisplayName(spellId);
                 sb.AppendLine(
-                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32}");
+                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32}");
             }
         }
 
@@ -394,7 +394,7 @@ internal static class GeckActorWriter
                 var editorId = resolver.ResolveEditorId(pkgId);
                 var displayName = resolver.ResolveDisplayName(pkgId);
                 sb.AppendLine(
-                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32}");
+                    $"    {GeckReportHelpers.Truncate(editorId, 32),-32} {GeckReportHelpers.Truncate(displayName, 32),-32}");
             }
         }
 
@@ -452,7 +452,7 @@ internal static class GeckActorWriter
         IReadOnlyList<RaceRecord>? races = null)
     {
         var sb = new StringBuilder();
-        GeckReportGenerator.AppendHeader(sb, $"NPC Report ({npcs.Count:N0} NPCs)");
+        GeckReportHelpers.AppendHeader(sb, $"NPC Report ({npcs.Count:N0} NPCs)");
         sb.AppendLine();
         sb.AppendLine($"Total NPCs: {npcs.Count:N0}");
 
@@ -606,13 +606,13 @@ internal static class GeckActorWriter
 
     internal static void AppendCreaturesSection(StringBuilder sb, List<CreatureRecord> creatures)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Creatures ({creatures.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Creatures ({creatures.Count})");
 
         foreach (var creature in creatures.OrderBy(c => c.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "CREA", creature.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "CREA", creature.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(creature.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(creature.FormId)}");
             sb.AppendLine($"Editor ID:      {creature.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {creature.FullName ?? "(none)"}");
             sb.AppendLine($"Type:           {creature.CreatureTypeName}");
@@ -648,13 +648,13 @@ internal static class GeckActorWriter
     internal static void AppendRacesSection(StringBuilder sb, List<RaceRecord> races,
         FormIdResolver resolver)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Races ({races.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Races ({races.Count})");
 
         foreach (var race in races.OrderBy(r => r.EditorId ?? ""))
         {
-            GeckReportGenerator.AppendRecordHeader(sb, "RACE", race.EditorId);
+            GeckReportHelpers.AppendRecordHeader(sb, "RACE", race.EditorId);
 
-            sb.AppendLine($"FormID:         {GeckReportGenerator.FormatFormId(race.FormId)}");
+            sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(race.FormId)}");
             sb.AppendLine($"Editor ID:      {race.EditorId ?? "(none)"}");
             sb.AppendLine($"Display Name:   {race.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(race.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
@@ -684,7 +684,7 @@ internal static class GeckActorWriter
                     var skillName = skillIndex >= 32 && skillIndex <= 45
                         ? raceSkillNames[skillIndex - 32]
                         : $"AV#{skillIndex}";
-                    sb.AppendLine($"  {skillName,-15} {GeckReportGenerator.FormatModifier(boost)}");
+                    sb.AppendLine($"  {skillName,-15} {GeckReportHelpers.FormatModifier(boost)}");
                 }
             }
 
@@ -747,7 +747,7 @@ internal static class GeckActorWriter
 
     internal static void AppendClassesSection(StringBuilder sb, List<ClassRecord> classes)
     {
-        GeckReportGenerator.AppendSectionHeader(sb, $"Classes ({classes.Count})");
+        GeckReportHelpers.AppendSectionHeader(sb, $"Classes ({classes.Count})");
         sb.AppendLine();
 
         var playable = classes.Count(c => c.IsPlayable);
@@ -768,7 +768,7 @@ internal static class GeckActorWriter
         {
             sb.AppendLine(new string('\u2500', 80));
             sb.AppendLine($"  CLASS: {cls.EditorId ?? "(none)"} \u2014 {cls.FullName ?? "(unnamed)"}");
-            sb.AppendLine($"  FormID:      {GeckReportGenerator.FormatFormId(cls.FormId)}");
+            sb.AppendLine($"  FormID:      {GeckReportHelpers.FormatFormId(cls.FormId)}");
             var flags = new List<string>();
             if (cls.IsPlayable)
             {
