@@ -156,6 +156,37 @@ internal static class DialogueViewerHelper
     }
 
     /// <summary>
+    ///     Finds the parent topic that links to the given topic, searching within a specific
+    ///     quest if a filter is active, or across all quests otherwise.
+    /// </summary>
+    public static TopicDialogueNode? FindParentTopic(
+        TopicDialogueNode currentTopic, DialogueTreeResult dialogueTree, uint? questFilter)
+    {
+        if (questFilter.HasValue &&
+            dialogueTree.QuestTrees.TryGetValue(questFilter.Value, out var filteredQuest))
+        {
+            var result = FindParentTopicIn(currentTopic, filteredQuest.Topics);
+            if (result != null)
+            {
+                return result;
+            }
+        }
+        else
+        {
+            foreach (var quest in dialogueTree.QuestTrees.Values)
+            {
+                var result = FindParentTopicIn(currentTopic, quest.Topics);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+        }
+
+        return FindParentTopicIn(currentTopic, dialogueTree.OrphanTopics);
+    }
+
+    /// <summary>
     ///     Resolves the quest to display in the dialogue header. When a filter is active,
     ///     uses the first filtered INFO's quest rather than the topic tree grouping, because
     ///     shared topics (e.g., combat dialogue) may be grouped under a different quest than

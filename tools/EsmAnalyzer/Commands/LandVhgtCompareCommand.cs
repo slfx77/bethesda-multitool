@@ -1,19 +1,16 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using FalloutXbox360Utils.Core.Formats.Esm;
 using Spectre.Console;
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Schema;
 using static FalloutXbox360Utils.Core.Utils.BinaryUtils;
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class LandCommands
+/// <summary>
+///     Handles VHGT delta comparison between two ESM files.
+/// </summary>
+internal static class LandVhgtCompareCommand
 {
-    private static void CompareVhgt(string leftPath, string rightPath, uint formId, int sampleCount,
+    internal static void Execute(string leftPath, string rightPath, uint formId, int sampleCount,
         bool showDifferences)
     {
         if (!File.Exists(rightPath))

@@ -115,7 +115,7 @@ public static class DmpMapRenderCommands
             var fileName = Path.GetFileName(dmpFile);
             try
             {
-                var result = FalloutXbox360Utils.CLI.DmpCommand.ProcessDmp(dmpFile);
+                var result = FalloutXbox360Utils.CLI.DmpDiagCommand.ProcessDmp(dmpFile);
                 var markers = result.Markers
                     .Where(m => m.Position != null)
                     .Where(m => !fo3MarkerFormIds.Contains(m.Header.FormId))

@@ -1,14 +1,20 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.Text.Json;
-using FalloutXbox360Utils.Core.Utils;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class ExportCommands
+/// <summary>
+///     Handles worldspace heightmap generation by stitching CELL LAND records.
+/// </summary>
+internal static class ExportWorldmapCommand
 {
-    private static int GenerateWorldmap(string filePath, string? worldspaceName, string outputDir, int scale,
+    // Grid size for LAND vertex data (33x33 vertices per cell)
+    private const int CellGridSize = 33;
+
+    // Cached JSON options to avoid repeated allocations
+    private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
+
+    internal static int Execute(string filePath, string? worldspaceName, string outputDir, int scale,
         bool rawOutput, bool exportAll, bool analyzeOnly)
     {
         _ = Directory.CreateDirectory(outputDir);
@@ -223,7 +229,7 @@ public static partial class ExportCommands
                             var vhgt = subrecords.FirstOrDefault(s => s.Signature == "VHGT");
                             if (vhgt != null && vhgt.Data.Length >= 4 + (CellGridSize * CellGridSize))
                             {
-                                var (heights, _) = ParseHeightmap(vhgt.Data, bigEndian);
+                                var (heights, _) = ExportLandCommand.ParseHeightmap(vhgt.Data, bigEndian);
                                 if (!heightmaps.ContainsKey((cell.GridX, cell.GridY)))
                                 {
                                     heightmaps[(cell.GridX, cell.GridY)] = heights;

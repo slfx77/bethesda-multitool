@@ -126,7 +126,7 @@ internal static class EsmFormIdCorrelator
             return 0;
         }
 
-        if (!EsmRecordScanner.IsRecordTypeMarker(data, checkOffset))
+        if (!RecordValidator.IsRecordTypeMarker(data, checkOffset))
         {
             return 0;
         }

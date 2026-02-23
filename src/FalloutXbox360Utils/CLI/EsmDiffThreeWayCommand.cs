@@ -34,7 +34,7 @@ public sealed class DiffFormIdResolver
 /// <summary>
 ///     Three-way diff: Xbox 360 original -> Converted -> PC reference.
 /// </summary>
-public static partial class EsmDiffCommand
+internal static class EsmDiffThreeWayCommand
 {
     /// <summary>
     ///     Runs a 3-way comparison between Xbox 360 original, converted output, and PC reference.

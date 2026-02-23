@@ -2,7 +2,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 
 namespace FalloutXbox360Utils;
 
@@ -50,20 +49,15 @@ public sealed partial class SingleFileTab
             return false;
         }
 
-        // Switch to Dialogue Viewer tab
         SubTabView.SelectedItem = DialogueViewerTab;
 
-        // Ensure it's populated
         if (!_session.DialogueViewerPopulated && _session.SemanticResult != null)
         {
             _ = PopulateDialogueViewerAsync();
         }
 
-        // Cross-tab navigation: clear filters
         _dialogueSpeakerFilter = null;
         _dialogueQuestFilter = null;
-
-        // Navigate to the topic
         NavigateToDialogueTopic(topic, pushToStack: _currentDialogueTopic != null);
         return true;
     }
@@ -79,15 +73,6 @@ public sealed partial class SingleFileTab
     private uint? _dialogueSpeakerFilter;
     private uint? _dialogueQuestFilter;
     private CancellationTokenSource? _dialogueSearchDebounceToken;
-
-    // Typed wrappers for TreeView DataObject to disambiguate quest vs NPC picker context
-    private sealed record QuestPickerData(uint QuestFormId, List<TopicDialogueNode> Topics);
-
-    private sealed record SpeakerPickerData(uint SpeakerFormId, List<TopicDialogueNode> Topics);
-
-    private sealed record QuestTopicPickerData(uint QuestFormId, TopicDialogueNode Topic);
-
-    private sealed record SpeakerTopicPickerData(uint SpeakerFormId, TopicDialogueNode Topic);
 
     #endregion
 
@@ -162,94 +147,24 @@ public sealed partial class SingleFileTab
         _dialoguePickerByQuest = byQuest;
         DialoguePickerTree.RootNodes.Clear();
 
+        List<TreeViewNode> nodes;
         if (byQuest)
         {
-            BuildQuestPickerTree(tree, searchQuery);
+            nodes = DialoguePickerTreeBuilder.BuildQuestPickerNodes(tree, searchQuery);
+        }
+        else if (_session.TopicsBySpeaker != null)
+        {
+            nodes = DialoguePickerTreeBuilder.BuildNpcPickerNodes(
+                _session.TopicsBySpeaker, ResolveFormName, searchQuery);
         }
         else
-        {
-            BuildNpcPickerTree(searchQuery);
-        }
-    }
-
-    private void BuildQuestPickerTree(DialogueTreeResult tree, string? searchQuery)
-    {
-        var quests = tree.QuestTrees.Values
-            .Where(q => q.Topics.Count > 0)
-            .OrderBy(q => q.QuestName ?? "", StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        foreach (var quest in quests)
-        {
-            var matchingTopics = DialogueMetadataBuilder.FilterTopics(quest.Topics, searchQuery);
-            if (matchingTopics.Count == 0)
-            {
-                continue;
-            }
-
-            var questName = quest.QuestName ?? $"0x{quest.QuestFormId:X8}";
-            var questNode = new EsmBrowserNode
-            {
-                DisplayName = questName,
-                Detail = $"({matchingTopics.Count})",
-                NodeType = "Category",
-                IconGlyph = "\uE8BD",
-                HasUnrealizedChildren = true,
-                DataObject = new QuestPickerData(quest.QuestFormId, matchingTopics)
-            };
-
-            var treeNode = new TreeViewNode { Content = questNode, HasUnrealizedChildren = true };
-            DialoguePickerTree.RootNodes.Add(treeNode);
-        }
-
-        var orphanTopics = DialogueMetadataBuilder.FilterTopics(tree.OrphanTopics, searchQuery);
-        if (orphanTopics.Count > 0)
-        {
-            var orphanNode = new EsmBrowserNode
-            {
-                DisplayName = "Unassigned Topics",
-                Detail = $"({orphanTopics.Count})",
-                NodeType = "Category",
-                IconGlyph = "\uE8BD",
-                HasUnrealizedChildren = true,
-                DataObject = orphanTopics
-            };
-
-            var treeNode = new TreeViewNode { Content = orphanNode, HasUnrealizedChildren = true };
-            DialoguePickerTree.RootNodes.Add(treeNode);
-        }
-    }
-
-    private void BuildNpcPickerTree(string? searchQuery)
-    {
-        if (_session.TopicsBySpeaker == null)
         {
             return;
         }
 
-        var speakers = _session.TopicsBySpeaker
-            .Select(kv => (
-                FormId: kv.Key,
-                Name: ResolveFormName(kv.Key),
-                Topics: DialogueMetadataBuilder.FilterTopics(kv.Value, searchQuery)))
-            .Where(s => s.Topics.Count > 0)
-            .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        foreach (var speaker in speakers)
+        foreach (var node in nodes)
         {
-            var speakerNode = new EsmBrowserNode
-            {
-                DisplayName = speaker.Name,
-                Detail = $"({speaker.Topics.Count})",
-                NodeType = "Category",
-                IconGlyph = "\uE77B",
-                HasUnrealizedChildren = true,
-                DataObject = new SpeakerPickerData(speaker.FormId, speaker.Topics)
-            };
-
-            var treeNode = new TreeViewNode { Content = speakerNode, HasUnrealizedChildren = true };
-            DialoguePickerTree.RootNodes.Add(treeNode);
+            DialoguePickerTree.RootNodes.Add(node);
         }
     }
 
@@ -257,103 +172,10 @@ public sealed partial class SingleFileTab
     private void DialoguePickerTree_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
 #pragma warning restore CA1822
     {
-        if (!args.Node.HasUnrealizedChildren || args.Node.Content is not EsmBrowserNode node)
-        {
-            return;
-        }
-
-        List<TopicDialogueNode> topics;
-        uint? speakerFormId = null;
-        uint? questFormId = null;
-        if (node.DataObject is SpeakerPickerData speakerData)
-        {
-            topics = speakerData.Topics;
-            speakerFormId = speakerData.SpeakerFormId;
-        }
-        else if (node.DataObject is QuestPickerData questData)
-        {
-            topics = questData.Topics;
-            questFormId = questData.QuestFormId;
-        }
-        else if (node.DataObject is List<TopicDialogueNode> orphanTopics)
-        {
-            topics = orphanTopics;
-        }
-        else
-        {
-            return;
-        }
-
-        foreach (var topic in topics.OrderBy(t => t.TopicName ?? "", StringComparer.OrdinalIgnoreCase))
-        {
-            var topicName = topic.TopicName ?? topic.Topic?.EditorId ?? $"0x{topic.TopicFormId:X8}";
-            var infoCount = topic.InfoChain.Count;
-            var topicType = topic.Topic?.TopicTypeName;
-
-            var detail = topicType != null ? $"{topicType} ({infoCount})" : $"({infoCount})";
-
-            // NPC view: show first response text; Quest view: show topic name
-            string displayName;
-            if (!_dialoguePickerByQuest)
-            {
-                var firstText = topic.InfoChain
-                    .SelectMany(info => info.Info.Responses)
-                    .Select(r => r.Text)
-                    .FirstOrDefault(t => !string.IsNullOrEmpty(t));
-
-                // Subtitle fallback for picker display
-                if (firstText == null)
-                {
-                    var subtitles = _session.EffectiveSubtitles;
-                    if (subtitles != null)
-                    {
-                        firstText = topic.InfoChain
-                            .Select(info => subtitles.Lookup(info.Info.FormId)?.Text)
-                            .FirstOrDefault(t => !string.IsNullOrEmpty(t));
-                    }
-                }
-
-                if (firstText != null && !DialogueMetadataBuilder.IsSimilarText(firstText, topicName))
-                {
-                    displayName = firstText.Length > 80 ? firstText[..77] + "..." : firstText;
-                }
-                else
-                {
-                    displayName = topicName;
-                }
-            }
-            else
-            {
-                displayName = topicName;
-            }
-
-            object topicDataObject;
-            if (speakerFormId.HasValue)
-            {
-                topicDataObject = new SpeakerTopicPickerData(speakerFormId.Value, topic);
-            }
-            else if (questFormId.HasValue)
-            {
-                topicDataObject = new QuestTopicPickerData(questFormId.Value, topic);
-            }
-            else
-            {
-                topicDataObject = topic;
-            }
-
-            var topicNode = new EsmBrowserNode
-            {
-                DisplayName = displayName,
-                Detail = detail,
-                NodeType = "Record",
-                IconGlyph = DialogueMetadataBuilder.GetTopicTypeIcon(topic.Topic?.TopicType ?? 0),
-                DataObject = topicDataObject
-            };
-
-            args.Node.Children.Add(new TreeViewNode { Content = topicNode });
-        }
-
-        args.Node.HasUnrealizedChildren = false;
+        DialoguePickerTreeBuilder.ExpandCategoryNode(
+            args, _dialoguePickerByQuest,
+            formId => _session.EffectiveSubtitles?.Lookup(formId),
+            ResolveFormName);
     }
 
     private void DialoguePickerTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
@@ -363,24 +185,15 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        if (browserNode.DataObject is SpeakerTopicPickerData speakerData)
+        var (topic, speakerFilter, questFilter) = DialoguePickerTreeBuilder.ExtractTopicFromInvocation(browserNode);
+        if (topic == null)
         {
-            _dialogueSpeakerFilter = speakerData.SpeakerFormId;
-            _dialogueQuestFilter = null;
-            NavigateToDialogueTopic(speakerData.Topic, pushToStack: false);
+            return;
         }
-        else if (browserNode.DataObject is QuestTopicPickerData questData)
-        {
-            _dialogueSpeakerFilter = null;
-            _dialogueQuestFilter = questData.QuestFormId;
-            NavigateToDialogueTopic(questData.Topic, pushToStack: false);
-        }
-        else if (browserNode.DataObject is TopicDialogueNode topic)
-        {
-            _dialogueSpeakerFilter = null;
-            _dialogueQuestFilter = null;
-            NavigateToDialogueTopic(topic, pushToStack: false);
-        }
+
+        _dialogueSpeakerFilter = speakerFilter;
+        _dialogueQuestFilter = questFilter;
+        NavigateToDialogueTopic(topic, pushToStack: false);
     }
 
     #endregion
@@ -397,11 +210,12 @@ public sealed partial class SingleFileTab
         _currentDialogueTopic = topic;
         _visitedTopicFormIds.Add(topic.TopicFormId);
 
-        var filteredInfoChain = GetFilteredInfoChain(topic);
+        var filteredInfoChain = DialogueViewerHelper.FilterInfoChain(
+            topic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter);
 
         UpdateDialogueHeader(topic, filteredInfoChain);
-        BuildConversationDisplay(filteredInfoChain, promptText);
-        BuildPlayerChoices(topic, filteredInfoChain);
+        PopulateConversationDisplay(filteredInfoChain, promptText);
+        PopulatePlayerChoices(topic, filteredInfoChain);
 
         DialogueConversationScroller.ChangeView(null, 0, null, disableAnimation: true);
         SyncDialogueTreeSelection(topic);
@@ -416,15 +230,7 @@ public sealed partial class SingleFileTab
                 continue;
             }
 
-            var containsTopic = categoryNode.DataObject switch
-            {
-                QuestPickerData qd => qd.Topics.Any(t => t.TopicFormId == topic.TopicFormId),
-                SpeakerPickerData sd => sd.Topics.Any(t => t.TopicFormId == topic.TopicFormId),
-                List<TopicDialogueNode> list => list.Any(t => t.TopicFormId == topic.TopicFormId),
-                _ => false
-            };
-
-            if (!containsTopic)
+            if (!DialoguePickerTreeBuilder.CategoryContainsTopic(categoryNode, topic.TopicFormId))
             {
                 continue;
             }
@@ -441,15 +247,7 @@ public sealed partial class SingleFileTab
                     continue;
                 }
 
-                var childTopicFormId = topicNode.DataObject switch
-                {
-                    QuestTopicPickerData qt => qt.Topic.TopicFormId,
-                    SpeakerTopicPickerData st => st.Topic.TopicFormId,
-                    TopicDialogueNode t => t.TopicFormId,
-                    _ => (uint?)null
-                };
-
-                if (childTopicFormId == topic.TopicFormId)
+                if (DialoguePickerTreeBuilder.GetChildTopicFormId(topicNode) == topic.TopicFormId)
                 {
                     DialoguePickerTree.SelectedNode = child;
                     var container = DialoguePickerTree.ContainerFromNode(child) as UIElement;
@@ -484,88 +282,20 @@ public sealed partial class SingleFileTab
         DialogueHeaderText.Text = string.Join(" \u203A ", parts);
     }
 
-    private List<InfoDialogueNode> GetFilteredInfoChain(TopicDialogueNode topic)
-    {
-        return DialogueViewerHelper.FilterInfoChain(topic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter);
-    }
-
-    private void BuildConversationDisplay(
-        List<InfoDialogueNode> filteredInfoChain, string? promptText = null)
+    private void PopulateConversationDisplay(List<InfoDialogueNode> filteredInfoChain, string? promptText = null)
     {
         DialogueConversationPanel.Children.Clear();
 
-        if (filteredInfoChain.Count == 0)
+        var elements = DialogueConversationBuilder.BuildConversationElements(
+            filteredInfoChain, promptText,
+            ResolveSpeakerName,
+            formId => _session.EffectiveSubtitles?.Lookup(formId),
+            BuildRecordDetailPanel);
+
+        foreach (var element in elements)
         {
-            DialogueConversationPanel.Children.Add(DialogueTreeRenderer.CreateEmptyTopicPlaceholder());
-            return;
+            DialogueConversationPanel.Children.Add(element);
         }
-
-        if (!string.IsNullOrEmpty(promptText))
-        {
-            DialogueConversationPanel.Children.Add(DialogueTreeRenderer.CreatePlayerPromptBlock(promptText));
-        }
-
-        var challengeInfo = filteredInfoChain.FirstOrDefault(i => i.Info.IsSpeechChallenge);
-        if (challengeInfo != null)
-        {
-            DialogueConversationPanel.Children.Add(
-                DialogueTreeRenderer.CreateSpeechChallengeBanner(challengeInfo.Info.DifficultyName));
-        }
-
-        if (filteredInfoChain.Count > 1)
-        {
-            DialogueConversationPanel.Children.Add(DialogueTreeRenderer.CreateSecondaryLabel(
-                $"{filteredInfoChain.Count} possible responses (game selects based on conditions):",
-                new Thickness(0, 0, 0, 4)));
-        }
-
-        for (var i = 0; i < filteredInfoChain.Count; i++)
-        {
-            if (i > 0)
-            {
-                DialogueConversationPanel.Children.Add(DialogueTreeRenderer.CreateResponseSeparator());
-                DialogueConversationPanel.Children.Add(DialogueTreeRenderer.CreateSecondaryLabel(
-                    $"Alternative response {i + 1}:", new Thickness(0, 0, 0, 4)));
-            }
-
-            DialogueConversationPanel.Children.Add(CreateNpcResponseBlock(filteredInfoChain[i]));
-        }
-    }
-
-    private Border CreateNpcResponseBlock(InfoDialogueNode infoNode)
-    {
-        var info = infoNode.Info;
-        var content = new StackPanel { Spacing = 4 };
-
-        content.Children.Add(
-            DialogueTreeRenderer.BuildSpeakerHeader(ResolveSpeakerName(info.SpeakerFormId), info.SpeakerFormId));
-
-        var hasResponseText = false;
-        foreach (var response in info.Responses.Where(r => !string.IsNullOrEmpty(r.Text)))
-        {
-            hasResponseText = true;
-            content.Children.Add(DialogueTreeRenderer.CreateResponseText(response.Text!));
-        }
-
-        if (!hasResponseText)
-        {
-            var subtitle = _session.EffectiveSubtitles?.Lookup(info.FormId);
-            if (subtitle?.Text != null)
-            {
-                content.Children.Add(DialogueTreeRenderer.CreateResponseText(subtitle.Text, isSubtitleFallback: true));
-                content.Children.Add(DialogueTreeRenderer.CreateSubtitleSourceLabel());
-            }
-        }
-
-        var tagStrip = DialogueTreeRenderer.BuildMetadataTagStrip(
-            DialogueRecordDetailBuilder.CollectMetadataTags(info));
-        if (tagStrip != null)
-        {
-            content.Children.Add(tagStrip);
-        }
-
-        content.Children.Add(BuildRecordDetailPanel(info));
-        return DialogueTreeRenderer.WrapInResponseCard(content);
     }
 
     private Border BuildRecordDetailPanel(DialogueRecord info)
@@ -582,7 +312,7 @@ public sealed partial class SingleFileTab
             createLink: (text, formId, fontSize, monospace) => CreateFormIdLink(text, formId, fontSize, monospace));
     }
 
-    private void BuildPlayerChoices(TopicDialogueNode topic, List<InfoDialogueNode> filteredInfoChain)
+    private void PopulatePlayerChoices(TopicDialogueNode topic, List<InfoDialogueNode> filteredInfoChain)
     {
         DialogueChoicesPanel.Children.Clear();
 
@@ -613,7 +343,9 @@ public sealed partial class SingleFileTab
             }
             else
             {
-                var parentTopic = FindParentTopic(topic);
+                var parentTopic = _session.DialogueTree != null
+                    ? DialogueViewerHelper.FindParentTopic(topic, _session.DialogueTree, _dialogueQuestFilter)
+                    : null;
                 var parentChoices = parentTopic != null
                     ? DialogueViewerHelper.CollectLinkedTopics(parentTopic.InfoChain, topic.TopicFormId)
                     : [];
@@ -644,15 +376,7 @@ public sealed partial class SingleFileTab
 
     private void ShowAddedTopicsInfo(List<InfoDialogueNode> filteredInfoChain)
     {
-        var addedTopics = new Dictionary<uint, TopicDialogueNode>();
-        foreach (var infoNode in filteredInfoChain)
-        {
-            foreach (var added in infoNode.AddedTopics)
-            {
-                addedTopics.TryAdd(added.TopicFormId, added);
-            }
-        }
-
+        var addedTopics = DialogueConversationBuilder.CollectUnlockedTopics(filteredInfoChain);
         if (addedTopics.Count == 0)
         {
             return;
@@ -664,7 +388,9 @@ public sealed partial class SingleFileTab
         foreach (var (_, addedTopic) in addedTopics)
         {
             var displayText = DialogueViewerHelper.ResolveTopicDisplayText(addedTopic);
-            var button = CreateDialogueChoiceButton(displayText, addedTopic);
+            var button = DialogueConversationBuilder.CreateStyledChoiceButton(
+                displayText, addedTopic, _visitedTopicFormIds,
+                (t, prompt) => NavigateToDialogueTopic(t, pushToStack: true, promptText: prompt));
             var container = new StackPanel();
             container.Children.Add(button);
             DialogueChoicesPanel.Children.Add(container);
@@ -674,47 +400,12 @@ public sealed partial class SingleFileTab
     private StackPanel CreatePlayerChoiceWithDetails(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
     {
         var container = new StackPanel();
-        container.Children.Add(CreatePlayerChoiceButton(linkedTopic, sourceInfo));
+        var button = DialogueConversationBuilder.CreatePlayerChoiceButton(
+            linkedTopic, sourceInfo, _visitedTopicFormIds,
+            (t, prompt) => NavigateToDialogueTopic(t, pushToStack: true, promptText: prompt));
+        container.Children.Add(button);
         container.Children.Add(BuildTopicDetailPanel(linkedTopic, sourceInfo));
         return container;
-    }
-
-    private Button CreatePlayerChoiceButton(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
-    {
-        var promptText = DialogueViewerHelper.ResolvePromptText(sourceInfo, linkedTopic);
-        var challengeOutcome = DialogueMetadataBuilder.DetectChallengeOutcome(ref promptText);
-        var speechInfo = linkedTopic.InfoChain.FirstOrDefault(i => i.Info.IsSpeechChallenge);
-        var isGoodbyeTopic = linkedTopic.InfoChain.Count > 0 && linkedTopic.InfoChain.All(i => i.Info.IsGoodbye);
-
-        return CreateDialogueChoiceButton(
-            promptText, linkedTopic,
-            challengeOutcome: challengeOutcome,
-            speechChallengeDifficulty: speechInfo?.Info.DifficultyName,
-            isGoodbyeTopic: isGoodbyeTopic);
-    }
-
-    private Button CreateDialogueChoiceButton(
-        string displayText, TopicDialogueNode targetTopic,
-        string? challengeOutcome = null, string? speechChallengeDifficulty = null,
-        bool isGoodbyeTopic = false)
-    {
-        var isVisited = _visitedTopicFormIds.Contains(targetTopic.TopicFormId);
-        var contentPanel = DialogueTreeRenderer.BuildChoiceContent(
-            displayText, isVisited, challengeOutcome, speechChallengeDifficulty, isGoodbyeTopic);
-
-        var button = new Button
-        {
-            Content = contentPanel,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            Padding = new Thickness(8, 6, 8, 6),
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0)
-        };
-
-        button.Click += (_, _) => NavigateToDialogueTopic(targetTopic, pushToStack: true, promptText: displayText);
-
-        return button;
     }
 
     private Border BuildTopicDetailPanel(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
@@ -738,37 +429,6 @@ public sealed partial class SingleFileTab
         }
 
         return _session.EffectiveResolver?.GetBestNameWithRefChain(formId.Value) ?? $"0x{formId.Value:X8}";
-    }
-
-    private TopicDialogueNode? FindParentTopic(TopicDialogueNode currentTopic)
-    {
-        if (_session.DialogueTree == null)
-        {
-            return null;
-        }
-
-        if (_dialogueQuestFilter.HasValue &&
-            _session.DialogueTree.QuestTrees.TryGetValue(_dialogueQuestFilter.Value, out var filteredQuest))
-        {
-            var result = DialogueViewerHelper.FindParentTopicIn(currentTopic, filteredQuest.Topics);
-            if (result != null)
-            {
-                return result;
-            }
-        }
-        else
-        {
-            foreach (var quest in _session.DialogueTree.QuestTrees.Values)
-            {
-                var result = DialogueViewerHelper.FindParentTopicIn(currentTopic, quest.Topics);
-                if (result != null)
-                {
-                    return result;
-                }
-            }
-        }
-
-        return DialogueViewerHelper.FindParentTopicIn(currentTopic, _session.DialogueTree.OrphanTopics);
     }
 
     private void AddReturnToPickerLink()

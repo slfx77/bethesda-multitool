@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
@@ -15,6 +17,10 @@ namespace FalloutXbox360Utils;
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    // Temporary fields to pass save data from AnalyzeSaveFileAsync to the session
+    private SaveFile? _pendingSaveData;
+    private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
+
     #region Dependency Checking
 
     private async Task CheckDependenciesAsync()
@@ -189,6 +195,95 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Analysis Pipeline
+
+    private async Task<AnalysisResult> RunFileAnalysisAsync(
+        string filePath, AnalysisFileType fileType, IProgress<AnalysisProgress> progress)
+    {
+        return fileType switch
+        {
+            AnalysisFileType.EsmFile => await EsmFileAnalyzer.AnalyzeAsync(filePath, progress),
+            AnalysisFileType.Minidump => await new MinidumpAnalyzer().AnalyzeAsync(filePath, progress),
+            AnalysisFileType.SaveFile => await AnalyzeSaveFileAsync(filePath, progress),
+            _ => throw new NotSupportedException($"Unknown file type: {filePath}")
+        };
+    }
+
+    private async Task<AnalysisResult> AnalyzeSaveFileAsync(string filePath, IProgress<AnalysisProgress> progress)
+    {
+        var (save, decodedForms, result) = await SingleFileAnalysisHelper.AnalyzeSaveFileAsync(filePath, progress);
+        _pendingSaveData = save;
+        _pendingDecodedForms = decodedForms;
+        return result;
+    }
+
+    private async Task RunSemanticReconstructionPipelineAsync()
+    {
+        SetPipelinePhase(AnalysisPipelinePhase.Reconstructing);
+        StatusTextBlock.Text = _session.IsEsmFile
+            ? Strings.Status_ParsingEsmRecords
+            : Strings.Status_ReconstructingRecords;
+
+        var reconProgress = new Progress<(int percent, string phase)>(p =>
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                AnalysisProgressBar.Value = 80 + p.percent * 0.15;
+                StatusTextBlock.Text = p.phase;
+            }));
+
+        _semanticReconstructionTask = Task.Run(() =>
+        {
+            var reconstructor = new RecordParser(
+                _analysisResult!.EsmRecords!,
+                _analysisResult.FormIdMap,
+                _session.Accessor!,
+                _session.FileSize,
+                _analysisResult.MinidumpInfo);
+            return reconstructor.ReconstructAll(reconProgress);
+        });
+
+        try
+        {
+            _session.SemanticResult = await _semanticReconstructionTask;
+            if (_session.SemanticResult != null)
+            {
+                _session.Resolver = _session.SemanticResult.CreateResolver();
+                SingleFileAnalysisHelper.AddTesFormStructRegions(_analysisResult!);
+                SingleFileAnalysisHelper.AddRuntimeTerrainMeshRegions(_analysisResult!);
+                RefreshCarvedFilesList();
+                BuildResultsFilterCheckboxes();
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
+                $"{ex.GetType().Name}: {ex.Message}", true);
+        }
+    }
+
+    private async Task RunCoverageAnalysisAsync()
+    {
+        try
+        {
+            SetPipelinePhase(AnalysisPipelinePhase.Coverage);
+            StatusTextBlock.Text = Strings.Status_RunningCoverageAnalysis;
+            AnalysisProgressBar.Value = 96;
+            _session.CoverageResult = await Task.Run(() =>
+                CoverageAnalyzer.Analyze(_session.AnalysisResult!, _session.Accessor!));
+
+            if (_session.CoverageResult.Error == null)
+            {
+                await HexViewer.AddCoverageGapRegionsAsync(_session.CoverageResult);
+            }
+        }
+        catch (Exception coverageEx)
+        {
+            StatusTextBlock.Text = Strings.Status_CoverageAnalysisFailed(coverageEx.Message);
+        }
+    }
+
+    #endregion
+
     #region Semantic Reconstruction
 
     /// <summary>
@@ -297,6 +392,62 @@ public sealed partial class SingleFileTab
             ReconstructProgressBar.IsIndeterminate = false;
             ReconstructStatusText.Text = "";
             StatusTextBlock.Text = "";
+        }
+    }
+
+    #endregion
+
+    #region Carved Files and Auto-Population
+
+    private void RefreshCarvedFilesList()
+    {
+        if (_analysisResult == null) return;
+
+        _allCarvedFiles.Clear();
+        _allCarvedFiles.AddRange(SingleFileAnalysisHelper.BuildCarvedFileList(
+            _analysisResult, isEsmFile: _session.IsEsmFile));
+        _carvedFiles.Clear();
+        foreach (var item in _allCarvedFiles)
+        {
+            _carvedFiles.Add(item);
+        }
+    }
+
+    private async Task AutoPopulateCurrentTabAsync(object? selectedTab)
+    {
+        if (_session.IsSaveFile)
+        {
+            if (ReferenceEquals(selectedTab, DataBrowserTab) && _session.SaveData != null)
+            {
+                await PopulateSaveBrowserAsync();
+            }
+
+            return;
+        }
+
+        if (!_session.HasEsmRecords) return;
+
+        var selected = selectedTab;
+
+        if (ReferenceEquals(selected, SummaryTab) && _session.SemanticResult != null)
+        {
+            PopulateRecordBreakdown();
+        }
+        else if (ReferenceEquals(selected, DataBrowserTab))
+        {
+            ReconstructButton_Click(this, new RoutedEventArgs());
+        }
+        else if (ReferenceEquals(selected, DialogueViewerTab))
+        {
+            _ = PopulateDialogueViewerAsync();
+        }
+        else if (ReferenceEquals(selected, WorldMapTab))
+        {
+            _ = PopulateWorldMapAsync();
+        }
+        else if (ReferenceEquals(selected, ReportsTab))
+        {
+            await GenerateReportsAsync();
         }
     }
 

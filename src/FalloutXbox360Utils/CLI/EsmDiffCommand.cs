@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.CLI;
 /// <summary>
 ///     Unified command for comparing and diffing ESM files.
 /// </summary>
-public static partial class EsmDiffCommand
+public static class EsmDiffCommand
 {
     /// <summary>
     ///     Creates the unified 'diff' command that accepts --xbox, --converted, --pc (at least 2 required).
@@ -86,8 +86,8 @@ public static partial class EsmDiffCommand
             if (fileCount == 3)
             {
                 // Three-way diff
-                return RunThreeWayDiff(xboxPath!, convertedPath!, pcPath!, formIdStr, recordType, limit, maxBytes,
-                    showBytes, showSemantic);
+                return EsmDiffThreeWayCommand.RunThreeWayDiff(xboxPath!, convertedPath!, pcPath!, formIdStr,
+                    recordType, limit, maxBytes, showBytes, showSemantic);
             }
 
             // Two-way diff - determine which two files and their labels
@@ -127,8 +127,8 @@ public static partial class EsmDiffCommand
                 limit = 100;
             }
 
-            return RunTwoWayDiff(fileA, fileB, labelA, labelB, headerOnly, showStats, showSemantic, formIdStr,
-                recordType, limit, maxBytes, showBytes, outputDir);
+            return EsmDiffUnifiedCommand.RunTwoWayDiff(fileA, fileB, labelA, labelB, headerOnly, showStats,
+                showSemantic, formIdStr, recordType, limit, maxBytes, showBytes, outputDir);
         });
 
         return command;
@@ -188,8 +188,8 @@ public static partial class EsmDiffCommand
             var showBytes = parseResult.GetValue(showBytesOption);
             var showSemantic = parseResult.GetValue(semanticOption);
 
-            return RunThreeWayDiff(xboxPath, convertedPath, pcPath, formIdStr, recordType, limit, maxBytes, showBytes,
-                showSemantic);
+            return EsmDiffThreeWayCommand.RunThreeWayDiff(xboxPath, convertedPath, pcPath, formIdStr, recordType,
+                limit, maxBytes, showBytes, showSemantic);
         });
 
         return command;

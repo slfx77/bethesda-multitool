@@ -1,13 +1,15 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using System.Globalization;
 using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.LandHelpers;
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class LandCommands
+/// <summary>
+///     Handles LAND record summary with human-readable interpretation.
+/// </summary>
+internal static class LandSummaryCommand
 {
-    private static int SummarizeLand(string filePath, string formIdText, int vhgtSamples, int vhgtHist,
+    internal static int Execute(string filePath, string formIdText, int vhgtSamples, int vhgtHist,
         string? vhgtComparePath, int vhgtCompareSamples, bool vhgtCompareDiff)
     {
         var formId = EsmFileLoader.ParseFormId(formIdText);
@@ -63,7 +65,7 @@ public static partial class LandCommands
         PrintVhgtDetails(subrecords, esm.IsBigEndian, vhgtSamples, vhgtHist);
         if (!string.IsNullOrWhiteSpace(vhgtComparePath))
         {
-            CompareVhgt(filePath, vhgtComparePath, formId.Value, vhgtCompareSamples, vhgtCompareDiff);
+            LandVhgtCompareCommand.Execute(filePath, vhgtComparePath, formId.Value, vhgtCompareSamples, vhgtCompareDiff);
         }
 
         return 0;

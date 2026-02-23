@@ -12,16 +12,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 public sealed class RecordParser
 {
-    #region Constructor
-
-    /// <summary>
-    ///     Creates a new RecordParser with scan results and optional memory-mapped access.
-    /// </summary>
-    /// <param name="scanResult">The ESM record scan results from EsmRecordFormat.</param>
-    /// <param name="formIdCorrelations">FormID to Editor ID correlations.</param>
-    /// <param name="accessor">Optional memory-mapped accessor for reading additional record data.</param>
-    /// <param name="fileSize">Size of the memory dump file.</param>
-    /// <param name="minidumpInfo">Optional minidump info for runtime struct reading (pointer following).</param>
     public RecordParser(
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? formIdCorrelations = null,
@@ -51,10 +41,6 @@ public sealed class RecordParser
         _miscCollections = new MiscCollectionHandler(_context);
         _ai = new AiRecordHandler(_context);
     }
-
-    #endregion
-
-    #region Public API - Reconstruction
 
     /// <summary>
     ///     Perform full semantic reconstruction of all supported record types.
@@ -92,100 +78,10 @@ public sealed class RecordParser
             .Where(kvp => !reconstructedTypes.Contains(kvp.Key))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        // Enrich LAND records with runtime cell coordinates for heightmap stitching
-        if (_context.RuntimeReader != null)
-        {
-            // Use pAllForms entries (LAND records lack editor IDs, so they're absent from RuntimeEditorIds)
-            var landEntries = _context.ScanResult.RuntimeLandFormEntries.Count > 0
-                ? _context.ScanResult.RuntimeLandFormEntries
-                : _context.ScanResult.RuntimeEditorIds; // Fallback for compatibility
-            var runtimeLandData = _context.RuntimeReader.ReadAllRuntimeLandData(landEntries);
-            if (runtimeLandData.Count > 0)
-            {
-                var existingCount = _context.ScanResult.LandRecords.Count;
-                EsmWorldExtractor.EnrichLandRecordsWithRuntimeData(_context.ScanResult, runtimeLandData);
-                var addedCount = _context.ScanResult.LandRecords.Count - existingCount;
-                Logger.Instance.Debug(
-                    $"  [Semantic] Enriched LAND records: {runtimeLandData.Count} with terrain data " +
-                    $"({existingCount} existing + {addedCount} runtime-only = {_context.ScanResult.LandRecords.Count} total)");
-            }
-        }
-
-        // Enrich placed references with runtime REFR/ACHR/ACRE data from pAllForms
-        if (_context.RuntimeReader != null && _context.ScanResult.RuntimeRefrFormEntries.Count > 0)
-        {
-            phaseSw.Restart();
-            var runtimeRefrs = _context.RuntimeReader.ReadAllRuntimeRefrs(
-                _context.ScanResult.RuntimeRefrFormEntries);
-
-            if (runtimeRefrs.Count > 0)
-            {
-                // Build index of existing ESM-scanned REFRs by FormID for merging
-                var existingByFormId = new Dictionary<uint, int>();
-                for (var i = 0; i < _context.ScanResult.RefrRecords.Count; i++)
-                {
-                    existingByFormId.TryAdd(_context.ScanResult.RefrRecords[i].Header.FormId, i);
-                }
-
-                var mergedCount = 0;
-                var addedCount = 0;
-                foreach (var (formId, runtimeRefr) in runtimeRefrs)
-                {
-                    if (existingByFormId.TryGetValue(formId, out var idx))
-                    {
-                        // Merge: prefer runtime non-null values over ESM
-                        var existing = _context.ScanResult.RefrRecords[idx];
-                        _context.ScanResult.RefrRecords[idx] = existing with
-                        {
-                            BaseFormId = runtimeRefr.BaseFormId != 0 ? runtimeRefr.BaseFormId : existing.BaseFormId,
-                            Position = runtimeRefr.Position ?? existing.Position,
-                            Scale = Math.Abs(runtimeRefr.Scale - 1.0f) > 0.001f ? runtimeRefr.Scale : existing.Scale,
-                            ParentCellFormId = runtimeRefr.ParentCellFormId ?? existing.ParentCellFormId,
-                            IsMapMarker = runtimeRefr.IsMapMarker || existing.IsMapMarker,
-                            MarkerType = runtimeRefr.MarkerType ?? existing.MarkerType,
-                            MarkerName = runtimeRefr.MarkerName ?? existing.MarkerName,
-                            EnableParentFormId = runtimeRefr.EnableParentFormId ?? existing.EnableParentFormId,
-                            EnableParentFlags = runtimeRefr.EnableParentFlags ?? existing.EnableParentFlags,
-                            LinkedRefFormId = runtimeRefr.LinkedRefFormId ?? existing.LinkedRefFormId,
-                            OwnerFormId = runtimeRefr.OwnerFormId ?? existing.OwnerFormId,
-                            DestinationDoorFormId = runtimeRefr.DestinationDoorFormId ?? existing.DestinationDoorFormId
-                        };
-                        mergedCount++;
-                    }
-                    else
-                    {
-                        _context.ScanResult.RefrRecords.Add(runtimeRefr);
-                        addedCount++;
-                    }
-                }
-
-                Logger.Instance.Debug(
-                    $"  [Semantic] Runtime REFRs: {phaseSw.Elapsed} ({runtimeRefrs.Count} read, " +
-                    $"{mergedCount} merged, {addedCount} new, " +
-                    $"{_context.ScanResult.RefrRecords.Count} total)");
-            }
-        }
-
-        // Enrich worldspace cell maps by walking TESWorldSpace pCellMap hash tables
-        if (_context.RuntimeReader != null)
-        {
-            phaseSw.Restart();
-            var wrldEntries = _context.ScanResult.RuntimeEditorIds
-                .Where(e => e.FormType == 0x41)
-                .ToList();
-
-            if (wrldEntries.Count > 0)
-            {
-                var cellMaps = _context.RuntimeReader.ReadAllWorldspaceCellMaps(wrldEntries);
-                if (cellMaps.Count > 0)
-                {
-                    _context.RuntimeWorldspaceCellMaps = cellMaps;
-                    var totalCells = cellMaps.Values.Sum(w => w.Cells.Count);
-                    Logger.Instance.Debug(
-                        $"  [Semantic] Worldspace cell maps: {phaseSw.Elapsed} ({cellMaps.Count} worldspaces, {totalCells} cells)");
-                }
-            }
-        }
+        // === Runtime enrichment phases (LAND, REFR, worldspace cell maps) ===
+        RuntimeDataEnricher.EnrichLandRecords(_context);
+        RuntimeDataEnricher.EnrichPlacedReferences(_context, phaseSw);
+        RuntimeDataEnricher.EnrichWorldspaceCellMaps(_context, phaseSw);
 
         // Pre-scan all records for FULL subrecords (display names) so that
         // unreconstructed types (HAIR, EYES, CSTY, etc.) have names available for display
@@ -248,8 +144,6 @@ public sealed class RecordParser
         var dialogueTree = _dialogue.BuildDialogueTrees(dialogues, dialogTopics, quests);
 
         // Backfill: quests discovered from dialogue QSTI references but not from QUST records.
-        // For some DMPs, runtime quest detection finds nothing, but dialogue INFOs still reference
-        // quest FormIDs via QSTI subrecords. Create stub QuestRecords so the Data Browser shows them.
         var existingQuestIds = new HashSet<uint>(quests.Select(q => q.FormId));
         foreach (var (questFormId, questNode) in dialogueTree.QuestTrees)
         {
@@ -277,161 +171,16 @@ public sealed class RecordParser
         var doors = _miscWorldObjects.ReconstructDoors();
         var furniture = _miscStaticObjects.ReconstructFurniture();
 
-        // Build runtime object→script mappings for DMP cross-reference chains.
-        // In memory dumps, ESM records are freed at load time so the ESM-based
-        // BuildCrossReferenceChains finds nothing. Runtime struct readers extract
-        // Script FormIDs from C++ object pointers (NPC_, CREA, CONT, ACTI, DOOR, FURN) instead.
-        if (_context.RuntimeReader != null)
-        {
-            var runtimeObjectToScript = new Dictionary<uint, uint>();
-            foreach (var npc in npcs.Where(n => n.Script is > 0))
-            {
-                runtimeObjectToScript.TryAdd(npc.FormId, npc.Script!.Value);
-            }
-
-            foreach (var creature in creatures.Where(c => c.Script is > 0))
-            {
-                runtimeObjectToScript.TryAdd(creature.FormId, creature.Script!.Value);
-            }
-
-            foreach (var container in containers.Where(c => c.Script is > 0))
-            {
-                runtimeObjectToScript.TryAdd(container.FormId, container.Script!.Value);
-            }
-
-            foreach (var activator in activators.Where(a => a.Script is > 0))
-            {
-                runtimeObjectToScript.TryAdd(activator.FormId, activator.Script!.Value);
-            }
-
-            foreach (var door in doors.Where(d => d.Script is > 0))
-            {
-                runtimeObjectToScript.TryAdd(door.FormId, door.Script!.Value);
-            }
-
-            foreach (var furn in furniture.Where(f => f.Script is > 0))
-            {
-                runtimeObjectToScript.TryAdd(furn.FormId, furn.Script!.Value);
-            }
-
-            if (runtimeObjectToScript.Count > 0)
-            {
-                _scripts.SetRuntimeObjectScriptMappings(runtimeObjectToScript);
-                Logger.Instance.Debug(
-                    $"  [Semantic] Runtime obj→script: {runtimeObjectToScript.Count} mappings " +
-                    $"(NPCs: {npcs.Count(n => n.Script is > 0)}, " +
-                    $"Creatures: {creatures.Count(c => c.Script is > 0)}, " +
-                    $"Containers: {containers.Count(c => c.Script is > 0)}, " +
-                    $"Activators: {activators.Count(a => a.Script is > 0)}, " +
-                    $"Doors: {doors.Count(d => d.Script is > 0)}, " +
-                    $"Furniture: {furniture.Count(f => f.Script is > 0)})");
-            }
-        }
+        // === Runtime script cross-reference chains ===
+        QuestScriptEnricher.BuildRuntimeScriptMappings(
+            _context, _scripts, npcs, creatures, containers, activators, doors, furniture);
 
         var scripts = _scripts.ReconstructScripts();
         Logger.Instance.Debug(
             $"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
 
         // === Quest enrichment: PathwayD backfill, variables cross-reference, related NPCs ===
-        phaseSw.Restart();
-
-        // PathwayD: backfill quests discoverable only through script OwnerQuestFormId
-        var questFormIdSet = new HashSet<uint>(quests.Select(q => q.FormId));
-        var pathwayDCount = 0;
-        foreach (var script in scripts)
-        {
-            if (script.OwnerQuestFormId is > 0 && !questFormIdSet.Contains(script.OwnerQuestFormId.Value))
-            {
-                var qfid = script.OwnerQuestFormId.Value;
-                quests.Add(new QuestRecord
-                {
-                    FormId = qfid,
-                    EditorId = _context.GetEditorId(qfid),
-                    FullName = _context.FormIdToFullName.GetValueOrDefault(qfid),
-                    Offset = 0,
-                    IsBigEndian = true
-                });
-                questFormIdSet.Add(qfid);
-                pathwayDCount++;
-            }
-        }
-
-        // Build script lookups for variable cross-referencing
-        var scriptByFormId = scripts.ToDictionary(s => s.FormId, s => s);
-        var scriptByOwnerQuest = new Dictionary<uint, ScriptRecord>();
-        foreach (var script in scripts)
-        {
-            if (script.OwnerQuestFormId is > 0)
-            {
-                scriptByOwnerQuest.TryAdd(script.OwnerQuestFormId.Value, script);
-            }
-        }
-
-        // Collect related NPCs from dialogue speaker attribution
-        var questToSpeakers = new Dictionary<uint, HashSet<uint>>();
-        foreach (var dialogue in dialogues)
-        {
-            if (dialogue.QuestFormId is > 0 && dialogue.SpeakerFormId is > 0)
-            {
-                if (!questToSpeakers.TryGetValue(dialogue.QuestFormId.Value, out var speakers))
-                {
-                    speakers = [];
-                    questToSpeakers[dialogue.QuestFormId.Value] = speakers;
-                }
-
-                speakers.Add(dialogue.SpeakerFormId.Value);
-            }
-        }
-
-        // Enrich quests with variables and related NPCs
-        var variablesLinked = 0;
-        var npcsLinked = 0;
-        for (var i = 0; i < quests.Count; i++)
-        {
-            var quest = quests[i];
-            List<ScriptVariableInfo>? variables = null;
-            List<uint>? relatedNpcs = null;
-
-            // Variables: try direct path (SCRI → SCPT), then reverse (OwnerQuestFormId)
-            if (quest.Script is > 0 && scriptByFormId.TryGetValue(quest.Script.Value, out var directScript)
-                                    && directScript.Variables.Count > 0)
-            {
-                variables = directScript.Variables;
-            }
-            else if (scriptByOwnerQuest.TryGetValue(quest.FormId, out var ownerScript)
-                     && ownerScript.Variables.Count > 0)
-            {
-                variables = ownerScript.Variables;
-            }
-
-            // Related NPCs from dialogue speakers
-            if (questToSpeakers.TryGetValue(quest.FormId, out var speakerSet) && speakerSet.Count > 0)
-            {
-                relatedNpcs = speakerSet.ToList();
-            }
-
-            if (variables != null || relatedNpcs != null)
-            {
-                quests[i] = quest with
-                {
-                    Variables = variables ?? quest.Variables,
-                    RelatedNpcFormIds = relatedNpcs ?? quest.RelatedNpcFormIds
-                };
-                if (variables != null)
-                {
-                    variablesLinked++;
-                }
-
-                if (relatedNpcs != null)
-                {
-                    npcsLinked++;
-                }
-            }
-        }
-
-        Logger.Instance.Debug(
-            $"  [Semantic] Quest enrichment: {phaseSw.Elapsed} " +
-            $"(PathwayD: {pathwayDCount}, Variables: {variablesLinked}, Related NPCs: {npcsLinked})");
+        QuestScriptEnricher.EnrichQuests(_context, quests, scripts, dialogues, phaseSw);
 
         progress?.Report((55, "Reconstructing abilities..."));
         phaseSw.Restart();
@@ -525,36 +274,13 @@ public sealed class RecordParser
             $"CSTY: {combatStyles.Count}, LGTM: {lightingTemplates.Count}, " +
             $"NAVM: {navMeshes.Count}, WTHR: {weather.Count})");
 
-        // Enrich placed references with base object bounds and model paths
-        phaseSw.Restart();
-        var boundsIndex = new Dictionary<uint, ObjectBounds>();
+        // === Build object bounds/model indexes and enrich placed references ===
         var modelIndex = new Dictionary<uint, string>();
-        AddToIndexes(statics, s => s.FormId, s => s.Bounds, s => s.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(activators, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(doors, d => d.FormId, d => d.Bounds, d => d.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(lights, l => l.FormId, l => l.Bounds, l => l.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(furniture, f => f.FormId, f => f.Bounds, f => f.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(weapons, w => w.FormId, w => w.Bounds, w => w.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(armor, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(ammo, a => a.FormId, a => a.Bounds, a => a.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(consumables, c => c.FormId, c => c.Bounds, c => c.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(miscItems, m => m.FormId, m => m.Bounds, m => m.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(books, b => b.FormId, b => b.Bounds, b => b.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(containers, c => c.FormId, c => null, c => c.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(keys, k => k.FormId, k => null, k => k.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(notes, n => n.FormId, n => null, n => n.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(weaponMods, w => w.FormId, w => null, w => w.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(sounds, s => s.FormId, s => s.Bounds, s => null, boundsIndex, modelIndex);
-        AddToIndexes(genericRecords, g => g.FormId, g => g.Bounds, g => g.ModelPath, boundsIndex, modelIndex);
-
-        WorldRecordHandler.EnrichPlacedReferences(cells, boundsIndex, modelIndex);
-        foreach (var ws in worldspaces)
-        {
-            WorldRecordHandler.EnrichPlacedReferences(ws.Cells, boundsIndex, modelIndex);
-        }
-
-        Logger.Instance.Debug(
-            $"  [Semantic] Enrichment: {phaseSw.Elapsed} (Bounds: {boundsIndex.Count}, Models: {modelIndex.Count})");
+        ObjectIndexBuilder.BuildAndEnrich(
+            statics, activators, doors, lights, furniture,
+            weapons, armor, ammo, consumables, miscItems, books,
+            containers, keys, notes, weaponMods, sounds, genericRecords,
+            cells, worldspaces, modelIndex, phaseSw);
 
         progress?.Report((95, "Building lookup tables..."));
 
@@ -648,47 +374,6 @@ public sealed class RecordParser
         return result;
     }
 
-    #endregion
-
-    #region Private Helpers
-
-    private static void AddToIndexes<T>(
-        List<T> records,
-        Func<T, uint> formIdSelector,
-        Func<T, ObjectBounds?> boundsSelector,
-        Func<T, string?> modelSelector,
-        Dictionary<uint, ObjectBounds> boundsIndex,
-        Dictionary<uint, string> modelIndex)
-    {
-        foreach (var record in records)
-        {
-            var formId = formIdSelector(record);
-            if (formId == 0)
-            {
-                continue;
-            }
-
-            var bounds = boundsSelector(record);
-            if (bounds != null)
-            {
-                boundsIndex.TryAdd(formId, bounds);
-            }
-
-            var model = modelSelector(record);
-            if (model != null)
-            {
-                modelIndex.TryAdd(formId, model);
-            }
-        }
-    }
-
-    #endregion
-
-    #region Fields
-
-    /// <summary>
-    ///     Shared context holding scan results, accessor, and lookup tables.
-    /// </summary>
     internal readonly RecordParserContext _context;
 
     // Domain-specific handlers
@@ -712,10 +397,6 @@ public sealed class RecordParser
     private readonly MiscCollectionHandler _miscCollections;
     private readonly AiRecordHandler _ai;
 
-    #endregion
-
-    #region Public API - Lookup Methods
-
     public string? GetEditorId(uint formId)
     {
         return _context.GetEditorId(formId);
@@ -736,241 +417,69 @@ public sealed class RecordParser
         return _context.GetRecordsByType(recordType);
     }
 
-    #endregion
-
-    #region Public API - Individual Reconstruction (for direct caller access)
-
     // Actors
-    public List<NpcRecord> ReconstructNpcs()
-    {
-        return _actors.ReconstructNpcs();
-    }
-
-    public List<CreatureRecord> ReconstructCreatures()
-    {
-        return _actors.ReconstructCreatures();
-    }
-
-    public List<FactionRecord> ReconstructFactions()
-    {
-        return _actors.ReconstructFactions();
-    }
-
-    public List<RaceRecord> ReconstructRaces()
-    {
-        return _actors.ReconstructRaces();
-    }
+    public List<NpcRecord> ReconstructNpcs() => _actors.ReconstructNpcs();
+    public List<CreatureRecord> ReconstructCreatures() => _actors.ReconstructCreatures();
+    public List<FactionRecord> ReconstructFactions() => _actors.ReconstructFactions();
+    public List<RaceRecord> ReconstructRaces() => _actors.ReconstructRaces();
 
     // Items
-    public List<WeaponRecord> ReconstructWeapons()
-    {
-        return _weapons.ReconstructWeapons();
-    }
-
-    public List<ArmorRecord> ReconstructArmor()
-    {
-        return _items.ReconstructArmor();
-    }
-
-    public List<AmmoRecord> ReconstructAmmo()
-    {
-        return _consumables.ReconstructAmmo();
-    }
-
-    public List<ConsumableRecord> ReconstructConsumables()
-    {
-        return _consumables.ReconstructConsumables();
-    }
-
-    public List<MiscItemRecord> ReconstructMiscItems()
-    {
-        return _items.ReconstructMiscItems();
-    }
-
-    public List<KeyRecord> ReconstructKeys()
-    {
-        return _items.ReconstructKeys();
-    }
-
-    public List<ContainerRecord> ReconstructContainers()
-    {
-        return _items.ReconstructContainers();
-    }
+    public List<WeaponRecord> ReconstructWeapons() => _weapons.ReconstructWeapons();
+    public List<ArmorRecord> ReconstructArmor() => _items.ReconstructArmor();
+    public List<AmmoRecord> ReconstructAmmo() => _consumables.ReconstructAmmo();
+    public List<ConsumableRecord> ReconstructConsumables() => _consumables.ReconstructConsumables();
+    public List<MiscItemRecord> ReconstructMiscItems() => _items.ReconstructMiscItems();
+    public List<KeyRecord> ReconstructKeys() => _items.ReconstructKeys();
+    public List<ContainerRecord> ReconstructContainers() => _items.ReconstructContainers();
 
     // Dialogue
-    public List<QuestRecord> ReconstructQuests()
-    {
-        return _dialogue.ReconstructQuests();
-    }
-
-    public List<DialogTopicRecord> ReconstructDialogTopics()
-    {
-        return _dialogue.ReconstructDialogTopics();
-    }
-
-    public List<DialogueRecord> ReconstructDialogue()
-    {
-        return _dialogue.ReconstructDialogue();
-    }
+    public List<QuestRecord> ReconstructQuests() => _dialogue.ReconstructQuests();
+    public List<DialogTopicRecord> ReconstructDialogTopics() => _dialogue.ReconstructDialogTopics();
+    public List<DialogueRecord> ReconstructDialogue() => _dialogue.ReconstructDialogue();
 
     public DialogueTreeResult BuildDialogueTrees(
         List<DialogueRecord> dialogues,
         List<DialogTopicRecord> topics,
-        List<QuestRecord> quests)
-    {
-        return _dialogue.BuildDialogueTrees(dialogues, topics, quests);
-    }
+        List<QuestRecord> quests) => _dialogue.BuildDialogueTrees(dialogues, topics, quests);
 
     // Text
-    public List<NoteRecord> ReconstructNotes()
-    {
-        return _text.ReconstructNotes();
-    }
-
-    public List<BookRecord> ReconstructBooks()
-    {
-        return _text.ReconstructBooks();
-    }
-
-    public List<TerminalRecord> ReconstructTerminals()
-    {
-        return _text.ReconstructTerminals();
-    }
-
-    public List<MessageRecord> ReconstructMessages()
-    {
-        return _text.ReconstructMessages();
-    }
+    public List<NoteRecord> ReconstructNotes() => _text.ReconstructNotes();
+    public List<BookRecord> ReconstructBooks() => _text.ReconstructBooks();
+    public List<TerminalRecord> ReconstructTerminals() => _text.ReconstructTerminals();
+    public List<MessageRecord> ReconstructMessages() => _text.ReconstructMessages();
 
     // Scripts
-    public List<ScriptRecord> ReconstructScripts()
-    {
-        return _scripts.ReconstructScripts();
-    }
+    public List<ScriptRecord> ReconstructScripts() => _scripts.ReconstructScripts();
 
     // Effects
-    public List<PerkRecord> ReconstructPerks()
-    {
-        return _effects.ReconstructPerks();
-    }
-
-    public List<SpellRecord> ReconstructSpells()
-    {
-        return _effects.ReconstructSpells();
-    }
-
-    public List<EnchantmentRecord> ReconstructEnchantments()
-    {
-        return _effects.ReconstructEnchantments();
-    }
-
-    public List<BaseEffectRecord> ReconstructBaseEffects()
-    {
-        return _effects.ReconstructBaseEffects();
-    }
-
-    public List<ProjectileRecord> ReconstructProjectiles()
-    {
-        return _combatEffects.ReconstructProjectiles();
-    }
-
-    public List<ExplosionRecord> ReconstructExplosions()
-    {
-        return _combatEffects.ReconstructExplosions();
-    }
+    public List<PerkRecord> ReconstructPerks() => _effects.ReconstructPerks();
+    public List<SpellRecord> ReconstructSpells() => _effects.ReconstructSpells();
+    public List<EnchantmentRecord> ReconstructEnchantments() => _effects.ReconstructEnchantments();
+    public List<BaseEffectRecord> ReconstructBaseEffects() => _effects.ReconstructBaseEffects();
+    public List<ProjectileRecord> ReconstructProjectiles() => _combatEffects.ReconstructProjectiles();
+    public List<ExplosionRecord> ReconstructExplosions() => _combatEffects.ReconstructExplosions();
 
     // World
-    public List<CellRecord> ReconstructCells()
-    {
-        return _world.ReconstructCells();
-    }
-
-    public List<WorldspaceRecord> ReconstructWorldspaces()
-    {
-        return _world.ReconstructWorldspaces();
-    }
-
-    public List<PlacedReference> ExtractMapMarkers()
-    {
-        return _world.ExtractMapMarkers();
-    }
+    public List<CellRecord> ReconstructCells() => _world.ReconstructCells();
+    public List<WorldspaceRecord> ReconstructWorldspaces() => _world.ReconstructWorldspaces();
+    public List<PlacedReference> ExtractMapMarkers() => _world.ExtractMapMarkers();
 
     // Misc
-    public List<GameSettingRecord> ReconstructGameSettings()
-    {
-        return _misc.ReconstructGameSettings();
-    }
-
-    public List<GlobalRecord> ReconstructGlobals()
-    {
-        return _miscBasicTypes.ReconstructGlobals();
-    }
-
-    public List<WeaponModRecord> ReconstructWeaponMods()
-    {
-        return _miscItems.ReconstructWeaponMods();
-    }
-
-    public List<RecipeRecord> ReconstructRecipes()
-    {
-        return _miscItems.ReconstructRecipes();
-    }
-
-    public List<ChallengeRecord> ReconstructChallenges()
-    {
-        return _miscBasicTypes.ReconstructChallenges();
-    }
-
-    public List<ReputationRecord> ReconstructReputations()
-    {
-        return _miscBasicTypes.ReconstructReputations();
-    }
-
-    public List<ClassRecord> ReconstructClasses()
-    {
-        return _miscBasicTypes.ReconstructClasses();
-    }
-
-    public List<LeveledListRecord> ReconstructLeveledLists()
-    {
-        return _miscCollections.ReconstructLeveledLists();
-    }
-
-    public List<FormListRecord> ReconstructFormLists()
-    {
-        return _miscCollections.ReconstructFormLists();
-    }
-
-    public List<ActivatorRecord> ReconstructActivators()
-    {
-        return _miscWorldObjects.ReconstructActivators();
-    }
-
-    public List<LightRecord> ReconstructLights()
-    {
-        return _miscWorldObjects.ReconstructLights();
-    }
-
-    public List<DoorRecord> ReconstructDoors()
-    {
-        return _miscWorldObjects.ReconstructDoors();
-    }
-
-    public List<StaticRecord> ReconstructStatics()
-    {
-        return _miscStaticObjects.ReconstructStatics();
-    }
-
-    public List<FurnitureRecord> ReconstructFurniture()
-    {
-        return _miscStaticObjects.ReconstructFurniture();
-    }
+    public List<GameSettingRecord> ReconstructGameSettings() => _misc.ReconstructGameSettings();
+    public List<GlobalRecord> ReconstructGlobals() => _miscBasicTypes.ReconstructGlobals();
+    public List<WeaponModRecord> ReconstructWeaponMods() => _miscItems.ReconstructWeaponMods();
+    public List<RecipeRecord> ReconstructRecipes() => _miscItems.ReconstructRecipes();
+    public List<ChallengeRecord> ReconstructChallenges() => _miscBasicTypes.ReconstructChallenges();
+    public List<ReputationRecord> ReconstructReputations() => _miscBasicTypes.ReconstructReputations();
+    public List<ClassRecord> ReconstructClasses() => _miscBasicTypes.ReconstructClasses();
+    public List<LeveledListRecord> ReconstructLeveledLists() => _miscCollections.ReconstructLeveledLists();
+    public List<FormListRecord> ReconstructFormLists() => _miscCollections.ReconstructFormLists();
+    public List<ActivatorRecord> ReconstructActivators() => _miscWorldObjects.ReconstructActivators();
+    public List<LightRecord> ReconstructLights() => _miscWorldObjects.ReconstructLights();
+    public List<DoorRecord> ReconstructDoors() => _miscWorldObjects.ReconstructDoors();
+    public List<StaticRecord> ReconstructStatics() => _miscStaticObjects.ReconstructStatics();
+    public List<FurnitureRecord> ReconstructFurniture() => _miscStaticObjects.ReconstructFurniture();
 
     // AI
-    public List<PackageRecord> ReconstructPackages()
-    {
-        return _ai.ReconstructPackages();
-    }
-
-    #endregion
+    public List<PackageRecord> ReconstructPackages() => _ai.ReconstructPackages();
 }

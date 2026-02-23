@@ -32,12 +32,12 @@ internal sealed class Program
         rootCommand.Subcommands.Add(GeometryCommands.CreateGeomCompareCommand());
         rootCommand.Subcommands.Add(GeometryCommands.CreateVerticesCommand());
         rootCommand.Subcommands.Add(GeometryCommands.CreateColorCompareCommand());
-        rootCommand.Subcommands.Add(PackedCommands.CreateSkinPartCommand());
-        rootCommand.Subcommands.Add(PackedCommands.CreateSkinPartCompareCommand());
+        rootCommand.Subcommands.Add(SkinPartitionCommands.CreateSkinPartCommand());
+        rootCommand.Subcommands.Add(SkinPartitionCommands.CreateSkinPartCompareCommand());
         rootCommand.Subcommands.Add(PackedCommands.CreatePackedCommand());
-        rootCommand.Subcommands.Add(PackedCommands.CreateStreamDumpCommand());
-        rootCommand.Subcommands.Add(PackedCommands.CreateAnalyzeStreamsCommand());
-        rootCommand.Subcommands.Add(PackedCommands.CreateNormalCompareCommand());
+        rootCommand.Subcommands.Add(PackedStreamAnalyzer.CreateStreamDumpCommand());
+        rootCommand.Subcommands.Add(PackedStreamAnalyzer.CreateAnalyzeStreamsCommand());
+        rootCommand.Subcommands.Add(PackedNormalComparer.CreateNormalCompareCommand());
         rootCommand.Subcommands.Add(HexCommands.CreateHexCommand());
         rootCommand.Subcommands.Add(HavokCommands.CreateHavokCommand());
         rootCommand.Subcommands.Add(HavokCommands.CreateHavokCompareCommand());

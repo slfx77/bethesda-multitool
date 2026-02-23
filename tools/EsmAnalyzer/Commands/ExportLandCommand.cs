@@ -1,14 +1,20 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
-using Spectre.Console;
 using System.Text.Json;
-using FalloutXbox360Utils.Core.Utils;
+using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
 
-public static partial class ExportCommands
+/// <summary>
+///     Handles LAND record export (images and JSON).
+/// </summary>
+internal static class ExportLandCommand
 {
-    private static int ExportLand(string filePath, string? formIdStr, bool exportAll, int limit, string outputDir)
+    // Grid size for LAND vertex data (33x33 vertices per cell)
+    private const int CellGridSize = 33;
+
+    // Cached JSON options to avoid repeated allocations
+    private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
+
+    internal static int Execute(string filePath, string? formIdStr, bool exportAll, int limit, string outputDir)
     {
         var targetFormId = EsmFileLoader.ParseFormId(formIdStr);
         if (!string.IsNullOrWhiteSpace(formIdStr) && targetFormId == null)
@@ -182,11 +188,11 @@ public static partial class ExportCommands
         ExportRgbMap(data, path);
     }
 
-    private static (float[,] heights, float baseHeight) ParseHeightmap(byte[] data, bool bigEndian, bool debug = false)
+    internal static (float[,] heights, float baseHeight) ParseHeightmap(byte[] data, bool bigEndian, bool debug = false)
     {
         // VHGT format from UESP:
         // - float offset: base height (multiplied by 8 to get world units)
-        // - 33×33 signed bytes: height gradients (multiplied by 8)
+        // - 33x33 signed bytes: height gradients (multiplied by 8)
         // - 3 bytes: unused
         //
         // The algorithm accumulates row deltas, applying the first delta to the running

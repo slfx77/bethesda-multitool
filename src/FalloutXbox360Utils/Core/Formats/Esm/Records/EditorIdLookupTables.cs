@@ -1,5 +1,4 @@
 using System.IO.MemoryMappedFiles;
-using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
@@ -7,208 +6,14 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
-///     Provides lookup tables, validation, and auxiliary extraction routines used by
-///     <see cref="EsmEditorIdExtractor" />. Includes FormType-to-offset mappings,
-///     EditorID validation, dialogue line extraction, and the pAllForms hash table
-///     walk that resolves LAND/REFR/ACHR/ACRE entries (which lack editor IDs).
+///     Provides dialogue line extraction and the pAllForms hash table walk that resolves
+///     LAND/REFR/ACHR/ACRE entries (which lack editor IDs). Delegates validation, string
+///     reading, and constants to <see cref="EsmEditorIdValidator" />,
+///     <see cref="EsmEditorIdStringReader" />, and <see cref="EsmEditorIdConstants" />.
 /// </summary>
 internal static class EditorIdLookupTables
 {
-    #region Constants
-
-    /// <summary>
-    ///     Maps runtime FormType byte values to the offset of the TESFullName pointer
-    ///     within the C++ class hierarchy for each record type.
-    /// </summary>
-    internal static readonly Dictionary<byte, int> FullNameOffsetByFormType = new()
-    {
-        [0x08] = 44, // FACT - TESFaction
-        [0x0A] = 44, // HAIR - TESHair (TESForm->TESFullName->TESModel->TESHair)
-        [0x0B] = 44, // EYES - TESEyes (TESForm->TESFullName->TESModel->TESEyes)
-        [0x0C] = 44, // RACE - TESRace
-        [0x15] = 68, // ACTI - TESObjectACTI
-        [0x18] = 68, // ARMO - TESObjectARMO
-        [0x19] = 68, // BOOK - TESObjectBOOK
-        [0x1B] = 80, // CONT - TESObjectCONT
-        [0x1C] = 68, // DOOR - TESObjectDOOR
-        [0x1F] = 68, // MISC - TESObjectMISC
-        [0x28] = 68, // WEAP - TESObjectWEAP
-        [0x29] = 68, // AMMO - TESAmmo
-        [0x2A] = 228, // NPC_ - TESNPC
-        [0x2E] = 68, // KEYM - TESKey
-        [0x2F] = 68, // ALCH - AlchemyItem
-        [0x33] = 68 // PROJ - BGSProjectile (TESBoundObject->TESFullName->TESModel->...)
-    };
-
-    internal const int InfoPromptOffset = 44;
-
-    #endregion
-
-    #region EditorID Validation
-
-    /// <summary>
-    ///     Validate an Editor ID string (alphanumeric + underscore, starts with letter or digit).
-    /// </summary>
-    internal static bool IsValidEditorId(string name)
-    {
-        if (string.IsNullOrEmpty(name) || name.Length < 2 || name.Length > 200)
-        {
-            return false;
-        }
-
-        if (!char.IsLetterOrDigit(name[0]))
-        {
-            return false;
-        }
-
-        // Require 100% valid characters (alphanumeric + underscore)
-        foreach (var c in name)
-        {
-            if (!char.IsLetterOrDigit(c) && c != '_')
-            {
-                return false;
-            }
-        }
-
-        // Reject repeated-pattern junk (e.g., "katSkatSkatS...")
-        if (name.Length >= 8 && HasRepeatedPattern(name))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    ///     Detect repeated substring patterns (e.g., "katSkatSkatS" repeats "katS").
-    /// </summary>
-    private static bool HasRepeatedPattern(string s)
-    {
-        // Check for patterns of length 2-6 that repeat 3+ times
-        for (var patLen = 2; patLen <= Math.Min(6, s.Length / 3); patLen++)
-        {
-            var pattern = s[..patLen];
-            var repeatCount = 0;
-            for (var i = 0; i + patLen <= s.Length; i += patLen)
-            {
-                if (s.AsSpan(i, patLen).SequenceEqual(pattern))
-                {
-                    repeatCount++;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            if (repeatCount >= 3)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    #endregion
-
-    #region String Reading
-
-    /// <summary>
-    ///     Read a BSStringT&lt;char&gt; string from a TESForm object in the dump.
-    ///     BSStringT layout (8 bytes, big-endian on Xbox 360):
-    ///     Offset 0: pString (char* pointer, 4 bytes BE)
-    ///     Offset 4: sLen (uint16 BE)
-    /// </summary>
-    internal static string? ReadBSStringT(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidumpInfo,
-        long tesFormFileOffset,
-        int fieldOffset)
-    {
-        var bstOffset = tesFormFileOffset + fieldOffset;
-        if (bstOffset + 8 > fileSize)
-        {
-            return null;
-        }
-
-        var bstBuffer = new byte[8];
-        accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
-
-        var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
-        var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
-
-        if (pString == 0 || sLen == 0 || sLen > 4096)
-        {
-            return null;
-        }
-
-        if (!Xbox360MemoryUtils.IsValidPointerInDump(pString, minidumpInfo))
-        {
-            return null;
-        }
-
-        var strFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(pString));
-        if (!strFileOffset.HasValue || strFileOffset.Value + sLen > fileSize)
-        {
-            return null;
-        }
-
-        var strBuffer = new byte[sLen];
-        accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
-
-        // Validate: should be mostly printable ASCII
-        var printable = 0;
-        for (var i = 0; i < sLen; i++)
-        {
-            var c = strBuffer[i];
-            if ((c >= 32 && c <= 126) || c == '\n' || c == '\r' || c == '\t')
-            {
-                printable++;
-            }
-        }
-
-        if (printable < sLen * 0.8)
-        {
-            return null;
-        }
-
-        return Encoding.ASCII.GetString(strBuffer, 0, sLen);
-    }
-
-    #endregion
-
     #region Dialogue Extraction
-
-    /// <summary>
-    ///     Detect the runtime FormType value for INFO records by matching EditorID naming
-    ///     conventions. The FormType enum shifts between game builds, so we calibrate from
-    ///     actual data rather than using hardcoded values.
-    /// </summary>
-    internal static byte? DetectInfoFormType(List<RuntimeEditorIdEntry> entries, int startIndex)
-    {
-        // INFO EditorIDs in Fallout: New Vegas reliably contain "Topic"
-        // (e.g., aBHTopicAgree, VDialogueDocMitchellTopic001)
-        var formTypeCounts = new Dictionary<byte, int>();
-        for (var i = startIndex; i < entries.Count; i++)
-        {
-            if (entries[i].EditorId.Contains("Topic", StringComparison.OrdinalIgnoreCase))
-            {
-                formTypeCounts.TryGetValue(entries[i].FormType, out var count);
-                formTypeCounts[entries[i].FormType] = count + 1;
-            }
-        }
-
-        if (formTypeCounts.Count == 0)
-        {
-            return null;
-        }
-
-        // Return the FormType with the most Topic matches (require at least 5)
-        var best = formTypeCounts.MaxBy(kv => kv.Value);
-        return best.Value >= 5 ? best.Key : null;
-    }
 
     /// <summary>
     ///     Detect INFO FormType from EditorID patterns, then read dialogue prompt text.
@@ -237,8 +42,8 @@ internal static class EditorIdLookupTables
             if (entry.FormType == infoFormType.Value && entry.TesFormOffset.HasValue)
             {
                 infoCount++;
-                var dialogueLine = ReadBSStringT(accessor, fileSize, minidumpInfo,
-                    entry.TesFormOffset.Value, InfoPromptOffset);
+                var dialogueLine = EsmEditorIdStringReader.ReadBSStringT(accessor, fileSize, minidumpInfo,
+                    entry.TesFormOffset.Value, EsmEditorIdConstants.InfoPromptOffset);
                 if (dialogueLine != null)
                 {
                     entry.DialogueLine = dialogueLine;
@@ -249,6 +54,35 @@ internal static class EditorIdLookupTables
 
         log.Debug("EditorIDs: Extracted {0:N0} dialogue lines from {1:N0} INFO entries",
             dialogueCount, infoCount);
+    }
+
+    /// <summary>
+    ///     Detect the runtime FormType value for INFO records by matching EditorID naming
+    ///     conventions. The FormType enum shifts between game builds, so we calibrate from
+    ///     actual data rather than using hardcoded values.
+    /// </summary>
+    internal static byte? DetectInfoFormType(List<RuntimeEditorIdEntry> entries, int startIndex)
+    {
+        // INFO EditorIDs in Fallout: New Vegas reliably contain "Topic"
+        // (e.g., aBHTopicAgree, VDialogueDocMitchellTopic001)
+        var formTypeCounts = new Dictionary<byte, int>();
+        for (var i = startIndex; i < entries.Count; i++)
+        {
+            if (entries[i].EditorId.Contains("Topic", StringComparison.OrdinalIgnoreCase))
+            {
+                formTypeCounts.TryGetValue(entries[i].FormType, out var count);
+                formTypeCounts[entries[i].FormType] = count + 1;
+            }
+        }
+
+        if (formTypeCounts.Count == 0)
+        {
+            return null;
+        }
+
+        // Return the FormType with the most Topic matches (require at least 5)
+        var best = formTypeCounts.MaxBy(kv => kv.Value);
+        return best.Value >= 5 ? best.Key : null;
     }
 
     #endregion

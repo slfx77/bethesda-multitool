@@ -1,19 +1,12 @@
 using System.CommandLine;
-using System.Text.Json;
 
 namespace EsmAnalyzer.Commands;
 
 /// <summary>
 ///     Commands for exporting ESM data (LAND records, etc.)
 /// </summary>
-public static partial class ExportCommands
+public static class ExportCommands
 {
-    // Grid size for LAND vertex data (33x33 vertices per cell)
-    private const int CellGridSize = 33;
-
-    // Cached JSON options to avoid repeated allocations
-    private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
-
     public static Command CreateWorldmapCommand()
     {
         var command = new Command("worldmap",
@@ -44,7 +37,7 @@ public static partial class ExportCommands
         command.Options.Add(exportAllOption);
         command.Options.Add(analyzeOnlyOption);
 
-        command.SetAction(parseResult => GenerateWorldmap(
+        command.SetAction(parseResult => ExportWorldmapCommand.Execute(
             parseResult.GetValue(fileArg)!,
             parseResult.GetValue(worldspaceOption),
             parseResult.GetValue(outputOption)!,
@@ -76,7 +69,7 @@ public static partial class ExportCommands
         command.Options.Add(limitOption);
         command.Options.Add(outputOption);
 
-        command.SetAction(parseResult => ExportLand(
+        command.SetAction(parseResult => ExportLandCommand.Execute(
             parseResult.GetValue(fileArg)!,
             parseResult.GetValue(formIdOption),
             parseResult.GetValue(allOption),

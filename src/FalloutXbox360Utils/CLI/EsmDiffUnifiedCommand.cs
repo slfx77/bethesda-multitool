@@ -5,12 +5,15 @@ using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
 
-public static partial class EsmDiffCommand
+/// <summary>
+///     Two-way unified diff: stats mode, full comparison, and TSV report output.
+/// </summary>
+internal static class EsmDiffUnifiedCommand
 {
     /// <summary>
     ///     Runs a two-way diff with labeled files (e.g., "Xbox 360" vs "PC").
     /// </summary>
-    private static int RunTwoWayDiff(
+    public static int RunTwoWayDiff(
         string fileAPath,
         string fileBPath,
         string labelA,
@@ -53,7 +56,7 @@ public static partial class EsmDiffCommand
         // Mode: header only
         if (headerOnly)
         {
-            return DiffHeader(fileAPath, fileBPath, labelA, labelB);
+            return EsmDiffHeaderCommand.DiffHeader(fileAPath, fileBPath, labelA, labelB);
         }
 
         // Mode: semantic diff (field-by-field comparison using schema)
@@ -69,14 +72,14 @@ public static partial class EsmDiffCommand
             var targetFormId = formIdStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
                 ? Convert.ToUInt32(formIdStr, 16)
                 : uint.Parse(formIdStr);
-            return DiffSpecificRecord(dataA, dataB, bigEndianA, bigEndianB, targetFormId, maxBytes, showBytes,
+            return EsmDiffRecordsCommand.DiffSpecificRecord(dataA, dataB, bigEndianA, bigEndianB, targetFormId, maxBytes, showBytes,
                 false, false, labelA, labelB);
         }
 
         // Mode: specific record type with byte-level diff
         if (!string.IsNullOrEmpty(recordType) && !showStats)
         {
-            return DiffRecordType(dataA, dataB, bigEndianA, bigEndianB, recordType, limit, maxBytes, showBytes,
+            return EsmDiffRecordsCommand.DiffRecordType(dataA, dataB, bigEndianA, bigEndianB, recordType, limit, maxBytes, showBytes,
                 false, false, labelA, labelB);
         }
 

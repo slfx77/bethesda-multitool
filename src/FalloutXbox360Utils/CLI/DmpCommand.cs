@@ -8,7 +8,7 @@ namespace FalloutXbox360Utils.CLI;
 /// <summary>
 ///     CLI commands for minidump (.dmp) analysis: modules, regions, VA conversion, hex dump, diagnostics.
 /// </summary>
-public static partial class DmpCommand
+public static class DmpCommand
 {
     /// <summary>
     ///     Creates the top-level 'dmp' command group with all subcommands.
@@ -21,7 +21,7 @@ public static partial class DmpCommand
         command.Subcommands.Add(CreateRegionsCommand());
         command.Subcommands.Add(CreateVa2OffsetCommand());
         command.Subcommands.Add(CreateHexDumpCommand());
-        command.Subcommands.Add(CreateDmpDiagCommand());
+        command.Subcommands.Add(DmpDiagCommand.CreateDmpDiagCommand());
 
         return command;
     }

@@ -80,7 +80,7 @@ internal static class EsmMiscDetector
         }
 
         var name = EsmStringUtils.ReadNullTermString(data, i + 6, len);
-        if (IsValidEditorId(name) && seen.Add(name))
+        if (EsmEditorIdValidator.IsValidEditorId(name) && seen.Add(name))
         {
             records.Add(new EdidRecord(name, i));
         }
@@ -101,71 +101,10 @@ internal static class EsmMiscDetector
         }
 
         var name = EsmStringUtils.ReadNullTermString(data, i + 6, len);
-        if (IsValidEditorId(name) && seen.Add(name))
+        if (EsmEditorIdValidator.IsValidEditorId(name) && seen.Add(name))
         {
             records.Add(new EdidRecord(name, baseOffset + i));
         }
-    }
-
-    private static bool IsValidEditorId(string name)
-    {
-        if (string.IsNullOrEmpty(name) || name.Length < 2 || name.Length > 200)
-        {
-            return false;
-        }
-
-        if (!char.IsLetterOrDigit(name[0]))
-        {
-            return false;
-        }
-
-        // Require 100% valid characters (alphanumeric + underscore)
-        foreach (var c in name)
-        {
-            if (!char.IsLetterOrDigit(c) && c != '_')
-            {
-                return false;
-            }
-        }
-
-        // Reject repeated-pattern junk (e.g., "katSkatSkatS...")
-        if (name.Length >= 8 && HasRepeatedPattern(name))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    ///     Detect repeated substring patterns (e.g., "katSkatSkatS" repeats "katS").
-    /// </summary>
-    private static bool HasRepeatedPattern(string s)
-    {
-        // Check for patterns of length 2-6 that repeat 3+ times
-        for (var patLen = 2; patLen <= Math.Min(6, s.Length / 3); patLen++)
-        {
-            var pattern = s[..patLen];
-            var repeatCount = 0;
-            for (var i = 0; i + patLen <= s.Length; i += patLen)
-            {
-                if (s.AsSpan(i, patLen).SequenceEqual(pattern))
-                {
-                    repeatCount++;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            if (repeatCount >= 3)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     #endregion

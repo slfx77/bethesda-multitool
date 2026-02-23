@@ -10,7 +10,7 @@ namespace FalloutXbox360Utils.Core.Minidump;
 ///     Scans memory-mapped dump files for known file signatures using parallel
 ///     region-aware scanning. Also provides file size estimation for matched signatures.
 /// </summary>
-public sealed class MinidumpFileScanner
+internal sealed class MinidumpFileScanner
 {
     private readonly SignatureMatcher _signatureMatcher;
 

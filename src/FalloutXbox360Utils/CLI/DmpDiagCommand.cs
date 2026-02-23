@@ -9,9 +9,9 @@ namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Diagnostic command to scan DMP memory dumps for persistent references and map markers.
-///     Uses both ESM record scanning and runtime struct reading (pAllForms → TESObjectREFR).
+///     Uses both ESM record scanning and runtime struct reading (pAllForms -> TESObjectREFR).
 /// </summary>
-public static partial class DmpCommand
+internal static class DmpDiagCommand
 {
     public static Command CreateDmpDiagCommand()
     {
@@ -126,11 +126,11 @@ public static partial class DmpCommand
                 AnsiConsole.MarkupLine($"\n  [cyan]{Markup.Escape(r.FileName)}[/] — {r.Markers.Count} markers:");
                 foreach (var m in r.Markers.Take(30))
                 {
-                    var name = m.MarkerName ?? "(no name)";
+                    var markerName = m.MarkerName ?? "(no name)";
                     var type = m.MarkerType.HasValue ? $"type={m.MarkerType.Value}" : "no type";
                     var pos = m.Position != null ? $"({m.Position.X:F0}, {m.Position.Y:F0})" : "(no pos)";
                     var persistent = m.Header.IsPersistent ? " PERSISTENT" : "";
-                    AnsiConsole.WriteLine($"    0x{m.Header.FormId:X8} [{type}] {name} {pos}{persistent}");
+                    AnsiConsole.WriteLine($"    0x{m.Header.FormId:X8} [{type}] {markerName} {pos}{persistent}");
                 }
 
                 if (r.Markers.Count > 30)
@@ -256,7 +256,7 @@ public static partial class DmpCommand
                             if (gAchr > 0) parts.Add($"ACHR={gAchr}");
                             if (gAcre > 0) parts.Add($"ACRE={gAcre}");
 
-                            var persistent = grid.Count(x => x.Header.IsPersistent);
+                            var persistentCount = grid.Count(x => x.Header.IsPersistent);
 
                             // Position range within the grid cell
                             var minX = grid.Min(x => x.Position!.X);
@@ -266,7 +266,7 @@ public static partial class DmpCommand
 
                             AnsiConsole.MarkupLine(
                                 $"      [yellow]0x{vcId:X8}[/] grid({grid.Key.GridX},{grid.Key.GridY}): " +
-                                $"{gc,5} objects ({string.Join(", ", parts)}, persist={persistent}) " +
+                                $"{gc,5} objects ({string.Join(", ", parts)}, persist={persistentCount}) " +
                                 $"X={Markup.Escape($"[{minX:F0}..{maxX:F0}]")} Y={Markup.Escape($"[{minY:F0}..{maxY:F0}]")}");
                             vcId++;
                         }

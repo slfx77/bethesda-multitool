@@ -5,7 +5,7 @@ namespace EsmAnalyzer.Commands;
 /// <summary>
 ///     Commands for summarizing LAND record data.
 /// </summary>
-public static partial class LandCommands
+public static class LandCommands
 {
     public static Command CreateLandSummaryCommand()
     {
@@ -46,7 +46,7 @@ public static partial class LandCommands
         command.Options.Add(vhgtCompareSamplesOpt);
         command.Options.Add(vhgtCompareDiffOpt);
 
-        command.SetAction(parseResult => SummarizeLand(
+        command.SetAction(parseResult => LandSummaryCommand.Execute(
             parseResult.GetValue(fileArg)!,
             parseResult.GetValue(formIdArg)!,
             parseResult.GetValue(vhgtSamplesOpt),

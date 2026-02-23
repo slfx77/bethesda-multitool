@@ -185,7 +185,7 @@ public static class GeckReportGenerator
         if (result.Npcs.Count > 0)
         {
             files["npcs.csv"] = CsvActorWriter.GenerateNpcsCsv(result.Npcs, resolver);
-            files["npc_report.txt"] = GeckActorWriter.GenerateNpcReport(result.Npcs, resolver, result.Races);
+            files["npc_report.txt"] = GeckActorDetailWriter.GenerateNpcReport(result.Npcs, resolver, result.Races);
         }
 
         if (result.Creatures.Count > 0)
@@ -258,7 +258,7 @@ public static class GeckReportGenerator
         if (result.Weapons.Count > 0)
         {
             files["weapons.csv"] = CsvItemWriter.GenerateWeaponsCsv(result.Weapons, resolver);
-            files["weapon_report.txt"] = GeckItemWriter.GenerateWeaponReport(result.Weapons, resolver);
+            files["weapon_report.txt"] = GeckItemDetailWriter.GenerateWeaponReport(result.Weapons, resolver);
         }
 
         if (result.Armor.Count > 0)
@@ -294,7 +294,7 @@ public static class GeckReportGenerator
         if (result.Containers.Count > 0)
         {
             files["containers.csv"] = CsvItemWriter.GenerateContainersCsv(result.Containers, resolver);
-            files["container_report.txt"] = GeckItemWriter.GenerateContainerReport(result.Containers, resolver);
+            files["container_report.txt"] = GeckItemDetailWriter.GenerateContainerReport(result.Containers, resolver);
         }
 
         // Abilities
@@ -373,13 +373,13 @@ public static class GeckReportGenerator
         if (result.WeaponMods.Count > 0)
         {
             files["weapon_mods.csv"] = CsvItemWriter.GenerateWeaponModsCsv(result.WeaponMods);
-            files["weapon_mod_report.txt"] = GeckItemWriter.GenerateWeaponModsReport(result.WeaponMods);
+            files["weapon_mod_report.txt"] = GeckItemDetailWriter.GenerateWeaponModsReport(result.WeaponMods);
         }
 
         if (result.Recipes.Count > 0)
         {
             files["recipes.csv"] = CsvItemWriter.GenerateRecipesCsv(result.Recipes, resolver);
-            files["recipe_report.txt"] = GeckItemWriter.GenerateRecipesReport(result.Recipes, resolver);
+            files["recipe_report.txt"] = GeckItemDetailWriter.GenerateRecipesReport(result.Recipes, resolver);
         }
 
         if (result.Challenges.Count > 0)

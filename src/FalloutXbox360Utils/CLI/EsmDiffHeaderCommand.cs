@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Utils;
 using Spectre.Console;
@@ -6,9 +6,12 @@ using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.DiffHelpers;
 
 namespace FalloutXbox360Utils.CLI;
 
-public static partial class EsmDiffCommand
+/// <summary>
+///     Header-level diff between two ESM files (TES4 record, HEDR subrecord, flags).
+/// </summary>
+internal static class EsmDiffHeaderCommand
 {
-    private static int DiffHeader(string fileAPath, string fileBPath, string labelA = "Xbox 360", string labelB = "PC")
+    public static int DiffHeader(string fileAPath, string fileBPath, string labelA = "Xbox 360", string labelB = "PC")
     {
         if (!File.Exists(fileAPath))
         {

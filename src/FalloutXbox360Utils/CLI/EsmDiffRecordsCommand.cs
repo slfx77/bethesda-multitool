@@ -6,9 +6,12 @@ using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.DiffPatternAn
 
 namespace FalloutXbox360Utils.CLI;
 
-public static partial class EsmDiffCommand
+/// <summary>
+///     Record-level byte diff between two ESM files (subrecord comparison, pattern detection).
+/// </summary>
+internal static class EsmDiffRecordsCommand
 {
-    private static int DiffSpecificRecord(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
+    public static int DiffSpecificRecord(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
         uint formId, int maxBytes, bool showBytes, bool showByteMarkers, bool detectPatterns,
         string labelA = "Xbox 360", string labelB = "PC")
     {
@@ -33,7 +36,7 @@ public static partial class EsmDiffCommand
         return 0;
     }
 
-    private static int DiffRecordType(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
+    public static int DiffRecordType(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
         string recordType, int limit, int maxBytes, bool showBytes, bool showByteMarkers, bool detectPatterns,
         string labelA = "Xbox 360", string labelB = "PC")
     {
@@ -215,10 +218,10 @@ public static partial class EsmDiffCommand
             {
                 Signature = sig,
                 SortOffset = sortOffset,
-                SizeDisplay = "—",
-                RecordOffsetDisplay = "—",
-                FileAOffsetDisplay = "—",
-                FileBOffsetDisplay = "—",
+                SizeDisplay = "\u2014",
+                RecordOffsetDisplay = "\u2014",
+                FileAOffsetDisplay = "\u2014",
+                FileBOffsetDisplay = "\u2014",
                 StatusMarkup = "[grey]N/A[/]",
                 ShowDetails = false,
                 DetailsMarkup = null
@@ -234,7 +237,7 @@ public static partial class EsmDiffCommand
                 SortOffset = sortOffset,
                 SizeDisplay = pc.Data.Length.ToString("N0"),
                 RecordOffsetDisplay = $"0x{pc.Offset:X}",
-                FileAOffsetDisplay = "—",
+                FileAOffsetDisplay = "\u2014",
                 FileBOffsetDisplay = $"0x{fileB:X}",
                 StatusMarkup = "[red]Only in B[/]",
                 ShowDetails = false,
@@ -252,7 +255,7 @@ public static partial class EsmDiffCommand
                 SizeDisplay = xbox.Data.Length.ToString("N0"),
                 RecordOffsetDisplay = $"0x{xbox.Offset:X}",
                 FileAOffsetDisplay = $"0x{fileA:X}",
-                FileBOffsetDisplay = "—",
+                FileBOffsetDisplay = "\u2014",
                 StatusMarkup = "[red]Only in A[/]",
                 ShowDetails = false,
                 DetailsMarkup = null
