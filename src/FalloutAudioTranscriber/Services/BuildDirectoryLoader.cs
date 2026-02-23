@@ -21,8 +21,8 @@ public static class BuildDirectoryLoader
     public static async Task<BuildLoadResult> LoadAsync(
         string dataDirectory,
         IProgress<(string message, double percent)>? progress = null,
-        CancellationToken ct = default,
-        string? esmOverridePath = null)
+        string? esmOverridePath = null,
+        CancellationToken ct = default)
     {
         // Step 1: Find BSA files
         progress?.Report(("Scanning for BSA files...", 0));

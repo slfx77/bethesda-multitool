@@ -281,7 +281,7 @@ public sealed partial class SingleFileTab
         AddDataStatusText.Text = string.Join(" | ", parts);
     }
 
-    private async Task<string?> PickFileAsync(string[] extensions)
+    private static async Task<string?> PickFileAsync(string[] extensions)
     {
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         foreach (var ext in extensions)

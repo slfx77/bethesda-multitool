@@ -62,7 +62,7 @@ public static class DmpMapRenderCommands
         return command;
     }
 
-    private record FrameData(
+    private sealed record FrameData(
         string FileName, string Stem, List<ExtractedRefrRecord> Markers, DateTime? ModuleTimestamp);
 
     private static async Task RunAsync(string dirPath, string? outputDir, int longEdge, string schemeName,
@@ -241,7 +241,7 @@ public static class DmpMapRenderCommands
     // World Bounds
     // ========================================================================
 
-    private record WorldBounds(float MinX, float MaxX, float MinY, float MaxY, float WorldW, float WorldH);
+    private sealed record WorldBounds(float MinX, float MaxX, float MinY, float MaxY, float WorldW, float WorldH);
 
     private static WorldBounds ComputeWorldBounds(List<ExtractedRefrRecord> allMarkers)
     {
@@ -505,7 +505,7 @@ public static class DmpMapRenderCommands
             ? (MapMarkerType)value.Value
             : null;
 
-    private record SchemeColor(string Name, byte R, byte G, byte B);
+    private sealed record SchemeColor(string Name, byte R, byte G, byte B);
 
     private static SchemeColor ParseScheme(string schemeName) =>
         schemeName.ToLowerInvariant() switch

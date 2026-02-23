@@ -132,8 +132,9 @@ public static class EsmStatsCommand
 
     private static string FormatSize(long bytes)
     {
-        return bytes < 1024 ? $"{bytes} B" :
-            bytes < 1024 * 1024 ? $"{bytes / 1024.0:F1} KB" : $"{bytes / (1024.0 * 1024.0):F1} MB";
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
     }
 
     private static void WriteMarkdownReport(string outputPath, string filePath, EsmFileHeader header,

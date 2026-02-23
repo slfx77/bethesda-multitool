@@ -102,7 +102,7 @@ public sealed partial class LoadingView : UserControl
             });
 
             var result = await BuildDirectoryLoader.LoadAsync(
-                DataDirectory, progress, _cts.Token, EsmOverridePath);
+                DataDirectory, progress, EsmOverridePath, _cts.Token);
 
             LoadResult = result;
             var entries = result.Entries;

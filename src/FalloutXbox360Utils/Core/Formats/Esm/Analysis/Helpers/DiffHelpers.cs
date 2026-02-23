@@ -76,22 +76,18 @@ public static class DiffHelpers
         }
 
         // 4-byte swap match
-        if (offset + 4 <= a.Length && offset + 4 <= b.Length)
+        if (offset + 4 <= a.Length && offset + 4 <= b.Length &&
+            a[offset] == b[offset + 3] && a[offset + 1] == b[offset + 2] &&
+            a[offset + 2] == b[offset + 1] && a[offset + 3] == b[offset])
         {
-            if (a[offset] == b[offset + 3] && a[offset + 1] == b[offset + 2] &&
-                a[offset + 2] == b[offset + 1] && a[offset + 3] == b[offset])
-            {
-                return 4;
-            }
+            return 4;
         }
 
         // 2-byte swap match
-        if (offset + 2 <= a.Length && offset + 2 <= b.Length)
+        if (offset + 2 <= a.Length && offset + 2 <= b.Length &&
+            a[offset] == b[offset + 1] && a[offset + 1] == b[offset])
         {
-            if (a[offset] == b[offset + 1] && a[offset + 1] == b[offset])
-            {
-                return 2;
-            }
+            return 2;
         }
 
         return 0;
@@ -209,7 +205,9 @@ public static class DiffHelpers
             var isSwapByte = swapByteOffsets != null
                 ? swapByteOffsets.Contains(idx)
                 : localSwapLen > 0 && idx >= localSwapStart && idx < localSwapEnd;
-            _ = isSwapByte ? sb.Append("~~") : isDiff ? sb.Append("^^") : sb.Append("  ");
+            if (isSwapByte) sb.Append("~~");
+            else if (isDiff) sb.Append("^^");
+            else sb.Append("  ");
         }
 
         return sb.ToString();
@@ -394,6 +392,7 @@ public static class DiffHelpers
     /// <summary>
     ///     Analyzes byte arrays to detect all swap patterns and diff statistics.
     /// </summary>
+#pragma warning disable S127 // Loop counters are intentionally advanced within windowed pattern matching
     public static DiffPatternInfo AnalyzeDiffPatterns(byte[] a, byte[] b)
     {
         var len = Math.Min(a.Length, b.Length);
@@ -623,6 +622,7 @@ public static class DiffHelpers
             Summary = summary
         };
     }
+#pragma warning restore S127
 
     /// <summary>
     ///     Attempts to interpret the difference between Xbox and PC data for known subrecord types.

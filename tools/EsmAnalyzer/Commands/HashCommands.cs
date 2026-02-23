@@ -125,6 +125,7 @@ public static class HashCommands
     {
         algoName = algo.ToUpperInvariant();
         using var stream = File.OpenRead(filePath);
+#pragma warning disable CA5350, CA5351 // File integrity hashes, not used for cryptographic security
         HashAlgorithm? hasher = algo.ToLowerInvariant() switch
         {
             "sha256" => SHA256.Create(),
@@ -132,6 +133,7 @@ public static class HashCommands
             "md5" => MD5.Create(),
             _ => null
         };
+#pragma warning restore CA5350, CA5351
 
         if (hasher == null)
         {

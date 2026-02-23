@@ -133,15 +133,6 @@ public sealed class SubtitleIndex
                     }
                 }
 
-                if (i <= line.Length && start <= i)
-                {
-                    // Capture any remaining content if quote wasn't properly closed
-                    if (i > start && value.Length == 0 && i <= line.Length)
-                    {
-                        // Already appended in the loop
-                    }
-                }
-
                 fields.Add(value.ToString());
 
                 // Skip comma separator

@@ -709,11 +709,6 @@ public static partial class EsmDiffCommand
         return FieldValueDecoder.Decode(data, type, bigEndian);
     }
 
-    private static uint DecodeWordSwapped(ReadOnlySpan<byte> data, bool bigEndian)
-    {
-        return FieldValueDecoder.DecodeWordSwapped(data, bigEndian);
-    }
-
     private static bool TryParseFormId(string value, out uint formId)
     {
         return FieldValueDecoder.TryParseFormId(value, out formId);

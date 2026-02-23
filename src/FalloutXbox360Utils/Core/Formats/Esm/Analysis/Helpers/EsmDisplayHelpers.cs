@@ -142,35 +142,50 @@ public static class EsmDisplayHelpers
     /// </summary>
     public static string GenerateSubrecordPreview(string signature, byte[] data, bool bigEndian)
     {
-        return data.Length == 0
-            ? "(empty)"
-            : signature switch
-            {
-                "EDID" or "FULL" or "NAME" or "ICON" or "MICO" or "TX00" or "TX01" or "TX02" or "TX03" or "TX04"
-                    or "TX05" =>
-                    TryGetString(data),
-                "NAM1" or "NAM2" or "SCTX" or "RNAM" =>
-                    TryGetString(data),
-                "DATA" when data.Length == 4 =>
-                    bigEndian
-                        ? $"uint32: {BinaryPrimitives.ReadUInt32BigEndian(data)}"
-                        : $"uint32: {BinaryPrimitives.ReadUInt32LittleEndian(data)}",
-                "QSTI" or "PNAM" or "TCLT" or "SCRO" when data.Length == 4 =>
-                    bigEndian
-                        ? $"FormID: 0x{BinaryPrimitives.ReadUInt32BigEndian(data):X8}"
-                        : $"FormID: 0x{BinaryPrimitives.ReadUInt32LittleEndian(data):X8}",
-                "NAM3" when data.Length == 1 =>
-                    $"byte: {data[0]}",
-                "TRDT" when data.Length >= 8 =>
-                    $"ResponseData ({data.Length} bytes)",
-                "CTDA" when data.Length >= 24 =>
-                    $"Condition ({data.Length} bytes)",
-                "SCHR" when data.Length >= 16 =>
-                    $"ScriptHeader ({data.Length} bytes)",
-                "SCDA" when data.Length >= 4 =>
-                    $"CompiledScript ({data.Length} bytes)",
-                _ => FormatBinaryPreview(data)
-            };
+        if (data.Length == 0)
+        {
+            return "(empty)";
+        }
+
+        return signature switch
+        {
+            "EDID" or "FULL" or "NAME" or "ICON" or "MICO" or "TX00" or "TX01" or "TX02" or "TX03" or "TX04"
+                or "TX05" =>
+                TryGetString(data),
+            "NAM1" or "NAM2" or "SCTX" or "RNAM" =>
+                TryGetString(data),
+            "DATA" when data.Length == 4 =>
+                FormatUInt32Preview("uint32", data, bigEndian),
+            "QSTI" or "PNAM" or "TCLT" or "SCRO" when data.Length == 4 =>
+                FormatFormIdPreview(data, bigEndian),
+            "NAM3" when data.Length == 1 =>
+                $"byte: {data[0]}",
+            "TRDT" when data.Length >= 8 =>
+                $"ResponseData ({data.Length} bytes)",
+            "CTDA" when data.Length >= 24 =>
+                $"Condition ({data.Length} bytes)",
+            "SCHR" when data.Length >= 16 =>
+                $"ScriptHeader ({data.Length} bytes)",
+            "SCDA" when data.Length >= 4 =>
+                $"CompiledScript ({data.Length} bytes)",
+            _ => FormatBinaryPreview(data)
+        };
+    }
+
+    private static string FormatUInt32Preview(string label, byte[] data, bool bigEndian)
+    {
+        var value = bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data)
+            : BinaryPrimitives.ReadUInt32LittleEndian(data);
+        return $"{label}: {value}";
+    }
+
+    private static string FormatFormIdPreview(byte[] data, bool bigEndian)
+    {
+        var value = bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data)
+            : BinaryPrimitives.ReadUInt32LittleEndian(data);
+        return $"FormID: 0x{value:X8}";
     }
 
     /// <summary>
@@ -307,9 +322,10 @@ public static class EsmDisplayHelpers
 
         var str = Encoding.UTF8.GetString(data, 0, len);
 
-        return str.All(c => !char.IsControl(c) || c == '\n' || c == '\r' || c == '\t')
-            ? str.Length < data.Length - 1 ? $"\"{str}\"..." : $"\"{str}\""
-            : FormatBinaryPreview(data);
+        if (!str.All(c => !char.IsControl(c) || c == '\n' || c == '\r' || c == '\t'))
+            return FormatBinaryPreview(data);
+
+        return str.Length < data.Length - 1 ? $"\"{str}\"..." : $"\"{str}\"";
     }
 
     private static string FormatStringValue(byte[] data)

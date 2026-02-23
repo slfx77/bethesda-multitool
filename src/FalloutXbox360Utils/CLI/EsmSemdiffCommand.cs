@@ -58,9 +58,7 @@ public static class EsmSemdiffCommand
             var recordType = parseResult.GetValue(typeOption);
             var limit = parseResult.GetValue(limitOption);
             var showAll = parseResult.GetValue(showAllOption);
-            var format = parseResult.GetValue(formatOption);
-
-            return RunSemanticDiff(fileA, fileB, formIdStr, recordType, limit, showAll, format);
+            return RunSemanticDiff(fileA, fileB, formIdStr, recordType, limit, showAll);
         });
 
         return command;
@@ -70,22 +68,22 @@ public static class EsmSemdiffCommand
     ///     Public entry point for semantic diff with custom labels (called by unified diff command).
     /// </summary>
     public static int RunSemanticDiffLabeled(string fileAPath, string fileBPath, string labelA, string labelB,
-        string? formIdStr, string? recordType, int limit, bool showAll, string format = "table",
+        string? formIdStr, string? recordType, int limit, bool showAll,
         bool skipHeader = false)
     {
-        return RunSemanticDiffCore(fileAPath, fileBPath, labelA, labelB, formIdStr, recordType, limit, showAll, format,
+        return RunSemanticDiffCore(fileAPath, fileBPath, labelA, labelB, formIdStr, recordType, limit, showAll,
             skipHeader);
     }
 
     private static int RunSemanticDiff(string fileAPath, string fileBPath, string? formIdStr,
-        string? recordType, int limit, bool showAll, string format)
+        string? recordType, int limit, bool showAll)
     {
         return RunSemanticDiffCore(fileAPath, fileBPath, "File A", "File B", formIdStr, recordType, limit, showAll,
-            format, false);
+            false);
     }
 
     private static int RunSemanticDiffCore(string fileAPath, string fileBPath, string labelA, string labelB,
-        string? formIdStr, string? recordType, int limit, bool showAll, string format, bool skipHeader)
+        string? formIdStr, string? recordType, int limit, bool showAll, bool skipHeader)
     {
         if (!File.Exists(fileAPath))
         {
@@ -181,7 +179,7 @@ public static class EsmSemdiffCommand
         var shown = 0;
         foreach (var diff in differences.Take(limit))
         {
-            DisplayRecordDiff(diff, showAll, format, bigEndianA, bigEndianB, labelA, labelB);
+            DisplayRecordDiff(diff, labelA, labelB);
             shown++;
             if (shown < limit && shown < differences.Count)
             {
@@ -355,8 +353,7 @@ public static class EsmSemdiffCommand
         return diffs;
     }
 
-    private static void DisplayRecordDiff(RecordDiff diff, bool showAll, string format, bool bigEndianA,
-        bool bigEndianB,
+    private static void DisplayRecordDiff(RecordDiff diff,
         string labelA = "File A", string labelB = "File B")
     {
         var formIdStr = $"0x{diff.FormId:X8}";
@@ -521,11 +518,6 @@ public static class EsmSemdiffCommand
     private static string FormatFloat(float f)
     {
         return FieldValueDecoder.FormatFloat(f);
-    }
-
-    private static string FormatDouble(double d)
-    {
-        return FieldValueDecoder.FormatDouble(d);
     }
 
     private static string FormatBytes(ReadOnlySpan<byte> data)

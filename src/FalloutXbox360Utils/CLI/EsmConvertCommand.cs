@@ -42,8 +42,6 @@ public static class EsmConvertCommand
             var input = parseResult.GetValue(inputArg)!;
             var output = parseResult.GetValue(outputOpt);
             var verbose = parseResult.GetValue(verboseOpt);
-            var skipLandIds = parseResult.GetValue(skipLandOpt) ?? Array.Empty<string>();
-            var skipTypes = parseResult.GetValue(skipTypeOpt) ?? Array.Empty<string>();
 
             if (string.IsNullOrEmpty(output))
             {

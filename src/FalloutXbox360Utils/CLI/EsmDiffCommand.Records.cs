@@ -7,61 +7,6 @@ namespace FalloutXbox360Utils.CLI;
 
 public static partial class EsmDiffCommand
 {
-    private static int DiffRecords(string xboxPath, string pcPath, string? formIdStr, string? recordType, int limit,
-        int maxBytes)
-    {
-        if (!File.Exists(xboxPath))
-        {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] Xbox 360 file not found: {Markup.Escape(xboxPath)}");
-            return 1;
-        }
-
-        if (!File.Exists(pcPath))
-        {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] PC file not found: {Markup.Escape(pcPath)}");
-            return 1;
-        }
-
-        var xboxData = File.ReadAllBytes(xboxPath);
-        var pcData = File.ReadAllBytes(pcPath);
-
-        var xboxBigEndian = EsmParser.IsBigEndian(xboxData);
-        var pcBigEndian = EsmParser.IsBigEndian(pcData);
-
-        AnsiConsole.MarkupLine("[bold cyan]ESM Record Diff[/]");
-        AnsiConsole.MarkupLine(
-            $"Xbox 360: {Path.GetFileName(xboxPath)} ({(xboxBigEndian ? "Big-endian" : "Little-endian")})");
-        AnsiConsole.MarkupLine(
-            $"PC:       {Path.GetFileName(pcPath)} ({(pcBigEndian ? "Big-endian" : "Little-endian")})");
-        AnsiConsole.WriteLine();
-
-        // Parse specific FormID
-        uint? targetFormId = null;
-        if (!string.IsNullOrEmpty(formIdStr))
-        {
-            targetFormId = formIdStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                ? Convert.ToUInt32(formIdStr, 16)
-                : uint.Parse(formIdStr);
-        }
-
-        // If we have a specific FormID, find it in both files
-        if (targetFormId.HasValue)
-        {
-            return DiffSpecificRecord(xboxData, pcData, xboxBigEndian, pcBigEndian, targetFormId.Value, maxBytes,
-                true, false, false);
-        }
-
-        // If we have a record type, compare records of that type
-        if (!string.IsNullOrEmpty(recordType))
-        {
-            return DiffRecordType(xboxData, pcData, xboxBigEndian, pcBigEndian, recordType, limit, maxBytes,
-                true, false, false);
-        }
-
-        AnsiConsole.MarkupLine("[yellow]Please specify either --formid or --type[/]");
-        return 1;
-    }
-
     private static int DiffSpecificRecord(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
         uint formId, int maxBytes, bool showBytes, bool showByteMarkers, bool detectPatterns,
         string labelA = "Xbox 360", string labelB = "PC")
@@ -319,37 +264,29 @@ public static partial class EsmDiffCommand
         DiffPatternInfo? patterns = null;
         var structuredPattern = string.Empty;
 
-        if (!isIdentical && sizeMatch)
+        if (!isIdentical && sizeMatch && detectPatterns)
         {
-            // Only check for endian swap and patterns if detectPatterns is enabled
-            if (detectPatterns)
+            isEndianSwapped = CheckEndianSwapped(xbox.Data, pc.Data);
+            if (!isEndianSwapped)
             {
-                isEndianSwapped = CheckEndianSwapped(xbox.Data, pc.Data);
-                if (!isEndianSwapped)
-                {
-                    patterns = AnalyzeDiffPatterns(xbox.Data, pc.Data);
-                    structuredPattern = AnalyzeStructuredDifference(xbox.Data, pc.Data);
-                }
+                patterns = AnalyzeDiffPatterns(xbox.Data, pc.Data);
+                structuredPattern = AnalyzeStructuredDifference(xbox.Data, pc.Data);
             }
         }
 
         string status;
         if (isIdentical)
-        {
             status = "[green]IDENTICAL[/]";
-        }
+        else if (!sizeMatch)
+            status = $"[red]SIZE {xbox.Data.Length}/{pc.Data.Length}[/]";
+        else if (isEndianSwapped)
+            status = "[cyan]ENDIAN-SWAPPED[/]";
+        else if (patterns != null && !string.IsNullOrWhiteSpace(patterns.Summary))
+            status = $"[yellow]CONTENT[/] [grey]({Markup.Escape(patterns.Summary)})[/]";
+        else if (!string.IsNullOrEmpty(structuredPattern))
+            status = $"[cyan]STRUCTURED[/] [grey]({Markup.Escape(structuredPattern)})[/]";
         else
-        {
-            status = !sizeMatch
-                ? $"[red]SIZE {xbox.Data.Length}/{pc.Data.Length}[/]"
-                : isEndianSwapped
-                    ? "[cyan]ENDIAN-SWAPPED[/]"
-                    : patterns != null && !string.IsNullOrWhiteSpace(patterns.Summary)
-                        ? $"[yellow]CONTENT[/] [grey]({Markup.Escape(patterns.Summary)})[/]"
-                        : !string.IsNullOrEmpty(structuredPattern)
-                            ? $"[cyan]STRUCTURED[/] [grey]({Markup.Escape(structuredPattern)})[/]"
-                            : "[yellow]CONTENT DIFFERS[/]";
-        }
+            status = "[yellow]CONTENT DIFFERS[/]";
 
         var fileAOffset = (long)xboxRecordOffset + EsmParser.MainRecordHeaderSize + xbox.Offset;
         var fileBOffset = (long)pcRecordOffset + EsmParser.MainRecordHeaderSize + pc.Offset;

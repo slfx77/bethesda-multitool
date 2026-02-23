@@ -195,6 +195,7 @@ public static partial class CompareCommands
         foreach (var group in groups)
         {
             var center = group.CenterCell;
+            if (center == null) continue;
             var command = $"cow {worldspaceName} {center.CellX} {center.CellY}";
 
             string locationName;
@@ -829,6 +830,7 @@ public static partial class CompareCommands
     private static void AppendGroupEntry(StringBuilder sb, CellGroup group, string worldspaceName, int rank)
     {
         var maxDiffCell = group.MaxDiffCell;
+        if (maxDiffCell == null) return;
 
         // Header with region info
         string header;

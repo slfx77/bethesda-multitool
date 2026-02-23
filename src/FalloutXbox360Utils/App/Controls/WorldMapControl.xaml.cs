@@ -33,7 +33,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Export ---
     // Target the long edge at 4096px — large enough for detail, small enough to view at 1:1
     private const int ExportLongEdge = 4096;
-    private const int ExportMaxDimension = 16384;
 
     // ========================================================================
     // Color Helpers

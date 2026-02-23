@@ -178,8 +178,8 @@ public static class FormIdAuditCommands
                             if (formId != 0) // Skip null references
                             {
                                 // Look up in both EDID maps
-                                var convertedEdid = convertedEdidMap.GetValueOrDefault(formId, null);
-                                var pcEdid = pcEdidMap.GetValueOrDefault(formId, null);
+                                var convertedEdid = convertedEdidMap!.GetValueOrDefault(formId, null);
+                                var pcEdid = pcEdidMap!.GetValueOrDefault(formId, null);
 
                                 // Check for mismatch
                                 if (convertedEdid != pcEdid)
@@ -445,7 +445,9 @@ public static class FormIdAuditCommands
             }
 
             // Compute content hash
+#pragma warning disable CA5351 // File content hash for comparison, not cryptographic security
             var hash = Convert.ToHexString(MD5.HashData(recordData));
+#pragma warning restore CA5351
 
             map[record.FormId] = new RecordInfo
             {

@@ -221,18 +221,15 @@ public static class SaveFileParser
             {
                 var fv = data[fvPos];
                 var piSize = BinaryUtils.ReadUInt32LE(data, fvPos + 1);
-                if (fv is >= 19 and <= 22 && piSize < 1000)
+                if (fv is >= 19 and <= 22 && piSize < 1000 &&
+                    ValidateFormVersionCandidate(data, fvPos + 5 + (int)piSize, maxSearchEnd))
                 {
-                    // Validate: FLT after plugins should produce sane offsets
-                    if (ValidateFormVersionCandidate(data, fvPos + 5 + (int)piSize, maxSearchEnd))
-                    {
-                        screenshotDataSize = trySize;
-                        formVersion = fv;
-                        pluginInfoSize = piSize;
-                        position = fvPos + 5;
-                        found = true;
-                        break;
-                    }
+                    screenshotDataSize = trySize;
+                    formVersion = fv;
+                    pluginInfoSize = piSize;
+                    position = fvPos + 5;
+                    found = true;
+                    break;
                 }
             }
         }

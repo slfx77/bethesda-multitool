@@ -341,7 +341,6 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
     private const int MapHeaderSize = 16;
 
     // NiTMapItem<int, TESObjectCELL*>: pNext(4) + key(4) + val(4) = 12 bytes
-    private const int ItemNextOffset = 0;
     private const int ItemKeyOffset = 4;
     private const int ItemValueOffset = 8;
     private const int ItemSize = 12;

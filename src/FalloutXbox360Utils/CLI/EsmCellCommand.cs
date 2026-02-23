@@ -550,13 +550,11 @@ public static class EsmCellCommand
                 }
 
                 if (obj.X >= cellMinX && obj.X < cellMaxX &&
-                    obj.Y >= cellMinY && obj.Y < cellMaxY)
+                    obj.Y >= cellMinY && obj.Y < cellMaxY &&
+                    (string.IsNullOrEmpty(typeFilter) ||
+                     obj.RecordType.Equals(typeFilter, StringComparison.OrdinalIgnoreCase)))
                 {
-                    if (string.IsNullOrEmpty(typeFilter) ||
-                        obj.RecordType.Equals(typeFilter, StringComparison.OrdinalIgnoreCase))
-                    {
-                        overlay.Add(obj);
-                    }
+                    overlay.Add(obj);
                 }
             }
         }

@@ -275,8 +275,12 @@ public sealed partial class SingleFileTab
 
                 var linkedCellFormIds = new HashSet<uint>();
                 foreach (var ws in suppRecords.Worldspaces)
-                foreach (var cell in ws.Cells)
-                    linkedCellFormIds.Add(cell.FormId);
+                {
+                    foreach (var cell in ws.Cells)
+                    {
+                        linkedCellFormIds.Add(cell.FormId);
+                    }
+                }
 
                 var unlinkedExterior = suppRecords.Cells
                     .Where(c => !c.IsInterior && c.GridX.HasValue && c.GridY.HasValue &&

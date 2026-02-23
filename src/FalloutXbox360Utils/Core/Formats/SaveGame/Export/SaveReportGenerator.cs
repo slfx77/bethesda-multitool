@@ -22,7 +22,7 @@ public static class SaveReportGenerator
 
         files["save_summary.txt"] = GenerateSummary(save, decodedForms, formIdArray, resolver);
         files["changed_forms.csv"] = GenerateChangedFormsCsv(save, decodedForms, formIdArray, resolver);
-        files["decode_coverage.txt"] = GenerateDecodeCoverage(save, decodedForms, formIdArray);
+        files["decode_coverage.txt"] = GenerateDecodeCoverage(save, decodedForms);
         files["player_data.txt"] = GeneratePlayerData(save, decodedForms, formIdArray, resolver);
         files["gameplay_stats.csv"] = GenerateStatsCsv(save);
         files["global_variables.csv"] = GenerateGlobalVariablesCsv(save, formIdArray, resolver);
@@ -194,7 +194,9 @@ public static class SaveReportGenerator
             {
                 consumed = decoded.BytesConsumed;
                 remaining = decoded.UndecodedBytes;
-                status = decoded.FullyDecoded ? "Full" : decoded.BytesConsumed > 0 ? "Partial" : "Failed";
+                if (decoded.FullyDecoded) status = "Full";
+                else if (decoded.BytesConsumed > 0) status = "Partial";
+                else status = "Failed";
             }
 
             // Position/cell data from InitialData (reference types only)
@@ -248,8 +250,7 @@ public static class SaveReportGenerator
 
     private static string GenerateDecodeCoverage(
         SaveFile save,
-        Dictionary<int, DecodedFormData>? decodedForms,
-        uint[] formIdArray)
+        Dictionary<int, DecodedFormData>? decodedForms)
     {
         var sb = new StringBuilder();
         sb.AppendLine(new string('=', 80));

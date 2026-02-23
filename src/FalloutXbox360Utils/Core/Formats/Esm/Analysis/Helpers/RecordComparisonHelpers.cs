@@ -85,12 +85,12 @@ public static class RecordComparisonHelpers
                         result.SubrecordDiffs.Add(new SubrecordDiff
                         {
                             Signature = sig,
-                            Xbox360Size = xboxSub?.Data.Length ?? 0,
-                            PcSize = pcSub?.Data.Length ?? 0,
-                            Xbox360Offset = xboxSub?.Offset ?? 0,
-                            PcOffset = pcSub?.Offset ?? 0,
-                            Xbox360Data = xboxSub?.Data,
-                            PcData = pcSub?.Data,
+                            Xbox360Size = xboxSub.Data.Length,
+                            PcSize = pcSub.Data.Length,
+                            Xbox360Offset = xboxSub.Offset,
+                            PcOffset = pcSub.Offset,
+                            Xbox360Data = xboxSub.Data,
+                            PcData = pcSub.Data,
                             DiffType = xboxSub.Data.Length != pcSub.Data.Length ? "Size differs" : "Content differs"
                         });
                     }

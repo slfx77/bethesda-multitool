@@ -867,14 +867,22 @@ public static class SaveCommand
 
             foreach (var diag in result.Diagnostics)
             {
-                var color = diag.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
-                            diag.Contains("INVALID", StringComparison.OrdinalIgnoreCase) ||
-                            diag.Contains("corrupted", StringComparison.OrdinalIgnoreCase)
-                    ? "red"
-                    : diag.Contains("confirmed", StringComparison.OrdinalIgnoreCase) ||
-                      diag.Contains("Found:", StringComparison.OrdinalIgnoreCase)
-                        ? "green"
-                        : "grey";
+                string color;
+                if (diag.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                    diag.Contains("INVALID", StringComparison.OrdinalIgnoreCase) ||
+                    diag.Contains("corrupted", StringComparison.OrdinalIgnoreCase))
+                {
+                    color = "red";
+                }
+                else if (diag.Contains("confirmed", StringComparison.OrdinalIgnoreCase) ||
+                         diag.Contains("Found:", StringComparison.OrdinalIgnoreCase))
+                {
+                    color = "green";
+                }
+                else
+                {
+                    color = "grey";
+                }
                 AnsiConsole.MarkupLine($"  [{color}]{Markup.Escape(diag)}[/]");
             }
 

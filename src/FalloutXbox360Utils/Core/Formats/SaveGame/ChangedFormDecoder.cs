@@ -546,12 +546,9 @@ public static class ChangedFormDecoder
         // Process::SaveGame_v2 vtable dispatch based on process_level.
         // For 0xFF (no process), nothing is written.
         // For active processes, the full inheritance chain is written.
-        if (processLevel != 0xFF)
+        if (processLevel != 0xFF && !DecodeProcessState(ref r, result, processLevel, flags))
         {
-            if (!DecodeProcessState(ref r, result, processLevel, flags))
-            {
-                return; // Process state hit unknown vtable dispatch — remaining bytes consumed as blob
-            }
+            return; // Process state hit unknown vtable dispatch — remaining bytes consumed as blob
         }
 
         // ── Layer 5: Actor unconditional reads (34 fields) ─────────────
@@ -1006,14 +1003,11 @@ public static class ChangedFormDecoder
             _ => false // unknown process level
         };
 
-        if (!ok)
+        if (!ok && r.Remaining > 0)
         {
             // Couldn't fully parse — consume remaining as blob
-            if (r.Remaining > 0)
-            {
-                AddRawBlobField(ref r, result, "PROCESS_STATE_TAIL",
-                    $"Remaining process state (undecoded, level {processLevel})");
-            }
+            AddRawBlobField(ref r, result, "PROCESS_STATE_TAIL",
+                $"Remaining process state (undecoded, level {processLevel})");
         }
 
         return ok;
@@ -1023,7 +1017,9 @@ public static class ChangedFormDecoder
     ///     Decodes BaseProcess::SaveGame_v2 fields.
     ///     Decompilation: 3 × uint32 + ActorPackage::SaveGame.
     /// </summary>
+#pragma warning disable S1172 // flags reserved for future conditional decoding
     private static bool DecodeBaseProcess(ref FormDataReader r, DecodedFormData result, uint flags)
+#pragma warning restore S1172
     {
         // 3 × uint32 (at struct offsets +0x1C, +0x20, +0x24)
         AddUInt32Field(ref r, result, "BASE_PROC_1C");
@@ -1034,6 +1030,7 @@ public static class ChangedFormDecoder
         return DecodeActorPackage(ref r, result, "BASE_PROC_PACKAGE");
     }
 
+#pragma warning disable S907 // goto is idiomatic for state-machine decoders with early termination
     /// <summary>
     ///     Decodes ActorPackage::SaveGame.
     ///     Format: RefID + conditional(procedure_type + procedure_save + idle_type + idle_save +
@@ -1179,6 +1176,7 @@ public static class ChangedFormDecoder
         });
         return true;
     }
+#pragma warning restore S907
 
     /// <summary>
     ///     Decodes LowProcess::SaveGame_v2 fields.
@@ -3644,24 +3642,6 @@ public static class ChangedFormDecoder
                 Name = name,
                 Value = refId,
                 DisplayValue = refId.ToString(),
-                DataOffset = startPos,
-                DataLength = r.Position - startPos
-            });
-        }
-    }
-
-    private static void AddVsvalField(ref FormDataReader r, DecodedFormData result, string name)
-    {
-        var startPos = r.Position;
-        if (r.HasData(1))
-        {
-            var value = r.ReadVsval();
-            r.TrySkipPipe();
-            result.Fields.Add(new DecodedField
-            {
-                Name = name,
-                Value = value,
-                DisplayValue = $"{value}",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });

@@ -81,7 +81,7 @@ public static partial class EsmDiffCommand
         }
 
         // Mode: full comparison (stats mode, or no specific filter)
-        return RunFullComparison(fileAPath, fileBPath, dataA, dataB, bigEndianA, bigEndianB, recordType, limit,
+        return RunFullComparison(dataA, dataB, bigEndianA, bigEndianB, recordType, limit,
             outputDir, labelA, labelB);
     }
 
@@ -89,8 +89,6 @@ public static partial class EsmDiffCommand
     ///     Full comparison mode - shows stats, type counts, and optionally writes TSV reports.
     /// </summary>
     private static int RunFullComparison(
-        string fileAPath,
-        string fileBPath,
         byte[] dataA,
         byte[] dataB,
         bool bigEndianA,
@@ -144,7 +142,10 @@ public static partial class EsmDiffCommand
             _ = countsA.TryGetValue(type, out var aCount);
             _ = countsB.TryGetValue(type, out var bCount);
             var delta = aCount - bCount;
-            var deltaStr = delta == 0 ? "0" : delta > 0 ? $"[yellow]+{delta:N0}[/]" : $"[red]{delta:N0}[/]";
+            string deltaStr;
+            if (delta == 0) deltaStr = "0";
+            else if (delta > 0) deltaStr = $"[yellow]+{delta:N0}[/]";
+            else deltaStr = $"[red]{delta:N0}[/]";
             _ = countTable.AddRow($"[cyan]{type}[/]", aCount.ToString("N0"), bCount.ToString("N0"), deltaStr);
         }
 

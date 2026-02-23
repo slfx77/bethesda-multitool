@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Resources;
 
 namespace Xbox360MemoryCarver.Tools;
@@ -10,17 +12,18 @@ namespace Xbox360MemoryCarver.Tools;
 /// Spectre.Console markup ([red], [bold], etc.) should be applied in code,
 /// not in the resource strings, to keep resources markup-agnostic.
 /// </remarks>
+[SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores")]
 public static class CliStrings
 {
     private static readonly ResourceManager _rm =
         new("Xbox360MemoryCarver.Tools.CliStrings", typeof(CliStrings).Assembly);
 
     /// <summary>Gets a localized string by key.</summary>
-    public static string Get(string key) => _rm.GetString(key) ?? key;
+    public static string Get(string key) => _rm.GetString(key, CultureInfo.CurrentUICulture) ?? key;
 
     /// <summary>Gets a localized string and formats it with arguments.</summary>
     public static string GetFormat(string key, params object[] args)
-        => string.Format(Get(key), args);
+        => string.Format(CultureInfo.CurrentCulture, Get(key), args);
 
     // ===== Common Argument Descriptions =====
     public static string Arg_FilePath => Get("Arg_FilePath");
