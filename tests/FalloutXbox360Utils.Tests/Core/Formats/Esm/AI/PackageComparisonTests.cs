@@ -49,6 +49,7 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             Assert.SkipWhen(dumpFiles.Count == 0, "No release beta dumps found");
             dumpPath = dumpFiles[0];
         }
+
         Log($"Using dump: {Path.GetFileName(dumpPath)} ({new FileInfo(dumpPath).Length:N0} bytes)");
 
         // Parse proto ESM packages
@@ -83,11 +84,11 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
         Log($"\nMatching FormIDs: {matching.Count}");
 
         // Compare
-        int typeMismatches = 0;
-        int flagMismatches = 0;
-        int scheduleMismatches = 0;
-        int totalWithData = 0;
-        int dumpMissingData = 0;
+        var typeMismatches = 0;
+        var flagMismatches = 0;
+        var scheduleMismatches = 0;
+        var totalWithData = 0;
+        var dumpMissingData = 0;
 
         foreach (var formId in matching)
         {
@@ -111,7 +112,7 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
 
             totalWithData++;
 
-            bool hasMismatch = false;
+            var hasMismatch = false;
 
             // Compare Type
             if (esm.Data.Type != dump.Data.Type)
@@ -150,7 +151,7 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
                 hasMismatch = true;
             }
 
-            if (hasMismatch && (typeMismatches + flagMismatches + scheduleMismatches) <= 30)
+            if (hasMismatch && typeMismatches + flagMismatches + scheduleMismatches <= 30)
             {
                 Log(
                     $"\n  MISMATCH 0x{formId:X8} ({esm.EditorId ?? dump.EditorId ?? "?"}):");
@@ -169,10 +170,10 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
         }
 
         // Categorize mismatches
-        int dumpAllZeroed = 0;   // Dump has all PKDT fields zeroed, ESM has data
-        int dumpGainedValues = 0; // Dump has non-zero values where ESM had zero
-        int bothNonZeroDiff = 0;  // Both non-zero, but different
-        int invalidTypes = 0;    // Types outside valid range (0-16)
+        var dumpAllZeroed = 0; // Dump has all PKDT fields zeroed, ESM has data
+        var dumpGainedValues = 0; // Dump has non-zero values where ESM had zero
+        var bothNonZeroDiff = 0; // Both non-zero, but different
+        var invalidTypes = 0; // Types outside valid range (0-16)
 
         foreach (var formId in matching)
         {
@@ -190,10 +191,10 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             }
 
             // Categorize PKDT field differences
-            bool esmHasData = esm.Data.GeneralFlags != 0 || esm.Data.FalloutBehaviorFlags != 0 ||
-                              esm.Data.TypeSpecificFlags != 0;
-            bool dumpHasData = dump.Data.GeneralFlags != 0 || dump.Data.FalloutBehaviorFlags != 0 ||
-                               dump.Data.TypeSpecificFlags != 0;
+            var esmHasData = esm.Data.GeneralFlags != 0 || esm.Data.FalloutBehaviorFlags != 0 ||
+                             esm.Data.TypeSpecificFlags != 0;
+            var dumpHasData = dump.Data.GeneralFlags != 0 || dump.Data.FalloutBehaviorFlags != 0 ||
+                              dump.Data.TypeSpecificFlags != 0;
 
             if (esmHasData && !dumpHasData && esm.Data.Type == dump.Data.Type)
             {
@@ -238,7 +239,7 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             Log($"  Type {g.Key,2} ({PackageTypeName(g.Key)}): {g.Count()}");
         }
 
-        Log($"\n=== Dump Package Sources (from diag) ===");
+        Log("\n=== Dump Package Sources (from diag) ===");
         Log($"  Runtime hash table entries (FormType 0x49): {dumpDiag.runtimePackCount}");
         Log($"  ESM PACK records in fragment scan: {dumpDiag.packRecordCount}");
 
@@ -274,16 +275,16 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
         Log("\n=== Dump Package Flag Analysis ===");
         // Corrected mask: bits 0-10, 12-13, 17-20, 21-28
         const uint knownGeneralBits = 0x1FFF37FF;
-        const ushort knownFOBits = 0x01FF;         // All defined PackageFOBehaviorFlags bits
-        const ushort knownTSBits = 0x017F;          // All defined PackageTypeSpecificFlags bits (incl. Allow Buying)
+        const ushort knownFOBits = 0x01FF; // All defined PackageFOBehaviorFlags bits
+        const ushort knownTSBits = 0x017F; // All defined PackageTypeSpecificFlags bits (incl. Allow Buying)
 
-        int undefinedGeneralBits = 0;
-        int undefinedFOBits = 0;
-        int undefinedTSBits = 0;
-        int noSchedule = 0;
-        int noData = 0;
-        int nameTypeMismatch = 0;      // EditorId contains type hint that doesn't match
-        int uninitializedMemory = 0;   // 0xCDCD/0xCDCDCDCD pattern (MS CRT heap fill)
+        var undefinedGeneralBits = 0;
+        var undefinedFOBits = 0;
+        var undefinedTSBits = 0;
+        var noSchedule = 0;
+        var noData = 0;
+        var nameTypeMismatch = 0; // EditorId contains type hint that doesn't match
+        var uninitializedMemory = 0; // 0xCDCD/0xCDCDCDCD pattern (MS CRT heap fill)
 
         var suspectPackages = new List<(PackageRecord pkg, string reason)>();
 
@@ -301,7 +302,7 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             }
 
             // Check for 0xCDCDCDCD / 0xCDCD uninitialized heap memory pattern
-            bool hasUninit = false;
+            var hasUninit = false;
             if (pkg.Data.GeneralFlags == 0xCDCDCDCD ||
                 pkg.Data.FalloutBehaviorFlags == 0xCDCD ||
                 pkg.Data.TypeSpecificFlags == 0xCDCD)
@@ -355,7 +356,7 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             if (pkg.EditorId != null)
             {
                 var edLower = pkg.EditorId.ToLowerInvariant();
-                bool mismatch = false;
+                var mismatch = false;
                 if ((edLower.Contains("sleep") && pkg.Data.Type != 4) ||
                     (edLower.Contains("sandbox") && pkg.Data.Type != 12) ||
                     (edLower.Contains("patrol") && pkg.Data.Type != 13) ||
@@ -392,7 +393,8 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             foreach (var (pkg, reason) in suspectPackages)
             {
                 Log($"  0x{pkg.FormId:X8} ({pkg.EditorId ?? "?"}) Type={pkg.Data!.Type} ({pkg.TypeName})");
-                Log($"    Flags=0x{pkg.Data.GeneralFlags:X8} FO=0x{pkg.Data.FalloutBehaviorFlags:X4} TS=0x{pkg.Data.TypeSpecificFlags:X4}");
+                Log(
+                    $"    Flags=0x{pkg.Data.GeneralFlags:X8} FO=0x{pkg.Data.FalloutBehaviorFlags:X4} TS=0x{pkg.Data.TypeSpecificFlags:X4}");
                 Log($"    Sched: {pkg.Schedule?.Summary ?? "none"}");
                 Log($"    Reason: {reason}");
             }
@@ -401,14 +403,17 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
         Log($"\nResults written to: {ResultFile}");
     }
 
-    private static string PackageTypeName(int type) => type switch
+    private static string PackageTypeName(int type)
     {
-        0 => "Find", 1 => "Follow", 2 => "Escort", 3 => "Eat", 4 => "Sleep",
-        5 => "Wander", 6 => "Travel", 7 => "Accompany", 8 => "Use Item At",
-        9 => "Ambush", 10 => "Flee Not Combat", 11 => "?11?",
-        12 => "Sandbox", 13 => "Patrol", 14 => "Guard", 15 => "Dialogue",
-        16 => "Use Weapon", _ => $"?{type}?"
-    };
+        return type switch
+        {
+            0 => "Find", 1 => "Follow", 2 => "Escort", 3 => "Eat", 4 => "Sleep",
+            5 => "Wander", 6 => "Travel", 7 => "Accompany", 8 => "Use Item At",
+            9 => "Ambush", 10 => "Flee Not Combat", 11 => "?11?",
+            12 => "Sandbox", 13 => "Patrol", 14 => "Guard", 15 => "Dialogue",
+            16 => "Use Weapon", _ => $"?{type}?"
+        };
+    }
 
     private static async Task<List<PackageRecord>> LoadPackagesFromFile(string path)
     {
@@ -417,7 +422,7 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
     }
 
     private static async Task<(List<PackageRecord> packages,
-        (int esmRecordCount, int packRecordCount, int runtimeEditorIdCount,
+            (int esmRecordCount, int packRecordCount, int runtimeEditorIdCount,
             int runtimePackCount, bool hasMinidump, int formIdMapCount) diag)>
         LoadPackagesFromFileWithDiag(string path)
     {

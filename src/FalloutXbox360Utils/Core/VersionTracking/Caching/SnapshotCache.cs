@@ -50,8 +50,9 @@ public class SnapshotCache
             // Check schema version
             if (envelope.CacheSchemaVersion != SchemaVersion)
             {
-                Logger.Instance.Debug($"[SnapshotCache] Schema version mismatch for {Path.GetFileName(sourceFilePath)}: " +
-                                      $"cached={envelope.CacheSchemaVersion}, current={SchemaVersion}");
+                Logger.Instance.Debug(
+                    $"[SnapshotCache] Schema version mismatch for {Path.GetFileName(sourceFilePath)}: " +
+                    $"cached={envelope.CacheSchemaVersion}, current={SchemaVersion}");
                 return null;
             }
 
@@ -67,7 +68,8 @@ public class SnapshotCache
         }
         catch (Exception ex)
         {
-            Logger.Instance.Warn($"[SnapshotCache] Failed to load cache for {Path.GetFileName(sourceFilePath)}: {ex.Message}");
+            Logger.Instance.Warn(
+                $"[SnapshotCache] Failed to load cache for {Path.GetFileName(sourceFilePath)}: {ex.Message}");
             return null;
         }
     }

@@ -11,23 +11,23 @@ public static class MarkdownTimelineWriter
 {
     private static readonly (string Label, Func<VersionDiffResult, List<RecordChange>> Selector,
         Func<VersionSnapshot, int> Counter)[] Categories =
-    [
-        ("Quests", d => d.QuestChanges, s => s.Quests.Count),
-        ("NPCs", d => d.NpcChanges, s => s.Npcs.Count),
-        ("Weapons", d => d.WeaponChanges, s => s.Weapons.Count),
-        ("Armor", d => d.ArmorChanges, s => s.Armor.Count),
-        ("Items", d => d.ItemChanges, s => s.Items.Count),
-        ("Scripts", d => d.ScriptChanges, s => s.Scripts.Count),
-        ("Dialogues", d => d.DialogueChanges, s => s.Dialogues.Count),
-        ("Locations", d => d.LocationChanges, s => s.Locations.Count),
-        ("Placements", d => d.PlacementChanges, s => s.Placements.Count),
-        ("Creatures", d => d.CreatureChanges, s => s.Creatures.Count),
-        ("Perks", d => d.PerkChanges, s => s.Perks.Count),
-        ("Ammo", d => d.AmmoChanges, s => s.Ammo.Count),
-        ("Leveled Lists", d => d.LeveledListChanges, s => s.LeveledLists.Count),
-        ("Notes", d => d.NoteChanges, s => s.Notes.Count),
-        ("Terminals", d => d.TerminalChanges, s => s.Terminals.Count)
-    ];
+        [
+            ("Quests", d => d.QuestChanges, s => s.Quests.Count),
+            ("NPCs", d => d.NpcChanges, s => s.Npcs.Count),
+            ("Weapons", d => d.WeaponChanges, s => s.Weapons.Count),
+            ("Armor", d => d.ArmorChanges, s => s.Armor.Count),
+            ("Items", d => d.ItemChanges, s => s.Items.Count),
+            ("Scripts", d => d.ScriptChanges, s => s.Scripts.Count),
+            ("Dialogues", d => d.DialogueChanges, s => s.Dialogues.Count),
+            ("Locations", d => d.LocationChanges, s => s.Locations.Count),
+            ("Placements", d => d.PlacementChanges, s => s.Placements.Count),
+            ("Creatures", d => d.CreatureChanges, s => s.Creatures.Count),
+            ("Perks", d => d.PerkChanges, s => s.Perks.Count),
+            ("Ammo", d => d.AmmoChanges, s => s.Ammo.Count),
+            ("Leveled Lists", d => d.LeveledListChanges, s => s.LeveledLists.Count),
+            ("Notes", d => d.NoteChanges, s => s.Notes.Count),
+            ("Terminals", d => d.TerminalChanges, s => s.Terminals.Count)
+        ];
 
     /// <summary>
     ///     Generates a full timeline report with per-record change tables.
@@ -69,8 +69,10 @@ public static class MarkdownTimelineWriter
     {
         sb.AppendLine("## Build Timeline");
         sb.AppendLine();
-        sb.AppendLine("| # | Build | Date | Source | Quests | NPCs | Weapons | Armor | Items | Scripts | Dialogues | Locations | Total |");
-        sb.AppendLine("|---|-------|------|--------|--------|------|---------|-------|-------|---------|-----------|-----------|-------|");
+        sb.AppendLine(
+            "| # | Build | Date | Source | Quests | NPCs | Weapons | Armor | Items | Scripts | Dialogues | Locations | Total |");
+        sb.AppendLine(
+            "|---|-------|------|--------|--------|------|---------|-------|-------|---------|-----------|-----------|-------|");
 
         for (var i = 0; i < snapshots.Count; i++)
         {
@@ -107,6 +109,102 @@ public static class MarkdownTimelineWriter
 
             sb.AppendLine($"| {i + 1} | {EscapePipes(d.FromBuild.Label)} → {EscapePipes(d.ToBuild.Label)} | " +
                           $"{d.TotalAdded:N0} | {d.TotalRemoved:N0} | {d.TotalChanged:N0} | {total:N0} |");
+        }
+    }
+
+    #endregion
+
+    #region FormID History
+
+    private static void WriteFormIdHistory(StringBuilder sb, List<VersionSnapshot> snapshots, uint formId)
+    {
+        sb.AppendLine($"## FormID History: 0x{formId:X8}");
+        sb.AppendLine();
+        sb.AppendLine("| Build | Date | Present | Name | Details |");
+        sb.AppendLine("|-------|------|---------|------|---------|");
+
+        foreach (var snapshot in snapshots)
+        {
+            var date = snapshot.Build.BuildDate?.ToString("yyyy-MM-dd") ?? "?";
+
+            if (snapshot.Quests.TryGetValue(formId, out var quest))
+            {
+                var stages = string.Join(", ", quest.Stages.Select(s => s.Index));
+                var objectives = string.Join("; ", quest.Objectives.Select(o => o.DisplayText ?? "?"));
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | QUST | {quest.FullName ?? quest.EditorId ?? ""} | Stages: [{stages}] Objectives: [{objectives}] |");
+            }
+            else if (snapshot.Npcs.TryGetValue(formId, out var npc))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | NPC_ | {npc.FullName ?? npc.EditorId ?? ""} | Level: {npc.Level} |");
+            }
+            else if (snapshot.Weapons.TryGetValue(formId, out var weapon))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | WEAP | {weapon.FullName ?? weapon.EditorId ?? ""} | Dmg: {weapon.Damage}, Clip: {weapon.ClipSize} |");
+            }
+            else if (snapshot.Armor.TryGetValue(formId, out var armor))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | ARMO | {armor.FullName ?? armor.EditorId ?? ""} | DT: {armor.DamageThreshold:F1} |");
+            }
+            else if (snapshot.Items.TryGetValue(formId, out var item))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | {item.RecordType} | {item.FullName ?? item.EditorId ?? ""} | Value: {item.Value} |");
+            }
+            else if (snapshot.Scripts.TryGetValue(formId, out var script))
+            {
+                var hasSource = !string.IsNullOrEmpty(script.SourceText);
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | SCPT | {script.EditorId ?? ""} | {script.ScriptType}, Vars: {script.VariableCount}, Source: {(hasSource ? "Yes" : "No")} |");
+            }
+            else if (snapshot.Dialogues.TryGetValue(formId, out var dialogue))
+            {
+                var text = dialogue.ResponseTexts.FirstOrDefault() ?? "";
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | INFO | {dialogue.EditorId ?? ""} | {EscapePipes(text)} |");
+            }
+            else if (snapshot.Locations.TryGetValue(formId, out var location))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | {location.RecordType} | {location.FullName ?? location.EditorId ?? ""} | |");
+            }
+            else if (snapshot.Creatures.TryGetValue(formId, out var creature))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | CREA | {creature.FullName ?? creature.EditorId ?? ""} | Level: {creature.Level}, Dmg: {creature.AttackDamage} |");
+            }
+            else if (snapshot.Perks.TryGetValue(formId, out var perk))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | PERK | {perk.FullName ?? perk.EditorId ?? ""} | Ranks: {perk.Ranks}, MinLvl: {perk.MinLevel} |");
+            }
+            else if (snapshot.Ammo.TryGetValue(formId, out var ammo))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | AMMO | {ammo.FullName ?? ammo.EditorId ?? ""} | Value: {ammo.Value} |");
+            }
+            else if (snapshot.LeveledLists.TryGetValue(formId, out var leveledList))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | {leveledList.ListType} | {leveledList.EditorId ?? ""} | Entries: {leveledList.Entries.Count} |");
+            }
+            else if (snapshot.Notes.TryGetValue(formId, out var note))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | NOTE | {note.FullName ?? note.EditorId ?? ""} | |");
+            }
+            else if (snapshot.Terminals.TryGetValue(formId, out var terminal))
+            {
+                sb.AppendLine(
+                    $"| {EscapePipes(snapshot.Build.Label)} | {date} | TERM | {terminal.FullName ?? terminal.EditorId ?? ""} | Items: {terminal.MenuItemCount} |");
+            }
+            else
+            {
+                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | - | (not found) | |");
+            }
         }
     }
 
@@ -242,7 +340,7 @@ public static class MarkdownTimelineWriter
 
             foreach (var history in histories.OrderBy(h => h.FormId))
             {
-                WriteRecordTable(sb, history, buildIndex, headingLevel: "#####");
+                WriteRecordTable(sb, history, buildIndex, "#####");
             }
         }
 
@@ -253,7 +351,7 @@ public static class MarkdownTimelineWriter
 
             foreach (var history in orphans.OrderBy(h => h.FormId))
             {
-                WriteRecordTable(sb, history, buildIndex, headingLevel: "#####");
+                WriteRecordTable(sb, history, buildIndex, "#####");
             }
         }
     }
@@ -316,7 +414,7 @@ public static class MarkdownTimelineWriter
             foreach (var cp in history.ChangePoints)
             {
                 var fc = cp.FieldChanges.FirstOrDefault(f => f.FieldName == field);
-                var value = fc != null ? (fc.NewValue ?? "(none)") : "-";
+                var value = fc != null ? fc.NewValue ?? "(none)" : "-";
                 sb.Append($" {EscapePipes(value)} |");
             }
 
@@ -345,19 +443,32 @@ public static class MarkdownTimelineWriter
             return;
         }
 
-        var cutQuests = FindCutRecords(dmpSnapshots.SelectMany(s => s.Quests), finalEsm.Quests, snapshots, fo3LeftoverFormIds);
-        var cutNpcs = FindCutRecords(dmpSnapshots.SelectMany(s => s.Npcs), finalEsm.Npcs, snapshots, fo3LeftoverFormIds);
-        var cutWeapons = FindCutRecords(dmpSnapshots.SelectMany(s => s.Weapons), finalEsm.Weapons, snapshots, fo3LeftoverFormIds);
-        var cutArmor = FindCutRecords(dmpSnapshots.SelectMany(s => s.Armor), finalEsm.Armor, snapshots, fo3LeftoverFormIds);
-        var cutItems = FindCutRecords(dmpSnapshots.SelectMany(s => s.Items), finalEsm.Items, snapshots, fo3LeftoverFormIds);
-        var cutScripts = FindCutRecords(dmpSnapshots.SelectMany(s => s.Scripts), finalEsm.Scripts, snapshots, fo3LeftoverFormIds);
-        var cutDialogues = FindCutRecords(dmpSnapshots.SelectMany(s => s.Dialogues), finalEsm.Dialogues, snapshots, fo3LeftoverFormIds);
-        var cutCreatures = FindCutRecords(dmpSnapshots.SelectMany(s => s.Creatures), finalEsm.Creatures, snapshots, fo3LeftoverFormIds);
-        var cutPerks = FindCutRecords(dmpSnapshots.SelectMany(s => s.Perks), finalEsm.Perks, snapshots, fo3LeftoverFormIds);
-        var cutAmmo = FindCutRecords(dmpSnapshots.SelectMany(s => s.Ammo), finalEsm.Ammo, snapshots, fo3LeftoverFormIds);
-        var cutLeveledLists = FindCutRecords(dmpSnapshots.SelectMany(s => s.LeveledLists), finalEsm.LeveledLists, snapshots, fo3LeftoverFormIds);
-        var cutNotes = FindCutRecords(dmpSnapshots.SelectMany(s => s.Notes), finalEsm.Notes, snapshots, fo3LeftoverFormIds);
-        var cutTerminals = FindCutRecords(dmpSnapshots.SelectMany(s => s.Terminals), finalEsm.Terminals, snapshots, fo3LeftoverFormIds);
+        var cutQuests = FindCutRecords(dmpSnapshots.SelectMany(s => s.Quests), finalEsm.Quests, snapshots,
+            fo3LeftoverFormIds);
+        var cutNpcs = FindCutRecords(dmpSnapshots.SelectMany(s => s.Npcs), finalEsm.Npcs, snapshots,
+            fo3LeftoverFormIds);
+        var cutWeapons = FindCutRecords(dmpSnapshots.SelectMany(s => s.Weapons), finalEsm.Weapons, snapshots,
+            fo3LeftoverFormIds);
+        var cutArmor = FindCutRecords(dmpSnapshots.SelectMany(s => s.Armor), finalEsm.Armor, snapshots,
+            fo3LeftoverFormIds);
+        var cutItems = FindCutRecords(dmpSnapshots.SelectMany(s => s.Items), finalEsm.Items, snapshots,
+            fo3LeftoverFormIds);
+        var cutScripts = FindCutRecords(dmpSnapshots.SelectMany(s => s.Scripts), finalEsm.Scripts, snapshots,
+            fo3LeftoverFormIds);
+        var cutDialogues = FindCutRecords(dmpSnapshots.SelectMany(s => s.Dialogues), finalEsm.Dialogues, snapshots,
+            fo3LeftoverFormIds);
+        var cutCreatures = FindCutRecords(dmpSnapshots.SelectMany(s => s.Creatures), finalEsm.Creatures, snapshots,
+            fo3LeftoverFormIds);
+        var cutPerks = FindCutRecords(dmpSnapshots.SelectMany(s => s.Perks), finalEsm.Perks, snapshots,
+            fo3LeftoverFormIds);
+        var cutAmmo = FindCutRecords(dmpSnapshots.SelectMany(s => s.Ammo), finalEsm.Ammo, snapshots,
+            fo3LeftoverFormIds);
+        var cutLeveledLists = FindCutRecords(dmpSnapshots.SelectMany(s => s.LeveledLists), finalEsm.LeveledLists,
+            snapshots, fo3LeftoverFormIds);
+        var cutNotes = FindCutRecords(dmpSnapshots.SelectMany(s => s.Notes), finalEsm.Notes, snapshots,
+            fo3LeftoverFormIds);
+        var cutTerminals = FindCutRecords(dmpSnapshots.SelectMany(s => s.Terminals), finalEsm.Terminals, snapshots,
+            fo3LeftoverFormIds);
 
         if (cutQuests.Count == 0 && cutNpcs.Count == 0 && cutWeapons.Count == 0 &&
             cutArmor.Count == 0 && cutItems.Count == 0 && cutScripts.Count == 0 &&
@@ -404,7 +515,9 @@ public static class MarkdownTimelineWriter
         sb.AppendLine();
 
         // Group by quest
-        var questGroups = new Dictionary<uint, (string QuestName, List<(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen)> Dialogues)>();
+        var questGroups =
+            new Dictionary<uint, (string QuestName,
+                List<(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen)> Dialogues)>();
         var orphans = new List<(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen)>();
 
         foreach (var record in records)
@@ -455,7 +568,8 @@ public static class MarkdownTimelineWriter
             sb.AppendLine("|------|-----------|---------|------------|-----------|");
             foreach (var (formId, editorId, name, firstSeen, lastSeen) in dialogues)
             {
-                sb.AppendLine($"| {name ?? ""} | {editorId ?? ""} | 0x{formId:X8} | {EscapePipes(firstSeen)} | {EscapePipes(lastSeen)} |");
+                sb.AppendLine(
+                    $"| {name ?? ""} | {editorId ?? ""} | 0x{formId:X8} | {EscapePipes(firstSeen)} | {EscapePipes(lastSeen)} |");
             }
 
             sb.AppendLine();
@@ -469,7 +583,8 @@ public static class MarkdownTimelineWriter
             sb.AppendLine("|------|-----------|---------|------------|-----------|");
             foreach (var (formId, editorId, name, firstSeen, lastSeen) in orphans)
             {
-                sb.AppendLine($"| {name ?? ""} | {editorId ?? ""} | 0x{formId:X8} | {EscapePipes(firstSeen)} | {EscapePipes(lastSeen)} |");
+                sb.AppendLine(
+                    $"| {name ?? ""} | {editorId ?? ""} | 0x{formId:X8} | {EscapePipes(firstSeen)} | {EscapePipes(lastSeen)} |");
             }
 
             sb.AppendLine();
@@ -549,89 +664,8 @@ public static class MarkdownTimelineWriter
         sb.AppendLine("|------|-----------|---------|------------|-----------|");
         foreach (var (formId, editorId, name, firstSeen, lastSeen) in records)
         {
-            sb.AppendLine($"| {name ?? ""} | {editorId ?? ""} | 0x{formId:X8} | {EscapePipes(firstSeen)} | {EscapePipes(lastSeen)} |");
-        }
-    }
-
-    #endregion
-
-    #region FormID History
-
-    private static void WriteFormIdHistory(StringBuilder sb, List<VersionSnapshot> snapshots, uint formId)
-    {
-        sb.AppendLine($"## FormID History: 0x{formId:X8}");
-        sb.AppendLine();
-        sb.AppendLine("| Build | Date | Present | Name | Details |");
-        sb.AppendLine("|-------|------|---------|------|---------|");
-
-        foreach (var snapshot in snapshots)
-        {
-            var date = snapshot.Build.BuildDate?.ToString("yyyy-MM-dd") ?? "?";
-
-            if (snapshot.Quests.TryGetValue(formId, out var quest))
-            {
-                var stages = string.Join(", ", quest.Stages.Select(s => s.Index));
-                var objectives = string.Join("; ", quest.Objectives.Select(o => o.DisplayText ?? "?"));
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | QUST | {quest.FullName ?? quest.EditorId ?? ""} | Stages: [{stages}] Objectives: [{objectives}] |");
-            }
-            else if (snapshot.Npcs.TryGetValue(formId, out var npc))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | NPC_ | {npc.FullName ?? npc.EditorId ?? ""} | Level: {npc.Level} |");
-            }
-            else if (snapshot.Weapons.TryGetValue(formId, out var weapon))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | WEAP | {weapon.FullName ?? weapon.EditorId ?? ""} | Dmg: {weapon.Damage}, Clip: {weapon.ClipSize} |");
-            }
-            else if (snapshot.Armor.TryGetValue(formId, out var armor))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | ARMO | {armor.FullName ?? armor.EditorId ?? ""} | DT: {armor.DamageThreshold:F1} |");
-            }
-            else if (snapshot.Items.TryGetValue(formId, out var item))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | {item.RecordType} | {item.FullName ?? item.EditorId ?? ""} | Value: {item.Value} |");
-            }
-            else if (snapshot.Scripts.TryGetValue(formId, out var script))
-            {
-                var hasSource = !string.IsNullOrEmpty(script.SourceText);
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | SCPT | {script.EditorId ?? ""} | {script.ScriptType}, Vars: {script.VariableCount}, Source: {(hasSource ? "Yes" : "No")} |");
-            }
-            else if (snapshot.Dialogues.TryGetValue(formId, out var dialogue))
-            {
-                var text = dialogue.ResponseTexts.FirstOrDefault() ?? "";
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | INFO | {dialogue.EditorId ?? ""} | {EscapePipes(text)} |");
-            }
-            else if (snapshot.Locations.TryGetValue(formId, out var location))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | {location.RecordType} | {location.FullName ?? location.EditorId ?? ""} | |");
-            }
-            else if (snapshot.Creatures.TryGetValue(formId, out var creature))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | CREA | {creature.FullName ?? creature.EditorId ?? ""} | Level: {creature.Level}, Dmg: {creature.AttackDamage} |");
-            }
-            else if (snapshot.Perks.TryGetValue(formId, out var perk))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | PERK | {perk.FullName ?? perk.EditorId ?? ""} | Ranks: {perk.Ranks}, MinLvl: {perk.MinLevel} |");
-            }
-            else if (snapshot.Ammo.TryGetValue(formId, out var ammo))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | AMMO | {ammo.FullName ?? ammo.EditorId ?? ""} | Value: {ammo.Value} |");
-            }
-            else if (snapshot.LeveledLists.TryGetValue(formId, out var leveledList))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | {leveledList.ListType} | {leveledList.EditorId ?? ""} | Entries: {leveledList.Entries.Count} |");
-            }
-            else if (snapshot.Notes.TryGetValue(formId, out var note))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | NOTE | {note.FullName ?? note.EditorId ?? ""} | |");
-            }
-            else if (snapshot.Terminals.TryGetValue(formId, out var terminal))
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | TERM | {terminal.FullName ?? terminal.EditorId ?? ""} | Items: {terminal.MenuItemCount} |");
-            }
-            else
-            {
-                sb.AppendLine($"| {EscapePipes(snapshot.Build.Label)} | {date} | - | (not found) | |");
-            }
+            sb.AppendLine(
+                $"| {name ?? ""} | {editorId ?? ""} | 0x{formId:X8} | {EscapePipes(firstSeen)} | {EscapePipes(lastSeen)} |");
         }
     }
 
@@ -642,7 +676,10 @@ public static class MarkdownTimelineWriter
     private sealed record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
 
     private sealed record RecordHistory(
-        uint FormId, string? EditorId, string? FullName, string Category,
+        uint FormId,
+        string? EditorId,
+        string? FullName,
+        string Category,
         List<ChangePoint> ChangePoints);
 
     private static string? GetEditorId<T>(T record)

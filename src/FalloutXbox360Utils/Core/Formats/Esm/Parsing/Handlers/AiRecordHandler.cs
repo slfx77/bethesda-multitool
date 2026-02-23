@@ -78,8 +78,8 @@ internal sealed class AiRecordHandler(RecordParserContext context)
         PackageLocation? location2 = null;
         PackageTarget? target = null;
         PackageTarget? target2 = null;
-        bool isRepeatable = false;
-        bool isStartingLocationLinkedRef = false;
+        var isRepeatable = false;
+        var isStartingLocationLinkedRef = false;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {

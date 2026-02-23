@@ -4,13 +4,11 @@ namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 ///     File Location Table from the save file header (110 bytes / 0x6E).
 ///     Provides byte offsets and counts for all body sections.
 ///     Offsets are absolute from the start of the save payload (the FO3SAVEGAME magic).
-///
 ///     Layout (verified empirically across 12 saves):
-///       Bytes 0-35:   9 × uint32 — defined fields below
-///       Bytes 36-107: 18 × uint32 — reserved (always zero in FNV)
-///       Bytes 108-109: 1 × uint16 — reserved (always zero)
-///       Total: 110 bytes (0x6E)
-///
+///     Bytes 0-35:   9 × uint32 — defined fields below
+///     Bytes 36-107: 18 × uint32 — reserved (always zero in FNV)
+///     Bytes 108-109: 1 × uint16 — reserved (always zero)
+///     Total: 110 bytes (0x6E)
 ///     GlobalDataTable1Count is always 12 (types 0-11).
 ///     GlobalDataTable2Count is always 1 (type 1000 = NVSE).
 ///     UnknownCount is always 0.

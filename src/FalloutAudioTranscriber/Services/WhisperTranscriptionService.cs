@@ -24,6 +24,15 @@ public sealed class WhisperTranscriptionService : IDisposable
     /// <summary>Whether the Whisper model is loaded and ready.</summary>
     public bool IsInitialized => _processor != null;
 
+    public void Dispose()
+    {
+        _processor?.Dispose();
+        _processor = null;
+
+        _factory?.Dispose();
+        _factory = null;
+    }
+
     /// <summary>
     ///     Download the model (if needed) and initialize the Whisper processor.
     /// </summary>
@@ -162,7 +171,7 @@ public sealed class WhisperTranscriptionService : IDisposable
         }
 
         // Convert to float sample pipeline
-        ISampleProvider samples = reader.ToSampleProvider();
+        var samples = reader.ToSampleProvider();
 
         // Stereo → mono
         if (samples.WaveFormat.Channels > 1)
@@ -180,14 +189,5 @@ public sealed class WhisperTranscriptionService : IDisposable
         using var outputStream = new MemoryStream();
         WaveFileWriter.WriteWavFileToStream(outputStream, samples.ToWaveProvider16());
         return outputStream.ToArray();
-    }
-
-    public void Dispose()
-    {
-        _processor?.Dispose();
-        _processor = null;
-
-        _factory?.Dispose();
-        _factory = null;
     }
 }

@@ -10,6 +10,33 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif;
 /// </summary>
 public class NifConverterTests
 {
+    #region IsNodeType
+
+    [Theory]
+    [InlineData("NiNode", true)]
+    [InlineData("BSFadeNode", true)]
+    [InlineData("BSLeafAnimNode", true)]
+    [InlineData("BSTreeNode", true)]
+    [InlineData("BSOrderedNode", true)]
+    [InlineData("BSMultiBoundNode", true)]
+    [InlineData("BSMasterParticleSystem", true)]
+    [InlineData("NiSwitchNode", true)]
+    [InlineData("NiBillboardNode", true)]
+    [InlineData("NiLODNode", true)]
+    [InlineData("BSBlastNode", true)]
+    [InlineData("BSDamageStage", true)]
+    [InlineData("NiAVObject", true)]
+    [InlineData("NiTriShape", false)]
+    [InlineData("NiTriStrips", false)]
+    [InlineData("NiSkinPartition", false)]
+    [InlineData("", false)]
+    public void IsNodeType_ReturnsExpected(string typeName, bool expected)
+    {
+        Assert.Equal(expected, NifConverter.IsNodeType(typeName));
+    }
+
+    #endregion
+
     #region HalfToFloat (BinaryUtils)
 
     [Fact]
@@ -136,47 +163,20 @@ public class NifConverterTests
 
     #endregion
 
-    #region IsNodeType
-
-    [Theory]
-    [InlineData("NiNode", true)]
-    [InlineData("BSFadeNode", true)]
-    [InlineData("BSLeafAnimNode", true)]
-    [InlineData("BSTreeNode", true)]
-    [InlineData("BSOrderedNode", true)]
-    [InlineData("BSMultiBoundNode", true)]
-    [InlineData("BSMasterParticleSystem", true)]
-    [InlineData("NiSwitchNode", true)]
-    [InlineData("NiBillboardNode", true)]
-    [InlineData("NiLODNode", true)]
-    [InlineData("BSBlastNode", true)]
-    [InlineData("BSDamageStage", true)]
-    [InlineData("NiAVObject", true)]
-    [InlineData("NiTriShape", false)]
-    [InlineData("NiTriStrips", false)]
-    [InlineData("NiSkinPartition", false)]
-    [InlineData("", false)]
-    public void IsNodeType_ReturnsExpected(string typeName, bool expected)
-    {
-        Assert.Equal(expected, NifConverter.IsNodeType(typeName));
-    }
-
-    #endregion
-
     #region ReadUInt16BE / ReadInt32BE
 
     [Fact]
     public void ReadUInt16BE_CorrectlyReadsBigEndian()
     {
         byte[] data = [0x12, 0x34, 0x00, 0x00];
-        Assert.Equal((ushort)0x1234, BinaryUtils.ReadUInt16BE(data, 0));
+        Assert.Equal((ushort)0x1234, BinaryUtils.ReadUInt16BE(data));
     }
 
     [Fact]
     public void ReadInt32BE_CorrectlyReadsBigEndian()
     {
         byte[] data = [0x12, 0x34, 0x56, 0x78];
-        Assert.Equal(0x12345678, BinaryUtils.ReadInt32BE(data, 0));
+        Assert.Equal(0x12345678, BinaryUtils.ReadInt32BE(data));
     }
 
     #endregion

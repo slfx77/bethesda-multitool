@@ -36,6 +36,7 @@ public sealed partial class SingleFileTab
         {
             textBlock.FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas");
         }
+
         var link = new HyperlinkButton
         {
             Content = textBlock,
@@ -293,7 +294,8 @@ public sealed partial class SingleFileTab
                                     TextDecorations = Windows.UI.Text.TextDecorations.Underline
                                 },
                                 Padding = new Thickness(0, 1, 12, 1),
-                                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.CornflowerBlue)
+                                Foreground =
+                                    new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.CornflowerBlue)
                             };
                             var capturedCellFormId = sub.CellNavigationFormId.Value;
                             cellLink.Click += async (_, _) =>
@@ -551,7 +553,7 @@ public sealed partial class SingleFileTab
 
     /// <summary>
     ///     Represents the current phase of the analysis pipeline.
-    ///     Used by <see cref="SetPipelinePhase"/> to centralize all UI control state transitions.
+    ///     Used by <see cref="SetPipelinePhase" /> to centralize all UI control state transitions.
     /// </summary>
     private enum AnalysisPipelinePhase
     {

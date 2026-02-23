@@ -11,23 +11,23 @@ public static class CodeBlockTimelineWriter
 {
     private static readonly (string Label, Func<VersionDiffResult, List<RecordChange>> Selector,
         Func<VersionSnapshot, int> Counter)[] Categories =
-    [
-        ("Quests", d => d.QuestChanges, s => s.Quests.Count),
-        ("NPCs", d => d.NpcChanges, s => s.Npcs.Count),
-        ("Dialogues", d => d.DialogueChanges, s => s.Dialogues.Count),
-        ("Weapons", d => d.WeaponChanges, s => s.Weapons.Count),
-        ("Armor", d => d.ArmorChanges, s => s.Armor.Count),
-        ("Items", d => d.ItemChanges, s => s.Items.Count),
-        ("Scripts", d => d.ScriptChanges, s => s.Scripts.Count),
-        ("Locations", d => d.LocationChanges, s => s.Locations.Count),
-        ("Placements", d => d.PlacementChanges, s => s.Placements.Count),
-        ("Creatures", d => d.CreatureChanges, s => s.Creatures.Count),
-        ("Perks", d => d.PerkChanges, s => s.Perks.Count),
-        ("Ammo", d => d.AmmoChanges, s => s.Ammo.Count),
-        ("Leveled Lists", d => d.LeveledListChanges, s => s.LeveledLists.Count),
-        ("Notes", d => d.NoteChanges, s => s.Notes.Count),
-        ("Terminals", d => d.TerminalChanges, s => s.Terminals.Count)
-    ];
+        [
+            ("Quests", d => d.QuestChanges, s => s.Quests.Count),
+            ("NPCs", d => d.NpcChanges, s => s.Npcs.Count),
+            ("Dialogues", d => d.DialogueChanges, s => s.Dialogues.Count),
+            ("Weapons", d => d.WeaponChanges, s => s.Weapons.Count),
+            ("Armor", d => d.ArmorChanges, s => s.Armor.Count),
+            ("Items", d => d.ItemChanges, s => s.Items.Count),
+            ("Scripts", d => d.ScriptChanges, s => s.Scripts.Count),
+            ("Locations", d => d.LocationChanges, s => s.Locations.Count),
+            ("Placements", d => d.PlacementChanges, s => s.Placements.Count),
+            ("Creatures", d => d.CreatureChanges, s => s.Creatures.Count),
+            ("Perks", d => d.PerkChanges, s => s.Perks.Count),
+            ("Ammo", d => d.AmmoChanges, s => s.Ammo.Count),
+            ("Leveled Lists", d => d.LeveledListChanges, s => s.LeveledLists.Count),
+            ("Notes", d => d.NoteChanges, s => s.Notes.Count),
+            ("Terminals", d => d.TerminalChanges, s => s.Terminals.Count)
+        ];
 
     /// <summary>
     ///     Generates a full timeline summary with code-block tables.

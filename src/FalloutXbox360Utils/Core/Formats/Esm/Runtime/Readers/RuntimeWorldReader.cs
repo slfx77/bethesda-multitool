@@ -17,23 +17,6 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    #region World/Land Struct Layout
-
-    // TESObjectLAND: PDB size 44, Debug dump 48, Release dump 60
-    private int LandStructSize => 44 + _s;
-    private int LandLoadedDataPtrOffset => 40 + _s;
-    // LoadedLandData: 164 bytes — standalone struct, identical across all builds
-    private const int LoadedDataSize = 164;
-    private const int LoadedDataVerticesPtrOffset = 4;    // NiPoint3** ppVertices
-    private const int LoadedDataNormalsPtrOffset = 8;     // NiPoint3** ppNormals
-    private const int LoadedDataColorsPtrOffset = 12;     // NiColorA** ppColorsA
-    private const int LoadedDataHeightExtentsOffset = 24; // NiPoint2: min/max terrain heights
-    private const int LoadedDataCellXOffset = 152;
-    private const int LoadedDataCellYOffset = 156;
-    private const int LoadedDataBaseHeightOffset = 160;
-
-    #endregion
-
     /// <summary>
     ///     Read cell coordinates from a runtime TESObjectLAND struct's LoadedLandData.
     ///     Returns null if the LAND has no loaded data or the pointer is invalid.
@@ -156,7 +139,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         // Vertices are required — normals and colors are optional
         var (vertices, vertexOffset) = ReadDoubleIndirectedFloatArray(
             loadedDataBuffer, LoadedDataVerticesPtrOffset,
-            floatsPerElement: 3, RuntimeTerrainMesh.VertexCount, maxAbsValue: 200_000);
+            3, RuntimeTerrainMesh.VertexCount, 200_000);
 
         if (vertices == null)
         {
@@ -200,12 +183,12 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
         // Try normals (NiPoint3, components should be in [-1, 1] but allow some tolerance)
         var (normals, _) = ReadDoubleIndirectedFloatArray(
             loadedDataBuffer, LoadedDataNormalsPtrOffset,
-            floatsPerElement: 3, RuntimeTerrainMesh.VertexCount, maxAbsValue: 2.0f);
+            3, RuntimeTerrainMesh.VertexCount, 2.0f);
 
         // Try vertex colors (NiColorA = RGBA, components in [0, 1])
         var (colors, _) = ReadDoubleIndirectedFloatArray(
             loadedDataBuffer, LoadedDataColorsPtrOffset,
-            floatsPerElement: 4, RuntimeTerrainMesh.VertexCount, maxAbsValue: 2.0f);
+            4, RuntimeTerrainMesh.VertexCount, 2.0f);
 
         return new RuntimeTerrainMesh
         {
@@ -250,7 +233,7 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
             return (null, 0);
         }
 
-        var innerPtr = BinaryUtils.ReadUInt32BE(innerPtrBytes, 0);
+        var innerPtr = BinaryUtils.ReadUInt32BE(innerPtrBytes);
         if (innerPtr == 0 || !_context.IsValidPointer(innerPtr))
         {
             return (null, 0);
@@ -473,4 +456,23 @@ internal sealed class RuntimeWorldReader(RuntimeMemoryContext context)
 
         return bestShift;
     }
+
+    #region World/Land Struct Layout
+
+    // TESObjectLAND: PDB size 44, Debug dump 48, Release dump 60
+    private int LandStructSize => 44 + _s;
+
+    private int LandLoadedDataPtrOffset => 40 + _s;
+
+    // LoadedLandData: 164 bytes — standalone struct, identical across all builds
+    private const int LoadedDataSize = 164;
+    private const int LoadedDataVerticesPtrOffset = 4; // NiPoint3** ppVertices
+    private const int LoadedDataNormalsPtrOffset = 8; // NiPoint3** ppNormals
+    private const int LoadedDataColorsPtrOffset = 12; // NiColorA** ppColorsA
+    private const int LoadedDataHeightExtentsOffset = 24; // NiPoint2: min/max terrain heights
+    private const int LoadedDataCellXOffset = 152;
+    private const int LoadedDataCellYOffset = 156;
+    private const int LoadedDataBaseHeightOffset = 160;
+
+    #endregion
 }

@@ -1,7 +1,7 @@
-using EsmAnalyzer.Helpers;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using System.Globalization;
-using static EsmAnalyzer.Helpers.LandHelpers;
+using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.LandHelpers;
 
 namespace EsmAnalyzer.Commands;
 

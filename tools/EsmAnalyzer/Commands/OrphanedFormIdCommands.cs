@@ -1,7 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.CommandLine;
-using EsmAnalyzer.Core;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using Spectre.Console;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;

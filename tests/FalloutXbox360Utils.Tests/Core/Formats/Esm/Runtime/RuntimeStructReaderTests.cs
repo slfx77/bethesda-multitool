@@ -14,8 +14,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 /// </summary>
 public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDisposable
 {
-    private readonly ITestOutputHelper _output = output;
-
     /// <summary>
     ///     Size of the synthetic dump file. Large enough for all test scenarios.
     /// </summary>
@@ -35,10 +33,74 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
     private const byte MiscFormType = 0x1F;
 
     private const int ModelPathBSStringTOffset = 80;
+    private readonly ITestOutputHelper _output = output;
+    private MemoryMappedViewAccessor? _accessor;
+    private MemoryMappedFile? _mmf;
 
     private string? _tempFilePath;
-    private MemoryMappedFile? _mmf;
-    private MemoryMappedViewAccessor? _accessor;
+
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+        _accessor?.Dispose();
+        _mmf?.Dispose();
+
+        if (_tempFilePath != null && File.Exists(_tempFilePath))
+        {
+            try
+            {
+                File.Delete(_tempFilePath);
+            }
+            catch
+            {
+                // Best-effort cleanup; temp files are cleaned by OS eventually.
+            }
+        }
+    }
+
+    #region Multiple Structs at Different Offsets
+
+    [Fact]
+    public void ReadRuntimeAmmo_TwoStructsAtDifferentOffsets_BothReadCorrectly()
+    {
+        // Arrange: place two AMMO structs at different offsets in the same file
+        var data = new byte[DataSize];
+
+        const uint formId1 = 0x000A0001;
+        const uint formId2 = 0x000A0002;
+        const int structOffset1 = 0;
+        const int structOffset2 = 512; // well past first struct (AmmoStructSize=236)
+        const int value1 = 10;
+        const int value2 = 25;
+
+        WriteTesFormHeader(data, structOffset1, 0x82010000, AmmoFormType, formId1);
+        WriteInt32BE(data, structOffset1 + AmmoValueOffset, value1);
+
+        WriteTesFormHeader(data, structOffset2, 0x82010000, AmmoFormType, formId2);
+        WriteInt32BE(data, structOffset2 + AmmoValueOffset, value2);
+
+        var reader = CreateReader(data);
+
+        var entry1 = MakeEntry("Ammo1", formId1, AmmoFormType, structOffset1);
+        var entry2 = MakeEntry("Ammo2", formId2, AmmoFormType, structOffset2);
+
+        // Act
+        var result1 = reader.ReadRuntimeAmmo(entry1);
+        var result2 = reader.ReadRuntimeAmmo(entry2);
+
+        // Assert
+        Assert.NotNull(result1);
+        Assert.NotNull(result2);
+        Assert.Equal((uint)value1, result1.Value);
+        Assert.Equal((uint)value2, result2.Value);
+        Assert.Equal(formId1, result1.FormId);
+        Assert.Equal(formId2, result2.FormId);
+
+        _output.WriteLine($"Struct1: formId=0x{result1.FormId:X8} value={result1.Value}");
+        _output.WriteLine($"Struct2: formId=0x{result2.FormId:X8} value={result2.Value}");
+    }
+
+    #endregion
 
     #region Test Fixture Helpers
 
@@ -324,7 +386,7 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
         Assert.Equal("MiscSensorModule", result.EditorId);
         Assert.Equal("Sensor Module", result.FullName);
         Assert.Equal(expectedValue, result.Value);
-        Assert.Equal(expectedWeight, result.Weight, precision: 3);
+        Assert.Equal(expectedWeight, result.Weight, 3);
         Assert.True(result.IsBigEndian);
 
         _output.WriteLine($"MiscItem value={result.Value}, weight={result.Weight:F2}");
@@ -451,7 +513,7 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
     {
         var data = new byte[DataSize];
         var reader = CreateReader(data);
-        var entry = MakeEntry("AmmoNull", 0x00011111, AmmoFormType, tesFormOffset: null);
+        var entry = MakeEntry("AmmoNull", 0x00011111, AmmoFormType, null);
 
         var result = reader.ReadRuntimeAmmo(entry);
 
@@ -465,7 +527,7 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
     {
         var data = new byte[DataSize];
         var reader = CreateReader(data);
-        var entry = MakeEntry("MiscNull", 0x00022222, MiscFormType, tesFormOffset: null);
+        var entry = MakeEntry("MiscNull", 0x00022222, MiscFormType, null);
 
         var result = reader.ReadRuntimeMiscItem(entry);
 
@@ -515,7 +577,7 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
         var data = new byte[DataSize];
         var reader = CreateReader(data);
 
-        var entry = MakeEntry("AmmoAtEnd", 0x00055555, AmmoFormType, tesFormOffset: DataSize);
+        var entry = MakeEntry("AmmoAtEnd", 0x00055555, AmmoFormType, DataSize);
 
         var result = reader.ReadRuntimeAmmo(entry);
 
@@ -591,50 +653,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
 
     #endregion
 
-    #region Multiple Structs at Different Offsets
-
-    [Fact]
-    public void ReadRuntimeAmmo_TwoStructsAtDifferentOffsets_BothReadCorrectly()
-    {
-        // Arrange: place two AMMO structs at different offsets in the same file
-        var data = new byte[DataSize];
-
-        const uint formId1 = 0x000A0001;
-        const uint formId2 = 0x000A0002;
-        const int structOffset1 = 0;
-        const int structOffset2 = 512; // well past first struct (AmmoStructSize=236)
-        const int value1 = 10;
-        const int value2 = 25;
-
-        WriteTesFormHeader(data, structOffset1, 0x82010000, AmmoFormType, formId1);
-        WriteInt32BE(data, structOffset1 + AmmoValueOffset, value1);
-
-        WriteTesFormHeader(data, structOffset2, 0x82010000, AmmoFormType, formId2);
-        WriteInt32BE(data, structOffset2 + AmmoValueOffset, value2);
-
-        var reader = CreateReader(data);
-
-        var entry1 = MakeEntry("Ammo1", formId1, AmmoFormType, structOffset1);
-        var entry2 = MakeEntry("Ammo2", formId2, AmmoFormType, structOffset2);
-
-        // Act
-        var result1 = reader.ReadRuntimeAmmo(entry1);
-        var result2 = reader.ReadRuntimeAmmo(entry2);
-
-        // Assert
-        Assert.NotNull(result1);
-        Assert.NotNull(result2);
-        Assert.Equal((uint)value1, result1.Value);
-        Assert.Equal((uint)value2, result2.Value);
-        Assert.Equal(formId1, result1.FormId);
-        Assert.Equal(formId2, result2.FormId);
-
-        _output.WriteLine($"Struct1: formId=0x{result1.FormId:X8} value={result1.Value}");
-        _output.WriteLine($"Struct2: formId=0x{result2.FormId:X8} value={result2.Value}");
-    }
-
-    #endregion
-
     #region Negative Value Tests
 
     [Fact]
@@ -679,7 +697,7 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
 
         Assert.NotNull(result);
         Assert.Equal(0, result.Value);
-        Assert.Equal(1.0f, result.Weight, precision: 3);
+        Assert.Equal(1.0f, result.Weight, 3);
 
         _output.WriteLine("Negative misc value clamped to 0, weight preserved");
     }
@@ -710,29 +728,10 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
         // so sign extension produces a negative 64-bit value.
         var result = Xbox360MemoryUtils.VaToLong(0x82000000);
         Assert.True(result < 0, "Module address should sign-extend to negative");
-        Assert.Equal(unchecked((long)(int)0x82000000), result);
+        Assert.Equal(unchecked((int)0x82000000), result);
 
         _output.WriteLine($"VaToLong(0x82000000) = 0x{result:X16} ({result})");
     }
 
     #endregion
-
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-        _accessor?.Dispose();
-        _mmf?.Dispose();
-
-        if (_tempFilePath != null && File.Exists(_tempFilePath))
-        {
-            try
-            {
-                File.Delete(_tempFilePath);
-            }
-            catch
-            {
-                // Best-effort cleanup; temp files are cleaned by OS eventually.
-            }
-        }
-    }
 }

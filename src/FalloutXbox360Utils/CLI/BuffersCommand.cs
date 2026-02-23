@@ -315,7 +315,8 @@ public static class BuffersCommand
         }
 
         var panel = new Panel(string.Join("\n", lines))
-            .Header($"[bold]String Pool Analysis ({CliHelpers.FormatSize(sp.TotalBytes)} across {sp.RegionCount:N0} regions)[/]")
+            .Header(
+                $"[bold]String Pool Analysis ({CliHelpers.FormatSize(sp.TotalBytes)} across {sp.RegionCount:N0} regions)[/]")
             .Border(BoxBorder.Rounded)
             .BorderColor(Color.Aqua);
         console.Write(panel);
@@ -334,7 +335,8 @@ public static class BuffersCommand
         foreach (var group in byType)
         {
             var totalSize = group.Sum(b => b.EstimatedSize);
-            lines.Add($"  [yellow]{group.Key,-12}[/] {group.Count(),5:N0} hits  (est. {CliHelpers.FormatSize(totalSize)})");
+            lines.Add(
+                $"  [yellow]{group.Key,-12}[/] {group.Count(),5:N0} hits  (est. {CliHelpers.FormatSize(totalSize)})");
         }
 
         if (verbose && exploration.DiscoveredBuffers.Count > 0)
@@ -448,7 +450,6 @@ public static class BuffersCommand
     #endregion
 
     #region Helpers
-
 
     private static string TruncateName(string name, int maxLength)
     {

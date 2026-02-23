@@ -147,7 +147,8 @@ internal sealed class NifDiscovery(NifConversionState state)
             // Parse the geometry block to find its Additional Data reference
             var additionalDataRef = ParseAdditionalDataRef(data, block);
 
-            if (additionalDataRef >= 0 && _state.PackedGeometryByBlock.TryGetValue(additionalDataRef, out var packedData))
+            if (additionalDataRef >= 0 &&
+                _state.PackedGeometryByBlock.TryGetValue(additionalDataRef, out var packedData))
             {
                 // Check if this is a skinned mesh - affects vertex color handling
                 var isSkinned = _state.GeometryToSkinPartition.ContainsKey(block.Index);

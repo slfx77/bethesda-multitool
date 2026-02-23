@@ -84,7 +84,8 @@ public static class RttiCommand
             var input = parseResult.GetValue(inputArg);
             if (string.IsNullOrEmpty(input))
             {
-                AnsiConsole.MarkupLine("[yellow]Usage:[/] rtti <dmp> <va> [<va2> ...] or rtti <dmp> --census or rtti --census-all");
+                AnsiConsole.MarkupLine(
+                    "[yellow]Usage:[/] rtti <dmp> <va> [<va2> ...] or rtti <dmp> --census or rtti --census-all");
                 return;
             }
 
@@ -118,7 +119,8 @@ public static class RttiCommand
 
         if (addresses.Length == 0 && scanRange == null && !census)
         {
-            AnsiConsole.MarkupLine("[yellow]Usage:[/] rtti <dmp> <va> [<va2> ...] or rtti <dmp> --scan 0xSTART-0xEND or rtti <dmp> --census");
+            AnsiConsole.MarkupLine(
+                "[yellow]Usage:[/] rtti <dmp> <va> [<va2> ...] or rtti <dmp> --scan 0xSTART-0xEND or rtti <dmp> --census");
             return;
         }
 
@@ -149,7 +151,8 @@ public static class RttiCommand
                 }
                 else
                 {
-                    AnsiConsole.MarkupLine($"[yellow]0x{va.Value:X8}:[/] RTTI not resolved (memory not captured or invalid chain)");
+                    AnsiConsole.MarkupLine(
+                        $"[yellow]0x{va.Value:X8}:[/] RTTI not resolved (memory not captured or invalid chain)");
                 }
             }
 
@@ -169,7 +172,8 @@ public static class RttiCommand
                 return;
             }
 
-            AnsiConsole.MarkupLine($"[blue]Scanning[/] 0x{range.Value.start:X8}–0x{range.Value.end:X8} (stride={stride})...");
+            AnsiConsole.MarkupLine(
+                $"[blue]Scanning[/] 0x{range.Value.start:X8}–0x{range.Value.end:X8} (stride={stride})...");
             var results = reader.ScanRange(range.Value.start, range.Value.end, stride);
 
             if (results.Count == 0)
@@ -190,13 +194,15 @@ public static class RttiCommand
 
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
-            .Start("[blue]Scanning heap for vtable pointers...[/]", ctx =>
-            {
-                entries = reader.RunCensus((scanned, total, bytes) =>
+            .Start("[blue]Scanning heap for vtable pointers...[/]",
+                ctx =>
                 {
-                    ctx.Status($"[blue]Scanning heap regions[/] {scanned}/{total} ({bytes / (1024 * 1024)} MB)");
+                    entries = reader.RunCensus((scanned, total, bytes) =>
+                    {
+                        ctx.Status(
+                            $"[blue]Scanning heap regions[/] {scanned}/{total} ({bytes / (1024 * 1024)} MB)");
+                    });
                 });
-            });
 
         if (entries.Count == 0)
         {
@@ -208,7 +214,8 @@ public static class RttiCommand
         var otherEntries = entries.Where(e => !e.IsTesForm).ToList();
         var totalInstances = entries.Sum(e => e.InstanceCount);
 
-        AnsiConsole.MarkupLine($"\n[green]Census complete:[/] {entries.Count} C++ classes, {totalInstances:N0} total instances");
+        AnsiConsole.MarkupLine(
+            $"\n[green]Census complete:[/] {entries.Count} C++ classes, {totalInstances:N0} total instances");
         AnsiConsole.MarkupLine($"  [cyan]TESForm-derived:[/] {tesFormEntries.Count} classes");
         AnsiConsole.MarkupLine($"  [grey]Other classes:[/] {otherEntries.Count} classes\n");
 
@@ -341,7 +348,8 @@ public static class RttiCommand
                         });
 
                         task.Value = 100;
-                        task.Description = $"[green]{Markup.Escape(fileName)}[/] [grey]({entries.Count} classes, {totalInstances:N0} instances)[/]";
+                        task.Description =
+                            $"[green]{Markup.Escape(fileName)}[/] [grey]({entries.Count} classes, {totalInstances:N0} instances)[/]";
                     }
                     catch (Exception ex)
                     {
@@ -377,7 +385,7 @@ public static class RttiCommand
 
     private static void PrintAggregatedSummary(AggregatedCensusReport report)
     {
-        AnsiConsole.MarkupLine($"\n[bold green]═══ RTTI Census: All Dumps ═══[/]\n");
+        AnsiConsole.MarkupLine("\n[bold green]═══ RTTI Census: All Dumps ═══[/]\n");
         AnsiConsole.MarkupLine($"Processed: [bold]{report.TotalDumps}[/] dumps");
         AnsiConsole.MarkupLine($"Classes found: [bold]{report.TotalClasses}[/] unique C++ classes");
         AnsiConsole.MarkupLine($"Total instances: [bold]{report.TotalInstances:N0}[/] (across all dumps)");
@@ -513,7 +521,8 @@ public static class RttiCommand
                 continue;
             }
 
-            AnsiConsole.MarkupLine($"\n[blue]Hierarchy for[/] [green]{Markup.Escape(result.ClassName)}[/] (vtable 0x{result.VtableVA:X8}):");
+            AnsiConsole.MarkupLine(
+                $"\n[blue]Hierarchy for[/] [green]{Markup.Escape(result.ClassName)}[/] (vtable 0x{result.VtableVA:X8}):");
 
             var tree = new Tree($"[green]{Markup.Escape(result.ClassName)}[/]");
             foreach (var baseClass in result.BaseClasses.Skip(1))

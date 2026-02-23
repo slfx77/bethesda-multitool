@@ -86,7 +86,10 @@ public record ExtractedTexture
         }
     }
 
-    private static bool IsPot(int v) => v > 0 && (v & (v - 1)) == 0;
+    private static bool IsPot(int v)
+    {
+        return v > 0 && (v & (v - 1)) == 0;
+    }
 }
 
 /// <summary>

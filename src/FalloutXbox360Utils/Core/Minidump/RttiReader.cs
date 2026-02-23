@@ -430,7 +430,11 @@ public sealed class RttiReader
 
     #region Private Types
 
-    private readonly record struct CompleteObjectLocator(uint Offset, uint CdOffset, uint PTypeDescriptor, uint PClassHierarchyDescriptor);
+    private readonly record struct CompleteObjectLocator(
+        uint Offset,
+        uint CdOffset,
+        uint PTypeDescriptor,
+        uint PClassHierarchyDescriptor);
 
     private readonly record struct TypeDesc(string MangledName);
 

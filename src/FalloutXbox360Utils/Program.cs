@@ -54,6 +54,7 @@ public static class Program
         rootCommand.Subcommands.Add(RepackCommand.Create());
         rootCommand.Subcommands.Add(RttiCommand.Create());
         rootCommand.Subcommands.Add(SaveCommand.Create());
+        rootCommand.Subcommands.Add(DmpCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }

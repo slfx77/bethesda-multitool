@@ -133,7 +133,7 @@ internal sealed class RuntimeMemoryContext(
     /// </summary>
     public uint? FollowPointerToFormId(byte[] buffer, int pointerOffset)
     {
-        return FollowPointerToFormIdCore(buffer, pointerOffset, expectedFormType: null);
+        return FollowPointerToFormIdCore(buffer, pointerOffset, null);
     }
 
     /// <summary>

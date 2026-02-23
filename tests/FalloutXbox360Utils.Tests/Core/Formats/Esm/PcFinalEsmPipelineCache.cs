@@ -14,13 +14,6 @@ internal static class PcFinalEsmPipelineCache
     private static PipelineResult? _cached;
     private static readonly Lock CacheLock = new();
 
-    internal sealed record PipelineResult(
-        List<ParsedMainRecord> ParsedRecords,
-        List<GrupHeaderInfo> GrupHeaders,
-        EsmRecordScanResult ScanResult,
-        RecordCollection Collection,
-        bool IsBigEndian);
-
     public static PipelineResult GetOrBuild(string filePath)
     {
         lock (CacheLock)
@@ -66,10 +59,17 @@ internal static class PcFinalEsmPipelineCache
             }
         }
 
-        var reconstructor = new RecordParser(scanResult, formIdCorrelations: formIdMap,
-            accessor: accessor, fileSize: fileData.Length);
+        var reconstructor = new RecordParser(scanResult, formIdMap,
+            accessor, fileData.Length);
         var collection = reconstructor.ReconstructAll();
 
         return new PipelineResult(parsedRecords, grupHeaders, scanResult, collection, isBigEndian);
     }
+
+    internal sealed record PipelineResult(
+        List<ParsedMainRecord> ParsedRecords,
+        List<GrupHeaderInfo> GrupHeaders,
+        EsmRecordScanResult ScanResult,
+        RecordCollection Collection,
+        bool IsBigEndian);
 }

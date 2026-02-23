@@ -113,6 +113,28 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Report Tab Reset
+
+    private void ResetReportsTab()
+    {
+        _reportEntries.Clear();
+        ReportPreviewTextBox.Text = "";
+        _reportLines = [];
+        _reportLineOffsets = [];
+        _reportFullContent = "";
+        ReportViewerScrollBar.Maximum = 0;
+        ReportViewerScrollBar.Value = 0;
+        _reportSearchMatches = [];
+        _reportSearchIndex = 0;
+        _reportSearchQuery = "";
+        ReportSearchBox.Text = "";
+        ReportSearchStatus.Text = "";
+        ExportAllReportsButton.IsEnabled = false;
+        ExportSelectedReportButton.IsEnabled = false;
+    }
+
+    #endregion
+
     #region Report Export
 
     private async void ExportAllReports_Click(object sender, RoutedEventArgs e)
@@ -152,28 +174,6 @@ public sealed partial class SingleFileTab
             await File.WriteAllTextAsync(file.Path, report.Content);
             StatusTextBlock.Text = $"Saved: {file.Path}";
         }
-    }
-
-    #endregion
-
-    #region Report Tab Reset
-
-    private void ResetReportsTab()
-    {
-        _reportEntries.Clear();
-        ReportPreviewTextBox.Text = "";
-        _reportLines = [];
-        _reportLineOffsets = [];
-        _reportFullContent = "";
-        ReportViewerScrollBar.Maximum = 0;
-        ReportViewerScrollBar.Value = 0;
-        _reportSearchMatches = [];
-        _reportSearchIndex = 0;
-        _reportSearchQuery = "";
-        ReportSearchBox.Text = "";
-        ReportSearchStatus.Text = "";
-        ExportAllReportsButton.IsEnabled = false;
-        ExportSelectedReportButton.IsEnabled = false;
     }
 
     #endregion
@@ -235,7 +235,7 @@ public sealed partial class SingleFileTab
 
     /// <summary>
     ///     Recalculates the report viewport line count and scrollbar parameters.
-    ///     If <paramref name="textBoxHeight"/> is provided, updates the viewport count
+    ///     If <paramref name="textBoxHeight" /> is provided, updates the viewport count
     ///     from the actual rendered height; otherwise uses the current value.
     /// </summary>
     private void RecalculateReportViewport(double textBoxHeight = 0)

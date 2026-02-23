@@ -17,28 +17,6 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    #region TESPackage Struct Layout (Proto Debug PDB base + _s)
-
-    // TESPackage: PDB size 128
-    private int PackStructSize => 128 + _s;
-    private int PackDataOffset => 28 + _s;       // PACKAGE_DATA (12 bytes inline)
-    private int PackLocPtrOffset => 44 + _s;     // PackageLocation* pPackLoc
-    private int PackTargPtrOffset => 48 + _s;    // PackageTarget* pPackTarg
-    private int PackSchedOffset => 56 + _s;      // PackageSchedule (8 bytes inline)
-
-    // PackageLocation (12 bytes)
-    private const int LocTypeOffset = 0;         // eLocType (char)
-    private const int LocRadiusOffset = 4;        // iRad (uint32)
-    private const int LocUnionOffset = 8;         // union: pObject/pRef/pCell/eObjType (pointer)
-
-    // PackageTarget (16 bytes)
-    private const int TargTypeOffset = 0;         // eTargType (uchar)
-    private const int TargUnionOffset = 4;        // union: pointer/enum
-    private const int TargValueOffset = 8;        // iValue (int32)
-    private const int TargRadiusOffset = 12;      // fAcquireRadius (float)
-
-    #endregion
-
     /// <summary>
     ///     Read a TESPackage runtime struct and return a PackageRecord.
     ///     Returns null if the struct cannot be read or validation fails.
@@ -284,4 +262,26 @@ internal sealed class RuntimePackageReader(RuntimeMemoryContext context)
             AcquireRadius = acquireRadius
         };
     }
+
+    #region TESPackage Struct Layout (Proto Debug PDB base + _s)
+
+    // TESPackage: PDB size 128
+    private int PackStructSize => 128 + _s;
+    private int PackDataOffset => 28 + _s; // PACKAGE_DATA (12 bytes inline)
+    private int PackLocPtrOffset => 44 + _s; // PackageLocation* pPackLoc
+    private int PackTargPtrOffset => 48 + _s; // PackageTarget* pPackTarg
+    private int PackSchedOffset => 56 + _s; // PackageSchedule (8 bytes inline)
+
+    // PackageLocation (12 bytes)
+    private const int LocTypeOffset = 0; // eLocType (char)
+    private const int LocRadiusOffset = 4; // iRad (uint32)
+    private const int LocUnionOffset = 8; // union: pObject/pRef/pCell/eObjType (pointer)
+
+    // PackageTarget (16 bytes)
+    private const int TargTypeOffset = 0; // eTargType (uchar)
+    private const int TargUnionOffset = 4; // union: pointer/enum
+    private const int TargValueOffset = 8; // iValue (int32)
+    private const int TargRadiusOffset = 12; // fAcquireRadius (float)
+
+    #endregion
 }

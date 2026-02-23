@@ -61,6 +61,41 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
     #endregion
 
+    #region Enrichment
+
+    /// <summary>
+    ///     Enrich placed references in cells with base object bounds and model paths.
+    ///     Joins PlacedReference.BaseFormId to pre-built indexes from reconstructed base objects.
+    /// </summary>
+    internal static void EnrichPlacedReferences(
+        List<CellRecord> cells,
+        Dictionary<uint, ObjectBounds> boundsIndex,
+        Dictionary<uint, string> modelIndex)
+    {
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var cell = cells[i];
+            if (!cell.PlacedObjects.Any(obj =>
+                    boundsIndex.ContainsKey(obj.BaseFormId) || modelIndex.ContainsKey(obj.BaseFormId)))
+            {
+                continue;
+            }
+
+            var enriched = cell.PlacedObjects.Select(obj =>
+            {
+                boundsIndex.TryGetValue(obj.BaseFormId, out var bounds);
+                modelIndex.TryGetValue(obj.BaseFormId, out var modelPath);
+                return bounds != null || modelPath != null
+                    ? obj with { Bounds = bounds ?? obj.Bounds, ModelPath = modelPath ?? obj.ModelPath }
+                    : obj;
+            }).ToList();
+
+            cells[i] = cell with { PlacedObjects = enriched };
+        }
+    }
+
+    #endregion
+
     #region Cells
 
     /// <summary>
@@ -234,7 +269,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
         // Build bounding boxes in cell grid coordinates from each worldspace's bounds data.
         // Prefer MNAM (explicit cell ranges) over NAM0/NAM9 (world unit coordinates).
-        var worldspaceBounds = new List<(WorldspaceRecord Ws, int MinCellX, int MinCellY, int MaxCellX, int MaxCellY)>();
+        var worldspaceBounds =
+            new List<(WorldspaceRecord Ws, int MinCellX, int MinCellY, int MaxCellX, int MaxCellY)>();
         foreach (var ws in worldspaces)
         {
             int minCellX, minCellY, maxCellX, maxCellY;
@@ -378,7 +414,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         // Find orphan refs (have a valid position but not in any cell)
         var orphans = allRefrs
             .Where(r => !placedFormIds.Contains(r.Header.FormId) && r.Position != null
-                        && (MathF.Abs(r.Position.X) > 1f || MathF.Abs(r.Position.Y) > 1f))
+                                                                 && (MathF.Abs(r.Position.X) > 1f ||
+                                                                     MathF.Abs(r.Position.Y) > 1f))
             .ToList();
 
         if (orphans.Count == 0)
@@ -468,7 +505,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
                 if (trueOrphans.Count == 0)
                 {
-                    Logger.Instance.Debug("  [Semantic] CreateVirtualCells: all orphans resolved, no virtual cells needed");
+                    Logger.Instance.Debug(
+                        "  [Semantic] CreateVirtualCells: all orphans resolved, no virtual cells needed");
                     return [];
                 }
             }
@@ -945,41 +983,6 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
-    }
-
-    #endregion
-
-    #region Enrichment
-
-    /// <summary>
-    ///     Enrich placed references in cells with base object bounds and model paths.
-    ///     Joins PlacedReference.BaseFormId to pre-built indexes from reconstructed base objects.
-    /// </summary>
-    internal static void EnrichPlacedReferences(
-        List<CellRecord> cells,
-        Dictionary<uint, ObjectBounds> boundsIndex,
-        Dictionary<uint, string> modelIndex)
-    {
-        for (var i = 0; i < cells.Count; i++)
-        {
-            var cell = cells[i];
-            if (!cell.PlacedObjects.Any(obj =>
-                    boundsIndex.ContainsKey(obj.BaseFormId) || modelIndex.ContainsKey(obj.BaseFormId)))
-            {
-                continue;
-            }
-
-            var enriched = cell.PlacedObjects.Select(obj =>
-            {
-                boundsIndex.TryGetValue(obj.BaseFormId, out var bounds);
-                modelIndex.TryGetValue(obj.BaseFormId, out var modelPath);
-                return bounds != null || modelPath != null
-                    ? obj with { Bounds = bounds ?? obj.Bounds, ModelPath = modelPath ?? obj.ModelPath }
-                    : obj;
-            }).ToList();
-
-            cells[i] = cell with { PlacedObjects = enriched };
-        }
     }
 
     #endregion

@@ -534,7 +534,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         // Detect DIAL FormType by finding RuntimeEditorId entries matching known DIAL FormIDs
         byte? dialFormType = null;
         var formTypeCounts = new Dictionary<byte, int>();
-        foreach (var formType in _context.ScanResult.RuntimeEditorIds.Where(entry => knownDialFormIds.Contains(entry.FormId))
+        foreach (var formType in _context.ScanResult.RuntimeEditorIds
+                     .Where(entry => knownDialFormIds.Contains(entry.FormId))
                      .Select(entry => entry.FormType))
         {
             formTypeCounts.TryGetValue(formType, out var count);
@@ -1014,7 +1015,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         var knownDialFormIds = new HashSet<uint>(topics.Select(t => t.FormId));
         var formTypeCounts = new Dictionary<byte, int>();
 
-        foreach (var formType in _context.ScanResult.RuntimeEditorIds.Where(entry => knownDialFormIds.Contains(entry.FormId))
+        foreach (var formType in _context.ScanResult.RuntimeEditorIds
+                     .Where(entry => knownDialFormIds.Contains(entry.FormId))
                      .Select(entry => entry.FormType))
         {
             formTypeCounts.TryGetValue(formType, out var count);

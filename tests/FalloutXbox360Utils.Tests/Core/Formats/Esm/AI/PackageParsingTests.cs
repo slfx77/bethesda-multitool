@@ -26,7 +26,7 @@ public sealed class PackageParsingTests
         BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(6), 0x0003); // FOBehavior = Hellos + Random Conversations
         BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(8), 0x007E); // TypeSpecific = all Sandbox flags
 
-        var result = AiRecordHandler.ParsePackageData(data, isBigEndian: true);
+        var result = AiRecordHandler.ParsePackageData(data, true);
 
         Assert.Equal(12, result.Type);
         Assert.Equal("Sandbox", result.TypeName);
@@ -45,7 +45,7 @@ public sealed class PackageParsingTests
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(6), 0x0003); // FOBehavior
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(8), 0x007E); // TypeSpecific
 
-        var result = AiRecordHandler.ParsePackageData(data, isBigEndian: false);
+        var result = AiRecordHandler.ParsePackageData(data, false);
 
         Assert.Equal(12, result.Type);
         Assert.Equal("Sandbox", result.TypeName);
@@ -71,8 +71,8 @@ public sealed class PackageParsingTests
         BinaryPrimitives.WriteUInt16LittleEndian(pcData.AsSpan(6), 0x01FF);
         BinaryPrimitives.WriteUInt16LittleEndian(pcData.AsSpan(8), 0x0001);
 
-        var xboxResult = AiRecordHandler.ParsePackageData(xboxData, isBigEndian: true);
-        var pcResult = AiRecordHandler.ParsePackageData(pcData, isBigEndian: false);
+        var xboxResult = AiRecordHandler.ParsePackageData(xboxData, true);
+        var pcResult = AiRecordHandler.ParsePackageData(pcData, false);
 
         Assert.Equal(xboxResult.Type, pcResult.Type);
         Assert.Equal(xboxResult.GeneralFlags, pcResult.GeneralFlags);
@@ -95,7 +95,7 @@ public sealed class PackageParsingTests
         data[3] = 8; // Time = 8 (8 AM)
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(4), 8); // Duration = 8 hours
 
-        var result = AiRecordHandler.ParsePackageSchedule(data, isBigEndian: false);
+        var result = AiRecordHandler.ParsePackageSchedule(data, false);
 
         Assert.Equal(-1, result.Month);
         Assert.Equal(-1, result.DayOfWeek);
@@ -116,7 +116,7 @@ public sealed class PackageParsingTests
         data[3] = 12; // Time = 12 (noon)
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(4), 2); // Duration = 2 hours
 
-        var result = AiRecordHandler.ParsePackageSchedule(data, isBigEndian: false);
+        var result = AiRecordHandler.ParsePackageSchedule(data, false);
 
         Assert.Equal("June", result.MonthName);
         Assert.Equal("June 15, 12:00 PM for 2 hours", result.Summary);
@@ -132,7 +132,7 @@ public sealed class PackageParsingTests
         data[3] = 20; // 8 PM
         BinaryPrimitives.WriteInt32BigEndian(data.AsSpan(4), 6); // Duration = 6 hours
 
-        var result = AiRecordHandler.ParsePackageSchedule(data, isBigEndian: true);
+        var result = AiRecordHandler.ParsePackageSchedule(data, true);
 
         Assert.Equal(6, result.Duration);
         Assert.Equal("Every day, 8:00 PM for 6 hours", result.Summary);
@@ -151,7 +151,7 @@ public sealed class PackageParsingTests
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(8), 5); // CountDistance
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(12), 100.0f); // AcquireRadius
 
-        var result = AiRecordHandler.ParsePackageTarget(data, isBigEndian: false);
+        var result = AiRecordHandler.ParsePackageTarget(data, false);
 
         Assert.Equal(0, result.Type);
         Assert.Equal("Specific Reference", result.TypeName);
@@ -168,7 +168,7 @@ public sealed class PackageParsingTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4), 42); // Object type enum
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(8), 1);
 
-        var result = AiRecordHandler.ParsePackageTarget(data, isBigEndian: false);
+        var result = AiRecordHandler.ParsePackageTarget(data, false);
 
         Assert.Equal(2, result.Type);
         Assert.Equal("Object Type", result.TypeName);

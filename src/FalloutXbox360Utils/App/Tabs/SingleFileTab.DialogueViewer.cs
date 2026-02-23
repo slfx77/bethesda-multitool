@@ -85,8 +85,11 @@ public sealed partial class SingleFileTab
 
     // Typed wrappers for TreeView DataObject to disambiguate quest vs NPC picker context
     private sealed record QuestPickerData(uint QuestFormId, List<TopicDialogueNode> Topics);
+
     private sealed record SpeakerPickerData(uint SpeakerFormId, List<TopicDialogueNode> Topics);
+
     private sealed record QuestTopicPickerData(uint QuestFormId, TopicDialogueNode Topic);
+
     private sealed record SpeakerTopicPickerData(uint SpeakerFormId, TopicDialogueNode Topic);
 
     #endregion
@@ -1419,6 +1422,7 @@ public sealed partial class SingleFileTab
         {
             textBlock.Opacity = 0.7;
         }
+
         contentPanel.Children.Add(textBlock);
 
         // Goodbye suffix
@@ -1631,6 +1635,7 @@ public sealed partial class SingleFileTab
             await _dialogueSearchDebounceToken.CancelAsync();
             _dialogueSearchDebounceToken.Dispose();
         }
+
         _dialogueSearchDebounceToken = new CancellationTokenSource();
         var token = _dialogueSearchDebounceToken.Token;
 

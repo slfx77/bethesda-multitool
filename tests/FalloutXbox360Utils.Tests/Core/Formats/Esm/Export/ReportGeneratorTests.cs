@@ -14,39 +14,45 @@ public class ReportGeneratorTests
 {
     #region Test Data
 
-    private static RecordCollection MinimalRecords() => new()
+    private static RecordCollection MinimalRecords()
     {
-        Npcs =
-        [
-            new NpcRecord
-            {
-                FormId = 0x00100000,
-                EditorId = "TestNpc",
-                FullName = "Test NPC"
-            }
-        ],
-        Weapons =
-        [
-            new WeaponRecord
-            {
-                FormId = 0x00200000,
-                EditorId = "TestWeapon",
-                FullName = "Test Weapon",
-                Damage = 25,
-                Weight = 3.5f,
-                Value = 100,
-                Speed = 1.0f,
-                ShotsPerSec = 2.0f
-            }
-        ],
-        FormIdToEditorId = new Dictionary<uint, string>
+        return new RecordCollection
         {
-            [0x00100000] = "TestNpc",
-            [0x00200000] = "TestWeapon"
-        }
-    };
+            Npcs =
+            [
+                new NpcRecord
+                {
+                    FormId = 0x00100000,
+                    EditorId = "TestNpc",
+                    FullName = "Test NPC"
+                }
+            ],
+            Weapons =
+            [
+                new WeaponRecord
+                {
+                    FormId = 0x00200000,
+                    EditorId = "TestWeapon",
+                    FullName = "Test Weapon",
+                    Damage = 25,
+                    Weight = 3.5f,
+                    Value = 100,
+                    Speed = 1.0f,
+                    ShotsPerSec = 2.0f
+                }
+            ],
+            FormIdToEditorId = new Dictionary<uint, string>
+            {
+                [0x00100000] = "TestNpc",
+                [0x00200000] = "TestWeapon"
+            }
+        };
+    }
 
-    private static RecordCollection EmptyRecords() => new();
+    private static RecordCollection EmptyRecords()
+    {
+        return new RecordCollection();
+    }
 
     #endregion
 

@@ -64,7 +64,7 @@ public class DialogueViewerLogicTests
         var info1 = MakeInfo(100, linkedTopics: [topicB, topicC]);
         var chain = new List<InfoDialogueNode> { info1 };
 
-        var result = DialogueViewerHelper.CollectLinkedTopics(chain, excludeTopicFormId: 1);
+        var result = DialogueViewerHelper.CollectLinkedTopics(chain, 1);
 
         Assert.Equal(2, result.Count);
         Assert.True(result.ContainsKey(2));
@@ -79,7 +79,7 @@ public class DialogueViewerLogicTests
         var info1 = MakeInfo(100, linkedTopics: [topicA, topicB]);
         var chain = new List<InfoDialogueNode> { info1 };
 
-        var result = DialogueViewerHelper.CollectLinkedTopics(chain, excludeTopicFormId: 1);
+        var result = DialogueViewerHelper.CollectLinkedTopics(chain, 1);
 
         Assert.Single(result);
         Assert.True(result.ContainsKey(2));
@@ -93,7 +93,7 @@ public class DialogueViewerLogicTests
         var info1 = MakeInfo(100, linkedTopics: [topicA]);
         var chain = new List<InfoDialogueNode> { info1 };
 
-        var result = DialogueViewerHelper.CollectLinkedTopics(chain, excludeTopicFormId: 1);
+        var result = DialogueViewerHelper.CollectLinkedTopics(chain, 1);
 
         Assert.Empty(result);
     }
@@ -101,7 +101,7 @@ public class DialogueViewerLogicTests
     [Fact]
     public void CollectLinkedTopics_EmptyChain_ReturnsEmpty()
     {
-        var result = DialogueViewerHelper.CollectLinkedTopics([], excludeTopicFormId: 1);
+        var result = DialogueViewerHelper.CollectLinkedTopics([], 1);
 
         Assert.Empty(result);
     }
@@ -114,7 +114,7 @@ public class DialogueViewerLogicTests
         var info2 = MakeInfo(101, linkedTopics: [topicB]);
         var chain = new List<InfoDialogueNode> { info1, info2 };
 
-        var result = DialogueViewerHelper.CollectLinkedTopics(chain, excludeTopicFormId: 1);
+        var result = DialogueViewerHelper.CollectLinkedTopics(chain, 1);
 
         Assert.Single(result);
         // Should keep the first occurrence (info1)
@@ -130,8 +130,8 @@ public class DialogueViewerLogicTests
     {
         var chain = new List<InfoDialogueNode>
         {
-            MakeInfo(1, questId: 10, speakerId: 100),
-            MakeInfo(2, questId: 20, speakerId: 200)
+            MakeInfo(1, 10, 100),
+            MakeInfo(2, 20, 200)
         };
 
         var result = DialogueViewerHelper.FilterInfoChain(chain, null, null);
@@ -144,12 +144,12 @@ public class DialogueViewerLogicTests
     {
         var chain = new List<InfoDialogueNode>
         {
-            MakeInfo(1, questId: 10, speakerId: 100),
-            MakeInfo(2, questId: 20, speakerId: 200),
-            MakeInfo(3, questId: 10, speakerId: 300)
+            MakeInfo(1, 10, 100),
+            MakeInfo(2, 20, 200),
+            MakeInfo(3, 10, 300)
         };
 
-        var result = DialogueViewerHelper.FilterInfoChain(chain, questFilter: 10, speakerFilter: null);
+        var result = DialogueViewerHelper.FilterInfoChain(chain, 10, null);
 
         Assert.Equal(2, result.Count);
         Assert.All(result, info => Assert.Equal(10u, info.Info.QuestFormId));
@@ -160,12 +160,12 @@ public class DialogueViewerLogicTests
     {
         var chain = new List<InfoDialogueNode>
         {
-            MakeInfo(1, questId: 10, speakerId: 100),
-            MakeInfo(2, questId: 20, speakerId: 200),
-            MakeInfo(3, questId: 10, speakerId: 100)
+            MakeInfo(1, 10, 100),
+            MakeInfo(2, 20, 200),
+            MakeInfo(3, 10, 100)
         };
 
-        var result = DialogueViewerHelper.FilterInfoChain(chain, questFilter: null, speakerFilter: 100);
+        var result = DialogueViewerHelper.FilterInfoChain(chain, null, 100);
 
         Assert.Equal(2, result.Count);
         Assert.All(result, info => Assert.Equal(100u, info.Info.SpeakerFormId));
@@ -176,12 +176,12 @@ public class DialogueViewerLogicTests
     {
         var chain = new List<InfoDialogueNode>
         {
-            MakeInfo(1, questId: 10, speakerId: 100),
-            MakeInfo(2, questId: 20, speakerId: 100),
-            MakeInfo(3, questId: 10, speakerId: 200)
+            MakeInfo(1, 10, 100),
+            MakeInfo(2, 20, 100),
+            MakeInfo(3, 10, 200)
         };
 
-        var result = DialogueViewerHelper.FilterInfoChain(chain, questFilter: 10, speakerFilter: 100);
+        var result = DialogueViewerHelper.FilterInfoChain(chain, 10, 100);
 
         Assert.Single(result);
         Assert.Equal(1u, result[0].Info.FormId);
@@ -192,11 +192,11 @@ public class DialogueViewerLogicTests
     {
         var chain = new List<InfoDialogueNode>
         {
-            MakeInfo(1, questId: 10),
-            MakeInfo(2, questId: 20)
+            MakeInfo(1, 10),
+            MakeInfo(2, 20)
         };
 
-        var result = DialogueViewerHelper.FilterInfoChain(chain, questFilter: 99, speakerFilter: null);
+        var result = DialogueViewerHelper.FilterInfoChain(chain, 99, null);
 
         // Falls back to full chain since no INFOs match quest 99
         Assert.Equal(2, result.Count);
@@ -211,7 +211,7 @@ public class DialogueViewerLogicTests
             MakeInfo(2, speakerId: 200)
         };
 
-        var result = DialogueViewerHelper.FilterInfoChain(chain, questFilter: null, speakerFilter: 999);
+        var result = DialogueViewerHelper.FilterInfoChain(chain, null, 999);
 
         Assert.Equal(2, result.Count);
     }
@@ -311,7 +311,7 @@ public class DialogueViewerLogicTests
         };
         var chain = new List<InfoDialogueNode> { info };
 
-        var result = DialogueViewerHelper.CollectLinkedTopics(chain, excludeTopicFormId: 1);
+        var result = DialogueViewerHelper.CollectLinkedTopics(chain, 1);
 
         Assert.Single(result);
         Assert.True(result.ContainsKey(2));
@@ -346,7 +346,7 @@ public class DialogueViewerLogicTests
     public void ResolveHeaderQuest_NoFilter_UsesTopicTreeGrouping()
     {
         var topic = MakeTopic(1, "SharedTopic",
-            MakeInfo(100, questId: 0xBBBB));
+            MakeInfo(100, 0xBBBB));
         var tree = new DialogueTreeResult
         {
             QuestTrees = new Dictionary<uint, QuestDialogueNode>
@@ -361,7 +361,7 @@ public class DialogueViewerLogicTests
         };
 
         var result = DialogueViewerHelper.ResolveHeaderQuest(
-            topic, topic.InfoChain, tree, hasActiveFilter: false);
+            topic, topic.InfoChain, tree, false);
 
         Assert.Equal(0xAAAAu, result);
     }
@@ -370,8 +370,8 @@ public class DialogueViewerLogicTests
     public void ResolveHeaderQuest_WithFilter_UsesFilteredInfoQuest()
     {
         var topic = MakeTopic(1, "SharedTopic",
-            MakeInfo(100, questId: 0xAAAA),
-            MakeInfo(101, questId: 0xBBBB));
+            MakeInfo(100, 0xAAAA),
+            MakeInfo(101, 0xBBBB));
         var tree = new DialogueTreeResult
         {
             QuestTrees = new Dictionary<uint, QuestDialogueNode>
@@ -386,11 +386,11 @@ public class DialogueViewerLogicTests
         };
         var filteredChain = new List<InfoDialogueNode>
         {
-            MakeInfo(101, questId: 0xBBBB)
+            MakeInfo(101, 0xBBBB)
         };
 
         var result = DialogueViewerHelper.ResolveHeaderQuest(
-            topic, filteredChain, tree, hasActiveFilter: true);
+            topic, filteredChain, tree, true);
 
         Assert.Equal(0xBBBBu, result);
     }
@@ -414,7 +414,7 @@ public class DialogueViewerLogicTests
         };
 
         var result = DialogueViewerHelper.ResolveHeaderQuest(
-            topic, topic.InfoChain, tree, hasActiveFilter: true);
+            topic, topic.InfoChain, tree, true);
 
         Assert.Equal(0xAAAAu, result);
     }

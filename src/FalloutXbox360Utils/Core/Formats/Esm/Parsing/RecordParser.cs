@@ -2,9 +2,7 @@ using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
@@ -14,26 +12,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 public sealed class RecordParser
 {
-    #region Fields
-
-    /// <summary>
-    ///     Shared context holding scan results, accessor, and lookup tables.
-    /// </summary>
-    internal readonly RecordParserContext _context;
-
-    // Domain-specific handlers
-    private readonly ActorRecordHandler _actors;
-    private readonly ItemRecordHandler _items;
-    private readonly DialogueRecordHandler _dialogue;
-    private readonly TextRecordHandler _text;
-    private readonly ScriptRecordHandler _scripts;
-    private readonly EffectRecordHandler _effects;
-    private readonly WorldRecordHandler _world;
-    private readonly MiscRecordHandler _misc;
-    private readonly AiRecordHandler _ai;
-
-    #endregion
-
     #region Constructor
 
     /// <summary>
@@ -406,7 +384,7 @@ public sealed class RecordParser
 
             // Variables: try direct path (SCRI → SCPT), then reverse (OwnerQuestFormId)
             if (quest.Script is > 0 && scriptByFormId.TryGetValue(quest.Script.Value, out var directScript)
-                && directScript.Variables.Count > 0)
+                                    && directScript.Variables.Count > 0)
             {
                 variables = directScript.Variables;
             }
@@ -552,11 +530,11 @@ public sealed class RecordParser
         AddToIndexes(consumables, c => c.FormId, c => c.Bounds, c => c.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(miscItems, m => m.FormId, m => m.Bounds, m => m.ModelPath, boundsIndex, modelIndex);
         AddToIndexes(books, b => b.FormId, b => b.Bounds, b => b.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(containers, c => c.FormId, c => (ObjectBounds?)null, c => c.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(keys, k => k.FormId, k => (ObjectBounds?)null, k => k.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(notes, n => n.FormId, n => (ObjectBounds?)null, n => n.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(weaponMods, w => w.FormId, w => (ObjectBounds?)null, w => w.ModelPath, boundsIndex, modelIndex);
-        AddToIndexes(sounds, s => s.FormId, s => s.Bounds, s => (string?)null, boundsIndex, modelIndex);
+        AddToIndexes(containers, c => c.FormId, c => null, c => c.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(keys, k => k.FormId, k => null, k => k.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(notes, n => n.FormId, n => null, n => n.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(weaponMods, w => w.FormId, w => null, w => w.ModelPath, boundsIndex, modelIndex);
+        AddToIndexes(sounds, s => s.FormId, s => s.Bounds, s => null, boundsIndex, modelIndex);
         AddToIndexes(genericRecords, g => g.FormId, g => g.Bounds, g => g.ModelPath, boundsIndex, modelIndex);
 
         WorldRecordHandler.EnrichPlacedReferences(cells, boundsIndex, modelIndex);
@@ -662,84 +640,6 @@ public sealed class RecordParser
 
     #endregion
 
-    #region Public API - Lookup Methods
-
-    public string? GetEditorId(uint formId) => _context.GetEditorId(formId);
-    public uint? GetFormId(string editorId) => _context.GetFormId(editorId);
-    public DetectedMainRecord? GetRecord(uint formId) => _context.GetRecord(formId);
-    public IEnumerable<DetectedMainRecord> GetRecordsByType(string recordType) => _context.GetRecordsByType(recordType);
-
-    #endregion
-
-    #region Public API - Individual Reconstruction (for direct caller access)
-
-    // Actors
-    public List<NpcRecord> ReconstructNpcs() => _actors.ReconstructNpcs();
-    public List<CreatureRecord> ReconstructCreatures() => _actors.ReconstructCreatures();
-    public List<FactionRecord> ReconstructFactions() => _actors.ReconstructFactions();
-    public List<RaceRecord> ReconstructRaces() => _actors.ReconstructRaces();
-
-    // Items
-    public List<WeaponRecord> ReconstructWeapons() => _items.ReconstructWeapons();
-    public List<ArmorRecord> ReconstructArmor() => _items.ReconstructArmor();
-    public List<AmmoRecord> ReconstructAmmo() => _items.ReconstructAmmo();
-    public List<ConsumableRecord> ReconstructConsumables() => _items.ReconstructConsumables();
-    public List<MiscItemRecord> ReconstructMiscItems() => _items.ReconstructMiscItems();
-    public List<KeyRecord> ReconstructKeys() => _items.ReconstructKeys();
-    public List<ContainerRecord> ReconstructContainers() => _items.ReconstructContainers();
-
-    // Dialogue
-    public List<QuestRecord> ReconstructQuests() => _dialogue.ReconstructQuests();
-    public List<DialogTopicRecord> ReconstructDialogTopics() => _dialogue.ReconstructDialogTopics();
-    public List<DialogueRecord> ReconstructDialogue() => _dialogue.ReconstructDialogue();
-    public DialogueTreeResult BuildDialogueTrees(
-        List<DialogueRecord> dialogues,
-        List<DialogTopicRecord> topics,
-        List<QuestRecord> quests) => _dialogue.BuildDialogueTrees(dialogues, topics, quests);
-
-    // Text
-    public List<NoteRecord> ReconstructNotes() => _text.ReconstructNotes();
-    public List<BookRecord> ReconstructBooks() => _text.ReconstructBooks();
-    public List<TerminalRecord> ReconstructTerminals() => _text.ReconstructTerminals();
-    public List<MessageRecord> ReconstructMessages() => _text.ReconstructMessages();
-
-    // Scripts
-    public List<ScriptRecord> ReconstructScripts() => _scripts.ReconstructScripts();
-
-    // Effects
-    public List<PerkRecord> ReconstructPerks() => _effects.ReconstructPerks();
-    public List<SpellRecord> ReconstructSpells() => _effects.ReconstructSpells();
-    public List<EnchantmentRecord> ReconstructEnchantments() => _effects.ReconstructEnchantments();
-    public List<BaseEffectRecord> ReconstructBaseEffects() => _effects.ReconstructBaseEffects();
-    public List<ProjectileRecord> ReconstructProjectiles() => _effects.ReconstructProjectiles();
-    public List<ExplosionRecord> ReconstructExplosions() => _effects.ReconstructExplosions();
-
-    // World
-    public List<CellRecord> ReconstructCells() => _world.ReconstructCells();
-    public List<WorldspaceRecord> ReconstructWorldspaces() => _world.ReconstructWorldspaces();
-    public List<PlacedReference> ExtractMapMarkers() => _world.ExtractMapMarkers();
-
-    // Misc
-    public List<GameSettingRecord> ReconstructGameSettings() => _misc.ReconstructGameSettings();
-    public List<GlobalRecord> ReconstructGlobals() => _misc.ReconstructGlobals();
-    public List<WeaponModRecord> ReconstructWeaponMods() => _misc.ReconstructWeaponMods();
-    public List<RecipeRecord> ReconstructRecipes() => _misc.ReconstructRecipes();
-    public List<ChallengeRecord> ReconstructChallenges() => _misc.ReconstructChallenges();
-    public List<ReputationRecord> ReconstructReputations() => _misc.ReconstructReputations();
-    public List<ClassRecord> ReconstructClasses() => _misc.ReconstructClasses();
-    public List<LeveledListRecord> ReconstructLeveledLists() => _misc.ReconstructLeveledLists();
-    public List<FormListRecord> ReconstructFormLists() => _misc.ReconstructFormLists();
-    public List<ActivatorRecord> ReconstructActivators() => _misc.ReconstructActivators();
-    public List<LightRecord> ReconstructLights() => _misc.ReconstructLights();
-    public List<DoorRecord> ReconstructDoors() => _misc.ReconstructDoors();
-    public List<StaticRecord> ReconstructStatics() => _misc.ReconstructStatics();
-    public List<FurnitureRecord> ReconstructFurniture() => _misc.ReconstructFurniture();
-
-    // AI
-    public List<PackageRecord> ReconstructPackages() => _ai.ReconstructPackages();
-
-    #endregion
-
     #region Private Helpers
 
     private static void AddToIndexes<T>(
@@ -770,6 +670,286 @@ public sealed class RecordParser
                 modelIndex.TryAdd(formId, model);
             }
         }
+    }
+
+    #endregion
+
+    #region Fields
+
+    /// <summary>
+    ///     Shared context holding scan results, accessor, and lookup tables.
+    /// </summary>
+    internal readonly RecordParserContext _context;
+
+    // Domain-specific handlers
+    private readonly ActorRecordHandler _actors;
+    private readonly ItemRecordHandler _items;
+    private readonly DialogueRecordHandler _dialogue;
+    private readonly TextRecordHandler _text;
+    private readonly ScriptRecordHandler _scripts;
+    private readonly EffectRecordHandler _effects;
+    private readonly WorldRecordHandler _world;
+    private readonly MiscRecordHandler _misc;
+    private readonly AiRecordHandler _ai;
+
+    #endregion
+
+    #region Public API - Lookup Methods
+
+    public string? GetEditorId(uint formId)
+    {
+        return _context.GetEditorId(formId);
+    }
+
+    public uint? GetFormId(string editorId)
+    {
+        return _context.GetFormId(editorId);
+    }
+
+    public DetectedMainRecord? GetRecord(uint formId)
+    {
+        return _context.GetRecord(formId);
+    }
+
+    public IEnumerable<DetectedMainRecord> GetRecordsByType(string recordType)
+    {
+        return _context.GetRecordsByType(recordType);
+    }
+
+    #endregion
+
+    #region Public API - Individual Reconstruction (for direct caller access)
+
+    // Actors
+    public List<NpcRecord> ReconstructNpcs()
+    {
+        return _actors.ReconstructNpcs();
+    }
+
+    public List<CreatureRecord> ReconstructCreatures()
+    {
+        return _actors.ReconstructCreatures();
+    }
+
+    public List<FactionRecord> ReconstructFactions()
+    {
+        return _actors.ReconstructFactions();
+    }
+
+    public List<RaceRecord> ReconstructRaces()
+    {
+        return _actors.ReconstructRaces();
+    }
+
+    // Items
+    public List<WeaponRecord> ReconstructWeapons()
+    {
+        return _items.ReconstructWeapons();
+    }
+
+    public List<ArmorRecord> ReconstructArmor()
+    {
+        return _items.ReconstructArmor();
+    }
+
+    public List<AmmoRecord> ReconstructAmmo()
+    {
+        return _items.ReconstructAmmo();
+    }
+
+    public List<ConsumableRecord> ReconstructConsumables()
+    {
+        return _items.ReconstructConsumables();
+    }
+
+    public List<MiscItemRecord> ReconstructMiscItems()
+    {
+        return _items.ReconstructMiscItems();
+    }
+
+    public List<KeyRecord> ReconstructKeys()
+    {
+        return _items.ReconstructKeys();
+    }
+
+    public List<ContainerRecord> ReconstructContainers()
+    {
+        return _items.ReconstructContainers();
+    }
+
+    // Dialogue
+    public List<QuestRecord> ReconstructQuests()
+    {
+        return _dialogue.ReconstructQuests();
+    }
+
+    public List<DialogTopicRecord> ReconstructDialogTopics()
+    {
+        return _dialogue.ReconstructDialogTopics();
+    }
+
+    public List<DialogueRecord> ReconstructDialogue()
+    {
+        return _dialogue.ReconstructDialogue();
+    }
+
+    public DialogueTreeResult BuildDialogueTrees(
+        List<DialogueRecord> dialogues,
+        List<DialogTopicRecord> topics,
+        List<QuestRecord> quests)
+    {
+        return _dialogue.BuildDialogueTrees(dialogues, topics, quests);
+    }
+
+    // Text
+    public List<NoteRecord> ReconstructNotes()
+    {
+        return _text.ReconstructNotes();
+    }
+
+    public List<BookRecord> ReconstructBooks()
+    {
+        return _text.ReconstructBooks();
+    }
+
+    public List<TerminalRecord> ReconstructTerminals()
+    {
+        return _text.ReconstructTerminals();
+    }
+
+    public List<MessageRecord> ReconstructMessages()
+    {
+        return _text.ReconstructMessages();
+    }
+
+    // Scripts
+    public List<ScriptRecord> ReconstructScripts()
+    {
+        return _scripts.ReconstructScripts();
+    }
+
+    // Effects
+    public List<PerkRecord> ReconstructPerks()
+    {
+        return _effects.ReconstructPerks();
+    }
+
+    public List<SpellRecord> ReconstructSpells()
+    {
+        return _effects.ReconstructSpells();
+    }
+
+    public List<EnchantmentRecord> ReconstructEnchantments()
+    {
+        return _effects.ReconstructEnchantments();
+    }
+
+    public List<BaseEffectRecord> ReconstructBaseEffects()
+    {
+        return _effects.ReconstructBaseEffects();
+    }
+
+    public List<ProjectileRecord> ReconstructProjectiles()
+    {
+        return _effects.ReconstructProjectiles();
+    }
+
+    public List<ExplosionRecord> ReconstructExplosions()
+    {
+        return _effects.ReconstructExplosions();
+    }
+
+    // World
+    public List<CellRecord> ReconstructCells()
+    {
+        return _world.ReconstructCells();
+    }
+
+    public List<WorldspaceRecord> ReconstructWorldspaces()
+    {
+        return _world.ReconstructWorldspaces();
+    }
+
+    public List<PlacedReference> ExtractMapMarkers()
+    {
+        return _world.ExtractMapMarkers();
+    }
+
+    // Misc
+    public List<GameSettingRecord> ReconstructGameSettings()
+    {
+        return _misc.ReconstructGameSettings();
+    }
+
+    public List<GlobalRecord> ReconstructGlobals()
+    {
+        return _misc.ReconstructGlobals();
+    }
+
+    public List<WeaponModRecord> ReconstructWeaponMods()
+    {
+        return _misc.ReconstructWeaponMods();
+    }
+
+    public List<RecipeRecord> ReconstructRecipes()
+    {
+        return _misc.ReconstructRecipes();
+    }
+
+    public List<ChallengeRecord> ReconstructChallenges()
+    {
+        return _misc.ReconstructChallenges();
+    }
+
+    public List<ReputationRecord> ReconstructReputations()
+    {
+        return _misc.ReconstructReputations();
+    }
+
+    public List<ClassRecord> ReconstructClasses()
+    {
+        return _misc.ReconstructClasses();
+    }
+
+    public List<LeveledListRecord> ReconstructLeveledLists()
+    {
+        return _misc.ReconstructLeveledLists();
+    }
+
+    public List<FormListRecord> ReconstructFormLists()
+    {
+        return _misc.ReconstructFormLists();
+    }
+
+    public List<ActivatorRecord> ReconstructActivators()
+    {
+        return _misc.ReconstructActivators();
+    }
+
+    public List<LightRecord> ReconstructLights()
+    {
+        return _misc.ReconstructLights();
+    }
+
+    public List<DoorRecord> ReconstructDoors()
+    {
+        return _misc.ReconstructDoors();
+    }
+
+    public List<StaticRecord> ReconstructStatics()
+    {
+        return _misc.ReconstructStatics();
+    }
+
+    public List<FurnitureRecord> ReconstructFurniture()
+    {
+        return _misc.ReconstructFurniture();
+    }
+
+    // AI
+    public List<PackageRecord> ReconstructPackages()
+    {
+        return _ai.ReconstructPackages();
     }
 
     #endregion

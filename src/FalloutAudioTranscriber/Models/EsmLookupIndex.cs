@@ -9,18 +9,18 @@ public class EsmLookupIndex
 {
     private readonly Dictionary<uint, InfoEntry> _infoEntries = new();
     private readonly Dictionary<uint, string> _npcNames = new();
-    private readonly Dictionary<uint, string> _questNames = new();
+    private readonly HashSet<uint> _npcsWithFullName = new(); // NPCs with a FULL (display) name
+    private readonly Dictionary<uint, uint> _npcVoiceTypes = new(); // NPC FormID → VTYP FormID
     private readonly Dictionary<string, string> _questEditorIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<uint, string> _questNames = new();
     private readonly Dictionary<string, TopicEntry> _topicEntries = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<uint, string> _vtypEditorIds = new(); // VTYP FormID → EditorID
-    private readonly Dictionary<uint, uint> _npcVoiceTypes = new();   // NPC FormID → VTYP FormID
-    private readonly HashSet<uint> _npcsWithFullName = new();          // NPCs with a FULL (display) name
-
-    // Built lazily after indexing: lowercase VTYP EDID → list of (NPC FormID, NPC Name)
-    private Dictionary<string, List<(uint FormId, string Name)>>? _voiceTypeToNpcs;
 
     // Built lazily: NPC FULL names (>= 4 chars) for substring matching in voice type folders
     private HashSet<string>? _npcFullNames;
+
+    // Built lazily after indexing: lowercase VTYP EDID → list of (NPC FormID, NPC Name)
+    private Dictionary<string, List<(uint FormId, string Name)>>? _voiceTypeToNpcs;
 
     /// <summary>Number of INFO records indexed.</summary>
     public int InfoCount => _infoEntries.Count;
@@ -289,9 +289,9 @@ public class EsmLookupIndex
 
     private record struct InfoEntry
     {
-        public string? SubtitleText;
-        public uint? SpeakerFormId;
         public uint? QuestFormId;
+        public uint? SpeakerFormId;
+        public string? SubtitleText;
     }
 
     private record struct TopicEntry

@@ -4,9 +4,9 @@ using System.Text;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Formats.SaveGame.Export;
+using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -48,7 +48,8 @@ public static class SaveCommand
             DefaultValueFactory = _ => 50
         };
         changesCommand.Options.Add(limitOpt);
-        var typeOpt = new Option<string?>("-t", "--type") { Description = "Filter by change type (e.g., ACHR, REFR, QUST)" };
+        var typeOpt = new Option<string?>("-t", "--type")
+            { Description = "Filter by change type (e.g., ACHR, REFR, QUST)" };
         changesCommand.Options.Add(typeOpt);
         changesCommand.SetAction((parseResult, _) =>
         {
@@ -67,7 +68,8 @@ public static class SaveCommand
         });
 
         var batchCommand = new Command("batch", "Parse all save files in a directory");
-        batchCommand.Arguments.Add(new Argument<string>(InputArgName) { Description = "Path to directory of .fxs files" });
+        batchCommand.Arguments.Add(new Argument<string>(InputArgName)
+            { Description = "Path to directory of .fxs files" });
         batchCommand.SetAction((parseResult, _) =>
         {
             var input = parseResult.GetValue<string>(InputArgName)!;
@@ -76,9 +78,12 @@ public static class SaveCommand
 
         var hexdumpCommand = new Command("hexdump", "Hex-dump global data or changed form raw bytes");
         hexdumpCommand.Arguments.Add(new Argument<string>(InputArgName) { Description = "Path to save file" });
-        var globalOpt = new Option<int?>("--global", "-g") { Description = "Global data type ID to dump (e.g., 0 for Misc Stats)" };
-        var formOpt = new Option<string?>("--form") { Description = "Changed form RefID to dump (e.g., 0x000014 for player)" };
-        var decodeOpt = new Option<bool>("--decode", "-d") { Description = "Also show decoded fields", DefaultValueFactory = _ => true };
+        var globalOpt = new Option<int?>("--global", "-g")
+            { Description = "Global data type ID to dump (e.g., 0 for Misc Stats)" };
+        var formOpt = new Option<string?>("--form")
+            { Description = "Changed form RefID to dump (e.g., 0x000014 for player)" };
+        var decodeOpt = new Option<bool>("--decode", "-d")
+            { Description = "Also show decoded fields", DefaultValueFactory = _ => true };
         hexdumpCommand.Options.Add(globalOpt);
         hexdumpCommand.Options.Add(formOpt);
         hexdumpCommand.Options.Add(decodeOpt);
@@ -118,7 +123,8 @@ public static class SaveCommand
         var reportsCommand = new Command("reports", "Generate save file reports (CSV + TXT) for reconciliation");
         reportsCommand.Arguments.Add(new Argument<string>(InputArgName) { Description = "Path to save file" });
         var esmOpt = new Option<string?>("--esm") { Description = "ESM/DMP file for name resolution enrichment" };
-        var outputOpt = new Option<string?>("-o", "--output") { Description = "Output directory (default: ./save_reports/)" };
+        var outputOpt = new Option<string?>("-o", "--output")
+            { Description = "Output directory (default: ./save_reports/)" };
         reportsCommand.Options.Add(esmOpt);
         reportsCommand.Options.Add(outputOpt);
         reportsCommand.SetAction((parseResult, _) =>
@@ -175,12 +181,14 @@ public static class SaveCommand
             headerTable.AddColumn("Value");
             headerTable.AddRow("Version", $"0x{h.Version:X}");
             headerTable.AddRow("Save Number", h.SaveNumber.ToString());
-            headerTable.AddRow("Player Name", string.IsNullOrEmpty(h.PlayerName) ? "[grey](empty)[/]" : Markup.Escape(h.PlayerName));
+            headerTable.AddRow("Player Name",
+                string.IsNullOrEmpty(h.PlayerName) ? "[grey](empty)[/]" : Markup.Escape(h.PlayerName));
             headerTable.AddRow("Player Status", Markup.Escape(h.PlayerStatus));
             headerTable.AddRow("Player Level", h.PlayerLevel.ToString());
             headerTable.AddRow("Current Cell", Markup.Escape(h.PlayerCell));
             headerTable.AddRow("Playtime", Markup.Escape(h.SaveDuration));
-            headerTable.AddRow("Screenshot", $"{h.ScreenshotWidth}x{h.ScreenshotHeight} ({h.ScreenshotDataSize:N0} bytes)");
+            headerTable.AddRow("Screenshot",
+                $"{h.ScreenshotWidth}x{h.ScreenshotHeight} ({h.ScreenshotDataSize:N0} bytes)");
             headerTable.AddRow("Form Version", h.FormVersion.ToString());
             AnsiConsole.Write(headerTable);
 
@@ -192,7 +200,7 @@ public static class SaveCommand
             }
 
             // Body summary
-            AnsiConsole.MarkupLine($"\n[bold]Body Summary:[/]");
+            AnsiConsole.MarkupLine("\n[bold]Body Summary:[/]");
             AnsiConsole.MarkupLine($"  Global Data 1 entries: {save.GlobalData1.Count}");
             AnsiConsole.MarkupLine($"  Global Data 2 entries: {save.GlobalData2.Count}");
             AnsiConsole.MarkupLine($"  Changed Forms: {save.ChangedForms.Count}");
@@ -214,7 +222,8 @@ public static class SaveCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error parsing {Markup.Escape(Path.GetFileName(path))}:[/] {Markup.Escape(ex.Message)}");
+            AnsiConsole.MarkupLine(
+                $"[red]Error parsing {Markup.Escape(Path.GetFileName(path))}:[/] {Markup.Escape(ex.Message)}");
             AnsiConsole.WriteException(ex);
             return 1;
         }
@@ -245,7 +254,7 @@ public static class SaveCommand
             summaryTable.AddColumn("With Position");
             foreach (var group in typeCounts)
             {
-                int withPos = group.Count(f => f.Initial != null);
+                var withPos = group.Count(f => f.Initial != null);
                 summaryTable.AddRow(
                     group.Key,
                     group.Count().ToString(),
@@ -275,12 +284,12 @@ public static class SaveCommand
                 var formIdArray = save.FormIdArray.ToArray().AsSpan();
                 foreach (var form in displayForms)
                 {
-                    string posStr = form.Initial != null
+                    var posStr = form.Initial != null
                         ? $"({form.Initial.PosX:F0}, {form.Initial.PosY:F0}, {form.Initial.PosZ:F0})"
                         : "[grey]-[/]";
 
                     var activeFlags = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
-                    string flagStr = activeFlags.Count > 0
+                    var flagStr = activeFlags.Count > 0
                         ? Markup.Escape(string.Join("|", activeFlags))
                         : $"0x{form.ChangeFlags:X8}";
 
@@ -318,7 +327,8 @@ public static class SaveCommand
             var h = save.Header;
 
             AnsiConsole.MarkupLine($"[bold green]Player State:[/] {Markup.Escape(Path.GetFileName(path))}");
-            AnsiConsole.MarkupLine($"  Name: {(string.IsNullOrEmpty(h.PlayerName) ? "(empty)" : Markup.Escape(h.PlayerName))}");
+            AnsiConsole.MarkupLine(
+                $"  Name: {(string.IsNullOrEmpty(h.PlayerName) ? "(empty)" : Markup.Escape(h.PlayerName))}");
             AnsiConsole.MarkupLine($"  Level: {h.PlayerLevel}");
             AnsiConsole.MarkupLine($"  Status: {Markup.Escape(h.PlayerStatus)}");
             AnsiConsole.MarkupLine($"  Cell: {Markup.Escape(h.PlayerCell)}");
@@ -329,7 +339,7 @@ public static class SaveCommand
             if (save.PlayerLocation != null)
             {
                 var loc = save.PlayerLocation;
-                AnsiConsole.MarkupLine($"\n[bold]World Position (Global Data Type 1):[/]");
+                AnsiConsole.MarkupLine("\n[bold]World Position (Global Data Type 1):[/]");
                 AnsiConsole.MarkupLine($"  Worldspace: {FormatFormId(loc.WorldspaceRefId, formIdArray)}");
                 AnsiConsole.MarkupLine($"  Grid: ({loc.CoordX}, {loc.CoordY})");
                 AnsiConsole.MarkupLine($"  Cell: {FormatFormId(loc.CellRefId, formIdArray)}");
@@ -346,7 +356,8 @@ public static class SaveCommand
                 AnsiConsole.MarkupLine($"\n[bold]Actor Changed Forms with Position ({playerForms.Count}):[/]");
                 foreach (var form in playerForms.Take(10))
                 {
-                    AnsiConsole.MarkupLine($"  {Markup.Escape(FormatFormId(form.RefId, formIdArray))} ({form.TypeName}): ({form.Initial!.PosX:F0}, {form.Initial.PosY:F0}, {form.Initial.PosZ:F0}) flags=0x{form.ChangeFlags:X8}");
+                    AnsiConsole.MarkupLine(
+                        $"  {Markup.Escape(FormatFormId(form.RefId, formIdArray))} ({form.TypeName}): ({form.Initial!.PosX:F0}, {form.Initial.PosY:F0}, {form.Initial.PosZ:F0}) flags=0x{form.ChangeFlags:X8}");
                 }
             }
 
@@ -393,34 +404,44 @@ public static class SaveCommand
                     return 1;
                 }
 
-                AnsiConsole.MarkupLine($"[bold green]Global Data Type {entry.Type}: {entry.TypeName}[/] ({entry.Data.Length:N0} bytes)\n");
+                AnsiConsole.MarkupLine(
+                    $"[bold green]Global Data Type {entry.Type}: {entry.TypeName}[/] ({entry.Data.Length:N0} bytes)\n");
                 PrintHexDump(entry.Data);
             }
             else if (formRef is not null)
             {
                 // Parse refid as hex
-                uint targetRaw = Convert.ToUInt32(formRef.Replace("0x", ""), 16);
+                var targetRaw = Convert.ToUInt32(formRef.Replace("0x", ""), 16);
                 var form = save.ChangedForms.FirstOrDefault(f => f.RefId.Raw == targetRaw);
                 if (form is null)
                 {
                     // Also try matching resolved FormID against the array
                     form = save.ChangedForms.FirstOrDefault(f =>
                     {
-                        try { return f.RefId.ResolveFormId(save.FormIdArray.ToArray()) == targetRaw; }
-                        catch { return false; }
+                        try
+                        {
+                            return f.RefId.ResolveFormId(save.FormIdArray.ToArray()) == targetRaw;
+                        }
+                        catch
+                        {
+                            return false;
+                        }
                     });
                 }
 
                 if (form is null)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Changed form with RefID {Markup.Escape(formRef)} not found.");
+                    AnsiConsole.MarkupLine(
+                        $"[red]Error:[/] Changed form with RefID {Markup.Escape(formRef)} not found.");
                     return 1;
                 }
 
                 var formIdArray = save.FormIdArray.ToArray().AsSpan();
-                AnsiConsole.MarkupLine($"[bold green]Changed Form {Markup.Escape(FormatFormId(form.RefId, formIdArray))} ({form.TypeName})[/]");
+                AnsiConsole.MarkupLine(
+                    $"[bold green]Changed Form {Markup.Escape(FormatFormId(form.RefId, formIdArray))} ({form.TypeName})[/]");
                 var flagNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
-                AnsiConsole.MarkupLine($"  Flags: 0x{form.ChangeFlags:X8}  Version: {form.Version}  Data: {form.Data.Length:N0} bytes");
+                AnsiConsole.MarkupLine(
+                    $"  Flags: 0x{form.ChangeFlags:X8}  Version: {form.Version}  Data: {form.Data.Length:N0} bytes");
                 if (flagNames.Count > 0)
                 {
                     AnsiConsole.MarkupLine($"  Active: [cyan]{Markup.Escape(string.Join(" | ", flagNames))}[/]");
@@ -468,9 +489,9 @@ public static class SaveCommand
             table.AddColumn("Stat");
             table.AddColumn(new TableColumn("Value").RightAligned());
 
-            for (int i = 0; i < save.Statistics.Count; i++)
+            for (var i = 0; i < save.Statistics.Count; i++)
             {
-                string label = i < SaveStatistics.Labels.Length
+                var label = i < SaveStatistics.Labels.Length
                     ? SaveStatistics.Labels[i]
                     : $"Unknown Stat {i}";
                 table.AddRow(label, save.Statistics.Values[i].ToString("N0"));
@@ -491,12 +512,12 @@ public static class SaveCommand
         const int bytesPerLine = 16;
         var sb = new StringBuilder();
 
-        for (int offset = 0; offset < data.Length; offset += bytesPerLine)
+        for (var offset = 0; offset < data.Length; offset += bytesPerLine)
         {
             sb.Append($"  {offset:X6}  ");
 
-            int lineLen = Math.Min(bytesPerLine, data.Length - offset);
-            for (int i = 0; i < bytesPerLine; i++)
+            var lineLen = Math.Min(bytesPerLine, data.Length - offset);
+            for (var i = 0; i < bytesPerLine; i++)
             {
                 if (i < lineLen)
                 {
@@ -514,9 +535,9 @@ public static class SaveCommand
             }
 
             sb.Append(" |");
-            for (int i = 0; i < lineLen; i++)
+            for (var i = 0; i < lineLen; i++)
             {
-                byte b = data[offset + i];
+                var b = data[offset + i];
                 sb.Append(b is >= 32 and < 127 ? (char)b : '.');
             }
 
@@ -534,7 +555,8 @@ public static class SaveCommand
             return;
         }
 
-        AnsiConsole.MarkupLine($"\n[bold yellow]Decoded Fields ({decoded.BytesConsumed}/{decoded.TotalBytes} bytes consumed):[/]");
+        AnsiConsole.MarkupLine(
+            $"\n[bold yellow]Decoded Fields ({decoded.BytesConsumed}/{decoded.TotalBytes} bytes consumed):[/]");
 
         var table = new Table().Border(TableBorder.Simple);
         table.AddColumn("Flag/Field");
@@ -596,7 +618,9 @@ public static class SaveCommand
 
             int totalForms = 0, decoded = 0, fullyDecoded = 0, partiallyDecoded = 0, failed = 0, unsupported = 0;
             long totalBytes = 0, decodedBytes = 0;
-            var typeStats = new Dictionary<string, (int Total, int Full, int Partial, int Fail, long TotalBytes, long DecodedBytes)>();
+            var typeStats =
+                new Dictionary<string, (int Total, int Full, int Partial, int Fail, long TotalBytes, long DecodedBytes
+                    )>();
             var errors = new List<string>();
 
             foreach (var form in save.ChangedForms)
@@ -610,11 +634,12 @@ public static class SaveCommand
                 }
 
                 var result = ChangedFormDecoder.Decode(form, formIdArray);
-                string typeName = form.TypeName;
+                var typeName = form.TypeName;
                 if (!typeStats.TryGetValue(typeName, out var s))
                 {
                     s = (0, 0, 0, 0, 0, 0);
                 }
+
                 s.Total++;
                 s.TotalBytes += form.Data.Length;
 
@@ -646,13 +671,15 @@ public static class SaveCommand
                     if (errors.Count < 10)
                     {
                         var flagNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
-                        errors.Add($"{FormatFormId(form.RefId, formIdArray)} ({typeName}) flags=0x{form.ChangeFlags:X8} [{string.Join("|", flagNames)}] data={form.Data.Length}b");
+                        errors.Add(
+                            $"{FormatFormId(form.RefId, formIdArray)} ({typeName}) flags=0x{form.ChangeFlags:X8} [{string.Join("|", flagNames)}] data={form.Data.Length}b");
                     }
                 }
 
                 if (result.Warnings.Count > 0 && errors.Count < 20)
                 {
-                    errors.Add($"{FormatFormId(form.RefId, formIdArray)} ({typeName}): {string.Join("; ", result.Warnings)}");
+                    errors.Add(
+                        $"{FormatFormId(form.RefId, formIdArray)} ({typeName}): {string.Join("; ", result.Warnings)}");
                 }
 
                 typeStats[typeName] = s;
@@ -671,7 +698,8 @@ public static class SaveCommand
             overallTable.AddRow("[grey]Unsupported type[/]", unsupported.ToString());
             overallTable.AddRow("Total data bytes", totalBytes.ToString("N0"));
             overallTable.AddRow("Decoded bytes", decodedBytes.ToString("N0"));
-            overallTable.AddRow("[bold]Decode coverage[/]", totalBytes > 0 ? $"{100.0 * decodedBytes / totalBytes:F1}%" : "N/A");
+            overallTable.AddRow("[bold]Decode coverage[/]",
+                totalBytes > 0 ? $"{100.0 * decodedBytes / totalBytes:F1}%" : "N/A");
             AnsiConsole.Write(overallTable);
 
             // Per-type breakdown
@@ -686,7 +714,7 @@ public static class SaveCommand
 
             foreach (var kvp in typeStats.OrderByDescending(x => x.Value.Total))
             {
-                string coverage = kvp.Value.TotalBytes > 0
+                var coverage = kvp.Value.TotalBytes > 0
                     ? $"{100.0 * kvp.Value.DecodedBytes / kvp.Value.TotalBytes:F1}%"
                     : "N/A";
                 typeTable.AddRow(
@@ -701,15 +729,18 @@ public static class SaveCommand
             AnsiConsole.Write(typeTable);
 
             // List partial forms with their last decoded field
-            var partials = new List<(string RefId, string Type, uint Flags, List<string> FlagNames, int DataLen, int Consumed, string LastField)>();
+            var partials =
+                new List<(string RefId, string Type, uint Flags, List<string> FlagNames, int DataLen, int Consumed,
+                    string LastField)>();
             foreach (var form in save.ChangedForms)
             {
                 if (form.Data.Length == 0) continue;
                 var r = ChangedFormDecoder.Decode(form, formIdArray);
                 if (r is null || r.FullyDecoded || r.BytesConsumed == 0) continue;
                 var fNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
-                string lastField = r.Fields.Count > 0 ? r.Fields[^1].Name : "(none)";
-                partials.Add((FormatFormId(form.RefId, formIdArray), form.TypeName, form.ChangeFlags, fNames, form.Data.Length, r.BytesConsumed, lastField));
+                var lastField = r.Fields.Count > 0 ? r.Fields[^1].Name : "(none)";
+                partials.Add((FormatFormId(form.RefId, formIdArray), form.TypeName, form.ChangeFlags, fNames,
+                    form.Data.Length, r.BytesConsumed, lastField));
             }
 
             // Analyze fully-decoded REFR flag combos
@@ -727,12 +758,14 @@ public static class SaveCommand
                 if (stat.Sizes.Count < 3) stat.Sizes.Add(form.Data.Length);
                 fullRefrs[form.ChangeFlags] = stat;
             }
+
             foreach (var kvp in fullRefrs.OrderByDescending(x => x.Value.Count).Take(15))
             {
                 var fNames = ChangeFlagRegistry.DescribeFlags(0x03, kvp.Key); // 0x03 = REFR type
-                int avg = kvp.Value.TotalLen / Math.Max(1, kvp.Value.Count);
+                var avg = kvp.Value.TotalLen / Math.Max(1, kvp.Value.Count);
                 var sizes = string.Join(",", kvp.Value.Sizes);
-                Console.WriteLine($"  flags=0x{kvp.Key:X8} count={kvp.Value.Count,5} avg_len={avg,4}b sizes=[{sizes}] [{string.Join("|", fNames)}]");
+                Console.WriteLine(
+                    $"  flags=0x{kvp.Key:X8} count={kvp.Value.Count,5} avg_len={avg,4}b sizes=[{sizes}] [{string.Join("|", fNames)}]");
             }
 
             if (partials.Count > 0)
@@ -746,10 +779,12 @@ public static class SaveCommand
                 {
                     var sample = g.First();
                     var flagStr = string.Join("|", sample.FlagNames);
-                    int avgRemaining = (int)g.Average(x => x.DataLen - x.Consumed);
-                    Console.WriteLine($"  {g.Count(),4}x {g.Key.Type} last={g.Key.LastField} avg_remaining={avgRemaining}b sample_flags={flagStr}");
+                    var avgRemaining = (int)g.Average(x => x.DataLen - x.Consumed);
+                    Console.WriteLine(
+                        $"  {g.Count(),4}x {g.Key.Type} last={g.Key.LastField} avg_remaining={avgRemaining}b sample_flags={flagStr}");
                     foreach (var p in g.Take(3))
-                        Console.WriteLine($"       {p.RefId} flags=0x{p.Flags:X8} data={p.DataLen}b consumed={p.Consumed}b remaining={p.DataLen - p.Consumed}b");
+                        Console.WriteLine(
+                            $"       {p.RefId} flags=0x{p.Flags:X8} data={p.DataLen}b consumed={p.Consumed}b remaining={p.DataLen - p.Consumed}b");
                 }
             }
 
@@ -792,7 +827,7 @@ public static class SaveCommand
                 return 1;
             }
 
-            string magic = Encoding.ASCII.GetString(data, 0, 4);
+            var magic = Encoding.ASCII.GetString(data, 0, 4);
             if (magic is not ("CON " or "LIVE" or "PIRS"))
             {
                 // Check if it's a raw FO3SAVEGAME
@@ -814,12 +849,15 @@ public static class SaveCommand
             headerTable.AddColumn("Field");
             headerTable.AddColumn("Value");
             headerTable.AddRow("Magic", header.Magic.Trim());
-            headerTable.AddRow("Content Type", $"0x{header.ContentType:X8}{(header.ContentType == 1 ? " (Save Game)" : "")}");
+            headerTable.AddRow("Content Type",
+                $"0x{header.ContentType:X8}{(header.ContentType == 1 ? " (Save Game)" : "")}");
             headerTable.AddRow("Metadata Version", header.MetadataVersion.ToString());
-            headerTable.AddRow("Block Separation", $"{header.BlockSeparation} ({(header.BlockSeparation == 0 ? "male" : "female")})");
+            headerTable.AddRow("Block Separation",
+                $"{header.BlockSeparation} ({(header.BlockSeparation == 0 ? "male" : "female")})");
             headerTable.AddRow("File Table Blocks", header.FileTableBlockCount.ToString());
             headerTable.AddRow("File Table Start Block", header.FileTableBlockNumber.ToString());
-            headerTable.AddRow("Total Allocated", $"{header.TotalAllocatedBlocks} blocks ({header.TotalAllocatedBlocks * 4096:N0} bytes)");
+            headerTable.AddRow("Total Allocated",
+                $"{header.TotalAllocatedBlocks} blocks ({header.TotalAllocatedBlocks * 4096:N0} bytes)");
             headerTable.AddRow("Total Unallocated", $"{header.TotalUnallocatedBlocks} blocks");
             AnsiConsole.Write(headerTable);
 
@@ -829,9 +867,9 @@ public static class SaveCommand
 
             foreach (var diag in result.Diagnostics)
             {
-                string color = diag.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
-                               diag.Contains("INVALID", StringComparison.OrdinalIgnoreCase) ||
-                               diag.Contains("corrupted", StringComparison.OrdinalIgnoreCase)
+                var color = diag.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                            diag.Contains("INVALID", StringComparison.OrdinalIgnoreCase) ||
+                            diag.Contains("corrupted", StringComparison.OrdinalIgnoreCase)
                     ? "red"
                     : diag.Contains("confirmed", StringComparison.OrdinalIgnoreCase) ||
                       diag.Contains("Found:", StringComparison.OrdinalIgnoreCase)
@@ -845,10 +883,11 @@ public static class SaveCommand
             if (result.FileEntry != null)
             {
                 var fe = result.FileEntry;
-                AnsiConsole.MarkupLine($"\n[bold]File Entry:[/]");
+                AnsiConsole.MarkupLine("\n[bold]File Entry:[/]");
                 AnsiConsole.MarkupLine($"  Filename: {Markup.Escape(fe.Filename)}");
                 AnsiConsole.MarkupLine($"  File Size: {fe.FileSize:N0} bytes");
-                AnsiConsole.MarkupLine($"  Start Block: {fe.StartBlock} (offset 0x{StfsContainer.DataBlockToRawOffset(fe.StartBlock):X})");
+                AnsiConsole.MarkupLine(
+                    $"  Start Block: {fe.StartBlock} (offset 0x{StfsContainer.DataBlockToRawOffset(fe.StartBlock):X})");
                 AnsiConsole.MarkupLine($"  Valid Blocks: {fe.ValidBlocks}");
                 AnsiConsole.MarkupLine($"  Allocated Blocks: {fe.AllocatedBlocks}");
                 AnsiConsole.MarkupLine($"  Consecutive: {fe.IsConsecutive}");
@@ -863,12 +902,13 @@ public static class SaveCommand
                 {
                     var save = SaveFileParser.Parse(data);
                     var h = save.Header;
-                    AnsiConsole.MarkupLine($"\n[bold]Save Header:[/]");
+                    AnsiConsole.MarkupLine("\n[bold]Save Header:[/]");
                     AnsiConsole.MarkupLine($"  Player: {Markup.Escape(h.PlayerName)} (Level {h.PlayerLevel})");
                     AnsiConsole.MarkupLine($"  Cell: {Markup.Escape(h.PlayerCell)}");
                     AnsiConsole.MarkupLine($"  Save #{h.SaveNumber}, Playtime: {Markup.Escape(h.SaveDuration)}");
                     AnsiConsole.MarkupLine($"  FormVersion: {h.FormVersion}");
-                    AnsiConsole.MarkupLine($"  Screenshot: {h.ScreenshotWidth}x{h.ScreenshotHeight} ({h.ScreenshotDataSize:N0} bytes)");
+                    AnsiConsole.MarkupLine(
+                        $"  Screenshot: {h.ScreenshotWidth}x{h.ScreenshotHeight} ({h.ScreenshotDataSize:N0} bytes)");
                     AnsiConsole.MarkupLine($"  Plugins: {h.Plugins.Count}");
                     AnsiConsole.MarkupLine($"  Changed Forms: {save.ChangedForms.Count}");
                     AnsiConsole.MarkupLine($"  FormID Array: {save.FormIdArray.Count} entries");
@@ -880,7 +920,7 @@ public static class SaveCommand
             }
             else
             {
-                AnsiConsole.MarkupLine($"\n[red]Extraction failed[/]");
+                AnsiConsole.MarkupLine("\n[red]Extraction failed[/]");
             }
 
             return 0;
@@ -902,14 +942,14 @@ public static class SaveCommand
 
         try
         {
-            AnsiConsole.MarkupLine($"[bold green]Generating save reports...[/]");
+            AnsiConsole.MarkupLine("[bold green]Generating save reports...[/]");
             var save = ParseFile(path);
             var formIdArray = save.FormIdArray.ToArray();
 
             // Decode all changed forms
             AnsiConsole.MarkupLine("  Decoding changed forms...");
             var decodedForms = new Dictionary<int, DecodedFormData>();
-            for (int i = 0; i < save.ChangedForms.Count; i++)
+            for (var i = 0; i < save.ChangedForms.Count; i++)
             {
                 var form = save.ChangedForms[i];
                 if (form.Data.Length == 0) continue;
@@ -946,7 +986,8 @@ public static class SaveCommand
                 File.WriteAllText(filePath, content);
             }
 
-            AnsiConsole.MarkupLine($"\n[bold green]Generated {reports.Count} reports to {Markup.Escape(outputDir)}:[/]");
+            AnsiConsole.MarkupLine(
+                $"\n[bold green]Generated {reports.Count} reports to {Markup.Escape(outputDir)}:[/]");
             foreach (var (filename, content) in reports.OrderBy(kvp => kvp.Key))
             {
                 AnsiConsole.MarkupLine($"  {filename} ({content.Length:N0} bytes)");
@@ -972,11 +1013,11 @@ public static class SaveCommand
             AnalysisResult analysisResult;
             if (fileType == AnalysisFileType.EsmFile)
             {
-                analysisResult = EsmFileAnalyzer.AnalyzeAsync(path, null).GetAwaiter().GetResult();
+                analysisResult = EsmFileAnalyzer.AnalyzeAsync(path).GetAwaiter().GetResult();
             }
             else if (fileType == AnalysisFileType.Minidump)
             {
-                analysisResult = new Core.Minidump.MinidumpAnalyzer().AnalyzeAsync(path, null).GetAwaiter().GetResult();
+                analysisResult = new MinidumpAnalyzer().AnalyzeAsync(path).GetAwaiter().GetResult();
             }
             else
             {
@@ -1004,7 +1045,8 @@ public static class SaveCommand
             var records = parser.ReconstructAll();
             var resolver = records.CreateResolver();
 
-            AnsiConsole.MarkupLine($"  [green]Loaded {records.TotalRecordsReconstructed:N0} records for name resolution.[/]");
+            AnsiConsole.MarkupLine(
+                $"  [green]Loaded {records.TotalRecordsReconstructed:N0} records for name resolution.[/]");
             return resolver;
         }
         catch (Exception ex)

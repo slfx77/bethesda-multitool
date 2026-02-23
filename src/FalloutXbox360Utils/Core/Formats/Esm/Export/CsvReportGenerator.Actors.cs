@@ -116,7 +116,8 @@ internal static class CsvActorWriter
 
             foreach (var spellId in npc.Spells)
             {
-                sb.AppendLine($"SPELL,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(spellId)},{resolver.ResolveCsv(spellId)},{resolver.ResolveDisplayNameCsv(spellId)},");
+                sb.AppendLine(
+                    $"SPELL,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(spellId)},{resolver.ResolveCsv(spellId)},{resolver.ResolveDisplayNameCsv(spellId)},");
             }
 
             foreach (var item in npc.Inventory)
@@ -127,7 +128,8 @@ internal static class CsvActorWriter
 
             foreach (var pkgId in npc.Packages)
             {
-                sb.AppendLine($"PACKAGE,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(pkgId)},{resolver.ResolveCsv(pkgId)},{resolver.ResolveDisplayNameCsv(pkgId)},");
+                sb.AppendLine(
+                    $"PACKAGE,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(pkgId)},{resolver.ResolveCsv(pkgId)},{resolver.ResolveDisplayNameCsv(pkgId)},");
             }
         }
 

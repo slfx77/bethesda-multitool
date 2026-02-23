@@ -11,41 +11,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 /// </summary>
 public static class DdsExporter
 {
-    #region DDS Constants
-
-    private const uint DdsMagic = 0x20534444; // "DDS "
-    private const uint DdsHeaderSize = 124;
-    private const uint DdsPixelFormatSize = 32;
-
-    // DDS header flags
-    private const uint DdsdCaps = 0x1;
-    private const uint DdsdHeight = 0x2;
-    private const uint DdsdWidth = 0x4;
-    private const uint DdsdPixelFormat = 0x1000;
-    private const uint DdsdMipmapCount = 0x20000;
-    private const uint DdsdLinearSize = 0x80000;
-
-    // Pixel format flags
-    private const uint DdpfFourCc = 0x4;
-    private const uint DdpfRgb = 0x40;
-    private const uint DdpfAlphaPixels = 0x1;
-
-    // Caps flags
-    private const uint DdsCapsTexture = 0x1000;
-    private const uint DdsCapsMipmap = 0x400000;
-    private const uint DdsCapsComplex = 0x8;
-
-    // Caps2 flags (cubemaps)
-    private const uint DdsCaps2Cubemap = 0x200;
-    private const uint DdsCaps2CubemapAllFaces = 0xFC00; // +X, -X, +Y, -Y, +Z, -Z
-
-    // FourCC codes (little-endian ASCII)
-    private const uint FourCcDxt1 = 0x31545844; // "DXT1"
-    private const uint FourCcDxt3 = 0x33545844; // "DXT3"
-    private const uint FourCcDxt5 = 0x35545844; // "DXT5"
-
-    #endregion
-
     /// <summary>
     ///     Export a single texture as a DDS file.
     ///     Handles Xbox 360 texture untiling and endian swap for compressed formats.
@@ -297,13 +262,16 @@ public static class DdsExporter
         return data;
     }
 
-    private static uint GetFourCc(NiTextureFormat format) => format switch
+    private static uint GetFourCc(NiTextureFormat format)
     {
-        NiTextureFormat.DXT1 => FourCcDxt1,
-        NiTextureFormat.DXT3 => FourCcDxt3,
-        NiTextureFormat.DXT5 => FourCcDxt5,
-        _ => FourCcDxt5
-    };
+        return format switch
+        {
+            NiTextureFormat.DXT1 => FourCcDxt1,
+            NiTextureFormat.DXT3 => FourCcDxt3,
+            NiTextureFormat.DXT5 => FourCcDxt5,
+            _ => FourCcDxt5
+        };
+    }
 
     private static uint CalculatePitch(ExtractedTexture texture)
     {
@@ -342,4 +310,39 @@ public static class DdsExporter
 
         return value;
     }
+
+    #region DDS Constants
+
+    private const uint DdsMagic = 0x20534444; // "DDS "
+    private const uint DdsHeaderSize = 124;
+    private const uint DdsPixelFormatSize = 32;
+
+    // DDS header flags
+    private const uint DdsdCaps = 0x1;
+    private const uint DdsdHeight = 0x2;
+    private const uint DdsdWidth = 0x4;
+    private const uint DdsdPixelFormat = 0x1000;
+    private const uint DdsdMipmapCount = 0x20000;
+    private const uint DdsdLinearSize = 0x80000;
+
+    // Pixel format flags
+    private const uint DdpfFourCc = 0x4;
+    private const uint DdpfRgb = 0x40;
+    private const uint DdpfAlphaPixels = 0x1;
+
+    // Caps flags
+    private const uint DdsCapsTexture = 0x1000;
+    private const uint DdsCapsMipmap = 0x400000;
+    private const uint DdsCapsComplex = 0x8;
+
+    // Caps2 flags (cubemaps)
+    private const uint DdsCaps2Cubemap = 0x200;
+    private const uint DdsCaps2CubemapAllFaces = 0xFC00; // +X, -X, +Y, -Y, +Z, -Z
+
+    // FourCC codes (little-endian ASCII)
+    private const uint FourCcDxt1 = 0x31545844; // "DXT1"
+    private const uint FourCcDxt3 = 0x33545844; // "DXT3"
+    private const uint FourCcDxt5 = 0x35545844; // "DXT5"
+
+    #endregion
 }

@@ -442,7 +442,7 @@ public class EsmParserTests
     [Fact]
     public void ParseFileHeader_ValidLe_ReturnsHeader()
     {
-        var buf = BuildLeTes4Header(1.34f, 0x001000);
+        var buf = BuildLeTes4Header();
         var header = EsmParser.ParseFileHeader(buf);
 
         Assert.NotNull(header);

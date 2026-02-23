@@ -35,7 +35,7 @@ internal static class EsmStringDetector
         var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
         var lastProgressMb = 0L;
 
-        var log = Core.Logger.Instance;
+        var log = Logger.Instance;
         log.Debug("AssetStrings: Starting scan of {0:N0} MB", fileSize / (1024 * 1024));
 
         try

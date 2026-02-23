@@ -47,7 +47,10 @@ public static class ChangeFlagRegistry
 
     private static readonly ChangeFlagDef ActorLifestate = new(0x00000400, "ACTOR_LIFESTATE");
     private static readonly ChangeFlagDef ActorExtraPackageData = new(0x00000800, "ACTOR_EXTRA_PACKAGE_DATA");
-    private static readonly ChangeFlagDef ActorExtraMerchantContainer = new(0x00001000, "ACTOR_EXTRA_MERCHANT_CONTAINER");
+
+    private static readonly ChangeFlagDef ActorExtraMerchantContainer =
+        new(0x00001000, "ACTOR_EXTRA_MERCHANT_CONTAINER");
+
     private static readonly ChangeFlagDef ActorExtraDismemberedLimbs = new(0x00020000, "ACTOR_EXTRA_DISMEMBERED_LIMBS");
     private static readonly ChangeFlagDef ActorExtraLeveledActor = new(0x00040000, "ACTOR_EXTRA_LEVELED_ACTOR");
     private static readonly ChangeFlagDef ActorDispositionModifiers = new(0x00080000, "ACTOR_DISPOSITION_MODIFIERS");
@@ -179,6 +182,11 @@ public static class ChangeFlagRegistry
         EncounterZoneFlags, EncounterZoneGameData
     ];
 
+    private static readonly ChangeFlagDef[] BaseObjectArr =
+    [
+        FormFlags, BaseObjectValue, BaseObjectFullname
+    ];
+
     /// <summary>
     ///     Returns the ordered list of applicable change flag definitions for the given change type.
     ///     The order matches the serialization order in the game's SaveGame/LoadGame functions.
@@ -187,46 +195,41 @@ public static class ChangeFlagRegistry
     {
         return changeType switch
         {
-            0 => RefrObjectFlags,                    // REFR
-            1 or 2 => ActorFlags,                    // ACHR, ACRE
-            >= 3 and <= 6 => ProjectileFlags,        // PMIS, PGRE, PBEA, PFLA
-            7 => CellFlagsArr,                       // CELL
-            8 => [TopicSaidOnce],                    // INFO
-            9 => QuestFlagsArr,                      // QUST
-            10 => NpcFlags,                          // NPC_
-            11 => CreatureFlags,                     // CREA
-            12 => BaseObjectWithSpeaker(),           // ACTI
-            13 => BaseObjectWithSpeaker(),           // TACT (talking activator)
+            0 => RefrObjectFlags, // REFR
+            1 or 2 => ActorFlags, // ACHR, ACRE
+            >= 3 and <= 6 => ProjectileFlags, // PMIS, PGRE, PBEA, PFLA
+            7 => CellFlagsArr, // CELL
+            8 => [TopicSaidOnce], // INFO
+            9 => QuestFlagsArr, // QUST
+            10 => NpcFlags, // NPC_
+            11 => CreatureFlags, // CREA
+            12 => BaseObjectWithSpeaker(), // ACTI
+            13 => BaseObjectWithSpeaker(), // TACT (talking activator)
             14 or 15 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24 or 25 or 27 or 28 or 29
-                => BaseObjectArr,                    // TERM, ARMO, CLOT, CONT, DOOR, INGR, LIGH, MISC, STAT, MSTT, FURN, AMMO, KEYM, ALCH
-            16 => BaseObjectWithBook(),              // BOOK
-            26 => BaseObjectArr,                     // WEAP
-            30 => [],                                // IDLM - no known flags
-            31 => [FormFlags, NoteRead],             // NOTE
-            32 => EncounterZoneArr,                  // ECZN
-            33 => [ClassTagSkills],                  // CLAS
-            34 => FactionFlagsArr,                   // FACT
-            35 => PackageFlags,                      // PACK
-            36 => [],                                // NAVM - no documented flags
-            37 => [FormListAddedForm],               // FLST
+                => BaseObjectArr, // TERM, ARMO, CLOT, CONT, DOOR, INGR, LIGH, MISC, STAT, MSTT, FURN, AMMO, KEYM, ALCH
+            16 => BaseObjectWithBook(), // BOOK
+            26 => BaseObjectArr, // WEAP
+            30 => [], // IDLM - no known flags
+            31 => [FormFlags, NoteRead], // NOTE
+            32 => EncounterZoneArr, // ECZN
+            33 => [ClassTagSkills], // CLAS
+            34 => FactionFlagsArr, // FACT
+            35 => PackageFlags, // PACK
+            36 => [], // NAVM - no documented flags
+            37 => [FormListAddedForm], // FLST
             38 or 39 or 40 => [LeveledListAddedObject], // LVLC, LVLN, LVLI
-            41 => [WaterRemapped],                   // WATR
-            42 => BaseObjectArr,                     // IMOD
-            43 => [ReputationValues],                // REPU
-            44 => ProjectileFlags,                   // PCBE (player combat beam)
-            45 or 46 => BaseObjectArr,               // RCPE, RCCT
-            47 or 48 or 49 => BaseObjectArr,         // CHIP, CSNO, LSCT
-            50 => [ChallengeValue],                  // CHAL
-            51 => BaseObjectArr,                     // AMEF
-            52 or 53 or 54 => BaseObjectArr,         // CCRD, CMNY, CDCK
+            41 => [WaterRemapped], // WATR
+            42 => BaseObjectArr, // IMOD
+            43 => [ReputationValues], // REPU
+            44 => ProjectileFlags, // PCBE (player combat beam)
+            45 or 46 => BaseObjectArr, // RCPE, RCCT
+            47 or 48 or 49 => BaseObjectArr, // CHIP, CSNO, LSCT
+            50 => [ChallengeValue], // CHAL
+            51 => BaseObjectArr, // AMEF
+            52 or 53 or 54 => BaseObjectArr, // CCRD, CMNY, CDCK
             _ => []
         };
     }
-
-    private static readonly ChangeFlagDef[] BaseObjectArr =
-    [
-        FormFlags, BaseObjectValue, BaseObjectFullname
-    ];
 
     private static ChangeFlagDef[] BaseObjectWithSpeaker()
     {
@@ -245,7 +248,7 @@ public static class ChangeFlagRegistry
     {
         var result = new List<string>();
         var defs = GetFlags(changeType);
-        uint remaining = changeFlags;
+        var remaining = changeFlags;
 
         foreach (var def in defs)
         {

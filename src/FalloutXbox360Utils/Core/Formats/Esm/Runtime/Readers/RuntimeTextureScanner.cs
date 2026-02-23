@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -8,34 +9,31 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     Scans memory dumps for NiPixelData runtime objects containing texture data.
 ///     Uses heuristic pattern matching based on PDB-derived struct layouts.
 ///     NiPixelData is a standalone Gamebryo object (NOT TESForm-derived).
-///
 ///     NiPixelData (116 bytes, extends NiObject):
-///       +0   vtable (ptr, 4 bytes)
-///       +4   m_uiRefCount (uint32 BE) — reference count
-///       +8   m_kPixelFormat (NiPixelFormat, 68 bytes inline):
-///              +8+0  m_uFlags (byte)
-///              +8+1  m_ucBitsPerPixel (byte)
-///              +8+4  m_eFormat (enum, uint32 BE) — NiPixelFormat::Format
-///              +8+8  m_eTiling (enum, uint32 BE)
-///              +8+12 m_uiRendererHint (uint32 BE)
-///              +8+16 m_uiExtraData (uint32 BE)
-///              +8+20 m_akComponents[4] (NiComponentSpec, 12 bytes each)
-///       +76  m_spPalette (NiPointer)
-///       +80  m_pucPixels (byte*) — raw pixel data pointer
-///       +84  m_puiWidth (uint32*) — per-mipmap width array
-///       +88  m_puiHeight (uint32*) — per-mipmap height array
-///       +92  m_puiOffsetInBytes (uint32*) — per-mipmap byte offset array
-///       +96  m_uiMipmapLevels (uint32 BE)
-///       +100 m_uiPixelStride (uint32 BE) — bytes per pixel (0 for compressed)
-///       +104 m_uiRevID (uint32 BE)
-///       +108 m_uiFaces (uint32 BE) — 1 for 2D, 6 for cubemap
-///       +112 bNoConvert (bool)
-///
+///     +0   vtable (ptr, 4 bytes)
+///     +4   m_uiRefCount (uint32 BE) — reference count
+///     +8   m_kPixelFormat (NiPixelFormat, 68 bytes inline):
+///     +8+0  m_uFlags (byte)
+///     +8+1  m_ucBitsPerPixel (byte)
+///     +8+4  m_eFormat (enum, uint32 BE) — NiPixelFormat::Format
+///     +8+8  m_eTiling (enum, uint32 BE)
+///     +8+12 m_uiRendererHint (uint32 BE)
+///     +8+16 m_uiExtraData (uint32 BE)
+///     +8+20 m_akComponents[4] (NiComponentSpec, 12 bytes each)
+///     +76  m_spPalette (NiPointer)
+///     +80  m_pucPixels (byte*) — raw pixel data pointer
+///     +84  m_puiWidth (uint32*) — per-mipmap width array
+///     +88  m_puiHeight (uint32*) — per-mipmap height array
+///     +92  m_puiOffsetInBytes (uint32*) — per-mipmap byte offset array
+///     +96  m_uiMipmapLevels (uint32 BE)
+///     +100 m_uiPixelStride (uint32 BE) — bytes per pixel (0 for compressed)
+///     +104 m_uiRevID (uint32 BE)
+///     +108 m_uiFaces (uint32 BE) — 1 for 2D, 6 for cubemap
+///     +112 bNoConvert (bool)
 ///     NiSourceTexture (72 bytes, extends NiTexture extends NiObjectNET):
-///       +4   m_uiRefCount (uint32 BE)
-///       +48  m_kFilename (NiFixedString — char*)
-///       +60  m_spSrcPixelData (NiPointer&lt;NiPixelData&gt;)
-///
+///     +4   m_uiRefCount (uint32 BE)
+///     +48  m_kFilename (NiFixedString — char*)
+///     +60  m_spSrcPixelData (NiPointer&lt;NiPixelData&gt;)
 ///     Both scans are combined into a single pass for performance.
 /// </summary>
 internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
@@ -43,44 +41,10 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
     private readonly RuntimeMemoryContext _context = context;
     private readonly RuntimeObjectScanner _scanner = new(context);
 
-    #region NiPixelData Field Offsets (PDB-verified)
-
-    private const int RefCountOffset = 4;
-    private const int BitsPerPixelOffset = 9;     // NiPixelFormat.m_ucBitsPerPixel (byte)
-    private const int FormatOffset = 12;           // NiPixelFormat.m_eFormat (uint32 BE)
-    private const int PixelsPtrOffset = 80;        // m_pucPixels (byte*)
-    private const int WidthPtrOffset = 84;         // m_puiWidth (uint32*)
-    private const int HeightPtrOffset = 88;        // m_puiHeight (uint32*)
-    private const int OffsetsPtrOffset = 92;       // m_puiOffsetInBytes (uint32*)
-    private const int MipmapLevelsOffset = 96;     // m_uiMipmapLevels (uint32 BE)
-    private const int PixelStrideOffset = 100;     // m_uiPixelStride (uint32 BE)
-    private const int FacesOffset = 108;           // m_uiFaces (uint32 BE)
-    private const int NiPixelDataSize = 116;
-
-    #endregion
-
-    #region NiSourceTexture Field Offsets
-
-    private const int SrcTexFilenameOffset = 48;       // m_kFilename (NiFixedString)
-    private const int SrcTexPixelDataPtrOffset = 60;   // m_spSrcPixelData (NiPointer)
-    private const int NiSourceTextureSize = 72;
-
-    #endregion
-
-    #region Validation Thresholds
-
-    private const int MaxRefCount = 10_000;
-    private const int MaxMipmapLevels = 16;
-    private const int MinDimension = 4;
-    private const int MaxDimension = 4096;
-    private const int MaxPixelDataSize = 64 * 1024 * 1024; // 64 MB max per texture
-
-    #endregion
+    private int _texturesFound;
 
     /// <summary>Shared counter for progress reporting.</summary>
     public int TexturesFound => _texturesFound;
-
-    private int _texturesFound;
 
     /// <summary>
     ///     Scan the entire dump for NiPixelData objects with valid pixel data,
@@ -99,8 +63,8 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
             _context.FileSize);
 
         _scanner.ScanAligned(
-            candidateTest: CombinedFastFilter,
-            processCandidate: (chunk, offset, fileOffset) =>
+            CombinedFastFilter,
+            (chunk, offset, fileOffset) =>
             {
                 // Try NiPixelData extraction
                 if (offset + NiPixelDataSize <= chunk.Length && IsNiPixelDataCandidate(chunk, offset))
@@ -130,8 +94,8 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
                     }
                 }
             },
-            minStructSize: NiSourceTextureSize, // Smaller struct: 72 < 116
-            progress: progress);
+            NiSourceTextureSize, // Smaller struct: 72 < 116
+            progress);
 
         var result = textures.OrderBy(t => t.SourceOffset).ToList();
 
@@ -479,30 +443,36 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
     ///     Expected m_uiPixelStride (bytes per pixel) for each uncompressed format.
     ///     Returns 0 for unknown/compressed (no validation possible).
     /// </summary>
-    private static uint GetExpectedPixelStride(NiTextureFormat format) => format switch
+    private static uint GetExpectedPixelStride(NiTextureFormat format)
     {
-        NiTextureFormat.RGB => 3,
-        NiTextureFormat.RGBA => 4,
-        NiTextureFormat.PAL or NiTextureFormat.PALA => 1,
-        NiTextureFormat.Bump => 2,
-        NiTextureFormat.OneCh => 1,
-        NiTextureFormat.TwoCh => 2,
-        NiTextureFormat.ThreeCh => 3,
-        _ => 0
-    };
+        return format switch
+        {
+            NiTextureFormat.RGB => 3,
+            NiTextureFormat.RGBA => 4,
+            NiTextureFormat.PAL or NiTextureFormat.PALA => 1,
+            NiTextureFormat.Bump => 2,
+            NiTextureFormat.OneCh => 1,
+            NiTextureFormat.TwoCh => 2,
+            NiTextureFormat.ThreeCh => 3,
+            _ => 0
+        };
+    }
 
     /// <summary>
     ///     Expected m_ucBitsPerPixel for each uncompressed format.
     ///     Returns 0 for unknown/compressed (no validation possible).
     /// </summary>
-    private static byte GetExpectedBitsPerPixel(NiTextureFormat format) => format switch
+    private static byte GetExpectedBitsPerPixel(NiTextureFormat format)
     {
-        NiTextureFormat.RGB or NiTextureFormat.ThreeCh => 24,
-        NiTextureFormat.RGBA => 32,
-        NiTextureFormat.PAL or NiTextureFormat.PALA or NiTextureFormat.OneCh => 8,
-        NiTextureFormat.Bump or NiTextureFormat.TwoCh => 16,
-        _ => 0
-    };
+        return format switch
+        {
+            NiTextureFormat.RGB or NiTextureFormat.ThreeCh => 24,
+            NiTextureFormat.RGBA => 32,
+            NiTextureFormat.PAL or NiTextureFormat.PALA or NiTextureFormat.OneCh => 8,
+            NiTextureFormat.Bump or NiTextureFormat.TwoCh => 16,
+            _ => 0
+        };
+    }
 
     /// <summary>Read a null-terminated ASCII string from a pointer.</summary>
     private string? ReadNullTerminatedString(uint ptr)
@@ -528,7 +498,7 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
         {
             if (buf[i] == 0)
             {
-                return i == 0 ? null : System.Text.Encoding.ASCII.GetString(buf, 0, i);
+                return i == 0 ? null : Encoding.ASCII.GetString(buf, 0, i);
             }
 
             if (buf[i] < 32 || buf[i] > 126)
@@ -555,7 +525,7 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
             return null;
         }
 
-        return BinaryUtils.ReadUInt32BE(buf, 0);
+        return BinaryUtils.ReadUInt32BE(buf);
     }
 
     /// <summary>
@@ -585,7 +555,7 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
             return null;
         }
 
-        return (int)BinaryUtils.ReadUInt32BE(buf, 0);
+        return (int)BinaryUtils.ReadUInt32BE(buf);
     }
 
     /// <summary>Read raw pixel data from the given pointer.</summary>
@@ -634,18 +604,24 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
     }
 
     /// <summary>Calculate data size for a single mipmap level.</summary>
-    private static int CalculateMipSize(NiTextureFormat format, int width, int height) => format switch
+    private static int CalculateMipSize(NiTextureFormat format, int width, int height)
     {
-        NiTextureFormat.DXT1 => Math.Max(1, width / 4) * Math.Max(1, height / 4) * 8,
-        NiTextureFormat.DXT3 or NiTextureFormat.DXT5 => Math.Max(1, width / 4) * Math.Max(1, height / 4) * 16,
-        NiTextureFormat.RGB => width * height * 3,
-        NiTextureFormat.RGBA => width * height * 4,
-        NiTextureFormat.PAL or NiTextureFormat.PALA => width * height,
-        NiTextureFormat.Bump => width * height * 2,
-        _ => width * height * 4 // Conservative default
-    };
+        return format switch
+        {
+            NiTextureFormat.DXT1 => Math.Max(1, width / 4) * Math.Max(1, height / 4) * 8,
+            NiTextureFormat.DXT3 or NiTextureFormat.DXT5 => Math.Max(1, width / 4) * Math.Max(1, height / 4) * 16,
+            NiTextureFormat.RGB => width * height * 3,
+            NiTextureFormat.RGBA => width * height * 4,
+            NiTextureFormat.PAL or NiTextureFormat.PALA => width * height,
+            NiTextureFormat.Bump => width * height * 2,
+            _ => width * height * 4 // Conservative default
+        };
+    }
 
-    private static bool IsPowerOfTwo(uint value) => value > 0 && (value & (value - 1)) == 0;
+    private static bool IsPowerOfTwo(uint value)
+    {
+        return value > 0 && (value & (value - 1)) == 0;
+    }
 
     private static long ComputeDataHash(byte[] data)
     {
@@ -659,4 +635,38 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
         // Mix in total length to differentiate same-prefix data
         return hash ^ (data.Length * 0x517CC1B727220A95L);
     }
+
+    #region NiPixelData Field Offsets (PDB-verified)
+
+    private const int RefCountOffset = 4;
+    private const int BitsPerPixelOffset = 9; // NiPixelFormat.m_ucBitsPerPixel (byte)
+    private const int FormatOffset = 12; // NiPixelFormat.m_eFormat (uint32 BE)
+    private const int PixelsPtrOffset = 80; // m_pucPixels (byte*)
+    private const int WidthPtrOffset = 84; // m_puiWidth (uint32*)
+    private const int HeightPtrOffset = 88; // m_puiHeight (uint32*)
+    private const int OffsetsPtrOffset = 92; // m_puiOffsetInBytes (uint32*)
+    private const int MipmapLevelsOffset = 96; // m_uiMipmapLevels (uint32 BE)
+    private const int PixelStrideOffset = 100; // m_uiPixelStride (uint32 BE)
+    private const int FacesOffset = 108; // m_uiFaces (uint32 BE)
+    private const int NiPixelDataSize = 116;
+
+    #endregion
+
+    #region NiSourceTexture Field Offsets
+
+    private const int SrcTexFilenameOffset = 48; // m_kFilename (NiFixedString)
+    private const int SrcTexPixelDataPtrOffset = 60; // m_spSrcPixelData (NiPointer)
+    private const int NiSourceTextureSize = 72;
+
+    #endregion
+
+    #region Validation Thresholds
+
+    private const int MaxRefCount = 10_000;
+    private const int MaxMipmapLevels = 16;
+    private const int MinDimension = 4;
+    private const int MaxDimension = 4096;
+    private const int MaxPixelDataSize = 64 * 1024 * 1024; // 64 MB max per texture
+
+    #endregion
 }

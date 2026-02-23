@@ -9,94 +9,50 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     Uses heuristic pattern matching based on PDB-derived struct layouts.
 ///     These are Gamebryo engine objects (NOT TESForm-derived), so they cannot
 ///     be found through the pAllForms hash table — heuristic scanning is required.
-///
 ///     NiRefObject (8 bytes — base of all Gamebryo objects):
-///       +0   vtable (ptr, 4 bytes)
-///       +4   m_uiRefCount (uint32 BE) — reference count, >0 for live objects
-///
+///     +0   vtable (ptr, 4 bytes)
+///     +4   m_uiRefCount (uint32 BE) — reference count, >0 for live objects
 ///     NiGeometryData (64 bytes, extends NiObject):
-///       +8   m_usVertices (uint16 BE) — vertex count
-///       +10  m_usID (uint16 BE) — unique ID
-///       +12  m_usDataFlags (uint16 BE)
-///       +14  m_usDirtyFlags (uint16 BE)
-///       +16  m_kBound (NiBound: center XYZ float3 + radius float, 16 bytes)
-///       +32  m_pkVertex (NiPoint3*) — vertex position array
-///       +36  m_pkNormal (NiPoint3*) — vertex normal array
-///       +40  m_pkColor (NiColorA*) — vertex color array
-///       +44  m_pkTexture (NiPoint2*) — UV coordinate array
-///       +48  m_spAdditionalGeomData (smart ptr)
-///       +52  m_pkBuffData (ptr) — GPU buffer data
-///       +56  m_ucKeepFlags, +57 m_ucCompressFlags, +58-60 bools
-///
+///     +8   m_usVertices (uint16 BE) — vertex count
+///     +10  m_usID (uint16 BE) — unique ID
+///     +12  m_usDataFlags (uint16 BE)
+///     +14  m_usDirtyFlags (uint16 BE)
+///     +16  m_kBound (NiBound: center XYZ float3 + radius float, 16 bytes)
+///     +32  m_pkVertex (NiPoint3*) — vertex position array
+///     +36  m_pkNormal (NiPoint3*) — vertex normal array
+///     +40  m_pkColor (NiColorA*) — vertex color array
+///     +44  m_pkTexture (NiPoint2*) — UV coordinate array
+///     +48  m_spAdditionalGeomData (smart ptr)
+///     +52  m_pkBuffData (ptr) — GPU buffer data
+///     +56  m_ucKeepFlags, +57 m_ucCompressFlags, +58-60 bools
 ///     NiTriBasedGeomData (68 bytes, extends NiGeometryData):
-///       +64  m_usTriangles (uint16 BE) — triangle count (must be >0)
-///
+///     +64  m_usTriangles (uint16 BE) — triangle count (must be >0)
 ///     NiTriShapeData (88 bytes, extends NiTriBasedGeomData):
-///       +68  m_uiTriListLength (uint32 BE) — triangle index count (= triangles * 3)
-///       +72  m_pusTriList (uint16*) — triangle index array
-///
+///     +68  m_uiTriListLength (uint32 BE) — triangle index count (= triangles * 3)
+///     +72  m_pusTriList (uint16*) — triangle index array
 ///     NiTriStripsData (80 bytes, extends NiTriBasedGeomData):
-///       +68  m_usStrips (uint16 BE) — number of triangle strips
-///       +72  m_pusStripLengths (uint16*) — length of each strip
-///       +76  m_pusStripLists (uint16*) — strip index array
+///     +68  m_usStrips (uint16 BE) — number of triangle strips
+///     +72  m_pusStripLengths (uint16*) — length of each strip
+///     +76  m_pusStripLists (uint16*) — strip index array
 /// </summary>
 internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
 {
-    private readonly RuntimeMemoryContext _context = context;
-    private readonly RuntimeObjectScanner _scanner = new(context);
-
     #region NiRefObject Field Offsets (PDB-verified)
 
-    private const int RefCountOffset = 4;          // m_uiRefCount: uint32 BE
-
-    #endregion
-
-    #region NiGeometryData Field Offsets (PDB-verified, no shift)
-
-    private const int VertexCountOffset = 8;       // m_usVertices: uint16 BE
-    private const int BoundCenterOffset = 16;      // m_kBound.center: NiPoint3 (12 bytes)
-    private const int BoundRadiusOffset = 28;      // m_kBound.radius: float BE
-    private const int VertexPtrOffset = 32;        // m_pkVertex: NiPoint3*
-    private const int NormalPtrOffset = 36;        // m_pkNormal: NiPoint3*
-    private const int ColorPtrOffset = 40;         // m_pkColor: NiColorA*
-    private const int UVPtrOffset = 44;            // m_pkTexture: NiPoint2*
+    private const int RefCountOffset = 4; // m_uiRefCount: uint32 BE
 
     #endregion
 
     #region NiTriBasedGeomData Field Offsets (PDB-verified)
 
-    private const int TriangleCountOffset = 64;    // m_usTriangles: uint16 BE
+    private const int TriangleCountOffset = 64; // m_usTriangles: uint16 BE
 
     #endregion
 
-    #region NiTriShapeData Field Offsets (PDB-verified)
+    private readonly RuntimeMemoryContext _context = context;
+    private readonly RuntimeObjectScanner _scanner = new(context);
 
-    private const int TriListLengthOffset = 68;    // m_uiTriListLength: uint32 BE
-    private const int TriListPtrOffset = 72;       // m_pusTriList: uint16*
-    private const int TriShapeStructSize = 88;
-
-    #endregion
-
-    #region NiTriStripsData Field Offsets (PDB-verified)
-
-    private const int StripCountOffset = 68;       // m_usStrips: uint16 BE
-    private const int StripLengthsPtrOffset = 72;  // m_pusStripLengths: uint16*
-    private const int StripListsPtrOffset = 76;    // m_pusStripLists: uint16*
-    private const int TriStripsStructSize = 80;
-
-    #endregion
-
-    #region Validation Thresholds
-
-    private const int MinVertices = 3;
-    private const int MaxVertices = 65535;
-    private const int MaxRefCount = 10_000;
-    private const float MaxCoordinate = 500_000f;
-    private const float MinSpatialExtent = 0.1f;
-    private const float MaxSpatialExtent = 200_000f;
-    private const float ValidFloatThreshold = 0.5f;
-
-    #endregion
+    private int _meshesFound;
 
     /// <summary>
     ///     Scan the entire dump for NiTriShapeData and NiTriStripsData objects.
@@ -109,8 +65,6 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     /// </summary>
     public int MeshesFound => _meshesFound;
 
-    private int _meshesFound;
-
     public List<ExtractedMesh> ScanForMeshes(IProgress<(long Scanned, long Total)>? progress = null)
     {
         var meshes = new ConcurrentBag<ExtractedMesh>();
@@ -121,8 +75,8 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
         log.Info("Geometry scanner: starting parallel dump scan ({0:N0} bytes)", _context.FileSize);
 
         _scanner.ScanAligned(
-            candidateTest: FastFilter,
-            processCandidate: (chunk, offset, fileOffset) =>
+            FastFilter,
+            (chunk, offset, fileOffset) =>
             {
                 var mesh = ValidateAndExtract(chunk, offset, fileOffset);
                 if (mesh != null && vertexHashes.TryAdd(mesh.VertexHash, 0))
@@ -134,8 +88,8 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
                         mesh.Type, fileOffset, mesh.VertexCount, mesh.TriangleCount, mesh.BoundRadius);
                 }
             },
-            minStructSize: TriShapeStructSize,
-            progress: progress);
+            TriShapeStructSize,
+            progress);
 
         var result = meshes.OrderBy(m => m.SourceOffset).ToList();
 
@@ -546,4 +500,45 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
 
         return hash;
     }
+
+    #region NiGeometryData Field Offsets (PDB-verified, no shift)
+
+    private const int VertexCountOffset = 8; // m_usVertices: uint16 BE
+    private const int BoundCenterOffset = 16; // m_kBound.center: NiPoint3 (12 bytes)
+    private const int BoundRadiusOffset = 28; // m_kBound.radius: float BE
+    private const int VertexPtrOffset = 32; // m_pkVertex: NiPoint3*
+    private const int NormalPtrOffset = 36; // m_pkNormal: NiPoint3*
+    private const int ColorPtrOffset = 40; // m_pkColor: NiColorA*
+    private const int UVPtrOffset = 44; // m_pkTexture: NiPoint2*
+
+    #endregion
+
+    #region NiTriShapeData Field Offsets (PDB-verified)
+
+    private const int TriListLengthOffset = 68; // m_uiTriListLength: uint32 BE
+    private const int TriListPtrOffset = 72; // m_pusTriList: uint16*
+    private const int TriShapeStructSize = 88;
+
+    #endregion
+
+    #region NiTriStripsData Field Offsets (PDB-verified)
+
+    private const int StripCountOffset = 68; // m_usStrips: uint16 BE
+    private const int StripLengthsPtrOffset = 72; // m_pusStripLengths: uint16*
+    private const int StripListsPtrOffset = 76; // m_pusStripLists: uint16*
+    private const int TriStripsStructSize = 80;
+
+    #endregion
+
+    #region Validation Thresholds
+
+    private const int MinVertices = 3;
+    private const int MaxVertices = 65535;
+    private const int MaxRefCount = 10_000;
+    private const float MaxCoordinate = 500_000f;
+    private const float MinSpatialExtent = 0.1f;
+    private const float MaxSpatialExtent = 200_000f;
+    private const float ValidFloatThreshold = 0.5f;
+
+    #endregion
 }

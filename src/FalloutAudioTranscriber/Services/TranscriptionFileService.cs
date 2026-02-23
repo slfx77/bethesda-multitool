@@ -182,7 +182,8 @@ public static class TranscriptionFileService
 
         foreach (var r in rows)
         {
-            sb.AppendLine($"{Escape(r.FilePath)},{r.FormId},{Escape(r.VoiceType)},{Escape(r.Speaker)},{Escape(r.Quest)},{r.Source},{Escape(r.Text)}");
+            sb.AppendLine(
+                $"{Escape(r.FilePath)},{r.FormId},{Escape(r.VoiceType)},{Escape(r.Speaker)},{Escape(r.Quest)},{r.Source},{Escape(r.Text)}");
         }
 
         await File.WriteAllTextAsync(outputPath, sb.ToString(), ct);
@@ -237,10 +238,6 @@ public static class TranscriptionFileService
 
         await File.WriteAllTextAsync(outputPath, sb.ToString(), ct);
     }
-
-    private readonly record struct ExportRow(
-        string FilePath, string FormId, string? VoiceType,
-        string? Speaker, string? Quest, string Source, string Text);
 
     /// <summary>
     ///     Build the unified export row list from project entries + optional ESM entries.
@@ -346,4 +343,13 @@ public static class TranscriptionFileService
 
         return value;
     }
+
+    private readonly record struct ExportRow(
+        string FilePath,
+        string FormId,
+        string? VoiceType,
+        string? Speaker,
+        string? Quest,
+        string Source,
+        string Text);
 }

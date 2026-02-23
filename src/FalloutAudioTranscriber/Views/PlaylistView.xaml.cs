@@ -1,41 +1,48 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Threading.Channels;
+using Windows.Storage.Pickers;
 using FalloutAudioTranscriber.Models;
 using FalloutAudioTranscriber.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Whisper.net;
-using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace FalloutAudioTranscriber.Views;
 
 #pragma warning disable CA1001 // WinUI 3 UserControls don't implement IDisposable
 public sealed partial class PlaylistView : UserControl
 {
-    private readonly AudioPlaybackService _playbackService = new();
-    private readonly WhisperTranscriptionService _whisperService = new();
+    private readonly DispatcherTimer? _autoSaveTimer;
     private readonly ObservableCollection<VoiceFileEntry> _displayedEntries = [];
+    private readonly AudioPlaybackService _playbackService = new();
+
+    // ────────────────────────────────────────────────────
+    // Batch transcription (multithreaded pipeline)
+    // ────────────────────────────────────────────────────
+
+    private readonly object _projectLock = new();
+    private readonly WhisperTranscriptionService _whisperService = new();
     private List<VoiceFileEntry> _allEntries = [];
+    private CancellationTokenSource? _batchCts;
+    private string? _dataDirectory;
+    private bool _filtersInitialized;
+    private bool _hasUnsavedChanges;
 
     // Transcription state
     private TranscriptionProject? _project;
-    private string? _dataDirectory;
-    private CancellationTokenSource? _batchCts;
-    private DispatcherTimer? _autoSaveTimer;
-    private bool _hasUnsavedChanges;
-    private bool _whisperInitialized;
 
     // Filter state
     private string _searchQuery = "";
     private bool _showEsmSubtitles;
-    private bool _transcribeEsmLines;
-    private bool _filtersInitialized;
+    private bool _sortAscending = true;
 
     // Sort state
     private string _sortColumn = "Status";
-    private bool _sortAscending = true;
+    private bool _transcribeEsmLines;
+    private bool _whisperInitialized;
 
     public PlaylistView()
     {
@@ -64,11 +71,11 @@ public sealed partial class PlaylistView : UserControl
         if (dataDirectory != null)
         {
             _project = await TranscriptionFileService.LoadAsync(dataDirectory)
-                        ?? new TranscriptionProject
-                        {
-                            DataDirectory = dataDirectory,
-                            CreatedAt = DateTimeOffset.UtcNow
-                        };
+                       ?? new TranscriptionProject
+                       {
+                           DataDirectory = dataDirectory,
+                           CreatedAt = DateTimeOffset.UtcNow
+                       };
 
             TranscriptionFileService.ApplyToEntries(_project, _allEntries);
         }
@@ -281,7 +288,7 @@ public sealed partial class PlaylistView : UserControl
         }
 
         // Sort by selected column
-        IOrderedEnumerable<VoiceFileEntry> sorted = _sortColumn switch
+        var sorted = _sortColumn switch
         {
             "Name" => _sortAscending
                 ? filtered.OrderBy(e => e.TopicEditorId).ThenBy(e => e.FormId)
@@ -437,9 +444,11 @@ public sealed partial class PlaylistView : UserControl
     {
         var currentIndex = FileListView.SelectedIndex;
 
-        bool IsWorkItem(VoiceFileEntry e) =>
-            e.Status is TranscriptionStatus.Untranscribed or TranscriptionStatus.Automatic
-            || (_transcribeEsmLines && e.Status == TranscriptionStatus.EsmSubtitle);
+        bool IsWorkItem(VoiceFileEntry e)
+        {
+            return e.Status is TranscriptionStatus.Untranscribed or TranscriptionStatus.Automatic
+                   || (_transcribeEsmLines && e.Status == TranscriptionStatus.EsmSubtitle);
+        }
 
         // Search forward from current position
         for (var i = currentIndex + 1; i < _displayedEntries.Count; i++)
@@ -561,12 +570,6 @@ public sealed partial class PlaylistView : UserControl
             Console.WriteLine($"[Playlist] Auto-save error: {ex.Message}");
         }
     }
-
-    // ────────────────────────────────────────────────────
-    // Batch transcription (multithreaded pipeline)
-    // ────────────────────────────────────────────────────
-
-    private readonly object _projectLock = new();
 
     private async void Batch_Click(object sender, RoutedEventArgs e)
     {
@@ -694,15 +697,16 @@ public sealed partial class PlaylistView : UserControl
 
                                 lock (_projectLock)
                                 {
-                                    _project!.Entries[$"{entry.VoiceType}|{entry.FormId:X8}_{entry.ResponseIndex}"] = new TranscriptionEntry
-                                    {
-                                        Text = transcribedText,
-                                        Source = "whisper",
-                                        VoiceType = entry.VoiceType,
-                                        SpeakerName = entry.SpeakerName,
-                                        QuestName = entry.QuestName,
-                                        TranscribedAt = DateTimeOffset.UtcNow
-                                    };
+                                    _project!.Entries[$"{entry.VoiceType}|{entry.FormId:X8}_{entry.ResponseIndex}"] =
+                                        new TranscriptionEntry
+                                        {
+                                            Text = transcribedText,
+                                            Source = "whisper",
+                                            VoiceType = entry.VoiceType,
+                                            SpeakerName = entry.SpeakerName,
+                                            QuestName = entry.QuestName,
+                                            TranscribedAt = DateTimeOffset.UtcNow
+                                        };
                                 }
                             }
                         }
@@ -781,7 +785,14 @@ public sealed partial class PlaylistView : UserControl
             // Wait for consumers to finish their current item before disposing processors
             if (consumerTasks != null)
             {
-                try { await Task.WhenAll(consumerTasks); } catch { /* consumers already handle their own errors */ }
+                try
+                {
+                    await Task.WhenAll(consumerTasks);
+                }
+                catch
+                {
+                    /* consumers already handle their own errors */
+                }
             }
 
             await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
@@ -793,7 +804,14 @@ public sealed partial class PlaylistView : UserControl
 
             if (consumerTasks != null)
             {
-                try { await Task.WhenAll(consumerTasks); } catch { /* consumers already handle their own errors */ }
+                try
+                {
+                    await Task.WhenAll(consumerTasks);
+                }
+                catch
+                {
+                    /* consumers already handle their own errors */
+                }
             }
 
             await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
@@ -836,8 +854,8 @@ public sealed partial class PlaylistView : UserControl
         picker.FileTypeChoices.Add("Plain Text", [".txt"]);
         picker.SuggestedFileName = "transcriptions";
 
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow.Instance!);
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
+        InitializeWithWindow.Initialize(picker, hwnd);
 
         var file = await picker.PickSaveFileAsync();
         if (file != null)

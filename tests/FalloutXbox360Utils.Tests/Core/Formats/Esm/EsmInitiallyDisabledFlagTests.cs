@@ -105,7 +105,7 @@ public class EsmInitiallyDisabledFlagTests(ITestOutputHelper output, SampleFileF
             var wastelandDisabledActors = wastelandObjects
                 .Count(p => p.IsInitiallyDisabled && p.RecordType is "ACHR" or "ACRE");
 
-            _output.WriteLine($"\nWastelandNV (0x000DA726):");
+            _output.WriteLine("\nWastelandNV (0x000DA726):");
             _output.WriteLine($"  Total placed objects: {wastelandObjects.Count:N0}");
             _output.WriteLine($"  Initially Disabled: {wastelandDisabled:N0} " +
                               $"(actors: {wastelandDisabledActors:N0})");

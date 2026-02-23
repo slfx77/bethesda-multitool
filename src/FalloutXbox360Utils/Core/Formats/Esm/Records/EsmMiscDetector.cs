@@ -13,6 +13,44 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 internal static class EsmMiscDetector
 {
+    #region Generic Subrecords
+
+    internal static void TryAddGenericSubrecordWithOffset(byte[] data, int i, int dataLength, long baseOffset,
+        List<DetectedSubrecord> records)
+    {
+        if (i + 6 > dataLength)
+        {
+            return;
+        }
+
+        // Check if signature looks valid (4 uppercase ASCII letters or underscore)
+        for (var j = 0; j < 4; j++)
+        {
+            var c = data[i + j];
+            if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
+            {
+                return;
+            }
+        }
+
+        var sig = Encoding.ASCII.GetString(data, i, 4);
+        var len = EsmSubrecordUtils.GetSubrecordLength(data, i + 4, dataLength - i - 6);
+
+        if (len == 0 || len > 65535 || i + 6 + len > dataLength)
+        {
+            return;
+        }
+
+        // Only add if it's a known subrecord signature from the schema
+        if (SchemaSignaturesLE.Value.Contains(sig) ||
+            SchemaSignaturesBE.Value.Contains(sig))
+        {
+            records.Add(new DetectedSubrecord { Signature = sig, DataSize = len, Offset = baseOffset + i });
+        }
+    }
+
+    #endregion
+
     #region Schema Signatures
 
     private static readonly Lazy<HashSet<string>> SchemaSignaturesLE =
@@ -507,44 +545,6 @@ internal static class EsmMiscDetector
         if (EsmSubrecordUtils.IsValidFormId(formId))
         {
             records.Add(new FormIdSubrecord(subrecordType, formId, baseOffset + i));
-        }
-    }
-
-    #endregion
-
-    #region Generic Subrecords
-
-    internal static void TryAddGenericSubrecordWithOffset(byte[] data, int i, int dataLength, long baseOffset,
-        List<DetectedSubrecord> records)
-    {
-        if (i + 6 > dataLength)
-        {
-            return;
-        }
-
-        // Check if signature looks valid (4 uppercase ASCII letters or underscore)
-        for (var j = 0; j < 4; j++)
-        {
-            var c = data[i + j];
-            if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
-            {
-                return;
-            }
-        }
-
-        var sig = Encoding.ASCII.GetString(data, i, 4);
-        var len = EsmSubrecordUtils.GetSubrecordLength(data, i + 4, dataLength - i - 6);
-
-        if (len == 0 || len > 65535 || i + 6 + len > dataLength)
-        {
-            return;
-        }
-
-        // Only add if it's a known subrecord signature from the schema
-        if (SchemaSignaturesLE.Value.Contains(sig) ||
-            SchemaSignaturesBE.Value.Contains(sig))
-        {
-            records.Add(new DetectedSubrecord { Signature = sig, DataSize = len, Offset = baseOffset + i });
         }
     }
 

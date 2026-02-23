@@ -1,6 +1,7 @@
-using FalloutXbox360Utils.Tests.Core.Formats.Script;
+using FalloutXbox360Utils.Tests;
+using Xunit;
 
-[assembly: Xunit.AssemblyFixture(typeof(FalloutXbox360Utils.Tests.SampleFileFixture))]
+[assembly: AssemblyFixture(typeof(SampleFileFixture))]
 
 namespace FalloutXbox360Utils.Tests;
 

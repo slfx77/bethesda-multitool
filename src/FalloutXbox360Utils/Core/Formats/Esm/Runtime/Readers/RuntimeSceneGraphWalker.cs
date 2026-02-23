@@ -10,42 +10,22 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     then follows the parent chain to discover model grouping and node names.
 ///     Uses reverse pointer scanning: finds NiTriShape structs whose m_spModelData (+220)
 ///     points to a known NiTriShapeData virtual address.
-///
 ///     NiTriShape (240 bytes, extends NiGeometry → NiAVObject → NiObjectNET → NiObject):
-///       +4   m_uiRefCount (uint32 BE) — reference count
-///       +8   m_kName (NiFixedString = char*) — node name
-///       +24  m_pkParent (NiNode*) — parent in scene graph
-///       +64  m_kLocal (NiTransform, 64 bytes) — local transform
-///       +128 m_kWorld (NiTransform, 64 bytes) — world transform
-///       +220 m_spModelData (NiGeometryData*) — pointer to our found NiTriShapeData
-///
+///     +4   m_uiRefCount (uint32 BE) — reference count
+///     +8   m_kName (NiFixedString = char*) — node name
+///     +24  m_pkParent (NiNode*) — parent in scene graph
+///     +64  m_kLocal (NiTransform, 64 bytes) — local transform
+///     +128 m_kWorld (NiTransform, 64 bytes) — world transform
+///     +220 m_spModelData (NiGeometryData*) — pointer to our found NiTriShapeData
 ///     NiNode (208 bytes, extends NiAVObject):
-///       +8   m_kName (NiFixedString = char*)
-///       +24  m_pkParent (NiNode*)
-///       +192 m_kChildren (NiTArray: +196 m_pBase, +202 m_usSize)
+///     +8   m_kName (NiFixedString = char*)
+///     +24  m_pkParent (NiNode*)
+///     +192 m_kChildren (NiTArray: +196 m_pBase, +202 m_usSize)
 /// </summary>
 internal sealed class RuntimeSceneGraphWalker(RuntimeMemoryContext context)
 {
     private readonly RuntimeMemoryContext _context = context;
     private readonly RuntimeObjectScanner _scanner = new(context);
-
-    #region NiTriShape/NiAVObject Offsets (PDB-verified)
-
-    private const int RefCountOffset = 4;
-    private const int NamePtrOffset = 8;         // NiObjectNET.m_kName: NiFixedString (char*)
-    private const int ParentPtrOffset = 24;      // NiAVObject.m_pkParent: NiNode*
-    private const int WorldTransformOffset = 128; // NiAVObject.m_kWorld: NiTransform (64 bytes)
-    private const int ModelDataPtrOffset = 220;  // NiGeometry.m_spModelData: NiGeometryData*
-    private const int NiTriShapeSize = 240;
-
-    #endregion
-
-    #region Validation Thresholds
-
-    private const int MaxRefCount = 10_000;
-    private const int MaxParentChainDepth = 32;
-
-    #endregion
 
     /// <summary>
     ///     For each extracted mesh, try to find the NiTriShape that owns it and walk
@@ -80,8 +60,8 @@ internal sealed class RuntimeSceneGraphWalker(RuntimeMemoryContext context)
         var results = new ConcurrentDictionary<long, SceneGraphInfo>();
 
         _scanner.ScanAligned(
-            candidateTest: (chunk, offset) => FastFilter(chunk, offset, vaToMesh),
-            processCandidate: (chunk, offset, fileOffset) =>
+            (chunk, offset) => FastFilter(chunk, offset, vaToMesh),
+            (chunk, offset, fileOffset) =>
             {
                 var modelDataPtr = BinaryUtils.ReadUInt32BE(chunk, offset + ModelDataPtrOffset);
                 if (!vaToMesh.TryGetValue(modelDataPtr, out var mesh))
@@ -95,7 +75,7 @@ internal sealed class RuntimeSceneGraphWalker(RuntimeMemoryContext context)
                     results.TryAdd(mesh.SourceOffset, info);
                 }
             },
-            minStructSize: NiTriShapeSize);
+            NiTriShapeSize);
 
         log.Info("SceneGraphWalker: resolved {0}/{1} meshes to scene graph nodes",
             results.Count, vaToMesh.Count);
@@ -232,6 +212,24 @@ internal sealed class RuntimeSceneGraphWalker(RuntimeMemoryContext context)
 
         return null; // No null terminator found
     }
+
+    #region NiTriShape/NiAVObject Offsets (PDB-verified)
+
+    private const int RefCountOffset = 4;
+    private const int NamePtrOffset = 8; // NiObjectNET.m_kName: NiFixedString (char*)
+    private const int ParentPtrOffset = 24; // NiAVObject.m_pkParent: NiNode*
+    private const int WorldTransformOffset = 128; // NiAVObject.m_kWorld: NiTransform (64 bytes)
+    private const int ModelDataPtrOffset = 220; // NiGeometry.m_spModelData: NiGeometryData*
+    private const int NiTriShapeSize = 240;
+
+    #endregion
+
+    #region Validation Thresholds
+
+    private const int MaxRefCount = 10_000;
+    private const int MaxParentChainDepth = 32;
+
+    #endregion
 }
 
 /// <summary>
@@ -283,10 +281,6 @@ public record SceneGraphInfo
         }
     }
 
-    private static bool IsGenericNodeName(string name) =>
-        name is "WorldRoot Node" or "MenuRoot Node" or "shadow scene node"
-            or "ObjectLODRoot" or "StaticNode" or "Scene Root";
-
     /// <summary>
     ///     Full path from root to leaf (e.g., "Scene Root/Building01/Tri Mesh 0").
     /// </summary>
@@ -307,5 +301,11 @@ public record SceneGraphInfo
 
             return parts.Count > 0 ? string.Join("/", parts) : "(unnamed)";
         }
+    }
+
+    private static bool IsGenericNodeName(string name)
+    {
+        return name is "WorldRoot Node" or "MenuRoot Node" or "shadow scene node"
+            or "ObjectLODRoot" or "StaticNode" or "Scene Root";
     }
 }

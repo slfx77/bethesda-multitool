@@ -144,7 +144,11 @@ internal static class SaveBrowserTreeBuilder
             new() { Name = "Save Number", Value = h.SaveNumber.ToString(), Category = "File" },
             new() { Name = "Form Version", Value = h.FormVersion.ToString(), Category = "File" },
             new() { Name = "Version", Value = $"0x{h.Version:X}", Category = "File" },
-            new() { Name = "Screenshot", Value = $"{h.ScreenshotWidth}x{h.ScreenshotHeight} ({h.ScreenshotDataSize:N0} bytes)", Category = "File" },
+            new()
+            {
+                Name = "Screenshot",
+                Value = $"{h.ScreenshotWidth}x{h.ScreenshotHeight} ({h.ScreenshotDataSize:N0} bytes)", Category = "File"
+            },
             new() { Name = "Changed Forms", Value = save.ChangedForms.Count.ToString("N0"), Category = "File" },
             new() { Name = "FormID Array", Value = save.FormIdArray.Count.ToString("N0"), Category = "File" }
         };
@@ -198,15 +202,24 @@ internal static class SaveBrowserTreeBuilder
         {
             var wsFormId = loc.WorldspaceRefId.ResolveFormId(formIdArray);
             var wsName = ResolveFormIdDisplay(wsFormId, resolver);
-            props.Add(new() { Name = "Worldspace", Value = wsName, Category = "Position", LinkedFormId = wsFormId != 0 ? wsFormId : null });
+            props.Add(new()
+            {
+                Name = "Worldspace", Value = wsName, Category = "Position",
+                LinkedFormId = wsFormId != 0 ? wsFormId : null
+            });
 
             props.Add(new() { Name = "Grid", Value = $"({loc.CoordX}, {loc.CoordY})", Category = "Position" });
 
             var cellFormId = loc.CellRefId.ResolveFormId(formIdArray);
             var cellName = ResolveFormIdDisplay(cellFormId, resolver);
-            props.Add(new() { Name = "Cell", Value = cellName, Category = "Position", LinkedFormId = cellFormId != 0 ? cellFormId : null });
+            props.Add(new()
+            {
+                Name = "Cell", Value = cellName, Category = "Position",
+                LinkedFormId = cellFormId != 0 ? cellFormId : null
+            });
 
-            props.Add(new() { Name = "Position", Value = $"({loc.PosX:F1}, {loc.PosY:F1}, {loc.PosZ:F1})", Category = "Position" });
+            props.Add(new()
+                { Name = "Position", Value = $"({loc.PosX:F1}, {loc.PosY:F1}, {loc.PosZ:F1})", Category = "Position" });
         }
 
         // Statistics (selected key stats)
@@ -362,20 +375,35 @@ internal static class SaveBrowserTreeBuilder
         {
             var cellFormId = init.CellRefId.ResolveFormId(formIdArray);
             var cellDisplay = ResolveFormIdDisplay(cellFormId, resolver);
-            props.Add(new() { Name = "Cell", Value = cellDisplay, Category = "Position", LinkedFormId = cellFormId != 0 ? cellFormId : null });
-            props.Add(new() { Name = "Position", Value = $"({init.PosX:F2}, {init.PosY:F2}, {init.PosZ:F2})", Category = "Position" });
-            props.Add(new() { Name = "Rotation", Value = $"({init.RotX:F4}, {init.RotY:F4}, {init.RotZ:F4})", Category = "Position" });
+            props.Add(new()
+            {
+                Name = "Cell", Value = cellDisplay, Category = "Position",
+                LinkedFormId = cellFormId != 0 ? cellFormId : null
+            });
+            props.Add(new()
+            {
+                Name = "Position", Value = $"({init.PosX:F2}, {init.PosY:F2}, {init.PosZ:F2})", Category = "Position"
+            });
+            props.Add(new()
+            {
+                Name = "Rotation", Value = $"({init.RotX:F4}, {init.RotY:F4}, {init.RotZ:F4})", Category = "Position"
+            });
 
             if (init.NewCellRefId.HasValue)
             {
                 var newCellFormId = init.NewCellRefId.Value.ResolveFormId(formIdArray);
                 var newCellDisplay = ResolveFormIdDisplay(newCellFormId, resolver);
-                props.Add(new() { Name = "New Cell", Value = newCellDisplay, Category = "Position", LinkedFormId = newCellFormId != 0 ? newCellFormId : null });
+                props.Add(new()
+                {
+                    Name = "New Cell", Value = newCellDisplay, Category = "Position",
+                    LinkedFormId = newCellFormId != 0 ? newCellFormId : null
+                });
             }
 
             if (init.NewCoordX.HasValue)
             {
-                props.Add(new() { Name = "New Grid", Value = $"({init.NewCoordX}, {init.NewCoordY})", Category = "Position" });
+                props.Add(new()
+                    { Name = "New Grid", Value = $"({init.NewCoordX}, {init.NewCoordY})", Category = "Position" });
             }
         }
 
@@ -459,10 +487,21 @@ internal static class SaveBrowserTreeBuilder
 
             var locProps = new List<EsmPropertyEntry>
             {
-                new() { Name = "Worldspace", Value = ResolveFormIdDisplay(wsFormId, resolver), Category = "Location", LinkedFormId = wsFormId != 0 ? wsFormId : null },
+                new()
+                {
+                    Name = "Worldspace", Value = ResolveFormIdDisplay(wsFormId, resolver), Category = "Location",
+                    LinkedFormId = wsFormId != 0 ? wsFormId : null
+                },
                 new() { Name = "Grid", Value = $"({loc.CoordX}, {loc.CoordY})", Category = "Location" },
-                new() { Name = "Cell", Value = ResolveFormIdDisplay(cellFormId, resolver), Category = "Location", LinkedFormId = cellFormId != 0 ? cellFormId : null },
-                new() { Name = "Position", Value = $"({loc.PosX:F2}, {loc.PosY:F2}, {loc.PosZ:F2})", Category = "Location" }
+                new()
+                {
+                    Name = "Cell", Value = ResolveFormIdDisplay(cellFormId, resolver), Category = "Location",
+                    LinkedFormId = cellFormId != 0 ? cellFormId : null
+                },
+                new()
+                {
+                    Name = "Position", Value = $"({loc.PosX:F2}, {loc.PosY:F2}, {loc.PosZ:F2})", Category = "Location"
+                }
             };
 
             globalNode.Children.Add(new EsmBrowserNode
@@ -560,17 +599,17 @@ internal static class SaveBrowserTreeBuilder
 
     private static string GetIconForType(byte changeType) => changeType switch
     {
-        1 => "\uE77B",  // ACHR — Contact
-        2 => "\uEBE8",  // ACRE — Bug
-        0 => "\uE81E",  // REFR — Pin
-        7 => "\uE707",  // CELL — MapPin
-        9 => "\uE8BD",  // QUST — Notepad
-        8 => "\uE8F2",  // INFO — Chat
+        1 => "\uE77B", // ACHR — Contact
+        2 => "\uEBE8", // ACRE — Bug
+        0 => "\uE81E", // REFR — Pin
+        7 => "\uE707", // CELL — MapPin
+        9 => "\uE8BD", // QUST — Notepad
+        8 => "\uE8F2", // INFO — Chat
         10 or 11 => "\uE77B", // NPC_/CREA — Contact
         26 => "\uEC5A", // WEAP — Weapon
         15 => "\uEC1B", // ARMO — Badge
         27 => "\uE8F0", // AMMO — Directions
         29 => "\uEB51", // ALCH — Heart
-        _ => "\uE7C3"   // Default
+        _ => "\uE7C3" // Default
     };
 }

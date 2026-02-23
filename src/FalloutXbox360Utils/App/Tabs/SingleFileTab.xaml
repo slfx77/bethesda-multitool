@@ -107,122 +107,122 @@
                     <RowDefinition Height="*" />
                   </Grid.RowDefinitions>
 
-                <!--  Column headers  -->
-                <Grid Grid.Row="0"
-                      Style="{StaticResource ColumnHeaderGridStyle}">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="90" />
-                    <ColumnDefinition Width="70" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="50" />
-                  </Grid.ColumnDefinitions>
-                  <Button Grid.Column="0"
-                          Style="{StaticResource SortableColumnHeaderButtonStyle}"
-                          Click="SortByOffset_Click">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock x:Uid="Col_Offset" FontWeight="SemiBold" />
-                      <FontIcon x:Name="OffsetSortIcon"
-                                Style="{StaticResource SortIconStyle}" />
-                    </StackPanel>
-                  </Button>
-                  <Button Grid.Column="1"
-                          Style="{StaticResource SortableColumnHeaderButtonStyle}"
-                          Click="SortByLength_Click">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
-                      <FontIcon x:Name="LengthSortIcon"
-                                Style="{StaticResource SortIconStyle}" />
-                    </StackPanel>
-                  </Button>
-                  <Button Grid.Column="2"
-                          Style="{StaticResource SortableColumnHeaderButtonStyle}"
-                          Click="SortByType_Click">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock x:Uid="Col_Type" FontWeight="SemiBold" />
-                      <FontIcon x:Name="TypeSortIcon"
-                                Style="{StaticResource SortIconStyle}" />
-                    </StackPanel>
-                  </Button>
-                  <Button Grid.Column="3"
-                          Style="{StaticResource SortableColumnHeaderButtonStyle}"
-                          Click="SortByFilename_Click">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
-                      <FontIcon x:Name="FilenameSortIcon"
-                                Style="{StaticResource SortIconStyle}" />
-                    </StackPanel>
-                  </Button>
-                  <TextBlock Grid.Column="4" FontWeight="SemiBold" Text="" />
+                  <!--  Column headers  -->
+                  <Grid Grid.Row="0"
+                        Style="{StaticResource ColumnHeaderGridStyle}">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="90" />
+                      <ColumnDefinition Width="70" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="50" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0"
+                            Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                            Click="SortByOffset_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock x:Uid="Col_Offset" FontWeight="SemiBold" />
+                        <FontIcon x:Name="OffsetSortIcon"
+                                  Style="{StaticResource SortIconStyle}" />
+                      </StackPanel>
+                    </Button>
+                    <Button Grid.Column="1"
+                            Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                            Click="SortByLength_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
+                        <FontIcon x:Name="LengthSortIcon"
+                                  Style="{StaticResource SortIconStyle}" />
+                      </StackPanel>
+                    </Button>
+                    <Button Grid.Column="2"
+                            Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                            Click="SortByType_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock x:Uid="Col_Type" FontWeight="SemiBold" />
+                        <FontIcon x:Name="TypeSortIcon"
+                                  Style="{StaticResource SortIconStyle}" />
+                      </StackPanel>
+                    </Button>
+                    <Button Grid.Column="3"
+                            Style="{StaticResource SortableColumnHeaderButtonStyle}"
+                            Click="SortByFilename_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock x:Uid="Col_Filename" FontWeight="SemiBold" />
+                        <FontIcon x:Name="FilenameSortIcon"
+                                  Style="{StaticResource SortIconStyle}" />
+                      </StackPanel>
+                    </Button>
+                    <TextBlock Grid.Column="4" FontWeight="SemiBold" Text="" />
+                  </Grid>
+
+                  <!--  File list  -->
+                  <ListView x:Name="ResultsListView"
+                            Grid.Row="1"
+                            RightTapped="ResultsListView_RightTapped"
+                            SelectionChanged="ResultsListView_SelectionChanged"
+                            SelectionMode="Single">
+                    <ListView.ContextFlyout>
+                      <MenuFlyout x:Name="FileListContextMenu">
+                        <MenuFlyoutItem x:Name="GoToStartMenuItem" x:Uid="Menu_GoToStart"
+                                        Click="GoToStart_Click">
+                          <MenuFlyoutItem.Icon>
+                            <FontIcon Glyph="&#xE76B;" />
+                          </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="GoToEndMenuItem" x:Uid="Menu_GoToEnd"
+                                        Click="GoToEnd_Click">
+                          <MenuFlyoutItem.Icon>
+                            <FontIcon Glyph="&#xE76C;" />
+                          </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem x:Name="CopyOffsetMenuItem" x:Uid="Menu_CopyOffset"
+                                        Click="CopyOffset_Click">
+                          <MenuFlyoutItem.Icon>
+                            <FontIcon Glyph="&#xE8C8;" />
+                          </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="CopyFilenameMenuItem" x:Uid="Menu_CopyFilename"
+                                        Click="CopyFilename_Click">
+                          <MenuFlyoutItem.Icon>
+                            <FontIcon Glyph="&#xE8C8;" />
+                          </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                      </MenuFlyout>
+                    </ListView.ContextFlyout>
+                    <ListView.ItemTemplate>
+                      <DataTemplate x:DataType="local:CarvedFileEntry">
+                        <Grid Padding="8,4">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="70" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                          </Grid.ColumnDefinitions>
+                          <TextBlock Grid.Column="0" FontFamily="Consolas" FontSize="11"
+                                     Text="{x:Bind OffsetHex}" />
+                          <TextBlock Grid.Column="1" FontSize="11"
+                                     Text="{x:Bind LengthFormatted}" />
+                          <TextBlock Grid.Column="2" FontSize="11"
+                                     Text="{x:Bind DisplayType}"
+                                     TextTrimming="CharacterEllipsis"
+                                     ToolTipService.ToolTip="{x:Bind DisplayType}" />
+                          <TextBlock Grid.Column="3" FontSize="11"
+                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                     Text="{x:Bind FileNameDisplay}"
+                                     TextTrimming="CharacterEllipsis"
+                                     ToolTipService.ToolTip="{x:Bind FileNameDisplay}" />
+                          <FontIcon Grid.Column="4" HorizontalAlignment="Center" FontSize="12"
+                                    Foreground="{x:Bind ExtractedColor, Mode=OneWay}"
+                                    Glyph="{x:Bind ExtractedGlyph, Mode=OneWay}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ListView.ItemTemplate>
+                  </ListView>
+
                 </Grid>
-
-                <!--  File list  -->
-                <ListView x:Name="ResultsListView"
-                          Grid.Row="1"
-                          RightTapped="ResultsListView_RightTapped"
-                          SelectionChanged="ResultsListView_SelectionChanged"
-                          SelectionMode="Single">
-                  <ListView.ContextFlyout>
-                    <MenuFlyout x:Name="FileListContextMenu">
-                      <MenuFlyoutItem x:Name="GoToStartMenuItem" x:Uid="Menu_GoToStart"
-                                      Click="GoToStart_Click">
-                        <MenuFlyoutItem.Icon>
-                          <FontIcon Glyph="&#xE76B;" />
-                        </MenuFlyoutItem.Icon>
-                      </MenuFlyoutItem>
-                      <MenuFlyoutItem x:Name="GoToEndMenuItem" x:Uid="Menu_GoToEnd"
-                                      Click="GoToEnd_Click">
-                        <MenuFlyoutItem.Icon>
-                          <FontIcon Glyph="&#xE76C;" />
-                        </MenuFlyoutItem.Icon>
-                      </MenuFlyoutItem>
-                      <MenuFlyoutSeparator />
-                      <MenuFlyoutItem x:Name="CopyOffsetMenuItem" x:Uid="Menu_CopyOffset"
-                                      Click="CopyOffset_Click">
-                        <MenuFlyoutItem.Icon>
-                          <FontIcon Glyph="&#xE8C8;" />
-                        </MenuFlyoutItem.Icon>
-                      </MenuFlyoutItem>
-                      <MenuFlyoutItem x:Name="CopyFilenameMenuItem" x:Uid="Menu_CopyFilename"
-                                      Click="CopyFilename_Click">
-                        <MenuFlyoutItem.Icon>
-                          <FontIcon Glyph="&#xE8C8;" />
-                        </MenuFlyoutItem.Icon>
-                      </MenuFlyoutItem>
-                    </MenuFlyout>
-                  </ListView.ContextFlyout>
-                  <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="local:CarvedFileEntry">
-                      <Grid Padding="8,4">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="90" />
-                          <ColumnDefinition Width="70" />
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="50" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" FontFamily="Consolas" FontSize="11"
-                                   Text="{x:Bind OffsetHex}" />
-                        <TextBlock Grid.Column="1" FontSize="11"
-                                   Text="{x:Bind LengthFormatted}" />
-                        <TextBlock Grid.Column="2" FontSize="11"
-                                   Text="{x:Bind DisplayType}"
-                                   TextTrimming="CharacterEllipsis"
-                                   ToolTipService.ToolTip="{x:Bind DisplayType}" />
-                        <TextBlock Grid.Column="3" FontSize="11"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Text="{x:Bind FileNameDisplay}"
-                                   TextTrimming="CharacterEllipsis"
-                                   ToolTipService.ToolTip="{x:Bind FileNameDisplay}" />
-                        <FontIcon Grid.Column="4" HorizontalAlignment="Center" FontSize="12"
-                                  Foreground="{x:Bind ExtractedColor, Mode=OneWay}"
-                                  Glyph="{x:Bind ExtractedGlyph, Mode=OneWay}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ListView.ItemTemplate>
-                </ListView>
-
-              </Grid>
               </Border>
 
               <!--  Type filter dropdown (below the card)  -->

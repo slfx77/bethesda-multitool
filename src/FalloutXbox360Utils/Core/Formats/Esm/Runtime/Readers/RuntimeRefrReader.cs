@@ -17,64 +17,6 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
     private readonly RuntimeMemoryContext _context = context;
     private readonly int _shift = RuntimeBuildOffsets.GetRefrFieldShift(useProtoOffsets);
 
-    #region TESObjectREFR Struct Layout
-
-    // Final: TESObjectREFR = 120 bytes. TESForm(40) + TESChildCell(8) + OBJ_REFR(28) + more.
-    // Early: TESObjectREFR = 116 bytes. TESForm(40) + TESChildCell(4) + OBJ_REFR(28) + more.
-    // Shift is -4 for all fields after offset 40 (TESChildCell data field absent in early builds).
-    private const int FinalRefrStructSize = 120;
-    private const int EarlyRefrStructSize = 116;
-    private const int FormFlagsOffset = 8;
-    private const int FormIdOffset = 12;
-
-    // OBJ_REFR data: Final at +48, Early at +44 (delta = _shift = -4)
-    private const int FinalBaseObjectPtrOffset = 48;
-    private const int FinalAngleXOffset = 52;
-    private const int FinalAngleYOffset = 56;
-    private const int FinalAngleZOffset = 60;
-    private const int FinalLocationXOffset = 64;
-    private const int FinalLocationYOffset = 68;
-    private const int FinalLocationZOffset = 72;
-    private const int FinalRefScaleOffset = 76;
-    private const int FinalParentCellPtrOffset = 80;
-
-    // BaseExtraList m_Extra: Final pHead at +88, Early at +84
-    private const int FinalExtraListHeadOffset = 88;
-
-    // Computed offsets (apply early-era shift)
-    private int RefrStructSize => useProtoOffsets ? EarlyRefrStructSize : FinalRefrStructSize;
-    private int BaseObjectPtrOffset => FinalBaseObjectPtrOffset + _shift;
-    private int AngleXOffset => FinalAngleXOffset + _shift;
-    private int AngleYOffset => FinalAngleYOffset + _shift;
-    private int AngleZOffset => FinalAngleZOffset + _shift;
-    private int LocationXOffset => FinalLocationXOffset + _shift;
-    private int LocationYOffset => FinalLocationYOffset + _shift;
-    private int LocationZOffset => FinalLocationZOffset + _shift;
-    private int RefScaleOffset => FinalRefScaleOffset + _shift;
-    private int ParentCellPtrOffset => FinalParentCellPtrOffset + _shift;
-    private int ExtraListHeadOffset => FinalExtraListHeadOffset + _shift;
-
-    // TESForm flags
-    private const uint DeletedFlag = 0x20;
-
-    // BSExtraData node layout (12 bytes): vfptr(0) + cEtype(4) + pad(5-7) + pNext(8)
-    private const int ExtraNodeSize = 12;
-    private const int ExtraEtypeOffset = 4;
-    private const int ExtraNextOffset = 8;
-
-    // ExtraMapMarker: BSExtraData(0-11) + pMapData(12, 4B ptr)
-    private const byte ExtraMapMarkerType = 0x2C; // 44 decimal
-    private const int MapDataPtrOffset = 12;
-
-    // MapMarkerData (20 bytes): TESFullName(0-11) + cFlags(12) + cOriginalFlags(13) + sType(14, uint16) + pReputation(16)
-    // TESFullName: vfptr(0) + cFullName(4, BSFixedString 8B)
-    private const int MapMarkerNameFieldOffset = 4; // BSFixedString at TESFullName+4
-    private const int MapMarkerTypeOffset = 14;
-
-    private const int MaxExtraListNodes = 100;
-
-    #endregion
-
     /// <summary>
     ///     Read a single TESObjectREFR from a runtime memory entry.
     ///     Returns null if the struct is invalid, deleted, or has no base object.
@@ -160,11 +102,11 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         // Determine record type from FormType
         var recordType = RuntimeBuildOffsets.GetRecordTypeCode(formType) ?? "REFR";
 
-        var position = new PositionSubrecord(locX, locY, locZ, rotX, rotY, rotZ, offset, IsBigEndian: true);
+        var position = new PositionSubrecord(locX, locY, locZ, rotX, rotY, rotZ, offset, true);
 
         return new ExtractedRefrRecord
         {
-            Header = new DetectedMainRecord(recordType, 0, flags, formId, offset, IsBigEndian: true),
+            Header = new DetectedMainRecord(recordType, 0, flags, formId, offset, true),
             BaseFormId = baseFormId.Value,
             Position = position,
             Scale = scale,
@@ -215,8 +157,8 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             return false; // No REFRs to probe → default to final layout
         }
 
-        var earlyReader = new RuntimeRefrReader(context, useProtoOffsets: true);
-        var finalReader = new RuntimeRefrReader(context, useProtoOffsets: false);
+        var earlyReader = new RuntimeRefrReader(context, true);
+        var finalReader = new RuntimeRefrReader(context, false);
 
         var earlySuccesses = 0;
         var finalSuccesses = 0;
@@ -338,4 +280,62 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
 
         return (true, markerType, markerName);
     }
+
+    #region TESObjectREFR Struct Layout
+
+    // Final: TESObjectREFR = 120 bytes. TESForm(40) + TESChildCell(8) + OBJ_REFR(28) + more.
+    // Early: TESObjectREFR = 116 bytes. TESForm(40) + TESChildCell(4) + OBJ_REFR(28) + more.
+    // Shift is -4 for all fields after offset 40 (TESChildCell data field absent in early builds).
+    private const int FinalRefrStructSize = 120;
+    private const int EarlyRefrStructSize = 116;
+    private const int FormFlagsOffset = 8;
+    private const int FormIdOffset = 12;
+
+    // OBJ_REFR data: Final at +48, Early at +44 (delta = _shift = -4)
+    private const int FinalBaseObjectPtrOffset = 48;
+    private const int FinalAngleXOffset = 52;
+    private const int FinalAngleYOffset = 56;
+    private const int FinalAngleZOffset = 60;
+    private const int FinalLocationXOffset = 64;
+    private const int FinalLocationYOffset = 68;
+    private const int FinalLocationZOffset = 72;
+    private const int FinalRefScaleOffset = 76;
+    private const int FinalParentCellPtrOffset = 80;
+
+    // BaseExtraList m_Extra: Final pHead at +88, Early at +84
+    private const int FinalExtraListHeadOffset = 88;
+
+    // Computed offsets (apply early-era shift)
+    private int RefrStructSize => useProtoOffsets ? EarlyRefrStructSize : FinalRefrStructSize;
+    private int BaseObjectPtrOffset => FinalBaseObjectPtrOffset + _shift;
+    private int AngleXOffset => FinalAngleXOffset + _shift;
+    private int AngleYOffset => FinalAngleYOffset + _shift;
+    private int AngleZOffset => FinalAngleZOffset + _shift;
+    private int LocationXOffset => FinalLocationXOffset + _shift;
+    private int LocationYOffset => FinalLocationYOffset + _shift;
+    private int LocationZOffset => FinalLocationZOffset + _shift;
+    private int RefScaleOffset => FinalRefScaleOffset + _shift;
+    private int ParentCellPtrOffset => FinalParentCellPtrOffset + _shift;
+    private int ExtraListHeadOffset => FinalExtraListHeadOffset + _shift;
+
+    // TESForm flags
+    private const uint DeletedFlag = 0x20;
+
+    // BSExtraData node layout (12 bytes): vfptr(0) + cEtype(4) + pad(5-7) + pNext(8)
+    private const int ExtraNodeSize = 12;
+    private const int ExtraEtypeOffset = 4;
+    private const int ExtraNextOffset = 8;
+
+    // ExtraMapMarker: BSExtraData(0-11) + pMapData(12, 4B ptr)
+    private const byte ExtraMapMarkerType = 0x2C; // 44 decimal
+    private const int MapDataPtrOffset = 12;
+
+    // MapMarkerData (20 bytes): TESFullName(0-11) + cFlags(12) + cOriginalFlags(13) + sType(14, uint16) + pReputation(16)
+    // TESFullName: vfptr(0) + cFullName(4, BSFixedString 8B)
+    private const int MapMarkerNameFieldOffset = 4; // BSFixedString at TESFullName+4
+    private const int MapMarkerTypeOffset = 14;
+
+    private const int MaxExtraListNodes = 100;
+
+    #endregion
 }

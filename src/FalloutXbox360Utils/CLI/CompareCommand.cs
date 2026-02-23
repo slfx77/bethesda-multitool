@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core;
@@ -22,7 +21,8 @@ public static class CompareCommand
 
         var dmpArg = new Argument<string>("dmp") { Description = "Path to DMP (memory dump) file" };
         var esmArg = new Argument<string>("esm") { Description = "Path to ESM reference file" };
-        var cellOpt = new Option<string?>("--cell") { Description = "Focus on a specific cell (hex FormID, e.g. 0x00012345)" };
+        var cellOpt = new Option<string?>("--cell")
+            { Description = "Focus on a specific cell (hex FormID, e.g. 0x00012345)" };
         var worldspaceOpt = new Option<string?>("--worldspace") { Description = "Filter to a worldspace by Editor ID" };
         var outputOpt = new Option<string?>("-o") { Description = "Export CSV comparison report to path" };
         var verboseOpt = new Option<bool>("--verbose") { Description = "Show per-object detail" };
@@ -135,6 +135,88 @@ public static class CompareCommand
         }
     }
 
+    #region CSV Export
+
+    private static void ExportCsv(
+        List<CellComparisonResult> cellComparisons,
+        List<WorldspaceComparisonResult> wsComparisons,
+        string outputPath)
+    {
+        var dir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        var sb = new StringBuilder();
+
+        // Worldspace section
+        sb.AppendLine("# Worldspace Comparison");
+        sb.AppendLine(
+            "FormID,EditorID,InDMP,InESM,DmpCells,EsmCells,DmpMapData,EsmMapData,DmpBounds,EsmBounds");
+        foreach (var ws in wsComparisons)
+        {
+            sb.AppendLine(string.Join(",",
+                $"0x{ws.FormId:X8}",
+                CliHelpers.CsvEscape(ws.EditorId),
+                ws.InDmp,
+                ws.InEsm,
+                ws.DmpCellCount,
+                ws.EsmCellCount,
+                ws.DmpHasMapData,
+                ws.EsmHasMapData,
+                ws.DmpHasBounds,
+                ws.EsmHasBounds));
+        }
+
+        sb.AppendLine();
+
+        // Cell section
+        sb.AppendLine("# Cell Comparison");
+        sb.AppendLine(
+            "FormID,EditorID,GridX,GridY,Worldspace,InDMP,InESM,DmpObjects,EsmObjects,SharedObjects,DmpOnlyObjects,EsmOnlyObjects,DmpBounds,EsmBounds,DmpModels,EsmModels,DmpHeightmap,EsmHeightmap,DmpTerrainMesh,GapReason");
+        foreach (var c in cellComparisons)
+        {
+            sb.AppendLine(string.Join(",",
+                $"0x{c.CellFormId:X8}",
+                CliHelpers.CsvEscape(c.EditorId),
+                c.GridX?.ToString() ?? "",
+                c.GridY?.ToString() ?? "",
+                CliHelpers.CsvEscape(c.WorldspaceEditorId),
+                c.InDmp,
+                c.InEsm,
+                c.DmpObjectCount,
+                c.EsmObjectCount,
+                c.SharedObjectCount,
+                c.DmpOnlyObjectCount,
+                c.EsmOnlyObjectCount,
+                c.DmpObjectsWithBounds,
+                c.EsmObjectsWithBounds,
+                c.DmpObjectsWithModel,
+                c.EsmObjectsWithModel,
+                c.DmpHasHeightmap,
+                c.EsmHasHeightmap,
+                c.DmpHasTerrainMesh,
+                c.GapReason));
+        }
+
+        File.WriteAllText(outputPath, sb.ToString());
+    }
+
+    #endregion
+
+    private static string FormatHeightmapStatus(bool dmpHas, bool esmHas, bool differs)
+    {
+        if (differs)
+        {
+            var d = dmpHas ? "Y" : "N";
+            var e = esmHas ? "Y" : "N";
+            return $"[yellow]D:{d} E:{e}[/]";
+        }
+
+        return dmpHas || esmHas ? "[green]Both[/]" : "[dim]None[/]";
+    }
+
     #region Data Loading
 
     private static async Task<RecordCollection?> LoadDmpAsync(string path)
@@ -153,7 +235,7 @@ public static class CompareCommand
                     task.Value = p.PercentComplete;
                     task.Description = $"[green]{p.Phase}[/]";
                 });
-                result = await analyzer.AnalyzeAsync(path, progress, true, false);
+                result = await analyzer.AnalyzeAsync(path, progress);
                 task.Value = 100;
             });
 
@@ -606,88 +688,4 @@ public static class CompareCommand
     }
 
     #endregion
-
-    #region CSV Export
-
-    private static void ExportCsv(
-        List<CellComparisonResult> cellComparisons,
-        List<WorldspaceComparisonResult> wsComparisons,
-        string outputPath)
-    {
-        var dir = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrEmpty(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-
-        var sb = new StringBuilder();
-
-        // Worldspace section
-        sb.AppendLine("# Worldspace Comparison");
-        sb.AppendLine(
-            "FormID,EditorID,InDMP,InESM,DmpCells,EsmCells,DmpMapData,EsmMapData,DmpBounds,EsmBounds");
-        foreach (var ws in wsComparisons)
-        {
-            sb.AppendLine(string.Join(",",
-                $"0x{ws.FormId:X8}",
-                CliHelpers.CsvEscape(ws.EditorId),
-                ws.InDmp,
-                ws.InEsm,
-                ws.DmpCellCount,
-                ws.EsmCellCount,
-                ws.DmpHasMapData,
-                ws.EsmHasMapData,
-                ws.DmpHasBounds,
-                ws.EsmHasBounds));
-        }
-
-        sb.AppendLine();
-
-        // Cell section
-        sb.AppendLine("# Cell Comparison");
-        sb.AppendLine(
-            "FormID,EditorID,GridX,GridY,Worldspace,InDMP,InESM,DmpObjects,EsmObjects,SharedObjects,DmpOnlyObjects,EsmOnlyObjects,DmpBounds,EsmBounds,DmpModels,EsmModels,DmpHeightmap,EsmHeightmap,DmpTerrainMesh,GapReason");
-        foreach (var c in cellComparisons)
-        {
-            sb.AppendLine(string.Join(",",
-                $"0x{c.CellFormId:X8}",
-                CliHelpers.CsvEscape(c.EditorId),
-                c.GridX?.ToString() ?? "",
-                c.GridY?.ToString() ?? "",
-                CliHelpers.CsvEscape(c.WorldspaceEditorId),
-                c.InDmp,
-                c.InEsm,
-                c.DmpObjectCount,
-                c.EsmObjectCount,
-                c.SharedObjectCount,
-                c.DmpOnlyObjectCount,
-                c.EsmOnlyObjectCount,
-                c.DmpObjectsWithBounds,
-                c.EsmObjectsWithBounds,
-                c.DmpObjectsWithModel,
-                c.EsmObjectsWithModel,
-                c.DmpHasHeightmap,
-                c.EsmHasHeightmap,
-                c.DmpHasTerrainMesh,
-                c.GapReason));
-        }
-
-        File.WriteAllText(outputPath, sb.ToString());
-    }
-
-
-    #endregion
-
-    private static string FormatHeightmapStatus(bool dmpHas, bool esmHas, bool differs)
-    {
-        if (differs)
-        {
-            var d = dmpHas ? "Y" : "N";
-            var e = esmHas ? "Y" : "N";
-            return $"[yellow]D:{d} E:{e}[/]";
-        }
-
-        return dmpHas || esmHas ? "[green]Both[/]" : "[dim]None[/]";
-    }
-
 }

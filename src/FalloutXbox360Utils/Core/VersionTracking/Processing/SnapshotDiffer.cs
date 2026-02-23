@@ -217,7 +217,8 @@ public static class SnapshotDiffer
             return true;
         }
 
-        return isQuest && (fieldName.StartsWith("Stage ", StringComparison.Ordinal) || fieldName.StartsWith("Objective ", StringComparison.Ordinal));
+        return isQuest && (fieldName.StartsWith("Stage ", StringComparison.Ordinal) ||
+                           fieldName.StartsWith("Objective ", StringComparison.Ordinal));
     }
 
     #endregion

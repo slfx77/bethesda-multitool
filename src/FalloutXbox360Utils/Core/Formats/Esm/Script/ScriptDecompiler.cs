@@ -34,29 +34,13 @@ public sealed class ScriptDecompiler(
     private readonly Func<uint, string?> _resolveFormName = resolveFormName;
     private readonly string? _scriptName = scriptName;
     private readonly List<ScriptVariableInfo> _variables = variables;
+    private int _exprEnd; // Current expression boundary (prevents over-reading ASCII numbers)
     private bool _hasPendingRef;
     private int _indentLevel;
     private ushort _pendingRefIndex;
 
     // State during decompilation
     private BytecodeReader _reader = null!;
-    private int _exprEnd; // Current expression boundary (prevents over-reading ASCII numbers)
-
-    /// <summary>
-    ///     Expression node on the RPN evaluation stack, carrying both the rendered text
-    ///     and the precedence level of the outermost operator.
-    ///     Higher precedence values bind more tightly; Atomic values are never wrapped.
-    /// </summary>
-    private readonly record struct ExprNode(string Text, int Precedence)
-    {
-        public const int Atomic = int.MaxValue;
-        public const int PrecOr = 1;             // ||
-        public const int PrecAnd = 2;            // &&
-        public const int PrecEquality = 3;       // ==, !=
-        public const int PrecRelational = 4;     // <, >, <=, >=
-        public const int PrecAdditive = 5;       // +, -
-        public const int PrecMultiplicative = 6; // *, /, %
-    }
 
     /// <summary>
     ///     Decompile compiled bytecode to GECK script source text.
@@ -80,6 +64,22 @@ public sealed class ScriptDecompiler(
         }
 
         return _output.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    ///     Expression node on the RPN evaluation stack, carrying both the rendered text
+    ///     and the precedence level of the outermost operator.
+    ///     Higher precedence values bind more tightly; Atomic values are never wrapped.
+    /// </summary>
+    private readonly record struct ExprNode(string Text, int Precedence)
+    {
+        public const int Atomic = int.MaxValue;
+        public const int PrecOr = 1; // ||
+        public const int PrecAnd = 2; // &&
+        public const int PrecEquality = 3; // ==, !=
+        public const int PrecRelational = 4; // <, >, <=, >=
+        public const int PrecAdditive = 5; // +, -
+        public const int PrecMultiplicative = 6; // *, /, %
     }
 
     #region Top-Level Dispatcher
@@ -667,16 +667,19 @@ public sealed class ScriptDecompiler(
         };
     }
 
-    private static int GetOperatorPrecedence(string op) => op switch
+    private static int GetOperatorPrecedence(string op)
     {
-        "||" => ExprNode.PrecOr,
-        "&&" => ExprNode.PrecAnd,
-        "==" or "!=" => ExprNode.PrecEquality,
-        "<" or ">" or "<=" or ">=" => ExprNode.PrecRelational,
-        "+" or "-" => ExprNode.PrecAdditive,
-        "*" or "/" or "%" => ExprNode.PrecMultiplicative,
-        _ => ExprNode.Atomic
-    };
+        return op switch
+        {
+            "||" => ExprNode.PrecOr,
+            "&&" => ExprNode.PrecAnd,
+            "==" or "!=" => ExprNode.PrecEquality,
+            "<" or ">" or "<=" or ">=" => ExprNode.PrecRelational,
+            "+" or "-" => ExprNode.PrecAdditive,
+            "*" or "/" or "%" => ExprNode.PrecMultiplicative,
+            _ => ExprNode.Atomic
+        };
+    }
 
     #endregion
 

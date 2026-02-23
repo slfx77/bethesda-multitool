@@ -54,13 +54,23 @@ internal sealed class NifConversionState
     /// <summary>Original string count (before adding new strings).</summary>
     public int OriginalStringCount;
 
-    /// <summary>NIF schema for schema-driven conversion.</summary>
-    public NifSchema Schema { get; }
-
     public NifConversionState()
     {
         Schema = NifSchema.LoadEmbedded();
     }
+
+    /// <summary>NIF schema for schema-driven conversion.</summary>
+    public NifSchema Schema { get; }
+
+    /// <summary>
+    ///     Whether in-place conversion can be used (no expansions, no blocks to strip, no new strings).
+    /// </summary>
+    public bool CanUseInPlaceConversion =>
+        BlocksToStrip.Count == 0 &&
+        GeometryExpansions.Count == 0 &&
+        HavokExpansions.Count == 0 &&
+        SkinPartitionExpansions.Count == 0 &&
+        NewStrings.Count == 0;
 
     /// <summary>
     ///     Resets all mutable state for a new conversion pass.
@@ -82,16 +92,6 @@ internal sealed class NifConversionState
         NodeNameStringIndices.Clear();
         OriginalStringCount = 0;
     }
-
-    /// <summary>
-    ///     Whether in-place conversion can be used (no expansions, no blocks to strip, no new strings).
-    /// </summary>
-    public bool CanUseInPlaceConversion =>
-        BlocksToStrip.Count == 0 &&
-        GeometryExpansions.Count == 0 &&
-        HavokExpansions.Count == 0 &&
-        SkinPartitionExpansions.Count == 0 &&
-        NewStrings.Count == 0;
 
     /// <summary>
     ///     Gets the output size for a block, accounting for expansions.

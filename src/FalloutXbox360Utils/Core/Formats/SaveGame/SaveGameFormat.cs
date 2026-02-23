@@ -1,5 +1,3 @@
-using FalloutXbox360Utils.Core.Utils;
-
 namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 
 /// <summary>
@@ -29,13 +27,13 @@ public sealed class SaveGameFormat : FileFormatBase
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         // Try to find the FO3SAVEGAME magic
-        int payloadOffset = SaveFileParser.FindPayloadOffset(data[offset..]);
+        var payloadOffset = SaveFileParser.FindPayloadOffset(data[offset..]);
         if (payloadOffset < 0)
         {
             return null;
         }
 
-        int magicOffset = offset + payloadOffset;
+        var magicOffset = offset + payloadOffset;
         if (magicOffset + 15 >= data.Length)
         {
             return null;

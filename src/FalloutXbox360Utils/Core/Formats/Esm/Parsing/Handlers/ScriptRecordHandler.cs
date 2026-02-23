@@ -104,7 +104,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
             foreach (var script in scripts)
             {
                 if (!script.IsQuestScript || script.OwnerQuestFormId.HasValue
-                    || script.Variables.Count == 0)
+                                          || script.Variables.Count == 0)
                 {
                     continue;
                 }
@@ -307,8 +307,10 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
     {
         // Record types that can have SCRI subrecords (objects with attached scripts)
         HashSet<string> scriTypes =
-            ["NPC_", "CREA", "ACTI", "CONT", "DOOR", "FURN", "WEAP", "ARMO", "MISC",
-             "BOOK", "ALCH", "KEYM", "AMMO", "LIGH", "LVLC", "LVLN", "FACT", "QUST"];
+        [
+            "NPC_", "CREA", "ACTI", "CONT", "DOOR", "FURN", "WEAP", "ARMO", "MISC",
+            "BOOK", "ALCH", "KEYM", "AMMO", "LIGH", "LVLC", "LVLN", "FACT", "QUST"
+        ];
 
         var buffer = ArrayPool<byte>.Shared.Rent(65536);
         try

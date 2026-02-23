@@ -18,67 +18,6 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    #region NPC Struct Layout (Proto Debug PDB base + _s)
-
-    // TESNPC: PDB size 492, Debug dump 496, Release dump 508
-    private int NpcStructSize => 492 + _s;
-    private int NpcAcbsOffset => 52 + _s;
-    private int NpcDeathItemPtrOffset => 76 + _s;
-    private int NpcVoiceTypePtrOffset => 80 + _s;
-    private int NpcTemplatePtrOffset => 84 + _s;
-    private int NpcRacePtrOffset => 272 + _s;
-    private int NpcClassPtrOffset => 304 + _s;
-    private int NpcAiDataOffset => 148 + _s;
-    private int NpcMoodOffset => 152 + _s;
-    private int NpcAiFlagsOffset => 156 + _s;
-    private int NpcAiAssistanceOffset => 162 + _s;
-    private int NpcSpecialOffset => 188 + _s;
-    private const int NpcSpecialSize = 7;
-    private int NpcSkillsOffset => 276 + _s;
-    private const int NpcSkillsSize = 14;
-    private int NpcFggsPointerOffset => 320 + _s;
-    private int NpcFggsCountOffset => 332 + _s;
-    private int NpcFggaPointerOffset => 352 + _s;
-    private int NpcFggaCountOffset => 364 + _s;
-    private int NpcFgtsPointerOffset => 384 + _s;
-    private int NpcFgtsCountOffset => 396 + _s;
-    private int NpcHairPtrOffset => 440 + _s;
-    private int NpcHairLengthOffset => 444 + _s;
-    private int NpcEyesPtrOffset => 448 + _s;
-    private int NpcCombatStylePtrOffset => 468 + _s;
-    private int NpcScriptPtrOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
-    private int NpcContainerDataOffset => 104 + _s;
-    private int NpcContainerNextOffset => 108 + _s;
-    private int NpcFactionListHeadOffset => 96 + _s;
-    // TESAIForm at offset 144 in TESActorBase; AIPackList (BSSimpleList<TESPackage*>) at +24 within TESAIForm
-    private int PackageListOffset => 168 + _s;
-
-    #endregion
-
-    #region Faction Struct Layout (Proto Debug PDB base + _s)
-
-    // TESFaction: PDB size 76, Debug dump 80, Release dump 92
-    private int FactStructSize => 76 + _s;
-    private int FactFlagsOffset => 52 + _s;
-    private int FactFullNameOffset => 28 + _s;
-
-    #endregion
-
-    #region Creature Struct Layout (Proto Debug PDB base + _s)
-
-    // TESCreature: PDB size 352, Debug dump 356, Release dump 368
-    private int CreaStructSize => 352 + _s;
-    private int CreaModelPathOffset => 172 + _s;
-    private int CreaScriptOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
-    private int CreaCombatSkillOffset => 212 + _s;
-    private int CreaMagicSkillOffset => 213 + _s;
-    private int CreaStealthSkillOffset => 214 + _s;
-    private int CreaAttackDamageOffset => 216 + _s;
-    private int CreaTypeOffset => 220 + _s;
-    private int CreaAcbsOffset => 8 + _s;
-
-    #endregion
-
     /// <summary>
     ///     Read extended NPC data from a runtime TESNPC struct.
     ///     Returns a NpcRecord populated with stats, race, class, etc.
@@ -589,7 +528,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
                 break;
             }
 
-            var nodeItemPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 0);
+            var nodeItemPtr = BinaryUtils.ReadUInt32BE(nodeBuf);
             nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
 
             if (nodeItemPtr != 0 && _context.IsValidPointer(nodeItemPtr))
@@ -885,4 +824,67 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
 
         return new InventoryItem(itemFormId.Value, count);
     }
+
+    #region NPC Struct Layout (Proto Debug PDB base + _s)
+
+    // TESNPC: PDB size 492, Debug dump 496, Release dump 508
+    private int NpcStructSize => 492 + _s;
+    private int NpcAcbsOffset => 52 + _s;
+    private int NpcDeathItemPtrOffset => 76 + _s;
+    private int NpcVoiceTypePtrOffset => 80 + _s;
+    private int NpcTemplatePtrOffset => 84 + _s;
+    private int NpcRacePtrOffset => 272 + _s;
+    private int NpcClassPtrOffset => 304 + _s;
+    private int NpcAiDataOffset => 148 + _s;
+    private int NpcMoodOffset => 152 + _s;
+    private int NpcAiFlagsOffset => 156 + _s;
+    private int NpcAiAssistanceOffset => 162 + _s;
+    private int NpcSpecialOffset => 188 + _s;
+    private const int NpcSpecialSize = 7;
+    private int NpcSkillsOffset => 276 + _s;
+    private const int NpcSkillsSize = 14;
+    private int NpcFggsPointerOffset => 320 + _s;
+    private int NpcFggsCountOffset => 332 + _s;
+    private int NpcFggaPointerOffset => 352 + _s;
+    private int NpcFggaCountOffset => 364 + _s;
+    private int NpcFgtsPointerOffset => 384 + _s;
+    private int NpcFgtsCountOffset => 396 + _s;
+    private int NpcHairPtrOffset => 440 + _s;
+    private int NpcHairLengthOffset => 444 + _s;
+    private int NpcEyesPtrOffset => 448 + _s;
+    private int NpcCombatStylePtrOffset => 468 + _s;
+    private int NpcScriptPtrOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
+    private int NpcContainerDataOffset => 104 + _s;
+    private int NpcContainerNextOffset => 108 + _s;
+
+    private int NpcFactionListHeadOffset => 96 + _s;
+
+    // TESAIForm at offset 144 in TESActorBase; AIPackList (BSSimpleList<TESPackage*>) at +24 within TESAIForm
+    private int PackageListOffset => 168 + _s;
+
+    #endregion
+
+    #region Faction Struct Layout (Proto Debug PDB base + _s)
+
+    // TESFaction: PDB size 76, Debug dump 80, Release dump 92
+    private int FactStructSize => 76 + _s;
+    private int FactFlagsOffset => 52 + _s;
+    private int FactFullNameOffset => 28 + _s;
+
+    #endregion
+
+    #region Creature Struct Layout (Proto Debug PDB base + _s)
+
+    // TESCreature: PDB size 352, Debug dump 356, Release dump 368
+    private int CreaStructSize => 352 + _s;
+    private int CreaModelPathOffset => 172 + _s;
+    private int CreaScriptOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
+    private int CreaCombatSkillOffset => 212 + _s;
+    private int CreaMagicSkillOffset => 213 + _s;
+    private int CreaStealthSkillOffset => 214 + _s;
+    private int CreaAttackDamageOffset => 216 + _s;
+    private int CreaTypeOffset => 220 + _s;
+    private int CreaAcbsOffset => 8 + _s;
+
+    #endregion
 }

@@ -3,7 +3,10 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
-/// <summary>Generates GECK-style text reports for Weapon, Armor, Ammo, Consumable, Misc Item, Key, Container, Weapon Mod, and Leveled List records.</summary>
+/// <summary>
+///     Generates GECK-style text reports for Weapon, Armor, Ammo, Consumable, Misc Item, Key, Container, Weapon Mod,
+///     and Leveled List records.
+/// </summary>
 internal static class GeckItemWriter
 {
     internal static void AppendWeaponsSection(StringBuilder sb, List<WeaponRecord> weapons,
@@ -668,7 +671,8 @@ internal static class GeckItemWriter
             {
                 var editorId = resolver.ResolveEditorId(item.ItemFormId);
                 var displayName = resolver.ResolveDisplayName(item.ItemFormId);
-                sb.AppendLine($"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {item.Count,5}");
+                sb.AppendLine(
+                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {item.Count,5}");
             }
         }
 

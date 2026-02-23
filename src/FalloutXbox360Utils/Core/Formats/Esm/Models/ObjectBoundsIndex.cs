@@ -214,8 +214,8 @@ internal static class ObjectBoundsIndex
         var path = modelPath.AsSpan();
 
         // Strip "meshes\" or "meshes/" prefix
-        if (path.Length > 7 &&
-            path[..7].Equals("meshes\\", StringComparison.OrdinalIgnoreCase) ||
+        if ((path.Length > 7 &&
+             path[..7].Equals("meshes\\", StringComparison.OrdinalIgnoreCase)) ||
             path[..7].Equals("meshes/", StringComparison.OrdinalIgnoreCase))
         {
             path = path[7..];

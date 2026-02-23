@@ -1,4 +1,5 @@
 // Pending migration: unattributed/debug/verify commands will move to analysis tools
+
 #pragma warning disable IDE0051, S1144
 
 using System.CommandLine;
@@ -1553,31 +1554,38 @@ public static class DialogueCommand
         table.AddRow("[bold]Topics[/]", "");
         table.AddRow("  Matched", $"[green]{result.TopicsMatched:N0}[/]");
         table.AddRow("  Missing (ESM only)", result.TopicsMissing > 0
-            ? $"[red]{result.TopicsMissing:N0}[/]" : $"[dim]{result.TopicsMissing:N0}[/]");
+            ? $"[red]{result.TopicsMissing:N0}[/]"
+            : $"[dim]{result.TopicsMissing:N0}[/]");
         table.AddRow("  Extra (DMP only)", result.TopicsExtra > 0
-            ? $"[yellow]{result.TopicsExtra:N0}[/]" : $"[dim]{result.TopicsExtra:N0}[/]");
+            ? $"[yellow]{result.TopicsExtra:N0}[/]"
+            : $"[dim]{result.TopicsExtra:N0}[/]");
 
         table.AddRow("[bold]INFOs[/]", "");
         table.AddRow("  Matched", $"[green]{result.InfosMatched:N0}[/]");
         table.AddRow("  Missing (ESM only)", result.InfosMissing > 0
-            ? $"[red]{result.InfosMissing:N0}[/]" : $"[dim]{result.InfosMissing:N0}[/]");
+            ? $"[red]{result.InfosMissing:N0}[/]"
+            : $"[dim]{result.InfosMissing:N0}[/]");
         table.AddRow("  Extra (DMP only)", result.InfosExtra > 0
-            ? $"[yellow]{result.InfosExtra:N0}[/]" : $"[dim]{result.InfosExtra:N0}[/]");
+            ? $"[yellow]{result.InfosExtra:N0}[/]"
+            : $"[dim]{result.InfosExtra:N0}[/]");
 
         table.AddRow("[bold]Dialogue Flow (TCLT)[/]", "");
         table.AddRow("  Matches", $"[green]{result.FlowMatches:N0}[/]");
         table.AddRow("  Mismatches", result.FlowMismatches > 0
-            ? $"[red]{result.FlowMismatches:N0}[/]" : $"[dim]{result.FlowMismatches:N0}[/]");
+            ? $"[red]{result.FlowMismatches:N0}[/]"
+            : $"[dim]{result.FlowMismatches:N0}[/]");
 
         table.AddRow("[bold]Response Text[/]", "");
         table.AddRow("  Both have text", $"[green]{result.ResponseTextMatches:N0}[/]");
         table.AddRow("  ESM has text, DMP missing", result.ResponseTextMissing > 0
-            ? $"[yellow]{result.ResponseTextMissing:N0}[/]" : $"[dim]{result.ResponseTextMissing:N0}[/]");
+            ? $"[yellow]{result.ResponseTextMissing:N0}[/]"
+            : $"[dim]{result.ResponseTextMissing:N0}[/]");
 
         table.AddRow("[bold]AddTopics (NAME)[/]", "");
         table.AddRow("  Matches", $"[green]{result.AddTopicMatches:N0}[/]");
         table.AddRow("  Mismatches", result.AddTopicMismatches > 0
-            ? $"[yellow]{result.AddTopicMismatches:N0}[/]" : $"[dim]{result.AddTopicMismatches:N0}[/]");
+            ? $"[yellow]{result.AddTopicMismatches:N0}[/]"
+            : $"[dim]{result.AddTopicMismatches:N0}[/]");
 
         table.AddRow("[bold]Runtime State[/]", "");
         table.AddRow("  SaidOnce (player spoke)", $"[cyan]{result.SaidOnceCount:N0}[/] / {result.TotalDmpInfos:N0}");
@@ -1646,7 +1654,6 @@ public static class DialogueCommand
 
         await File.WriteAllLinesAsync(path, lines);
     }
-
 
     #endregion
 }

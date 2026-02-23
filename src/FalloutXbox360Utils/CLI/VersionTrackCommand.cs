@@ -1,6 +1,9 @@
 using System.CommandLine;
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 using FalloutXbox360Utils.Core.VersionTracking.Caching;
 using FalloutXbox360Utils.Core.VersionTracking.Extraction;
@@ -19,14 +22,14 @@ public static class VersionTrackCommand
 {
     private const string DefaultBuildsDir = "Sample/Full_360_Builds";
     private const string DefaultDumpsDir = "Sample/MemoryDump";
+    private const string DefaultCacheDir = ".vtrack_cache";
 
-    private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
-        TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver()
     };
-    private const string DefaultCacheDir = ".vtrack_cache";
 
     public static Command Create()
     {
@@ -37,6 +40,20 @@ public static class VersionTrackCommand
         command.Subcommands.Add(CreateReportCommand());
 
         return command;
+    }
+
+    private sealed record ReportOptions
+    {
+        public required string BuildsDir { get; init; }
+        public required string DumpsDir { get; init; }
+        public required string OutputDir { get; init; }
+        public required string Format { get; init; }
+        public string? Baseline { get; init; }
+        public required string CacheDir { get; init; }
+        public bool Force { get; init; }
+        public string[]? Types { get; init; }
+        public string? FormId { get; init; }
+        public string? Fo3EsmDir { get; init; }
     }
 
     #region Inventory Subcommand
@@ -126,7 +143,8 @@ public static class VersionTrackCommand
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[green]Total:[/] {builds.Count} sources ({esmCount} ESM, {dmpCount} DMP)");
-        AnsiConsole.MarkupLine($"[green]Unique PE timestamps:[/] {uniqueTimestamps} (will coalesce DMPs with same timestamp)");
+        AnsiConsole.MarkupLine(
+            $"[green]Unique PE timestamps:[/] {uniqueTimestamps} (will coalesce DMPs with same timestamp)");
     }
 
     #endregion
@@ -138,7 +156,8 @@ public static class VersionTrackCommand
         var command = new Command("extract", "Extract snapshot from a single ESM or DMP file");
 
         var fileArg = new Argument<string>("file") { Description = "Path to ESM or DMP file" };
-        var outputOpt = new Option<string?>("--output") { Description = "Snapshot output path (default: auto-named in cache dir)" };
+        var outputOpt = new Option<string?>("--output")
+            { Description = "Snapshot output path (default: auto-named in cache dir)" };
         var forceOpt = new Option<bool>("--force") { Description = "Re-extract even if cached" };
         var cacheDirOpt = new Option<string>("--cache-dir")
         {
@@ -269,9 +288,9 @@ public static class VersionTrackCommand
         // DMP file
         try
         {
-            var info = Core.Minidump.MinidumpParser.Parse(filePath);
-            var gameModule = Core.Minidump.MinidumpAnalyzer.FindGameModule(info);
-            var buildType = Core.Minidump.MinidumpAnalyzer.DetectBuildType(info);
+            var info = MinidumpParser.Parse(filePath);
+            var gameModule = MinidumpAnalyzer.FindGameModule(info);
+            var buildType = MinidumpAnalyzer.DetectBuildType(info);
 
             DateTimeOffset? buildDate = null;
             uint? peTimestamp = null;
@@ -324,7 +343,7 @@ public static class VersionTrackCommand
             Directory.CreateDirectory(dir);
         }
 
-        var json = System.Text.Json.JsonSerializer.Serialize(snapshot, JsonOptions);
+        var json = JsonSerializer.Serialize(snapshot, JsonOptions);
         File.WriteAllText(outputPath, json);
         AnsiConsole.MarkupLine($"[green]Snapshot saved:[/] {outputPath}");
     }
@@ -369,10 +388,13 @@ public static class VersionTrackCommand
         var forceOpt = new Option<bool>("--force") { Description = "Re-extract all (ignore cache)" };
         var typesOpt = new Option<string[]>("--types")
         {
-            Description = "Filter categories: quest,npc,dialogue,weapon,armor,item,script,location,placement,creature,perk,ammo,leveledlist,note,terminal"
+            Description =
+                "Filter categories: quest,npc,dialogue,weapon,armor,item,script,location,placement,creature,perk,ammo,leveledlist,note,terminal"
         };
-        var formIdOpt = new Option<string?>("--formid") { Description = "Track specific FormID across all versions (hex, e.g. 0x001547A2)" };
-        var fo3EsmOpt = new Option<string?>("--fo3-esm") { Description = "Path to Fallout 3 ESM directory for leftover filtering" };
+        var formIdOpt = new Option<string?>("--formid")
+            { Description = "Track specific FormID across all versions (hex, e.g. 0x001547A2)" };
+        var fo3EsmOpt = new Option<string?>("--fo3-esm")
+            { Description = "Path to Fallout 3 ESM directory for leftover filtering" };
 
         command.Options.Add(buildsOpt);
         command.Options.Add(dumpsOpt);
@@ -453,9 +475,11 @@ public static class VersionTrackCommand
         HashSet<uint>? fo3LeftoverFormIds = null;
         if (opts.Fo3EsmDir != null)
         {
-            AnsiConsole.MarkupLine($"[blue]Step 5/{totalStepsInit}:[/] Extracting Fallout 3 data for leftover filtering...");
+            AnsiConsole.MarkupLine(
+                $"[blue]Step 5/{totalStepsInit}:[/] Extracting Fallout 3 data for leftover filtering...");
             fo3LeftoverFormIds = await ExtractFo3LeftoversAsync(opts, coalesced, cancellationToken);
-            AnsiConsole.MarkupLine($"  [green]Identified {fo3LeftoverFormIds.Count:N0} FO3 leftover FormIDs to filter[/]");
+            AnsiConsole.MarkupLine(
+                $"  [green]Identified {fo3LeftoverFormIds.Count:N0} FO3 leftover FormIDs to filter[/]");
         }
 
         // Step 6: Generate reports
@@ -515,7 +539,8 @@ public static class VersionTrackCommand
             if (cached != null)
             {
                 task.Value = 100;
-                task.Description = $"[green]{Markup.Escape(build.Label)}[/] [grey](cached, {cached.TotalRecordCount:N0} records)[/]";
+                task.Description =
+                    $"[green]{Markup.Escape(build.Label)}[/] [grey](cached, {cached.TotalRecordCount:N0} records)[/]";
                 return cached;
             }
         }
@@ -534,7 +559,8 @@ public static class VersionTrackCommand
 
             cache.Save(build.SourcePath, snapshot);
             task.Value = 100;
-            task.Description = $"[green]{Markup.Escape(build.Label)}[/] [grey]({snapshot.TotalRecordCount:N0} records)[/]";
+            task.Description =
+                $"[green]{Markup.Escape(build.Label)}[/] [grey]({snapshot.TotalRecordCount:N0} records)[/]";
             return snapshot;
         }
         catch (Exception ex)
@@ -586,7 +612,8 @@ public static class VersionTrackCommand
                     if (cached != null)
                     {
                         task.Value = 100;
-                        task.Description = $"[green]FO3: {Markup.Escape(fileName)}[/] [grey](cached, {cached.TotalRecordCount:N0} records)[/]";
+                        task.Description =
+                            $"[green]FO3: {Markup.Escape(fileName)}[/] [grey](cached, {cached.TotalRecordCount:N0} records)[/]";
                         fo3Snapshots.Add(cached);
                         continue;
                     }
@@ -606,16 +633,19 @@ public static class VersionTrackCommand
                             task.Description = $"FO3: {Markup.Escape(fileName)}: [grey]{Markup.Escape(p.phase)}[/]";
                         });
 
-                        var snapshot = await EsmSnapshotExtractor.ExtractAsync(esmPath, buildInfo, progress, cancellationToken);
+                        var snapshot =
+                            await EsmSnapshotExtractor.ExtractAsync(esmPath, buildInfo, progress, cancellationToken);
                         cache.Save(esmPath, snapshot);
 
                         task.Value = 100;
-                        task.Description = $"[green]FO3: {Markup.Escape(fileName)}[/] [grey]({snapshot.TotalRecordCount:N0} records)[/]";
+                        task.Description =
+                            $"[green]FO3: {Markup.Escape(fileName)}[/] [grey]({snapshot.TotalRecordCount:N0} records)[/]";
                         fo3Snapshots.Add(snapshot);
                     }
                     catch (Exception ex)
                     {
-                        task.Description = $"[red]FO3: {Markup.Escape(fileName)}[/] [grey]({Markup.Escape(ex.Message)})[/]";
+                        task.Description =
+                            $"[red]FO3: {Markup.Escape(fileName)}[/] [grey]({Markup.Escape(ex.Message)})[/]";
                         task.Value = 100;
                     }
                 }
@@ -652,7 +682,7 @@ public static class VersionTrackCommand
         var changedFormIds = new HashSet<uint>(
             fo3VsFnv.AllChanges
                 .Where(c => c.ChangeType == ChangeType.Changed
-                             && HasSignificantFo3Changes(c.FieldChanges))
+                            && HasSignificantFo3Changes(c.FieldChanges))
                 .Select(c => c.FormId));
 
         // FO3 leftover = FO3 FormID present in FNV dev builds but NOT changed
@@ -830,7 +860,8 @@ public static class VersionTrackCommand
             var diff = SnapshotDiffer.Diff(baseline, combinedDmp);
             if (diff.TotalAdded + diff.TotalRemoved + diff.TotalChanged > 0)
             {
-                var wiki = MediaWikiTimelineWriter.WriteBuildPage(combinedDmp, baseline, diff, title, intro, isDmpPage: true, fo3LeftoverFormIds: fo3LeftoverFormIds);
+                var wiki = MediaWikiTimelineWriter.WriteBuildPage(combinedDmp, baseline, diff, title, intro, true,
+                    fo3LeftoverFormIds);
                 var fileName = BinaryUtils.SanitizeFilename(title).Replace(' ', '_') + ".mw";
                 var wikiPath = Path.Combine(opts.OutputDir, fileName);
                 await File.WriteAllTextAsync(wikiPath, wiki, cancellationToken);
@@ -851,7 +882,8 @@ public static class VersionTrackCommand
             var intro = $"Dated {snapshot.Build.BuildDate?.ToString("MMMM d, yyyy") ?? "unknown"}, " +
                         "this build has a number of differences compared to the final release.";
 
-            var wiki = MediaWikiTimelineWriter.WriteBuildPage(snapshot, baseline, diff, title, intro, isDmpPage: false, fo3LeftoverFormIds: fo3LeftoverFormIds);
+            var wiki = MediaWikiTimelineWriter.WriteBuildPage(snapshot, baseline, diff, title, intro, false,
+                fo3LeftoverFormIds);
             var fileName = BinaryUtils.SanitizeFilename(title).Replace(' ', '_') + ".mw";
             var wikiPath = Path.Combine(opts.OutputDir, fileName);
             await File.WriteAllTextAsync(wikiPath, wiki, cancellationToken);
@@ -860,18 +892,4 @@ public static class VersionTrackCommand
     }
 
     #endregion
-
-    private sealed record ReportOptions
-    {
-        public required string BuildsDir { get; init; }
-        public required string DumpsDir { get; init; }
-        public required string OutputDir { get; init; }
-        public required string Format { get; init; }
-        public string? Baseline { get; init; }
-        public required string CacheDir { get; init; }
-        public bool Force { get; init; }
-        public string[]? Types { get; init; }
-        public string? FormId { get; init; }
-        public string? Fo3EsmDir { get; init; }
-    }
 }

@@ -35,22 +35,29 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private const int ExportLongEdge = 4096;
     private const int ExportMaxDimension = 16384;
 
-    // --- Cell browser search ---
-    private List<CellListItem> _allCellItems = [];
-    private BrowserMode _activeBrowser = BrowserMode.None;
+    // ========================================================================
+    // Color Helpers
+    // ========================================================================
+
+    private static readonly FrozenDictionary<PlacedObjectCategory, Color> CategoryColors =
+        BuildWorldCategoryColors();
 
     // --- Legend category visibility ---
     private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
-    private bool _legendExpanded = true;
+    private BrowserMode _activeBrowser = BrowserMode.None;
 
-    // --- Navigation ---
-    /// <summary>Raised before any internal navigation so the parent can push unified nav state.</summary>
-    internal event Action? BeforeNavigate;
-    private bool _suppressNavEvents;
+    // --- Cell browser search ---
+    private List<CellListItem> _allCellItems = [];
+    private byte[]? _cachedGrayscale;
+    private int _cachedHmWidth, _cachedHmHeight;
+    private byte[]? _cachedWaterMask;
 
     // --- Cell grid lookup (built when worldspace changes) ---
     private Dictionary<(int x, int y), CellRecord>? _cellGridLookup;
     private CanvasBitmap? _cellHeightmapBitmap;
+
+    // --- Heightmap tinting ---
+    private HeightmapColorScheme _currentColorScheme = HeightmapColorScheme.Amber;
 
     // ========================================================================
     // Cursor Helpers
@@ -62,10 +69,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     // --- Filtered markers for the selected worldspace ---
     private List<PlacedReference> _filteredMarkers = [];
+    private bool _hideDisabledActors = true;
 
     // --- Hover / Selection ---
     private PlacedReference? _hoveredObject;
     private bool _isPanning;
+    private bool _legendExpanded = true;
+
+    // --- Map marker icon bitmaps (loaded from embedded PNGs, tinted to scheme color) ---
+    private Dictionary<MapMarkerType, CanvasBitmap>? _markerIconBitmaps;
 
     // --- State ---
     private ViewMode _mode = ViewMode.WorldOverview;
@@ -79,6 +91,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private CellRecord? _selectedCell;
     private PlacedReference? _selectedObject;
     private WorldspaceRecord? _selectedWorldspace;
+    private bool _showWater = true;
+    private bool _suppressNavEvents;
 
     // --- Unlinked exterior cells (DMP files without WRLD records) ---
     private List<CellRecord>? _unlinkedCells;
@@ -89,17 +103,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private int _worldHmMinX, _worldHmMaxY;
     private int _worldHmPixelWidth, _worldHmPixelHeight;
 
-    // --- Map marker icon bitmaps (loaded from embedded PNGs, tinted to scheme color) ---
-    private Dictionary<MapMarkerType, CanvasBitmap>? _markerIconBitmaps;
-
-    // --- Heightmap tinting ---
-    private HeightmapColorScheme _currentColorScheme = HeightmapColorScheme.Amber;
-    private bool _showWater = true;
-    private bool _hideDisabledActors = true;
-    private byte[]? _cachedGrayscale;
-    private byte[]? _cachedWaterMask;
-    private int _cachedHmWidth, _cachedHmHeight;
-
     // --- Pan/Zoom ---
     private float _zoom = 0.05f;
 
@@ -107,6 +110,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         InitializeComponent();
     }
+
+    // --- Navigation ---
+    /// <summary>Raised before any internal navigation so the parent can push unified nav state.</summary>
+    internal event Action? BeforeNavigate;
 
     // --- Events ---
     public event EventHandler<PlacedReference>? InspectObject;
@@ -1030,7 +1037,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var outlineWidth = 1f / _zoom;
 
         var achrColor = Color.FromArgb(255, 0, 200, 200); // Teal for NPCs
-        var acreColor = Color.FromArgb(255, 255, 140, 0);  // Orange for creatures
+        var acreColor = Color.FromArgb(255, 255, 140, 0); // Orange for creatures
         var refrColor = Color.FromArgb(255, 120, 120, 120); // Gray for objects
 
         foreach (var obj in _data.SaveOverlayMarkers)
@@ -2614,13 +2621,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _ => category.ToString()
     };
 
-    // ========================================================================
-    // Color Helpers
-    // ========================================================================
-
-    private static readonly FrozenDictionary<PlacedObjectCategory, Color> CategoryColors =
-        BuildWorldCategoryColors();
-
     private static Color GetCategoryColor(PlacedObjectCategory category) =>
         CategoryColors.GetValueOrDefault(category, Color.FromArgb(255, 80, 80, 80));
 
@@ -2646,7 +2646,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             [PlacedObjectCategory.Plants] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, plantsHue)),
             [PlacedObjectCategory.Npc] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, npcHue)),
             [PlacedObjectCategory.MapMarker] = Color.FromArgb(255, 255, 255, 255),
-            [PlacedObjectCategory.Unknown] = Color.FromArgb(255, 80, 80, 80),
+            [PlacedObjectCategory.Unknown] = Color.FromArgb(255, 80, 80, 80)
         };
 
         // 15 remaining categories distributed across 3 hue arcs between pinned hues.
@@ -2667,14 +2667,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             PlacedObjectCategory.Landscape, PlacedObjectCategory.Item,
             PlacedObjectCategory.Activator, PlacedObjectCategory.Container,
             PlacedObjectCategory.Door, PlacedObjectCategory.Light,
-            PlacedObjectCategory.Traps,
+            PlacedObjectCategory.Traps
         ];
 
         (double start, double end, int count)[] arcs =
         [
             (creatureHue, plantsHue, 5),
             (plantsHue, npcHue, 3),
-            (npcHue, creatureHue + 360, 7),
+            (npcHue, creatureHue + 360, 7)
         ];
 
         var idx = 0;

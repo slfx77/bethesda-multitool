@@ -7,33 +7,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 internal static class DialogueVerifier
 {
     /// <summary>
-    ///     Summary statistics from comparing two dialogue trees.
-    /// </summary>
-    public record VerificationResult
-    {
-        public int TopicsMatched { get; init; }
-        public int TopicsMissing { get; init; }
-        public int TopicsExtra { get; init; }
-        public int InfosMatched { get; init; }
-        public int InfosMissing { get; init; }
-        public int InfosExtra { get; init; }
-        public int FlowMatches { get; init; }
-        public int FlowMismatches { get; init; }
-        public int ResponseTextMatches { get; init; }
-        public int ResponseTextMissing { get; init; }
-        public int AddTopicMatches { get; init; }
-        public int AddTopicMismatches { get; init; }
-        public int SaidOnceCount { get; init; }
-        public int TotalDmpInfos { get; init; }
-        public List<TopicDiff> TopicDiffs { get; init; } = [];
-    }
-
-    /// <summary>
-    ///     A single difference found between DMP and ESM dialogue trees.
-    /// </summary>
-    public record TopicDiff(uint TopicFormId, string? TopicName, string DiffType, string Detail);
-
-    /// <summary>
     ///     Compare a DMP dialogue tree against an ESM reference tree.
     ///     Returns statistics on matches, mismatches, and coverage.
     /// </summary>
@@ -250,4 +223,31 @@ internal static class DialogueVerifier
 
         return result;
     }
+
+    /// <summary>
+    ///     Summary statistics from comparing two dialogue trees.
+    /// </summary>
+    public record VerificationResult
+    {
+        public int TopicsMatched { get; init; }
+        public int TopicsMissing { get; init; }
+        public int TopicsExtra { get; init; }
+        public int InfosMatched { get; init; }
+        public int InfosMissing { get; init; }
+        public int InfosExtra { get; init; }
+        public int FlowMatches { get; init; }
+        public int FlowMismatches { get; init; }
+        public int ResponseTextMatches { get; init; }
+        public int ResponseTextMissing { get; init; }
+        public int AddTopicMatches { get; init; }
+        public int AddTopicMismatches { get; init; }
+        public int SaidOnceCount { get; init; }
+        public int TotalDmpInfos { get; init; }
+        public List<TopicDiff> TopicDiffs { get; init; } = [];
+    }
+
+    /// <summary>
+    ///     A single difference found between DMP and ESM dialogue trees.
+    /// </summary>
+    public record TopicDiff(uint TopicFormId, string? TopicName, string DiffType, string Detail);
 }

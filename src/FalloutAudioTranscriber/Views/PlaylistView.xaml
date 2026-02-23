@@ -74,7 +74,7 @@
             <Flyout x:Name="ClearWhisperFlyout">
               <StackPanel Spacing="12" Width="260">
                 <TextBlock TextWrapping="Wrap"
-                  Text="Remove all auto-transcribed (Whisper) entries? Accepted and ESM subtitles will be kept." />
+                           Text="Remove all auto-transcribed (Whisper) entries? Accepted and ESM subtitles will be kept." />
                 <Button
                   Content="Clear Whisper Transcriptions"
                   Click="ClearWhisper_Click"

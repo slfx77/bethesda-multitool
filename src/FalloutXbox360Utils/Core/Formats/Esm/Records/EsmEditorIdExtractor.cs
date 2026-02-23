@@ -13,22 +13,6 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 internal static class EsmEditorIdExtractor
 {
-    #region Nested Types
-
-    /// <summary>
-    ///     Represents a candidate hash table found during dynamic scanning.
-    /// </summary>
-    private readonly record struct HashTableCandidate(
-        long FileOffset,
-        long VirtualAddress,
-        uint HashSize,
-        long BucketArrayVa,
-        long BucketArrayFileOffset,
-        int ValidationScore,
-        uint AllFormsVa = 0);
-
-    #endregion
-
     #region PE Section Parsing
 
     /// <summary>
@@ -102,6 +86,122 @@ internal static class EsmEditorIdExtractor
 
         return sections;
     }
+
+    #endregion
+
+    #region String Reading
+
+    /// <summary>
+    ///     Read a BSStringT&lt;char&gt; string from a TESForm object in the dump.
+    ///     BSStringT layout (8 bytes, big-endian on Xbox 360):
+    ///     Offset 0: pString (char* pointer, 4 bytes BE)
+    ///     Offset 4: sLen (uint16 BE)
+    /// </summary>
+    private static string? ReadBSStringT(
+        MemoryMappedViewAccessor accessor,
+        long fileSize,
+        MinidumpInfo minidumpInfo,
+        long tesFormFileOffset,
+        int fieldOffset)
+    {
+        var bstOffset = tesFormFileOffset + fieldOffset;
+        if (bstOffset + 8 > fileSize)
+        {
+            return null;
+        }
+
+        var bstBuffer = new byte[8];
+        accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
+
+        var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
+        var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
+
+        if (pString == 0 || sLen == 0 || sLen > 4096)
+        {
+            return null;
+        }
+
+        if (!Xbox360MemoryUtils.IsValidPointerInDump(pString, minidumpInfo))
+        {
+            return null;
+        }
+
+        var strFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(pString));
+        if (!strFileOffset.HasValue || strFileOffset.Value + sLen > fileSize)
+        {
+            return null;
+        }
+
+        var strBuffer = new byte[sLen];
+        accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
+
+        // Validate: should be mostly printable ASCII
+        var printable = 0;
+        for (var i = 0; i < sLen; i++)
+        {
+            var c = strBuffer[i];
+            if ((c >= 32 && c <= 126) || c == '\n' || c == '\r' || c == '\t')
+            {
+                printable++;
+            }
+        }
+
+        if (printable < sLen * 0.8)
+        {
+            return null;
+        }
+
+        return Encoding.ASCII.GetString(strBuffer, 0, sLen);
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    /// <summary>
+    ///     Detect the runtime FormType value for INFO records by matching EditorID naming
+    ///     conventions. The FormType enum shifts between game builds, so we calibrate from
+    ///     actual data rather than using hardcoded values.
+    /// </summary>
+    private static byte? DetectInfoFormType(List<RuntimeEditorIdEntry> entries, int startIndex)
+    {
+        // INFO EditorIDs in Fallout: New Vegas reliably contain "Topic"
+        // (e.g., aBHTopicAgree, VDialogueDocMitchellTopic001)
+        var formTypeCounts = new Dictionary<byte, int>();
+        for (var i = startIndex; i < entries.Count; i++)
+        {
+            if (entries[i].EditorId.Contains("Topic", StringComparison.OrdinalIgnoreCase))
+            {
+                formTypeCounts.TryGetValue(entries[i].FormType, out var count);
+                formTypeCounts[entries[i].FormType] = count + 1;
+            }
+        }
+
+        if (formTypeCounts.Count == 0)
+        {
+            return null;
+        }
+
+        // Return the FormType with the most Topic matches (require at least 5)
+        var best = formTypeCounts.MaxBy(kv => kv.Value);
+        return best.Value >= 5 ? best.Key : null;
+    }
+
+    #endregion
+
+    #region Nested Types
+
+    /// <summary>
+    ///     Represents a candidate hash table found during dynamic scanning.
+    /// </summary>
+    private readonly record struct HashTableCandidate(
+        long FileOffset,
+        long VirtualAddress,
+        uint HashSize,
+        long BucketArrayVa,
+        long BucketArrayFileOffset,
+        int ValidationScore,
+        uint AllFormsVa = 0);
 
     #endregion
 
@@ -728,7 +828,8 @@ internal static class EsmEditorIdExtractor
             if (best.Value >= 3)
             {
                 landFormType = best.Key;
-                log.Debug("EditorIDs: pAllForms: detected LAND FormType = 0x{0:X2} ({1} matches from {2} known LAND FormIDs)",
+                log.Debug(
+                    "EditorIDs: pAllForms: detected LAND FormType = 0x{0:X2} ({1} matches from {2} known LAND FormIDs)",
                     landFormType, best.Value, knownLandFormIds.Count);
             }
         }
@@ -745,7 +846,8 @@ internal static class EsmEditorIdExtractor
             if (best.Value >= 3)
             {
                 refrBaseFormType = best.Key;
-                log.Debug("EditorIDs: pAllForms: detected REFR base FormType = 0x{0:X2} ({1} matches from {2} known REFR FormIDs)",
+                log.Debug(
+                    "EditorIDs: pAllForms: detected REFR base FormType = 0x{0:X2} ({1} matches from {2} known REFR FormIDs)",
                     refrBaseFormType, best.Value, knownRefrFormIds.Count);
             }
         }
@@ -798,8 +900,10 @@ internal static class EsmEditorIdExtractor
             }
         }
 
-        log.Debug("EditorIDs: pAllForms walk complete - {0:N0} LAND (0x{1:X2}), {2:N0} REFR/ACHR/ACRE (0x{3:X2}-0x{4:X2}), {5} chain errors, {6:N0} total forms",
-            landCount, landFormType, refrCount, refrBaseFormType, (byte)(refrBaseFormType + 2), chainErrors, allEntries.Count);
+        log.Debug(
+            "EditorIDs: pAllForms walk complete - {0:N0} LAND (0x{1:X2}), {2:N0} REFR/ACHR/ACRE (0x{3:X2}-0x{4:X2}), {5} chain errors, {6:N0} total forms",
+            landCount, landFormType, refrCount, refrBaseFormType, (byte)(refrBaseFormType + 2), chainErrors,
+            allEntries.Count);
     }
 
     /// <summary>
@@ -887,73 +991,6 @@ internal static class EsmEditorIdExtractor
 
             itemVa = nextVa;
         }
-    }
-
-    #endregion
-
-    #region String Reading
-
-    /// <summary>
-    ///     Read a BSStringT&lt;char&gt; string from a TESForm object in the dump.
-    ///     BSStringT layout (8 bytes, big-endian on Xbox 360):
-    ///     Offset 0: pString (char* pointer, 4 bytes BE)
-    ///     Offset 4: sLen (uint16 BE)
-    /// </summary>
-    private static string? ReadBSStringT(
-        MemoryMappedViewAccessor accessor,
-        long fileSize,
-        MinidumpInfo minidumpInfo,
-        long tesFormFileOffset,
-        int fieldOffset)
-    {
-        var bstOffset = tesFormFileOffset + fieldOffset;
-        if (bstOffset + 8 > fileSize)
-        {
-            return null;
-        }
-
-        var bstBuffer = new byte[8];
-        accessor.ReadArray(bstOffset, bstBuffer, 0, 8);
-
-        var pString = BinaryUtils.ReadUInt32BE(bstBuffer);
-        var sLen = BinaryUtils.ReadUInt16BE(bstBuffer, 4);
-
-        if (pString == 0 || sLen == 0 || sLen > 4096)
-        {
-            return null;
-        }
-
-        if (!Xbox360MemoryUtils.IsValidPointerInDump(pString, minidumpInfo))
-        {
-            return null;
-        }
-
-        var strFileOffset = minidumpInfo.VirtualAddressToFileOffset(Xbox360MemoryUtils.VaToLong(pString));
-        if (!strFileOffset.HasValue || strFileOffset.Value + sLen > fileSize)
-        {
-            return null;
-        }
-
-        var strBuffer = new byte[sLen];
-        accessor.ReadArray(strFileOffset.Value, strBuffer, 0, sLen);
-
-        // Validate: should be mostly printable ASCII
-        var printable = 0;
-        for (var i = 0; i < sLen; i++)
-        {
-            var c = strBuffer[i];
-            if ((c >= 32 && c <= 126) || c == '\n' || c == '\r' || c == '\t')
-            {
-                printable++;
-            }
-        }
-
-        if (printable < sLen * 0.8)
-        {
-            return null;
-        }
-
-        return Encoding.ASCII.GetString(strBuffer, 0, sLen);
     }
 
     #endregion
@@ -1053,39 +1090,6 @@ internal static class EsmEditorIdExtractor
     };
 
     private const int InfoPromptOffset = 44;
-
-    #endregion
-
-    #region Helper Methods
-
-    /// <summary>
-    ///     Detect the runtime FormType value for INFO records by matching EditorID naming
-    ///     conventions. The FormType enum shifts between game builds, so we calibrate from
-    ///     actual data rather than using hardcoded values.
-    /// </summary>
-    private static byte? DetectInfoFormType(List<RuntimeEditorIdEntry> entries, int startIndex)
-    {
-        // INFO EditorIDs in Fallout: New Vegas reliably contain "Topic"
-        // (e.g., aBHTopicAgree, VDialogueDocMitchellTopic001)
-        var formTypeCounts = new Dictionary<byte, int>();
-        for (var i = startIndex; i < entries.Count; i++)
-        {
-            if (entries[i].EditorId.Contains("Topic", StringComparison.OrdinalIgnoreCase))
-            {
-                formTypeCounts.TryGetValue(entries[i].FormType, out var count);
-                formTypeCounts[entries[i].FormType] = count + 1;
-            }
-        }
-
-        if (formTypeCounts.Count == 0)
-        {
-            return null;
-        }
-
-        // Return the FormType with the most Topic matches (require at least 5)
-        var best = formTypeCounts.MaxBy(kv => kv.Value);
-        return best.Value >= 5 ? best.Key : null;
-    }
 
     #endregion
 }

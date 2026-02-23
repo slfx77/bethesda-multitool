@@ -16,13 +16,17 @@ namespace FalloutXbox360Utils.CLI;
 public static class PackagesCommand
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
     public static Command Create()
     {
-        var command = new Command("packages", "Report AI packages (PACK records) with decoded types, schedules, and flags");
+        var command = new Command("packages",
+            "Report AI packages (PACK records) with decoded types, schedules, and flags");
 
         var inputArg = new Argument<string>("input") { Description = "Path to ESM or DMP file" };
-        var typeOpt = new Option<string?>("-t", "--type") { Description = "Filter by package type (e.g., Sandbox, Patrol)" };
-        var npcOpt = new Option<string?>("--npc") { Description = "Filter to packages used by a specific NPC (editor ID)" };
+        var typeOpt = new Option<string?>("-t", "--type")
+            { Description = "Filter by package type (e.g., Sandbox, Patrol)" };
+        var npcOpt = new Option<string?>("--npc")
+            { Description = "Filter to packages used by a specific NPC (editor ID)" };
         var limitOpt = new Option<int>("-l", "--limit")
         {
             Description = "Limit number of packages shown",

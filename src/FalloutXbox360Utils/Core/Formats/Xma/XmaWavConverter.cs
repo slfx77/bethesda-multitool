@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Xma;
@@ -144,7 +145,7 @@ internal static class XmaWavConverter
         var offset = 12;
         while (offset + 8 <= wav.Length)
         {
-            var chunkId = System.Text.Encoding.ASCII.GetString(wav, offset, 4);
+            var chunkId = Encoding.ASCII.GetString(wav, offset, 4);
             var chunkSizeOffset = offset + 4;
 
             if (chunkId == "data")

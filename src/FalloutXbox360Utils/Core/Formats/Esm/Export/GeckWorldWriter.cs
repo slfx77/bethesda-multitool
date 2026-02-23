@@ -29,7 +29,8 @@ internal static class GeckWorldWriter
 
             if (obj.Bounds != null)
             {
-                sb.Append($" bounds=[{obj.Bounds.X1},{obj.Bounds.Y1},{obj.Bounds.Z1}]-[{obj.Bounds.X2},{obj.Bounds.Y2},{obj.Bounds.Z2}]");
+                sb.Append(
+                    $" bounds=[{obj.Bounds.X1},{obj.Bounds.Y1},{obj.Bounds.Z1}]-[{obj.Bounds.X2},{obj.Bounds.Y2},{obj.Bounds.Z2}]");
             }
 
             sb.AppendLine();

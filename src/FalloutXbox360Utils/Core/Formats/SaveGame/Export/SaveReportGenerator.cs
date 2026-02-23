@@ -81,10 +81,11 @@ public static class SaveReportGenerator
 
         // Plugins
         sb.AppendLine($"Plugins ({h.Plugins.Count}):");
-        for (int i = 0; i < h.Plugins.Count; i++)
+        for (var i = 0; i < h.Plugins.Count; i++)
         {
             sb.AppendLine($"  [{i:X2}] {h.Plugins[i]}");
         }
+
         sb.AppendLine();
 
         // Player location
@@ -101,7 +102,8 @@ public static class SaveReportGenerator
             sb.AppendLine($"  Grid:        ({loc.CoordX}, {loc.CoordY})");
             var cellFormId = loc.CellRefId.ResolveFormId(formIdArray);
             var cellName = ResolveName(cellFormId, resolver);
-            sb.AppendLine($"  Cell:        {FormatFormId(loc.CellRefId, formIdArray)}{(cellName != "" ? $" ({cellName})" : "")}");
+            sb.AppendLine(
+                $"  Cell:        {FormatFormId(loc.CellRefId, formIdArray)}{(cellName != "" ? $" ({cellName})" : "")}");
             sb.AppendLine($"  Position:    ({loc.PosX:F2}, {loc.PosY:F2}, {loc.PosZ:F2})");
             sb.AppendLine();
         }
@@ -127,9 +129,10 @@ public static class SaveReportGenerator
         sb.AppendLine($"  {new string('-', 12)} {new string('-', 8)}  {new string('-', 14)}");
         foreach (var group in typeCounts)
         {
-            int withPos = group.Count(f => f.Initial != null);
+            var withPos = group.Count(f => f.Initial != null);
             sb.AppendLine($"  {group.Key,-12} {group.Count(),8}  {withPos,14}");
         }
+
         sb.AppendLine();
 
         // Decode coverage overview
@@ -143,6 +146,7 @@ public static class SaveReportGenerator
                 {
                     totalBytes += save.ChangedForms[idx].Data.Length;
                 }
+
                 decodedBytes += decoded.BytesConsumed;
                 if (decoded.FullyDecoded) full++;
                 else if (decoded.BytesConsumed > 0) partial++;
@@ -156,7 +160,8 @@ public static class SaveReportGenerator
             sb.AppendLine($"  Failed:          {failed}");
             if (totalBytes > 0)
             {
-                sb.AppendLine($"  Byte coverage:   {100.0 * decodedBytes / totalBytes:F1}% ({decodedBytes:N0} / {totalBytes:N0})");
+                sb.AppendLine(
+                    $"  Byte coverage:   {100.0 * decodedBytes / totalBytes:F1}% ({decodedBytes:N0} / {totalBytes:N0})");
             }
         }
 
@@ -170,9 +175,10 @@ public static class SaveReportGenerator
         FormIdResolver? resolver)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("FormID,Type,EditorID,DisplayName,Flags,FlagNames,DataSize,DecodeStatus,BytesConsumed,BytesRemaining,CellFormID,CellName,PosX,PosY,PosZ,RotX,RotY,RotZ,BaseFormID,BaseName");
+        sb.AppendLine(
+            "FormID,Type,EditorID,DisplayName,Flags,FlagNames,DataSize,DecodeStatus,BytesConsumed,BytesRemaining,CellFormID,CellName,PosX,PosY,PosZ,RotX,RotY,RotZ,BaseFormID,BaseName");
 
-        for (int i = 0; i < save.ChangedForms.Count; i++)
+        for (var i = 0; i < save.ChangedForms.Count; i++)
         {
             var form = save.ChangedForms[i];
             var resolved = form.RefId.ResolveFormId(formIdArray);
@@ -182,7 +188,7 @@ public static class SaveReportGenerator
             var flagNames = ChangeFlagRegistry.DescribeFlags(form.ChangeType, form.ChangeFlags);
             var flagStr = flagNames.Count > 0 ? string.Join("|", flagNames) : "";
 
-            string status = "NotDecoded";
+            var status = "NotDecoded";
             int consumed = 0, remaining = form.Data.Length;
             if (decodedForms != null && decodedForms.TryGetValue(i, out var decoded))
             {
@@ -199,7 +205,9 @@ public static class SaveReportGenerator
             {
                 var cellResolved = init.CellRefId.ResolveFormId(formIdArray);
                 cellFormId = Fmt.FId(cellResolved);
-                cellName = cellResolved != 0 && resolver != null ? Fmt.CsvEscape(resolver.GetBestNameWithRefChain(cellResolved) ?? "") : "";
+                cellName = cellResolved != 0 && resolver != null
+                    ? Fmt.CsvEscape(resolver.GetBestNameWithRefChain(cellResolved) ?? "")
+                    : "";
                 posX = init.PosX.ToString("F2");
                 posY = init.PosY.ToString("F2");
                 posZ = init.PosZ.ToString("F2");
@@ -210,7 +218,9 @@ public static class SaveReportGenerator
                 {
                     var baseResolved = init.BaseFormRefId.Value.ResolveFormId(formIdArray);
                     baseFormId = Fmt.FId(baseResolved);
-                    baseName = baseResolved != 0 && resolver != null ? Fmt.CsvEscape(resolver.GetBestNameWithRefChain(baseResolved) ?? "") : "";
+                    baseName = baseResolved != 0 && resolver != null
+                        ? Fmt.CsvEscape(resolver.GetBestNameWithRefChain(baseResolved) ?? "")
+                        : "";
                 }
             }
 
@@ -254,9 +264,10 @@ public static class SaveReportGenerator
         }
 
         // Per-type breakdown
-        var typeStats = new Dictionary<string, (int Total, int Full, int Partial, int Fail, long TotalBytes, long DecodedBytes)>();
+        var typeStats =
+            new Dictionary<string, (int Total, int Full, int Partial, int Fail, long TotalBytes, long DecodedBytes)>();
 
-        for (int i = 0; i < save.ChangedForms.Count; i++)
+        for (var i = 0; i < save.ChangedForms.Count; i++)
         {
             var form = save.ChangedForms[i];
             if (form.Data.Length == 0) continue;
@@ -266,6 +277,7 @@ public static class SaveReportGenerator
             {
                 s = (0, 0, 0, 0, 0, 0);
             }
+
             s.Total++;
             s.TotalBytes += form.Data.Length;
 
@@ -281,14 +293,16 @@ public static class SaveReportGenerator
         }
 
         sb.AppendLine($"  {"Type",-12} {"Total",6} {"Full",6} {"Partial",8} {"Fail",6} {"Coverage",10}");
-        sb.AppendLine($"  {new string('-', 12)} {new string('-', 6)} {new string('-', 6)} {new string('-', 8)} {new string('-', 6)} {new string('-', 10)}");
+        sb.AppendLine(
+            $"  {new string('-', 12)} {new string('-', 6)} {new string('-', 6)} {new string('-', 8)} {new string('-', 6)} {new string('-', 10)}");
 
         foreach (var (type, stats) in typeStats.OrderByDescending(x => x.Value.Total))
         {
             var coverage = stats.TotalBytes > 0
                 ? $"{100.0 * stats.DecodedBytes / stats.TotalBytes:F1}%"
                 : "N/A";
-            sb.AppendLine($"  {type,-12} {stats.Total,6} {stats.Full,6} {stats.Partial,8} {stats.Fail,6} {coverage,10}");
+            sb.AppendLine(
+                $"  {type,-12} {stats.Total,6} {stats.Full,6} {stats.Partial,8} {stats.Fail,6} {coverage,10}");
         }
 
         // Totals
@@ -297,11 +311,13 @@ public static class SaveReportGenerator
             (acc, s) => (acc.Total + s.Total, acc.Full + s.Full, acc.Partial + s.Partial,
                 acc.Fail + s.Fail, acc.TotalBytes + s.TotalBytes, acc.DecodedBytes + s.DecodedBytes));
 
-        sb.AppendLine($"  {new string('-', 12)} {new string('-', 6)} {new string('-', 6)} {new string('-', 8)} {new string('-', 6)} {new string('-', 10)}");
+        sb.AppendLine(
+            $"  {new string('-', 12)} {new string('-', 6)} {new string('-', 6)} {new string('-', 8)} {new string('-', 6)} {new string('-', 10)}");
         var totalCoverage = totals.TotalBytes > 0
             ? $"{100.0 * totals.DecodedBytes / totals.TotalBytes:F1}%"
             : "N/A";
-        sb.AppendLine($"  {"TOTAL",-12} {totals.Total,6} {totals.Full,6} {totals.Partial,8} {totals.Fail,6} {totalCoverage,10}");
+        sb.AppendLine(
+            $"  {"TOTAL",-12} {totals.Total,6} {totals.Full,6} {totals.Partial,8} {totals.Fail,6} {totalCoverage,10}");
 
         return sb.ToString();
     }
@@ -338,7 +354,8 @@ public static class SaveReportGenerator
                 sb.AppendLine("  Worldspace:  Interior");
             var cellFormId2 = loc.CellRefId.ResolveFormId(formIdArray);
             var cellName2 = ResolveName(cellFormId2, resolver);
-            sb.AppendLine($"  Cell:        {FormatFormId(loc.CellRefId, formIdArray)}{(cellName2 != "" ? $" ({cellName2})" : "")}");
+            sb.AppendLine(
+                $"  Cell:        {FormatFormId(loc.CellRefId, formIdArray)}{(cellName2 != "" ? $" ({cellName2})" : "")}");
             sb.AppendLine($"  Grid:        ({loc.CoordX}, {loc.CoordY})");
             sb.AppendLine($"  Position:    ({loc.PosX:F2}, {loc.PosY:F2}, {loc.PosZ:F2})");
             sb.AppendLine();
@@ -347,7 +364,7 @@ public static class SaveReportGenerator
         // Find player form (FormID 0x14) and dump decoded fields
         if (decodedForms != null)
         {
-            for (int i = 0; i < save.ChangedForms.Count; i++)
+            for (var i = 0; i < save.ChangedForms.Count; i++)
             {
                 var form = save.ChangedForms[i];
                 var resolved = form.RefId.ResolveFormId(formIdArray);
@@ -360,12 +377,14 @@ public static class SaveReportGenerator
                 {
                     sb.AppendLine($"  Active Flags: {string.Join(" | ", flagNames)}");
                 }
+
                 sb.AppendLine($"  Data Size:    {form.Data.Length} bytes");
                 sb.AppendLine();
 
                 if (decodedForms.TryGetValue(i, out var decoded))
                 {
-                    sb.AppendLine($"  Decoded: {decoded.BytesConsumed}/{decoded.TotalBytes} bytes ({(decoded.FullyDecoded ? "FULL" : "PARTIAL")})");
+                    sb.AppendLine(
+                        $"  Decoded: {decoded.BytesConsumed}/{decoded.TotalBytes} bytes ({(decoded.FullyDecoded ? "FULL" : "PARTIAL")})");
                     sb.AppendLine();
 
                     foreach (var field in decoded.Fields)
@@ -416,9 +435,9 @@ public static class SaveReportGenerator
         var sb = new StringBuilder();
         sb.AppendLine("StatLabel,Value");
 
-        for (int i = 0; i < save.Statistics.Count; i++)
+        for (var i = 0; i < save.Statistics.Count; i++)
         {
-            string label = i < SaveStatistics.Labels.Length
+            var label = i < SaveStatistics.Labels.Length
                 ? SaveStatistics.Labels[i]
                 : $"Unknown Stat {i}";
             sb.AppendLine($"{Fmt.CsvEscape(label)},{save.Statistics.Values[i]}");

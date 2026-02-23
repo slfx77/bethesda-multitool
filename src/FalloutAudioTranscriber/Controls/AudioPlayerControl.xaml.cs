@@ -2,16 +2,18 @@ using FalloutAudioTranscriber.Models;
 using FalloutAudioTranscriber.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using NAudio.Wave;
 
 namespace FalloutAudioTranscriber.Controls;
 
 public sealed partial class AudioPlayerControl : UserControl
 {
-    private AudioPlaybackService? _playbackService;
-    private DispatcherTimer? _positionTimer;
-    private bool _isSeeking;
+    private readonly DispatcherTimer? _positionTimer;
     private VoiceFileEntry? _currentEntry;
+    private bool _isSeeking;
+    private AudioPlaybackService? _playbackService;
 
     public AudioPlayerControl()
     {
@@ -138,17 +140,17 @@ public sealed partial class AudioPlayerControl : UserControl
         _playbackService?.Stop();
     }
 
-    private void SeekSlider_GettingFocus(UIElement sender, Microsoft.UI.Xaml.Input.GettingFocusEventArgs args)
+    private void SeekSlider_GettingFocus(UIElement sender, GettingFocusEventArgs args)
     {
         _isSeeking = true;
     }
 
-    private void SeekSlider_LosingFocus(UIElement sender, Microsoft.UI.Xaml.Input.LosingFocusEventArgs args)
+    private void SeekSlider_LosingFocus(UIElement sender, LosingFocusEventArgs args)
     {
         _isSeeking = false;
     }
 
-    private void SeekSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    private void SeekSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         if (_playbackService == null || !_isSeeking)
         {

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using Spectre.Console;
 
@@ -131,7 +132,7 @@ public static class ConvertNifCommand
     /// </summary>
     private static async Task ProcessFilesAsync(ConversionContext context)
     {
-        if (context.Verbose) Core.Logger.Instance.Level = Core.LogLevel.Debug;
+        if (context.Verbose) Logger.Instance.Level = LogLevel.Debug;
 
         await AnsiConsole.Progress()
             .AutoClear(false)

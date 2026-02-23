@@ -130,7 +130,8 @@ internal sealed class NifOutputWriter(NifConversionState state)
             Log.Debug($"    Block {block.Index}: Using {triangles.Length / 3} triangles from NiTriStripsData strips");
         }
 
-        return NifGeometryWriter.WriteExpandedGeometryBlock(input, output, outPos, block, packedData, vertexMap, triangles);
+        return NifGeometryWriter.WriteExpandedGeometryBlock(input, output, outPos, block, packedData, vertexMap,
+            triangles);
     }
 
     private static void LogVertexMapAndTriangles(int blockIndex, int skinPartitionIndex, ushort[]? vertexMap,

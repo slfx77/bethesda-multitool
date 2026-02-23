@@ -39,7 +39,7 @@ public static partial class FaceGenControls
         "Nostrils - transverse shift" // [25]
     };
 
-    public static readonly float[][] GeometryAsymmetricCoeffs = new float[][]
+    public static readonly float[][] GeometryAsymmetricCoeffs = new[]
     {
         // [0] Brow Ridge - forward axis twist
         new[]

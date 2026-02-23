@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;

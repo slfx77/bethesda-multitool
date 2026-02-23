@@ -522,7 +522,7 @@
 
   <!-- ===== SingleFileTab: Placeholder Text (x:Uid) ===== -->
   <data name="Input_MinidumpPath.PlaceholderText" xml:space="preserve">
-    <value>Select or enter a .dmp, .esm, or .esp file...</value>
+    <value>Select or enter a .dmp, .esm, .esp, or .fxs file...</value>
   </data>
   <data name="Input_OutputPath.PlaceholderText" xml:space="preserve">
     <value>Select or enter output directory...</value>

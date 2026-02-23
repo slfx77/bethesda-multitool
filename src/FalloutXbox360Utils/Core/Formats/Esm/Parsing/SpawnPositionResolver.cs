@@ -161,7 +161,7 @@ internal static class SpawnPositionResolver
 
         var leafActors = new List<uint>();
         var visited = new HashSet<uint>();
-        ResolveLeveledListLeaves(baseFormId, leveledListById, leafActors, visited, maxDepth: 8);
+        ResolveLeveledListLeaves(baseFormId, leveledListById, leafActors, visited, 8);
 
         foreach (var leafFormId in leafActors)
         {
@@ -288,8 +288,8 @@ internal static class SpawnPositionResolver
 
                 break;
 
-                // Types 2 (Near Current), 3 (Near Editor), 5 (Object Type)
-                // cannot be resolved from static ESM data
+            // Types 2 (Near Current), 3 (Near Editor), 5 (Object Type)
+            // cannot be resolved from static ESM data
         }
 
         return null;

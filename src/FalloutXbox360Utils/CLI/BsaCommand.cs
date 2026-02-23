@@ -1,11 +1,9 @@
 // Copyright (c) 2026 FalloutXbox360Utils Contributors
 // Licensed under the MIT License.
 
-// Pending migration: validate/compare commands will move to analysis tools
-#pragma warning disable IDE0051, S1144
-
 using System.CommandLine;
 using System.Security.Cryptography;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Xma;
@@ -26,6 +24,12 @@ public static class BsaCommand
         bsaCommand.Subcommands.Add(CreateExtractCommand());
         bsaCommand.Subcommands.Add(CreateConvertCommand());
         bsaCommand.Subcommands.Add(CreateInfoCommand());
+        bsaCommand.Subcommands.Add(CreateValidateCommand());
+        bsaCommand.Subcommands.Add(CreateCompareCommand());
+        bsaCommand.Subcommands.Add(CreateFindCommand());
+        bsaCommand.Subcommands.Add(CreateInspectCommand());
+        bsaCommand.Subcommands.Add(CreateRawDumpCommand());
+        bsaCommand.Subcommands.Add(CreateFileCompareCommand());
 
         return bsaCommand;
     }
@@ -735,7 +739,8 @@ public static class BsaCommand
             var totalSize = results.Where(r => r.Success).Sum(r => r.ExtractedSize);
 
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[green]✓ Extracted:[/] {0:N0} files ({1})", succeeded, CliHelpers.FormatSize(totalSize));
+            AnsiConsole.MarkupLine("[green]✓ Extracted:[/] {0:N0} files ({1})", succeeded,
+                CliHelpers.FormatSize(totalSize));
 
             if (converted > 0 || ddxBatchConverted > 0)
             {
@@ -1486,5 +1491,315 @@ public static class BsaCommand
         await using var stream = File.OpenRead(filePath);
         var hash = await SHA256.HashDataAsync(stream);
         return Convert.ToHexString(hash);
+    }
+
+    private static Command CreateFindCommand()
+    {
+        var command = new Command("find", "Search for files matching a pattern in a BSA archive");
+
+        var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
+        var patternArg = new Argument<string>("pattern") { Description = "Search pattern (substring match)" };
+        var limitOpt = new Option<int>("-l", "--limit")
+        {
+            Description = "Maximum results to show",
+            DefaultValueFactory = _ => 50
+        };
+
+        command.Arguments.Add(inputArg);
+        command.Arguments.Add(patternArg);
+        command.Options.Add(limitOpt);
+
+        command.SetAction((parseResult, _) =>
+        {
+            var input = parseResult.GetValue(inputArg)!;
+            var pattern = parseResult.GetValue(patternArg)!;
+            var limit = parseResult.GetValue(limitOpt);
+            RunFind(input, pattern, limit);
+            return Task.CompletedTask;
+        });
+
+        return command;
+    }
+
+    private static void RunFind(string input, string pattern, int limit)
+    {
+        if (!File.Exists(input))
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", input);
+            return;
+        }
+
+        var archive = BsaParser.Parse(input);
+        var searchPattern = pattern.Replace("*", "").ToLowerInvariant();
+        var matches = archive.AllFiles
+            .Where(f => f.FullPath.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
+            .Take(limit)
+            .ToList();
+
+        AnsiConsole.MarkupLine("[cyan]Found {0} files matching[/] '{1}':", matches.Count, Markup.Escape(pattern));
+        AnsiConsole.WriteLine();
+
+        var table = new Table();
+        table.AddColumn("Path");
+        table.AddColumn(new TableColumn("Offset").RightAligned());
+        table.AddColumn(new TableColumn("Size").RightAligned());
+        table.AddColumn("Compressed");
+        table.Border = TableBorder.Simple;
+
+        foreach (var file in matches)
+        {
+            var isCompressed = archive.Header.DefaultCompressed != file.CompressionToggle;
+            table.AddRow(
+                file.FullPath,
+                $"0x{file.Offset:X8}",
+                CliHelpers.FormatSize(file.Size),
+                isCompressed ? "[green]Yes[/]" : "");
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    private static Command CreateInspectCommand()
+    {
+        var command = new Command("inspect", "Inspect a file's raw bytes and metadata in a BSA archive");
+
+        var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
+        var filenameArg = new Argument<string>("filename") { Description = "File path within BSA (substring match)" };
+
+        command.Arguments.Add(inputArg);
+        command.Arguments.Add(filenameArg);
+
+        command.SetAction((parseResult, _) =>
+        {
+            var input = parseResult.GetValue(inputArg)!;
+            var filename = parseResult.GetValue(filenameArg)!;
+            RunInspect(input, filename);
+            return Task.CompletedTask;
+        });
+
+        return command;
+    }
+
+    private static void RunInspect(string input, string filename)
+    {
+        if (!File.Exists(input))
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", input);
+            return;
+        }
+
+        var archive = BsaParser.Parse(input);
+        var searchName = filename.ToLowerInvariant();
+
+        var file = archive.AllFiles.FirstOrDefault(f =>
+            f.FullPath.Equals(searchName, StringComparison.OrdinalIgnoreCase) ||
+            f.FullPath.Contains(searchName, StringComparison.OrdinalIgnoreCase));
+
+        if (file == null)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found in BSA: {0}", Markup.Escape(filename));
+            return;
+        }
+
+        var table = new Table();
+        table.AddColumn("Property");
+        table.AddColumn("Value");
+        table.Border = TableBorder.Rounded;
+
+        table.AddRow("Path", file.FullPath);
+        table.AddRow("Offset", $"0x{file.Offset:X8} ({file.Offset})");
+        table.AddRow("Size", $"{file.Size:N0} bytes");
+        table.AddRow("Compression Toggle", file.CompressionToggle.ToString());
+        table.AddRow("Archive Default Compressed", archive.Header.DefaultCompressed.ToString());
+        table.AddRow("Actually Compressed", (archive.Header.DefaultCompressed != file.CompressionToggle).ToString());
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        // Read and display raw bytes
+        using var fs = File.OpenRead(input);
+        fs.Position = file.Offset;
+
+        var readSize = Math.Min((int)file.Size, 256);
+        var buffer = new byte[readSize];
+        var bytesRead = fs.Read(buffer, 0, readSize);
+
+        AnsiConsole.MarkupLine("[bold]First {0} bytes at offset 0x{1:X8}:[/]", bytesRead, file.Offset);
+        PrintHexDump(buffer, bytesRead, file.Offset);
+
+        // File type identification
+        AnsiConsole.WriteLine();
+        if (bytesRead >= 4)
+        {
+            var magicStr = Encoding.ASCII.GetString(buffer, 0, Math.Min(4, bytesRead));
+            AnsiConsole.MarkupLine("[bold]Magic:[/] {0}", Markup.Escape(magicStr.Replace("\0", "\\0")));
+        }
+    }
+
+    private static Command CreateRawDumpCommand()
+    {
+        var command = new Command("rawdump", "Dump raw bytes at a specific offset in a BSA file");
+
+        var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
+        var offsetArg = new Argument<long>("offset") { Description = "File offset (decimal or 0x hex)" };
+        var lengthArg = new Argument<int>("length") { Description = "Number of bytes to dump" };
+
+        command.Arguments.Add(inputArg);
+        command.Arguments.Add(offsetArg);
+        command.Arguments.Add(lengthArg);
+
+        command.SetAction((parseResult, _) =>
+        {
+            var input = parseResult.GetValue(inputArg)!;
+            var offset = parseResult.GetValue(offsetArg);
+            var length = parseResult.GetValue(lengthArg);
+            RunRawDump(input, offset, length);
+            return Task.CompletedTask;
+        });
+
+        return command;
+    }
+
+    private static void RunRawDump(string input, long offset, int length)
+    {
+        if (!File.Exists(input))
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", input);
+            return;
+        }
+
+        using var fs = File.OpenRead(input);
+        if (offset >= fs.Length)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] Offset 0x{0:X8} is beyond file size {1}", offset, fs.Length);
+            return;
+        }
+
+        fs.Position = offset;
+        var buffer = new byte[Math.Min(length, (int)(fs.Length - offset))];
+        var bytesRead = fs.Read(buffer, 0, buffer.Length);
+
+        AnsiConsole.MarkupLine("[bold]Raw dump at offset 0x{0:X8}, {1} bytes:[/]", offset, bytesRead);
+        AnsiConsole.WriteLine();
+        PrintHexDump(buffer, bytesRead, offset);
+    }
+
+    private static Command CreateFileCompareCommand()
+    {
+        var command = new Command("file-compare", "Compare a file in a BSA against an extracted copy");
+
+        var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
+        var filenameArg = new Argument<string>("filename") { Description = "File path within BSA (substring match)" };
+        var extractedArg = new Argument<string>("extracted") { Description = "Path to extracted file on disk" };
+
+        command.Arguments.Add(inputArg);
+        command.Arguments.Add(filenameArg);
+        command.Arguments.Add(extractedArg);
+
+        command.SetAction((parseResult, _) =>
+        {
+            var input = parseResult.GetValue(inputArg)!;
+            var filename = parseResult.GetValue(filenameArg)!;
+            var extracted = parseResult.GetValue(extractedArg)!;
+            RunFileCompare(input, filename, extracted);
+            return Task.CompletedTask;
+        });
+
+        return command;
+    }
+
+    private static void RunFileCompare(string bsaPath, string filename, string extractedPath)
+    {
+        if (!File.Exists(bsaPath))
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] BSA file not found: {0}", bsaPath);
+            return;
+        }
+
+        if (!File.Exists(extractedPath))
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] Extracted file not found: {0}", extractedPath);
+            return;
+        }
+
+        var archive = BsaParser.Parse(bsaPath);
+        var searchName = filename.ToLowerInvariant();
+
+        var file = archive.AllFiles.FirstOrDefault(f =>
+            f.FullPath.Contains(searchName, StringComparison.OrdinalIgnoreCase));
+
+        if (file == null)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found in BSA: {0}", Markup.Escape(filename));
+            return;
+        }
+
+        using var extractor = new BsaExtractor(bsaPath);
+        var bsaData = extractor.ExtractFile(file);
+        var extractedData = File.ReadAllBytes(extractedPath);
+
+        var table = new Table();
+        table.AddColumn("Source");
+        table.AddColumn("Size");
+        table.Border = TableBorder.Rounded;
+
+        table.AddRow("BSA (decompressed)", $"{bsaData.Length:N0} bytes");
+        table.AddRow("Extracted file", $"{extractedData.Length:N0} bytes");
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        if (bsaData.Length != extractedData.Length)
+        {
+            AnsiConsole.MarkupLine("[red]SIZE MISMATCH[/]: BSA={0:N0}, Extracted={1:N0}", bsaData.Length,
+                extractedData.Length);
+        }
+        else if (bsaData.SequenceEqual(extractedData))
+        {
+            AnsiConsole.MarkupLine("[green]MATCH[/]: Extracted file matches BSA content exactly");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[red]CONTENT MISMATCH[/]: Files have same size but different content");
+
+            for (var i = 0; i < bsaData.Length; i++)
+            {
+                if (bsaData[i] != extractedData[i])
+                {
+                    AnsiConsole.MarkupLine("  First difference at offset [yellow]0x{0:X8}[/]", i);
+                    AnsiConsole.MarkupLine("    BSA byte:       0x{0:X2}", bsaData[i]);
+                    AnsiConsole.MarkupLine("    Extracted byte: 0x{0:X2}", extractedData[i]);
+                    break;
+                }
+            }
+        }
+    }
+
+    private static void PrintHexDump(byte[] data, int length, long baseOffset)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < length; i += 16)
+        {
+            sb.Clear();
+            sb.AppendFormat("{0:X8}  ", baseOffset + i);
+
+            for (var j = 0; j < 16; j++)
+            {
+                sb.Append(i + j < length ? $"{data[i + j]:X2} " : "   ");
+                if (j == 7)
+                {
+                    sb.Append(' ');
+                }
+            }
+
+            sb.Append(" |");
+            for (var j = 0; j < 16 && i + j < length; j++)
+            {
+                var b = data[i + j];
+                sb.Append(b is >= 32 and < 127 ? (char)b : '.');
+            }
+
+            sb.Append('|');
+            AnsiConsole.WriteLine(sb.ToString());
+        }
     }
 }

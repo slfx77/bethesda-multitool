@@ -14,6 +14,62 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
 {
     private readonly ITestOutputHelper _output = output;
 
+    #region Sample-File-Based Tests
+
+    [Fact]
+    [Trait("Category", "Slow")]
+    public void ConvertToLittleEndian_RealEsm_ProducesValidOutput()
+    {
+        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
+
+        var input = File.ReadAllBytes(samples.Xbox360FinalEsm!);
+        _output.WriteLine($"Input: {input.Length:N0} bytes");
+
+        using var converter = new EsmConverter(input, false);
+        var result = converter.ConvertToLittleEndian();
+
+        _output.WriteLine($"Output: {result.Length:N0} bytes");
+        _output.WriteLine(converter.GetStatsSummary());
+
+        // Output should start with LE TES4 header
+        Assert.Equal((byte)'T', result[0]);
+        Assert.Equal((byte)'E', result[1]);
+        Assert.Equal((byte)'S', result[2]);
+        Assert.Equal((byte)'4', result[3]);
+
+        // Output data size should be LE
+        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(result.AsSpan(4));
+        Assert.True(dataSize > 0 && dataSize < (uint)result.Length);
+
+        // Output should be smaller or similar in size to input
+        // (TOFT region is removed, but new OFST tables may be added)
+        Assert.True(result.Length > 0);
+    }
+
+    #endregion
+
+    #region Utility
+
+    /// <summary>
+    ///     Finds the position of an ASCII signature in little-endian output.
+    /// </summary>
+    private static int FindAsciiSignature(byte[] data, string signature, int startOffset = 0)
+    {
+        var sigBytes = Encoding.ASCII.GetBytes(signature);
+        for (var i = startOffset; i <= data.Length - 4; i++)
+        {
+            if (data[i] == sigBytes[0] && data[i + 1] == sigBytes[1] &&
+                data[i + 2] == sigBytes[2] && data[i + 3] == sigBytes[3])
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    #endregion
+
     #region Test Helpers
 
     /// <summary>
@@ -115,10 +171,10 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
         Array.Copy(tes4Data, data, tes4Data.Length);
 
         var grupOffset = tes4Data.Length;
-        WriteBEGrupHeader(data, grupOffset, grupTotalSize, "ALCH", groupType: 0);
+        WriteBEGrupHeader(data, grupOffset, grupTotalSize, "ALCH", 0);
 
         var recordOffset = grupOffset + 24;
-        WriteBERecordHeader(data, recordOffset, "ALCH", (uint)recordDataSize, formId: 0x00010001);
+        WriteBERecordHeader(data, recordOffset, "ALCH", (uint)recordDataSize, 0x00010001);
         WriteBESubrecord(data, recordOffset + 24, "EDID", edid);
 
         return data;
@@ -132,7 +188,7 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
     public void ConvertToLittleEndian_MinimalEsm_ProducesOutput()
     {
         var input = BuildMinimalBigEndianEsm();
-        using var converter = new EsmConverter(input, verbose: false);
+        using var converter = new EsmConverter(input, false);
 
         var result = converter.ConvertToLittleEndian();
 
@@ -150,7 +206,7 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
     public void ConvertToLittleEndian_WithGrup_ConvertsRecord()
     {
         var input = BuildSimpleEsmWithGrup();
-        using var converter = new EsmConverter(input, verbose: false);
+        using var converter = new EsmConverter(input, false);
 
         var result = converter.ConvertToLittleEndian();
 
@@ -175,7 +231,7 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
     {
         // Very small input that can't even contain a header
         var input = new byte[4];
-        using var converter = new EsmConverter(input, verbose: false);
+        using var converter = new EsmConverter(input, false);
 
         // Should not throw, though output may be minimal/empty
         var exception = Record.Exception(() => converter.ConvertToLittleEndian());
@@ -208,17 +264,17 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
         var offset = tes4Data.Length;
 
         // TOFT sentinel (DataSize includes the INFO record inside)
-        WriteBERecordHeader(data, offset, "TOFT", (uint)toftDataSize, formId: 0xFFFFFFFE);
+        WriteBERecordHeader(data, offset, "TOFT", (uint)toftDataSize, 0xFFFFFFFE);
         offset += 24;
 
         // INFO record inside TOFT block
-        WriteBERecordHeader(data, offset, "INFO", 0, formId: 0x000A0001);
+        WriteBERecordHeader(data, offset, "INFO", 0, 0x000A0001);
         offset += 24;
 
         // TOFT end marker
-        WriteBERecordHeader(data, offset, "TOFT", 0, formId: 0xFFFFFFFF);
+        WriteBERecordHeader(data, offset, "TOFT", 0, 0xFFFFFFFF);
 
-        using var converter = new EsmConverter(data, verbose: false);
+        using var converter = new EsmConverter(data, false);
         var result = converter.ConvertToLittleEndian();
 
         Assert.NotNull(result);
@@ -236,69 +292,13 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
     public void GetStatsSummary_AfterConversion_ReturnsNonEmpty()
     {
         var input = BuildSimpleEsmWithGrup();
-        using var converter = new EsmConverter(input, verbose: false);
+        using var converter = new EsmConverter(input, false);
 
         converter.ConvertToLittleEndian();
         var summary = converter.GetStatsSummary();
 
         Assert.False(string.IsNullOrEmpty(summary));
         _output.WriteLine(summary);
-    }
-
-    #endregion
-
-    #region Sample-File-Based Tests
-
-    [Fact]
-    [Trait("Category", "Slow")]
-    public void ConvertToLittleEndian_RealEsm_ProducesValidOutput()
-    {
-        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
-
-        var input = File.ReadAllBytes(samples.Xbox360FinalEsm!);
-        _output.WriteLine($"Input: {input.Length:N0} bytes");
-
-        using var converter = new EsmConverter(input, verbose: false);
-        var result = converter.ConvertToLittleEndian();
-
-        _output.WriteLine($"Output: {result.Length:N0} bytes");
-        _output.WriteLine(converter.GetStatsSummary());
-
-        // Output should start with LE TES4 header
-        Assert.Equal((byte)'T', result[0]);
-        Assert.Equal((byte)'E', result[1]);
-        Assert.Equal((byte)'S', result[2]);
-        Assert.Equal((byte)'4', result[3]);
-
-        // Output data size should be LE
-        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(result.AsSpan(4));
-        Assert.True(dataSize > 0 && dataSize < (uint)result.Length);
-
-        // Output should be smaller or similar in size to input
-        // (TOFT region is removed, but new OFST tables may be added)
-        Assert.True(result.Length > 0);
-    }
-
-    #endregion
-
-    #region Utility
-
-    /// <summary>
-    ///     Finds the position of an ASCII signature in little-endian output.
-    /// </summary>
-    private static int FindAsciiSignature(byte[] data, string signature, int startOffset = 0)
-    {
-        var sigBytes = Encoding.ASCII.GetBytes(signature);
-        for (var i = startOffset; i <= data.Length - 4; i++)
-        {
-            if (data[i] == sigBytes[0] && data[i + 1] == sigBytes[1] &&
-                data[i + 2] == sigBytes[2] && data[i + 3] == sigBytes[3])
-            {
-                return i;
-            }
-        }
-
-        return -1;
     }
 
     #endregion

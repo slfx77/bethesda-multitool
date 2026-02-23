@@ -126,9 +126,9 @@ public static class RecordFieldComparer
         var changes = new List<FieldChange>();
         CompareField(changes, "MarkerName", a.MarkerName, b.MarkerName);
         CompareFormId(changes, "BaseObject", a.BaseFormId, b.BaseFormId);
-        CompareFloat(changes, "X", a.X, b.X, tolerance: 1.0f);
-        CompareFloat(changes, "Y", a.Y, b.Y, tolerance: 1.0f);
-        CompareFloat(changes, "Z", a.Z, b.Z, tolerance: 1.0f);
+        CompareFloat(changes, "X", a.X, b.X, 1.0f);
+        CompareFloat(changes, "Y", a.Y, b.Y, 1.0f);
+        CompareFloat(changes, "Z", a.Z, b.Z, 1.0f);
         return changes;
     }
 
@@ -297,9 +297,13 @@ public static class RecordFieldComparer
         }
     }
 
-    private static void CompareLeveledEntries(List<FieldChange> changes, List<TrackedLeveledEntry> a, List<TrackedLeveledEntry> b)
+    private static void CompareLeveledEntries(List<FieldChange> changes, List<TrackedLeveledEntry> a,
+        List<TrackedLeveledEntry> b)
     {
-        static string Serialize(TrackedLeveledEntry e) => $"L{e.Level}:0x{e.FormId:X8}x{e.Count}";
+        static string Serialize(TrackedLeveledEntry e)
+        {
+            return $"L{e.Level}:0x{e.FormId:X8}x{e.Count}";
+        }
 
         var setA = new HashSet<string>(a.Select(Serialize));
         var setB = new HashSet<string>(b.Select(Serialize));
@@ -341,7 +345,8 @@ public static class RecordFieldComparer
         }
     }
 
-    private static void CompareObjectives(List<FieldChange> changes, List<TrackedQuestObjective> a, List<TrackedQuestObjective> b)
+    private static void CompareObjectives(List<FieldChange> changes, List<TrackedQuestObjective> a,
+        List<TrackedQuestObjective> b)
     {
         var dictA = a.ToDictionary(o => o.Index);
         var dictB = b.ToDictionary(o => o.Index);

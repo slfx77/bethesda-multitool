@@ -22,9 +22,9 @@ public class RttiReaderTests
     {
         // Arrange
         var (info, stream) = BuildSyntheticDump(
-            className: ".?AVTESIdleForm@@",
-            baseClassName: ".?AVTESForm@@",
-            objectOffset: 0);
+            ".?AVTESIdleForm@@",
+            ".?AVTESForm@@",
+            0);
 
         var reader = new RttiReader(info, stream);
 
@@ -44,9 +44,9 @@ public class RttiReaderTests
     {
         // Arrange — objectOffset=272 means this is a secondary vtable
         var (info, stream) = BuildSyntheticDump(
-            className: ".?AVActorValueOwner@@",
-            baseClassName: null,
-            objectOffset: 272);
+            ".?AVActorValueOwner@@",
+            null,
+            272);
 
         var reader = new RttiReader(info, stream);
 
@@ -64,9 +64,9 @@ public class RttiReaderTests
     {
         // Arrange
         var (info, stream) = BuildSyntheticDump(
-            className: ".?AVTESIdleForm@@",
-            baseClassName: ".?AVTESForm@@",
-            objectOffset: 0);
+            ".?AVTESIdleForm@@",
+            ".?AVTESForm@@",
+            0);
 
         var reader = new RttiReader(info, stream);
 
@@ -169,9 +169,9 @@ public class RttiReaderTests
     {
         // Arrange — .?AU prefix (struct instead of class)
         var (info, stream) = BuildSyntheticDump(
-            className: ".?AUBaseFormComponent@@",
-            baseClassName: null,
-            objectOffset: 0);
+            ".?AUBaseFormComponent@@",
+            null,
+            0);
 
         var reader = new RttiReader(info, stream);
 
@@ -245,10 +245,10 @@ public class RttiReaderTests
         var data = new byte[0x300];
 
         // Build RTTI chain for vtable1 (at offset 0x04)
-        BuildRttiChainAt(data, vtableOffset: 0x00, colOffset: 0x10, tdOffset: 0x30, ".?AVClassA@@");
+        BuildRttiChainAt(data, 0x00, 0x10, 0x30, ".?AVClassA@@");
 
         // Build RTTI chain for vtable2 (at offset 0x0104)
-        BuildRttiChainAt(data, vtableOffset: 0x100, colOffset: 0x110, tdOffset: 0x130, ".?AVClassB@@");
+        BuildRttiChainAt(data, 0x100, 0x110, 0x130, ".?AVClassB@@");
 
         // Simulate a striped array: alternating vtable pointers
         // At offset 0x200: vtable1 pointer, at 0x204: vtable2 pointer, repeating
@@ -262,7 +262,7 @@ public class RttiReaderTests
         var reader = new RttiReader(info, stream);
 
         // Act — scan the striped region
-        var results = reader.ScanRange(BaseVA + 0x200, BaseVA + 0x210, stride: 4);
+        var results = reader.ScanRange(BaseVA + 0x200, BaseVA + 0x210, 4);
 
         // Assert
         Assert.Equal(2, results.Count);
@@ -278,7 +278,7 @@ public class RttiReaderTests
         var vtableVA = BaseVA + 4;
         var data = new byte[0x200];
 
-        BuildRttiChainAt(data, vtableOffset: 0x00, colOffset: 0x10, tdOffset: 0x30, ".?AVMyClass@@");
+        BuildRttiChainAt(data, 0x00, 0x10, 0x30, ".?AVMyClass@@");
 
         // Same pointer at multiple positions
         WriteBE(data, 0x100, vtableVA);
@@ -290,7 +290,7 @@ public class RttiReaderTests
         var reader = new RttiReader(info, stream);
 
         // Act
-        var results = reader.ScanRange(BaseVA + 0x100, BaseVA + 0x10C, stride: 4);
+        var results = reader.ScanRange(BaseVA + 0x100, BaseVA + 0x10C, 4);
 
         // Assert — should only return 1 result despite 3 occurrences
         Assert.Single(results);

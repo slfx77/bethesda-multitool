@@ -15,7 +15,7 @@ public static class EsmFileAnalyzer
     /// <summary>
     ///     Analyzes an ESM/ESP file and returns results compatible with the existing UI.
     ///     All heavy work runs on a thread-pool thread to keep the UI responsive.
-    ///     <see cref="IProgress{T}.Report"/> marshals progress updates back to the UI thread automatically.
+    ///     <see cref="IProgress{T}.Report" /> marshals progress updates back to the UI thread automatically.
     /// </summary>
     public static async Task<AnalysisResult> AnalyzeAsync(
         string filePath,
@@ -117,7 +117,8 @@ public static class EsmFileAnalyzer
         Logger.Instance.Info($"[ESM Analysis] Topic\u2192INFO map: {topicToInfoMap.Count} topics with " +
                              $"{topicToInfoMap.Values.Sum(v => v.Count)} child INFOs");
         result.EsmRecords =
-            ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap);
+            ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefrMap,
+                topicToInfoMap);
         ExtractRefrRecordsFromParsed(result.EsmRecords, parsedRecords, isBigEndian);
 
         // Extract LAND records for heightmap rendering in World tab
@@ -284,7 +285,7 @@ public static class EsmFileAnalyzer
 
     /// <summary>
     ///     Builds all four record-to-GRUP mapping dictionaries in a single pass over the records list.
-    ///     Uses <see cref="SortedIntervalMap"/> for O(log n) GRUP lookups per record instead of O(n) linear scans.
+    ///     Uses <see cref="SortedIntervalMap" /> for O(log n) GRUP lookups per record instead of O(n) linear scans.
     /// </summary>
     internal static (
         Dictionary<uint, uint> CellToWorldspace,

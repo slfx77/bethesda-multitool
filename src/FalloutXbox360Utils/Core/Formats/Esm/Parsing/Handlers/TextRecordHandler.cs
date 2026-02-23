@@ -93,13 +93,16 @@ internal sealed class TextRecordHandler(RecordParserContext context)
                             icon = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
                             break;
                         case "QNAM" when sub.DataLength >= 4:
-                            questFormId = RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                            questFormId = RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength),
+                                record.IsBigEndian);
                             break;
                         case "DNAM" when sub.DataLength >= 4:
-                            flags = RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                            flags = RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength),
+                                record.IsBigEndian);
                             break;
                         case "TNAM" when sub.DataLength >= 4:
-                            displayTime = RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                            displayTime = RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, sub.DataLength),
+                                record.IsBigEndian);
                             break;
                         case "ITXT":
                         {

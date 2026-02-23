@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
+
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>A single world placement of a base object in a cell.</summary>
@@ -182,7 +184,10 @@ public record RecordCollection
     /// <summary>Reconstructed Weather (WTHR) records.</summary>
     public List<WeatherRecord> Weather { get; init; } = [];
 
-    /// <summary>FormID → model path (.nif) mapping from STAT, ACTI, DOOR, LIGH, FURN, WEAP, ARMO, AMMO, ALCH, MISC, BOOK, CONT records.</summary>
+    /// <summary>
+    ///     FormID → model path (.nif) mapping from STAT, ACTI, DOOR, LIGH, FURN, WEAP, ARMO, AMMO, ALCH, MISC, BOOK, CONT
+    ///     records.
+    /// </summary>
     public Dictionary<uint, string> ModelPathIndex { get; init; } = [];
 
     /// <summary>FormID to Editor ID mapping built during reconstruction.</summary>
@@ -219,9 +224,9 @@ public record RecordCollection
     public Dictionary<string, int> UnreconstructedTypeCounts { get; init; } = [];
 
     /// <summary>Creates a FormIdResolver from this collection's dictionaries.</summary>
-    public Export.FormIdResolver CreateResolver(Dictionary<uint, string>? overrideEditorIds = null)
+    public FormIdResolver CreateResolver(Dictionary<uint, string>? overrideEditorIds = null)
     {
-        return new Export.FormIdResolver(
+        return new FormIdResolver(
             overrideEditorIds ?? FormIdToEditorId,
             FormIdToDisplayName,
             BuildRefToBaseMap());

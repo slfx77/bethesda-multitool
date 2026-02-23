@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace FalloutAudioTranscriber.Models;
 
 /// <summary>
@@ -11,7 +13,10 @@ public static class VoiceFileNameParser
     /// <summary>
     ///     Try to parse a voice filename into its components.
     /// </summary>
-    /// <param name="fileName">Just the filename, not the full path (e.g., "rscommrangerfoxtr_rscommrangerfoxtrottopic018_00126f4c_1.xma").</param>
+    /// <param name="fileName">
+    ///     Just the filename, not the full path (e.g.,
+    ///     "rscommrangerfoxtr_rscommrangerfoxtrottopic018_00126f4c_1.xma").
+    /// </param>
     /// <param name="formId">Parsed FormID.</param>
     /// <param name="responseIndex">Parsed response index.</param>
     /// <param name="topicEditorId">Everything before the FormID (the topic editor ID fragment).</param>
@@ -53,7 +58,7 @@ public static class VoiceFileNameParser
         }
 
         var formIdPart = baseName[(formIdUnderscore + 1)..formIdEnd];
-        if (formIdPart.Length != 8 || !uint.TryParse(formIdPart, System.Globalization.NumberStyles.HexNumber, null, out formId))
+        if (formIdPart.Length != 8 || !uint.TryParse(formIdPart, NumberStyles.HexNumber, null, out formId))
         {
             return false;
         }

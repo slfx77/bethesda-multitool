@@ -16,37 +16,6 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    #region Script Struct Layout (Proto Debug PDB base + _s)
-
-    // Script: PDB size 84, Debug dump 88, Release dump 100, FormType: 0x11
-    private int ScptStructSize => 84 + _s;
-    private int ScptVarCountOffset => 24 + _s;
-    private int ScptRefCountOffset => 28 + _s;
-    private int ScptDataSizeOffset => 32 + _s;
-    private int ScptLastVarIdOffset => 36 + _s;
-    private int ScptIsQuestOffset => 40 + _s;
-    private int ScptIsMagicEffectOffset => 41 + _s;
-    private int ScptIsCompiledOffset => 42 + _s;
-    private int ScptTextPtrOffset => 44 + _s; // m_text: char* -> SCTX source
-    private int ScptDataPtrOffset => 48 + _s; // m_data: char* -> SCDA bytecode
-    private int ScptQuestDelayOffset => 56 + _s;
-    private int ScptOwnerQuestOffset => 64 + _s; // pOwnerQuest: TESQuest*
-    private int ScptRefObjectsListOffset => 68 + _s; // BSSimpleList<SCRIPT_REFERENCED_OBJECT*>
-    private int ScptVariablesListOffset => 76 + _s; // BSSimpleList<ScriptVariable*>
-
-    // SCRIPT_REFERENCED_OBJECT: 16 bytes — standalone struct, not TESForm-derived
-    // +0: cEditorID (BSStringT, 8 bytes), +8: pForm (TESForm*, 4 bytes), +12: uiVariableID (UInt32)
-    private const int ScroFormPtrOffset = 8;
-    private const int ScroVarIdOffset = 12;
-    private const int ScroStructSize = 16;
-
-    // ScriptVariable: 32 bytes — standalone struct, not TESForm-derived
-    private const int SvarIsIntegerOffset = 12; // bIsInteger within SCRIPT_LOCAL
-    private const int SvarNameOffset = 24; // BSStringT cName
-    private const int SvarStructSize = 32;
-
-    #endregion
-
     /// <summary>
     ///     Read a Script C++ struct from a runtime memory dump.
     ///     Layout: TESForm(40) + SCRIPT_HEADER(20) + m_text(4) + m_data(4) +
@@ -417,4 +386,35 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
 
         return new ScriptVariableInfo(index, name, type);
     }
+
+    #region Script Struct Layout (Proto Debug PDB base + _s)
+
+    // Script: PDB size 84, Debug dump 88, Release dump 100, FormType: 0x11
+    private int ScptStructSize => 84 + _s;
+    private int ScptVarCountOffset => 24 + _s;
+    private int ScptRefCountOffset => 28 + _s;
+    private int ScptDataSizeOffset => 32 + _s;
+    private int ScptLastVarIdOffset => 36 + _s;
+    private int ScptIsQuestOffset => 40 + _s;
+    private int ScptIsMagicEffectOffset => 41 + _s;
+    private int ScptIsCompiledOffset => 42 + _s;
+    private int ScptTextPtrOffset => 44 + _s; // m_text: char* -> SCTX source
+    private int ScptDataPtrOffset => 48 + _s; // m_data: char* -> SCDA bytecode
+    private int ScptQuestDelayOffset => 56 + _s;
+    private int ScptOwnerQuestOffset => 64 + _s; // pOwnerQuest: TESQuest*
+    private int ScptRefObjectsListOffset => 68 + _s; // BSSimpleList<SCRIPT_REFERENCED_OBJECT*>
+    private int ScptVariablesListOffset => 76 + _s; // BSSimpleList<ScriptVariable*>
+
+    // SCRIPT_REFERENCED_OBJECT: 16 bytes — standalone struct, not TESForm-derived
+    // +0: cEditorID (BSStringT, 8 bytes), +8: pForm (TESForm*, 4 bytes), +12: uiVariableID (UInt32)
+    private const int ScroFormPtrOffset = 8;
+    private const int ScroVarIdOffset = 12;
+    private const int ScroStructSize = 16;
+
+    // ScriptVariable: 32 bytes — standalone struct, not TESForm-derived
+    private const int SvarIsIntegerOffset = 12; // bIsInteger within SCRIPT_LOCAL
+    private const int SvarNameOffset = 24; // BSStringT cName
+    private const int SvarStructSize = 32;
+
+    #endregion
 }

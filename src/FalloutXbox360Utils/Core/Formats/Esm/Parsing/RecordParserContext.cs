@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Minidump;
@@ -15,38 +16,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// </summary>
 public sealed class RecordParserContext
 {
-    public EsmRecordScanResult ScanResult { get; }
-    public MemoryMappedViewAccessor? Accessor { get; }
-    public long FileSize { get; }
-    public RuntimeStructReader? RuntimeReader { get; }
-    public Dictionary<uint, DetectedMainRecord> RecordsByFormId { get; }
-
-    /// <summary>
-    ///     Mutable: handlers write to this during reconstruction (e.g., EDID subrecord enrichment).
-    /// </summary>
-    public Dictionary<uint, string> FormIdToEditorId { get; }
-
-    public Dictionary<string, uint> EditorIdToFormId { get; }
-
-    /// <summary>
-    ///     Mutable: handlers write to this during reconstruction (e.g., FULL subrecord enrichment).
-    /// </summary>
-    public Dictionary<uint, string> FormIdToFullName { get; } = new();
-
-    /// <summary>
-    ///     Runtime worldspace cell maps from walking TESWorldSpace pCellMap hash tables.
-    ///     Keyed by worldspace FormID. Set during RecordParser enrichment phase.
-    /// </summary>
-    public Dictionary<uint, RuntimeWorldspaceData>? RuntimeWorldspaceCellMaps { get; set; }
-
     private readonly Dictionary<string, List<DetectedMainRecord>> _recordsByType;
     private Dictionary<uint, uint>? _refToBase;
-
-    /// <summary>
-    ///     Pre-built Ref→Base mapping from ScanResult.RefrRecords.
-    ///     Cached for reuse by both ScriptRecordHandler (during reconstruction) and CreateResolver().
-    /// </summary>
-    public Dictionary<uint, uint> RefToBase => _refToBase ??= BuildRefToBase();
 
     public RecordParserContext(
         EsmRecordScanResult scanResult,
@@ -103,6 +74,86 @@ public sealed class RecordParserContext
         // can skip already-known records instead of re-reading them from the accessor.
         PrePopulateFullNames(scanResult);
     }
+
+    public EsmRecordScanResult ScanResult { get; }
+    public MemoryMappedViewAccessor? Accessor { get; }
+    public long FileSize { get; }
+    public RuntimeStructReader? RuntimeReader { get; }
+    public Dictionary<uint, DetectedMainRecord> RecordsByFormId { get; }
+
+    /// <summary>
+    ///     Mutable: handlers write to this during reconstruction (e.g., EDID subrecord enrichment).
+    /// </summary>
+    public Dictionary<uint, string> FormIdToEditorId { get; }
+
+    public Dictionary<string, uint> EditorIdToFormId { get; }
+
+    /// <summary>
+    ///     Mutable: handlers write to this during reconstruction (e.g., FULL subrecord enrichment).
+    /// </summary>
+    public Dictionary<uint, string> FormIdToFullName { get; } = new();
+
+    /// <summary>
+    ///     Runtime worldspace cell maps from walking TESWorldSpace pCellMap hash tables.
+    ///     Keyed by worldspace FormID. Set during RecordParser enrichment phase.
+    /// </summary>
+    public Dictionary<uint, RuntimeWorldspaceData>? RuntimeWorldspaceCellMaps { get; set; }
+
+    /// <summary>
+    ///     Pre-built Ref→Base mapping from ScanResult.RefrRecords.
+    ///     Cached for reuse by both ScriptRecordHandler (during reconstruction) and CreateResolver().
+    /// </summary>
+    public Dictionary<uint, uint> RefToBase => _refToBase ??= BuildRefToBase();
+
+    #region Runtime Merge
+
+    /// <summary>
+    ///     Merges runtime-only records into an existing list, deduplicating by FormID.
+    ///     Eliminates the repeated runtime merge pattern across all handler methods.
+    /// </summary>
+    public void MergeRuntimeRecords<T>(
+        List<T> records,
+        byte formType,
+        Func<T, uint> formIdSelector,
+        Func<RuntimeStructReader, RuntimeEditorIdEntry, T?> factory,
+        string typeName) where T : class
+    {
+        if (RuntimeReader == null)
+        {
+            return;
+        }
+
+        var esmFormIds = new HashSet<uint>(records.Count);
+        foreach (var record in records)
+        {
+            esmFormIds.Add(formIdSelector(record));
+        }
+
+        var runtimeCount = 0;
+        foreach (var entry in ScanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType != formType || esmFormIds.Contains(entry.FormId))
+            {
+                continue;
+            }
+
+            var item = factory(RuntimeReader, entry);
+            if (item != null)
+            {
+                records.Add(item);
+                runtimeCount++;
+            }
+        }
+
+        if (runtimeCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Added {runtimeCount} {typeName} from runtime struct reading " +
+                $"(total: {records.Count}, ESM: {esmFormIds.Count})");
+        }
+    }
+
+    #endregion
 
     #region Lookup Methods
 
@@ -275,59 +326,9 @@ public sealed class RecordParserContext
     }
 
     /// <summary>Creates a FormIdResolver from the current context's dictionaries.</summary>
-    public Export.FormIdResolver CreateResolver()
+    public FormIdResolver CreateResolver()
     {
-        return new Export.FormIdResolver(FormIdToEditorId, BuildFormIdToDisplayNameMap(), RefToBase);
-    }
-
-    #endregion
-
-    #region Runtime Merge
-
-    /// <summary>
-    ///     Merges runtime-only records into an existing list, deduplicating by FormID.
-    ///     Eliminates the repeated runtime merge pattern across all handler methods.
-    /// </summary>
-    public void MergeRuntimeRecords<T>(
-        List<T> records,
-        byte formType,
-        Func<T, uint> formIdSelector,
-        Func<RuntimeStructReader, RuntimeEditorIdEntry, T?> factory,
-        string typeName) where T : class
-    {
-        if (RuntimeReader == null)
-        {
-            return;
-        }
-
-        var esmFormIds = new HashSet<uint>(records.Count);
-        foreach (var record in records)
-        {
-            esmFormIds.Add(formIdSelector(record));
-        }
-
-        var runtimeCount = 0;
-        foreach (var entry in ScanResult.RuntimeEditorIds)
-        {
-            if (entry.FormType != formType || esmFormIds.Contains(entry.FormId))
-            {
-                continue;
-            }
-
-            var item = factory(RuntimeReader, entry);
-            if (item != null)
-            {
-                records.Add(item);
-                runtimeCount++;
-            }
-        }
-
-        if (runtimeCount > 0)
-        {
-            Logger.Instance.Debug(
-                $"  [Semantic] Added {runtimeCount} {typeName} from runtime struct reading " +
-                $"(total: {records.Count}, ESM: {esmFormIds.Count})");
-        }
+        return new FormIdResolver(FormIdToEditorId, BuildFormIdToDisplayNameMap(), RefToBase);
     }
 
     #endregion

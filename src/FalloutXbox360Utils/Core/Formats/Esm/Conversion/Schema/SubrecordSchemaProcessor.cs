@@ -226,7 +226,7 @@ public static class SubrecordSchemaProcessor
 
         // ATXT/BTXT: FormID swap at offset 0, Layer (uint16) swap at offset 6 are handled by the schema.
         // Byte 5 (PlatformFlag) must be set to 0x88 for PC — Xbox 360 stores 0x00, PC expects 0x88.
-        if ((signature is "ATXT" or "BTXT") && result.Length >= 6)
+        if (signature is "ATXT" or "BTXT" && result.Length >= 6)
         {
             result[5] = 0x88;
         }

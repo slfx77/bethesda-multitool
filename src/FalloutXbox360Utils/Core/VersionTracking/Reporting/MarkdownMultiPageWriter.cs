@@ -1,6 +1,5 @@
 using System.Text;
 using FalloutXbox360Utils.Core.VersionTracking.Models;
-using FalloutXbox360Utils.Core.VersionTracking.Processing;
 
 namespace FalloutXbox360Utils.Core.VersionTracking.Reporting;
 
@@ -10,28 +9,6 @@ namespace FalloutXbox360Utils.Core.VersionTracking.Reporting;
 /// </summary>
 public static class MarkdownMultiPageWriter
 {
-    #region Types
-
-    private sealed record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
-
-    private sealed record RecordHistory(
-        uint FormId, string? EditorId, string? FullName, string Category,
-        List<ChangePoint> ChangePoints);
-
-    private sealed record CutRecord(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen);
-
-    /// <summary>Defines a record category with accessors for snapshots and diffs.</summary>
-    private sealed record CategoryDef(
-        string Name,
-        string FileName,
-        string Description,
-        Func<VersionDiffResult, List<RecordChange>> DiffSelector,
-        Func<VersionSnapshot, int> Counter,
-        Func<VersionSnapshot, IEnumerable<KeyValuePair<uint, object>>> RecordSelector,
-        Func<object, List<VersionSnapshot>, string> GroupClassifier);
-
-    #endregion
-
     #region Category Definitions
 
     private static readonly CategoryDef[] Categories =
@@ -182,7 +159,8 @@ public static class MarkdownMultiPageWriter
 
         foreach (var (name, _, total, cut, changed) in stats)
         {
-            sb.AppendLine($"| [{name}]({Categories.First(c => c.Name == name).FileName}) | {total:N0} | {cut:N0} | {changed:N0} |");
+            sb.AppendLine(
+                $"| [{name}]({Categories.First(c => c.Name == name).FileName}) | {total:N0} | {cut:N0} | {changed:N0} |");
             totalFinal += total;
             totalCut += cut;
             totalChanged += changed;
@@ -199,8 +177,15 @@ public static class MarkdownMultiPageWriter
         foreach (var (name, fileName, _, cut, changed) in stats)
         {
             var parts = new List<string>();
-            if (cut > 0) { parts.Add($"{cut} cut"); }
-            if (changed > 0) { parts.Add($"{changed} changed"); }
+            if (cut > 0)
+            {
+                parts.Add($"{cut} cut");
+            }
+
+            if (changed > 0)
+            {
+                parts.Add($"{changed} changed");
+            }
 
             var desc = parts.Count > 0 ? string.Join(", ", parts) : "no changes detected";
             sb.AppendLine($"- [{name}]({fileName}) — {desc}");
@@ -226,8 +211,10 @@ public static class MarkdownMultiPageWriter
         // Build progression table
         sb.AppendLine("## Build Progression");
         sb.AppendLine();
-        sb.AppendLine("| # | Build | Date | Source | Quests | NPCs | Weapons | Armor | Items | Scripts | Dialogues | Locations | Total |");
-        sb.AppendLine("|---|-------|------|--------|--------|------|---------|-------|-------|---------|-----------|-----------|-------|");
+        sb.AppendLine(
+            "| # | Build | Date | Source | Quests | NPCs | Weapons | Armor | Items | Scripts | Dialogues | Locations | Total |");
+        sb.AppendLine(
+            "|---|-------|------|--------|--------|------|---------|-------|-------|---------|-----------|-----------|-------|");
 
         for (var i = 0; i < snapshots.Count; i++)
         {
@@ -311,6 +298,31 @@ public static class MarkdownMultiPageWriter
 
     #endregion
 
+    #region Types
+
+    private sealed record ChangePoint(string BuildLabel, DateTimeOffset? BuildDate, List<FieldChange> FieldChanges);
+
+    private sealed record RecordHistory(
+        uint FormId,
+        string? EditorId,
+        string? FullName,
+        string Category,
+        List<ChangePoint> ChangePoints);
+
+    private sealed record CutRecord(uint FormId, string? EditorId, string? Name, string FirstSeen, string LastSeen);
+
+    /// <summary>Defines a record category with accessors for snapshots and diffs.</summary>
+    private sealed record CategoryDef(
+        string Name,
+        string FileName,
+        string Description,
+        Func<VersionDiffResult, List<RecordChange>> DiffSelector,
+        Func<VersionSnapshot, int> Counter,
+        Func<VersionSnapshot, IEnumerable<KeyValuePair<uint, object>>> RecordSelector,
+        Func<object, List<VersionSnapshot>, string> GroupClassifier);
+
+    #endregion
+
     #region Cut Content Section
 
     private static void WriteCutContentSection(
@@ -345,7 +357,8 @@ public static class MarkdownMultiPageWriter
             foreach (var r in records.OrderBy(r => r.Name ?? r.EditorId ?? $"0x{r.FormId:X8}"))
             {
                 var heading = GetTcrfHeading(r.Name, r.EditorId, r.FormId);
-                sb.AppendLine($"| {Esc(heading)} | {r.EditorId ?? ""} | 0x{r.FormId:X8} | {Esc(r.FirstSeen)} | {Esc(r.LastSeen)} |");
+                sb.AppendLine(
+                    $"| {Esc(heading)} | {r.EditorId ?? ""} | 0x{r.FormId:X8} | {Esc(r.FirstSeen)} | {Esc(r.LastSeen)} |");
             }
 
             sb.AppendLine();
@@ -441,8 +454,9 @@ public static class MarkdownMultiPageWriter
         // Write minor changes in collapsible block
         if (minorHistories.Count > 0)
         {
-            sb.AppendLine($"<details>");
-            sb.AppendLine($"<summary>{minorHistories.Count} records with minor changes (flags, padding, etc.)</summary>");
+            sb.AppendLine("<details>");
+            sb.AppendLine(
+                $"<summary>{minorHistories.Count} records with minor changes (flags, padding, etc.)</summary>");
             sb.AppendLine();
 
             var minorGroups = minorHistories
@@ -554,7 +568,7 @@ public static class MarkdownMultiPageWriter
             foreach (var cp in history.ChangePoints)
             {
                 var fc = cp.FieldChanges.FirstOrDefault(f => f.FieldName == field);
-                var value = fc != null ? (fc.NewValue ?? "(none)") : "-";
+                var value = fc != null ? fc.NewValue ?? "(none)" : "-";
                 sb.Append($" {Esc(value)} |");
             }
 
@@ -1044,61 +1058,75 @@ public static class MarkdownMultiPageWriter
             {
                 var stages = string.Join(", ", quest.Stages.Select(s => s.Index));
                 var objectives = string.Join("; ", quest.Objectives.Select(o => o.DisplayText ?? "?"));
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | QUST | {quest.FullName ?? quest.EditorId ?? ""} | Stages: [{stages}] Objectives: [{objectives}] |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | QUST | {quest.FullName ?? quest.EditorId ?? ""} | Stages: [{stages}] Objectives: [{objectives}] |");
             }
             else if (snapshot.Npcs.TryGetValue(formId, out var npc))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | NPC_ | {npc.FullName ?? npc.EditorId ?? ""} | Level: {npc.Level} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | NPC_ | {npc.FullName ?? npc.EditorId ?? ""} | Level: {npc.Level} |");
             }
             else if (snapshot.Weapons.TryGetValue(formId, out var weapon))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | WEAP | {weapon.FullName ?? weapon.EditorId ?? ""} | Dmg: {weapon.Damage}, Clip: {weapon.ClipSize} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | WEAP | {weapon.FullName ?? weapon.EditorId ?? ""} | Dmg: {weapon.Damage}, Clip: {weapon.ClipSize} |");
             }
             else if (snapshot.Armor.TryGetValue(formId, out var armor))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | ARMO | {armor.FullName ?? armor.EditorId ?? ""} | DT: {armor.DamageThreshold:F1} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | ARMO | {armor.FullName ?? armor.EditorId ?? ""} | DT: {armor.DamageThreshold:F1} |");
             }
             else if (snapshot.Items.TryGetValue(formId, out var item))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | {item.RecordType} | {item.FullName ?? item.EditorId ?? ""} | Value: {item.Value} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | {item.RecordType} | {item.FullName ?? item.EditorId ?? ""} | Value: {item.Value} |");
             }
             else if (snapshot.Scripts.TryGetValue(formId, out var script))
             {
                 var hasSource = !string.IsNullOrEmpty(script.SourceText);
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | SCPT | {script.EditorId ?? ""} | {script.ScriptType}, Vars: {script.VariableCount}, Source: {(hasSource ? "Yes" : "No")} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | SCPT | {script.EditorId ?? ""} | {script.ScriptType}, Vars: {script.VariableCount}, Source: {(hasSource ? "Yes" : "No")} |");
             }
             else if (snapshot.Dialogues.TryGetValue(formId, out var dialogue))
             {
                 var text = dialogue.ResponseTexts.FirstOrDefault() ?? "";
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | INFO | {dialogue.EditorId ?? ""} | {Esc(text)} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | INFO | {dialogue.EditorId ?? ""} | {Esc(text)} |");
             }
             else if (snapshot.Locations.TryGetValue(formId, out var location))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | {location.RecordType} | {location.FullName ?? location.EditorId ?? ""} | |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | {location.RecordType} | {location.FullName ?? location.EditorId ?? ""} | |");
             }
             else if (snapshot.Creatures.TryGetValue(formId, out var creature))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | CREA | {creature.FullName ?? creature.EditorId ?? ""} | Level: {creature.Level}, Dmg: {creature.AttackDamage} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | CREA | {creature.FullName ?? creature.EditorId ?? ""} | Level: {creature.Level}, Dmg: {creature.AttackDamage} |");
             }
             else if (snapshot.Perks.TryGetValue(formId, out var perk))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | PERK | {perk.FullName ?? perk.EditorId ?? ""} | Ranks: {perk.Ranks}, MinLevel: {perk.MinLevel} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | PERK | {perk.FullName ?? perk.EditorId ?? ""} | Ranks: {perk.Ranks}, MinLevel: {perk.MinLevel} |");
             }
             else if (snapshot.Ammo.TryGetValue(formId, out var ammo))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | AMMO | {ammo.FullName ?? ammo.EditorId ?? ""} | Value: {ammo.Value}, Speed: {ammo.Speed:F1} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | AMMO | {ammo.FullName ?? ammo.EditorId ?? ""} | Value: {ammo.Value}, Speed: {ammo.Speed:F1} |");
             }
             else if (snapshot.LeveledLists.TryGetValue(formId, out var leveledList))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | {leveledList.ListType} | {leveledList.EditorId ?? ""} | Entries: {leveledList.Entries.Count}, ChanceNone: {leveledList.ChanceNone} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | {leveledList.ListType} | {leveledList.EditorId ?? ""} | Entries: {leveledList.Entries.Count}, ChanceNone: {leveledList.ChanceNone} |");
             }
             else if (snapshot.Notes.TryGetValue(formId, out var note))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | NOTE | {note.FullName ?? note.EditorId ?? ""} | Type: {note.NoteType} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | NOTE | {note.FullName ?? note.EditorId ?? ""} | Type: {note.NoteType} |");
             }
             else if (snapshot.Terminals.TryGetValue(formId, out var terminal))
             {
-                sb.AppendLine($"| {Esc(snapshot.Build.Label)} | {date} | TERM | {terminal.FullName ?? terminal.EditorId ?? ""} | MenuItems: {terminal.MenuItemCount} |");
+                sb.AppendLine(
+                    $"| {Esc(snapshot.Build.Label)} | {date} | TERM | {terminal.FullName ?? terminal.EditorId ?? ""} | MenuItems: {terminal.MenuItemCount} |");
             }
             else
             {
@@ -1108,7 +1136,10 @@ public static class MarkdownMultiPageWriter
     }
 
     /// <summary>Escape pipe characters for markdown table cells.</summary>
-    private static string Esc(string text) => text.Replace("|", "\\|");
+    private static string Esc(string text)
+    {
+        return text.Replace("|", "\\|");
+    }
 
     #endregion
 }

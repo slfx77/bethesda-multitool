@@ -109,19 +109,19 @@ public record RuntimeTerrainMesh
         // Map grid-consistent X count to LOD level:
         // LOD 0: ~33 unique X positions, LOD 1: ~17, LOD 2: ~9, LOD 3: ~5
         int level;
-        if (gridConsistentCount >= 28)       // LOD 0: 33 (allow some missing)
+        if (gridConsistentCount >= 28) // LOD 0: 33 (allow some missing)
         {
             level = 0;
         }
-        else if (gridConsistentCount >= 14)  // LOD 1: 17
+        else if (gridConsistentCount >= 14) // LOD 1: 17
         {
             level = 1;
         }
-        else if (gridConsistentCount >= 7)   // LOD 2: 9
+        else if (gridConsistentCount >= 7) // LOD 2: 9
         {
             level = 2;
         }
-        else if (gridConsistentCount >= 4)   // LOD 3: 5
+        else if (gridConsistentCount >= 4) // LOD 3: 5
         {
             level = 3;
         }
@@ -461,7 +461,7 @@ public record RuntimeTerrainMesh
         {
             for (var sx = 0; sx < verticesPerRow; sx++)
             {
-                var srcIdx = (sy * step) * GridSize + (sx * step);
+                var srcIdx = sy * step * GridSize + sx * step;
                 if (srcIdx < VertexCount)
                 {
                     sparse[sy, sx] = Vertices[srcIdx * 3 + 2];
@@ -488,9 +488,9 @@ public record RuntimeTerrainMesh
                 var fy = srcY - y0;
 
                 heights[y, x] = sparse[y0, x0] * (1 - fx) * (1 - fy)
-                              + sparse[y0, x1] * fx * (1 - fy)
-                              + sparse[y1, x0] * (1 - fx) * fy
-                              + sparse[y1, x1] * fx * fy;
+                                + sparse[y0, x1] * fx * (1 - fy)
+                                + sparse[y1, x0] * (1 - fx) * fy
+                                + sparse[y1, x1] * fx * fy;
             }
         }
 

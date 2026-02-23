@@ -191,6 +191,23 @@ public static class SnapshotCoalescer
     }
 
     /// <summary>
+    ///     Merges multiple dictionaries by FormID. First non-null value wins.
+    /// </summary>
+    private static Dictionary<uint, T> MergeDicts<T>(IEnumerable<Dictionary<uint, T>> dicts)
+    {
+        var merged = new Dictionary<uint, T>();
+        foreach (var dict in dicts)
+        {
+            foreach (var (key, value) in dict)
+            {
+                merged.TryAdd(key, value);
+            }
+        }
+
+        return merged;
+    }
+
+    /// <summary>
     ///     Natural string comparer that sorts embedded numbers numerically
     ///     (e.g., "xex2" before "xex10").
     /// </summary>
@@ -200,9 +217,20 @@ public static class SnapshotCoalescer
 
         public int Compare(string? x, string? y)
         {
-            if (x == y) { return 0; }
-            if (x == null) { return -1; }
-            if (y == null) { return 1; }
+            if (x == y)
+            {
+                return 0;
+            }
+
+            if (x == null)
+            {
+                return -1;
+            }
+
+            if (y == null)
+            {
+                return 1;
+            }
 
             var ix = 0;
             var iy = 0;
@@ -215,12 +243,19 @@ public static class SnapshotCoalescer
                     var nx = ParseDigitRun(x, ref ix);
                     var ny = ParseDigitRun(y, ref iy);
                     var cmp = nx.CompareTo(ny);
-                    if (cmp != 0) { return cmp; }
+                    if (cmp != 0)
+                    {
+                        return cmp;
+                    }
                 }
                 else
                 {
                     var cmp = char.ToLowerInvariant(x[ix]).CompareTo(char.ToLowerInvariant(y[iy]));
-                    if (cmp != 0) { return cmp; }
+                    if (cmp != 0)
+                    {
+                        return cmp;
+                    }
+
                     ix++;
                     iy++;
                 }
@@ -239,22 +274,5 @@ public static class SnapshotCoalescer
 
             return long.Parse(s.AsSpan(start, pos - start));
         }
-    }
-
-    /// <summary>
-    ///     Merges multiple dictionaries by FormID. First non-null value wins.
-    /// </summary>
-    private static Dictionary<uint, T> MergeDicts<T>(IEnumerable<Dictionary<uint, T>> dicts)
-    {
-        var merged = new Dictionary<uint, T>();
-        foreach (var dict in dicts)
-        {
-            foreach (var (key, value) in dict)
-            {
-                merged.TryAdd(key, value);
-            }
-        }
-
-        return merged;
     }
 }

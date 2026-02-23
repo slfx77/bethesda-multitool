@@ -81,12 +81,12 @@ public static class MapExportLayoutEngine
     {
         var radius = MathF.Max(4f, longEdge * 0.004f);
         return new MapExportSizing(
-            MarkerRadius: radius,
-            LabelFontSize: MathF.Max(8f, longEdge * 0.0055f),
-            OutlineWidth: MathF.Max(1f, longEdge * 0.0005f),
-            LabelPadH: longEdge * 0.002f,
-            LabelPadV: longEdge * 0.001f,
-            Gap: MathF.Max(2f, radius * 0.5f));
+            radius,
+            MathF.Max(8f, longEdge * 0.0055f),
+            MathF.Max(1f, longEdge * 0.0005f),
+            longEdge * 0.002f,
+            longEdge * 0.001f,
+            MathF.Max(2f, radius * 0.5f));
     }
 
     // ========================================================================
@@ -193,53 +193,62 @@ public static class MapExportLayoutEngine
     // ========================================================================
 
     /// <summary>Marker rendering priority (0 = highest / City, 9 = lowest / unknown).</summary>
-    public static int GetMarkerPriority(MapMarkerType? type) => type switch
+    public static int GetMarkerPriority(MapMarkerType? type)
     {
-        MapMarkerType.City => 0,
-        MapMarkerType.Settlement => 1,
-        MapMarkerType.Encampment => 2,
-        MapMarkerType.Military => 3,
-        MapMarkerType.Monument => 4,
-        MapMarkerType.Vault => 5,
-        MapMarkerType.Factory => 6,
-        MapMarkerType.Cave => 7,
-        MapMarkerType.NaturalLandmark => 8,
-        _ => 9
-    };
+        return type switch
+        {
+            MapMarkerType.City => 0,
+            MapMarkerType.Settlement => 1,
+            MapMarkerType.Encampment => 2,
+            MapMarkerType.Military => 3,
+            MapMarkerType.Monument => 4,
+            MapMarkerType.Vault => 5,
+            MapMarkerType.Factory => 6,
+            MapMarkerType.Cave => 7,
+            MapMarkerType.NaturalLandmark => 8,
+            _ => 9
+        };
+    }
 
     /// <summary>Segoe MDL2 Assets glyph codepoint for a marker type.</summary>
-    public static string GetMarkerGlyph(MapMarkerType? type) => type switch
+    public static string GetMarkerGlyph(MapMarkerType? type)
     {
-        MapMarkerType.City => "\uE80F",
-        MapMarkerType.Settlement => "\uE825",
-        MapMarkerType.Encampment => "\uE7C1",
-        MapMarkerType.Cave => "\uE774",
-        MapMarkerType.Factory => "\uE8B1",
-        MapMarkerType.Monument => "\uE734",
-        MapMarkerType.Military => "\uE7C8",
-        MapMarkerType.Vault => "\uE72E",
-        _ => "\uE81D"
-    };
+        return type switch
+        {
+            MapMarkerType.City => "\uE80F",
+            MapMarkerType.Settlement => "\uE825",
+            MapMarkerType.Encampment => "\uE7C1",
+            MapMarkerType.Cave => "\uE774",
+            MapMarkerType.Factory => "\uE8B1",
+            MapMarkerType.Monument => "\uE734",
+            MapMarkerType.Military => "\uE7C8",
+            MapMarkerType.Vault => "\uE72E",
+            _ => "\uE81D"
+        };
+    }
 
     /// <summary>RGB color for a marker type (all 14 game types covered).</summary>
-    public static (byte R, byte G, byte B) GetMarkerColor(MapMarkerType? type) => type switch
+    public static (byte R, byte G, byte B) GetMarkerColor(MapMarkerType? type)
     {
-        MapMarkerType.City => (255, 215, 0),
-        MapMarkerType.Settlement => (200, 170, 80),
-        MapMarkerType.Encampment => (180, 140, 60),
-        MapMarkerType.Cave => (120, 100, 80),
-        MapMarkerType.Factory => (180, 180, 180),
-        MapMarkerType.Monument => (220, 200, 160),
-        MapMarkerType.Military => (200, 60, 60),
-        MapMarkerType.Vault => (80, 140, 255),
-        MapMarkerType.NaturalLandmark => (160, 180, 120),
-        MapMarkerType.Office => (170, 170, 200),
-        MapMarkerType.RuinsTown => (150, 120, 90),
-        MapMarkerType.RuinsUrban => (140, 130, 110),
-        MapMarkerType.RuinsSewer => (100, 90, 80),
-        MapMarkerType.Metro => (160, 160, 180),
-        _ => (200, 200, 200)
-    };
+        return type switch
+        {
+            MapMarkerType.City => (255, 215, 0),
+            MapMarkerType.Settlement => (200, 170, 80),
+            MapMarkerType.Encampment => (180, 140, 60),
+            MapMarkerType.Cave => (120, 100, 80),
+            MapMarkerType.Factory => (180, 180, 180),
+            MapMarkerType.Monument => (220, 200, 160),
+            MapMarkerType.Military => (200, 60, 60),
+            MapMarkerType.Vault => (80, 140, 255),
+            MapMarkerType.NaturalLandmark => (160, 180, 120),
+            MapMarkerType.Office => (170, 170, 200),
+            MapMarkerType.RuinsTown => (150, 120, 90),
+            MapMarkerType.RuinsUrban => (140, 130, 110),
+            MapMarkerType.RuinsSewer => (100, 90, 80),
+            MapMarkerType.Metro => (160, 160, 180),
+            _ => (200, 200, 200)
+        };
+    }
 
     // ========================================================================
     // Full layout

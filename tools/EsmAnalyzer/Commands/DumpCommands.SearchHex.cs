@@ -1,4 +1,4 @@
-﻿using EsmAnalyzer.Helpers;
+﻿using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
@@ -7,7 +7,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Schema;
-using static EsmAnalyzer.Helpers.RecordTraversalHelpers;
+using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.RecordTraversalHelpers;
 
 namespace EsmAnalyzer.Commands;
 

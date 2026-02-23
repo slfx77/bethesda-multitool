@@ -101,7 +101,7 @@ internal static class AssetNameResolver
         for (var i = 0; i < name.Length; i++)
         {
             var c = name[i];
-            result[i] = (InvalidFileNameChars.Contains(c) || c is '/' or '\\' or ':') ? '_' : c;
+            result[i] = InvalidFileNameChars.Contains(c) || c is '/' or '\\' or ':' ? '_' : c;
         }
 
         var sanitized = new string(result).Trim('_', ' ', '.');

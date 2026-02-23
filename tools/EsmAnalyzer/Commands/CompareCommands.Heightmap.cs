@@ -1,4 +1,4 @@
-using EsmAnalyzer.Helpers;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using System.Buffers.Binary;
 using System.Text;

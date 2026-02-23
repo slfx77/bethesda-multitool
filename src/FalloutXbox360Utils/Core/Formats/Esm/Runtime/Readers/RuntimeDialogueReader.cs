@@ -13,87 +13,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     private readonly RuntimeMemoryContext _context = context;
     private readonly InfoOffsets _info = InfoLayout;
 
-    #region Struct Layouts
-
-    /// <summary>
-    ///     TESTopicInfo struct layout offsets.
-    ///     TESTopicInfo inherits directly from TESForm (not TESBoundObject), so fields after
-    ///     TESForm base (+24) are shifted by only +4 in the dump, not +16.
-    ///     PDB size = 80 bytes, dump size = 84 bytes (+4 shift extends last field to +84).
-    /// </summary>
-    private sealed record InfoOffsets(
-        int StructSize,
-        int IndexOffset,
-        int DataOffset,
-        int PromptOffset,
-        int SpeakerPtrOffset,
-        int DifficultyOffset,
-        int QuestPtrOffset);
-
-    // TESTopicInfo: Proto Debug PDB = 80 bytes, dump = 84 bytes (PDB + 4 shift after TESForm base).
-    // PDB offsets → dump offsets: 32→36, 35→39, 40→44, 60→64, 68→72, 72→76.
-    private static readonly InfoOffsets InfoLayout = new(84, 36, 39, 44, 64, 72, 76);
-
-    // TESForm field present in Release builds (not in Proto Debug PDB):
-    // cFormEditorID BSStringT at offset 16 (same in both PDB and runtime — within TESForm base).
-    private const int FormEditorIdOffset = 16;
-
-    // Additional TESTopicInfo offsets (adjusted = PDB + 4 shift):
-    // bSaidOnce at PDB+34 → dump +38, m_listAddTopics at PDB+48 → dump +52.
-    private const int InfoSaidOnceOffset = 38;
-    private const int InfoAddTopicsOffset = 52;
-
-    // TESTopic layout — consistent across all known builds (Final Debug / Release PDB, 80 bytes).
-    // FullName=+44, DataType=+52, Flags=+53, Priority=+56, QuestInfoList=+60, DummyPrompt=+68.
-    private const int DialStructSize = 80;
-    private const int DialFullNameOffset = 44;
-    private const int DialDataTypeOffset = 52;
-    private const int DialDataFlagsOffset = 53;
-    private const int DialPriorityOffset = 56;
-    private const int DialQuestInfoListOffset = 60;
-    private const int DialDummyPromptOffset = 68;
-
-    #endregion
-
     // Build-specific offset shift for Note/Quest/Terminal structs.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
-
-    #region Note Struct Layout (Proto Debug PDB base + _s)
-
-    // BGSNote: PDB size 128, Debug dump 132, Release dump 144
-    private int NoteStructSize => 128 + _s;
-    private int NoteTypeOffset => 124 + _s;
-    private int NoteModelPathOffset => 52 + _s;
-    private int NoteFullNameOffset => 76 + _s;
-
-    #endregion
-
-    #region Quest Struct Layout (Proto Debug PDB base + _s)
-
-    // TESQuest: PDB size 108, Debug dump 112, Release dump 124
-    private int QustStructSize => 108 + _s;
-    private int QustFlagsOffset => 60 + _s;
-    private int QustPriorityOffset => 61 + _s;
-    private int QustFullNameOffset => 52 + _s;
-
-    #endregion
-
-    #region Terminal Struct Layout (Proto Debug PDB base + _s)
-
-    // BGSTerminal: PDB size 168, Debug dump 172, Release dump 184
-    private int TermStructSize => 168 + _s;
-    private int TermDifficultyOffset => 116 + _s;
-    private int TermFlagsOffset => 117 + _s;
-    private int TermPasswordOffset => 120 + _s;
-    private int TermMenuItemListOffset => 136 + _s;
-    // TERMINAL_MENU_ITEM offsets — fixed within the menu item struct, not TESForm-derived
-    private const int MenuItemSize = 120;
-    private const int MenuItemResponseTextOffset = 0;
-    private const int MenuItemResultScriptOffset = 16;
-    private const int MenuItemSubMenuOffset = 112;
-
-    #endregion
 
     /// <summary>
     ///     Read extended topic data from a runtime TESTopic struct.
@@ -851,4 +773,83 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         return results;
     }
 
+    #region Struct Layouts
+
+    /// <summary>
+    ///     TESTopicInfo struct layout offsets.
+    ///     TESTopicInfo inherits directly from TESForm (not TESBoundObject), so fields after
+    ///     TESForm base (+24) are shifted by only +4 in the dump, not +16.
+    ///     PDB size = 80 bytes, dump size = 84 bytes (+4 shift extends last field to +84).
+    /// </summary>
+    private sealed record InfoOffsets(
+        int StructSize,
+        int IndexOffset,
+        int DataOffset,
+        int PromptOffset,
+        int SpeakerPtrOffset,
+        int DifficultyOffset,
+        int QuestPtrOffset);
+
+    // TESTopicInfo: Proto Debug PDB = 80 bytes, dump = 84 bytes (PDB + 4 shift after TESForm base).
+    // PDB offsets → dump offsets: 32→36, 35→39, 40→44, 60→64, 68→72, 72→76.
+    private static readonly InfoOffsets InfoLayout = new(84, 36, 39, 44, 64, 72, 76);
+
+    // TESForm field present in Release builds (not in Proto Debug PDB):
+    // cFormEditorID BSStringT at offset 16 (same in both PDB and runtime — within TESForm base).
+    private const int FormEditorIdOffset = 16;
+
+    // Additional TESTopicInfo offsets (adjusted = PDB + 4 shift):
+    // bSaidOnce at PDB+34 → dump +38, m_listAddTopics at PDB+48 → dump +52.
+    private const int InfoSaidOnceOffset = 38;
+    private const int InfoAddTopicsOffset = 52;
+
+    // TESTopic layout — consistent across all known builds (Final Debug / Release PDB, 80 bytes).
+    // FullName=+44, DataType=+52, Flags=+53, Priority=+56, QuestInfoList=+60, DummyPrompt=+68.
+    private const int DialStructSize = 80;
+    private const int DialFullNameOffset = 44;
+    private const int DialDataTypeOffset = 52;
+    private const int DialDataFlagsOffset = 53;
+    private const int DialPriorityOffset = 56;
+    private const int DialQuestInfoListOffset = 60;
+    private const int DialDummyPromptOffset = 68;
+
+    #endregion
+
+    #region Note Struct Layout (Proto Debug PDB base + _s)
+
+    // BGSNote: PDB size 128, Debug dump 132, Release dump 144
+    private int NoteStructSize => 128 + _s;
+    private int NoteTypeOffset => 124 + _s;
+    private int NoteModelPathOffset => 52 + _s;
+    private int NoteFullNameOffset => 76 + _s;
+
+    #endregion
+
+    #region Quest Struct Layout (Proto Debug PDB base + _s)
+
+    // TESQuest: PDB size 108, Debug dump 112, Release dump 124
+    private int QustStructSize => 108 + _s;
+    private int QustFlagsOffset => 60 + _s;
+    private int QustPriorityOffset => 61 + _s;
+    private int QustFullNameOffset => 52 + _s;
+
+    #endregion
+
+    #region Terminal Struct Layout (Proto Debug PDB base + _s)
+
+    // BGSTerminal: PDB size 168, Debug dump 172, Release dump 184
+    private int TermStructSize => 168 + _s;
+    private int TermDifficultyOffset => 116 + _s;
+    private int TermFlagsOffset => 117 + _s;
+    private int TermPasswordOffset => 120 + _s;
+
+    private int TermMenuItemListOffset => 136 + _s;
+
+    // TERMINAL_MENU_ITEM offsets — fixed within the menu item struct, not TESForm-derived
+    private const int MenuItemSize = 120;
+    private const int MenuItemResponseTextOffset = 0;
+    private const int MenuItemResultScriptOffset = 16;
+    private const int MenuItemSubMenuOffset = 112;
+
+    #endregion
 }

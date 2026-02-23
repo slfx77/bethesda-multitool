@@ -1,3 +1,4 @@
+using Windows.UI.Text;
 using FalloutAudioTranscriber.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -13,6 +14,13 @@ public sealed partial class VoiceFileDetailPanel : UserControl
         InitializeComponent();
     }
 
+    /// <summary>Get or set the transcription text box content.</summary>
+    public string TranscriptionText
+    {
+        get => TranscriptionTextBox.Text;
+        set => TranscriptionTextBox.Text = value;
+    }
+
     /// <summary>Raised when the user clicks Approve.</summary>
     public event EventHandler? ApproveRequested;
 
@@ -21,13 +29,6 @@ public sealed partial class VoiceFileDetailPanel : UserControl
 
     /// <summary>Raised when the user clicks Reject (revert to ESM text).</summary>
     public event EventHandler? RejectRequested;
-
-    /// <summary>Get or set the transcription text box content.</summary>
-    public string TranscriptionText
-    {
-        get => TranscriptionTextBox.Text;
-        set => TranscriptionTextBox.Text = value;
-    }
 
     /// <summary>Set whether ESM lines should show transcription controls.</summary>
     public void SetTranscribeEsmMode(bool enabled)
@@ -87,8 +88,8 @@ public sealed partial class VoiceFileDetailPanel : UserControl
 
         SubtitleText.Text = entry.HasSubtitle ? entry.SubtitleText! : "(no subtitle in ESM)";
         SubtitleText.FontStyle = entry.HasSubtitle
-            ? Windows.UI.Text.FontStyle.Normal
-            : Windows.UI.Text.FontStyle.Italic;
+            ? FontStyle.Normal
+            : FontStyle.Italic;
 
         BsaPathText.Text = entry.BsaPath;
 
@@ -145,7 +146,18 @@ public sealed partial class VoiceFileDetailPanel : UserControl
         TranscribeButton.IsEnabled = available;
     }
 
-    private void Approve_Click(object sender, RoutedEventArgs e) => ApproveRequested?.Invoke(this, EventArgs.Empty);
-    private void Transcribe_Click(object sender, RoutedEventArgs e) => TranscribeRequested?.Invoke(this, EventArgs.Empty);
-    private void Reject_Click(object sender, RoutedEventArgs e) => RejectRequested?.Invoke(this, EventArgs.Empty);
+    private void Approve_Click(object sender, RoutedEventArgs e)
+    {
+        ApproveRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Transcribe_Click(object sender, RoutedEventArgs e)
+    {
+        TranscribeRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Reject_Click(object sender, RoutedEventArgs e)
+    {
+        RejectRequested?.Invoke(this, EventArgs.Empty);
+    }
 }

@@ -6,6 +6,18 @@ namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 /// </summary>
 public sealed class SaveStatistics
 {
+    /// <summary>Stat labels by index.</summary>
+    public static readonly string[] Labels =
+    [
+        "Quests Completed", "Locations Discovered", "People Killed", "Creatures Killed",
+        "Locks Picked", "Computers Hacked", "Stimpaks Taken", "Rad-X Taken",
+        "RadAway Taken", "Chems Taken", "Times Addicted", "Mines Disarmed",
+        "Speech Successes", "Pockets Picked", "Pants Exploded", "Books Read",
+        "Bobbleheads Found", "Weapons Created", "People Mesmerized", "Captives Rescued",
+        "Sandman Kills", "Paralyzing Punches", "Robots Disabled", "Contracts Completed",
+        "Corpses Eaten", "Mysterious Stranger Visits", "Challenges Completed"
+    ];
+
     /// <summary>Raw stat values indexed by position.</summary>
     public IReadOnlyList<uint> Values { get; init; } = [];
 
@@ -39,18 +51,6 @@ public sealed class SaveStatistics
     public uint CorpsesEaten => GetValueOrDefault(24);
     public uint MysteriousStrangerVisits => GetValueOrDefault(25);
     public uint ChallengesCompleted => GetValueOrDefault(26);
-
-    /// <summary>Stat labels by index.</summary>
-    public static readonly string[] Labels =
-    [
-        "Quests Completed", "Locations Discovered", "People Killed", "Creatures Killed",
-        "Locks Picked", "Computers Hacked", "Stimpaks Taken", "Rad-X Taken",
-        "RadAway Taken", "Chems Taken", "Times Addicted", "Mines Disarmed",
-        "Speech Successes", "Pockets Picked", "Pants Exploded", "Books Read",
-        "Bobbleheads Found", "Weapons Created", "People Mesmerized", "Captives Rescued",
-        "Sandman Kills", "Paralyzing Punches", "Robots Disabled", "Contracts Completed",
-        "Corpses Eaten", "Mysterious Stranger Visits", "Challenges Completed"
-    ];
 
     private uint GetValueOrDefault(int index)
     {

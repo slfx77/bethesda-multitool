@@ -1,5 +1,4 @@
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Strings;
 
@@ -816,7 +815,8 @@ internal static class CsvMiscWriter
         var matchedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Emit rows for each FormID → model path mapping
-        foreach (var (formId, modelPath) in records.ModelPathIndex.OrderBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase))
+        foreach (var (formId, modelPath) in records.ModelPathIndex.OrderBy(kv => kv.Value,
+                     StringComparer.OrdinalIgnoreCase))
         {
             var editorId = records.FormIdToEditorId.GetValueOrDefault(formId, "");
             var recordType = formIdToType.GetValueOrDefault(formId, "");
@@ -889,6 +889,8 @@ internal static class CsvMiscWriter
         }
 
         static string NormalizePath(string path)
-            => path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
+        {
+            return path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
+        }
     }
 }

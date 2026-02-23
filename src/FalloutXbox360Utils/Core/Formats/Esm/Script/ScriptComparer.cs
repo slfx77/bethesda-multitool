@@ -17,7 +17,7 @@ public static class ScriptComparer
     public static Dictionary<string, string> BuildFunctionNameNormalizationMap()
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        for (ushort opcode = ScriptOpcodes.MinFunctionOpcode; opcode < 0x2000; opcode++)
+        for (var opcode = ScriptOpcodes.MinFunctionOpcode; opcode < 0x2000; opcode++)
         {
             var def = ScriptFunctionTable.Get(opcode);
             if (def == null)
@@ -136,7 +136,8 @@ public static class ScriptComparer
         // Normalize: strip parens/quotes/commas, collapse whitespace, then re-normalize function names
         // (function names may have been adjacent to parens on first pass, e.g., "(IsDLCInstalled")
         var sourceNorm = NormalizeWords(NormalizeFunctionNames(NormalizeParensAndSpaces(sourceCanonical), nameMap));
-        var decompiledNorm = NormalizeWords(NormalizeFunctionNames(NormalizeParensAndSpaces(decompiledCanonical), nameMap));
+        var decompiledNorm =
+            NormalizeWords(NormalizeFunctionNames(NormalizeParensAndSpaces(decompiledCanonical), nameMap));
         if (string.Equals(sourceNorm, decompiledNorm, StringComparison.OrdinalIgnoreCase))
         {
             return "Parenthesization";
@@ -237,7 +238,7 @@ public static class ScriptComparer
         // Count remaining lines as missing/extra
         result.MismatchesByCategory.TryGetValue("MissingLine", out var missing);
         result.MismatchesByCategory["MissingLine"] = missing + Math.Abs(
-            (sourceLines.Count - si) - (decompiledLines.Count - di));
+            sourceLines.Count - si - (decompiledLines.Count - di));
 
         return result;
     }

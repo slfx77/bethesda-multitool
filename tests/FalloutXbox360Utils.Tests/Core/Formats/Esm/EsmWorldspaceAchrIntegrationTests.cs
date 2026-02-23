@@ -49,7 +49,7 @@ public class EsmWorldspaceAchrIntegrationTests(ITestOutputHelper output, SampleF
 
         // Check which cell Veronica maps to via CellToRefrMap
         uint? veronicaCellFormId = null;
-        foreach (KeyValuePair<uint, List<uint>> entry in scanResult.CellToRefrMap)
+        foreach (var entry in scanResult.CellToRefrMap)
         {
             if (entry.Value.Contains(0x000E32A9))
             {

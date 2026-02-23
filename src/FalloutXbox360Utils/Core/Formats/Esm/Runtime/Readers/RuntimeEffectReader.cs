@@ -16,25 +16,6 @@ internal sealed class RuntimeEffectReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    #region Projectile Struct Layout (Proto Debug PDB base + _s)
-
-    // BGSProjectile: PDB size 208, Debug dump 212, Release dump 224
-    private int ProjStructSize => 208 + _s;
-    private int ProjGravityOffset => 100 + _s;
-    private int ProjSpeedOffset => 104 + _s;
-    private int ProjRangeOffset => 108 + _s;
-    private int ProjExplosionOffset => 132 + _s;
-    private int ProjActiveSoundOffset => 136 + _s;
-    private int ProjMuzzleFlashDurOffset => 140 + _s;
-    private int ProjForceOffset => 148 + _s;
-    private int ProjCountdownSoundOffset => 152 + _s;
-    private int ProjDeactivateSoundOffset => 156 + _s;
-
-    /// <summary>Model path BSStringT offset, shared by all TESBoundObject-derived types.</summary>
-    private int ModelPathOffset => 64 + _s;
-
-    #endregion
-
     /// <summary>
     ///     Read BGSProjectile physics/sound data from a runtime struct at the given file offset.
     ///     Returns null if validation fails (struct not readable or values out of range).
@@ -91,7 +72,8 @@ internal sealed class RuntimeEffectReader(RuntimeMemoryContext context)
         var deactivateSound = _context.FollowPointerToFormId(buffer, ProjDeactivateSoundOffset);
 
         // Read world model path
-        var modelPath = _context.ReadBSStringT(fileOffset, ModelPathOffset); // Same +80 offset as other TESBoundObject types
+        var modelPath =
+            _context.ReadBSStringT(fileOffset, ModelPathOffset); // Same +80 offset as other TESBoundObject types
 
         return new ProjectilePhysicsData
         {
@@ -107,4 +89,23 @@ internal sealed class RuntimeEffectReader(RuntimeMemoryContext context)
             ModelPath = modelPath
         };
     }
+
+    #region Projectile Struct Layout (Proto Debug PDB base + _s)
+
+    // BGSProjectile: PDB size 208, Debug dump 212, Release dump 224
+    private int ProjStructSize => 208 + _s;
+    private int ProjGravityOffset => 100 + _s;
+    private int ProjSpeedOffset => 104 + _s;
+    private int ProjRangeOffset => 108 + _s;
+    private int ProjExplosionOffset => 132 + _s;
+    private int ProjActiveSoundOffset => 136 + _s;
+    private int ProjMuzzleFlashDurOffset => 140 + _s;
+    private int ProjForceOffset => 148 + _s;
+    private int ProjCountdownSoundOffset => 152 + _s;
+    private int ProjDeactivateSoundOffset => 156 + _s;
+
+    /// <summary>Model path BSStringT offset, shared by all TESBoundObject-derived types.</summary>
+    private int ModelPathOffset => 64 + _s;
+
+    #endregion
 }

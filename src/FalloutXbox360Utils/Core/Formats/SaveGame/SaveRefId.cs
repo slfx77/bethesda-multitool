@@ -16,12 +16,14 @@ public readonly record struct SaveRefId(uint Raw)
     /// </summary>
     public uint Value => Raw & 0x3FFFFF;
 
+    public bool IsNull => Raw == 0;
+
     /// <summary>
     ///     Reads a 3-byte RefID from a span (big-endian byte order within the 3 bytes).
     /// </summary>
     public static SaveRefId Read(ReadOnlySpan<byte> data, int offset)
     {
-        uint raw = ((uint)data[offset] << 16) | ((uint)data[offset + 1] << 8) | data[offset + 2];
+        var raw = ((uint)data[offset] << 16) | ((uint)data[offset + 1] << 8) | data[offset + 2];
         return new SaveRefId(raw);
     }
 
@@ -40,8 +42,6 @@ public readonly record struct SaveRefId(uint Raw)
             _ => Raw
         };
     }
-
-    public bool IsNull => Raw == 0;
 
     public override string ToString()
     {

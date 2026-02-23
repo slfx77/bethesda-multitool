@@ -70,7 +70,7 @@ public static class EsmIndexBuilder
                         ? $"CREA_{record.Header.FormId:X8}"
                         : $"NPC_{record.Header.FormId:X8}";
                     var name = fullName ?? editorId ?? fallback;
-                    index.AddNpc(record.Header.FormId, name, voiceTypeFormId, hasFullName: fullName != null);
+                    index.AddNpc(record.Header.FormId, name, voiceTypeFormId, fullName != null);
                     npcCount++;
                     break;
                 }
@@ -122,7 +122,8 @@ public static class EsmIndexBuilder
             }
         }
 
-        progress?.Report($"Indexed {infoCount} INFOs, {npcCount} NPCs, {questCount} quests, {dialCount} topics, {vtypCount} voice types");
+        progress?.Report(
+            $"Indexed {infoCount} INFOs, {npcCount} NPCs, {questCount} quests, {dialCount} topics, {vtypCount} voice types");
         return index;
     }
 }

@@ -10,6 +10,44 @@ namespace FalloutXbox360Utils.Core.Utils;
 /// </summary>
 public static class BinaryUtils
 {
+    #region HalfFloat
+
+    /// <summary>
+    ///     Converts IEEE 754 half-precision (16-bit) float to single-precision (32-bit).
+    /// </summary>
+    public static float HalfToFloat(ushort half)
+    {
+        var sign = (half >> 15) & 1;
+        var exp = (half >> 10) & 0x1F;
+        var mant = half & 0x3FF;
+
+        if (exp == 0)
+        {
+            if (mant == 0)
+            {
+                return sign == 1 ? -0.0f : 0.0f;
+            }
+
+            var value = (float)Math.Pow(2, -14) * (mant / 1024.0f);
+            return sign == 1 ? -value : value;
+        }
+
+        if (exp == 31)
+        {
+            if (mant == 0)
+            {
+                return sign == 1 ? float.NegativeInfinity : float.PositiveInfinity;
+            }
+
+            return float.NaN;
+        }
+
+        var normalizedValue = (float)Math.Pow(2, exp - 15) * (1 + mant / 1024.0f);
+        return sign == 1 ? -normalizedValue : normalizedValue;
+    }
+
+    #endregion
+
     #region UInt16
 
     /// <summary>
@@ -294,44 +332,6 @@ public static class BinaryUtils
     public static double ReadDouble(byte[] data, int offset, bool bigEndian)
     {
         return ReadDouble(data.AsSpan(), offset, bigEndian);
-    }
-
-    #endregion
-
-    #region HalfFloat
-
-    /// <summary>
-    ///     Converts IEEE 754 half-precision (16-bit) float to single-precision (32-bit).
-    /// </summary>
-    public static float HalfToFloat(ushort half)
-    {
-        var sign = (half >> 15) & 1;
-        var exp = (half >> 10) & 0x1F;
-        var mant = half & 0x3FF;
-
-        if (exp == 0)
-        {
-            if (mant == 0)
-            {
-                return sign == 1 ? -0.0f : 0.0f;
-            }
-
-            var value = (float)Math.Pow(2, -14) * (mant / 1024.0f);
-            return sign == 1 ? -value : value;
-        }
-
-        if (exp == 31)
-        {
-            if (mant == 0)
-            {
-                return sign == 1 ? float.NegativeInfinity : float.PositiveInfinity;
-            }
-
-            return float.NaN;
-        }
-
-        var normalizedValue = (float)Math.Pow(2, exp - 15) * (1 + mant / 1024.0f);
-        return sign == 1 ? -normalizedValue : normalizedValue;
     }
 
     #endregion

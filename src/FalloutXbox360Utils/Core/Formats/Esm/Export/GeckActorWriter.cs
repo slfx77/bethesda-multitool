@@ -239,7 +239,8 @@ internal static class GeckActorWriter
                     $"  {"Fatigue:",-18}{npc.Stats.FatigueBase,-10}{"Speed Mult:",-22}{npc.Stats.SpeedMultiplier}%");
             }
 
-            sb.AppendLine($"  {"Karma:",-18}{npc.Stats.KarmaAlignment:F2}{GeckReportGenerator.FormatKarmaLabel(npc.Stats.KarmaAlignment)}");
+            sb.AppendLine(
+                $"  {"Karma:",-18}{npc.Stats.KarmaAlignment:F2}{GeckReportGenerator.FormatKarmaLabel(npc.Stats.KarmaAlignment)}");
             sb.AppendLine(
                 $"  {"Disposition:",-18}{npc.Stats.DispositionBase,-10}{"Barter Gold:",-22}{npc.Stats.BarterGold}");
         }
@@ -341,7 +342,8 @@ internal static class GeckActorWriter
             {
                 var editorId = resolver.ResolveEditorId(faction.FactionFormId);
                 var displayName = resolver.ResolveDisplayName(faction.FactionFormId);
-                sb.AppendLine($"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {faction.Rank,4}");
+                sb.AppendLine(
+                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {faction.Rank,4}");
             }
         }
 
@@ -357,7 +359,8 @@ internal static class GeckActorWriter
             {
                 var editorId = resolver.ResolveEditorId(item.ItemFormId);
                 var displayName = resolver.ResolveDisplayName(item.ItemFormId);
-                sb.AppendLine($"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {item.Count,5}");
+                sb.AppendLine(
+                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32} {item.Count,5}");
             }
         }
 
@@ -373,7 +376,8 @@ internal static class GeckActorWriter
             {
                 var editorId = resolver.ResolveEditorId(spellId);
                 var displayName = resolver.ResolveDisplayName(spellId);
-                sb.AppendLine($"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32}");
+                sb.AppendLine(
+                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32}");
             }
         }
 
@@ -389,7 +393,8 @@ internal static class GeckActorWriter
             {
                 var editorId = resolver.ResolveEditorId(pkgId);
                 var displayName = resolver.ResolveDisplayName(pkgId);
-                sb.AppendLine($"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32}");
+                sb.AppendLine(
+                    $"    {GeckReportGenerator.Truncate(editorId, 32),-32} {GeckReportGenerator.Truncate(displayName, 32),-32}");
             }
         }
 

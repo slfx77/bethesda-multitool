@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace FalloutXbox360Utils.Core.Formats.Subtitles;
 
@@ -21,13 +22,18 @@ public sealed class SubtitleIndex
 {
     private readonly Dictionary<uint, SubtitleEntry> _entries;
 
-    public SubtitleIndex(Dictionary<uint, SubtitleEntry> entries) => _entries = entries;
+    public SubtitleIndex(Dictionary<uint, SubtitleEntry> entries)
+    {
+        _entries = entries;
+    }
 
     public int Count => _entries.Count;
 
     /// <summary>Returns the subtitle entry for the given INFO FormID, or null.</summary>
-    public SubtitleEntry? Lookup(uint formId) =>
-        _entries.TryGetValue(formId, out var entry) ? entry : null;
+    public SubtitleEntry? Lookup(uint formId)
+    {
+        return _entries.TryGetValue(formId, out var entry) ? entry : null;
+    }
 
     /// <summary>
     ///     Parses a subtitle CSV file exported by FalloutAudioTranscriber.
@@ -85,7 +91,7 @@ public sealed class SubtitleIndex
     private static List<string> ParseCsvLine(string line)
     {
         var fields = new List<string>();
-        int i = 0;
+        var i = 0;
 
         while (i <= line.Length)
         {
@@ -100,7 +106,7 @@ public sealed class SubtitleIndex
                 // Quoted field
                 i++; // skip opening quote
                 var start = i;
-                var value = new System.Text.StringBuilder();
+                var value = new StringBuilder();
                 while (i < line.Length)
                 {
                     if (line[i] == '"')
@@ -159,6 +165,8 @@ public sealed class SubtitleIndex
         return fields;
     }
 
-    private static string? NullIfEmpty(string value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value;
+    private static string? NullIfEmpty(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
 }

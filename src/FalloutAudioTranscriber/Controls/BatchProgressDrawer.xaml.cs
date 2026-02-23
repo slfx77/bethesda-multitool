@@ -123,14 +123,17 @@ public sealed partial class BatchProgressDrawer : UserControl
         CancelButton.IsEnabled = false;
     }
 
-    private static SolidColorBrush StatusBrush(BatchItemStatus status) => status switch
+    private static SolidColorBrush StatusBrush(BatchItemStatus status)
     {
-        BatchItemStatus.Success => new SolidColorBrush(Colors.LimeGreen),
-        BatchItemStatus.Empty => new SolidColorBrush(Colors.Goldenrod),
-        BatchItemStatus.Error => new SolidColorBrush(Colors.Tomato),
-        BatchItemStatus.Skipped => new SolidColorBrush(Colors.Gray),
-        _ => new SolidColorBrush(Colors.Gray)
-    };
+        return status switch
+        {
+            BatchItemStatus.Success => new SolidColorBrush(Colors.LimeGreen),
+            BatchItemStatus.Empty => new SolidColorBrush(Colors.Goldenrod),
+            BatchItemStatus.Error => new SolidColorBrush(Colors.Tomato),
+            BatchItemStatus.Skipped => new SolidColorBrush(Colors.Gray),
+            _ => new SolidColorBrush(Colors.Gray)
+        };
+    }
 
     private static string? Truncate(string? text, int maxLen)
     {

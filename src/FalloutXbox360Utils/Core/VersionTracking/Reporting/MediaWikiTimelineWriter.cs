@@ -14,23 +14,23 @@ public static class MediaWikiTimelineWriter
 
     private static readonly (string Label, Func<VersionDiffResult, List<RecordChange>> Selector,
         Func<VersionSnapshot, int> Counter)[] Categories =
-    [
-        ("Quests", d => d.QuestChanges, s => s.Quests.Count),
-        ("NPCs", d => d.NpcChanges, s => s.Npcs.Count),
-        ("Dialogues", d => d.DialogueChanges, s => s.Dialogues.Count),
-        ("Weapons", d => d.WeaponChanges, s => s.Weapons.Count),
-        ("Armor", d => d.ArmorChanges, s => s.Armor.Count),
-        ("Items", d => d.ItemChanges, s => s.Items.Count),
-        ("Scripts", d => d.ScriptChanges, s => s.Scripts.Count),
-        ("Locations", d => d.LocationChanges, s => s.Locations.Count),
-        ("Placements", d => d.PlacementChanges, s => s.Placements.Count),
-        ("Creatures", d => d.CreatureChanges, s => s.Creatures.Count),
-        ("Perks", d => d.PerkChanges, s => s.Perks.Count),
-        ("Ammo", d => d.AmmoChanges, s => s.Ammo.Count),
-        ("Leveled Lists", d => d.LeveledListChanges, s => s.LeveledLists.Count),
-        ("Notes", d => d.NoteChanges, s => s.Notes.Count),
-        ("Terminals", d => d.TerminalChanges, s => s.Terminals.Count)
-    ];
+        [
+            ("Quests", d => d.QuestChanges, s => s.Quests.Count),
+            ("NPCs", d => d.NpcChanges, s => s.Npcs.Count),
+            ("Dialogues", d => d.DialogueChanges, s => s.Dialogues.Count),
+            ("Weapons", d => d.WeaponChanges, s => s.Weapons.Count),
+            ("Armor", d => d.ArmorChanges, s => s.Armor.Count),
+            ("Items", d => d.ItemChanges, s => s.Items.Count),
+            ("Scripts", d => d.ScriptChanges, s => s.Scripts.Count),
+            ("Locations", d => d.LocationChanges, s => s.Locations.Count),
+            ("Placements", d => d.PlacementChanges, s => s.Placements.Count),
+            ("Creatures", d => d.CreatureChanges, s => s.Creatures.Count),
+            ("Perks", d => d.PerkChanges, s => s.Perks.Count),
+            ("Ammo", d => d.AmmoChanges, s => s.Ammo.Count),
+            ("Leveled Lists", d => d.LeveledListChanges, s => s.LeveledLists.Count),
+            ("Notes", d => d.NoteChanges, s => s.Notes.Count),
+            ("Terminals", d => d.TerminalChanges, s => s.Terminals.Count)
+        ];
 
     /// <summary>
     ///     Generates a TCRF prototype wiki page comparing a build against a baseline.
@@ -53,7 +53,7 @@ public static class MediaWikiTimelineWriter
         // Page header
         sb.AppendLine("{{subpage}}");
         sb.AppendLine("{{todo|This page was auto-generated from extracted game data and requires human review. " +
-                       "Verify all entries, add context and screenshots where appropriate.}}");
+                      "Verify all entries, add context and screenshots where appropriate.}}");
         sb.AppendLine();
         sb.AppendLine(introText);
         sb.AppendLine();
@@ -134,6 +134,65 @@ public static class MediaWikiTimelineWriter
         }
     }
 
+    #region Added After Section
+
+    private static void WriteAddedAfterSection(
+        StringBuilder sb, Dictionary<string, List<RecordChange>> addedAfterRecords)
+    {
+        if (addedAfterRecords.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("==Added After This Build==");
+        sb.AppendLine("Records present in the final release that were not yet in this build.");
+        sb.AppendLine();
+
+        foreach (var (category, records) in addedAfterRecords.OrderByDescending(kvp => GetCategoryPriority(kvp.Key)))
+        {
+            sb.AppendLine($"==={category}===");
+            WriteCutWikiTable(sb, records); // Same table format as cut content
+            sb.AppendLine();
+        }
+    }
+
+    #endregion
+
+    #region Statistics Section
+
+    private static void WriteStatisticsSection(
+        StringBuilder sb, VersionSnapshot target, VersionSnapshot baseline, VersionDiffResult diff)
+    {
+        sb.AppendLine("==Statistics==");
+        sb.AppendLine("{| class=\"wikitable\"");
+        sb.AppendLine("! Category !! This Build !! Final !! Cut !! Added After !! Changed");
+
+        foreach (var (label, selector, counter) in Categories)
+        {
+            var changes = selector(diff);
+            if (changes.Count == 0 && counter(target) == 0 && counter(baseline) == 0)
+            {
+                continue;
+            }
+
+            // Remember: diff is Diff(baseline, target)
+            // "Added" in diff = in target, not baseline = cut from final
+            // "Removed" in diff = in baseline, not target = added after this build
+            var cut = changes.Count(c => c.ChangeType == ChangeType.Added);
+            var addedAfter = changes.Count(c => c.ChangeType == ChangeType.Removed);
+            var changed = changes.Count(c => c.ChangeType == ChangeType.Changed);
+
+            sb.AppendLine("|-");
+            sb.AppendLine($"| {label} || {counter(target):N0} || {counter(baseline):N0} || " +
+                          $"{cut} || {addedAfter} || {changed}");
+        }
+
+        sb.AppendLine("|}");
+        sb.AppendLine();
+    }
+
+    #endregion
+
     #region Cut Content Section
 
     private static void WriteCutContentSection(
@@ -149,7 +208,7 @@ public static class MediaWikiTimelineWriter
         if (isDmpPage)
         {
             sb.AppendLine("Records found in the memory dumps that are absent from the final release. " +
-                           "Due to the incomplete nature of memory dumps, some entries may be fragments.");
+                          "Due to the incomplete nature of memory dumps, some entries may be fragments.");
         }
         else
         {
@@ -181,7 +240,7 @@ public static class MediaWikiTimelineWriter
 
         if (isCollapsible)
         {
-            sb.AppendLine($"<div class=\"mw-collapsible mw-collapsed\">");
+            sb.AppendLine("<div class=\"mw-collapsible mw-collapsed\">");
             sb.AppendLine($"{sorted.Count} entries");
             sb.AppendLine("<div class=\"mw-collapsible-content\">");
         }
@@ -192,7 +251,8 @@ public static class MediaWikiTimelineWriter
         foreach (var record in sorted)
         {
             sb.AppendLine("|-");
-            sb.AppendLine($"| {EscapeWiki(record.FullName ?? "")} || {EscapeWiki(record.EditorId ?? "")} || {FormatFormIdHex(record.FormId)}");
+            sb.AppendLine(
+                $"| {EscapeWiki(record.FullName ?? "")} || {EscapeWiki(record.EditorId ?? "")} || {FormatFormIdHex(record.FormId)}");
         }
 
         sb.AppendLine("|}");
@@ -389,65 +449,6 @@ public static class MediaWikiTimelineWriter
             sb.AppendLine("====Other Dialogues====");
             WriteChangedRecordSections(sb, orphans);
         }
-    }
-
-    #endregion
-
-    #region Added After Section
-
-    private static void WriteAddedAfterSection(
-        StringBuilder sb, Dictionary<string, List<RecordChange>> addedAfterRecords)
-    {
-        if (addedAfterRecords.Count == 0)
-        {
-            return;
-        }
-
-        sb.AppendLine("==Added After This Build==");
-        sb.AppendLine("Records present in the final release that were not yet in this build.");
-        sb.AppendLine();
-
-        foreach (var (category, records) in addedAfterRecords.OrderByDescending(kvp => GetCategoryPriority(kvp.Key)))
-        {
-            sb.AppendLine($"==={category}===");
-            WriteCutWikiTable(sb, records); // Same table format as cut content
-            sb.AppendLine();
-        }
-    }
-
-    #endregion
-
-    #region Statistics Section
-
-    private static void WriteStatisticsSection(
-        StringBuilder sb, VersionSnapshot target, VersionSnapshot baseline, VersionDiffResult diff)
-    {
-        sb.AppendLine("==Statistics==");
-        sb.AppendLine("{| class=\"wikitable\"");
-        sb.AppendLine("! Category !! This Build !! Final !! Cut !! Added After !! Changed");
-
-        foreach (var (label, selector, counter) in Categories)
-        {
-            var changes = selector(diff);
-            if (changes.Count == 0 && counter(target) == 0 && counter(baseline) == 0)
-            {
-                continue;
-            }
-
-            // Remember: diff is Diff(baseline, target)
-            // "Added" in diff = in target, not baseline = cut from final
-            // "Removed" in diff = in baseline, not target = added after this build
-            var cut = changes.Count(c => c.ChangeType == ChangeType.Added);
-            var addedAfter = changes.Count(c => c.ChangeType == ChangeType.Removed);
-            var changed = changes.Count(c => c.ChangeType == ChangeType.Changed);
-
-            sb.AppendLine("|-");
-            sb.AppendLine($"| {label} || {counter(target):N0} || {counter(baseline):N0} || " +
-                          $"{cut} || {addedAfter} || {changed}");
-        }
-
-        sb.AppendLine("|}");
-        sb.AppendLine();
     }
 
     #endregion

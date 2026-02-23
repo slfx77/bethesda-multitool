@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 
@@ -33,10 +32,10 @@ public static class ChangedFormDecoder
                     DecodeRefr(ref reader, form.ChangeFlags, result, form.Initial?.DataType ?? 0);
                     break;
                 case 1: // ACHR (Character)
-                    DecodeActor(ref reader, form.ChangeFlags, result, isCharacter: true, form.Initial?.DataType ?? 0);
+                    DecodeActor(ref reader, form.ChangeFlags, result, true, form.Initial?.DataType ?? 0);
                     break;
                 case 2: // ACRE (Creature)
-                    DecodeActor(ref reader, form.ChangeFlags, result, isCharacter: false, form.Initial?.DataType ?? 0);
+                    DecodeActor(ref reader, form.ChangeFlags, result, false, form.Initial?.DataType ?? 0);
                     break;
                 case >= 3 and <= 6: // PMIS, PGRE, PBEA, PFLA
                     DecodeProjectile(ref reader, form.ChangeFlags, result);
@@ -137,40 +136,40 @@ public static class ChangedFormDecoder
         {
             // v2 format: vsval stage_count, per stage: (byte index + pipe, byte flags + pipe,
             //   vsval log_count, per log: (byte logIndex + pipe, byte hasNote + pipe, [4B note + pipe]))
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (!r.HasData(1))
             {
                 return;
             }
 
-            uint stageCount = r.ReadVsval();
+            var stageCount = r.ReadVsval();
             r.TrySkipPipe();
             var stages = new List<DecodedField>();
-            for (int i = 0; i < stageCount && r.HasData(1); i++)
+            for (var i = 0; i < stageCount && r.HasData(1); i++)
             {
-                int stageStart = r.Position;
-                byte stageIndex = r.ReadByte();
+                var stageStart = r.Position;
+                var stageIndex = r.ReadByte();
                 r.TrySkipPipe();
-                byte stageFlags = r.HasData(1) ? r.ReadByte() : (byte)0;
+                var stageFlags = r.HasData(1) ? r.ReadByte() : (byte)0;
                 r.TrySkipPipe();
 
                 // Nested log entries within this stage
-                uint logCount = r.HasData(1) ? r.ReadVsval() : 0;
+                var logCount = r.HasData(1) ? r.ReadVsval() : 0;
                 r.TrySkipPipe();
                 var logEntries = new List<DecodedField>();
-                for (int j = 0; j < logCount && r.HasData(1); j++)
+                for (var j = 0; j < logCount && r.HasData(1); j++)
                 {
-                    int logStart = r.Position;
-                    byte logIndex = r.ReadByte();
+                    var logStart = r.Position;
+                    var logIndex = r.ReadByte();
                     r.TrySkipPipe();
-                    byte hasNote = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    var hasNote = r.HasData(1) ? r.ReadByte() : (byte)0;
                     r.TrySkipPipe();
-                    string noteDisplay = "no note";
+                    var noteDisplay = "no note";
                     if (hasNote != 0 && r.HasData(4))
                     {
                         // Two independently byte-swapped uint16s (TESQuest::SaveGame v1, lines 16148-16165)
-                        ushort noteId = r.ReadUInt16();
-                        ushort noteExtra = r.ReadUInt16();
+                        var noteId = r.ReadUInt16();
+                        var noteExtra = r.ReadUInt16();
                         r.TrySkipPipe();
                         noteDisplay = $"note=({noteId:X4}, {noteExtra:X4})";
                     }
@@ -213,21 +212,21 @@ public static class ChangedFormDecoder
         if (HasFlag(flags, 0x20000000)) // QUEST_OBJECTIVES (bit 29)
         {
             // v2 format: vsval count, per objective: (uint32 objData + pipe, uint32 target + pipe)
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (!r.HasData(1))
             {
                 return;
             }
 
-            uint count = r.ReadVsval();
+            var count = r.ReadVsval();
             r.TrySkipPipe();
             var objectives = new List<DecodedField>();
-            for (int i = 0; i < count && r.HasData(4); i++)
+            for (var i = 0; i < count && r.HasData(4); i++)
             {
-                int objStart = r.Position;
-                uint objData = r.ReadUInt32();
+                var objStart = r.Position;
+                var objData = r.ReadUInt32();
                 r.TrySkipPipe();
-                uint targetRef = r.HasData(4) ? r.ReadUInt32() : 0;
+                var targetRef = r.HasData(4) ? r.ReadUInt32() : 0;
                 r.TrySkipPipe();
                 objectives.Add(new DecodedField
                 {
@@ -289,8 +288,9 @@ public static class ChangedFormDecoder
         // Inventory — InventoryChanges::SaveGame_v2 called ONCE when bit 5 or bit 27 is set.
         if ((flags & 0x08000020) != 0)
         {
-            string name = HasFlag(flags, 0x08000000) && !HasFlag(flags, 0x00000020)
-                ? "REFR_LEVELED_INVENTORY" : "REFR_INVENTORY";
+            var name = HasFlag(flags, 0x08000000) && !HasFlag(flags, 0x00000020)
+                ? "REFR_LEVELED_INVENTORY"
+                : "REFR_INVENTORY";
             DecodeInventory(ref r, result, name);
         }
 
@@ -303,17 +303,23 @@ public static class ChangedFormDecoder
         // Zero-size flags — no data in save blob, just the change flag existence
         if (HasFlag(flags, 0x00200000))
         {
-            result.Fields.Add(new DecodedField { Name = "OBJECT_EMPTY", DisplayValue = "Container emptied", DataOffset = r.Position, DataLength = 0 });
+            result.Fields.Add(new DecodedField
+                { Name = "OBJECT_EMPTY", DisplayValue = "Container emptied", DataOffset = r.Position, DataLength = 0 });
         }
 
         if (HasFlag(flags, 0x00400000))
         {
-            result.Fields.Add(new DecodedField { Name = "OBJECT_OPEN_DEFAULT_STATE", DisplayValue = "Open by default", DataOffset = r.Position, DataLength = 0 });
+            result.Fields.Add(new DecodedField
+            {
+                Name = "OBJECT_OPEN_DEFAULT_STATE", DisplayValue = "Open by default", DataOffset = r.Position,
+                DataLength = 0
+            });
         }
 
         if (HasFlag(flags, 0x00800000))
         {
-            result.Fields.Add(new DecodedField { Name = "OBJECT_OPEN_STATE", DisplayValue = "Open state", DataOffset = r.Position, DataLength = 0 });
+            result.Fields.Add(new DecodedField
+                { Name = "OBJECT_OPEN_STATE", DisplayValue = "Open state", DataOffset = r.Position, DataLength = 0 });
         }
 
         // CREATED_ONLY (bit 30) — separate ExtraDataList v2 block, NOT in the main mask
@@ -328,7 +334,8 @@ public static class ChangedFormDecoder
     ///     Handles REFR_MOVE (bit 1), REFR_HAVOK_MOVE (bit 2), and REFR_CELL_CHANGED (bit 3).
     ///     initialDataType: 4=basic (27B), 5=created/mobile (31B), 6=exterior (34B), 0=unknown.
     /// </summary>
-    private static void DecodeRefrInitialData(ref FormDataReader r, uint flags, DecodedFormData result, int initialDataType = 0)
+    private static void DecodeRefrInitialData(ref FormDataReader r, uint flags, DecodedFormData result,
+        int initialDataType = 0)
     {
         // ── Position flat struct ──
         // BGSSaveLoadInitialData::SaveInitialData writes ONE flat struct (no intermediate pipes)
@@ -336,27 +343,27 @@ public static class ChangedFormDecoder
         // Type 4 (MOVE/HAVOK): RefID(3B) + 6 floats(24B) = 27B (0x1B)
         // Type 5 (Created): + flags(1B) + baseFormRefId(3B) = 31B (0x1F)
         // Type 6 (Cell Changed): + newCellRefId(3B) + gridX(2B) + gridY(2B) = 34B (0x22)
-        bool hasMove = HasFlag(flags, 0x00000002);
-        bool hasHavok = HasFlag(flags, 0x00000004);
-        bool hasCellChanged = HasFlag(flags, 0x00000008);
-        bool needsPositionBlock = hasMove || hasHavok || hasCellChanged;
+        var hasMove = HasFlag(flags, 0x00000002);
+        var hasHavok = HasFlag(flags, 0x00000004);
+        var hasCellChanged = HasFlag(flags, 0x00000008);
+        var needsPositionBlock = hasMove || hasHavok || hasCellChanged;
 
         if (needsPositionBlock && r.HasData(27))
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             var cellRefId = r.ReadRefId();
-            float posX = r.ReadFloat();
-            float posY = r.ReadFloat();
-            float posZ = r.ReadFloat();
-            float rotX = r.ReadFloat();
-            float rotY = r.ReadFloat();
-            float rotZ = r.ReadFloat();
+            var posX = r.ReadFloat();
+            var posY = r.ReadFloat();
+            var posZ = r.ReadFloat();
+            var rotX = r.ReadFloat();
+            var rotY = r.ReadFloat();
+            var rotZ = r.ReadFloat();
 
             // Type 5 extras (Created): flags(1B) + baseFormRefId(3B) — still in the flat struct
-            string extraInfo = "";
+            var extraInfo = "";
             if (initialDataType == 5 && r.HasData(4))
             {
-                byte createdFlags = r.ReadByte();
+                var createdFlags = r.ReadByte();
                 var baseFormRef = r.ReadRefId();
                 extraInfo = $", CreatedFlags=0x{createdFlags:X2}, BaseForm={baseFormRef}";
             }
@@ -365,18 +372,19 @@ public static class ChangedFormDecoder
             if (initialDataType == 6 && r.HasData(7))
             {
                 var newCellRef = r.ReadRefId();
-                short gridX = r.ReadInt16();
-                short gridY = r.ReadInt16();
+                var gridX = r.ReadInt16();
+                var gridY = r.ReadInt16();
                 extraInfo = $", NewCell={newCellRef}, Grid=({gridX}, {gridY})";
             }
 
             r.TrySkipPipe(); // single pipe after the entire flat struct
 
-            string name = hasMove ? "REFR_MOVE" : "REFR_HAVOK_MOVE";
+            var name = hasMove ? "REFR_MOVE" : "REFR_HAVOK_MOVE";
             result.Fields.Add(new DecodedField
             {
                 Name = name,
-                DisplayValue = $"Cell={cellRefId}, Pos=({posX:F1}, {posY:F1}, {posZ:F1}), Rot=({rotX:F3}, {rotY:F3}, {rotZ:F3}){extraInfo}",
+                DisplayValue =
+                    $"Cell={cellRefId}, Pos=({posX:F1}, {posY:F1}, {posZ:F1}), Rot=({rotX:F3}, {rotY:F3}, {rotZ:F3}){extraInfo}",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -388,8 +396,8 @@ public static class ChangedFormDecoder
         // From decompilation line 21855: checks bit 2, then func_0x82689948/func_0x82689990 pattern.
         if (hasHavok && r.HasData(1))
         {
-            int startPos = r.Position;
-            uint havokByteCount = r.ReadVsval();
+            var startPos = r.Position;
+            var havokByteCount = r.ReadVsval();
             r.TrySkipPipe();
             if (havokByteCount > 0 && r.HasData((int)havokByteCount))
             {
@@ -410,7 +418,7 @@ public static class ChangedFormDecoder
         // For other types (Type 4/5), CELL_CHANGED may appear separately.
         if (hasCellChanged && initialDataType != 6 && r.HasData(3))
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             var cellRefId = r.ReadRefId();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
@@ -428,17 +436,17 @@ public static class ChangedFormDecoder
     /// </summary>
     private static void DecodeRefrAnimation(ref FormDataReader r, DecodedFormData result)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (!r.HasData(1))
         {
             return;
         }
 
-        uint byteCount = r.ReadVsval();
+        var byteCount = r.ReadVsval();
         r.TrySkipPipe();
         if (byteCount > 0 && r.HasData((int)byteCount))
         {
-            byte[] animData = r.ReadBytes((int)byteCount);
+            var animData = r.ReadBytes((int)byteCount);
             result.Fields.Add(new DecodedField
             {
                 Name = "REFR_ANIMATION",
@@ -464,7 +472,8 @@ public static class ChangedFormDecoder
     //  ACHR/ACRE decoder (ChangeType 1, 2) — Actor instances
     // ────────────────────────────────────────────────────────────────
 
-    private static void DecodeActor(ref FormDataReader r, uint flags, DecodedFormData result, bool isCharacter, int initialDataType)
+    private static void DecodeActor(ref FormDataReader r, uint flags, DecodedFormData result, bool isCharacter,
+        int initialDataType)
     {
         // ── Phase 0: Initial data (same as REFR — prepended by save infrastructure) ──
         // The save infrastructure writes position/cell data before SaveGame_v2 runs,
@@ -477,7 +486,7 @@ public static class ChangedFormDecoder
         byte processLevel = 0xFF;
         if (r.HasData(1))
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             processLevel = r.ReadByte();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
@@ -559,18 +568,18 @@ public static class ChangedFormDecoder
         // bit 19 (0x00080000) = ACTOR_PACKAGES — vsval count + (RefID + uint32) per entry
         if (HasFlag(flags, 0x00080000))
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(1))
             {
-                uint count = r.ReadVsval();
+                var count = r.ReadVsval();
                 r.TrySkipPipe();
                 var entries = new List<DecodedField>();
-                for (int i = 0; i < count && r.HasData(3); i++)
+                for (var i = 0; i < count && r.HasData(3); i++)
                 {
-                    int entryStart = r.Position;
+                    var entryStart = r.Position;
                     var pkgRef = r.ReadRefId();
                     r.TrySkipPipe();
-                    uint pkgData = r.HasData(4) ? r.ReadUInt32() : 0;
+                    var pkgData = r.HasData(4) ? r.ReadUInt32() : 0;
                     r.TrySkipPipe();
                     entries.Add(new DecodedField
                     {
@@ -624,15 +633,15 @@ public static class ChangedFormDecoder
         // The decompilation shows: animation is gated on !IsActor(), so actors skip it.
         if (HasFlag(flags, 0x04000000)) // REFR_EXTRA_ACTIVATING_CHILDREN
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(1))
             {
-                byte count = r.ReadByte();
+                var count = r.ReadByte();
                 r.TrySkipPipe();
                 var children = new List<DecodedField>();
-                for (int i = 0; i < count && r.HasData(3); i++)
+                for (var i = 0; i < count && r.HasData(3); i++)
                 {
-                    int childStart = r.Position;
+                    var childStart = r.Position;
                     var childRefId = r.ReadRefId();
                     r.TrySkipPipe();
                     children.Add(new DecodedField
@@ -683,19 +692,19 @@ public static class ChangedFormDecoder
     /// </summary>
     private static void DecodeActorValueModifierList(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (!r.HasData(1))
         {
             return;
         }
 
-        byte count = r.ReadByte();
+        var count = r.ReadByte();
         r.TrySkipPipe();
         var modifiers = new List<DecodedField>();
-        for (int i = 0; i < count && r.HasData(1); i++)
+        for (var i = 0; i < count && r.HasData(1); i++)
         {
-            int modStart = r.Position;
-            byte avCode = r.ReadByte();
+            var modStart = r.Position;
+            var avCode = r.ReadByte();
             r.TrySkipPipe();
             float value = 0;
             if (r.HasData(4))
@@ -704,7 +713,7 @@ public static class ChangedFormDecoder
                 r.TrySkipPipe();
             }
 
-            string avName = ActorValueName(avCode);
+            var avName = ActorValueName(avCode);
             modifiers.Add(new DecodedField
             {
                 Name = $"Mod[{i}]",
@@ -734,55 +743,55 @@ public static class ChangedFormDecoder
         if (!r.HasData(6)) return; // minimum viability check
 
         // Group 1: Timer and state (lines 14243-14247)
-        AddFloatField(ref r, result, "ACTOR_TIMER");              // +0x124, 4B float
-        AddByteField(ref r, result, "ACTOR_STATE_134");           // +0x134, 1B
-        AddByteField(ref r, result, "ACTOR_STATE_135");           // +0x135, 1B
+        AddFloatField(ref r, result, "ACTOR_TIMER"); // +0x124, 4B float
+        AddByteField(ref r, result, "ACTOR_STATE_134"); // +0x134, 1B
+        AddByteField(ref r, result, "ACTOR_STATE_135"); // +0x135, 1B
 
         // Group 2: AI fields (lines 14248-14253)
-        AddByteField(ref r, result, "ACTOR_AI_CC");               // +0xCC, 1B
-        AddByteField(ref r, result, "ACTOR_AI_D4");               // +0xD4, 1B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_D8");          // +0xD8, 4B
-        AddByteField(ref r, result, "ACTOR_FIELD_8D");            // +0x8D, 1B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_120");         // +0x120, 4B
+        AddByteField(ref r, result, "ACTOR_AI_CC"); // +0xCC, 1B
+        AddByteField(ref r, result, "ACTOR_AI_D4"); // +0xD4, 1B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_D8"); // +0xD8, 4B
+        AddByteField(ref r, result, "ACTOR_FIELD_8D"); // +0x8D, 1B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_120"); // +0x120, 4B
 
         // Group 3: Combat/movement (lines 14253-14261)
-        AddByteField(ref r, result, "ACTOR_FIELD_128");           // +0x128, 1B
-        AddByteField(ref r, result, "ACTOR_FIELD_136");           // +0x136, 1B
-        AddByteField(ref r, result, "ACTOR_FIELD_155");           // +0x155, 1B
-        AddByteField(ref r, result, "ACTOR_FIELD_156");           // +0x156, 1B
-        AddByteField(ref r, result, "ACTOR_FIELD_15C");           // +0x15C, 1B
-        AddByteField(ref r, result, "ACTOR_FIELD_15D");           // +0x15D, 1B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_160");         // +0x160, 4B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_164");         // +0x164, 4B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_168");         // +0x168, 4B
+        AddByteField(ref r, result, "ACTOR_FIELD_128"); // +0x128, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_136"); // +0x136, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_155"); // +0x155, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_156"); // +0x156, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_15C"); // +0x15C, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_15D"); // +0x15D, 1B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_160"); // +0x160, 4B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_164"); // +0x164, 4B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_168"); // +0x168, 4B
 
         // Group 4: Misc (lines 14262-14268)
-        AddByteField(ref r, result, "ACTOR_FIELD_184");           // +0x184, 1B
-        AddByteField(ref r, result, "ACTOR_FIELD_185");           // +0x185, 1B
-        AddByteField(ref r, result, "ACTOR_FIELD_19D");           // +0x19D, 1B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_1B4");         // +0x1B4, 4B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_1B8");         // +0x1B8, 4B
-        AddByteField(ref r, result, "ACTOR_FIELD_100");           // +0x100, 1B
-        AddByteField(ref r, result, "ACTOR_FIELD_101");           // +0x101, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_184"); // +0x184, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_185"); // +0x185, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_19D"); // +0x19D, 1B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_1B4"); // +0x1B4, 4B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_1B8"); // +0x1B8, 4B
+        AddByteField(ref r, result, "ACTOR_FIELD_100"); // +0x100, 1B
+        AddByteField(ref r, result, "ACTOR_FIELD_101"); // +0x101, 1B
 
         // Version-gated fields (all present for FNV, save version >= 122)
         // Version > 7 (line 14271)
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_11C");         // +0x11C, 4B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_11C"); // +0x11C, 4B
 
         // Version > 8 (lines 14275-14279)
-        AddByteField(ref r, result, "ACTOR_FIELD_V8_A");          // 1B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_V8_B");        // 4B
-        AddByteField(ref r, result, "ACTOR_FIELD_V8_C");          // 1B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_V8_D");        // 4B
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_V8_E");        // 4B
+        AddByteField(ref r, result, "ACTOR_FIELD_V8_A"); // 1B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_V8_B"); // 4B
+        AddByteField(ref r, result, "ACTOR_FIELD_V8_C"); // 1B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_V8_D"); // 4B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_V8_E"); // 4B
 
         // Version > 12 (line 14283)
-        AddUInt32Field(ref r, result, "ACTOR_FIELD_V12");         // +0x130, 4B
+        AddUInt32Field(ref r, result, "ACTOR_FIELD_V12"); // +0x130, 4B
 
         // Fixed reads after version-gated (lines 14285-14290)
-        AddRefIdField(ref r, result, "ACTOR_REF_D0");             // RefID 3B
-        AddRefIdField(ref r, result, "ACTOR_COMBAT_TARGET");      // RefID 3B (LoadFormID)
-        AddRefIdField(ref r, result, "ACTOR_REF_80");             // RefID 3B
+        AddRefIdField(ref r, result, "ACTOR_REF_D0"); // RefID 3B
+        AddRefIdField(ref r, result, "ACTOR_COMBAT_TARGET"); // RefID 3B (LoadFormID)
+        AddRefIdField(ref r, result, "ACTOR_REF_80"); // RefID 3B
     }
 
     /// <summary>
@@ -796,26 +805,26 @@ public static class ChangedFormDecoder
         if (!r.HasData(4)) return; // minimum viability
 
         // 8 sequential byte fields
-        AddByteField(ref r, result, "MOBILE_FIELD_94");    // +0x94
-        AddByteField(ref r, result, "MOBILE_FIELD_95");    // +0x95
-        AddByteField(ref r, result, "MOBILE_FIELD_8C");    // +0x8C
-        AddByteField(ref r, result, "MOBILE_FIELD_8F");    // +0x8F
-        AddByteField(ref r, result, "MOBILE_FIELD_90");    // +0x90
-        AddByteField(ref r, result, "MOBILE_FIELD_8D");    // +0x8D
-        AddByteField(ref r, result, "MOBILE_FIELD_8E");    // +0x8E
-        AddByteField(ref r, result, "MOBILE_FIELD_96");    // +0x96
+        AddByteField(ref r, result, "MOBILE_FIELD_94"); // +0x94
+        AddByteField(ref r, result, "MOBILE_FIELD_95"); // +0x95
+        AddByteField(ref r, result, "MOBILE_FIELD_8C"); // +0x8C
+        AddByteField(ref r, result, "MOBILE_FIELD_8F"); // +0x8F
+        AddByteField(ref r, result, "MOBILE_FIELD_90"); // +0x90
+        AddByteField(ref r, result, "MOBILE_FIELD_8D"); // +0x8D
+        AddByteField(ref r, result, "MOBILE_FIELD_8E"); // +0x8E
+        AddByteField(ref r, result, "MOBILE_FIELD_96"); // +0x96
 
         // 2 uint32 fields (floats in memory)
-        AddUInt32Field(ref r, result, "MOBILE_FIELD_84");  // +0x84
-        AddUInt32Field(ref r, result, "MOBILE_FIELD_88");  // +0x88
+        AddUInt32Field(ref r, result, "MOBILE_FIELD_84"); // +0x84
+        AddUInt32Field(ref r, result, "MOBILE_FIELD_88"); // +0x88
 
         // 2 more byte fields
-        AddByteField(ref r, result, "MOBILE_FIELD_91");    // +0x91
-        AddByteField(ref r, result, "MOBILE_FIELD_93");    // +0x93
+        AddByteField(ref r, result, "MOBILE_FIELD_91"); // +0x91
+        AddByteField(ref r, result, "MOBILE_FIELD_93"); // +0x93
 
         // 2 FormID fields
-        AddRefIdField(ref r, result, "MOBILE_REFID_7C");   // +0x7C
-        AddRefIdField(ref r, result, "MOBILE_REFID_80");   // +0x80
+        AddRefIdField(ref r, result, "MOBILE_REFID_7C"); // +0x7C
+        AddRefIdField(ref r, result, "MOBILE_REFID_80"); // +0x80
     }
 
     /// <summary>
@@ -852,10 +861,10 @@ public static class ChangedFormDecoder
         // Field 9: 12 bytes (3 floats, position) at +0x04
         if (r.HasData(12))
         {
-            int startPos = r.Position;
-            float x = r.ReadFloat();
-            float y = r.ReadFloat();
-            float z = r.ReadFloat();
+            var startPos = r.Position;
+            var x = r.ReadFloat();
+            var y = r.ReadFloat();
+            var z = r.ReadFloat();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -869,10 +878,10 @@ public static class ChangedFormDecoder
         // Field 10: 12 bytes (3 floats, rotation/direction) at +0x10
         if (r.HasData(12))
         {
-            int startPos = r.Position;
-            float x = r.ReadFloat();
-            float y = r.ReadFloat();
-            float z = r.ReadFloat();
+            var startPos = r.Position;
+            var x = r.ReadFloat();
+            var y = r.ReadFloat();
+            var z = r.ReadFloat();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -908,10 +917,10 @@ public static class ChangedFormDecoder
         // For robustness, read these as individual typed fields.
         if (r.HasData(12))
         {
-            int startPos = r.Position;
-            float px = r.ReadFloat();
-            float py = r.ReadFloat();
-            float pz = r.ReadFloat();
+            var startPos = r.Position;
+            var px = r.ReadFloat();
+            var py = r.ReadFloat();
+            var pz = r.ReadFloat();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -935,8 +944,8 @@ public static class ChangedFormDecoder
 
         // ── Flags byte (encodes presence of combat/weapon/group state) ──
         if (!r.HasData(1)) return;
-        int flagsStart = r.Position;
-        byte moverFlags = r.ReadByte();
+        var flagsStart = r.Position;
+        var moverFlags = r.ReadByte();
         r.TrySkipPipe();
         result.Fields.Add(new DecodedField
         {
@@ -988,7 +997,7 @@ public static class ChangedFormDecoder
 
         // Each level calls its parent first, then writes its own fields.
         // We decode in inheritance order: Base → Low → MiddleLow → MiddleHigh → High
-        bool ok = processLevel switch
+        var ok = processLevel switch
         {
             0x00 => DecodeHighProcess(ref r, result, flags),
             0x01 => DecodeMiddleHighProcess(ref r, result, flags),
@@ -1035,7 +1044,7 @@ public static class ChangedFormDecoder
     {
         if (!r.HasData(3)) return true;
 
-        int startPos = r.Position;
+        var startPos = r.Position;
         var packageRef = r.ReadRefId();
         r.TrySkipPipe();
 
@@ -1066,8 +1075,8 @@ public static class ChangedFormDecoder
 
         // Procedure type byte (0xFF = no procedure data)
         if (!r.HasData(1)) goto Done;
-        int procStart = r.Position;
-        byte procType = r.ReadByte();
+        var procStart = r.Position;
+        var procType = r.ReadByte();
         r.TrySkipPipe();
         children.Add(new DecodedField
         {
@@ -1093,8 +1102,8 @@ public static class ChangedFormDecoder
 
         // Idle procedure type byte (0xFF = no idle data)
         if (!r.HasData(1)) goto Done;
-        int idleStart = r.Position;
-        byte idleType = r.ReadByte();
+        var idleStart = r.Position;
+        var idleType = r.ReadByte();
         r.TrySkipPipe();
         children.Add(new DecodedField
         {
@@ -1119,14 +1128,34 @@ public static class ChangedFormDecoder
         }
 
         // 3 × uint32 fields (flags/timers at package offsets +0xC, +0x10, +0x14)
-        if (r.HasData(4)) { uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "PkgField_0C", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 }); }
-        if (r.HasData(4)) { uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "PkgField_10", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 }); }
-        if (r.HasData(4)) { uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "PkgField_14", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 }); }
+        if (r.HasData(4))
+        {
+            var v = r.ReadUInt32();
+            r.TrySkipPipe();
+            children.Add(new DecodedField
+                { Name = "PkgField_0C", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 });
+        }
+
+        if (r.HasData(4))
+        {
+            var v = r.ReadUInt32();
+            r.TrySkipPipe();
+            children.Add(new DecodedField
+                { Name = "PkgField_10", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 });
+        }
+
+        if (r.HasData(4))
+        {
+            var v = r.ReadUInt32();
+            r.TrySkipPipe();
+            children.Add(new DecodedField
+                { Name = "PkgField_14", DisplayValue = $"0x{v:X8}", DataOffset = r.Position - 5, DataLength = 5 });
+        }
 
         // Target RefID
         if (r.HasData(3))
         {
-            int tStart = r.Position;
+            var tStart = r.Position;
             var targetRef = r.ReadRefId();
             r.TrySkipPipe();
             children.Add(new DecodedField
@@ -1162,14 +1191,14 @@ public static class ChangedFormDecoder
         if (!DecodeBaseProcess(ref r, result, flags)) return false;
 
         // Own fields
-        AddByteField(ref r, result, "LOW_PROC_30");     // +0x30
-        AddUInt32Field(ref r, result, "LOW_PROC_A4");    // +0xA4
+        AddByteField(ref r, result, "LOW_PROC_30"); // +0x30
+        AddUInt32Field(ref r, result, "LOW_PROC_A4"); // +0xA4
         AddRefIdField(ref r, result, "LOW_PROC_REF_34"); // +0x34
-        AddUInt32Field(ref r, result, "LOW_PROC_58");    // +0x58
-        AddUInt32Field(ref r, result, "LOW_PROC_A8");    // +0xA8
-        AddUInt32Field(ref r, result, "LOW_PROC_AC");    // +0xAC
-        AddByteField(ref r, result, "LOW_PROC_B0");      // +0xB0
-        AddUInt16Field(ref r, result, "LOW_PROC_50");    // +0x50
+        AddUInt32Field(ref r, result, "LOW_PROC_58"); // +0x58
+        AddUInt32Field(ref r, result, "LOW_PROC_A8"); // +0xA8
+        AddUInt32Field(ref r, result, "LOW_PROC_AC"); // +0xAC
+        AddByteField(ref r, result, "LOW_PROC_B0"); // +0xB0
+        AddUInt16Field(ref r, result, "LOW_PROC_50"); // +0x50
 
         // CombatTimer::SaveGame — 2 floats (timer value adjusted by global game time, + duration)
         AddFloatField(ref r, result, "LOW_PROC_COMBAT_TIMER");
@@ -1231,13 +1260,13 @@ public static class ChangedFormDecoder
         AddUInt32Field(ref r, result, "MIDHIGH_174");
         AddUInt32Field(ref r, result, "MIDHIGH_108");
         AddByteField(ref r, result, "MIDHIGH_1DA");
-        AddFloat3Field(ref r, result, "MIDHIGH_VECTOR_FC");   // +0xFC, 3 floats
+        AddFloat3Field(ref r, result, "MIDHIGH_VECTOR_FC"); // +0xFC, 3 floats
         AddUInt32Field(ref r, result, "MIDHIGH_DC");
         AddByteField(ref r, result, "MIDHIGH_13D");
         AddByteField(ref r, result, "MIDHIGH_144");
         AddByteField(ref r, result, "MIDHIGH_156");
         AddUInt16Field(ref r, result, "MIDHIGH_154");
-        AddFloat3Field(ref r, result, "MIDHIGH_VECTOR_148");  // +0x148, 3 floats
+        AddFloat3Field(ref r, result, "MIDHIGH_VECTOR_148"); // +0x148, 3 floats
         AddByteField(ref r, result, "MIDHIGH_13C");
         AddByteField(ref r, result, "MIDHIGH_E0");
         AddByteField(ref r, result, "MIDHIGH_188");
@@ -1281,12 +1310,12 @@ public static class ChangedFormDecoder
         // When present, wrapped in a vsval byte-count prefix
         if (HasFlag(flags, 0x10000000) && r.HasData(1))
         {
-            int animStart = r.Position;
-            uint animByteCount = r.ReadVsval();
+            var animStart = r.Position;
+            var animByteCount = r.ReadVsval();
             r.TrySkipPipe();
             if (animByteCount > 0 && r.HasData((int)Math.Min(animByteCount, r.Remaining)))
             {
-                int toConsume = (int)Math.Min(animByteCount, r.Remaining);
+                var toConsume = (int)Math.Min(animByteCount, r.Remaining);
                 r.ReadBytes(toConsume);
                 result.Fields.Add(new DecodedField
                 {
@@ -1345,7 +1374,7 @@ public static class ChangedFormDecoder
         AddUInt16Field(ref r, result, "HIGH_2C2");
         AddUInt16Field(ref r, result, "HIGH_2C4");
         AddByteField(ref r, result, "HIGH_349");
-        AddFloat3Field(ref r, result, "HIGH_VECTOR_300");   // +0x300, 3 floats
+        AddFloat3Field(ref r, result, "HIGH_VECTOR_300"); // +0x300, 3 floats
         AddUInt32Field(ref r, result, "HIGH_36C");
         AddUInt32Field(ref r, result, "HIGH_3E8");
         AddUInt32Field(ref r, result, "HIGH_3EC");
@@ -1364,11 +1393,11 @@ public static class ChangedFormDecoder
         AddUInt32Field(ref r, result, "HIGH_2D4");
         AddUInt32Field(ref r, result, "HIGH_2D8");
         AddByteField(ref r, result, "HIGH_3B8");
-        AddByteField(ref r, result, "HIGH_2DC_A");    // +0x2DC written 3 times in decompilation
+        AddByteField(ref r, result, "HIGH_2DC_A"); // +0x2DC written 3 times in decompilation
         AddUInt32Field(ref r, result, "HIGH_2E0");
         AddUInt32Field(ref r, result, "HIGH_344");
-        AddByteField(ref r, result, "HIGH_2DC_B");    // +0x2DC second write
-        AddByteField(ref r, result, "HIGH_2DC_C");    // +0x2DC third write
+        AddByteField(ref r, result, "HIGH_2DC_B"); // +0x2DC second write
+        AddByteField(ref r, result, "HIGH_2DC_C"); // +0x2DC third write
         AddUInt32Field(ref r, result, "HIGH_3D8");
         AddUInt32Field(ref r, result, "HIGH_448");
         AddByteField(ref r, result, "HIGH_29D");
@@ -1400,7 +1429,7 @@ public static class ChangedFormDecoder
         AddRefIdField(ref r, result, "HIGH_REF_2AC");
 
         // ── 6 × (RefID + byte) pairs ── (array at +0x3F8, flags at +0x410)
-        for (int i = 0; i < 6 && r.HasData(4); i++)
+        for (var i = 0; i < 6 && r.HasData(4); i++)
         {
             AddRefIdField(ref r, result, $"HIGH_EQUIP_REF_{i}");
             AddByteField(ref r, result, $"HIGH_EQUIP_FLAG_{i}");
@@ -1414,8 +1443,8 @@ public static class ChangedFormDecoder
         // ── Conditional DialogueItem ──
         if (r.HasData(1))
         {
-            int dlgFlagStart = r.Position;
-            byte hasDialogue = r.ReadByte();
+            var dlgFlagStart = r.Position;
+            var hasDialogue = r.ReadByte();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -1441,8 +1470,8 @@ public static class ChangedFormDecoder
         // ── Conditional DetectionEvent ──
         if (r.HasData(1))
         {
-            int evtFlagStart = r.Position;
-            byte hasEvent = r.ReadByte();
+            var evtFlagStart = r.Position;
+            var hasEvent = r.ReadByte();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -1472,10 +1501,10 @@ public static class ChangedFormDecoder
     private static void AddFloat3Field(ref FormDataReader r, DecodedFormData result, string name)
     {
         if (!r.HasData(12)) return;
-        int startPos = r.Position;
-        float x = r.ReadFloat();
-        float y = r.ReadFloat();
-        float z = r.ReadFloat();
+        var startPos = r.Position;
+        var x = r.ReadFloat();
+        var y = r.ReadFloat();
+        var z = r.ReadFloat();
         r.TrySkipPipe();
         result.Fields.Add(new DecodedField
         {
@@ -1493,13 +1522,13 @@ public static class ChangedFormDecoder
     private static void DecodeVsvalRefIdList(ref FormDataReader r, DecodedFormData result, string name)
     {
         if (!r.HasData(1)) return;
-        int startPos = r.Position;
-        uint count = r.ReadVsval();
+        var startPos = r.Position;
+        var count = r.ReadVsval();
         r.TrySkipPipe();
         var items = new List<DecodedField>();
         for (uint i = 0; i < count && r.HasData(3); i++)
         {
-            int itemStart = r.Position;
+            var itemStart = r.Position;
             var refId = r.ReadRefId();
             r.TrySkipPipe();
             items.Add(new DecodedField
@@ -1529,10 +1558,10 @@ public static class ChangedFormDecoder
     private static void DecodeVsvalCountedBlob(ref FormDataReader r, DecodedFormData result, string name)
     {
         if (!r.HasData(1)) return;
-        int startPos = r.Position;
-        uint byteCount = r.ReadVsval();
+        var startPos = r.Position;
+        var byteCount = r.ReadVsval();
         r.TrySkipPipe();
-        int toConsume = (int)Math.Min(byteCount, (uint)r.Remaining);
+        var toConsume = (int)Math.Min(byteCount, (uint)r.Remaining);
         if (toConsume > 0)
         {
             r.ReadBytes(toConsume);
@@ -1574,47 +1603,111 @@ public static class ChangedFormDecoder
     private static void DecodePathingAvoidNodeList(ref FormDataReader r, DecodedFormData result)
     {
         if (!r.HasData(1)) return;
-        int startPos = r.Position;
-        uint count = r.ReadVsval();
+        var startPos = r.Position;
+        var count = r.ReadVsval();
         r.TrySkipPipe();
         var items = new List<DecodedField>();
         for (uint i = 0; i < count && r.HasData(10); i++)
         {
-            int itemStart = r.Position;
+            var itemStart = r.Position;
             var children = new List<DecodedField>();
 
             // PathingAvoidNode::SaveGame
             if (r.HasData(1))
             {
-                byte nodeType = r.ReadByte();
+                var nodeType = r.ReadByte();
                 r.TrySkipPipe();
-                children.Add(new DecodedField { Name = "NodeType", DisplayValue = $"0x{nodeType:X2}", DataOffset = itemStart, DataLength = r.Position - itemStart });
+                children.Add(new DecodedField
+                {
+                    Name = "NodeType", DisplayValue = $"0x{nodeType:X2}", DataOffset = itemStart,
+                    DataLength = r.Position - itemStart
+                });
 
-                if (r.HasData(4)) { int s = r.Position; uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Field_18", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s }); }
-                if (r.HasData(4)) { int s = r.Position; uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Field_1C", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s }); }
+                if (r.HasData(4))
+                {
+                    var s = r.Position;
+                    var v = r.ReadUInt32();
+                    r.TrySkipPipe();
+                    children.Add(new DecodedField
+                        { Name = "Field_18", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s });
+                }
+
+                if (r.HasData(4))
+                {
+                    var s = r.Position;
+                    var v = r.ReadUInt32();
+                    r.TrySkipPipe();
+                    children.Add(new DecodedField
+                        { Name = "Field_1C", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s });
+                }
 
                 if (r.HasData(12))
                 {
-                    int s = r.Position;
+                    var s = r.Position;
                     float x = r.ReadFloat(), y = r.ReadFloat(), z = r.ReadFloat();
                     r.TrySkipPipe();
-                    children.Add(new DecodedField { Name = "Position", DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})", DataOffset = s, DataLength = r.Position - s });
+                    children.Add(new DecodedField
+                    {
+                        Name = "Position", DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})",
+                        DataOffset = s, DataLength = r.Position - s
+                    });
                 }
 
                 if (nodeType == 1 && r.HasData(12))
                 {
-                    int s = r.Position;
+                    var s = r.Position;
                     float x = r.ReadFloat(), y = r.ReadFloat(), z = r.ReadFloat();
                     r.TrySkipPipe();
-                    children.Add(new DecodedField { Name = "Position2", DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})", DataOffset = s, DataLength = r.Position - s });
+                    children.Add(new DecodedField
+                    {
+                        Name = "Position2", DisplayValue = $"({FormatFloat(x)}, {FormatFloat(y)}, {FormatFloat(z)})",
+                        DataOffset = s, DataLength = r.Position - s
+                    });
                 }
             }
 
             // Extra fields written by HighProcess after PathingAvoidNode::SaveGame
-            if (r.HasData(4)) { int s = r.Position; uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Extra_24", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s }); }
-            if (r.HasData(4)) { int s = r.Position; uint v = r.ReadUInt32(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Extra_2C", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s }); }
-            if (r.HasData(3)) { int s = r.Position; var rf = r.ReadRefId(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Extra_REF_28", Value = rf, DisplayValue = rf.ToString(), DataOffset = s, DataLength = r.Position - s }); }
-            if (r.HasData(3)) { int s = r.Position; var rf = r.ReadRefId(); r.TrySkipPipe(); children.Add(new DecodedField { Name = "Extra_REF_30", Value = rf, DisplayValue = rf.ToString(), DataOffset = s, DataLength = r.Position - s }); }
+            if (r.HasData(4))
+            {
+                var s = r.Position;
+                var v = r.ReadUInt32();
+                r.TrySkipPipe();
+                children.Add(new DecodedField
+                    { Name = "Extra_24", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s });
+            }
+
+            if (r.HasData(4))
+            {
+                var s = r.Position;
+                var v = r.ReadUInt32();
+                r.TrySkipPipe();
+                children.Add(new DecodedField
+                    { Name = "Extra_2C", DisplayValue = $"0x{v:X8}", DataOffset = s, DataLength = r.Position - s });
+            }
+
+            if (r.HasData(3))
+            {
+                var s = r.Position;
+                var rf = r.ReadRefId();
+                r.TrySkipPipe();
+                children.Add(new DecodedField
+                {
+                    Name = "Extra_REF_28", Value = rf, DisplayValue = rf.ToString(), DataOffset = s,
+                    DataLength = r.Position - s
+                });
+            }
+
+            if (r.HasData(3))
+            {
+                var s = r.Position;
+                var rf = r.ReadRefId();
+                r.TrySkipPipe();
+                children.Add(new DecodedField
+                {
+                    Name = "Extra_REF_30", Value = rf, DisplayValue = rf.ToString(), DataOffset = s,
+                    DataLength = r.Position - s
+                });
+            }
 
             items.Add(new DecodedField
             {
@@ -1643,8 +1736,8 @@ public static class ChangedFormDecoder
     private static void DecodeDetectionStateList(ref FormDataReader r, DecodedFormData result, string name)
     {
         if (!r.HasData(1)) return;
-        int startPos = r.Position;
-        uint count = r.ReadVsval();
+        var startPos = r.Position;
+        var count = r.ReadVsval();
         r.TrySkipPipe();
         for (uint i = 0; i < count && r.HasData(3); i++)
         {
@@ -1731,22 +1824,26 @@ public static class ChangedFormDecoder
         if (HasFlag(flags, 0x00000200)) // NPC_SKILLS
         {
             // PDB: NPC_DATA struct = 28 bytes: uchar cSkill[14] + uchar cOffset[14], block + pipe.
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(28))
             {
-                string[] skillNames = ["Barter", "BigGuns", "EnergyWeapons", "Explosives", "Lockpick", "Medicine", "MeleeWeapons", "Repair", "Science", "SmallGuns", "Sneak", "Speech", "Survival", "Unarmed"];
-                byte[] skills = r.ReadBytes(14);
-                byte[] offsets = r.ReadBytes(14);
+                string[] skillNames =
+                [
+                    "Barter", "BigGuns", "EnergyWeapons", "Explosives", "Lockpick", "Medicine", "MeleeWeapons",
+                    "Repair", "Science", "SmallGuns", "Sneak", "Speech", "Survival", "Unarmed"
+                ];
+                var skills = r.ReadBytes(14);
+                var offsets = r.ReadBytes(14);
                 r.TrySkipPipe();
                 var sb = new StringBuilder();
-                for (int i = 0; i < 14; i++)
+                for (var i = 0; i < 14; i++)
                 {
                     if (i > 0)
                     {
                         sb.Append(", ");
                     }
 
-                    string name = i < skillNames.Length ? skillNames[i] : $"Skill{i}";
+                    var name = i < skillNames.Length ? skillNames[i] : $"Skill{i}";
                     sb.Append(offsets[i] != 0 ? $"{name}={skills[i]}+{offsets[i]}" : $"{name}={skills[i]}");
                 }
 
@@ -1770,7 +1867,7 @@ public static class ChangedFormDecoder
         {
             // NPC_FACE: FaceGen morph floats + hair/eyes/headparts data.
             // Variable-length. Calculate size by reserving space for subsequent fields.
-            int trailingSize = 0;
+            var trailingSize = 0;
             if (HasFlag(flags, 0x01000000))
             {
                 trailingSize += 2; // NPC_GENDER: byte + pipe
@@ -1781,24 +1878,24 @@ public static class ChangedFormDecoder
                 trailingSize += 4; // NPC_RACE: RefID + pipe
             }
 
-            int faceDataSize = r.Remaining - trailingSize;
+            var faceDataSize = r.Remaining - trailingSize;
             if (faceDataSize > 0)
             {
-                int startPos = r.Position;
+                var startPos = r.Position;
                 // Decode the initial morph floats (pipe-terminated)
                 // Structure: byte(flags)+pipe, then sets of float+pipe morph coefficients,
                 // followed by hair/eyes/headparts data.
-                byte faceFlags = r.ReadByte();
+                var faceFlags = r.ReadByte();
                 r.TrySkipPipe();
                 var morphSets = new List<DecodedField>();
-                int floatCount = 0;
-                int setStart = r.Position;
+                var floatCount = 0;
+                var setStart = r.Position;
                 while (r.Position - startPos < faceDataSize && r.HasData(4))
                 {
                     // Check if next 5 bytes look like a float + pipe pattern
                     if (r.HasData(5) && r.Position + 5 - startPos <= faceDataSize)
                     {
-                        int beforeFloat = r.Position;
+                        var beforeFloat = r.Position;
                         _ = r.ReadFloat();
                         if (r.HasData(1) && r.PeekByte() == 0x7C)
                         {
@@ -1826,10 +1923,10 @@ public static class ChangedFormDecoder
                 }
 
                 // Read remaining face data (hair, eyes, color, headparts) as blob
-                int remaining = faceDataSize - (r.Position - startPos);
+                var remaining = faceDataSize - (r.Position - startPos);
                 if (remaining > 0)
                 {
-                    int blobStart = r.Position;
+                    var blobStart = r.Position;
                     r.ReadBytes(remaining);
                     morphSets.Add(new DecodedField
                     {
@@ -1853,10 +1950,10 @@ public static class ChangedFormDecoder
 
         if (HasFlag(flags, 0x01000000)) // NPC_GENDER
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(1))
             {
-                byte gender = r.ReadByte();
+                var gender = r.ReadByte();
                 r.TrySkipPipe();
                 result.Fields.Add(new DecodedField
                 {
@@ -1912,12 +2009,15 @@ public static class ChangedFormDecoder
 
         if (HasFlag(flags, 0x00000200)) // CREATURE_SKILLS
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(1))
             {
-                byte combatSkill = r.ReadByte(); r.TrySkipPipe();
-                byte magicSkill = r.ReadByte(); r.TrySkipPipe();
-                byte stealthSkill = r.ReadByte(); r.TrySkipPipe();
+                var combatSkill = r.ReadByte();
+                r.TrySkipPipe();
+                var magicSkill = r.ReadByte();
+                r.TrySkipPipe();
+                var stealthSkill = r.ReadByte();
+                r.TrySkipPipe();
                 result.Fields.Add(new DecodedField
                 {
                     Name = "CREATURE_SKILLS",
@@ -1946,11 +2046,11 @@ public static class ChangedFormDecoder
         {
             if (HasFlag(flags, 0x20000000) && r.HasData(8)) // + EXTERIOR_CHAR → Type 01
             {
-                int startPos = r.Position;
-                ushort wsIndex = r.ReadUInt16();
-                sbyte coordX = (sbyte)r.ReadByte();
-                sbyte coordY = (sbyte)r.ReadByte();
-                uint detachTime = r.ReadUInt32();
+                var startPos = r.Position;
+                var wsIndex = r.ReadUInt16();
+                var coordX = (sbyte)r.ReadByte();
+                var coordY = (sbyte)r.ReadByte();
+                var detachTime = r.ReadUInt32();
                 r.TrySkipPipe();
                 result.Fields.Add(new DecodedField
                 {
@@ -1960,20 +2060,34 @@ public static class ChangedFormDecoder
                     DataLength = r.Position - startPos,
                     Children =
                     [
-                        new() { Name = "WorldspaceIndex", DisplayValue = wsIndex.ToString(), DataOffset = startPos, DataLength = 2 },
-                        new() { Name = "CoordX", DisplayValue = coordX.ToString(), DataOffset = startPos + 2, DataLength = 1 },
-                        new() { Name = "CoordY", DisplayValue = coordY.ToString(), DataOffset = startPos + 3, DataLength = 1 },
-                        new() { Name = "DetachTime", DisplayValue = detachTime.ToString(), DataOffset = startPos + 4, DataLength = 4 }
+                        new DecodedField
+                        {
+                            Name = "WorldspaceIndex", DisplayValue = wsIndex.ToString(), DataOffset = startPos,
+                            DataLength = 2
+                        },
+                        new DecodedField
+                        {
+                            Name = "CoordX", DisplayValue = coordX.ToString(), DataOffset = startPos + 2, DataLength = 1
+                        },
+                        new DecodedField
+                        {
+                            Name = "CoordY", DisplayValue = coordY.ToString(), DataOffset = startPos + 3, DataLength = 1
+                        },
+                        new DecodedField
+                        {
+                            Name = "DetachTime", DisplayValue = detachTime.ToString(), DataOffset = startPos + 4,
+                            DataLength = 4
+                        }
                     ]
                 });
             }
             else if (HasFlag(flags, 0x10000000) && r.HasData(10)) // + EXTERIOR_SHORT → Type 02
             {
-                int startPos = r.Position;
-                ushort wsIndex = r.ReadUInt16();
-                short coordX = r.ReadInt16();
-                short coordY = r.ReadInt16();
-                uint detachTime = r.ReadUInt32();
+                var startPos = r.Position;
+                var wsIndex = r.ReadUInt16();
+                var coordX = r.ReadInt16();
+                var coordY = r.ReadInt16();
+                var detachTime = r.ReadUInt32();
                 r.TrySkipPipe();
                 result.Fields.Add(new DecodedField
                 {
@@ -1983,10 +2097,24 @@ public static class ChangedFormDecoder
                     DataLength = r.Position - startPos,
                     Children =
                     [
-                        new() { Name = "WorldspaceIndex", DisplayValue = wsIndex.ToString(), DataOffset = startPos, DataLength = 2 },
-                        new() { Name = "CoordX", DisplayValue = coordX.ToString(), DataOffset = startPos + 2, DataLength = 2 },
-                        new() { Name = "CoordY", DisplayValue = coordY.ToString(), DataOffset = startPos + 4, DataLength = 2 },
-                        new() { Name = "DetachTime", DisplayValue = detachTime.ToString(), DataOffset = startPos + 6, DataLength = 4 }
+                        new DecodedField
+                        {
+                            Name = "WorldspaceIndex", DisplayValue = wsIndex.ToString(), DataOffset = startPos,
+                            DataLength = 2
+                        },
+                        new DecodedField
+                        {
+                            Name = "CoordX", DisplayValue = coordX.ToString(), DataOffset = startPos + 2, DataLength = 2
+                        },
+                        new DecodedField
+                        {
+                            Name = "CoordY", DisplayValue = coordY.ToString(), DataOffset = startPos + 4, DataLength = 2
+                        },
+                        new DecodedField
+                        {
+                            Name = "DetachTime", DisplayValue = detachTime.ToString(), DataOffset = startPos + 6,
+                            DataLength = 4
+                        }
                     ]
                 });
             }
@@ -2062,7 +2190,8 @@ public static class ChangedFormDecoder
         // func_0x823ae3d0 is NOT YET DECOMPILED — raw blob until we can fully parse.
         if (HasFlag(flags, 0x20000000))
         {
-            AddRawBlobField(ref r, result, "PROJECTILE_STATE", "Projectile save state (MobileObject + Projectile chain)");
+            AddRawBlobField(ref r, result, "PROJECTILE_STATE",
+                "Projectile save state (MobileObject + Projectile chain)");
         }
 
         // Projectiles have REFR_EXTRA_GAME_ONLY directly (no object/actor overlay)
@@ -2134,18 +2263,19 @@ public static class ChangedFormDecoder
         if (HasFlag(flags, 0x80000000)) // ENCOUNTER_ZONE_GAME_DATA
         {
             // Written as a block: 4 uint32 values + pipe
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(16))
             {
-                uint detachTime = r.ReadUInt32();
-                uint zoneLevel = r.ReadUInt32();
-                uint zoneFlags = r.ReadUInt32();
-                uint resetCount = r.ReadUInt32();
+                var detachTime = r.ReadUInt32();
+                var zoneLevel = r.ReadUInt32();
+                var zoneFlags = r.ReadUInt32();
+                var resetCount = r.ReadUInt32();
                 r.TrySkipPipe();
                 result.Fields.Add(new DecodedField
                 {
                     Name = "ENCOUNTER_ZONE_GAME_DATA",
-                    DisplayValue = $"DetachTime={detachTime}, Level={zoneLevel}, Flags=0x{zoneFlags:X8}, ResetCount={resetCount}",
+                    DisplayValue =
+                        $"DetachTime={detachTime}, Level={zoneLevel}, Flags=0x{zoneFlags:X8}, ResetCount={resetCount}",
                     DataOffset = startPos,
                     DataLength = r.Position - startPos
                 });
@@ -2158,12 +2288,12 @@ public static class ChangedFormDecoder
         if (HasFlag(flags, 0x00000002)) // CLASS_TAG_SKILLS
         {
             // 4 tag skills as uint32 AV codes, each pipe-terminated
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(4))
             {
                 var tags = new uint[4];
                 var sb = new StringBuilder();
-                for (int i = 0; i < 4 && r.HasData(4); i++)
+                for (var i = 0; i < 4 && r.HasData(4); i++)
                 {
                     tags[i] = r.ReadUInt32();
                     r.TrySkipPipe();
@@ -2199,20 +2329,20 @@ public static class ChangedFormDecoder
 
         if (HasFlag(flags, 0x00000004)) // FACTION_REACTIONS
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(1))
             {
-                uint count = r.ReadVsval();
+                var count = r.ReadVsval();
                 r.TrySkipPipe();
                 var reactions = new List<DecodedField>();
-                for (int i = 0; i < count && r.HasData(3); i++)
+                for (var i = 0; i < count && r.HasData(3); i++)
                 {
-                    int rStart = r.Position;
+                    var rStart = r.Position;
                     var factionRef = r.ReadRefId();
                     r.TrySkipPipe();
-                    int modifier = r.HasData(4) ? r.ReadInt32() : 0;
+                    var modifier = r.HasData(4) ? r.ReadInt32() : 0;
                     r.TrySkipPipe();
-                    int reaction = r.HasData(4) ? r.ReadInt32() : 0;
+                    var reaction = r.HasData(4) ? r.ReadInt32() : 0;
                     r.TrySkipPipe();
                     reactions.Add(new DecodedField
                     {
@@ -2236,12 +2366,12 @@ public static class ChangedFormDecoder
 
         if (HasFlag(flags, 0x80000000)) // FACTION_CRIME_COUNTS
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(4))
             {
-                uint murderCount = r.ReadUInt32();
+                var murderCount = r.ReadUInt32();
                 r.TrySkipPipe();
-                uint assaultCount = r.HasData(4) ? r.ReadUInt32() : 0;
+                var assaultCount = r.HasData(4) ? r.ReadUInt32() : 0;
                 r.TrySkipPipe();
                 result.Fields.Add(new DecodedField
                 {
@@ -2283,15 +2413,15 @@ public static class ChangedFormDecoder
     {
         if (HasFlag(flags, 0x80000000)) // FORM_LIST_ADDED_FORM
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(1))
             {
-                byte count = r.ReadByte();
+                var count = r.ReadByte();
                 r.TrySkipPipe();
                 var forms = new List<DecodedField>();
-                for (int i = 0; i < count && r.HasData(3); i++)
+                for (var i = 0; i < count && r.HasData(3); i++)
                 {
-                    int fStart = r.Position;
+                    var fStart = r.Position;
                     var formRef = r.ReadRefId();
                     r.TrySkipPipe();
                     forms.Add(new DecodedField
@@ -2319,20 +2449,20 @@ public static class ChangedFormDecoder
     {
         if (HasFlag(flags, 0x80000000)) // LEVELED_LIST_ADDED_OBJECT
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(1))
             {
-                byte count = r.ReadByte();
+                var count = r.ReadByte();
                 r.TrySkipPipe();
                 var objects = new List<DecodedField>();
-                for (int i = 0; i < count && r.HasData(3); i++)
+                for (var i = 0; i < count && r.HasData(3); i++)
                 {
-                    int eStart = r.Position;
+                    var eStart = r.Position;
                     var formRef = r.ReadRefId();
                     r.TrySkipPipe();
-                    ushort level = r.HasData(2) ? r.ReadUInt16() : (ushort)0;
+                    var level = r.HasData(2) ? r.ReadUInt16() : (ushort)0;
                     r.TrySkipPipe();
-                    ushort itemCount = r.HasData(2) ? r.ReadUInt16() : (ushort)0;
+                    var itemCount = r.HasData(2) ? r.ReadUInt16() : (ushort)0;
                     r.TrySkipPipe();
                     objects.Add(new DecodedField
                     {
@@ -2367,12 +2497,12 @@ public static class ChangedFormDecoder
     {
         if (HasFlag(flags, 0x00000002)) // REPUTATION_VALUES
         {
-            int startPos = r.Position;
+            var startPos = r.Position;
             if (r.HasData(4))
             {
-                float fame = r.ReadFloat();
+                var fame = r.ReadFloat();
                 r.TrySkipPipe();
-                float infamy = r.HasData(4) ? r.ReadFloat() : 0f;
+                var infamy = r.HasData(4) ? r.ReadFloat() : 0f;
                 r.TrySkipPipe();
                 result.Fields.Add(new DecodedField
                 {
@@ -2403,23 +2533,23 @@ public static class ChangedFormDecoder
     /// </summary>
     private static void DecodeExtraDataList(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (!r.HasData(1))
         {
             return;
         }
 
-        uint count = r.ReadVsval();
+        var count = r.ReadVsval();
         r.TrySkipPipe();
         var entries = new List<DecodedField>();
-        bool aborted = false;
+        var aborted = false;
 
-        for (int i = 0; i < count && r.HasData(1); i++)
+        for (var i = 0; i < count && r.HasData(1); i++)
         {
-            int entryStart = r.Position;
-            byte type = r.ReadByte();
+            var entryStart = r.Position;
+            var type = r.ReadByte();
             r.TrySkipPipe();
-            string displayValue = "";
+            var displayValue = "";
 
             switch (type)
             {
@@ -2432,7 +2562,12 @@ public static class ChangedFormDecoder
                 case 0x1C or 0x21 or 0x22 or 0x39 or 0x3C or 0x3F or 0x46 or 0x49
                     or 0x55 or 0x6C or 0x74 or 0x89:
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var refId = r.ReadRefId();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraTypeName(type)}: {refId}";
@@ -2443,8 +2578,13 @@ public static class ChangedFormDecoder
                 case 0x1E or 0x23 or 0x25 or 0x27 or 0x28 or 0x30
                     or 0x56 or 0x5C or 0x5D:
                 {
-                    if (!r.HasData(4)) { aborted = true; break; }
-                    uint val = r.ReadUInt32();
+                    if (!r.HasData(4))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val = r.ReadUInt32();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraTypeName(type)}: 0x{val:X8}";
                     break;
@@ -2453,8 +2593,13 @@ public static class ChangedFormDecoder
                 // Single byte types
                 case 0x26 or 0x4A or 0x4E or 0x8D:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    byte val = r.ReadByte();
+                    if (!r.HasData(1))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val = r.ReadByte();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraTypeName(type)}: 0x{val:X2}";
                     break;
@@ -2463,8 +2608,13 @@ public static class ChangedFormDecoder
                 // Single uint16 type
                 case 0x24:
                 {
-                    if (!r.HasData(2)) { aborted = true; break; }
-                    ushort val = r.ReadUInt16();
+                    if (!r.HasData(2))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val = r.ReadUInt16();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraTypeName(type)}: {val}";
                     break;
@@ -2473,10 +2623,15 @@ public static class ChangedFormDecoder
                 // Two uint32 values
                 case 0x92:
                 {
-                    if (!r.HasData(8)) { aborted = true; break; }
-                    uint val1 = r.ReadUInt32();
+                    if (!r.HasData(8))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val1 = r.ReadUInt32();
                     r.TrySkipPipe();
-                    uint val2 = r.ReadUInt32();
+                    var val2 = r.ReadUInt32();
                     r.TrySkipPipe();
                     displayValue = $"{ExtraTypeName(type)}: 0x{val1:X8}, 0x{val2:X8}";
                     break;
@@ -2485,12 +2640,17 @@ public static class ChangedFormDecoder
                 // LockData (0x4D): byte lockLevel + RefID key + byte lockFlags
                 case 0x4D:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    byte lockLevel = r.ReadByte();
+                    if (!r.HasData(1))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var lockLevel = r.ReadByte();
                     r.TrySkipPipe();
                     var keyRef = r.HasData(3) ? r.ReadRefId() : default;
                     r.TrySkipPipe();
-                    byte lockFlags = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    var lockFlags = r.HasData(1) ? r.ReadByte() : (byte)0;
                     r.TrySkipPipe();
                     displayValue = $"LockData: Level={lockLevel}, Key={keyRef}, Flags=0x{lockFlags:X2}";
                     break;
@@ -2499,16 +2659,24 @@ public static class ChangedFormDecoder
                 // ExtraOwnership (0x18): RefID + 12 bytes (3 floats) + 4 bytes
                 case 0x18:
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var ownerRef = r.ReadRefId();
                     r.TrySkipPipe();
                     float x = 0, y = 0, z = 0;
                     if (r.HasData(12))
                     {
-                        x = r.ReadFloat(); y = r.ReadFloat(); z = r.ReadFloat();
+                        x = r.ReadFloat();
+                        y = r.ReadFloat();
+                        z = r.ReadFloat();
                         r.TrySkipPipe();
                     }
-                    uint extra = r.HasData(4) ? r.ReadUInt32() : 0;
+
+                    var extra = r.HasData(4) ? r.ReadUInt32() : 0;
                     r.TrySkipPipe();
                     displayValue = $"Ownership: {ownerRef}, ({x:F1},{y:F1},{z:F1}), 0x{extra:X8}";
                     break;
@@ -2517,18 +2685,23 @@ public static class ChangedFormDecoder
                 // ExtraRank (0x19): RefID + RefID + 4B + 3 bytes
                 case 0x19:
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
                     var ownerRef = r.ReadRefId();
                     r.TrySkipPipe();
                     var rankRef = r.HasData(3) ? r.ReadRefId() : default;
                     r.TrySkipPipe();
-                    uint data = r.HasData(4) ? r.ReadUInt32() : 0;
+                    var data = r.HasData(4) ? r.ReadUInt32() : 0;
                     r.TrySkipPipe();
-                    byte b1 = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    var b1 = r.HasData(1) ? r.ReadByte() : (byte)0;
                     r.TrySkipPipe();
-                    byte b2 = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    var b2 = r.HasData(1) ? r.ReadByte() : (byte)0;
                     r.TrySkipPipe();
-                    byte b3 = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    var b3 = r.HasData(1) ? r.ReadByte() : (byte)0;
                     r.TrySkipPipe();
                     displayValue = $"Rank: Owner={ownerRef}, Rank={rankRef}, Data=0x{data:X8}, {b1}/{b2}/{b3}";
                     break;
@@ -2537,41 +2710,70 @@ public static class ChangedFormDecoder
                 // FormID list types with vsval count
                 case 0x1B: // ExtraContainerChanges: vsval count + (RefID + byte) per entry
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    uint listCount = r.ReadVsval();
-                    r.TrySkipPipe();
-                    for (int j = 0; j < listCount && r.HasData(3); j++)
+                    if (!r.HasData(1))
                     {
-                        r.ReadRefId(); r.TrySkipPipe();
-                        if (r.HasData(1)) { r.ReadByte(); r.TrySkipPipe(); }
+                        aborted = true;
+                        break;
                     }
+
+                    var listCount = r.ReadVsval();
+                    r.TrySkipPipe();
+                    for (var j = 0; j < listCount && r.HasData(3); j++)
+                    {
+                        r.ReadRefId();
+                        r.TrySkipPipe();
+                        if (r.HasData(1))
+                        {
+                            r.ReadByte();
+                            r.TrySkipPipe();
+                        }
+                    }
+
                     displayValue = $"ContainerChanges: {listCount} entries";
                     break;
                 }
 
                 case 0x1D: // ExtraLevCrpc: vsval count + RefID per entry
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    uint listCount = r.ReadVsval();
-                    r.TrySkipPipe();
-                    for (int j = 0; j < listCount && r.HasData(3); j++)
+                    if (!r.HasData(1))
                     {
-                        r.ReadRefId(); r.TrySkipPipe();
+                        aborted = true;
+                        break;
                     }
+
+                    var listCount = r.ReadVsval();
+                    r.TrySkipPipe();
+                    for (var j = 0; j < listCount && r.HasData(3); j++)
+                    {
+                        r.ReadRefId();
+                        r.TrySkipPipe();
+                    }
+
                     displayValue = $"LevCrpc: {listCount} entries";
                     break;
                 }
 
                 case 0x5E: // List of RefID + byte pairs
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    uint listCount = r.ReadVsval();
-                    r.TrySkipPipe();
-                    for (int j = 0; j < listCount && r.HasData(3); j++)
+                    if (!r.HasData(1))
                     {
-                        r.ReadRefId(); r.TrySkipPipe();
-                        if (r.HasData(1)) { r.ReadByte(); r.TrySkipPipe(); }
+                        aborted = true;
+                        break;
                     }
+
+                    var listCount = r.ReadVsval();
+                    r.TrySkipPipe();
+                    for (var j = 0; j < listCount && r.HasData(3); j++)
+                    {
+                        r.ReadRefId();
+                        r.TrySkipPipe();
+                        if (r.HasData(1))
+                        {
+                            r.ReadByte();
+                            r.TrySkipPipe();
+                        }
+                    }
+
                     displayValue = $"Extra0x5E: {listCount} entries";
                     break;
                 }
@@ -2579,14 +2781,22 @@ public static class ChangedFormDecoder
                 // 0x35: vsval count + (uint32 + uint32) per entry
                 case 0x35:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    uint listCount = r.ReadVsval();
-                    r.TrySkipPipe();
-                    for (int j = 0; j < listCount && r.HasData(8); j++)
+                    if (!r.HasData(1))
                     {
-                        r.ReadUInt32(); r.TrySkipPipe();
-                        r.ReadUInt32(); r.TrySkipPipe();
+                        aborted = true;
+                        break;
                     }
+
+                    var listCount = r.ReadVsval();
+                    r.TrySkipPipe();
+                    for (var j = 0; j < listCount && r.HasData(8); j++)
+                    {
+                        r.ReadUInt32();
+                        r.TrySkipPipe();
+                        r.ReadUInt32();
+                        r.TrySkipPipe();
+                    }
+
                     displayValue = $"Extra0x35: {listCount} entries";
                     break;
                 }
@@ -2594,15 +2804,24 @@ public static class ChangedFormDecoder
                 // 0x73: vsval count + (RefID + uint32 + uint32) per entry
                 case 0x73:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    uint listCount = r.ReadVsval();
-                    r.TrySkipPipe();
-                    for (int j = 0; j < listCount && r.HasData(11); j++)
+                    if (!r.HasData(1))
                     {
-                        r.ReadRefId(); r.TrySkipPipe();
-                        r.ReadUInt32(); r.TrySkipPipe();
-                        r.ReadUInt32(); r.TrySkipPipe();
+                        aborted = true;
+                        break;
                     }
+
+                    var listCount = r.ReadVsval();
+                    r.TrySkipPipe();
+                    for (var j = 0; j < listCount && r.HasData(11); j++)
+                    {
+                        r.ReadRefId();
+                        r.TrySkipPipe();
+                        r.ReadUInt32();
+                        r.TrySkipPipe();
+                        r.ReadUInt32();
+                        r.TrySkipPipe();
+                    }
+
                     displayValue = $"Extra0x73: {listCount} entries";
                     break;
                 }
@@ -2610,12 +2829,22 @@ public static class ChangedFormDecoder
                 // 0x2A: ExtraRefPointerList: byte + byte + RefID + uint32 + uint32
                 case 0x2A:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    byte b1 = r.ReadByte(); r.TrySkipPipe();
-                    byte b2 = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
-                    var refId = r.HasData(3) ? r.ReadRefId() : default; r.TrySkipPipe();
-                    uint v1 = r.HasData(4) ? r.ReadUInt32() : 0; r.TrySkipPipe();
-                    uint v2 = r.HasData(4) ? r.ReadUInt32() : 0; r.TrySkipPipe();
+                    if (!r.HasData(1))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var b1 = r.ReadByte();
+                    r.TrySkipPipe();
+                    var b2 = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    r.TrySkipPipe();
+                    var refId = r.HasData(3) ? r.ReadRefId() : default;
+                    r.TrySkipPipe();
+                    var v1 = r.HasData(4) ? r.ReadUInt32() : 0;
+                    r.TrySkipPipe();
+                    var v2 = r.HasData(4) ? r.ReadUInt32() : 0;
+                    r.TrySkipPipe();
                     displayValue = $"RefPointer: {b1}/{b2}, {refId}, 0x{v1:X8}, 0x{v2:X8}";
                     break;
                 }
@@ -2623,9 +2852,16 @@ public static class ChangedFormDecoder
                 // 0x2F: uint32 + byte
                 case 0x2F:
                 {
-                    if (!r.HasData(4)) { aborted = true; break; }
-                    uint val = r.ReadUInt32(); r.TrySkipPipe();
-                    byte b = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
+                    if (!r.HasData(4))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val = r.ReadUInt32();
+                    r.TrySkipPipe();
+                    var b = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    r.TrySkipPipe();
                     displayValue = $"Extra0x2F: 0x{val:X8}, {b}";
                     break;
                 }
@@ -2633,9 +2869,16 @@ public static class ChangedFormDecoder
                 // 0x50: two bytes
                 case 0x50:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    byte b1 = r.ReadByte(); r.TrySkipPipe();
-                    byte b2 = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
+                    if (!r.HasData(1))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var b1 = r.ReadByte();
+                    r.TrySkipPipe();
+                    var b2 = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    r.TrySkipPipe();
                     displayValue = $"Extra0x50: {b1}, {b2}";
                     break;
                 }
@@ -2643,8 +2886,14 @@ public static class ChangedFormDecoder
                 // 0x54: single uint32
                 case 0x54:
                 {
-                    if (!r.HasData(4)) { aborted = true; break; }
-                    uint val = r.ReadUInt32(); r.TrySkipPipe();
+                    if (!r.HasData(4))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val = r.ReadUInt32();
+                    r.TrySkipPipe();
                     displayValue = $"Extra0x54: 0x{val:X8}";
                     break;
                 }
@@ -2652,8 +2901,14 @@ public static class ChangedFormDecoder
                 // 0x60: single uint32 (editor ref ID as uint32)
                 case 0x60:
                 {
-                    if (!r.HasData(4)) { aborted = true; break; }
-                    uint val = r.ReadUInt32(); r.TrySkipPipe();
+                    if (!r.HasData(4))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val = r.ReadUInt32();
+                    r.TrySkipPipe();
                     displayValue = $"EditorRef: 0x{val:X8}";
                     break;
                 }
@@ -2661,9 +2916,16 @@ public static class ChangedFormDecoder
                 // 0x6E: RefID + uint32
                 case 0x6E:
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
-                    var refId = r.ReadRefId(); r.TrySkipPipe();
-                    uint val = r.HasData(4) ? r.ReadUInt32() : 0; r.TrySkipPipe();
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var refId = r.ReadRefId();
+                    r.TrySkipPipe();
+                    var val = r.HasData(4) ? r.ReadUInt32() : 0;
+                    r.TrySkipPipe();
                     displayValue = $"Extra0x6E: {refId}, 0x{val:X8}";
                     break;
                 }
@@ -2671,10 +2933,18 @@ public static class ChangedFormDecoder
                 // 0x75: RefID + RefID + byte
                 case 0x75:
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
-                    var ref1 = r.ReadRefId(); r.TrySkipPipe();
-                    var ref2 = r.HasData(3) ? r.ReadRefId() : default; r.TrySkipPipe();
-                    byte b = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var ref1 = r.ReadRefId();
+                    r.TrySkipPipe();
+                    var ref2 = r.HasData(3) ? r.ReadRefId() : default;
+                    r.TrySkipPipe();
+                    var b = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    r.TrySkipPipe();
                     displayValue = $"Extra0x75: {ref1}, {ref2}, {b}";
                     break;
                 }
@@ -2682,8 +2952,14 @@ public static class ChangedFormDecoder
                 // 0x2C: single byte (activate ref children)
                 case 0x2C:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    byte val = r.ReadByte(); r.TrySkipPipe();
+                    if (!r.HasData(1))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val = r.ReadByte();
+                    r.TrySkipPipe();
                     displayValue = $"ActivateRefChildren: {val}";
                     break;
                 }
@@ -2691,12 +2967,19 @@ public static class ChangedFormDecoder
                 // 0x8F: two strings (uint16 len + bytes each)
                 case 0x8F:
                 {
-                    if (!r.HasData(2)) { aborted = true; break; }
-                    ushort len1 = r.ReadUInt16(); r.TrySkipPipe();
-                    string s1 = (len1 > 0 && r.HasData(len1)) ? r.ReadString(len1) : "";
+                    if (!r.HasData(2))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var len1 = r.ReadUInt16();
                     r.TrySkipPipe();
-                    ushort len2 = r.HasData(2) ? r.ReadUInt16() : (ushort)0; r.TrySkipPipe();
-                    string s2 = (len2 > 0 && r.HasData(len2)) ? r.ReadString(len2) : "";
+                    var s1 = len1 > 0 && r.HasData(len1) ? r.ReadString(len1) : "";
+                    r.TrySkipPipe();
+                    var len2 = r.HasData(2) ? r.ReadUInt16() : (ushort)0;
+                    r.TrySkipPipe();
+                    var s2 = len2 > 0 && r.HasData(len2) ? r.ReadString(len2) : "";
                     r.TrySkipPipe();
                     displayValue = $"Strings: \"{s1}\", \"{s2}\"";
                     break;
@@ -2705,10 +2988,18 @@ public static class ChangedFormDecoder
                 // 0x32: three RefIDs (StartingWorldOrCell)
                 case 0x32:
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
-                    var ref1 = r.ReadRefId(); r.TrySkipPipe();
-                    var ref2 = r.HasData(3) ? r.ReadRefId() : default; r.TrySkipPipe();
-                    var ref3 = r.HasData(3) ? r.ReadRefId() : default; r.TrySkipPipe();
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var ref1 = r.ReadRefId();
+                    r.TrySkipPipe();
+                    var ref2 = r.HasData(3) ? r.ReadRefId() : default;
+                    r.TrySkipPipe();
+                    var ref3 = r.HasData(3) ? r.ReadRefId() : default;
+                    r.TrySkipPipe();
                     displayValue = $"StartingWorldOrCell: {ref1}, {ref2}, {ref3}";
                     break;
                 }
@@ -2716,9 +3007,16 @@ public static class ChangedFormDecoder
                 // 0x5B: RefID + uint32
                 case 0x5B:
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
-                    var refId = r.ReadRefId(); r.TrySkipPipe();
-                    uint slotIdx = r.HasData(4) ? r.ReadUInt32() : 0; r.TrySkipPipe();
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var refId = r.ReadRefId();
+                    r.TrySkipPipe();
+                    var slotIdx = r.HasData(4) ? r.ReadUInt32() : 0;
+                    r.TrySkipPipe();
                     displayValue = $"Extra0x5B: {refId}, slot={slotIdx}";
                     break;
                 }
@@ -2726,13 +3024,20 @@ public static class ChangedFormDecoder
                 // 0x7C: vsval count + RefIDs
                 case 0x7C:
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    uint listCount = r.ReadVsval();
-                    r.TrySkipPipe();
-                    for (int j = 0; j < listCount && r.HasData(3); j++)
+                    if (!r.HasData(1))
                     {
-                        r.ReadRefId(); r.TrySkipPipe();
+                        aborted = true;
+                        break;
                     }
+
+                    var listCount = r.ReadVsval();
+                    r.TrySkipPipe();
+                    for (var j = 0; j < listCount && r.HasData(3); j++)
+                    {
+                        r.ReadRefId();
+                        r.TrySkipPipe();
+                    }
+
                     displayValue = $"OwnerFormIDs: {listCount} entries";
                     break;
                 }
@@ -2743,33 +3048,54 @@ public static class ChangedFormDecoder
                 //   × [ 3 bytes + 1 byte (version>15, always true for FNV) + vsval inner_count + [RefID × inner_count] ]
                 case 0x5F:
                 {
-                    if (!r.HasData(14)) { aborted = true; break; }
-                    ushort an_u16 = r.ReadUInt16(); r.TrySkipPipe();
-                    uint an_u32a = r.ReadUInt32(); r.TrySkipPipe();
-                    uint an_u32b = r.ReadUInt32(); r.TrySkipPipe();
-                    byte an_byte = r.ReadByte(); r.TrySkipPipe();
-                    var an_ref = r.HasData(3) ? r.ReadRefId() : default; r.TrySkipPipe();
+                    if (!r.HasData(14))
+                    {
+                        aborted = true;
+                        break;
+                    }
 
-                    uint outerCount = r.HasData(1) ? r.ReadVsval() : 0;
+                    var an_u16 = r.ReadUInt16();
+                    r.TrySkipPipe();
+                    var an_u32a = r.ReadUInt32();
+                    r.TrySkipPipe();
+                    var an_u32b = r.ReadUInt32();
+                    r.TrySkipPipe();
+                    var an_byte = r.ReadByte();
+                    r.TrySkipPipe();
+                    var an_ref = r.HasData(3) ? r.ReadRefId() : default;
                     r.TrySkipPipe();
 
-                    for (int j = 0; j < outerCount && r.HasData(4); j++)
+                    var outerCount = r.HasData(1) ? r.ReadVsval() : 0;
+                    r.TrySkipPipe();
+
+                    for (var j = 0; j < outerCount && r.HasData(4); j++)
                     {
                         // 3 individual bytes
-                        r.ReadByte(); r.TrySkipPipe();
-                        r.ReadByte(); r.TrySkipPipe();
-                        r.ReadByte(); r.TrySkipPipe();
-                        // conditional byte (version > 15, always present for FNV)
-                        if (r.HasData(1)) { r.ReadByte(); r.TrySkipPipe(); }
-                        // vsval inner count + RefIDs
-                        uint innerCount = r.HasData(1) ? r.ReadVsval() : 0;
+                        r.ReadByte();
                         r.TrySkipPipe();
-                        for (int k = 0; k < innerCount && r.HasData(3); k++)
+                        r.ReadByte();
+                        r.TrySkipPipe();
+                        r.ReadByte();
+                        r.TrySkipPipe();
+                        // conditional byte (version > 15, always present for FNV)
+                        if (r.HasData(1))
                         {
-                            r.ReadRefId(); r.TrySkipPipe();
+                            r.ReadByte();
+                            r.TrySkipPipe();
+                        }
+
+                        // vsval inner count + RefIDs
+                        var innerCount = r.HasData(1) ? r.ReadVsval() : 0;
+                        r.TrySkipPipe();
+                        for (var k = 0; k < innerCount && r.HasData(3); k++)
+                        {
+                            r.ReadRefId();
+                            r.TrySkipPipe();
                         }
                     }
-                    displayValue = $"AnimNotes: u16={an_u16}, u32=0x{an_u32a:X8}/0x{an_u32b:X8}, b={an_byte}, ref={an_ref}, {outerCount} outer entries";
+
+                    displayValue =
+                        $"AnimNotes: u16={an_u16}, u32=0x{an_u32a:X8}/0x{an_u32b:X8}, b={an_byte}, ref={an_ref}, {outerCount} outer entries";
                     break;
                 }
 
@@ -2787,40 +3113,76 @@ public static class ChangedFormDecoder
                     //   [byte hasEventData + pipe]
                     //   if hasEventData: [8B eventData + pipe]
                     //   [byte scriptFlag + pipe]
-                    if (!r.HasData(3)) { aborted = true; break; }
-                    var refId = r.ReadRefId(); r.TrySkipPipe();
-                    if (!r.HasData(1)) { displayValue = $"ActivateRef: {refId}"; break; }
-                    uint slVarCount = r.ReadVsval(); r.TrySkipPipe();
-                    for (int j = 0; j < slVarCount && r.HasData(4); j++)
+                    if (!r.HasData(3))
                     {
-                        uint varIdx = r.ReadUInt32(); r.TrySkipPipe();
+                        aborted = true;
+                        break;
+                    }
+
+                    var refId = r.ReadRefId();
+                    r.TrySkipPipe();
+                    if (!r.HasData(1))
+                    {
+                        displayValue = $"ActivateRef: {refId}";
+                        break;
+                    }
+
+                    var slVarCount = r.ReadVsval();
+                    r.TrySkipPipe();
+                    for (var j = 0; j < slVarCount && r.HasData(4); j++)
+                    {
+                        var varIdx = r.ReadUInt32();
+                        r.TrySkipPipe();
                         if ((varIdx & 0x80000000) != 0)
                         {
                             // Ref variable: 3B RefID
-                            if (r.HasData(3)) { r.ReadRefId(); r.TrySkipPipe(); }
+                            if (r.HasData(3))
+                            {
+                                r.ReadRefId();
+                                r.TrySkipPipe();
+                            }
                         }
                         else
                         {
                             // Value variable: 8B double
-                            if (r.HasData(8)) { r.ReadBytes(8); r.TrySkipPipe(); }
+                            if (r.HasData(8))
+                            {
+                                r.ReadBytes(8);
+                                r.TrySkipPipe();
+                            }
                         }
                     }
+
                     // hasEventData byte
-                    byte hasEvent = r.HasData(1) ? r.ReadByte() : (byte)0; r.TrySkipPipe();
+                    var hasEvent = r.HasData(1) ? r.ReadByte() : (byte)0;
+                    r.TrySkipPipe();
                     if (hasEvent != 0 && r.HasData(8))
                     {
-                        r.ReadBytes(8); r.TrySkipPipe(); // 8B event data
+                        r.ReadBytes(8);
+                        r.TrySkipPipe(); // 8B event data
                     }
+
                     // scriptFlag byte
-                    if (r.HasData(1)) { r.ReadByte(); r.TrySkipPipe(); }
+                    if (r.HasData(1))
+                    {
+                        r.ReadByte();
+                        r.TrySkipPipe();
+                    }
+
                     displayValue = $"ActivateRef: {refId}, {slVarCount} script var(s)";
                     break;
                 }
 
                 case 0x33: // Package: RefID + opaque func_0x82635648
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
-                    var refId = r.ReadRefId(); r.TrySkipPipe();
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var refId = r.ReadRefId();
+                    r.TrySkipPipe();
                     displayValue = $"Package: {refId} (partial — sub-function data follows)";
                     aborted = true;
                     break;
@@ -2828,8 +3190,14 @@ public static class ChangedFormDecoder
 
                 case 0x1A: // Action: RefID + virtual dispatch
                 {
-                    if (!r.HasData(3)) { aborted = true; break; }
-                    var refId = r.ReadRefId(); r.TrySkipPipe();
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var refId = r.ReadRefId();
+                    r.TrySkipPipe();
                     displayValue = $"Action: {refId} (partial — virtual dispatch follows)";
                     aborted = true;
                     break;
@@ -2839,28 +3207,44 @@ public static class ChangedFormDecoder
                 {
                     // ExtraDataList::SaveGame_v2 line 6628: 2 RefIDs + 1 uint32 (nested flags)
                     // Then calls nested SaveGame_v2 with those flags. If flags=0, nothing written.
-                    if (!r.HasData(3)) { aborted = true; break; }
-                    var ref1 = r.ReadRefId(); r.TrySkipPipe();
-                    var ref2 = r.HasData(3) ? r.ReadRefId() : default; r.TrySkipPipe();
-                    uint nestedFlags = r.HasData(4) ? r.ReadUInt32() : 0; r.TrySkipPipe();
+                    if (!r.HasData(3))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var ref1 = r.ReadRefId();
+                    r.TrySkipPipe();
+                    var ref2 = r.HasData(3) ? r.ReadRefId() : default;
+                    r.TrySkipPipe();
+                    var nestedFlags = r.HasData(4) ? r.ReadUInt32() : 0;
+                    r.TrySkipPipe();
                     if (nestedFlags != 0)
                     {
                         // Non-zero flags means nested save data follows — can't decode without
                         // knowing the nested form type. Abort and rewind.
-                        displayValue = $"MagicCaster: {ref1}, {ref2}, nestedFlags=0x{nestedFlags:X8} (virtual dispatch follows)";
+                        displayValue =
+                            $"MagicCaster: {ref1}, {ref2}, nestedFlags=0x{nestedFlags:X8} (virtual dispatch follows)";
                         aborted = true;
                     }
                     else
                     {
                         displayValue = $"MagicCaster: {ref1}, {ref2}, nestedFlags=0 (no nested data)";
                     }
+
                     break;
                 }
 
                 case 0x70: // BoundBody: 1 byte + virtual dispatch
                 {
-                    if (!r.HasData(1)) { aborted = true; break; }
-                    byte val = r.ReadByte(); r.TrySkipPipe();
+                    if (!r.HasData(1))
+                    {
+                        aborted = true;
+                        break;
+                    }
+
+                    var val = r.ReadByte();
+                    r.TrySkipPipe();
                     displayValue = $"BoundBody: {val} (partial — virtual dispatch follows)";
                     aborted = true;
                     break;
@@ -2896,14 +3280,14 @@ public static class ChangedFormDecoder
         }
 
         // If we aborted mid-list, consume remaining bytes as a partial blob
-        int blobStart = r.Position;
+        var blobStart = r.Position;
         if (aborted && r.Remaining > 0)
         {
             // Don't consume ALL remaining — this blob is just the rest of THIS ExtraDataList.
             // We can't know the exact boundary, so consume remaining as a blob.
             // This is still better than the old AddRawBlobField which ate EVERYTHING.
-            int blobSize = r.Remaining;
-            byte[] blobData = r.ReadBytes(blobSize);
+            var blobSize = r.Remaining;
+            var blobData = r.ReadBytes(blobSize);
             entries.Add(new DecodedField
             {
                 Name = "ExtraDataList_Remainder",
@@ -3006,22 +3390,22 @@ public static class ChangedFormDecoder
         //   [vsval] item count
         //   per item: [3B RefID + pipe] [4B uint32 count LE + pipe] [vsval extra count + pipe]
         //             for each extra: ExtraDataList_v2 block
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (!r.HasData(1))
         {
             return;
         }
 
-        uint itemCount = r.ReadVsval();
+        var itemCount = r.ReadVsval();
         r.TrySkipPipe();
         var items = new List<DecodedField>();
-        for (int i = 0; i < itemCount && r.HasData(3); i++)
+        for (var i = 0; i < itemCount && r.HasData(3); i++)
         {
-            int itemStart = r.Position;
+            var itemStart = r.Position;
             var itemRef = r.ReadRefId();
             r.TrySkipPipe();
 
-            int count = 0;
+            var count = 0;
             if (r.HasData(4))
             {
                 count = r.ReadInt32();
@@ -3036,7 +3420,7 @@ public static class ChangedFormDecoder
                 extraCount = r.ReadVsval();
                 r.TrySkipPipe();
 
-                for (int j = 0; j < extraCount && r.HasData(1); j++)
+                for (var j = 0; j < extraCount && r.HasData(1); j++)
                 {
                     // Each extra is a full ExtraDataList_v2 block
                     var extraResult = new DecodedFormData();
@@ -3083,35 +3467,35 @@ public static class ChangedFormDecoder
         //   byte hasEventList + pipe
         //   if hasEventList: 8 raw bytes + pipe
         //   byte hasScript + pipe
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (!r.HasData(1))
         {
             return;
         }
 
-        uint varCount = r.ReadVsval();
+        var varCount = r.ReadVsval();
         r.TrySkipPipe();
 
         var vars = new List<DecodedField>();
-        for (int i = 0; i < (int)varCount && r.HasData(4); i++)
+        for (var i = 0; i < (int)varCount && r.HasData(4); i++)
         {
-            int varStart = r.Position;
-            uint formId = r.ReadUInt32();
+            var varStart = r.Position;
+            var formId = r.ReadUInt32();
             r.TrySkipPipe();
             string varValue;
 
             if ((formId & 0x80000000) != 0)
             {
                 // Reference-type variable: formID has bit 31 set, followed by vsval index
-                uint actualFormId = formId & 0x7FFFFFFF;
-                uint refIndex = r.HasData(1) ? r.ReadVsval() : 0;
+                var actualFormId = formId & 0x7FFFFFFF;
+                var refIndex = r.HasData(1) ? r.ReadVsval() : 0;
                 r.TrySkipPipe();
                 varValue = $"ref FormID=0x{actualFormId:X8}, index={refIndex}";
             }
             else if (r.HasData(8))
             {
                 // Value-type variable: formID without bit 31, followed by 8-byte double
-                double dblVal = BinaryPrimitives.ReadDoubleLittleEndian(r.ReadBytes(8));
+                var dblVal = BinaryPrimitives.ReadDoubleLittleEndian(r.ReadBytes(8));
                 r.TrySkipPipe();
                 varValue = $"FormID=0x{formId:X8}, value={dblVal:F6}";
             }
@@ -3130,18 +3514,18 @@ public static class ChangedFormDecoder
         }
 
         // hasEventList byte + pipe
-        byte hasEventList = r.HasData(1) ? r.ReadByte() : (byte)0;
+        var hasEventList = r.HasData(1) ? r.ReadByte() : (byte)0;
         r.TrySkipPipe();
-        string eventDisplay = "no events";
+        var eventDisplay = "no events";
         if (hasEventList != 0 && r.HasData(8))
         {
-            byte[] eventData = r.ReadBytes(8);
+            var eventData = r.ReadBytes(8);
             r.TrySkipPipe();
             eventDisplay = $"events={Convert.ToHexString(eventData)}";
         }
 
         // hasScript byte + pipe
-        byte hasScript = r.HasData(1) ? r.ReadByte() : (byte)0;
+        var hasScript = r.HasData(1) ? r.ReadByte() : (byte)0;
         r.TrySkipPipe();
 
         result.Fields.Add(new DecodedField
@@ -3158,7 +3542,10 @@ public static class ChangedFormDecoder
     //  Field helper methods
     // ────────────────────────────────────────────────────────────────
 
-    private static bool HasFlag(uint flags, uint mask) => (flags & mask) != 0;
+    private static bool HasFlag(uint flags, uint mask)
+    {
+        return (flags & mask) != 0;
+    }
 
     /// <summary>
     ///     Formats a float value for display, showing hex for unreasonable values
@@ -3175,10 +3562,10 @@ public static class ChangedFormDecoder
 
     private static void AddUInt16Field(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(2))
         {
-            ushort value = r.ReadUInt16();
+            var value = r.ReadUInt16();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -3193,10 +3580,10 @@ public static class ChangedFormDecoder
 
     private static void AddUInt32Field(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(4))
         {
-            uint value = r.ReadUInt32();
+            var value = r.ReadUInt32();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -3211,10 +3598,10 @@ public static class ChangedFormDecoder
 
     private static void AddByteField(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(1))
         {
-            byte value = r.ReadByte();
+            var value = r.ReadByte();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -3229,10 +3616,10 @@ public static class ChangedFormDecoder
 
     private static void AddFloatField(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(4))
         {
-            float value = r.ReadFloat();
+            var value = r.ReadFloat();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -3247,7 +3634,7 @@ public static class ChangedFormDecoder
 
     private static void AddRefIdField(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(3))
         {
             var refId = r.ReadRefId();
@@ -3265,10 +3652,10 @@ public static class ChangedFormDecoder
 
     private static void AddVsvalField(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(1))
         {
-            uint value = r.ReadVsval();
+            var value = r.ReadVsval();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
@@ -3283,14 +3670,14 @@ public static class ChangedFormDecoder
 
     private static void AddLenStringField(ref FormDataReader r, DecodedFormData result, string name)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(2))
         {
-            ushort len = r.ReadUInt16();
+            var len = r.ReadUInt16();
             r.TrySkipPipe();
             if (r.HasData(len))
             {
-                string value = r.ReadString(len);
+                var value = r.ReadString(len);
                 r.TrySkipPipe();
                 result.Fields.Add(new DecodedField
                 {
@@ -3310,11 +3697,11 @@ public static class ChangedFormDecoder
     /// </summary>
     private static void AddRawBlobField(ref FormDataReader r, DecodedFormData result, string name, string description)
     {
-        int startPos = r.Position;
-        int remaining = r.Remaining;
+        var startPos = r.Position;
+        var remaining = r.Remaining;
         if (remaining > 0)
         {
-            byte[] data = r.ReadBytes(remaining);
+            var data = r.ReadBytes(remaining);
             result.Fields.Add(new DecodedField
             {
                 Name = name,
@@ -3349,16 +3736,16 @@ public static class ChangedFormDecoder
     /// </summary>
     private static void DecodeSpellList(ref FormDataReader r, DecodedFormData result)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (!r.HasData(1)) return;
 
-        uint spellCount = r.ReadVsval();
+        var spellCount = r.ReadVsval();
         r.TrySkipPipe();
         var children = new List<DecodedField>();
 
-        for (int i = 0; i < (int)spellCount && r.HasData(3); i++)
+        for (var i = 0; i < (int)spellCount && r.HasData(3); i++)
         {
-            int sStart = r.Position;
+            var sStart = r.Position;
             var spellRef = r.ReadRefId();
             r.TrySkipPipe();
             children.Add(new DecodedField
@@ -3373,11 +3760,11 @@ public static class ChangedFormDecoder
         // Second list: leveled spells (same format)
         if (r.HasData(1))
         {
-            uint leveledCount = r.ReadVsval();
+            var leveledCount = r.ReadVsval();
             r.TrySkipPipe();
-            for (int i = 0; i < (int)leveledCount && r.HasData(3); i++)
+            for (var i = 0; i < (int)leveledCount && r.HasData(3); i++)
             {
-                int sStart = r.Position;
+                var sStart = r.Position;
                 var spellRef = r.ReadRefId();
                 r.TrySkipPipe();
                 children.Add(new DecodedField
@@ -3393,7 +3780,8 @@ public static class ChangedFormDecoder
         result.Fields.Add(new DecodedField
         {
             Name = "ACTOR_BASE_SPELLLIST",
-            DisplayValue = $"{spellCount} spell(s)" + (children.Count > (int)spellCount ? $", {children.Count - (int)spellCount} leveled" : ""),
+            DisplayValue = $"{spellCount} spell(s)" +
+                           (children.Count > (int)spellCount ? $", {children.Count - (int)spellCount} leveled" : ""),
             DataOffset = startPos,
             DataLength = r.Position - startPos,
             Children = children
@@ -3402,24 +3790,25 @@ public static class ChangedFormDecoder
 
     private static void DecodeActorBaseData(ref FormDataReader r, DecodedFormData result)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(24))
         {
-            uint baseFlags = r.ReadUInt32();
-            ushort fatigue = r.ReadUInt16();
-            ushort barterGold = r.ReadUInt16();
-            ushort level = r.ReadUInt16();
-            ushort calcMin = r.ReadUInt16();
-            ushort calcMax = r.ReadUInt16();
-            ushort speedMul = r.ReadUInt16();
-            float karma = r.ReadFloat();
-            ushort disposition = r.ReadUInt16();
-            ushort templateFlags = r.ReadUInt16();
+            var baseFlags = r.ReadUInt32();
+            var fatigue = r.ReadUInt16();
+            var barterGold = r.ReadUInt16();
+            var level = r.ReadUInt16();
+            var calcMin = r.ReadUInt16();
+            var calcMax = r.ReadUInt16();
+            var speedMul = r.ReadUInt16();
+            var karma = r.ReadFloat();
+            var disposition = r.ReadUInt16();
+            var templateFlags = r.ReadUInt16();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
                 Name = "ACTOR_BASE_DATA",
-                DisplayValue = $"Flags=0x{baseFlags:X8}, Fatigue={fatigue}, BarterGold={barterGold}, Level={level}, CalcMin={calcMin}, CalcMax={calcMax}, SpeedMul={speedMul}, Karma={karma:F1}, Disp={disposition}, Template=0x{templateFlags:X4}",
+                DisplayValue =
+                    $"Flags=0x{baseFlags:X8}, Fatigue={fatigue}, BarterGold={barterGold}, Level={level}, CalcMin={calcMin}, CalcMax={calcMax}, SpeedMul={speedMul}, Karma={karma:F1}, Disp={disposition}, Template=0x{templateFlags:X4}",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -3431,16 +3820,17 @@ public static class ChangedFormDecoder
     /// </summary>
     private static void DecodeActorBaseAttributes(ref FormDataReader r, DecodedFormData result)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(7))
         {
-            byte[] attrs = r.ReadBytes(7);
+            var attrs = r.ReadBytes(7);
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
                 Name = "ACTOR_BASE_ATTRIBUTES",
                 Value = attrs,
-                DisplayValue = $"S={attrs[0]} P={attrs[1]} E={attrs[2]} C={attrs[3]} I={attrs[4]} A={attrs[5]} L={attrs[6]}",
+                DisplayValue =
+                    $"S={attrs[0]} P={attrs[1]} E={attrs[2]} C={attrs[3]} I={attrs[4]} A={attrs[5]} L={attrs[6]}",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -3452,26 +3842,27 @@ public static class ChangedFormDecoder
     /// </summary>
     private static void DecodeActorBaseAiData(ref FormDataReader r, DecodedFormData result)
     {
-        int startPos = r.Position;
+        var startPos = r.Position;
         if (r.HasData(20))
         {
-            byte aggression = r.ReadByte();
-            byte confidence = r.ReadByte();
-            byte energyLevel = r.ReadByte();
-            byte responsibility = r.ReadByte();
-            byte mood = r.ReadByte();
+            var aggression = r.ReadByte();
+            var confidence = r.ReadByte();
+            var energyLevel = r.ReadByte();
+            var responsibility = r.ReadByte();
+            var mood = r.ReadByte();
             r.ReadBytes(3); // struct padding
-            uint services = r.ReadUInt32();
-            byte trainSkill = r.ReadByte();
-            byte trainLevel = r.ReadByte();
-            byte assistance = r.ReadByte();
+            var services = r.ReadUInt32();
+            var trainSkill = r.ReadByte();
+            var trainLevel = r.ReadByte();
+            var assistance = r.ReadByte();
             r.ReadByte(); // bAggroRadius
-            uint aggroRadius = r.ReadUInt32();
+            var aggroRadius = r.ReadUInt32();
             r.TrySkipPipe();
             result.Fields.Add(new DecodedField
             {
                 Name = "ACTOR_BASE_AIDATA",
-                DisplayValue = $"Aggr={aggression}, Conf={confidence}, Energy={energyLevel}, Resp={responsibility}, Mood={mood}, Services=0x{services:X}, TrainSkill={trainSkill}, TrainLvl={trainLevel}, Assist={assistance}, AggroR={aggroRadius}",
+                DisplayValue =
+                    $"Aggr={aggression}, Conf={confidence}, Energy={energyLevel}, Resp={responsibility}, Mood={mood}, Services=0x{services:X}, TrainSkill={trainSkill}, TrainLvl={trainLevel}, Assist={assistance}, AggroR={aggroRadius}",
                 DataOffset = startPos,
                 DataLength = r.Position - startPos
             });
@@ -3579,7 +3970,6 @@ public static class ChangedFormDecoder
 internal ref struct FormDataReader
 {
     private readonly ReadOnlySpan<byte> _data;
-    private int _position;
 
     /// <summary>FormID array from the save file, for resolving RefIDs to full FormIDs.</summary>
     public ReadOnlySpan<uint> FormIdArray { get; }
@@ -3588,12 +3978,17 @@ internal ref struct FormDataReader
     {
         _data = data;
         FormIdArray = formIdArray;
-        _position = 0;
+        Position = 0;
     }
 
-    public int Position => _position;
-    public int Remaining => _data.Length - _position;
-    public bool HasData(int count) => _position + count <= _data.Length;
+    public int Position { get; private set; }
+
+    public int Remaining => _data.Length - Position;
+
+    public bool HasData(int count)
+    {
+        return Position + count <= _data.Length;
+    }
 
     /// <summary>
     ///     Skips a pipe terminator (0x7C) if present at the current position.
@@ -3602,15 +3997,21 @@ internal ref struct FormDataReader
     /// </summary>
     public void TrySkipPipe()
     {
-        if (_position < _data.Length && _data[_position] == 0x7C)
+        if (Position < _data.Length && _data[Position] == 0x7C)
         {
-            _position++;
+            Position++;
         }
     }
 
-    public byte PeekByte() => _data[_position];
+    public byte PeekByte()
+    {
+        return _data[Position];
+    }
 
-    public void Seek(int position) => _position = position;
+    public void Seek(int position)
+    {
+        Position = position;
+    }
 
     /// <summary>
     ///     Reads a vsval (variable-sized value) from the save buffer.
@@ -3619,11 +4020,11 @@ internal ref struct FormDataReader
     /// </summary>
     public uint ReadVsval()
     {
-        byte first = _data[_position];
-        int tag = first & 3;
+        var first = _data[Position];
+        var tag = first & 3;
         if (tag == 0)
         {
-            _position++;
+            Position++;
             return (uint)(first >> 2);
         }
 
@@ -3631,83 +4032,83 @@ internal ref struct FormDataReader
         {
             if (!HasData(2))
             {
-                _position++;
+                Position++;
                 return 0;
             }
 
-            ushort raw = ReadUInt16();
+            var raw = ReadUInt16();
             return (uint)(raw >> 2);
         }
 
         // tag == 2 (or 3 — treat as 4-byte)
         if (!HasData(4))
         {
-            _position++;
+            Position++;
             return 0;
         }
 
-        uint raw32 = ReadUInt32();
+        var raw32 = ReadUInt32();
         return raw32 >> 2;
     }
 
     public byte ReadByte()
     {
-        return _data[_position++];
+        return _data[Position++];
     }
 
     public ushort ReadUInt16()
     {
-        ushort value = BinaryPrimitives.ReadUInt16LittleEndian(_data[_position..]);
-        _position += 2;
+        var value = BinaryPrimitives.ReadUInt16LittleEndian(_data[Position..]);
+        Position += 2;
         return value;
     }
 
     public short ReadInt16()
     {
-        short value = BinaryPrimitives.ReadInt16LittleEndian(_data[_position..]);
-        _position += 2;
+        var value = BinaryPrimitives.ReadInt16LittleEndian(_data[Position..]);
+        Position += 2;
         return value;
     }
 
     public uint ReadUInt32()
     {
-        uint value = BinaryPrimitives.ReadUInt32LittleEndian(_data[_position..]);
-        _position += 4;
+        var value = BinaryPrimitives.ReadUInt32LittleEndian(_data[Position..]);
+        Position += 4;
         return value;
     }
 
     public int ReadInt32()
     {
-        int value = BinaryPrimitives.ReadInt32LittleEndian(_data[_position..]);
-        _position += 4;
+        var value = BinaryPrimitives.ReadInt32LittleEndian(_data[Position..]);
+        Position += 4;
         return value;
     }
 
     public float ReadFloat()
     {
-        float value = BinaryPrimitives.ReadSingleLittleEndian(_data[_position..]);
-        _position += 4;
+        var value = BinaryPrimitives.ReadSingleLittleEndian(_data[Position..]);
+        Position += 4;
         return value;
     }
 
     public SaveRefId ReadRefId()
     {
-        var refId = SaveRefId.Read(_data, _position);
-        _position += 3;
+        var refId = SaveRefId.Read(_data, Position);
+        Position += 3;
         return refId;
     }
 
     public byte[] ReadBytes(int count)
     {
-        var result = _data.Slice(_position, count).ToArray();
-        _position += count;
+        var result = _data.Slice(Position, count).ToArray();
+        Position += count;
         return result;
     }
 
     public string ReadString(int length)
     {
-        var result = Encoding.UTF8.GetString(_data.Slice(_position, length));
-        _position += length;
+        var result = Encoding.UTF8.GetString(_data.Slice(Position, length));
+        Position += length;
         return result;
     }
 }

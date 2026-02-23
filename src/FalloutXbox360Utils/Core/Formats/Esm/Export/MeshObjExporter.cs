@@ -113,7 +113,7 @@ public static class MeshObjExporter
     {
         var sb = new StringBuilder();
         sb.AppendLine("Index,Offset,Type,Category,Vertices,Triangles,HasNormals,HasUVs,HasColors," +
-                       "BoundCenterX,BoundCenterY,BoundCenterZ,BoundRadius");
+                      "BoundCenterX,BoundCenterY,BoundCenterZ,BoundRadius");
 
         for (var i = 0; i < meshes.Count; i++)
         {

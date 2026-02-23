@@ -111,7 +111,7 @@ public static class MinidumpExtractor
         if (options.GenerateEsmReports && analysisResult?.EsmRecords != null)
         {
             (esmReportGenerated, heightmapsExported, scriptsExtracted,
-                runtimeTexturesExported, runtimeMeshesExported, semanticResult) =
+                    runtimeTexturesExported, runtimeMeshesExported, semanticResult) =
                 await GenerateEsmOutputsAsync(analysisResult, filePath, extractDir, progress);
 
             // Post-carve enrichment: rename XMA files using SOUN EditorIDs
@@ -330,7 +330,7 @@ public static class MinidumpExtractor
     ///     Returns the RecordCollection for post-processing (e.g., sound/mesh name enrichment).
     /// </summary>
     private static async Task<(bool reportGenerated, int heightmapsExported, int scriptsExtracted,
-        int runtimeTexturesExported, int runtimeMeshesExported, RecordCollection? records)>
+            int runtimeTexturesExported, int runtimeMeshesExported, RecordCollection? records)>
         GenerateEsmOutputsAsync(
             AnalysisResult analysisResult,
             string filePath,
@@ -592,5 +592,4 @@ public static class MinidumpExtractor
             await CarveManifest.SaveAsync(extractDir, entries);
         }
     }
-
 }

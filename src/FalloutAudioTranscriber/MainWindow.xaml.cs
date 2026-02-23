@@ -1,4 +1,5 @@
 using Windows.Graphics;
+using Windows.UI;
 using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
@@ -90,19 +91,19 @@ public sealed partial class MainWindow : Window
         {
             titleBar.ButtonForegroundColor = Colors.White;
             titleBar.ButtonHoverForegroundColor = Colors.White;
-            titleBar.ButtonHoverBackgroundColor = Windows.UI.Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF);
-            titleBar.ButtonPressedForegroundColor = Windows.UI.Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF);
-            titleBar.ButtonPressedBackgroundColor = Windows.UI.Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF);
-            titleBar.ButtonInactiveForegroundColor = Windows.UI.Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonHoverBackgroundColor = Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonPressedForegroundColor = Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonPressedBackgroundColor = Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonInactiveForegroundColor = Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF);
         }
         else
         {
             titleBar.ButtonForegroundColor = Colors.Black;
             titleBar.ButtonHoverForegroundColor = Colors.Black;
-            titleBar.ButtonHoverBackgroundColor = Windows.UI.Color.FromArgb(0x20, 0x00, 0x00, 0x00);
-            titleBar.ButtonPressedForegroundColor = Windows.UI.Color.FromArgb(0xC0, 0x00, 0x00, 0x00);
-            titleBar.ButtonPressedBackgroundColor = Windows.UI.Color.FromArgb(0x10, 0x00, 0x00, 0x00);
-            titleBar.ButtonInactiveForegroundColor = Windows.UI.Color.FromArgb(0x80, 0x00, 0x00, 0x00);
+            titleBar.ButtonHoverBackgroundColor = Color.FromArgb(0x20, 0x00, 0x00, 0x00);
+            titleBar.ButtonPressedForegroundColor = Color.FromArgb(0xC0, 0x00, 0x00, 0x00);
+            titleBar.ButtonPressedBackgroundColor = Color.FromArgb(0x10, 0x00, 0x00, 0x00);
+            titleBar.ButtonInactiveForegroundColor = Color.FromArgb(0x80, 0x00, 0x00, 0x00);
         }
 
         titleBar.ButtonBackgroundColor = Colors.Transparent;

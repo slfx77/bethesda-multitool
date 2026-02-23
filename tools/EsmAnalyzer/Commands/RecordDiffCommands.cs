@@ -1,6 +1,6 @@
 using System.CommandLine;
-using EsmAnalyzer.Core;
-using EsmAnalyzer.Helpers;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;

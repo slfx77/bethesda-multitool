@@ -23,7 +23,10 @@ public sealed class DecodedField
     /// <summary>Optional sub-fields for structured data (e.g., inventory items, quest stages).</summary>
     public List<DecodedField>? Children { get; init; }
 
-    public override string ToString() => $"{Name} = {DisplayValue}";
+    public override string ToString()
+    {
+        return $"{Name} = {DisplayValue}";
+    }
 }
 
 /// <summary>

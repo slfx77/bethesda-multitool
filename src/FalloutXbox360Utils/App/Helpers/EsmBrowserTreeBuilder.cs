@@ -191,6 +191,14 @@ internal static partial class EsmBrowserTreeBuilder
     /// </summary>
     private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> NamedPropertyCache = new();
 
+    private static readonly string[] LocationTypeNames =
+    [
+        "Near Reference", "In Cell", "Near Current", "Near Editor",
+        "Object ID", "Object Type", "Near Linked Reference", "At Package Location",
+        "", "", "", "",
+        "Near Linked Ref"
+    ];
+
     /// <summary>
     ///     Maps an actor value code to a skill name.
     ///     AV codes 32-45 map to skills; returns null for non-skill AVs.
@@ -852,7 +860,9 @@ internal static partial class EsmBrowserTreeBuilder
                     }
                     else if (prop.Name == "FaceGenGeometryAsymmetric" && morphs.Length == 30)
                     {
-                        raceBase = isFemale ? race?.FemaleFaceGenGeometryAsymmetric : race?.MaleFaceGenGeometryAsymmetric;
+                        raceBase = isFemale
+                            ? race?.FemaleFaceGenGeometryAsymmetric
+                            : race?.MaleFaceGenGeometryAsymmetric;
                         sliders = FaceGenControls.ComputeGeometryAsymmetric(morphs, raceBase);
                     }
                     else if (prop.Name == "FaceGenTextureSymmetric" && morphs.Length == 50)
@@ -936,8 +946,8 @@ internal static partial class EsmBrowserTreeBuilder
 
                 // Expand SourceText by default; fall back to DecompiledText when no source
                 var expandByDefault = scriptRecord != null &&
-                    (prop.Name == "SourceText" ||
-                     (prop.Name == "DecompiledText" && !scriptRecord.HasSource));
+                                      (prop.Name == "SourceText" ||
+                                       (prop.Name == "DecompiledText" && !scriptRecord.HasSource));
 
                 properties.Add(new EsmPropertyEntry
                 {
@@ -1288,7 +1298,9 @@ internal static partial class EsmBrowserTreeBuilder
         properties.Add(new EsmPropertyEntry
             { Name = "Health", Value = $"{calcHealth} (Base: {baseHealth} + Level×10)", Category = "Derived Stats" });
         properties.Add(new EsmPropertyEntry
-            { Name = "Fatigue", Value = $"{calcFatigue} (Base: {fatigueBase} + (STR+END)×10)", Category = "Derived Stats" });
+        {
+            Name = "Fatigue", Value = $"{calcFatigue} (Base: {fatigueBase} + (STR+END)×10)", Category = "Derived Stats"
+        });
         properties.Add(new EsmPropertyEntry
             { Name = "Critical Chance", Value = $"{critChance:F0}%", Category = "Derived Stats" });
         properties.Add(new EsmPropertyEntry
@@ -1720,14 +1732,6 @@ internal static partial class EsmBrowserTreeBuilder
             _ => value.ToString() ?? ""
         };
     }
-
-    private static readonly string[] LocationTypeNames =
-    [
-        "Near Reference", "In Cell", "Near Current", "Near Editor",
-        "Object ID", "Object Type", "Near Linked Reference", "At Package Location",
-        "", "", "", "",
-        "Near Linked Ref"
-    ];
 
     private static void AddPackageLocationProperty(
         List<EsmPropertyEntry> properties,

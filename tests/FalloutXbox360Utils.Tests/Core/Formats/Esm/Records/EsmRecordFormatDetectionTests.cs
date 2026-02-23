@@ -112,8 +112,8 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
         // Place it where a main record header would be, with plausible size/flags/formId.
         var buf = new byte[72];
         WriteSig(buf, 0, "VGT_");
-        WriteUInt32LE(buf, 4, 20);          // dataSize
-        WriteUInt32LE(buf, 8, 0);           // flags
+        WriteUInt32LE(buf, 4, 20); // dataSize
+        WriteUInt32LE(buf, 8, 0); // flags
         WriteUInt32LE(buf, 12, 0x00010001); // formId - would be valid if not rejected
         // Remaining bytes zero (VC fields + data)
 
@@ -512,7 +512,7 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
         var ds2 = (uint)(6 + edid2Bytes.Length);
         var ds3 = (uint)(6 + edid3Bytes.Length);
 
-        var totalSize = (24 + ds1) + (24 + ds2) + (24 + ds3) + 24; // +24 padding
+        var totalSize = 24 + ds1 + 24 + ds2 + 24 + ds3 + 24; // +24 padding
         var buf = new byte[totalSize];
 
         var off = 0;

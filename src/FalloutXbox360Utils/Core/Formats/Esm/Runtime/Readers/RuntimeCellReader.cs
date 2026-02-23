@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -16,48 +15,6 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
 {
     private readonly RuntimeMemoryContext _context = context;
     private readonly int _shift = RuntimeBuildOffsets.GetWorldCellFieldShift(useProtoOffsets);
-
-    #region TESWorldSpace Struct Layout
-
-    // Final PDB: TESWorldSpace = 244 bytes, TESForm = 40 bytes
-    // WRLD/CELL don't inherit TESChildCell — no shift needed for early builds.
-    private const int WorldStructSize = 244;
-
-    // Field offsets (final layout — same for early builds until confirmed otherwise)
-    private int WorldCellMapPtrOffset => 64 + _shift;
-    private int WorldPersistentCellPtrOffset => 68 + _shift;
-    private int WorldParentWorldPtrOffset => 128 + _shift;
-
-    #endregion
-
-    #region TESObjectCELL Struct Layout
-
-    // Final PDB: TESObjectCELL = 192 bytes
-    // FormID is always at offset 12 (TESForm header, no shift)
-    private int CellFlagsOffset => 52 + _shift;
-    private int CellLandPtrOffset => 92 + _shift;
-    private int CellWorldSpacePtrOffset => 160 + _shift;
-
-    #endregion
-
-    #region NiTPointerMap Layout (heap-allocated, no shift — standalone data structure)
-
-    // NiTPointerMap<int, TESObjectCELL*>: vfptr(4) + hashSize(4) + pBuckets(4) + count(4) = 16 bytes
-    private const int MapHashSizeOffset = 4;
-    private const int MapBucketArrayPtrOffset = 8;
-    private const int MapEntryCountOffset = 12;
-    private const int MapHeaderSize = 16;
-
-    // NiTMapItem<int, TESObjectCELL*>: pNext(4) + key(4) + val(4) = 12 bytes
-    private const int ItemNextOffset = 0;
-    private const int ItemKeyOffset = 4;
-    private const int ItemValueOffset = 8;
-    private const int ItemSize = 12;
-
-    private const int MaxBuckets = 4096;
-    private const int MaxChainDepth = 200;
-
-    #endregion
 
     /// <summary>
     ///     Read all worldspace cell maps from the given WRLD form entries.
@@ -236,12 +193,12 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
                 break;
             }
 
-            var nextVa = BinaryUtils.ReadUInt32BE(itemBuffer, ItemNextOffset);
+            var nextVa = BinaryUtils.ReadUInt32BE(itemBuffer);
             var key = (int)BinaryUtils.ReadUInt32BE(itemBuffer, ItemKeyOffset);
             var cellVa = BinaryUtils.ReadUInt32BE(itemBuffer, ItemValueOffset);
 
             // Decode grid coordinates from packed key
-            var gridX = key >> 16;           // Arithmetic shift preserves sign
+            var gridX = key >> 16; // Arithmetic shift preserves sign
             var gridY = (short)(key & 0xFFFF); // Cast to short for sign extension
 
             // Follow cell pointer to read FormID and flags
@@ -351,4 +308,46 @@ internal sealed class RuntimeCellReader(RuntimeMemoryContext context, bool usePr
 
         return _context.ReadBytes(offset, size);
     }
+
+    #region TESWorldSpace Struct Layout
+
+    // Final PDB: TESWorldSpace = 244 bytes, TESForm = 40 bytes
+    // WRLD/CELL don't inherit TESChildCell — no shift needed for early builds.
+    private const int WorldStructSize = 244;
+
+    // Field offsets (final layout — same for early builds until confirmed otherwise)
+    private int WorldCellMapPtrOffset => 64 + _shift;
+    private int WorldPersistentCellPtrOffset => 68 + _shift;
+    private int WorldParentWorldPtrOffset => 128 + _shift;
+
+    #endregion
+
+    #region TESObjectCELL Struct Layout
+
+    // Final PDB: TESObjectCELL = 192 bytes
+    // FormID is always at offset 12 (TESForm header, no shift)
+    private int CellFlagsOffset => 52 + _shift;
+    private int CellLandPtrOffset => 92 + _shift;
+    private int CellWorldSpacePtrOffset => 160 + _shift;
+
+    #endregion
+
+    #region NiTPointerMap Layout (heap-allocated, no shift — standalone data structure)
+
+    // NiTPointerMap<int, TESObjectCELL*>: vfptr(4) + hashSize(4) + pBuckets(4) + count(4) = 16 bytes
+    private const int MapHashSizeOffset = 4;
+    private const int MapBucketArrayPtrOffset = 8;
+    private const int MapEntryCountOffset = 12;
+    private const int MapHeaderSize = 16;
+
+    // NiTMapItem<int, TESObjectCELL*>: pNext(4) + key(4) + val(4) = 12 bytes
+    private const int ItemNextOffset = 0;
+    private const int ItemKeyOffset = 4;
+    private const int ItemValueOffset = 8;
+    private const int ItemSize = 12;
+
+    private const int MaxBuckets = 4096;
+    private const int MaxChainDepth = 200;
+
+    #endregion
 }

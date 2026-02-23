@@ -221,7 +221,7 @@ internal static class EsmRecordScanner
         /* 21 */ (buf, i, len, off, res, _, _) =>
             EsmWorldExtractor.TryAddXclcSubrecordWithOffset(buf, i, len, off, false, res.CellGrids),
         /* 22 */ (buf, i, len, off, res, _, _) =>
-            EsmWorldExtractor.TryAddXclcSubrecordWithOffset(buf, i, len, off, true, res.CellGrids),
+            EsmWorldExtractor.TryAddXclcSubrecordWithOffset(buf, i, len, off, true, res.CellGrids)
     ];
 
     /// <summary>
@@ -243,7 +243,7 @@ internal static class EsmRecordScanner
             (SigTrdt, 8), (SigFull, 9), (SigDesc, 10), (SigModl, 11),
             (SigIcon, 12), (SigMico, 13), (SigScri, 14), (SigEnam, 15),
             (SigSnam, 16), (SigQnam, 17), (SigCtda, 18), (SigVhgt, 19),
-            (SigTghv, 20), (SigXclc, 21), (SigClcx, 22),
+            (SigTghv, 20), (SigXclc, 21), (SigClcx, 22)
         ];
 
         foreach (var (magic, index) in subrecords)

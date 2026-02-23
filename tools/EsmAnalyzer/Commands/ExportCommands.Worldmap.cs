@@ -1,5 +1,5 @@
-using EsmAnalyzer.Core;
-using EsmAnalyzer.Helpers;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
 using ImageMagick;
 using Spectre.Console;
 using System.Text;

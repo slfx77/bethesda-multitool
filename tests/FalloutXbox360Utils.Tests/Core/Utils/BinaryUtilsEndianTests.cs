@@ -17,16 +17,16 @@ public class BinaryUtilsEndianTests
     public void ReadUInt16_BigEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadUInt16BE(span, 0), BinaryUtils.ReadUInt16(span, 0, bigEndian: true));
-        Assert.Equal(BinaryUtils.ReadUInt16BE(span, 2), BinaryUtils.ReadUInt16(span, 2, bigEndian: true));
+        Assert.Equal(BinaryUtils.ReadUInt16BE(span), BinaryUtils.ReadUInt16(span, 0, true));
+        Assert.Equal(BinaryUtils.ReadUInt16BE(span, 2), BinaryUtils.ReadUInt16(span, 2, true));
     }
 
     [Fact]
     public void ReadUInt16_LittleEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadUInt16LE(span, 0), BinaryUtils.ReadUInt16(span, 0, bigEndian: false));
-        Assert.Equal(BinaryUtils.ReadUInt16LE(span, 2), BinaryUtils.ReadUInt16(span, 2, bigEndian: false));
+        Assert.Equal(BinaryUtils.ReadUInt16LE(span), BinaryUtils.ReadUInt16(span, 0, false));
+        Assert.Equal(BinaryUtils.ReadUInt16LE(span, 2), BinaryUtils.ReadUInt16(span, 2, false));
     }
 
     [Fact]
@@ -62,14 +62,14 @@ public class BinaryUtilsEndianTests
     public void ReadInt16_BigEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadInt16BE(span, 0), BinaryUtils.ReadInt16(span, 0, bigEndian: true));
+        Assert.Equal(BinaryUtils.ReadInt16BE(span), BinaryUtils.ReadInt16(span, 0, true));
     }
 
     [Fact]
     public void ReadInt16_LittleEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadInt16LE(span, 0), BinaryUtils.ReadInt16(span, 0, bigEndian: false));
+        Assert.Equal(BinaryUtils.ReadInt16LE(span), BinaryUtils.ReadInt16(span, 0, false));
     }
 
     [Fact]
@@ -88,14 +88,14 @@ public class BinaryUtilsEndianTests
     public void ReadUInt32_BigEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadUInt32BE(span, 0), BinaryUtils.ReadUInt32(span, 0, bigEndian: true));
+        Assert.Equal(BinaryUtils.ReadUInt32BE(span), BinaryUtils.ReadUInt32(span, 0, true));
     }
 
     [Fact]
     public void ReadUInt32_LittleEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadUInt32LE(span, 0), BinaryUtils.ReadUInt32(span, 0, bigEndian: false));
+        Assert.Equal(BinaryUtils.ReadUInt32LE(span), BinaryUtils.ReadUInt32(span, 0, false));
     }
 
     [Fact]
@@ -121,14 +121,14 @@ public class BinaryUtilsEndianTests
     public void ReadInt32_BigEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadInt32BE(span, 0), BinaryUtils.ReadInt32(span, 0, bigEndian: true));
+        Assert.Equal(BinaryUtils.ReadInt32BE(span), BinaryUtils.ReadInt32(span, 0, true));
     }
 
     [Fact]
     public void ReadInt32_LittleEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadInt32LE(span, 0), BinaryUtils.ReadInt32(span, 0, bigEndian: false));
+        Assert.Equal(BinaryUtils.ReadInt32LE(span), BinaryUtils.ReadInt32(span, 0, false));
     }
 
     [Fact]
@@ -147,14 +147,14 @@ public class BinaryUtilsEndianTests
     public void ReadUInt64_BigEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadUInt64BE(span, 0), BinaryUtils.ReadUInt64(span, 0, bigEndian: true));
+        Assert.Equal(BinaryUtils.ReadUInt64BE(span), BinaryUtils.ReadUInt64(span, 0, true));
     }
 
     [Fact]
     public void ReadUInt64_LittleEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadUInt64LE(span, 0), BinaryUtils.ReadUInt64(span, 0, bigEndian: false));
+        Assert.Equal(BinaryUtils.ReadUInt64LE(span), BinaryUtils.ReadUInt64(span, 0, false));
     }
 
     [Fact]
@@ -187,14 +187,14 @@ public class BinaryUtilsEndianTests
     public void ReadInt64_BigEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadInt64BE(span, 0), BinaryUtils.ReadInt64(span, 0, bigEndian: true));
+        Assert.Equal(BinaryUtils.ReadInt64BE(span), BinaryUtils.ReadInt64(span, 0, true));
     }
 
     [Fact]
     public void ReadInt64_LittleEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadInt64LE(span, 0), BinaryUtils.ReadInt64(span, 0, bigEndian: false));
+        Assert.Equal(BinaryUtils.ReadInt64LE(span), BinaryUtils.ReadInt64(span, 0, false));
     }
 
     #endregion
@@ -205,14 +205,14 @@ public class BinaryUtilsEndianTests
     public void ReadFloat_BigEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadFloatBE(span, 0), BinaryUtils.ReadFloat(span, 0, bigEndian: true));
+        Assert.Equal(BinaryUtils.ReadFloatBE(span), BinaryUtils.ReadFloat(span, 0, true));
     }
 
     [Fact]
     public void ReadFloat_LittleEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadFloatLE(span, 0), BinaryUtils.ReadFloat(span, 0, bigEndian: false));
+        Assert.Equal(BinaryUtils.ReadFloatLE(span), BinaryUtils.ReadFloat(span, 0, false));
     }
 
     [Fact]
@@ -246,14 +246,14 @@ public class BinaryUtilsEndianTests
     public void ReadDouble_BigEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadDoubleBE(span, 0), BinaryUtils.ReadDouble(span, 0, bigEndian: true));
+        Assert.Equal(BinaryUtils.ReadDoubleBE(span), BinaryUtils.ReadDouble(span, 0, true));
     }
 
     [Fact]
     public void ReadDouble_LittleEndian_MatchesExplicit()
     {
         ReadOnlySpan<byte> span = TestData;
-        Assert.Equal(BinaryUtils.ReadDoubleLE(span, 0), BinaryUtils.ReadDouble(span, 0, bigEndian: false));
+        Assert.Equal(BinaryUtils.ReadDoubleLE(span), BinaryUtils.ReadDouble(span, 0, false));
     }
 
     #endregion

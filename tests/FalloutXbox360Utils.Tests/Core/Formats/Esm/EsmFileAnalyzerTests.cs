@@ -36,7 +36,7 @@ public class EsmFileAnalyzerTests
         // GRUP type 1 (World Children) for worldspace 0x0003C2EC at offset 1000, size 500
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(1000, 500, 0x0003C2EC, groupType: 1)
+            MakeGrup(1000, 500, 0x0003C2EC, 1)
         };
 
         var records = new List<ParsedMainRecord>
@@ -71,7 +71,7 @@ public class EsmFileAnalyzerTests
         // GRUP type 9 (Cell Temporary Children) for cell 0x0000A001 at offset 2000, size 300
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(2000, 300, 0x0000A001, groupType: 9)
+            MakeGrup(2000, 300, 0x0000A001, 9)
         };
 
         var records = new List<ParsedMainRecord>
@@ -103,7 +103,7 @@ public class EsmFileAnalyzerTests
         // GRUP type 7 (Topic Children) for DIAL 0x000D0001 at offset 5000, size 200
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(5000, 200, 0x000D0001, groupType: 7)
+            MakeGrup(5000, 200, 0x000D0001, 7)
         };
 
         var records = new List<ParsedMainRecord>
@@ -143,9 +143,9 @@ public class EsmFileAnalyzerTests
     {
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(100, 500, 0x0001, groupType: 1),   // World Children
-            MakeGrup(700, 300, 0x0002, groupType: 8),    // Cell Persistent Children
-            MakeGrup(1100, 200, 0x0003, groupType: 7)    // Topic Children
+            MakeGrup(100, 500, 0x0001, 1), // World Children
+            MakeGrup(700, 300, 0x0002, 8), // Cell Persistent Children
+            MakeGrup(1100, 200, 0x0003, 7) // Topic Children
         };
 
         var records = new List<ParsedMainRecord>
@@ -180,7 +180,7 @@ public class EsmFileAnalyzerTests
         // Only World Children GRUP, but records are WEAP/NPC_ (not CELL/LAND/REFR/INFO)
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(100, 500, 0x0001, groupType: 1)
+            MakeGrup(100, 500, 0x0001, 1)
         };
 
         var records = new List<ParsedMainRecord>

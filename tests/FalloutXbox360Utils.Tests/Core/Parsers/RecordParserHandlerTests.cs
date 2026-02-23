@@ -17,6 +17,89 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 {
     private readonly ITestOutputHelper _output = output;
 
+    #region Big-Endian Tests
+
+    [Fact]
+    public void ReconstructBooks_BigEndian_ParsesCorrectly()
+    {
+        var edidData = NullTermString("BEBook");
+        var fullData = NullTermString("Big Endian Book");
+
+        // DATA subrecord: flags(1) + skill(1) + value(int32 BE) + weight(float BE) = 10 bytes
+        var dataField = new byte[10];
+        dataField[0] = 0x02;
+        dataField[1] = 0x05;
+        BinaryPrimitives.WriteInt32BigEndian(dataField.AsSpan(2), 100);
+        BinaryPrimitives.WriteSingleBigEndian(dataField.AsSpan(6), 3.0f);
+
+        var recordBytes = BuildRecordBytes(0x00050001, "BOOK", true,
+            ("EDID", edidData),
+            ("FULL", fullData),
+            ("DATA", dataField));
+
+        var mainRecord = new DetectedMainRecord("BOOK",
+            (uint)(recordBytes.Length - 24), 0, 0x00050001, 0, true);
+
+        var scanResult = MakeScanResult([mainRecord]);
+
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
+        var books = parser.ReconstructBooks();
+
+        Assert.Single(books);
+        var book = books[0];
+        Assert.Equal("BEBook", book.EditorId);
+        Assert.Equal("Big Endian Book", book.FullName);
+        Assert.Equal(100, book.Value);
+        Assert.Equal(3.0f, book.Weight);
+        Assert.True(book.IsBigEndian);
+    }
+
+    #endregion
+
+    #region Sample-File-Based Tests (Skipped When Unavailable)
+
+    [Fact]
+    [Trait("Category", "Slow")]
+    public void ReconstructAll_WithSampleFile_ProducesNonEmptyResults()
+    {
+        Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
+
+        var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
+        var isBigEndian = EsmParser.IsBigEndian(fileData);
+        var (records, _) = EsmParser.EnumerateRecordsWithGrups(fileData);
+
+        var mainRecords = records.Select(r => new DetectedMainRecord(
+            r.Header.Signature,
+            r.Header.DataSize,
+            r.Header.Flags,
+            r.Header.FormId,
+            r.Offset,
+            isBigEndian)).ToList();
+
+        var scanResult = new EsmRecordScanResult { MainRecords = mainRecords };
+
+        using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,
+            MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
+
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
+        var result = parser.ReconstructAll();
+
+        _output.WriteLine($"NPCs: {result.Npcs.Count}, Weapons: {result.Weapons.Count}, " +
+                          $"Quests: {result.Quests.Count}, Dialogues: {result.Dialogues.Count}, " +
+                          $"Total: {result.TotalRecordsReconstructed}");
+
+        Assert.True(result.Npcs.Count > 0, "Expected at least some NPCs");
+        Assert.True(result.Weapons.Count > 0, "Expected at least some weapons");
+        Assert.True(result.TotalRecordsReconstructed > 0, "Expected non-zero reconstruction count");
+    }
+
+    #endregion
+
     #region Test Helpers
 
     /// <summary>
@@ -134,8 +217,8 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     {
         var mainRecords = new List<DetectedMainRecord>
         {
-            MakeRecord("NPC_", 0x00001234, 100, dataSize: 50),
-            MakeRecord("WEAP", 0x00005678, 200, dataSize: 50)
+            MakeRecord("NPC_", 0x00001234, 100, 50),
+            MakeRecord("WEAP", 0x00005678, 200, 50)
         };
 
         var editorIds = new List<EdidRecord>
@@ -144,7 +227,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             new("TestWeapon", 210) // Within WEAP record bounds
         };
 
-        var scanResult = MakeScanResult(mainRecords: mainRecords, editorIds: editorIds);
+        var scanResult = MakeScanResult(mainRecords, editorIds);
         var parser = new RecordParser(scanResult);
 
         Assert.Equal("TestNpc", parser.GetEditorId(0x00001234));
@@ -169,8 +252,8 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             { 0x00001111, "ProvidedEditorId" }
         };
 
-        var scanResult = MakeScanResult(mainRecords: [MakeRecord("NPC_", 0x00001111, 0)]);
-        var parser = new RecordParser(scanResult, formIdCorrelations: correlations);
+        var scanResult = MakeScanResult([MakeRecord("NPC_", 0x00001111, 0)]);
+        var parser = new RecordParser(scanResult, correlations);
 
         Assert.Equal("ProvidedEditorId", parser.GetEditorId(0x00001111));
     }
@@ -198,7 +281,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         };
 
         var scanResult = MakeScanResult();
-        var parser = new RecordParser(scanResult, formIdCorrelations: correlations);
+        var parser = new RecordParser(scanResult, correlations);
 
         Assert.Equal(0x00001234u, parser.GetFormId("MyEditorId"));
     }
@@ -212,7 +295,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             MakeRecord("WEAP", 0x00005678, 200)
         };
 
-        var scanResult = MakeScanResult(mainRecords: records);
+        var scanResult = MakeScanResult(records);
         var parser = new RecordParser(scanResult);
 
         var record = parser.GetRecord(0x00001234);
@@ -248,8 +331,8 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             { 0x00005678, "TestNpc2" }
         };
 
-        var scanResult = MakeScanResult(mainRecords: records);
-        var parser = new RecordParser(scanResult, formIdCorrelations: correlations);
+        var scanResult = MakeScanResult(records);
+        var parser = new RecordParser(scanResult, correlations);
         var npcs = parser.ReconstructNpcs();
 
         Assert.Equal(2, npcs.Count);
@@ -270,8 +353,8 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             { 0x000AAAA1, "TestCreature" }
         };
 
-        var scanResult = MakeScanResult(mainRecords: records);
-        var parser = new RecordParser(scanResult, formIdCorrelations: correlations);
+        var scanResult = MakeScanResult(records);
+        var parser = new RecordParser(scanResult, correlations);
         var creatures = parser.ReconstructCreatures();
 
         Assert.Single(creatures);
@@ -297,8 +380,8 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             { 0x000B0001, "TestTerminal" }
         };
 
-        var scanResult = MakeScanResult(mainRecords: records, fullNames: fullNames);
-        var parser = new RecordParser(scanResult, formIdCorrelations: correlations);
+        var scanResult = MakeScanResult(records, fullNames: fullNames);
+        var parser = new RecordParser(scanResult, correlations);
         var terminals = parser.ReconstructTerminals();
 
         Assert.Single(terminals);
@@ -314,7 +397,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             MakeRecord("PACK", 0x000C0001, 100)
         };
 
-        var scanResult = MakeScanResult(mainRecords: records);
+        var scanResult = MakeScanResult(records);
         var parser = new RecordParser(scanResult);
         var packages = parser.ReconstructPackages();
 
@@ -331,7 +414,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             MakeRecord("GLOB", 0x000D0001, 100)
         };
 
-        var scanResult = MakeScanResult(mainRecords: records);
+        var scanResult = MakeScanResult(records);
         var parser = new RecordParser(scanResult);
         var globals = parser.ReconstructGlobals();
 
@@ -366,7 +449,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         var mainRecord = new DetectedMainRecord("BOOK",
             (uint)(recordBytes.Length - 24), 0, 0x00010001, 0, false);
 
-        var scanResult = MakeScanResult(mainRecords: [mainRecord]);
+        var scanResult = MakeScanResult([mainRecord]);
 
         using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
         using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
@@ -402,7 +485,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         var mainRecord = new DetectedMainRecord("NOTE",
             (uint)(recordBytes.Length - 24), 0, 0x00020001, 0, false);
 
-        var scanResult = MakeScanResult(mainRecords: [mainRecord]);
+        var scanResult = MakeScanResult([mainRecord]);
 
         using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
         using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
@@ -438,7 +521,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         var mainRecord = new DetectedMainRecord("MESG",
             (uint)(recordBytes.Length - 24), 0, 0x00030001, 0, false);
 
-        var scanResult = MakeScanResult(mainRecords: [mainRecord]);
+        var scanResult = MakeScanResult([mainRecord]);
 
         using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
         using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
@@ -463,7 +546,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         var edidData = NullTermString("TimeScale");
 
         // FNAM: value type 'f' (float)
-        var fnamData = new byte[] { (byte)'f' };
+        var fnamData = new[] { (byte)'f' };
 
         // FLTV: float value 30.0
         var fltvData = new byte[4];
@@ -477,7 +560,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         var mainRecord = new DetectedMainRecord("GLOB",
             (uint)(recordBytes.Length - 24), 0, 0x00040001, 0, false);
 
-        var scanResult = MakeScanResult(mainRecords: [mainRecord]);
+        var scanResult = MakeScanResult([mainRecord]);
 
         using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
         using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
@@ -532,8 +615,8 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             { 0x00005001, "TestTerminal" }
         };
 
-        var scanResult = MakeScanResult(mainRecords: records);
-        var parser = new RecordParser(scanResult, formIdCorrelations: correlations);
+        var scanResult = MakeScanResult(records);
+        var parser = new RecordParser(scanResult, correlations);
         var result = parser.ReconstructAll();
 
         Assert.Single(result.Npcs);
@@ -562,97 +645,14 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
             { 0x00001001, "FirstNpc" }
         };
 
-        var scanResult = MakeScanResult(mainRecords: records);
-        var parser = new RecordParser(scanResult, formIdCorrelations: correlations);
+        var scanResult = MakeScanResult(records);
+        var parser = new RecordParser(scanResult, correlations);
         var result = parser.ReconstructAll();
 
         // The FormIdToEditorId should include the well-known PlayerRef/Player even
         // though they weren't in the main records
         Assert.True(result.FormIdToEditorId.ContainsKey(0x00000007)); // PlayerRef
         Assert.True(result.FormIdToEditorId.ContainsKey(0x00000014)); // Player
-    }
-
-    #endregion
-
-    #region Big-Endian Tests
-
-    [Fact]
-    public void ReconstructBooks_BigEndian_ParsesCorrectly()
-    {
-        var edidData = NullTermString("BEBook");
-        var fullData = NullTermString("Big Endian Book");
-
-        // DATA subrecord: flags(1) + skill(1) + value(int32 BE) + weight(float BE) = 10 bytes
-        var dataField = new byte[10];
-        dataField[0] = 0x02;
-        dataField[1] = 0x05;
-        BinaryPrimitives.WriteInt32BigEndian(dataField.AsSpan(2), 100);
-        BinaryPrimitives.WriteSingleBigEndian(dataField.AsSpan(6), 3.0f);
-
-        var recordBytes = BuildRecordBytes(0x00050001, "BOOK", true,
-            ("EDID", edidData),
-            ("FULL", fullData),
-            ("DATA", dataField));
-
-        var mainRecord = new DetectedMainRecord("BOOK",
-            (uint)(recordBytes.Length - 24), 0, 0x00050001, 0, true);
-
-        var scanResult = MakeScanResult(mainRecords: [mainRecord]);
-
-        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
-        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
-        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
-
-        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
-        var books = parser.ReconstructBooks();
-
-        Assert.Single(books);
-        var book = books[0];
-        Assert.Equal("BEBook", book.EditorId);
-        Assert.Equal("Big Endian Book", book.FullName);
-        Assert.Equal(100, book.Value);
-        Assert.Equal(3.0f, book.Weight);
-        Assert.True(book.IsBigEndian);
-    }
-
-    #endregion
-
-    #region Sample-File-Based Tests (Skipped When Unavailable)
-
-    [Fact]
-    [Trait("Category", "Slow")]
-    public void ReconstructAll_WithSampleFile_ProducesNonEmptyResults()
-    {
-        Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
-
-        var fileData = File.ReadAllBytes(samples.Xbox360ProtoEsm!);
-        var isBigEndian = EsmParser.IsBigEndian(fileData);
-        var (records, _) = EsmParser.EnumerateRecordsWithGrups(fileData);
-
-        var mainRecords = records.Select(r => new DetectedMainRecord(
-            r.Header.Signature,
-            r.Header.DataSize,
-            r.Header.Flags,
-            r.Header.FormId,
-            r.Offset,
-            isBigEndian)).ToList();
-
-        var scanResult = new EsmRecordScanResult { MainRecords = mainRecords };
-
-        using var mmf = MemoryMappedFile.CreateFromFile(samples.Xbox360ProtoEsm!, FileMode.Open, null, 0,
-            MemoryMappedFileAccess.Read);
-        using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
-
-        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
-        var result = parser.ReconstructAll();
-
-        _output.WriteLine($"NPCs: {result.Npcs.Count}, Weapons: {result.Weapons.Count}, " +
-                          $"Quests: {result.Quests.Count}, Dialogues: {result.Dialogues.Count}, " +
-                          $"Total: {result.TotalRecordsReconstructed}");
-
-        Assert.True(result.Npcs.Count > 0, "Expected at least some NPCs");
-        Assert.True(result.Weapons.Count > 0, "Expected at least some weapons");
-        Assert.True(result.TotalRecordsReconstructed > 0, "Expected non-zero reconstruction count");
     }
 
     #endregion

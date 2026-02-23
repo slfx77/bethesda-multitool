@@ -1,4 +1,3 @@
-using System.Reflection;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
@@ -27,7 +26,7 @@ public static class MapMarkerIconProvider
         [MapMarkerType.RuinsUrban] = "icon_map_ruins_urban",
         [MapMarkerType.RuinsSewer] = "icon_map_ruins_sewer",
         [MapMarkerType.Metro] = "icon_map_metro",
-        [MapMarkerType.Vault] = "icon_map_vault",
+        [MapMarkerType.Vault] = "icon_map_vault"
     };
 
     private static readonly Lazy<Dictionary<MapMarkerType, byte[]>> Cache = new(LoadAll);

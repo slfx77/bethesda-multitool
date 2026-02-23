@@ -1,16 +1,15 @@
+using Windows.Storage.Pickers;
 using FalloutAudioTranscriber.Models;
 using FalloutAudioTranscriber.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace FalloutAudioTranscriber.Views;
 
 #pragma warning disable CA1001 // WinUI 3 UserControls don't implement IDisposable
 public sealed partial class LoadingView : UserControl
 {
-    private string? _selectedPath;
-    private string? _selectedEsmPath;
     private CancellationTokenSource? _cts;
 
     public LoadingView()
@@ -18,17 +17,17 @@ public sealed partial class LoadingView : UserControl
         InitializeComponent();
     }
 
-    /// <summary>Fires when a build is successfully loaded.</summary>
-    public event EventHandler? BuildLoaded;
-
     /// <summary>The loaded build result (available after BuildLoaded fires).</summary>
     public BuildLoadResult? LoadResult { get; private set; }
 
     /// <summary>The selected data directory path.</summary>
-    public string? DataDirectory => _selectedPath;
+    public string? DataDirectory { get; private set; }
 
     /// <summary>User-selected ESM override path (null = auto-detect).</summary>
-    public string? EsmOverridePath => _selectedEsmPath;
+    public string? EsmOverridePath { get; private set; }
+
+    /// <summary>Fires when a build is successfully loaded.</summary>
+    public event EventHandler? BuildLoaded;
 
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
     {
@@ -37,13 +36,13 @@ public sealed partial class LoadingView : UserControl
         picker.FileTypeFilter.Add("*");
 
         // Initialize the picker with the window handle (required for WinUI 3 unpackaged)
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow.Instance!);
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
+        InitializeWithWindow.Initialize(picker, hwnd);
 
         var folder = await picker.PickSingleFolderAsync();
         if (folder != null)
         {
-            _selectedPath = folder.Path;
+            DataDirectory = folder.Path;
             FolderPathBox.Text = folder.Path;
             LoadButton.IsEnabled = true;
             ResultsPanel.Visibility = Visibility.Collapsed;
@@ -56,13 +55,13 @@ public sealed partial class LoadingView : UserControl
         picker.SuggestedStartLocation = PickerLocationId.ComputerFolder;
         picker.FileTypeFilter.Add(".esm");
 
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow.Instance!);
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
+        InitializeWithWindow.Initialize(picker, hwnd);
 
         var file = await picker.PickSingleFileAsync();
         if (file != null)
         {
-            _selectedEsmPath = file.Path;
+            EsmOverridePath = file.Path;
             EsmPathBox.Text = file.Path;
             EsmClearButton.Visibility = Visibility.Visible;
         }
@@ -70,14 +69,14 @@ public sealed partial class LoadingView : UserControl
 
     private void EsmClearButton_Click(object sender, RoutedEventArgs e)
     {
-        _selectedEsmPath = null;
+        EsmOverridePath = null;
         EsmPathBox.Text = "";
         EsmClearButton.Visibility = Visibility.Collapsed;
     }
 
     private async void LoadButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_selectedPath == null)
+        if (DataDirectory == null)
         {
             return;
         }
@@ -103,7 +102,7 @@ public sealed partial class LoadingView : UserControl
             });
 
             var result = await BuildDirectoryLoader.LoadAsync(
-                _selectedPath, progress, _cts.Token, esmOverridePath: _selectedEsmPath);
+                DataDirectory, progress, _cts.Token, EsmOverridePath);
 
             LoadResult = result;
             var entries = result.Entries;
@@ -121,14 +120,18 @@ public sealed partial class LoadingView : UserControl
             // ESM enrichment heuristics
             if (result.EsmInfoCount > 0)
             {
-                static string Pct(int n, int total) => total > 0 ? $"{100.0 * n / total:F0}%" : "N/A";
+                static string Pct(int n, int total)
+                {
+                    return total > 0 ? $"{100.0 * n / total:F0}%" : "N/A";
+                }
 
                 var sourceTag = result.EsmSourceDescription ?? "unknown";
                 detailLines += $"\nESM ({sourceTag}): {result.EsmInfoCount:N0} INFOs, {result.EsmNpcCount:N0} NPCs, "
                                + $"{result.EsmQuestCount:N0} quests, {result.EsmTopicCount:N0} topics";
-                detailLines += $"\nMatch: {result.EnrichedSubtitleCount:N0} subtitles ({Pct(result.EnrichedSubtitleCount, entries.Count)}), "
-                               + $"{result.EnrichedSpeakerCount:N0} speakers ({Pct(result.EnrichedSpeakerCount, entries.Count)}), "
-                               + $"{result.EnrichedQuestCount:N0} quests ({Pct(result.EnrichedQuestCount, entries.Count)})";
+                detailLines +=
+                    $"\nMatch: {result.EnrichedSubtitleCount:N0} subtitles ({Pct(result.EnrichedSubtitleCount, entries.Count)}), "
+                    + $"{result.EnrichedSpeakerCount:N0} speakers ({Pct(result.EnrichedSpeakerCount, entries.Count)}), "
+                    + $"{result.EnrichedQuestCount:N0} quests ({Pct(result.EnrichedQuestCount, entries.Count)})";
             }
             else
             {
@@ -138,7 +141,7 @@ public sealed partial class LoadingView : UserControl
             ResultsDetails.Text = detailLines;
             ResultsPanel.Visibility = Visibility.Visible;
 
-            MainWindow.Instance?.SetStatus($"Loaded {entries.Count:N0} voice files from {_selectedPath}");
+            MainWindow.Instance?.SetStatus($"Loaded {entries.Count:N0} voice files from {DataDirectory}");
 
             BuildLoaded?.Invoke(this, EventArgs.Empty);
         }

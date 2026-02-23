@@ -183,7 +183,6 @@ public static class AnalyzeCommand
         {
             await ExtractRuntimeTexturesAsync(opts.ExtractTextures, result);
         }
-
     }
 
     private static async Task<RecordCollection?> ExportSemanticReportAsync(
@@ -527,8 +526,8 @@ public static class AnalyzeCommand
         var csvPath = Path.Combine(outputDir, "terrain_diagnostics.csv");
         var csv = new StringBuilder();
         csv.AppendLine("DumpFile,CellX,CellY,FormID,MinZ,MaxZ,ZRange,ZStdDev," +
-                        "UniqueZCount,ZeroZCount,ZeroZPct,GarbageZCount,DominantZPct," +
-                        "LastActiveRow,RowDiscontinuities,Classification");
+                       "UniqueZCount,ZeroZCount,ZeroZPct,GarbageZCount,DominantZPct," +
+                       "LastActiveRow,RowDiscontinuities,Classification");
         foreach (var d in diagnostics)
         {
             csv.AppendLine(CultureInfo.InvariantCulture,
@@ -635,10 +634,10 @@ public static class AnalyzeCommand
         Dictionary<long, SceneGraphInfo> sceneGraph,
         string outputPath)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
         sb.AppendLine("Index,Offset,Type,Category,Vertices,Triangles,HasNormals,HasUVs,HasColors," +
-                       "BoundCenterX,BoundCenterY,BoundCenterZ,BoundRadius," +
-                       "NodeName,ModelName,SceneGraphPath,RootNodeVA");
+                      "BoundCenterX,BoundCenterY,BoundCenterZ,BoundRadius," +
+                      "NodeName,ModelName,SceneGraphPath,RootNodeVA");
 
         for (var i = 0; i < meshes.Count; i++)
         {
@@ -646,7 +645,7 @@ public static class AnalyzeCommand
             var category = m.Is3D ? "3D" : "UI";
             sceneGraph.TryGetValue(m.SourceOffset, out var info);
 
-            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            sb.AppendLine(CultureInfo.InvariantCulture,
                 $"{i},0x{m.SourceOffset:X},{m.Type},{category},{m.VertexCount},{m.TriangleCount}," +
                 $"{(m.Normals != null ? "Yes" : "No")},{(m.UVs != null ? "Yes" : "No")}," +
                 $"{(m.VertexColors != null ? "Yes" : "No")}," +

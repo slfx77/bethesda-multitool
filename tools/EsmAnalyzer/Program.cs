@@ -33,10 +33,7 @@ internal sealed class Program
         var rootCommand = new RootCommand("ESM Analyzer - Analyze and compare Xbox 360 and PC ESM files");
 
         // ===== Top-level commands =====
-        rootCommand.Subcommands.Add(StatsCommands.CreateStatsCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateDumpCommand());
-        rootCommand.Subcommands.Add(DumpCommands.CreateTraceCommand());
-        rootCommand.Subcommands.Add(ConvertCommands.CreateConvertCommand());
+        // Note: stats, dump, trace, convert, diff, semdiff, cell objects/npc-trace migrated to main app (falloutu esm ...)
         rootCommand.Subcommands.Add(GrupCommands.CreateGrupsCommand());
         rootCommand.Subcommands.Add(ToftCommands.CreateToftCommand());
         rootCommand.Subcommands.Add(LandCommands.CreateLandSummaryCommand());
@@ -48,13 +45,8 @@ internal sealed class Program
         rootCommand.Subcommands.Add(VoiceHeuristicsCommands.CreateVoiceHeuristicsCommand());
         rootCommand.Subcommands.Add(TranscriptDiagCommands.CreateTranscriptDiagCommand());
         rootCommand.Subcommands.Add(GenFaceGenCommands.CreateGenFaceGenCommand());
-        rootCommand.Subcommands.Add(BsaCommands.CreateBsaCommandGroup());
 
         // ===== Backward compatibility aliases =====
-        // Keep old command names for scripts that use them
-        // Note: Avoid adding commands whose names conflict with command groups (diff, search, validate)
-        rootCommand.Subcommands.Add(DiffCommands.CreateDiff3Command());  // "diff3" at root (shortcut for "diff three")
-        rootCommand.Subcommands.Add(SemanticDiffCommands.CreateSemanticDiffCommand());  // "semdiff" at root
         rootCommand.Subcommands.Add(FormIdAuditCommands.CreateFormIdAuditCommand());  // "formid-audit" at root
         rootCommand.Subcommands.Add(RecordDiffCommands.CreateRecordDiffCommand());  // "record-diff" at root
         rootCommand.Subcommands.Add(CompareCommands.CreateCompareLandCommand());  // "compare-land" at root
@@ -69,7 +61,6 @@ internal sealed class Program
         rootCommand.Subcommands.Add(NaviCommands.CreateDumpNvmiCommand());     // "dump-nvmi" at root (NAVI navmesh info)
         rootCommand.Subcommands.Add(OrphanedFormIdCommands.CreateOrphanRefsCommand());  // "orphan-refs" at root
         rootCommand.Subcommands.Add(FaceGenCommands.CreateFaceGenCommand());  // "facegen" at root
-        rootCommand.Subcommands.Add(DmpDiagCommands.CreateDmpDiagCommand());  // "dmp-diag" at root (backward compat)
 
         // ===== compare subcommands =====
         var compareCommand = new Command("compare", "Compare ESM files (land, cells, heightmaps)");
@@ -96,15 +87,8 @@ internal sealed class Program
         validateCommand.Subcommands.Add(DumpCommands.CreateDeepValidateCommand());       // "deep" instead of "validate-deep"
         rootCommand.Subcommands.Add(validateCommand);
 
-        // ===== diff subcommands =====
-        // Unified 'diff' command: use --xbox, --converted, --pc (at least 2 required)
-        rootCommand.Subcommands.Add(DiffCommands.CreateUnifiedDiffCommand());
-        // Note: diff3 alias already added above for backward compatibility
-
-        // ===== cell subcommands (semantic cell inspection) =====
-        var cellCommand = new Command("cell", "Inspect cells, placed objects, and NPC placement");
-        cellCommand.Subcommands.Add(CellObjectsCommands.CreateObjectsCommand());
-        cellCommand.Subcommands.Add(CellObjectsCommands.CreateNpcTraceCommand());
+        // ===== cell subcommands =====
+        var cellCommand = new Command("cell", "Raw GRUP-level cell inspection");
         cellCommand.Subcommands.Add(CellCommands.CreateCellChildrenCommand());   // raw GRUP-level inspection
         rootCommand.Subcommands.Add(cellCommand);
 
@@ -124,13 +108,8 @@ internal sealed class Program
         wrldCommand.Subcommands.Add(OfstCommands.CreateOfstQuadtreeCommand());
         rootCommand.Subcommands.Add(wrldCommand);
 
-        // ===== dmp subcommands (minidump analysis) =====
-        var dmpCommand = new Command("dmp", "Minidump analysis, diagnostics, and script comparison");
-        dmpCommand.Subcommands.Add(DmpDiagCommands.CreateDmpDiagCommand());       // "dmp diag"
-        dmpCommand.Subcommands.Add(DmpRegionCommands.CreateRegionsCommand());     // "dmp regions"
-        dmpCommand.Subcommands.Add(DmpRegionCommands.CreateModulesCommand());     // "dmp modules"
-        dmpCommand.Subcommands.Add(DmpRegionCommands.CreateVa2OffsetCommand());   // "dmp va2offset"
-        dmpCommand.Subcommands.Add(DmpRegionCommands.CreateHexDumpCommand());     // "dmp hexdump"
+        // ===== dmp subcommands (niche — scripts, rendering, module extraction) =====
+        var dmpCommand = new Command("dmp", "Minidump scripts, rendering, and module extraction");
         dmpCommand.Subcommands.Add(DmpScriptCommands.CreateScriptsCommand());     // "dmp scripts ..."
         dmpCommand.Subcommands.Add(DmpMapRenderCommands.CreateRenderMapCommand()); // "dmp render-map"
         dmpCommand.Subcommands.Add(DmpModuleExtractCommands.CreateExtractModuleCommand()); // "dmp extract-module"
@@ -151,10 +130,6 @@ internal sealed class Program
                 .AddColumn("[bold]Command[/]")
                 .AddColumn("[bold]Description[/]");
 
-            _ = table.AddRow("[cyan]stats[/]", "Display record type statistics for an ESM file");
-            _ = table.AddRow("[cyan]dump[/]", "Dump records of a specific type");
-            _ = table.AddRow("[cyan]trace[/]", "Trace record/GRUP structure at a specific offset");
-            _ = table.AddRow("[cyan]convert[/]", "Convert Xbox 360 ESM to PC little-endian format");
             _ = table.AddRow("[cyan]grups[/]", "Analyze GRUP structure, nesting, and find duplicates");
             _ = table.AddRow("[cyan]toft[/]", "Analyze the Xbox 360 TOFT streaming cache region");
             _ = table.AddRow("[cyan]land-summary[/]", "Summarize LAND subrecords with human-readable interpretation");
@@ -185,14 +160,7 @@ internal sealed class Program
             _ = table.AddRow("  [cyan]validate structure[/]", "Validate record/GRUP structure (first failure)");
             _ = table.AddRow("  [cyan]validate deep[/]", "Deep-validate records and subrecords");
             _ = table.AddRow("", "");
-            _ = table.AddRow("[bold yellow]diff[/]", "[bold]Compare and diff ESM files[/]");
-            _ = table.AddRow("  [cyan]diff two[/]", "Compare two ESM files (stats, byte-level, headers)");
-            _ = table.AddRow("  [cyan]diff three[/]", "Three-way diff: Xbox 360 → Converted → PC reference");
-            _ = table.AddRow("  [cyan]diff semdiff[/]", "Semantic diff - human-readable field differences");
-            _ = table.AddRow("", "");
-            _ = table.AddRow("[bold yellow]cell[/]", "[bold]Inspect cells and NPC placement[/]");
-            _ = table.AddRow("  [cyan]cell objects[/]", "List placed objects in a cell (with persistent overlay)");
-            _ = table.AddRow("  [cyan]cell npc-trace[/]", "Trace NPC from base FormID through ACHR to cell and position");
+            _ = table.AddRow("[bold yellow]cell[/]", "[bold]Cell inspection[/]");
             _ = table.AddRow("  [cyan]cell cell-children[/]", "Raw GRUP-level cell children inspection");
             _ = table.AddRow("", "");
             _ = table.AddRow("[bold yellow]wrld[/]", "[bold]WRLD worldspace analysis (OFST streaming)[/]");
@@ -204,12 +172,7 @@ internal sealed class Program
             _ = table.AddRow("  [cyan]wrld ofst-image[/]", "Visualize WRLD OFST as an image");
 
             _ = table.AddRow("", "");
-            _ = table.AddRow("[bold yellow]dmp[/]", "[bold]Minidump analysis and diagnostics[/]");
-            _ = table.AddRow("  [cyan]dmp dmp-diag[/]", "Scan DMP files for persistent references and map markers");
-            _ = table.AddRow("  [cyan]dmp regions[/]", "List memory regions in minidump");
-            _ = table.AddRow("  [cyan]dmp modules[/]", "List loaded modules in minidump");
-            _ = table.AddRow("  [cyan]dmp va2offset[/]", "Convert virtual address to file offset");
-            _ = table.AddRow("  [cyan]dmp hexdump[/]", "Hex dump memory at an address");
+            _ = table.AddRow("[bold yellow]dmp[/]", "[bold]Minidump scripts, rendering, module extraction[/]");
             _ = table.AddRow("  [cyan]dmp scripts list[/]", "List all scripts in memory dump");
             _ = table.AddRow("  [cyan]dmp scripts show[/]", "Show details of a specific script");
             _ = table.AddRow("  [cyan]dmp scripts compare[/]", "Semantic comparison of SCTX vs SCDA");
@@ -217,20 +180,16 @@ internal sealed class Program
             _ = table.AddRow("  [cyan]dmp render-map[/]", "Render map marker overlay PNGs from DMP files");
             _ = table.AddRow("  [cyan]dmp extract-module[/]", "Extract game executable from DMP as raw binary for Ghidra");
             _ = table.AddRow("", "");
-            _ = table.AddRow("[bold yellow]bsa[/]", "[bold]BSA archive utilities[/]");
-            _ = table.AddRow("  [cyan]bsa list[/]", "List files in a BSA archive (with optional path filter)");
-            _ = table.AddRow("  [cyan]bsa extract[/]", "Extract files/directories from BSA (--png for DDS conversion)");
-            _ = table.AddRow("", "");
             _ = table.AddRow("[cyan]orphan-refs[/]", "Find FormID references to non-existent records (cut content detection)");
             _ = table.AddRow("[cyan]gen-facegen[/]", "Parse FaceGen si.ctl and generate C# code");
 
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("Use [cyan]--help[/] with any command for more information.");
-            AnsiConsole.MarkupLine("Example: [grey]dotnet run -- stats FalloutNV.esm[/]");
-            AnsiConsole.MarkupLine("Example: [grey]dotnet run -- diff three --xbox x.esm --converted c.esm --pc p.esm[/]");
+            AnsiConsole.MarkupLine("Example: [grey]dotnet run -- grups FalloutNV.esm[/]");
             AnsiConsole.MarkupLine("");
-            AnsiConsole.MarkupLine("[dim]Backward compat aliases: diff3, semdiff, compare-land, compare-cells, hex, locate, validate-deep, ofst, ofst-compare, ofst-image, dmp-diag[/]");
+            AnsiConsole.MarkupLine("[dim]Aliases: formid-audit, record-diff, compare-land, compare-cells, hex, locate, validate-deep, ofst, ofst-compare, ofst-image[/]");
+            AnsiConsole.MarkupLine("[dim]Migrated to main app: stats, dump, trace, convert, diff, semdiff, cell objects/npc-trace, dmp diag/regions/modules/va2offset/hexdump[/]");
         });
 
         return rootCommand.Parse(args).Invoke();

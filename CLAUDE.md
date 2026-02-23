@@ -9,56 +9,96 @@
 ### Tool Usage - NEVER use PowerShell for binary operations
 
 - **NIF files**: Use `dotnet run --project tools/NifAnalyzer -f net10.0 -- <command> <file>`
-- **ESM files**: Use `dotnet run --project tools/EsmAnalyzer -c Release -- <command> <file>`
+- **ESM files**: Use main app CLI or EsmAnalyzer (see command reference below)
 - **Never use** `2>&1` in PowerShell - breaks Spectre.Console ANSI output
 
-### EsmAnalyzer Commands
+### Main App CLI Commands (falloutu)
 
 ```bash
-# Analysis
-stats <file>                    # Record type statistics
-dump <file> <type>              # Dump records of type
-trace <file> -o <offset>        # Trace structure at offset
-locate <file> <formid>          # Find record by FormID
+# Run main app
+dotnet run --project src/FalloutXbox360Utils -f net10.0 -- <command> <args>
 
-# Comparison
-compare land <file1> <file2>    # Compare land records
-compare cells <file1> <file2>   # Compare cell records
-compare heightmaps <f1> <f2>    # Compare heightmap data
+# ESM commands
+esm <file>                      # Default ESM analysis
+esm stats <file>                # Record type statistics
+esm dump <file> <type>          # Dump records of type
+esm trace <file> -o <offset>    # Trace structure at offset
+esm convert <file>              # Convert Xbox 360 ESM to PC format
+esm semdiff <f1> <f2>           # Semantic field-by-field diff
+esm diff --xbox <f> --converted <f> --pc <f>  # Unified 2/3-way diff
+esm cell objects <file> <cell>  # List placed objects in a cell
+esm cell npc-trace <file> <id>  # Trace NPC from FormID to cell
 
-# Diff (unified command - provide 2 or 3 files)
-diff --xbox <file> --converted <file> --pc <file> -t <type> --semantic
-semdiff <file1> <file2> ...     # Semantic field-by-field diff (most useful!)
+# BSA commands
+bsa list <file>                 # List files in BSA archive
+bsa extract <file> -o <dir>     # Extract BSA contents
+bsa info <file>                 # BSA archive statistics
+bsa find <file> <pattern>       # Find files matching pattern
+bsa inspect <file> <path>       # Inspect a specific file entry
+bsa rawdump <file> <off> <len>  # Raw hex dump at offset
+bsa file-compare <bsa> <f> <e>  # Compare BSA entry vs extracted
 
-# Conversion
-convert <file>                  # Convert Xbox 360 ESM to PC format
-
-# DMP analysis (minidump)
-dmp dmp-diag <directory>        # Scan DMPs for persistent refs and map markers
-dmp regions <file>              # List memory regions
+# DMP commands
 dmp modules <file>              # List loaded modules
+dmp regions <file>              # List memory regions
 dmp va2offset <file> <address>  # Convert VA to file offset
 dmp hexdump <file> <address>    # Hex dump at address
+dmp dmp-diag <directory>        # Scan DMPs for persistent refs and map markers
+```
+
+### EsmAnalyzer Commands (niche debugging)
+
+```bash
+# Run EsmAnalyzer (fast build, niche commands)
+dotnet run --project tools/EsmAnalyzer -c Release -- <command> <args>
+
+# Structure analysis
+grups <file>                    # GRUP structure, nesting, duplicates
+toft <file>                     # Xbox 360 TOFT streaming cache
+
+# Land/export
+land-summary <file>             # LAND subrecord summary
+export-land <file>              # Export LAND as images/JSON
+worldmap <file>                 # Generate worldspace heightmap
+
+# Comparison
+compare land <f1> <f2>          # Compare land records
+compare cells <f1> <f2>         # Compare cell records
+compare heightmaps <f1> <f2>    # Compare heightmap data
+
+# Search/validate
+search text <file> <pattern>    # ASCII text search
+search hex <file> <offset>      # Hex dump at offset
+search locate <file> <offset>   # Locate record at offset
+validate structure <file>       # Validate record structure
+validate deep <file>            # Deep record validation
+
+# DMP (niche — scripts, rendering, module extraction)
 dmp scripts list <file>         # List scripts in DMP
 dmp scripts show <file> <id>    # Show script details
 dmp scripts compare <file>      # Compare SCTX vs SCDA
 dmp scripts crossrefs <file>    # Cross-reference chain diagnostics
+dmp render-map <directory>      # Render map marker overlay PNGs
+dmp extract-module <file>       # Extract game exe for Ghidra
 
-# FaceGen
+# Other niche
 gen-facegen <ctl-file>          # Generate C# code from si.ctl
+worldmap-diag <file>            # World map category diagnostics
+category-audit <file>           # Map category audit
+orphan-refs <file>              # Find orphaned FormID references
 ```
 
 ### Semantic Diff (semdiff) - Primary debugging tool
 
 ```bash
 # Compare specific FormID between converted and PC reference
-semdiff <converted.esm> <pc_reference.esm> -f 0x0017B37C
+dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm semdiff <converted.esm> <pc_reference.esm> -f 0x0017B37C
 
 # Compare all records of a type
-semdiff <converted.esm> <pc_reference.esm> -t PROJ --limit 50
+dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm semdiff <converted.esm> <pc_reference.esm> -t PROJ --limit 50
 
 # Show all fields, not just differences
-semdiff <file1> <file2> -f 0x12345678 --all
+dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm semdiff <file1> <file2> -f 0x12345678 --all
 ```
 
 ## Xbox 360 ESM Conversion
@@ -117,14 +157,25 @@ src/FalloutXbox360Utils/Core/Formats/Esm/Conversion/
     ├── SubrecordSchemaProcessor.cs     # Schema application logic
     └── SubrecordFieldType.cs           # Field type enum
 
-tools/EsmAnalyzer/                      # Thin CLI wrapper over the above
-├── Commands/                           # CLI commands (38 files)
-│   ├── ConvertCommands.cs              # Convert command entry point
-│   ├── SemanticDiffCommands.cs         # semdiff implementation
-│   ├── DiffCommands*.cs               # Diff commands (Unified, ThreeWay, Header, Records)
-│   └── CompareCommands*.cs             # Compare commands (Land, Cells, Heightmap)
-└── Helpers/
-    └── DiffHelpers.cs                  # Diff display utilities
+src/FalloutXbox360Utils/CLI/             # Main app CLI commands (migrated from EsmAnalyzer)
+├── EsmStatsCommand.cs                  # esm stats
+├── EsmDumpCommand.cs                   # esm dump, esm trace
+├── EsmConvertCommand.cs                # esm convert
+├── EsmSemdiffCommand.cs                # esm semdiff
+├── EsmDiffCommand*.cs                  # esm diff (Unified, ThreeWay, Header, Records)
+├── EsmCellCommand.cs                   # esm cell objects, esm cell npc-trace
+├── DmpCommand.cs                       # dmp modules, regions, va2offset, hexdump
+├── DmpCommand.Diag.cs                  # dmp dmp-diag
+└── BsaCommand.cs                       # bsa list, extract, info, find, inspect, rawdump
+
+tools/EsmAnalyzer/                      # Niche debugging commands (fast build)
+├── Commands/                           # Remaining commands (~25 files)
+│   ├── CompareCommands*.cs             # Compare commands (Land, Cells, Heightmap)
+│   ├── DumpCommands*.cs                # Search, hex, locate, validate commands
+│   ├── DmpScriptCommands.cs            # DMP script analysis
+│   ├── DmpMapRenderCommands.cs         # DMP map rendering
+│   └── DmpModuleExtractCommands.cs     # DMP module extraction for Ghidra
+└── GlobalUsings.cs                     # References main project Analysis/ namespace
 ```
 
 ## Standard File Paths
@@ -139,14 +190,16 @@ tools/EsmAnalyzer/                      # Thin CLI wrapper over the above
 ### Three-Way Diff (Primary Debugging Tool)
 
 ```bash
-# Compare all three files for a record type
-diff --xbox "Sample/ESM/360_final/FalloutNV.esm" \
+# Compare all three files for a record type (via main app)
+dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm diff \
+     --xbox "Sample/ESM/360_final/FalloutNV.esm" \
      --converted "TestOutput/FalloutNV.pc.esm" \
      --pc "Sample/ESM/pc_final/FalloutNV.esm" \
      -t ALCH --semantic -l 5
 
 # Compare specific FormID across all three
-diff --xbox ... --converted ... --pc ... -f 0x0017B37C --semantic
+dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm diff \
+     --xbox ... --converted ... --pc ... -f 0x0017B37C --semantic
 ```
 
 ### Reference Materials

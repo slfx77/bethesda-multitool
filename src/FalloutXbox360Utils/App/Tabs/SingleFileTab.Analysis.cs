@@ -127,6 +127,68 @@ public sealed partial class SingleFileTab
 
     #endregion
 
+    #region Save File Browser
+
+    private async Task PopulateSaveBrowserAsync()
+    {
+        if (_session.SaveData == null || _session.DecodedForms == null) return;
+
+        // Prevent double-population
+        if (DataBrowserContent.Visibility == Visibility.Visible) return;
+
+        ReconstructProgressBar.Visibility = Visibility.Visible;
+        ReconstructProgressBar.IsIndeterminate = true;
+        ReconstructStatusText.Text = "Building save data browser...";
+        StatusTextBlock.Text = "Building save data browser...";
+
+        try
+        {
+            var save = _session.SaveData;
+            var decodedForms = _session.DecodedForms;
+            var resolver = _session.EffectiveResolver;
+            var subtitles = _session.EffectiveSubtitles;
+
+            // Build tree on background thread (with optional enrichment from supplementary data)
+            var tree = await Task.Run(() => SaveBrowserTreeBuilder.BuildTree(save, decodedForms, resolver, subtitles));
+
+            _esmBrowserTree = tree;
+            _placementIndex = null;
+            _raceLookup = null;
+            _flatListBuilt = false;
+
+            StatusTextBlock.Text = "Loading tree view...";
+
+            // Add nodes to tree (must be on UI thread)
+            // Only show chevrons for nodes that actually have children
+            EsmTreeView.RootNodes.Clear();
+            foreach (var node in tree)
+            {
+                var hasChildren = node.Children.Count > 0 || node.HasUnrealizedChildren;
+                var treeNode = new TreeViewNode { Content = node, HasUnrealizedChildren = hasChildren };
+                EsmTreeView.RootNodes.Add(treeNode);
+            }
+
+            DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
+            DataBrowserContent.Visibility = Visibility.Visible;
+
+            // Build FormID navigation index for save data
+            _formIdBuildTask = Task.Run(() =>
+            {
+                BuildFormIdNodeIndex();
+                DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = "");
+            });
+        }
+        finally
+        {
+            ReconstructProgressBar.Visibility = Visibility.Collapsed;
+            ReconstructProgressBar.IsIndeterminate = false;
+            ReconstructStatusText.Text = "";
+            StatusTextBlock.Text = "";
+        }
+    }
+
+    #endregion
+
     #region Semantic Reconstruction
 
     /// <summary>
@@ -223,68 +285,6 @@ public sealed partial class SingleFileTab
 
             // Pre-build FormID navigation index in the background (avoids delay on first link click)
             // Tracked via _formIdBuildTask so NavigateToFormId can await it if needed
-            _formIdBuildTask = Task.Run(() =>
-            {
-                BuildFormIdNodeIndex();
-                DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = "");
-            });
-        }
-        finally
-        {
-            ReconstructProgressBar.Visibility = Visibility.Collapsed;
-            ReconstructProgressBar.IsIndeterminate = false;
-            ReconstructStatusText.Text = "";
-            StatusTextBlock.Text = "";
-        }
-    }
-
-    #endregion
-
-    #region Save File Browser
-
-    private async Task PopulateSaveBrowserAsync()
-    {
-        if (_session.SaveData == null || _session.DecodedForms == null) return;
-
-        // Prevent double-population
-        if (DataBrowserContent.Visibility == Visibility.Visible) return;
-
-        ReconstructProgressBar.Visibility = Visibility.Visible;
-        ReconstructProgressBar.IsIndeterminate = true;
-        ReconstructStatusText.Text = "Building save data browser...";
-        StatusTextBlock.Text = "Building save data browser...";
-
-        try
-        {
-            var save = _session.SaveData;
-            var decodedForms = _session.DecodedForms;
-            var resolver = _session.EffectiveResolver;
-            var subtitles = _session.EffectiveSubtitles;
-
-            // Build tree on background thread (with optional enrichment from supplementary data)
-            var tree = await Task.Run(() => SaveBrowserTreeBuilder.BuildTree(save, decodedForms, resolver, subtitles));
-
-            _esmBrowserTree = tree;
-            _placementIndex = null;
-            _raceLookup = null;
-            _flatListBuilt = false;
-
-            StatusTextBlock.Text = "Loading tree view...";
-
-            // Add nodes to tree (must be on UI thread)
-            // Only show chevrons for nodes that actually have children
-            EsmTreeView.RootNodes.Clear();
-            foreach (var node in tree)
-            {
-                var hasChildren = node.Children.Count > 0 || node.HasUnrealizedChildren;
-                var treeNode = new TreeViewNode { Content = node, HasUnrealizedChildren = hasChildren };
-                EsmTreeView.RootNodes.Add(treeNode);
-            }
-
-            DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
-            DataBrowserContent.Visibility = Visibility.Visible;
-
-            // Build FormID navigation index for save data
             _formIdBuildTask = Task.Run(() =>
             {
                 BuildFormIdNodeIndex();

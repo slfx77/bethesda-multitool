@@ -153,27 +153,27 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     stats = ParseActorBase(subData, record.Offset + 24 + sub.DataOffset, record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("DATA", "CREA", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        var fields = SubrecordDataReader.ReadFields("DATA", "CREA", subData, record.IsBigEndian);
-                        if (fields.Count > 0)
-                        {
-                            creatureType = SubrecordDataReader.GetByte(fields, "CreatureType");
-                            combatSkill = SubrecordDataReader.GetByte(fields, "CombatSkill");
-                            magicSkill = SubrecordDataReader.GetByte(fields, "MagicSkill");
-                            stealthSkill = SubrecordDataReader.GetByte(fields, "StealthSkill");
-                            attackDamage = (short)SubrecordDataReader.GetInt32(fields, "AttackDamage");
-                        }
-                        else
-                        {
-                            // Fallback for non-standard sizes without a matching schema
-                            creatureType = subData[0];
-                            combatSkill = subData[1];
-                            magicSkill = subData[2];
-                            stealthSkill = subData[3];
-                        }
-
-                        break;
+                        creatureType = SubrecordDataReader.GetByte(fields, "CreatureType");
+                        combatSkill = SubrecordDataReader.GetByte(fields, "CombatSkill");
+                        magicSkill = SubrecordDataReader.GetByte(fields, "MagicSkill");
+                        stealthSkill = SubrecordDataReader.GetByte(fields, "StealthSkill");
+                        attackDamage = (short)SubrecordDataReader.GetInt32(fields, "AttackDamage");
                     }
+                    else
+                    {
+                        // Fallback for non-standard sizes without a matching schema
+                        creatureType = subData[0];
+                        combatSkill = subData[1];
+                        magicSkill = subData[2];
+                        stealthSkill = subData[3];
+                    }
+
+                    break;
+                }
                 case "SCRI" when sub.DataLength == 4:
                     script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
@@ -321,36 +321,36 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     flags = (uint)(subData[0] | (subData[1] << 8));
                     break;
                 case "XNAM" when sub.DataLength == 12:
+                {
+                    var fields = SubrecordDataReader.ReadFields("XNAM", "FACT", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        var fields = SubrecordDataReader.ReadFields("XNAM", "FACT", subData, record.IsBigEndian);
-                        if (fields.Count > 0)
-                        {
-                            var factionFormId = SubrecordDataReader.GetUInt32(fields, "Faction");
-                            var modifier = SubrecordDataReader.GetInt32(fields, "Modifier");
-                            var combatReaction = SubrecordDataReader.GetUInt32(fields, "CombatReaction");
-                            relations.Add(new FactionRelation(factionFormId, modifier, combatReaction));
-                        }
-
-                        break;
+                        var factionFormId = SubrecordDataReader.GetUInt32(fields, "Faction");
+                        var modifier = SubrecordDataReader.GetInt32(fields, "Modifier");
+                        var combatReaction = SubrecordDataReader.GetUInt32(fields, "CombatReaction");
+                        relations.Add(new FactionRelation(factionFormId, modifier, combatReaction));
                     }
+
+                    break;
+                }
                 case "RNAM" when sub.DataLength == 4:
+                {
+                    // Flush previous rank if any
+                    if (currentRankNumber.HasValue)
                     {
-                        // Flush previous rank if any
-                        if (currentRankNumber.HasValue)
-                        {
-                            ranks.Add(new FactionRank(currentRankNumber.Value, currentMaleTitle, currentFemaleTitle,
-                                currentInsignia));
-                        }
-
-                        var fields = SubrecordDataReader.ReadFields("RNAM", "FACT", subData, record.IsBigEndian);
-                        currentRankNumber = fields.Count > 0
-                            ? SubrecordDataReader.GetInt32(fields, "RankNumber")
-                            : 0;
-                        currentMaleTitle = null;
-                        currentFemaleTitle = null;
-                        currentInsignia = null;
-                        break;
+                        ranks.Add(new FactionRank(currentRankNumber.Value, currentMaleTitle, currentFemaleTitle,
+                            currentInsignia));
                     }
+
+                    var fields = SubrecordDataReader.ReadFields("RNAM", "FACT", subData, record.IsBigEndian);
+                    currentRankNumber = fields.Count > 0
+                        ? SubrecordDataReader.GetInt32(fields, "RankNumber")
+                        : 0;
+                    currentMaleTitle = null;
+                    currentFemaleTitle = null;
+                    currentInsignia = null;
+                    break;
+                }
                 case "MNAM" when sub.DataLength > 0 && currentRankNumber.HasValue:
                     currentMaleTitle = EsmStringUtils.ReadNullTermString(subData);
                     break;
@@ -361,15 +361,15 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     currentInsignia = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "CRVA" when sub.DataLength >= 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("CRVA", "FACT", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        var fields = SubrecordDataReader.ReadFields("CRVA", "FACT", subData, record.IsBigEndian);
-                        if (fields.Count > 0)
-                        {
-                            crimeGoldMultiplier = SubrecordDataReader.GetFloat(fields, "CrimeGoldMultiplier");
-                        }
-
-                        break;
+                        crimeGoldMultiplier = SubrecordDataReader.GetFloat(fields, "CrimeGoldMultiplier");
                     }
+
+                    break;
+                }
             }
         }
 
@@ -537,15 +537,15 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     hairFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "LNAM" when sub.DataLength == 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("LNAM", "NPC_", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        var fields = SubrecordDataReader.ReadFields("LNAM", "NPC_", subData, record.IsBigEndian);
-                        if (fields.Count > 0)
-                        {
-                            hairLength = SubrecordDataReader.GetFloat(fields, "HairLength");
-                        }
-
-                        break;
+                        hairLength = SubrecordDataReader.GetFloat(fields, "HairLength");
                     }
+
+                    break;
+                }
                 case "ENAM" when sub.DataLength == 4:
                     eyesFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
@@ -558,35 +558,35 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     spells.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     break;
                 case "CNTO" when sub.DataLength >= 8:
+                {
+                    var fields = SubrecordDataReader.ReadFields("CNTO", null, subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        var fields = SubrecordDataReader.ReadFields("CNTO", null, subData, record.IsBigEndian);
-                        if (fields.Count > 0)
-                        {
-                            var itemFormId = SubrecordDataReader.GetUInt32(fields, "Item");
-                            var count = SubrecordDataReader.GetInt32(fields, "Count");
-                            inventory.Add(new InventoryItem(itemFormId, count));
-                        }
-
-                        break;
+                        var itemFormId = SubrecordDataReader.GetUInt32(fields, "Item");
+                        var count = SubrecordDataReader.GetInt32(fields, "Count");
+                        inventory.Add(new InventoryItem(itemFormId, count));
                     }
+
+                    break;
+                }
                 case "DATA" when sub.DataLength == 11:
-                    {
-                        // NPC_ DATA: Int32 BaseHealth + 7 UInt8 SPECIAL (ST, PE, EN, CH, IN, AG, LK)
-                        specialStats =
-                            [subData[4], subData[5], subData[6], subData[7], subData[8], subData[9], subData[10]];
-                        break;
-                    }
+                {
+                    // NPC_ DATA: Int32 BaseHealth + 7 UInt8 SPECIAL (ST, PE, EN, CH, IN, AG, LK)
+                    specialStats =
+                        [subData[4], subData[5], subData[6], subData[7], subData[8], subData[9], subData[10]];
+                    break;
+                }
                 case "DNAM" when sub.DataLength == 28:
+                {
+                    // NPC_ DNAM: 14 skill base values (each 2 bytes: base + modifier)
+                    skills = new byte[14];
+                    for (var i = 0; i < 14; i++)
                     {
-                        // NPC_ DNAM: 14 skill base values (each 2 bytes: base + modifier)
-                        skills = new byte[14];
-                        for (var i = 0; i < 14; i++)
-                        {
-                            skills[i] = subData[i * 2]; // Base value (skip modifier byte)
-                        }
-
-                        break;
+                        skills[i] = subData[i * 2]; // Base value (skip modifier byte)
                     }
+
+                    break;
+                }
                 case "PKID" when sub.DataLength == 4:
                     packages.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     break;
@@ -757,30 +757,30 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     description = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "DATA" when sub.DataLength >= 36:
+                {
+                    // Skill Boosts: 7 pairs of (Skill AV code, Boost value)
+                    for (var i = 0; i < 14; i += 2)
                     {
-                        // Skill Boosts: 7 pairs of (Skill AV code, Boost value)
-                        for (var i = 0; i < 14; i += 2)
+                        var avCode = (sbyte)subData[i];
+                        var boost = (sbyte)subData[i + 1];
+                        if (avCode >= 0 && boost != 0)
                         {
-                            var avCode = (sbyte)subData[i];
-                            var boost = (sbyte)subData[i + 1];
-                            if (avCode >= 0 && boost != 0)
-                            {
-                                skillBoosts.Add((avCode, boost));
-                            }
+                            skillBoosts.Add((avCode, boost));
                         }
-
-                        var fields = SubrecordDataReader.ReadFields("DATA", "RACE", subData, record.IsBigEndian);
-                        if (fields.Count > 0)
-                        {
-                            maleHeight = SubrecordDataReader.GetFloat(fields, "MaleHeight");
-                            femaleHeight = SubrecordDataReader.GetFloat(fields, "FemaleHeight");
-                            maleWeight = SubrecordDataReader.GetFloat(fields, "MaleWeight");
-                            femaleWeight = SubrecordDataReader.GetFloat(fields, "FemaleWeight");
-                            dataFlags = SubrecordDataReader.GetUInt32(fields, "Flags");
-                        }
-
-                        break;
                     }
+
+                    var fields = SubrecordDataReader.ReadFields("DATA", "RACE", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
+                    {
+                        maleHeight = SubrecordDataReader.GetFloat(fields, "MaleHeight");
+                        femaleHeight = SubrecordDataReader.GetFloat(fields, "FemaleHeight");
+                        maleWeight = SubrecordDataReader.GetFloat(fields, "MaleWeight");
+                        femaleWeight = SubrecordDataReader.GetFloat(fields, "FemaleWeight");
+                        dataFlags = SubrecordDataReader.GetUInt32(fields, "Flags");
+                    }
+
+                    break;
+                }
                 case "DNAM" when sub.DataLength == 8:
                     // Default hair styles (Male FormID + Female FormID)
                     defaultHairMale = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
@@ -806,25 +806,25 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     defaultHairColor = subData[0];
                     break;
                 case "PNAM" when sub.DataLength == 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("PNAM", "RACE", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        var fields = SubrecordDataReader.ReadFields("PNAM", "RACE", subData, record.IsBigEndian);
-                        if (fields.Count > 0)
-                        {
-                            faceGenMainClamp = SubrecordDataReader.GetFloat(fields, "FaceGenMainClamp");
-                        }
-
-                        break;
+                        faceGenMainClamp = SubrecordDataReader.GetFloat(fields, "FaceGenMainClamp");
                     }
+
+                    break;
+                }
                 case "UNAM" when sub.DataLength == 4:
+                {
+                    var fields = SubrecordDataReader.ReadFields("UNAM", "RACE", subData, record.IsBigEndian);
+                    if (fields.Count > 0)
                     {
-                        var fields = SubrecordDataReader.ReadFields("UNAM", "RACE", subData, record.IsBigEndian);
-                        if (fields.Count > 0)
-                        {
-                            faceGenFaceClamp = SubrecordDataReader.GetFloat(fields, "FaceGenFaceClamp");
-                        }
-
-                        break;
+                        faceGenFaceClamp = SubrecordDataReader.GetFloat(fields, "FaceGenFaceClamp");
                     }
+
+                    break;
+                }
                 case "ONAM" when sub.DataLength == 4:
                     olderRace = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;

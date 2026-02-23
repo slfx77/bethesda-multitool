@@ -232,7 +232,8 @@ public static class GeckReportGenerator
         if (result.DialogTopics.Count > 0)
         {
             files["dialog_topics.csv"] = CsvMiscWriter.GenerateDialogTopicsCsv(result.DialogTopics, resolver);
-            files["dialog_topic_report.txt"] = GeckDialogueWriter.GenerateDialogTopicsReport(result.DialogTopics, resolver);
+            files["dialog_topic_report.txt"] =
+                GeckDialogueWriter.GenerateDialogTopicsReport(result.DialogTopics, resolver);
         }
 
         if (result.Notes.Count > 0)
@@ -375,7 +376,8 @@ public static class GeckReportGenerator
         if (result.Enchantments.Count > 0)
         {
             files["enchantments.csv"] = CsvMiscWriter.GenerateEnchantmentsCsv(result.Enchantments, resolver);
-            files["enchantment_report.txt"] = GeckEffectsWriter.GenerateEnchantmentsReport(result.Enchantments, resolver);
+            files["enchantment_report.txt"] =
+                GeckEffectsWriter.GenerateEnchantmentsReport(result.Enchantments, resolver);
         }
 
         if (result.BaseEffects.Count > 0)
@@ -466,13 +468,17 @@ public static class GeckReportGenerator
     ///     Generate a report of asset paths detected from runtime string pools.
     /// </summary>
     public static string GenerateAssetListReport(List<DetectedAssetString> assets)
-        => GeckMiscWriter.GenerateAssetListReport(assets);
+    {
+        return GeckMiscWriter.GenerateAssetListReport(assets);
+    }
 
     /// <summary>
     ///     Generate a report for runtime Editor IDs.
     /// </summary>
     public static string GenerateRuntimeEditorIdsReport(List<RuntimeEditorIdEntry> entries)
-        => GeckMiscWriter.GenerateRuntimeEditorIdsReport(entries);
+    {
+        return GeckMiscWriter.GenerateRuntimeEditorIdsReport(entries);
+    }
 
     /// <summary>
     ///     Generate a dialogue tree report.
@@ -480,7 +486,9 @@ public static class GeckReportGenerator
     public static string GenerateDialogueTreeReport(
         DialogueTreeResult dialogueTree,
         FormIdResolver resolver)
-        => GeckDialogueWriter.GenerateDialogueTreeReport(dialogueTree, resolver);
+    {
+        return GeckDialogueWriter.GenerateDialogueTreeReport(dialogueTree, resolver);
+    }
 
     /// <summary>
     ///     Tree node for hierarchical path grouping in asset reports.

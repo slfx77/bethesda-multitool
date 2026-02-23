@@ -21,12 +21,6 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     private static readonly Lock CacheLock = new();
     private readonly ITestOutputHelper _output = output;
 
-    private sealed record DecompResult(
-        uint FormId,
-        string? EditorId,
-        string? SourceText,
-        string Decompiled);
-
     private static byte[] GetFileData(string path)
     {
         lock (CacheLock)
@@ -71,7 +65,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
                 }
 
                 var decompiler = new ScriptDecompiler(
-                    variables, referencedObjects, _ => null, false);
+                    variables, referencedObjects, _ => null);
                 var decompiled = decompiler.Decompile(compiledData);
                 _cachedDecompResults.Add(new DecompResult(
                     record.FormId, editorId, sourceText, decompiled));
@@ -237,14 +231,14 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
         var totalLines = totalMatches + totalMismatches;
         var overallMatchRate = totalLines > 0 ? 100.0 * totalMatches / totalLines : 0;
 
-        _output.WriteLine($"\n=== ESM Semantic Comparison Results ===");
+        _output.WriteLine("\n=== ESM Semantic Comparison Results ===");
         _output.WriteLine($"Scripts compared: {scriptsCompared}");
         _output.WriteLine($"Total lines compared: {totalLines:N0}");
         _output.WriteLine($"Matching lines: {totalMatches:N0} (includes {totalTolerated:N0} tolerated)");
         _output.WriteLine($"Mismatched lines: {totalMismatches:N0}");
         _output.WriteLine($"Overall match rate: {overallMatchRate:F1}%");
 
-        _output.WriteLine($"\n--- Mismatch Categories ---");
+        _output.WriteLine("\n--- Mismatch Categories ---");
         foreach (var kvp in aggregateMismatches.OrderByDescending(kv => kv.Value))
         {
             var pct = totalLines > 0 ? 100.0 * kvp.Value / totalLines : 0;
@@ -253,7 +247,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
 
         if (aggregateTolerated.Count > 0)
         {
-            _output.WriteLine($"\n--- Tolerated Differences (counted as matches) ---");
+            _output.WriteLine("\n--- Tolerated Differences (counted as matches) ---");
             foreach (var kvp in aggregateTolerated.OrderByDescending(kv => kv.Value))
             {
                 var pct = totalLines > 0 ? 100.0 * kvp.Value / totalLines : 0;
@@ -263,7 +257,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
 
         if (worstScripts.Count > 0)
         {
-            _output.WriteLine($"\n--- Worst Scripts ---");
+            _output.WriteLine("\n--- Worst Scripts ---");
             foreach (var w in worstScripts)
             {
                 _output.WriteLine($"  {w.Name}: {w.MatchRate:F1}% match ({w.Mismatches} mismatches)");
@@ -377,4 +371,10 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output, SampleFi
     }
 
     #endregion
+
+    private sealed record DecompResult(
+        uint FormId,
+        string? EditorId,
+        string? SourceText,
+        string Decompiled);
 }

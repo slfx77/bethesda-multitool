@@ -71,7 +71,7 @@ public static class BuildDirectoryLoader
 
             var bsaPath = bsaPaths[i];
             var bsaName = Path.GetFileName(bsaPath);
-            var basePercent = 30 + (60.0 * i / totalBsas);
+            var basePercent = 30 + 60.0 * i / totalBsas;
             progress?.Report(($"Parsing {bsaName}...", basePercent));
 
             ParseVoiceFilesFromBsa(bsaPath, allEntries, fileRecords);
@@ -198,7 +198,8 @@ public static class BuildDirectoryLoader
                 }
 
                 // Try to parse FormID from filename
-                if (!VoiceFileNameParser.TryParse(file.Name, out var formId, out var responseIndex, out var topicEditorId))
+                if (!VoiceFileNameParser.TryParse(file.Name, out var formId, out var responseIndex,
+                        out var topicEditorId))
                 {
                     continue;
                 }

@@ -57,7 +57,8 @@ internal static class GeckMiscWriter
             var dialogueLine = GeckReportGenerator.CsvEscape(entry.DialogueLine);
             var offset = entry.TesFormOffset?.ToString() ?? "";
 
-            sb.AppendLine($"{GeckReportGenerator.CsvEscape(entry.EditorId)},{formId},{formType},{displayName},{dialogueLine},{offset}");
+            sb.AppendLine(
+                $"{GeckReportGenerator.CsvEscape(entry.EditorId)},{formId},{formType},{displayName},{dialogueLine},{offset}");
         }
 
         return sb.ToString();
@@ -69,7 +70,8 @@ internal static class GeckMiscWriter
         GeckReportGenerator.AppendHeader(sb, "String Pool Data (from Runtime Memory)");
         sb.AppendLine();
         sb.AppendLine($"  Total strings:     {sp.TotalStrings,10:N0} ({sp.UniqueStrings:N0} unique)");
-        sb.AppendLine($"  Across:            {sp.RegionCount,10:N0} regions ({GeckReportGenerator.FormatPoolSize(sp.TotalBytes)})");
+        sb.AppendLine(
+            $"  Across:            {sp.RegionCount,10:N0} regions ({GeckReportGenerator.FormatPoolSize(sp.TotalBytes)})");
         sb.AppendLine();
         sb.AppendLine($"  File paths:        {sp.FilePaths,10:N0}");
 
@@ -120,7 +122,8 @@ internal static class GeckMiscWriter
             sb.AppendLine($"--- {group.Key} Globals ---");
             foreach (var g in group.OrderBy(x => x.EditorId, StringComparer.OrdinalIgnoreCase))
             {
-                sb.AppendLine($"  {g.EditorId ?? "(none)",-50} = {g.DisplayValue,12}  [{GeckReportGenerator.FormatFormId(g.FormId)}]");
+                sb.AppendLine(
+                    $"  {g.EditorId ?? "(none)",-50} = {g.DisplayValue,12}  [{GeckReportGenerator.FormatFormId(g.FormId)}]");
             }
 
             sb.AppendLine();
@@ -196,7 +199,8 @@ internal static class GeckMiscWriter
                 var displayValue = setting.StringValue?.Length > 50
                     ? setting.StringValue[..47] + "..."
                     : setting.StringValue;
-                sb.AppendLine($"  {setting.EditorId,-60} = \"{displayValue}\"  [{GeckReportGenerator.FormatFormId(setting.FormId)}]");
+                sb.AppendLine(
+                    $"  {setting.EditorId,-60} = \"{displayValue}\"  [{GeckReportGenerator.FormatFormId(setting.FormId)}]");
             }
 
             sb.AppendLine();
@@ -256,7 +260,8 @@ internal static class GeckMiscWriter
                     var itemName = entry.FormId != 0
                         ? resolver.FormatFull(entry.FormId)
                         : "(none)";
-                    sb.AppendLine($"  {entry.Level,7}  {GeckReportGenerator.Truncate(itemName, 50),-50} {entry.Count,6}");
+                    sb.AppendLine(
+                        $"  {entry.Level,7}  {GeckReportGenerator.Truncate(itemName, 50),-50} {entry.Count,6}");
                 }
             }
 

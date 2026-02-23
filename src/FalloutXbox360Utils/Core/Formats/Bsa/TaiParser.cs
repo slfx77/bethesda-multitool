@@ -20,11 +20,13 @@ public readonly record struct TaiEntry(
     public string Name => Path.GetFileNameWithoutExtension(VirtualPath);
 
     /// <summary>Convert UV coordinates to pixel rectangle given atlas dimensions.</summary>
-    public (int X, int Y, int Width, int Height) ToPixelRect(int atlasWidth, int atlasHeight) =>
-        ((int)(UOffset * atlasWidth),
-         (int)(VOffset * atlasHeight),
-         (int)(UWidth * atlasWidth),
-         (int)(VHeight * atlasHeight));
+    public (int X, int Y, int Width, int Height) ToPixelRect(int atlasWidth, int atlasHeight)
+    {
+        return ((int)(UOffset * atlasWidth),
+            (int)(VOffset * atlasHeight),
+            (int)(UWidth * atlasWidth),
+            (int)(VHeight * atlasHeight));
+    }
 }
 
 /// <summary>

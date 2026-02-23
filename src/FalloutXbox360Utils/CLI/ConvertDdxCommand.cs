@@ -137,7 +137,8 @@ public static class ConvertDdxCommand
 
             if (existingCount > 0)
             {
-                AnsiConsole.MarkupLine($"[yellow]{existingCount} file(s) already exist and will be skipped. Use --overwrite to replace.[/]");
+                AnsiConsole.MarkupLine(
+                    $"[yellow]{existingCount} file(s) already exist and will be skipped. Use --overwrite to replace.[/]");
             }
         }
 

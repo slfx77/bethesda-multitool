@@ -8,6 +8,10 @@ namespace FalloutXbox360Utils.Core.Minidump;
 /// </summary>
 public class MinidumpInfo
 {
+    private MinidumpMemoryRegion[]? _sortedRegionIndex;
+
+    // Lazily-built sorted index for O(log n) VA lookups.
+    private long[]? _sortedVaStarts;
     public bool IsValid { get; init; }
     public ushort ProcessorArchitecture { get; set; }
     public uint NumberOfStreams { get; init; }
@@ -52,10 +56,6 @@ public class MinidumpInfo
 
         return null;
     }
-
-    // Lazily-built sorted index for O(log n) VA lookups.
-    private long[]? _sortedVaStarts;
-    private MinidumpMemoryRegion[]? _sortedRegionIndex;
 
     /// <summary>
     ///     Convert a virtual address to a file offset using binary search on sorted memory regions.

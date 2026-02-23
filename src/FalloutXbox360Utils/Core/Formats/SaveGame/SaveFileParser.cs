@@ -10,8 +10,8 @@ namespace FalloutXbox360Utils.Core.Formats.SaveGame;
 /// </summary>
 public static class SaveFileParser
 {
-    private static readonly byte[] Magic = "FO3SAVEGAME"u8.ToArray();
     private const byte PipeTerminator = 0x7C;
+    private static readonly byte[] Magic = "FO3SAVEGAME"u8.ToArray();
 
     /// <summary>
     ///     Parse a save file from raw bytes (may be STFS-wrapped or raw FO3SAVEGAME).
@@ -19,7 +19,7 @@ public static class SaveFileParser
     public static SaveFile Parse(ReadOnlySpan<byte> data)
     {
         ReadOnlySpan<byte> payload;
-        int stfsPayloadOffset = 0;
+        var stfsPayloadOffset = 0;
         StfsExtractionResult? stfsResult = null;
         int? exactPayloadSize = null;
 
@@ -47,19 +47,22 @@ public static class SaveFileParser
             }
         }
 
-        var header = ParseHeader(payload, out int headerEnd, exactPayloadSize);
+        var header = ParseHeader(payload, out var headerEnd, exactPayloadSize);
         var locationTable = ParseFileLocationTable(payload, ref headerEnd);
 
         // FLT offsets are absolute from save payload start
-        int bodyBase = 0;
+        var bodyBase = 0;
 
-        var globalData1 = ParseGlobalDataEntries(payload, bodyBase, locationTable.GlobalDataTable1Offset, locationTable.GlobalDataTable1Count);
-        var changedForms = ParseChangedForms(payload, bodyBase, locationTable.ChangedFormsOffset, locationTable.ChangedFormsCount);
-        var globalData2 = ParseGlobalDataEntries(payload, bodyBase, locationTable.GlobalDataTable2Offset, locationTable.GlobalDataTable2Count);
+        var globalData1 = ParseGlobalDataEntries(payload, bodyBase, locationTable.GlobalDataTable1Offset,
+            locationTable.GlobalDataTable1Count);
+        var changedForms = ParseChangedForms(payload, bodyBase, locationTable.ChangedFormsOffset,
+            locationTable.ChangedFormsCount);
+        var globalData2 = ParseGlobalDataEntries(payload, bodyBase, locationTable.GlobalDataTable2Offset,
+            locationTable.GlobalDataTable2Count);
 
         // Parse FormID array
-        int formIdArrayOffset = bodyBase + (int)locationTable.RefIdArrayCountOffset;
-        var formIdArray = ParseFormIdArray(payload, formIdArrayOffset, out int afterFormIds);
+        var formIdArrayOffset = bodyBase + (int)locationTable.RefIdArrayCountOffset;
+        var formIdArray = ParseFormIdArray(payload, formIdArrayOffset, out var afterFormIds);
 
         // Parse visited worldspaces
         var visitedWorldspaces = ParseFormIdArray(payload, afterFormIds, out _);
@@ -121,7 +124,7 @@ public static class SaveFileParser
         }
 
         // Fallback: search for FO3SAVEGAME magic at block boundaries
-        for (int offset = 0x1000; offset < data.Length - Magic.Length; offset += 0x1000)
+        for (var offset = 0x1000; offset < data.Length - Magic.Length; offset += 0x1000)
         {
             if (data.Slice(offset, Magic.Length).SequenceEqual(Magic))
             {
@@ -134,7 +137,10 @@ public static class SaveFileParser
     }
 
     /// <summary>Kept for backward compatibility.</summary>
-    public static int FindPayloadOffset(ReadOnlySpan<byte> data) => FindMagicOffset(data);
+    public static int FindPayloadOffset(ReadOnlySpan<byte> data)
+    {
+        return FindMagicOffset(data);
+    }
 
     /// <summary>
     ///     Extract the save payload from STFS data.
@@ -171,50 +177,50 @@ public static class SaveFileParser
         position = Magic.Length;
 
         // Header Size (uint32)
-        uint headerSize = BinaryUtils.ReadUInt32LE(data, position);
+        var headerSize = BinaryUtils.ReadUInt32LE(data, position);
         position += 4;
 
-        int headerStart = position;
+        var headerStart = position;
 
         // Parse pipe-terminated fields within the header
-        uint version = ReadUInt32T(data, ref position);
-        uint screenshotWidth = ReadUInt32T(data, ref position);
-        uint screenshotHeight = ReadUInt32T(data, ref position);
-        uint saveNumber = ReadUInt32T(data, ref position);
-        string playerName = ReadLenStringT(data, ref position);
-        string playerStatus = ReadLenStringT(data, ref position);
-        uint playerLevel = ReadUInt32T(data, ref position);
-        string playerCell = ReadLenStringT(data, ref position);
-        string saveDuration = ReadLenStringT(data, ref position);
+        var version = ReadUInt32T(data, ref position);
+        var screenshotWidth = ReadUInt32T(data, ref position);
+        var screenshotHeight = ReadUInt32T(data, ref position);
+        var saveNumber = ReadUInt32T(data, ref position);
+        var playerName = ReadLenStringT(data, ref position);
+        var playerStatus = ReadLenStringT(data, ref position);
+        var playerLevel = ReadUInt32T(data, ref position);
+        var playerCell = ReadLenStringT(data, ref position);
+        var saveDuration = ReadLenStringT(data, ref position);
 
         // Skip to end of header
-        int headerEnd = headerStart + (int)headerSize;
+        var headerEnd = headerStart + (int)headerSize;
         if (position < headerEnd)
         {
             position = headerEnd;
         }
 
         // Screenshot data - try standard 3bpp first, then search for formVersion marker
-        int screenshotDataOffset = position;
-        int screenshotDataSize = (int)(screenshotWidth * screenshotHeight * 3);
+        var screenshotDataOffset = position;
+        var screenshotDataSize = (int)(screenshotWidth * screenshotHeight * 3);
         byte formVersion = 0;
         uint pluginInfoSize = 0;
 
         // Bound the search to the actual payload size when known
-        int maxSearchEnd = payloadSize.HasValue
+        var maxSearchEnd = payloadSize.HasValue
             ? Math.Min(payloadSize.Value, data.Length)
             : data.Length;
 
         // Try 3bpp and 4bpp screenshot sizes
-        bool found = false;
-        foreach (int bpp in new[] { 3, 4 })
+        var found = false;
+        foreach (var bpp in new[] { 3, 4 })
         {
-            int trySize = (int)(screenshotWidth * screenshotHeight * bpp);
-            int fvPos = headerEnd + trySize;
+            var trySize = (int)(screenshotWidth * screenshotHeight * bpp);
+            var fvPos = headerEnd + trySize;
             if (fvPos + 5 < maxSearchEnd)
             {
-                byte fv = data[fvPos];
-                uint piSize = BinaryUtils.ReadUInt32LE(data, fvPos + 1);
+                var fv = data[fvPos];
+                var piSize = BinaryUtils.ReadUInt32LE(data, fvPos + 1);
                 if (fv is >= 19 and <= 22 && piSize < 1000)
                 {
                     // Validate: FLT after plugins should produce sane offsets
@@ -234,24 +240,24 @@ public static class SaveFileParser
         // Fallback: search for formVersion marker validated by plugin structure (.esm/.esp) AND FLT
         if (!found)
         {
-            int searchEnd = Math.Min(headerEnd + (int)(screenshotWidth * screenshotHeight * 8), maxSearchEnd - 5);
-            for (int i = headerEnd; i < searchEnd; i++)
+            var searchEnd = Math.Min(headerEnd + (int)(screenshotWidth * screenshotHeight * 8), maxSearchEnd - 5);
+            for (var i = headerEnd; i < searchEnd; i++)
             {
-                byte fvCandidate = data[i];
+                var fvCandidate = data[i];
                 if (fvCandidate is < 19 or > 22)
                 {
                     continue;
                 }
 
-                uint piSize = BinaryUtils.ReadUInt32LE(data, i + 1);
+                var piSize = BinaryUtils.ReadUInt32LE(data, i + 1);
                 if (piSize is < 1 or > 1000)
                 {
                     continue;
                 }
 
                 // Validate: plugin info section should contain .esm or .esp filename
-                int pluginRegionStart = i + 5;
-                int pluginRegionEnd = Math.Min(pluginRegionStart + (int)piSize, maxSearchEnd);
+                var pluginRegionStart = i + 5;
+                var pluginRegionEnd = Math.Min(pluginRegionStart + (int)piSize, maxSearchEnd);
                 if (pluginRegionEnd - pluginRegionStart < 5)
                 {
                     continue;
@@ -264,7 +270,7 @@ public static class SaveFileParser
                 }
 
                 // Additional validation: check FLT at expected position produces sane offsets
-                int fltPosition = pluginRegionStart + (int)piSize;
+                var fltPosition = pluginRegionStart + (int)piSize;
                 if (!ValidateFormVersionCandidate(data, fltPosition, maxSearchEnd))
                 {
                     continue;
@@ -285,9 +291,9 @@ public static class SaveFileParser
             position = headerEnd + screenshotDataSize;
             if (position + 5 < data.Length)
             {
-                byte fvCandidate = data[position];
-                uint piCandidate = BinaryUtils.ReadUInt32LE(data, position + 1);
-                int fltPos = position + 5 + (int)piCandidate;
+                var fvCandidate = data[position];
+                var piCandidate = BinaryUtils.ReadUInt32LE(data, position + 1);
+                var fltPos = position + 5 + (int)piCandidate;
 
                 if (piCandidate < 1000 && ValidateFormVersionCandidate(data, fltPos, maxSearchEnd))
                 {
@@ -309,10 +315,10 @@ public static class SaveFileParser
 
         // Plugin count (uint8) followed by pipe-separated length-prefixed plugin names
         var plugins = new List<string>();
-        int pluginsEnd = position + (int)pluginInfoSize;
+        var pluginsEnd = position + (int)pluginInfoSize;
         if (position < data.Length)
         {
-            byte pluginCount = data[position];
+            var pluginCount = data[position];
             position++;
 
             // Skip pipe separator after plugin count
@@ -321,7 +327,7 @@ public static class SaveFileParser
                 position++;
             }
 
-            for (int i = 0; i < pluginCount && position < pluginsEnd; i++)
+            for (var i = 0; i < pluginCount && position < pluginsEnd; i++)
             {
                 plugins.Add(ReadLenStringT(data, ref position));
             }
@@ -361,11 +367,11 @@ public static class SaveFileParser
         }
 
         // Read key FLT fields
-        uint refIdOffset = BinaryUtils.ReadUInt32LE(data, fltPosition);
-        uint gdt1Offset = BinaryUtils.ReadUInt32LE(data, fltPosition + 8);
-        uint cfOffset = BinaryUtils.ReadUInt32LE(data, fltPosition + 12);
-        uint gdt1Count = BinaryUtils.ReadUInt32LE(data, fltPosition + 20);
-        uint cfCount = BinaryUtils.ReadUInt32LE(data, fltPosition + 28);
+        var refIdOffset = BinaryUtils.ReadUInt32LE(data, fltPosition);
+        var gdt1Offset = BinaryUtils.ReadUInt32LE(data, fltPosition + 8);
+        var cfOffset = BinaryUtils.ReadUInt32LE(data, fltPosition + 12);
+        var gdt1Count = BinaryUtils.ReadUInt32LE(data, fltPosition + 20);
+        var cfCount = BinaryUtils.ReadUInt32LE(data, fltPosition + 28);
 
         // Sanity checks: offsets should be within payload and in order
         if (cfOffset == 0 || cfOffset > (uint)maxPayloadSize)
@@ -429,10 +435,11 @@ public static class SaveFileParser
     /// <summary>
     ///     Parse Global Data entries from a section.
     /// </summary>
-    private static List<GlobalDataEntry> ParseGlobalDataEntries(ReadOnlySpan<byte> data, int bodyBase, uint sectionOffset, uint count)
+    private static List<GlobalDataEntry> ParseGlobalDataEntries(ReadOnlySpan<byte> data, int bodyBase,
+        uint sectionOffset, uint count)
     {
         var entries = new List<GlobalDataEntry>();
-        int pos = bodyBase + (int)sectionOffset;
+        var pos = bodyBase + (int)sectionOffset;
 
         // Guard against garbage offsets from misdetected header
         if (pos < 0 || pos >= data.Length)
@@ -442,11 +449,11 @@ public static class SaveFileParser
 
         for (uint i = 0; i < count && pos + 8 <= data.Length; i++)
         {
-            uint type = BinaryUtils.ReadUInt32LE(data, pos);
-            uint length = BinaryUtils.ReadUInt32LE(data, pos + 4);
+            var type = BinaryUtils.ReadUInt32LE(data, pos);
+            var length = BinaryUtils.ReadUInt32LE(data, pos + 4);
             pos += 8;
 
-            int intLength = (int)length;
+            var intLength = (int)length;
             if (intLength < 0 || (long)pos + intLength > data.Length)
             {
                 break;
@@ -467,10 +474,11 @@ public static class SaveFileParser
     /// <summary>
     ///     Parse Changed Form entries from the body.
     /// </summary>
-    private static List<ChangedForm> ParseChangedForms(ReadOnlySpan<byte> data, int bodyBase, uint sectionOffset, uint count)
+    private static List<ChangedForm> ParseChangedForms(ReadOnlySpan<byte> data, int bodyBase, uint sectionOffset,
+        uint count)
     {
         var forms = new List<ChangedForm>();
-        int pos = bodyBase + (int)sectionOffset;
+        var pos = bodyBase + (int)sectionOffset;
 
         // Guard against garbage offsets from misdetected header
         if (pos < 0 || pos >= data.Length)
@@ -485,22 +493,22 @@ public static class SaveFileParser
             pos += 3;
 
             // ChangeFlags: uint32
-            uint changeFlags = BinaryUtils.ReadUInt32LE(data, pos);
+            var changeFlags = BinaryUtils.ReadUInt32LE(data, pos);
             pos += 4;
 
             // Type byte: bits 0-5 = type, bits 6-7 = length code
-            byte rawType = data[pos];
+            var rawType = data[pos];
             pos++;
 
-            byte changeType = (byte)(rawType & 0x3F);
-            int lengthCode = rawType >> 6;
+            var changeType = (byte)(rawType & 0x3F);
+            var lengthCode = rawType >> 6;
 
             // Version: uint8
-            byte version = data[pos];
+            var version = data[pos];
             pos++;
 
             // Data length (depends on length code)
-            int dataLength = lengthCode switch
+            var dataLength = lengthCode switch
             {
                 0 => data[pos++],
                 1 => ReadUInt16Advance(data, ref pos),
@@ -513,7 +521,7 @@ public static class SaveFileParser
                 break;
             }
 
-            byte[] formData = data.Slice(pos, dataLength).ToArray();
+            var formData = data.Slice(pos, dataLength).ToArray();
 
             // Parse initial data for reference types
             InitialData? initialData = null;
@@ -542,15 +550,16 @@ public static class SaveFileParser
     ///     Try to parse initial data (position/cell) from a reference-type changed form.
     /// </summary>
 #pragma warning disable S1172 // changeType reserved for future per-type parsing
-    private static InitialData? TryParseInitialData(ReadOnlySpan<byte> formData, byte _changeType, uint changeFlags, SaveRefId refId)
+    private static InitialData? TryParseInitialData(ReadOnlySpan<byte> formData, byte _changeType, uint changeFlags,
+        SaveRefId refId)
 #pragma warning restore S1172
     {
         try
         {
-            int pos = 0;
-            bool isCreated = refId.Type == SaveRefIdType.Created;
-            bool hasMoved = (changeFlags & 0x02) != 0; // CHANGE_REFR_MOVE
-            bool hasCellChanged = (changeFlags & 0x08) != 0; // CHANGE_REFR_CELL_CHANGED
+            var pos = 0;
+            var isCreated = refId.Type == SaveRefIdType.Created;
+            var hasMoved = (changeFlags & 0x02) != 0; // CHANGE_REFR_MOVE
+            var hasCellChanged = (changeFlags & 0x08) != 0; // CHANGE_REFR_CELL_CHANGED
 
             if (isCreated)
             {
@@ -562,12 +571,18 @@ public static class SaveFileParser
 
                 var cellRef = SaveRefId.Read(formData, pos);
                 pos += 3;
-                float posX = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float posY = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float posZ = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotX = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotY = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotZ = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
+                var posX = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var posY = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var posZ = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotX = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotY = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotZ = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
                 pos++; // flags uint8
                 var baseFormRef = SaveRefId.Read(formData, pos);
 
@@ -591,17 +606,23 @@ public static class SaveFileParser
 
                 var cellRef = SaveRefId.Read(formData, pos);
                 pos += 3;
-                float posX = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float posY = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float posZ = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotX = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotY = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotZ = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
+                var posX = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var posY = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var posZ = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotX = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotY = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotZ = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
                 var newCellRef = SaveRefId.Read(formData, pos);
                 pos += 3;
-                short newCoordX = BinaryPrimitives.ReadInt16LittleEndian(formData[pos..]);
+                var newCoordX = BinaryPrimitives.ReadInt16LittleEndian(formData[pos..]);
                 pos += 2;
-                short newCoordY = BinaryPrimitives.ReadInt16LittleEndian(formData[pos..]);
+                var newCoordY = BinaryPrimitives.ReadInt16LittleEndian(formData[pos..]);
 
                 return new InitialData
                 {
@@ -625,12 +646,17 @@ public static class SaveFileParser
 
                 var cellRef = SaveRefId.Read(formData, pos);
                 pos += 3;
-                float posX = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float posY = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float posZ = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotX = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotY = BinaryUtils.ReadFloatLE(formData, pos); pos += 4;
-                float rotZ = BinaryUtils.ReadFloatLE(formData, pos);
+                var posX = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var posY = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var posZ = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotX = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotY = BinaryUtils.ReadFloatLE(formData, pos);
+                pos += 4;
+                var rotZ = BinaryUtils.ReadFloatLE(formData, pos);
 
                 return new InitialData
                 {
@@ -662,7 +688,7 @@ public static class SaveFileParser
             return result;
         }
 
-        uint count = BinaryUtils.ReadUInt32LE(data, offset);
+        var count = BinaryUtils.ReadUInt32LE(data, offset);
         endOffset = offset + 4;
 
         // Sanity cap to prevent allocating huge lists from garbage data
@@ -703,9 +729,9 @@ public static class SaveFileParser
             }
 
             // Coord X/Y (int32 each, pipe-terminated)
-            int coordX = r.HasData(4) ? r.ReadInt32() : 0;
+            var coordX = r.HasData(4) ? r.ReadInt32() : 0;
             r.TrySkipPipe();
-            int coordY = r.HasData(4) ? r.ReadInt32() : 0;
+            var coordY = r.HasData(4) ? r.ReadInt32() : 0;
             r.TrySkipPipe();
 
             // Cell RefID (3B) + pipe
@@ -713,9 +739,9 @@ public static class SaveFileParser
             r.TrySkipPipe();
 
             // Player position (3 floats, pipe after group)
-            float posX = r.HasData(4) ? r.ReadFloat() : 0;
-            float posY = r.HasData(4) ? r.ReadFloat() : 0;
-            float posZ = r.HasData(4) ? r.ReadFloat() : 0;
+            var posX = r.HasData(4) ? r.ReadFloat() : 0;
+            var posY = r.HasData(4) ? r.ReadFloat() : 0;
+            var posZ = r.HasData(4) ? r.ReadFloat() : 0;
 
             return new PlayerLocation
             {
@@ -745,8 +771,8 @@ public static class SaveFileParser
             return new SaveStatistics();
         }
 
-        int pos = 0;
-        uint count = ReadUInt32T(data, ref pos);
+        var pos = 0;
+        var count = ReadUInt32T(data, ref pos);
 
         if (count > 100)
         {
@@ -771,14 +797,14 @@ public static class SaveFileParser
         var result = new List<GlobalVariable>();
         var r = new FormDataReader(data, []);
 
-        uint count = r.ReadVsval();
+        var count = r.ReadVsval();
         r.TrySkipPipe();
 
         for (uint i = 0; i < count && r.HasData(3); i++)
         {
             var refId = r.ReadRefId();
             r.TrySkipPipe();
-            float value = r.HasData(4) ? r.ReadFloat() : 0;
+            var value = r.HasData(4) ? r.ReadFloat() : 0;
             r.TrySkipPipe();
             result.Add(new GlobalVariable(refId, value));
         }
@@ -796,7 +822,7 @@ public static class SaveFileParser
     /// <summary>Read a uint32 followed by a pipe terminator (0x7C).</summary>
     private static uint ReadUInt32T(ReadOnlySpan<byte> data, ref int position)
     {
-        uint value = BinaryUtils.ReadUInt32LE(data, position);
+        var value = BinaryUtils.ReadUInt32LE(data, position);
         position += 4;
         if (position < data.Length && data[position] == PipeTerminator)
         {
@@ -809,7 +835,7 @@ public static class SaveFileParser
     /// <summary>Read a uint16-length-prefixed string followed by a pipe terminator.</summary>
     private static string ReadLenStringT(ReadOnlySpan<byte> data, ref int position)
     {
-        ushort length = BinaryUtils.ReadUInt16LE(data, position);
+        var length = BinaryUtils.ReadUInt16LE(data, position);
         position += 2;
         if (position < data.Length && data[position] == PipeTerminator)
         {
@@ -821,7 +847,7 @@ public static class SaveFileParser
             return "";
         }
 
-        string value = Encoding.ASCII.GetString(data.Slice(position, length));
+        var value = Encoding.ASCII.GetString(data.Slice(position, length));
         position += length;
         if (position < data.Length && data[position] == PipeTerminator)
         {
@@ -833,14 +859,14 @@ public static class SaveFileParser
 
     private static ushort ReadUInt16Advance(ReadOnlySpan<byte> data, ref int position)
     {
-        ushort value = BinaryUtils.ReadUInt16LE(data, position);
+        var value = BinaryUtils.ReadUInt16LE(data, position);
         position += 2;
         return value;
     }
 
     private static uint ReadUInt32Advance(ReadOnlySpan<byte> data, ref int position)
     {
-        uint value = BinaryUtils.ReadUInt32LE(data, position);
+        var value = BinaryUtils.ReadUInt32LE(data, position);
         position += 4;
         return value;
     }

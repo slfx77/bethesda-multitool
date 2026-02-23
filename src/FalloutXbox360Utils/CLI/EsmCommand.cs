@@ -2,12 +2,10 @@ using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.Json;
-using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -73,6 +71,13 @@ public static class EsmCommand
 
         command.Subcommands.Add(PackagesCommand.Create());
         command.Subcommands.Add(reportsCommand);
+        command.Subcommands.Add(EsmStatsCommand.CreateStatsCommand());
+        command.Subcommands.Add(EsmDumpCommand.CreateDumpCommand());
+        command.Subcommands.Add(EsmDumpCommand.CreateTraceCommand());
+        command.Subcommands.Add(EsmConvertCommand.CreateConvertCommand());
+        command.Subcommands.Add(EsmSemdiffCommand.CreateSemanticDiffCommand());
+        command.Subcommands.Add(EsmDiffCommand.CreateUnifiedDiffCommand());
+        command.Subcommands.Add(CreateCellGroup());
 
         return command;
     }
@@ -357,7 +362,8 @@ public static class EsmCommand
             AnsiConsole.MarkupLine("  Reconstructing records...");
             var fileSize = new FileInfo(input).Length;
             RecordCollection records;
-            using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
+            using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0,
+                       MemoryMappedFileAccess.Read))
             using (var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read))
             {
                 var parser = new RecordParser(
@@ -387,7 +393,8 @@ public static class EsmCommand
                 await File.WriteAllTextAsync(filePath, content);
             }
 
-            AnsiConsole.MarkupLine($"\n[bold green]Generated {reports.Count} reports to {Markup.Escape(outputDir)}:[/]");
+            AnsiConsole.MarkupLine(
+                $"\n[bold green]Generated {reports.Count} reports to {Markup.Escape(outputDir)}:[/]");
             foreach (var (filename, content) in reports.OrderBy(kvp => kvp.Key))
             {
                 AnsiConsole.MarkupLine($"  {filename} ({content.Length:N0} bytes)");
@@ -427,5 +434,13 @@ public static class EsmCommand
         };
 
         return JsonSerializer.Serialize(jsonObj, JsonOptions);
+    }
+
+    private static Command CreateCellGroup()
+    {
+        var group = new Command("cell", "Cell inspection commands");
+        group.Subcommands.Add(EsmCellCommand.CreateObjectsCommand());
+        group.Subcommands.Add(EsmCellCommand.CreateNpcTraceCommand());
+        return group;
     }
 }

@@ -10,17 +10,39 @@ namespace FalloutAudioTranscriber.Services;
 /// </summary>
 public sealed class AudioPlaybackService : IDisposable
 {
-    private readonly Dictionary<string, BsaExtractor> _extractors = new();
     private readonly LinkedList<(string key, byte[] data)> _cache = new();
+    private readonly Dictionary<string, BsaExtractor> _extractors = new();
     private readonly int _maxCacheSize;
+    private RawSourceWaveStream? _currentStream;
     private Dictionary<string, BsaFileRecord> _fileRecords = new();
 
     private WaveOutEvent? _waveOut;
-    private RawSourceWaveStream? _currentStream;
 
     public AudioPlaybackService(int maxCacheSize = 50)
     {
         _maxCacheSize = maxCacheSize;
+    }
+
+    /// <summary>Current playback state.</summary>
+    public PlaybackState State => _waveOut?.PlaybackState ?? PlaybackState.Stopped;
+
+    /// <summary>Current playback position.</summary>
+    public TimeSpan Position => _currentStream?.CurrentTime ?? TimeSpan.Zero;
+
+    /// <summary>Total duration of current audio.</summary>
+    public TimeSpan Duration => _currentStream?.TotalTime ?? TimeSpan.Zero;
+
+    public void Dispose()
+    {
+        Stop();
+
+        foreach (var extractor in _extractors.Values)
+        {
+            extractor.Dispose();
+        }
+
+        _extractors.Clear();
+        _cache.Clear();
     }
 
     /// <summary>
@@ -33,15 +55,6 @@ public sealed class AudioPlaybackService : IDisposable
 
     /// <summary>Fires when playback state changes.</summary>
     public event EventHandler<PlaybackState>? PlaybackStateChanged;
-
-    /// <summary>Current playback state.</summary>
-    public PlaybackState State => _waveOut?.PlaybackState ?? PlaybackState.Stopped;
-
-    /// <summary>Current playback position.</summary>
-    public TimeSpan Position => _currentStream?.CurrentTime ?? TimeSpan.Zero;
-
-    /// <summary>Total duration of current audio.</summary>
-    public TimeSpan Duration => _currentStream?.TotalTime ?? TimeSpan.Zero;
 
     /// <summary>
     ///     Extract and play a voice file entry.
@@ -225,18 +238,5 @@ public sealed class AudioPlaybackService : IDisposable
         }
 
         return extractor;
-    }
-
-    public void Dispose()
-    {
-        Stop();
-
-        foreach (var extractor in _extractors.Values)
-        {
-            extractor.Dispose();
-        }
-
-        _extractors.Clear();
-        _cache.Clear();
     }
 }

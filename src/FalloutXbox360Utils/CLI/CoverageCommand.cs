@@ -369,6 +369,4 @@ public static class CoverageCommand
             _ => "white"
         };
     }
-
-
 }

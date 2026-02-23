@@ -17,13 +17,15 @@ public class TranscriptionStatusBrushConverter : IValueConverter
 
     public object Convert(object value, Type targetType, object parameter, string language)
     {
-        return value is TranscriptionStatus status ? status switch
-        {
-            TranscriptionStatus.EsmSubtitle => GreenBrush,
-            TranscriptionStatus.Accepted => BlueBrush,
-            TranscriptionStatus.Automatic => GoldBrush,
-            _ => OrangeBrush
-        } : OrangeBrush;
+        return value is TranscriptionStatus status
+            ? status switch
+            {
+                TranscriptionStatus.EsmSubtitle => GreenBrush,
+                TranscriptionStatus.Accepted => BlueBrush,
+                TranscriptionStatus.Automatic => GoldBrush,
+                _ => OrangeBrush
+            }
+            : OrangeBrush;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)

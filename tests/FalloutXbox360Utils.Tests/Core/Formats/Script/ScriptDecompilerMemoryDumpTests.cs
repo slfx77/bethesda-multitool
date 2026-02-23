@@ -293,13 +293,13 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFil
         var totalLines = totalMatches + totalMismatches;
         var overallMatchRate = totalLines > 0 ? 100.0 * totalMatches / totalLines : 0;
 
-        _output.WriteLine($"\n=== Semantic Comparison Results ===");
+        _output.WriteLine("\n=== Semantic Comparison Results ===");
         _output.WriteLine($"Total lines compared: {totalLines:N0}");
         _output.WriteLine($"Matching lines: {totalMatches:N0} (includes {totalTolerated:N0} tolerated)");
         _output.WriteLine($"Mismatched lines: {totalMismatches:N0}");
         _output.WriteLine($"Overall match rate: {overallMatchRate:F1}%");
 
-        _output.WriteLine($"\n--- Mismatch Categories ---");
+        _output.WriteLine("\n--- Mismatch Categories ---");
         foreach (var (category, count) in aggregateMismatches.OrderByDescending(kv => kv.Value))
         {
             var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
@@ -308,7 +308,7 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFil
 
         if (aggregateTolerated.Count > 0)
         {
-            _output.WriteLine($"\n--- Tolerated Differences (counted as matches) ---");
+            _output.WriteLine("\n--- Tolerated Differences (counted as matches) ---");
             foreach (var (category, count) in aggregateTolerated.OrderByDescending(kv => kv.Value))
             {
                 var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
@@ -318,7 +318,7 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFil
 
         if (worstScripts.Count > 0)
         {
-            _output.WriteLine($"\n--- Worst Scripts ---");
+            _output.WriteLine("\n--- Worst Scripts ---");
             foreach (var (name, rate, mismatches) in worstScripts)
             {
                 _output.WriteLine($"  {name}: {rate:F1}% match ({mismatches} mismatches)");
@@ -349,13 +349,13 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFil
         Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
         await using (var writer = new StreamWriter(reportPath))
         {
-            await writer.WriteLineAsync($"=== Semantic Comparison Results ===");
+            await writer.WriteLineAsync("=== Semantic Comparison Results ===");
             await writer.WriteLineAsync($"Total lines compared: {totalLines:N0}");
             await writer.WriteLineAsync($"Matching lines: {totalMatches:N0} (includes {totalTolerated:N0} tolerated)");
             await writer.WriteLineAsync($"Mismatched lines: {totalMismatches:N0}");
             await writer.WriteLineAsync($"Overall match rate: {overallMatchRate:F1}%");
             await writer.WriteLineAsync();
-            await writer.WriteLineAsync($"--- Mismatch Categories ---");
+            await writer.WriteLineAsync("--- Mismatch Categories ---");
             foreach (var (category, count) in aggregateMismatches.OrderByDescending(kv => kv.Value))
             {
                 var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
@@ -365,7 +365,7 @@ public class ScriptDecompilerMemoryDumpTests(ITestOutputHelper output, SampleFil
             if (aggregateTolerated.Count > 0)
             {
                 await writer.WriteLineAsync();
-                await writer.WriteLineAsync($"--- Tolerated Differences (counted as matches) ---");
+                await writer.WriteLineAsync("--- Tolerated Differences (counted as matches) ---");
                 foreach (var (category, count) in aggregateTolerated.OrderByDescending(kv => kv.Value))
                 {
                     var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;

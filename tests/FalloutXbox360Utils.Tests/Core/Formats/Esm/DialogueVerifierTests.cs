@@ -5,67 +5,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;
 
 public class DialogueVerifierTests
 {
-    #region Helper Factories
-
-    private static TopicDialogueNode MakeTopic(uint formId, string name,
-        params InfoDialogueNode[] infos)
-    {
-        return new TopicDialogueNode
-        {
-            TopicFormId = formId,
-            TopicName = name,
-            InfoChain = infos.ToList()
-        };
-    }
-
-    private static InfoDialogueNode MakeInfo(uint formId, uint? questId = null,
-        uint? speakerId = null, bool saidOnce = false,
-        List<uint>? linkToTopics = null, List<uint>? addTopics = null,
-        params string[] responseTexts)
-    {
-        return new InfoDialogueNode
-        {
-            Info = new DialogueRecord
-            {
-                FormId = formId,
-                QuestFormId = questId,
-                SpeakerFormId = speakerId,
-                SaidOnce = saidOnce,
-                LinkToTopics = linkToTopics ?? [],
-                AddTopics = addTopics ?? [],
-                Responses = responseTexts
-                    .Select(t => new DialogueResponse { Text = t })
-                    .ToList()
-            },
-            ChoiceTopics = [],
-            AddedTopics = []
-        };
-    }
-
-    private static DialogueTreeResult MakeTree(
-        Dictionary<uint, QuestDialogueNode>? quests = null,
-        List<TopicDialogueNode>? orphans = null)
-    {
-        return new DialogueTreeResult
-        {
-            QuestTrees = quests ?? new Dictionary<uint, QuestDialogueNode>(),
-            OrphanTopics = orphans ?? []
-        };
-    }
-
-    private static QuestDialogueNode MakeQuest(uint formId, string name,
-        params TopicDialogueNode[] topics)
-    {
-        return new QuestDialogueNode
-        {
-            QuestFormId = formId,
-            QuestName = name,
-            Topics = topics.ToList()
-        };
-    }
-
-    #endregion
-
     [Fact]
     public void Verify_MatchingTrees_AllMatch()
     {
@@ -74,8 +13,8 @@ public class DialogueVerifierTests
         var topic = MakeTopic(1, "Greeting", info1, info2);
         var quest = MakeQuest(10, "MainQuest", topic);
 
-        var tree1 = MakeTree(quests: new Dictionary<uint, QuestDialogueNode> { [10] = quest });
-        var tree2 = MakeTree(quests: new Dictionary<uint, QuestDialogueNode> { [10] = quest });
+        var tree1 = MakeTree(new Dictionary<uint, QuestDialogueNode> { [10] = quest });
+        var tree2 = MakeTree(new Dictionary<uint, QuestDialogueNode> { [10] = quest });
 
         var result = DialogueVerifier.Compare(tree1, tree2);
 
@@ -161,8 +100,11 @@ public class DialogueVerifierTests
         var info3 = MakeInfo(102, saidOnce: true);
 
         var dmpTree = MakeTree(orphans: [MakeTopic(1, "Topic", info1, info2, info3)]);
-        var esmTree = MakeTree(orphans: [MakeTopic(1, "Topic",
-            MakeInfo(100), MakeInfo(101), MakeInfo(102))]);
+        var esmTree = MakeTree(orphans:
+        [
+            MakeTopic(1, "Topic",
+                MakeInfo(100), MakeInfo(101), MakeInfo(102))
+        ]);
 
         var result = DialogueVerifier.Compare(dmpTree, esmTree);
 
@@ -194,14 +136,14 @@ public class DialogueVerifierTests
         var questA = MakeQuest(10, "QuestA", topic1);
         var questB = MakeQuest(20, "QuestB", topic2);
 
-        var tree = MakeTree(quests: new Dictionary<uint, QuestDialogueNode>
+        var tree = MakeTree(new Dictionary<uint, QuestDialogueNode>
         {
             [10] = questA,
             [20] = questB
         });
 
         // Filter to quest 10 — should only see topic1
-        var result = DialogueVerifier.Compare(tree, tree, questFilter: 10);
+        var result = DialogueVerifier.Compare(tree, tree, 10);
 
         Assert.Equal(1, result.TopicsMatched);
         Assert.Equal(0, result.TopicsMissing);
@@ -235,4 +177,65 @@ public class DialogueVerifierTests
         Assert.Equal(0, result.TopicsExtra);
         Assert.Empty(result.TopicDiffs);
     }
+
+    #region Helper Factories
+
+    private static TopicDialogueNode MakeTopic(uint formId, string name,
+        params InfoDialogueNode[] infos)
+    {
+        return new TopicDialogueNode
+        {
+            TopicFormId = formId,
+            TopicName = name,
+            InfoChain = infos.ToList()
+        };
+    }
+
+    private static InfoDialogueNode MakeInfo(uint formId, uint? questId = null,
+        uint? speakerId = null, bool saidOnce = false,
+        List<uint>? linkToTopics = null, List<uint>? addTopics = null,
+        params string[] responseTexts)
+    {
+        return new InfoDialogueNode
+        {
+            Info = new DialogueRecord
+            {
+                FormId = formId,
+                QuestFormId = questId,
+                SpeakerFormId = speakerId,
+                SaidOnce = saidOnce,
+                LinkToTopics = linkToTopics ?? [],
+                AddTopics = addTopics ?? [],
+                Responses = responseTexts
+                    .Select(t => new DialogueResponse { Text = t })
+                    .ToList()
+            },
+            ChoiceTopics = [],
+            AddedTopics = []
+        };
+    }
+
+    private static DialogueTreeResult MakeTree(
+        Dictionary<uint, QuestDialogueNode>? quests = null,
+        List<TopicDialogueNode>? orphans = null)
+    {
+        return new DialogueTreeResult
+        {
+            QuestTrees = quests ?? new Dictionary<uint, QuestDialogueNode>(),
+            OrphanTopics = orphans ?? []
+        };
+    }
+
+    private static QuestDialogueNode MakeQuest(uint formId, string name,
+        params TopicDialogueNode[] topics)
+    {
+        return new QuestDialogueNode
+        {
+            QuestFormId = formId,
+            QuestName = name,
+            Topics = topics.ToList()
+        };
+    }
+
+    #endregion
 }

@@ -100,5 +100,4 @@ internal static class NifConverter
             "BSOrderedNode" or "BSMultiBoundNode" or "BSMasterParticleSystem" or "NiSwitchNode" or
             "NiBillboardNode" or "NiLODNode" or "BSBlastNode" or "BSDamageStage" or "NiAVObject";
     }
-
 }

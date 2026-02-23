@@ -5,24 +5,27 @@ using Microsoft.UI.Xaml.Controls;
 namespace FalloutXbox360Utils;
 
 // ── Unified Navigation Location Types ──
-
 #pragma warning disable S2094 // Abstract base for sealed record hierarchy (pattern matching)
 internal abstract record UnifiedNavLocation;
 #pragma warning restore S2094
 internal sealed record DataBrowserNavLocation(EsmBrowserNode Node) : UnifiedNavLocation;
+
 internal sealed record WorldMapNavLocation(WorldMapControl.WorldNavState State) : UnifiedNavLocation;
+
 internal sealed record DialogueNavLocation(
-    uint TopicFormId, double ScrollPosition,
-    uint? QuestFilter, uint? SpeakerFilter) : UnifiedNavLocation;
+    uint TopicFormId,
+    double ScrollPosition,
+    uint? QuestFilter,
+    uint? SpeakerFilter) : UnifiedNavLocation;
 
 /// <summary>
 ///     Navigation: unified back/forward history across all tabs, and FormID link navigation.
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    private const int UnifiedNavStackLimit = 100;
     private readonly Stack<UnifiedNavLocation> _unifiedBackStack = new();
     private readonly Stack<UnifiedNavLocation> _unifiedForwardStack = new();
-    private const int UnifiedNavStackLimit = 100;
     private Task? _formIdBuildTask;
     private Dictionary<uint, EsmBrowserNode>? _formIdNodeIndex;
     private bool _isNavigating;

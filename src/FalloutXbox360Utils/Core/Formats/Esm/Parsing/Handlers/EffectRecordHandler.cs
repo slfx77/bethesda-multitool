@@ -73,7 +73,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                             break;
                         }
                         case "EFID" when sub.DataLength >= 4:
-                            currentEffectId = RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
+                            currentEffectId =
+                                RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
                             break;
                         case "EFIT" when sub.DataLength >= 12:
                         {
@@ -397,7 +398,8 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
                                 sub.DataLength));
                             break;
                         case "EITM" when sub.DataLength >= 4:
-                            enchantment = RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
+                            enchantment =
+                                RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
                             break;
                         case "DATA" when sub.DataLength >= 36:
                         {
