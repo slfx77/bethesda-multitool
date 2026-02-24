@@ -5,6 +5,7 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
@@ -96,116 +97,6 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         Assert.True(result.Npcs.Count > 0, "Expected at least some NPCs");
         Assert.True(result.Weapons.Count > 0, "Expected at least some weapons");
         Assert.True(result.TotalRecordsReconstructed > 0, "Expected non-zero reconstruction count");
-    }
-
-    #endregion
-
-    #region Test Helpers
-
-    /// <summary>
-    ///     Creates a minimal EsmRecordScanResult with the given main records.
-    /// </summary>
-    private static EsmRecordScanResult MakeScanResult(
-        List<DetectedMainRecord>? mainRecords = null,
-        List<EdidRecord>? editorIds = null,
-        List<TextSubrecord>? fullNames = null,
-        List<ActorBaseSubrecord>? actorBases = null,
-        List<RuntimeEditorIdEntry>? runtimeEditorIds = null,
-        Dictionary<uint, List<uint>>? topicToInfoMap = null)
-    {
-        return new EsmRecordScanResult
-        {
-            MainRecords = mainRecords ?? [],
-            EditorIds = editorIds ?? [],
-            FullNames = fullNames ?? [],
-            ActorBases = actorBases ?? [],
-            RuntimeEditorIds = runtimeEditorIds ?? [],
-            TopicToInfoMap = topicToInfoMap ?? []
-        };
-    }
-
-    /// <summary>
-    ///     Creates a DetectedMainRecord with sensible defaults.
-    /// </summary>
-    private static DetectedMainRecord MakeRecord(string type, uint formId, long offset, uint dataSize = 100,
-        bool isBigEndian = false, uint flags = 0)
-    {
-        return new DetectedMainRecord(type, dataSize, flags, formId, offset, isBigEndian);
-    }
-
-    /// <summary>
-    ///     Builds a byte buffer containing ESM record data with subrecords.
-    ///     Returns the buffer suitable for memory-mapped access.
-    ///     Layout: [24-byte record header] [subrecord data...]
-    /// </summary>
-    private static byte[] BuildRecordBytes(uint formId, string recordType, bool bigEndian,
-        params (string sig, byte[] data)[] subrecords)
-    {
-        // Calculate total subrecord data size
-        var dataSize = 0;
-        foreach (var (_, data) in subrecords)
-        {
-            dataSize += 6 + data.Length; // 4 sig + 2 size + data
-        }
-
-        var totalSize = 24 + dataSize; // 24-byte record header + data
-        var buffer = new byte[totalSize];
-
-        // Write record header
-        var sigBytes = Encoding.ASCII.GetBytes(recordType);
-        if (bigEndian)
-        {
-            // Reverse signature for big-endian
-            buffer[0] = sigBytes[3];
-            buffer[1] = sigBytes[2];
-            buffer[2] = sigBytes[1];
-            buffer[3] = sigBytes[0];
-            BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(4), (uint)dataSize);
-            BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(8), 0); // flags
-            BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(12), formId);
-        }
-        else
-        {
-            Array.Copy(sigBytes, buffer, 4);
-            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(4), (uint)dataSize);
-            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(8), 0); // flags
-            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(12), formId);
-        }
-
-        // Write subrecords
-        var offset = 24;
-        foreach (var (sig, data) in subrecords)
-        {
-            var subSigBytes = Encoding.ASCII.GetBytes(sig);
-            if (bigEndian)
-            {
-                buffer[offset] = subSigBytes[3];
-                buffer[offset + 1] = subSigBytes[2];
-                buffer[offset + 2] = subSigBytes[1];
-                buffer[offset + 3] = subSigBytes[0];
-                BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(offset + 4), (ushort)data.Length);
-            }
-            else
-            {
-                Array.Copy(subSigBytes, 0, buffer, offset, 4);
-                BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(offset + 4), (ushort)data.Length);
-            }
-
-            Array.Copy(data, 0, buffer, offset + 6, data.Length);
-            offset += 6 + data.Length;
-        }
-
-        return buffer;
-    }
-
-    /// <summary>
-    ///     Creates a null-terminated ASCII string as bytes.
-    /// </summary>
-    private static byte[] NullTermString(string s)
-    {
-        var bytes = new byte[s.Length + 1];
-        Encoding.ASCII.GetBytes(s, bytes);
-        return bytes;
     }
 
     #endregion
@@ -316,93 +207,60 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 
     #region Reconstruction Without Accessor Tests
 
-    [Fact]
-    public void ReconstructNpcs_WithoutAccessor_ReturnsBasicRecords()
+    public static TheoryData<string, uint, string?, string?> ReconstructWithoutAccessorCases => new()
     {
-        var records = new List<DetectedMainRecord>
-        {
-            MakeRecord("NPC_", 0x00001234, 100),
-            MakeRecord("NPC_", 0x00005678, 300)
-        };
+        // recordType, formId, editorId, expectedFullName
+        { "NPC_", 0x00001234u, "TestNpc", null },
+        { "CREA", 0x000AAAA1u, "TestCreature", null },
+        { "TERM", 0x000B0001u, "TestTerminal", "Terminal Alpha" },
+        { "PACK", 0x000C0001u, null, null }
+    };
 
-        var correlations = new Dictionary<uint, string>
-        {
-            { 0x00001234, "TestNpc1" },
-            { 0x00005678, "TestNpc2" }
-        };
-
-        var scanResult = MakeScanResult(records);
-        var parser = new RecordParser(scanResult, correlations);
-        var npcs = parser.ReconstructNpcs();
-
-        Assert.Equal(2, npcs.Count);
-        Assert.Equal(0x00001234u, npcs[0].FormId);
-        Assert.Equal("TestNpc1", npcs[0].EditorId);
-    }
-
-    [Fact]
-    public void ReconstructCreatures_WithoutAccessor_ReturnsBasicRecords()
+    [Theory]
+    [MemberData(nameof(ReconstructWithoutAccessorCases))]
+    public void Reconstruct_WithoutAccessor_ReturnsBasicRecords(
+        string recordType, uint formId, string? editorId, string? expectedFullName)
     {
-        var records = new List<DetectedMainRecord>
-        {
-            MakeRecord("CREA", 0x000AAAA1, 100)
-        };
+        var records = new List<DetectedMainRecord> { MakeRecord(recordType, formId, 100) };
 
-        var correlations = new Dictionary<uint, string>
-        {
-            { 0x000AAAA1, "TestCreature" }
-        };
+        var correlations = editorId is not null
+            ? new Dictionary<uint, string> { { formId, editorId } }
+            : new Dictionary<uint, string>();
 
-        var scanResult = MakeScanResult(records);
-        var parser = new RecordParser(scanResult, correlations);
-        var creatures = parser.ReconstructCreatures();
-
-        Assert.Single(creatures);
-        Assert.Equal(0x000AAAA1u, creatures[0].FormId);
-        Assert.Equal("TestCreature", creatures[0].EditorId);
-    }
-
-    [Fact]
-    public void ReconstructTerminals_WithoutAccessor_ReturnsBasicRecords()
-    {
-        var records = new List<DetectedMainRecord>
-        {
-            MakeRecord("TERM", 0x000B0001, 100)
-        };
-
-        var fullNames = new List<TextSubrecord>
-        {
-            new("FULL", "Terminal Alpha", 120)
-        };
-
-        var correlations = new Dictionary<uint, string>
-        {
-            { 0x000B0001, "TestTerminal" }
-        };
+        var fullNames = expectedFullName is not null
+            ? new List<TextSubrecord> { new("FULL", expectedFullName, 120) }
+            : null;
 
         var scanResult = MakeScanResult(records, fullNames: fullNames);
         var parser = new RecordParser(scanResult, correlations);
-        var terminals = parser.ReconstructTerminals();
 
-        Assert.Single(terminals);
-        Assert.Equal("TestTerminal", terminals[0].EditorId);
-        Assert.Equal("Terminal Alpha", terminals[0].FullName);
-    }
-
-    [Fact]
-    public void ReconstructPackages_WithoutAccessor_ReturnsBasicRecords()
-    {
-        var records = new List<DetectedMainRecord>
+        var (resultFormId, resultEditorId, resultFullName) = recordType switch
         {
-            MakeRecord("PACK", 0x000C0001, 100)
+            "NPC_" => ExtractFields(parser.ReconstructNpcs(), r => (r.FormId, r.EditorId, null)),
+            "CREA" => ExtractFields(parser.ReconstructCreatures(), r => (r.FormId, r.EditorId, null)),
+            "TERM" => ExtractFields(parser.ReconstructTerminals(), r => (r.FormId, r.EditorId, r.FullName)),
+            "PACK" => ExtractFields(parser.ReconstructPackages(), r => (r.FormId, r.EditorId, null)),
+            _ => throw new ArgumentException($"Unknown record type: {recordType}")
         };
 
-        var scanResult = MakeScanResult(records);
-        var parser = new RecordParser(scanResult);
-        var packages = parser.ReconstructPackages();
+        static (uint, string?, string?) ExtractFields<T>(
+            List<T> results, Func<T, (uint, string?, string?)> selector)
+        {
+            Assert.NotEmpty(results);
+            return selector(results[0]);
+        }
 
-        Assert.Single(packages);
-        Assert.Equal(0x000C0001u, packages[0].FormId);
+        Assert.Equal(formId, resultFormId);
+
+        if (editorId is not null)
+        {
+            Assert.Equal(editorId, resultEditorId);
+        }
+
+        if (expectedFullName is not null)
+        {
+            Assert.Equal(expectedFullName, resultFullName);
+        }
     }
 
     [Fact]

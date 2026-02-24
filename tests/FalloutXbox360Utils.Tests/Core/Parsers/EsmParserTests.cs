@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
@@ -61,56 +62,6 @@ public class EsmParserTests
     #region Helpers
 
     /// <summary>
-    ///     Write a little-endian 4-byte subrecord signature.
-    /// </summary>
-    private static void WriteSig(byte[] buf, int offset, string sig)
-    {
-        buf[offset] = (byte)sig[0];
-        buf[offset + 1] = (byte)sig[1];
-        buf[offset + 2] = (byte)sig[2];
-        buf[offset + 3] = (byte)sig[3];
-    }
-
-    /// <summary>
-    ///     Write a big-endian 4-byte subrecord signature (reversed).
-    /// </summary>
-    private static void WriteSigBE(byte[] buf, int offset, string sig)
-    {
-        buf[offset] = (byte)sig[3];
-        buf[offset + 1] = (byte)sig[2];
-        buf[offset + 2] = (byte)sig[1];
-        buf[offset + 3] = (byte)sig[0];
-    }
-
-    private static void WriteUInt32LE(byte[] buf, int offset, uint value)
-    {
-        buf[offset] = (byte)(value & 0xFF);
-        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 2] = (byte)((value >> 16) & 0xFF);
-        buf[offset + 3] = (byte)((value >> 24) & 0xFF);
-    }
-
-    private static void WriteUInt32BE(byte[] buf, int offset, uint value)
-    {
-        buf[offset] = (byte)((value >> 24) & 0xFF);
-        buf[offset + 1] = (byte)((value >> 16) & 0xFF);
-        buf[offset + 2] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 3] = (byte)(value & 0xFF);
-    }
-
-    private static void WriteUInt16LE(byte[] buf, int offset, ushort value)
-    {
-        buf[offset] = (byte)(value & 0xFF);
-        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
-    }
-
-    private static void WriteUInt16BE(byte[] buf, int offset, ushort value)
-    {
-        buf[offset] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 1] = (byte)(value & 0xFF);
-    }
-
-    /// <summary>
     ///     Build a minimal LE TES4 record header (24 bytes) + HEDR subrecord.
     /// </summary>
     private static byte[] BuildLeTes4Header(float version = 1.34f, uint nextObjId = 0x001000)
@@ -145,75 +96,52 @@ public class EsmParserTests
 
     #region IsBigEndian
 
-    [Fact]
-    public void IsBigEndian_Tes4_ReturnsFalse()
+    public static TheoryData<byte[], bool> IsBigEndianCases => new()
     {
-        byte[] data = [(byte)'T', (byte)'E', (byte)'S', (byte)'4'];
-        Assert.False(EsmParser.IsBigEndian(data));
-    }
+        { new byte[] { (byte)'T', (byte)'E', (byte)'S', (byte)'4' }, false },     // "TES4" → LE
+        { new byte[] { (byte)'4', (byte)'S', (byte)'E', (byte)'T' }, true },      // "4SET" → BE
+        { new byte[] { (byte)'T', (byte)'E' }, false },                            // Too short
+        { Array.Empty<byte>(), false },                                             // Empty
+        { new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }, false }                          // Random bytes
+    };
 
-    [Fact]
-    public void IsBigEndian_4Set_ReturnsTrue()
+    [Theory]
+    [MemberData(nameof(IsBigEndianCases))]
+    public void IsBigEndian_ReturnsExpected(byte[] data, bool expected)
     {
-        byte[] data = [(byte)'4', (byte)'S', (byte)'E', (byte)'T'];
-        Assert.True(EsmParser.IsBigEndian(data));
-    }
-
-    [Fact]
-    public void IsBigEndian_TooShort_ReturnsFalse()
-    {
-        byte[] data = [(byte)'T', (byte)'E'];
-        Assert.False(EsmParser.IsBigEndian(data));
-    }
-
-    [Fact]
-    public void IsBigEndian_Empty_ReturnsFalse()
-    {
-        Assert.False(EsmParser.IsBigEndian([]));
-    }
-
-    [Fact]
-    public void IsBigEndian_RandomBytes_ReturnsFalse()
-    {
-        byte[] data = [0xDE, 0xAD, 0xBE, 0xEF];
-        Assert.False(EsmParser.IsBigEndian(data));
+        Assert.Equal(expected, EsmParser.IsBigEndian(data));
     }
 
     #endregion
 
     #region ParseRecordHeader
 
-    [Fact]
-    public void ParseRecordHeader_ValidLeWeap_ReturnsHeader()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ParseRecordHeader_ValidWeap_ReturnsHeader(bool bigEndian)
     {
         var buf = new byte[24];
-        WriteSig(buf, 0, "WEAP");
-        WriteUInt32LE(buf, 4, 100); // DataSize
-        WriteUInt32LE(buf, 8, 0); // Flags
-        WriteUInt32LE(buf, 12, 0x00012345); // FormId
-        WriteUInt32LE(buf, 16, 1); // VC1
-        WriteUInt32LE(buf, 20, 2); // VC2
+        if (bigEndian)
+        {
+            WriteSigBE(buf, 0, "WEAP");
+            WriteUInt32BE(buf, 4, 100);
+            WriteUInt32BE(buf, 8, 0);
+            WriteUInt32BE(buf, 12, 0x00012345);
+            WriteUInt32BE(buf, 16, 1);
+            WriteUInt32BE(buf, 20, 2);
+        }
+        else
+        {
+            WriteSig(buf, 0, "WEAP");
+            WriteUInt32LE(buf, 4, 100);
+            WriteUInt32LE(buf, 8, 0);
+            WriteUInt32LE(buf, 12, 0x00012345);
+            WriteUInt32LE(buf, 16, 1);
+            WriteUInt32LE(buf, 20, 2);
+        }
 
-        var header = EsmParser.ParseRecordHeader(buf);
-
-        Assert.NotNull(header);
-        Assert.Equal("WEAP", header!.Signature);
-        Assert.Equal(100u, header.DataSize);
-        Assert.Equal(0x00012345u, header.FormId);
-    }
-
-    [Fact]
-    public void ParseRecordHeader_ValidBeWeap_ReturnsHeader()
-    {
-        var buf = new byte[24];
-        WriteSigBE(buf, 0, "WEAP");
-        WriteUInt32BE(buf, 4, 100);
-        WriteUInt32BE(buf, 8, 0);
-        WriteUInt32BE(buf, 12, 0x00012345);
-        WriteUInt32BE(buf, 16, 1);
-        WriteUInt32BE(buf, 20, 2);
-
-        var header = EsmParser.ParseRecordHeader(buf, true);
+        var header = EsmParser.ParseRecordHeader(buf, bigEndian);
 
         Assert.NotNull(header);
         Assert.Equal("WEAP", header!.Signature);
@@ -310,18 +238,29 @@ public class EsmParserTests
 
     #region ParseSubrecords
 
-    [Fact]
-    public void ParseSubrecords_SingleEdid_ReturnsSingleSubrecord()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ParseSubrecords_SingleEdid_ReturnsSingleSubrecord(bool bigEndian)
     {
         // EDID subrecord: sig(4) + len(2) + data
         var edidText = "TestItem\0";
         var edidBytes = Encoding.ASCII.GetBytes(edidText);
         var buf = new byte[6 + edidBytes.Length];
-        WriteSig(buf, 0, "EDID");
-        WriteUInt16LE(buf, 4, (ushort)edidBytes.Length);
+        if (bigEndian)
+        {
+            WriteSigBE(buf, 0, "EDID");
+            WriteUInt16BE(buf, 4, (ushort)edidBytes.Length);
+        }
+        else
+        {
+            WriteSig(buf, 0, "EDID");
+            WriteUInt16LE(buf, 4, (ushort)edidBytes.Length);
+        }
+
         Array.Copy(edidBytes, 0, buf, 6, edidBytes.Length);
 
-        var subs = EsmParser.ParseSubrecords(buf);
+        var subs = EsmParser.ParseSubrecords(buf, bigEndian);
 
         Assert.Single(subs);
         Assert.Equal("EDID", subs[0].Signature);
@@ -355,21 +294,6 @@ public class EsmParserTests
         Assert.Equal("EDID", subs[0].Signature);
         Assert.Equal("DATA", subs[1].Signature);
         Assert.Equal(4, subs[1].Data.Length);
-    }
-
-    [Fact]
-    public void ParseSubrecords_BeSubrecords_ReturnsCorrectly()
-    {
-        var edid = "Test\0"u8.ToArray();
-        var buf = new byte[6 + edid.Length];
-        WriteSigBE(buf, 0, "EDID");
-        WriteUInt16BE(buf, 4, (ushort)edid.Length);
-        Array.Copy(edid, 0, buf, 6, edid.Length);
-
-        var subs = EsmParser.ParseSubrecords(buf, true);
-
-        Assert.Single(subs);
-        Assert.Equal("EDID", subs[0].Signature);
     }
 
     [Fact]

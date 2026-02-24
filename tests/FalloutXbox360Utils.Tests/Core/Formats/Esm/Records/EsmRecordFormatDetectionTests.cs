@@ -1,6 +1,9 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
+using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Records;
 
@@ -14,142 +17,46 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
 {
     private readonly ITestOutputHelper _output = output;
 
-    #region Helpers
-
-    /// <summary>Write a 4-char ASCII signature in little-endian byte order.</summary>
-    private static void WriteSig(byte[] buf, int offset, string sig)
-    {
-        buf[offset] = (byte)sig[0];
-        buf[offset + 1] = (byte)sig[1];
-        buf[offset + 2] = (byte)sig[2];
-        buf[offset + 3] = (byte)sig[3];
-    }
-
-    /// <summary>Write a uint32 in little-endian.</summary>
-    private static void WriteUInt32LE(byte[] buf, int offset, uint value)
-    {
-        buf[offset] = (byte)(value & 0xFF);
-        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 2] = (byte)((value >> 16) & 0xFF);
-        buf[offset + 3] = (byte)((value >> 24) & 0xFF);
-    }
-
-    /// <summary>Write a uint16 in little-endian.</summary>
-    private static void WriteUInt16LE(byte[] buf, int offset, ushort value)
-    {
-        buf[offset] = (byte)(value & 0xFF);
-        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
-    }
-
-    /// <summary>
-    ///     Build a synthetic main record header (24 bytes) at the specified offset in the buffer.
-    ///     Layout: [SIG:4][DataSize:4][Flags:4][FormId:4][VC1:4][VC2:4]
-    /// </summary>
-    private static void WriteMainRecordHeader(
-        byte[] buf, int offset, string sig, uint dataSize, uint flags, uint formId)
-    {
-        WriteSig(buf, offset, sig);
-        WriteUInt32LE(buf, offset + 4, dataSize);
-        WriteUInt32LE(buf, offset + 8, flags);
-        WriteUInt32LE(buf, offset + 12, formId);
-        WriteUInt32LE(buf, offset + 16, 0); // VC1
-        WriteUInt32LE(buf, offset + 20, 0); // VC2
-    }
-
-    /// <summary>
-    ///     Build a synthetic EDID subrecord at the specified offset.
-    ///     Layout: [EDID:4][Length:2][NullTermString]
-    /// </summary>
-    private static int WriteEdidSubrecord(byte[] buf, int offset, string editorId)
-    {
-        WriteSig(buf, offset, "EDID");
-        var text = Encoding.ASCII.GetBytes(editorId + "\0");
-        WriteUInt16LE(buf, offset + 4, (ushort)text.Length);
-        Array.Copy(text, 0, buf, offset + 6, text.Length);
-        return 6 + text.Length;
-    }
-
-    /// <summary>
-    ///     Build a synthetic FULL subrecord at the specified offset.
-    ///     Layout: [FULL:4][Length:2][NullTermString]
-    /// </summary>
-    private static void WriteFullSubrecord(byte[] buf, int offset, string displayName)
-    {
-        WriteSig(buf, offset, "FULL");
-        var text = Encoding.ASCII.GetBytes(displayName + "\0");
-        WriteUInt16LE(buf, offset + 4, (ushort)text.Length);
-        Array.Copy(text, 0, buf, offset + 6, text.Length);
-    }
-
-    /// <summary>
-    ///     Build a complete valid record (header + EDID) in a fresh buffer, with enough
-    ///     padding so ScanForRecords can scan without overrun (needs data.Length - 24 range).
-    /// </summary>
-    private static byte[] BuildRecordWithEdid(
-        string sig, uint dataSize, uint flags, uint formId, string editorId)
-    {
-        var edidPayload = Encoding.ASCII.GetBytes(editorId + "\0");
-        var edidSubrecordSize = 6 + edidPayload.Length;
-
-        // Ensure dataSize covers the EDID subrecord
-        var effectiveDataSize = Math.Max(dataSize, (uint)edidSubrecordSize);
-
-        // Buffer: 24 (header) + effectiveDataSize + 24 (padding for scanner lookahead)
-        var buf = new byte[24 + effectiveDataSize + 24];
-        WriteMainRecordHeader(buf, 0, sig, effectiveDataSize, flags, formId);
-        WriteEdidSubrecord(buf, 24, editorId);
-        return buf;
-    }
-
-    #endregion
-
     #region 1. False Positive Detection
 
-    [Fact]
-    public void ScanForRecords_GpuDebugPattern_VGT_IsRejected()
+    public static TheoryData<byte[], string> FalsePositivePatterns
     {
-        // VGT_ (0x56, 0x47, 0x54, 0x5F) is a known GPU debug pattern.
-        // Place it where a main record header would be, with plausible size/flags/formId.
-        var buf = new byte[72];
-        WriteSig(buf, 0, "VGT_");
-        WriteUInt32LE(buf, 4, 20); // dataSize
-        WriteUInt32LE(buf, 8, 0); // flags
-        WriteUInt32LE(buf, 12, 0x00010001); // formId - would be valid if not rejected
-        // Remaining bytes zero (VC fields + data)
+        get
+        {
+            var data = new TheoryData<byte[], string>();
 
-        var result = EsmRecordScanner.ScanForRecords(buf);
+            // VGT_ (0x56, 0x47, 0x54, 0x5F) is a known GPU debug pattern
+            var vgt = new byte[72];
+            WriteSig(vgt, 0, "VGT_");
+            WriteUInt32LE(vgt, 4, 20);
+            WriteUInt32LE(vgt, 8, 0);
+            WriteUInt32LE(vgt, 12, 0x00010001);
+            data.Add(vgt, "VGT_ GPU debug pattern");
 
-        _output.WriteLine($"MainRecords detected: {result.MainRecords.Count}");
-        Assert.Empty(result.MainRecords);
+            // SPI_ is another known GPU debug pattern
+            var spi = new byte[72];
+            WriteSig(spi, 0, "SPI_");
+            WriteUInt32LE(spi, 4, 20);
+            WriteUInt32LE(spi, 8, 0);
+            WriteUInt32LE(spi, 12, 0x00010001);
+            data.Add(spi, "SPI_ GPU debug pattern");
+
+            // All-ASCII FormID (0x54455354 = "TEST") triggers IsFormIdAllPrintableAscii
+            var ascii = new byte[72];
+            WriteMainRecordHeader(ascii, 0, "WEAP", 20, 0, 0x54455354);
+            data.Add(ascii, "All-ASCII FormID");
+
+            return data;
+        }
     }
 
-    [Fact]
-    public void ScanForRecords_AllAsciiFormId_IsRejected()
+    [Theory]
+    [MemberData(nameof(FalsePositivePatterns))]
+    public void ScanForRecords_FalsePositivePattern_IsRejected(byte[] buf, string description)
     {
-        // Create a record header where the FormID is all printable ASCII: 0x54455354 = "TEST"
-        // This triggers IsFormIdAllPrintableAscii and should be rejected.
-        // Use "WEAP" as the signature since it is a known RuntimeRecordType.
-        var buf = new byte[72];
-        WriteMainRecordHeader(buf, 0, "WEAP", 20, 0, 0x54455354); // "TEST" in ASCII
-
         var result = EsmRecordScanner.ScanForRecords(buf);
 
-        _output.WriteLine($"MainRecords detected: {result.MainRecords.Count}");
-        Assert.Empty(result.MainRecords);
-    }
-
-    [Fact]
-    public void ScanForRecords_SpiUnderscore_GpuPattern_IsRejected()
-    {
-        // SPI_ is another known false positive GPU pattern.
-        var buf = new byte[72];
-        WriteSig(buf, 0, "SPI_");
-        WriteUInt32LE(buf, 4, 20);
-        WriteUInt32LE(buf, 8, 0);
-        WriteUInt32LE(buf, 12, 0x00010001);
-
-        var result = EsmRecordScanner.ScanForRecords(buf);
-
+        _output.WriteLine($"Pattern: {description}, MainRecords detected: {result.MainRecords.Count}");
         Assert.Empty(result.MainRecords);
     }
 
@@ -174,50 +81,24 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
         Assert.Equal("TestNpc", result.EditorIds[0].Name);
     }
 
-    [Fact]
-    public void ScanForRecords_OversizedDataSize_IsRejected()
+    public static TheoryData<uint, uint, string> InvalidHeaderParameters => new()
     {
-        // dataSize > 10,000,000 should fail IsValidMainRecordHeader
+        { 20_000_000, 0x00010001u, "Oversized dataSize (>10M)" },
+        { 0, 0x00010001u, "Zero dataSize" },
+        { 20, 0x00000000u, "Zero FormId" },
+        { 20, 0xFFFFFFFFu, "Max FormId (0xFFFFFFFF)" },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidHeaderParameters))]
+    public void ScanForRecords_InvalidHeader_IsRejected(uint dataSize, uint formId, string description)
+    {
         var buf = new byte[72];
-        WriteMainRecordHeader(buf, 0, "WEAP", 20_000_000, 0, 0x00010001);
+        WriteMainRecordHeader(buf, 0, "WEAP", dataSize, 0, formId);
 
         var result = EsmRecordScanner.ScanForRecords(buf);
 
-        Assert.Empty(result.MainRecords);
-    }
-
-    [Fact]
-    public void ScanForRecords_ZeroDataSize_IsRejected()
-    {
-        // dataSize == 0 should fail validation
-        var buf = new byte[72];
-        WriteMainRecordHeader(buf, 0, "WEAP", 0, 0, 0x00010001);
-
-        var result = EsmRecordScanner.ScanForRecords(buf);
-
-        Assert.Empty(result.MainRecords);
-    }
-
-    [Fact]
-    public void ScanForRecords_ZeroFormId_IsRejected()
-    {
-        var buf = new byte[72];
-        WriteMainRecordHeader(buf, 0, "WEAP", 20, 0, 0x00000000);
-
-        var result = EsmRecordScanner.ScanForRecords(buf);
-
-        Assert.Empty(result.MainRecords);
-    }
-
-    [Fact]
-    public void ScanForRecords_MaxFormId_IsRejected()
-    {
-        // FormID 0xFFFFFFFF should be rejected
-        var buf = new byte[72];
-        WriteMainRecordHeader(buf, 0, "WEAP", 20, 0, 0xFFFFFFFF);
-
-        var result = EsmRecordScanner.ScanForRecords(buf);
-
+        _output.WriteLine($"Rejection reason: {description}, MainRecords detected: {result.MainRecords.Count}");
         Assert.Empty(result.MainRecords);
     }
 
@@ -440,30 +321,7 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
         var result = EsmRecordScanner.ScanForRecords(buf);
 
         Assert.NotNull(result);
-        Assert.Empty(result.EditorIds);
-        Assert.Empty(result.FullNames);
-        Assert.Empty(result.Descriptions);
-        Assert.Empty(result.GameSettings);
-        Assert.Empty(result.ScriptSources);
-        Assert.Empty(result.FormIdReferences);
-        Assert.Empty(result.MainRecords);
-        Assert.Empty(result.NameReferences);
-        Assert.Empty(result.Positions);
-        Assert.Empty(result.ActorBases);
-        Assert.Empty(result.ResponseTexts);
-        Assert.Empty(result.ResponseData);
-        Assert.Empty(result.ModelPaths);
-        Assert.Empty(result.IconPaths);
-        Assert.Empty(result.TexturePaths);
-        Assert.Empty(result.ScriptRefs);
-        Assert.Empty(result.EffectRefs);
-        Assert.Empty(result.SoundRefs);
-        Assert.Empty(result.QuestRefs);
-        Assert.Empty(result.Conditions);
-        Assert.Empty(result.Heightmaps);
-        Assert.Empty(result.CellGrids);
-        Assert.Empty(result.AssetStrings);
-        Assert.Empty(result.RuntimeEditorIds);
+        EsmAssert.AllCollectionsEmpty(result);
     }
 
     [Fact]

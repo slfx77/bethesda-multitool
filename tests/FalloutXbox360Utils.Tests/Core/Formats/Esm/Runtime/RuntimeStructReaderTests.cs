@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
@@ -134,43 +135,6 @@ public sealed class RuntimeStructReaderTests(ITestOutputHelper output) : IDispos
         };
 
         return new RuntimeStructReader(_accessor, data.Length, minidumpInfo);
-    }
-
-    /// <summary>
-    ///     Write a big-endian uint32 into a byte array at the specified offset.
-    /// </summary>
-    private static void WriteUInt32BE(byte[] data, int offset, uint value)
-    {
-        data[offset] = (byte)(value >> 24);
-        data[offset + 1] = (byte)(value >> 16);
-        data[offset + 2] = (byte)(value >> 8);
-        data[offset + 3] = (byte)value;
-    }
-
-    /// <summary>
-    ///     Write a big-endian int32 into a byte array at the specified offset.
-    /// </summary>
-    private static void WriteInt32BE(byte[] data, int offset, int value)
-    {
-        WriteUInt32BE(data, offset, (uint)value);
-    }
-
-    /// <summary>
-    ///     Write a big-endian uint16 into a byte array at the specified offset.
-    /// </summary>
-    private static void WriteUInt16BE(byte[] data, int offset, ushort value)
-    {
-        data[offset] = (byte)(value >> 8);
-        data[offset + 1] = (byte)value;
-    }
-
-    /// <summary>
-    ///     Write a big-endian float into a byte array at the specified offset.
-    /// </summary>
-    private static void WriteFloatBE(byte[] data, int offset, float value)
-    {
-        var bits = BitConverter.SingleToUInt32Bits(value);
-        WriteUInt32BE(data, offset, bits);
     }
 
     /// <summary>

@@ -83,57 +83,21 @@ public class BinaryUtilsTests
 
     #region ReadUInt32LE Tests
 
-    [Fact]
-    public void ReadUInt32LE_ReadsLittleEndianCorrectly()
+    [Theory]
+    [MemberData(nameof(ReadUInt32LEData))]
+    public void ReadUInt32LE_ReadsCorrectly(byte[] data, int offset, uint expected)
     {
-        // Arrange - 0x12345678 in little-endian
-        byte[] data = [0x78, 0x56, 0x34, 0x12];
-
-        // Act
-        var result = BinaryUtils.ReadUInt32LE(data);
-
-        // Assert
-        Assert.Equal(0x12345678u, result);
+        Assert.Equal(expected, BinaryUtils.ReadUInt32LE(data, offset));
     }
 
-    [Fact]
-    public void ReadUInt32LE_WithOffset_ReadsCorrectly()
-    {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0x78, 0x56, 0x34, 0x12];
-
-        // Act
-        var result = BinaryUtils.ReadUInt32LE(data, 2);
-
-        // Assert
-        Assert.Equal(0x12345678u, result);
-    }
-
-    [Fact]
-    public void ReadUInt32LE_ZeroValue_ReturnsZero()
-    {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0x00, 0x00];
-
-        // Act
-        var result = BinaryUtils.ReadUInt32LE(data);
-
-        // Assert
-        Assert.Equal(0u, result);
-    }
-
-    [Fact]
-    public void ReadUInt32LE_MaxValue_ReturnsMaxUInt32()
-    {
-        // Arrange
-        byte[] data = [0xFF, 0xFF, 0xFF, 0xFF];
-
-        // Act
-        var result = BinaryUtils.ReadUInt32LE(data);
-
-        // Assert
-        Assert.Equal(uint.MaxValue, result);
-    }
+    public static TheoryData<byte[], int, uint> ReadUInt32LEData =>
+        new()
+        {
+            { new byte[] { 0x78, 0x56, 0x34, 0x12 }, 0, 0x12345678u },
+            { new byte[] { 0x00, 0x00, 0x78, 0x56, 0x34, 0x12 }, 2, 0x12345678u },
+            { new byte[] { 0x00, 0x00, 0x00, 0x00 }, 0, 0u },
+            { new byte[] { 0xFF, 0xFF, 0xFF, 0xFF }, 0, uint.MaxValue }
+        };
 
     #endregion
 
@@ -337,212 +301,55 @@ public class BinaryUtilsTests
 
     #region FindPattern Tests
 
-    [Fact]
-    public void FindPattern_PatternExists_ReturnsCorrectOffset()
+    [Theory]
+    [MemberData(nameof(FindPatternData))]
+    public void FindPattern_VariousInputs(byte[] data, byte[] pattern, int startOffset, int expected)
     {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0x41, 0x42, 0x43, 0x00];
-        byte[] pattern = [0x41, 0x42, 0x43];
-
-        // Act
-        var result = BinaryUtils.FindPattern(data, pattern);
-
-        // Assert
-        Assert.Equal(2, result);
+        Assert.Equal(expected, BinaryUtils.FindPattern(data, pattern, startOffset));
     }
 
-    [Fact]
-    public void FindPattern_PatternNotExists_ReturnsMinusOne()
-    {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0x41, 0x42, 0x43, 0x00];
-        byte[] pattern = [0x44, 0x45, 0x46];
-
-        // Act
-        var result = BinaryUtils.FindPattern(data, pattern);
-
-        // Assert
-        Assert.Equal(-1, result);
-    }
-
-    [Fact]
-    public void FindPattern_WithStartOffset_SearchesFromOffset()
-    {
-        // Arrange
-        byte[] data = [0x41, 0x42, 0x00, 0x41, 0x42, 0x00];
-        byte[] pattern = [0x41, 0x42];
-
-        // Act
-        var result = BinaryUtils.FindPattern(data, pattern, 2);
-
-        // Assert
-        Assert.Equal(3, result);
-    }
-
-    [Fact]
-    public void FindPattern_EmptyPattern_ReturnsMinusOne()
-    {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0x00];
-        byte[] pattern = [];
-
-        // Act
-        var result = BinaryUtils.FindPattern(data, pattern);
-
-        // Assert
-        Assert.Equal(-1, result);
-    }
-
-    [Fact]
-    public void FindPattern_SingleByte_ReturnsCorrectOffset()
-    {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0xFF, 0x00];
-        byte[] pattern = [0xFF];
-
-        // Act
-        var result = BinaryUtils.FindPattern(data, pattern);
-
-        // Assert
-        Assert.Equal(2, result);
-    }
-
-    [Fact]
-    public void FindPattern_PatternAtEnd_ReturnsCorrectOffset()
-    {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0x00, 0x41, 0x42, 0x43];
-        byte[] pattern = [0x41, 0x42, 0x43];
-
-        // Act
-        var result = BinaryUtils.FindPattern(data, pattern);
-
-        // Assert
-        Assert.Equal(3, result);
-    }
-
-    [Fact]
-    public void FindPattern_DataShorterThanPattern_ReturnsMinusOne()
-    {
-        // Arrange
-        byte[] data = [0x41, 0x42];
-        byte[] pattern = [0x41, 0x42, 0x43, 0x44];
-
-        // Act
-        var result = BinaryUtils.FindPattern(data, pattern);
-
-        // Assert
-        Assert.Equal(-1, result);
-    }
-
-    [Fact]
-    public void FindPattern_StartOffsetBeyondMatch_ReturnsMinusOne()
-    {
-        // Arrange
-        byte[] data = [0x41, 0x42, 0x43, 0x00, 0x00];
-        byte[] pattern = [0x41, 0x42, 0x43];
-
-        // Act
-        var result = BinaryUtils.FindPattern(data, pattern, 2);
-
-        // Assert
-        Assert.Equal(-1, result);
-    }
+    public static TheoryData<byte[], byte[], int, int> FindPatternData =>
+        new()
+        {
+            { new byte[] { 0x00, 0x00, 0x41, 0x42, 0x43, 0x00 }, new byte[] { 0x41, 0x42, 0x43 }, 0, 2 },
+            { new byte[] { 0x00, 0x00, 0x41, 0x42, 0x43, 0x00 }, new byte[] { 0x44, 0x45, 0x46 }, 0, -1 },
+            { new byte[] { 0x41, 0x42, 0x00, 0x41, 0x42, 0x00 }, new byte[] { 0x41, 0x42 }, 2, 3 },
+            { new byte[] { 0x00, 0x00, 0x00 }, Array.Empty<byte>(), 0, -1 },
+            { new byte[] { 0x00, 0x00, 0xFF, 0x00 }, new byte[] { 0xFF }, 0, 2 },
+            { new byte[] { 0x00, 0x00, 0x00, 0x41, 0x42, 0x43 }, new byte[] { 0x41, 0x42, 0x43 }, 0, 3 },
+            { new byte[] { 0x41, 0x42 }, new byte[] { 0x41, 0x42, 0x43, 0x44 }, 0, -1 },
+            { new byte[] { 0x41, 0x42, 0x43, 0x00, 0x00 }, new byte[] { 0x41, 0x42, 0x43 }, 2, -1 }
+        };
 
     #endregion
 
     #region ExtractNullTerminatedString Tests
 
-    [Fact]
-    public void ExtractNullTerminatedString_ValidString_ReturnsString()
+    [Theory]
+    [MemberData(nameof(ExtractNullTermStringData))]
+    public void ExtractNullTerminatedString_VariousInputs(byte[] data, int offset, int maxLength, string? expected)
     {
-        // Arrange
-        byte[] data = [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00, 0x00]; // "Hello\0\0"
-
-        // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(data);
-
-        // Assert
-        Assert.Equal("Hello", result);
+        Assert.Equal(expected, BinaryUtils.ExtractNullTerminatedString(data, offset, maxLength));
     }
 
-    [Fact]
-    public void ExtractNullTerminatedString_WithOffset_ReturnsCorrectString()
-    {
-        // Arrange
-        byte[] data = [0x00, 0x00, 0x48, 0x69, 0x00]; // "\0\0Hi\0"
-
-        // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(data, 2);
-
-        // Assert
-        Assert.Equal("Hi", result);
-    }
-
-    [Fact]
-    public void ExtractNullTerminatedString_NoNullTerminator_ReturnsNull()
-    {
-        // Arrange - No null terminator within maxLength
-        byte[] data = [0x48, 0x65, 0x6C, 0x6C, 0x6F]; // "Hello" with no null
-
-        // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(data, maxLength: 5);
-
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void ExtractNullTerminatedString_OffsetBeyondData_ReturnsNull()
-    {
-        // Arrange
-        byte[] data = [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00];
-
-        // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(data, 100);
-
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void ExtractNullTerminatedString_NonPrintableContent_ReturnsNull()
-    {
-        // Arrange - Non-printable binary data with null terminator
-        byte[] data = [0x00, 0x01, 0x02, 0x03, 0x00];
-
-        // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(data);
-
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void ExtractNullTerminatedString_EmptyString_ReturnsNull()
-    {
-        // Arrange - Immediate null terminator
-        byte[] data = [0x00, 0x41, 0x42, 0x43];
-
-        // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(data);
-
-        // Assert - Empty strings fail IsPrintableText check
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void ExtractNullTerminatedString_FilePath_ReturnsPath()
-    {
-        // Arrange - Common file path string
-        var pathBytes = "textures/architecture/wall.dds\0"u8.ToArray();
-
-        // Act
-        var result = BinaryUtils.ExtractNullTerminatedString(pathBytes);
-
-        // Assert
-        Assert.Equal("textures/architecture/wall.dds", result);
-    }
+    public static TheoryData<byte[], int, int, string?> ExtractNullTermStringData =>
+        new()
+        {
+            // Valid string
+            { new byte[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00, 0x00 }, 0, 256, "Hello" },
+            // With offset
+            { new byte[] { 0x00, 0x00, 0x48, 0x69, 0x00 }, 2, 256, "Hi" },
+            // No null terminator within maxLength
+            { new byte[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F }, 0, 5, null },
+            // Offset beyond data
+            { new byte[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00 }, 100, 256, null },
+            // Non-printable content
+            { new byte[] { 0x00, 0x01, 0x02, 0x03, 0x00 }, 0, 256, null },
+            // Empty string (immediate null terminator)
+            { new byte[] { 0x00, 0x41, 0x42, 0x43 }, 0, 256, null },
+            // File path
+            { "textures/architecture/wall.dds\0"u8.ToArray(), 0, 256, "textures/architecture/wall.dds" }
+        };
 
     #endregion
 }

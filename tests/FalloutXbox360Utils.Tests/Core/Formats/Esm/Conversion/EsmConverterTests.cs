@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Conversion;
 
@@ -66,118 +67,6 @@ public class EsmConverterTests(ITestOutputHelper output, SampleFileFixture sampl
         }
 
         return -1;
-    }
-
-    #endregion
-
-    #region Test Helpers
-
-    /// <summary>
-    ///     Writes a big-endian record header at the specified offset.
-    ///     Record header: [SIG:4 reversed][SIZE:4 BE][FLAGS:4 BE][FORMID:4 BE][TS:4 BE][VCS:4 BE] = 24 bytes
-    /// </summary>
-    private static void WriteBERecordHeader(byte[] buffer, int offset, string signature, uint dataSize,
-        uint formId = 0, uint flags = 0)
-    {
-        // Signature is stored reversed for big-endian
-        buffer[offset + 0] = (byte)signature[3];
-        buffer[offset + 1] = (byte)signature[2];
-        buffer[offset + 2] = (byte)signature[1];
-        buffer[offset + 3] = (byte)signature[0];
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(offset + 4), dataSize);
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(offset + 8), flags);
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(offset + 12), formId);
-        // Timestamp and VCS: zeros
-    }
-
-    /// <summary>
-    ///     Writes a big-endian GRUP header at the specified offset.
-    ///     GRUP header: [GRUP:4 reversed][SIZE:4 BE][LABEL:4 BE][TYPE:4 BE][STAMP:4 BE][UNK:4 BE] = 24 bytes
-    /// </summary>
-    private static void WriteBEGrupHeader(byte[] buffer, int offset, uint groupSize, string labelSignature,
-        int groupType = 0)
-    {
-        // "GRUP" reversed
-        buffer[offset + 0] = (byte)'P';
-        buffer[offset + 1] = (byte)'U';
-        buffer[offset + 2] = (byte)'R';
-        buffer[offset + 3] = (byte)'G';
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(offset + 4), groupSize);
-
-        // Label: for type 0, this is a record type signature (reversed for BE)
-        buffer[offset + 8] = (byte)labelSignature[3];
-        buffer[offset + 9] = (byte)labelSignature[2];
-        buffer[offset + 10] = (byte)labelSignature[1];
-        buffer[offset + 11] = (byte)labelSignature[0];
-
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(offset + 12), (uint)groupType);
-        // Stamp and Unknown: zeros
-    }
-
-    /// <summary>
-    ///     Writes a big-endian EDID subrecord at the specified offset.
-    ///     Subrecord: [SIG:4 reversed][SIZE:2 BE][DATA:N]
-    /// </summary>
-    private static void WriteBESubrecord(byte[] buffer, int offset, string signature, byte[] data)
-    {
-        buffer[offset + 0] = (byte)signature[3];
-        buffer[offset + 1] = (byte)signature[2];
-        buffer[offset + 2] = (byte)signature[1];
-        buffer[offset + 3] = (byte)signature[0];
-        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(offset + 4), (ushort)data.Length);
-        Array.Copy(data, 0, buffer, offset + 6, data.Length);
-    }
-
-    /// <summary>
-    ///     Creates a minimal big-endian ESM file with just a TES4 header record.
-    ///     The TES4 record contains a HEDR subrecord (12 bytes) as required by the parser.
-    /// </summary>
-    private static byte[] BuildMinimalBigEndianEsm()
-    {
-        // TES4 header: 24-byte header + HEDR subrecord (6 header + 12 data = 18 bytes)
-        const int tes4DataSize = 18; // HEDR subrecord
-        const int totalSize = 24 + tes4DataSize;
-
-        var data = new byte[totalSize];
-        WriteBERecordHeader(data, 0, "TES4", tes4DataSize);
-
-        // HEDR subrecord: version(float) + numRecords(int32) + nextObjectId(uint32)
-        var hedrData = new byte[12];
-        BinaryPrimitives.WriteSingleBigEndian(hedrData.AsSpan(0), 1.34f); // version
-        BinaryPrimitives.WriteInt32BigEndian(hedrData.AsSpan(4), 1); // numRecords
-        BinaryPrimitives.WriteUInt32BigEndian(hedrData.AsSpan(8), 0x00000800); // nextObjectId
-        WriteBESubrecord(data, 24, "HEDR", hedrData);
-
-        return data;
-    }
-
-    /// <summary>
-    ///     Creates a big-endian ESM with TES4 header + a simple GRUP containing an ALCH record.
-    /// </summary>
-    private static byte[] BuildSimpleEsmWithGrup()
-    {
-        // Record data: EDID subrecord with "TestAlch\0"
-        var edid = Encoding.ASCII.GetBytes("TestAlch\0");
-        var subrecordSize = 6 + edid.Length; // sig(4) + size(2) + data
-        var recordDataSize = subrecordSize;
-
-        // TES4 header (24+18=42 bytes) + GRUP header (24 bytes) + ALCH record (24 + recordDataSize)
-        var tes4Data = BuildMinimalBigEndianEsm();
-        var alchRecordTotalSize = 24 + recordDataSize;
-        var grupTotalSize = (uint)(24 + alchRecordTotalSize);
-        var totalSize = tes4Data.Length + (int)grupTotalSize;
-
-        var data = new byte[totalSize];
-        Array.Copy(tes4Data, data, tes4Data.Length);
-
-        var grupOffset = tes4Data.Length;
-        WriteBEGrupHeader(data, grupOffset, grupTotalSize, "ALCH", 0);
-
-        var recordOffset = grupOffset + 24;
-        WriteBERecordHeader(data, recordOffset, "ALCH", (uint)recordDataSize, 0x00010001);
-        WriteBESubrecord(data, recordOffset + 24, "EDID", edid);
-
-        return data;
     }
 
     #endregion

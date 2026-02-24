@@ -50,28 +50,20 @@ public class RecordValidatorTests
 
     #region IsKnownFalsePositive
 
-    [Fact]
-    public void IsKnownFalsePositive_VgtDebugPattern_ReturnsTrue()
+    public static TheoryData<byte[], int, string> KnownFalsePositiveTrueCases => new()
     {
-        // "VGT_" is a known false positive (GPU debug register)
-        byte[] data = [(byte)'V', (byte)'G', (byte)'T', (byte)'_'];
-        Assert.True(RecordValidator.IsKnownFalsePositive(data, 0));
-    }
+        { new byte[] { (byte)'V', (byte)'G', (byte)'T', (byte)'_' }, 0, "VGT_ GPU debug register" },
+        { new byte[] { (byte)'S', (byte)'P', (byte)'I', (byte)'_' }, 0, "SPI_ Shader Processor Interpolator" },
+        { new byte[] { (byte)'_', (byte)'T', (byte)'G', (byte)'V' }, 0, "VGT_ reversed for Xbox 360 big-endian" },
+        { new byte[] { 0x00, 0x00, 0x00, 0x00, (byte)'T', (byte)'C', (byte)'P', (byte)'_' }, 4, "TCP_ at offset 4" },
+    };
 
-    [Fact]
-    public void IsKnownFalsePositive_SpiPattern_ReturnsTrue()
+    [Theory]
+    [MemberData(nameof(KnownFalsePositiveTrueCases))]
+    public void IsKnownFalsePositive_KnownPatterns_ReturnsTrue(byte[] data, int offset, string description)
     {
-        // "SPI_" is a known false positive (Shader Processor Interpolator)
-        byte[] data = [(byte)'S', (byte)'P', (byte)'I', (byte)'_'];
-        Assert.True(RecordValidator.IsKnownFalsePositive(data, 0));
-    }
-
-    [Fact]
-    public void IsKnownFalsePositive_BigEndianReversed_ReturnsTrue()
-    {
-        // "VGT_" reversed for Xbox 360 big-endian: "_TGV"
-        byte[] data = [(byte)'_', (byte)'T', (byte)'G', (byte)'V'];
-        Assert.True(RecordValidator.IsKnownFalsePositive(data, 0));
+        _ = description; // Used for test case display name
+        Assert.True(RecordValidator.IsKnownFalsePositive(data, offset));
     }
 
     [Fact]
@@ -80,14 +72,6 @@ public class RecordValidatorTests
         // "NPC_" is not a false positive
         byte[] data = [(byte)'N', (byte)'P', (byte)'C', (byte)'_'];
         Assert.False(RecordValidator.IsKnownFalsePositive(data, 0));
-    }
-
-    [Fact]
-    public void IsKnownFalsePositive_AtOffset_DetectsCorrectly()
-    {
-        // Pattern at offset 4, not offset 0
-        byte[] data = [0x00, 0x00, 0x00, 0x00, (byte)'T', (byte)'C', (byte)'P', (byte)'_'];
-        Assert.True(RecordValidator.IsKnownFalsePositive(data, 4));
     }
 
     [Fact]
@@ -219,33 +203,15 @@ public class RecordValidatorTests
 
     #region IsInExcludedRange
 
-    [Fact]
-    public void IsInExcludedRange_InsideRange_ReturnsTrue()
+    [Theory]
+    [InlineData(150, true)]   // Inside range
+    [InlineData(100, true)]   // At start (inclusive)
+    [InlineData(200, false)]  // At end (exclusive)
+    [InlineData(50, false)]   // Outside range
+    public void IsInExcludedRange_SingleRange_ReturnsExpected(long offset, bool expected)
     {
         var ranges = new List<(long start, long end)> { (100, 200) };
-        Assert.True(RecordValidator.IsInExcludedRange(150, ranges));
-    }
-
-    [Fact]
-    public void IsInExcludedRange_AtStart_ReturnsTrue()
-    {
-        var ranges = new List<(long start, long end)> { (100, 200) };
-        Assert.True(RecordValidator.IsInExcludedRange(100, ranges));
-    }
-
-    [Fact]
-    public void IsInExcludedRange_AtEnd_ReturnsFalse()
-    {
-        // End is exclusive
-        var ranges = new List<(long start, long end)> { (100, 200) };
-        Assert.False(RecordValidator.IsInExcludedRange(200, ranges));
-    }
-
-    [Fact]
-    public void IsInExcludedRange_OutsideRange_ReturnsFalse()
-    {
-        var ranges = new List<(long start, long end)> { (100, 200) };
-        Assert.False(RecordValidator.IsInExcludedRange(50, ranges));
+        Assert.Equal(expected, RecordValidator.IsInExcludedRange(offset, ranges));
     }
 
     [Fact]
@@ -297,59 +263,27 @@ public class RecordValidatorTests
 
     #region IsValidMainRecordHeader
 
-    [Fact]
-    public void IsValidMainRecordHeader_ValidRecord_ReturnsTrue()
+    public static TheoryData<string, uint, uint, uint, bool, string> MainRecordHeaderCases => new()
     {
-        // Typical NPC_ record: reasonable data size, no special flags, valid FormID
-        Assert.True(RecordValidator.IsValidMainRecordHeader("NPC_", 500, 0, 0x0017B37C));
-    }
+        // Valid cases
+        { "NPC_", 500, 0u, 0x0017B37Cu, true, "Typical NPC_ record" },
+        { "REFR", 100, 0x00040000u | 0x80000000u, 0x00010001u, true, "Compressed flag allows upper bits" },
+        // Invalid cases
+        { "REFR", 0, 0u, 0x00010001u, false, "Zero data size" },
+        { "REFR", 20_000_000, 0u, 0x00010001u, false, "Huge data size" },
+        { "REFR", 100, 0u, 0u, false, "FormID zero" },
+        { "REFR", 100, 0u, 0xFFFFFFFFu, false, "FormID all 0xFF" },
+        { "REFR", 100, 0u, 0x4B434150u, false, "FormID all printable ASCII (PACK)" },
+        { "REFR", 100, 0x80000000u, 0x00010001u, false, "Upper flags without compressed flag" },
+    };
 
-    [Fact]
-    public void IsValidMainRecordHeader_ZeroDataSize_ReturnsFalse()
+    [Theory]
+    [MemberData(nameof(MainRecordHeaderCases))]
+    public void IsValidMainRecordHeader_ReturnsExpected(
+        string recordType, uint dataSize, uint flags, uint formId, bool expected, string description)
     {
-        Assert.False(RecordValidator.IsValidMainRecordHeader("REFR", 0, 0, 0x00010001));
-    }
-
-    [Fact]
-    public void IsValidMainRecordHeader_HugeDataSize_ReturnsFalse()
-    {
-        Assert.False(RecordValidator.IsValidMainRecordHeader("REFR", 20_000_000, 0, 0x00010001));
-    }
-
-    [Fact]
-    public void IsValidMainRecordHeader_FormIdZero_ReturnsFalse()
-    {
-        Assert.False(RecordValidator.IsValidMainRecordHeader("REFR", 100, 0, 0));
-    }
-
-    [Fact]
-    public void IsValidMainRecordHeader_FormIdAllFs_ReturnsFalse()
-    {
-        Assert.False(RecordValidator.IsValidMainRecordHeader("REFR", 100, 0, 0xFFFFFFFF));
-    }
-
-    [Fact]
-    public void IsValidMainRecordHeader_FormIdAllPrintableAscii_ReturnsFalse()
-    {
-        // "PACK" as FormID bytes = 0x4B434150 — all printable, likely inside string data
-        uint asciiFormId = 0x4B434150; // "PACK" interpreted as uint
-        Assert.False(RecordValidator.IsValidMainRecordHeader("REFR", 100, 0, asciiFormId));
-    }
-
-    [Fact]
-    public void IsValidMainRecordHeader_CompressedFlag_AllowsUpperBits()
-    {
-        // Compressed flag (0x00040000) should allow records that set upper flag bits
-        uint flags = 0x00040000 | 0x80000000; // Compressed + upper bit
-        Assert.True(RecordValidator.IsValidMainRecordHeader("REFR", 100, flags, 0x00010001));
-    }
-
-    [Fact]
-    public void IsValidMainRecordHeader_BadUpperFlags_ReturnsFalse()
-    {
-        // Upper bits set without compressed flag -> invalid
-        uint flags = 0x80000000;
-        Assert.False(RecordValidator.IsValidMainRecordHeader("REFR", 100, flags, 0x00010001));
+        _ = description; // Used for test case display name
+        Assert.Equal(expected, RecordValidator.IsValidMainRecordHeader(recordType, dataSize, flags, formId));
     }
 
     #endregion

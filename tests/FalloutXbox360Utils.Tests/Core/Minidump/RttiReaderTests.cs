@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Minidump;
@@ -117,9 +118,9 @@ public class RttiReaderTests
         var colVA = BaseVA + 0x10;
 
         // vtable[-1] at offset 0x00 → points to COL
-        WriteBE(data, 0x00, colVA);
+        WriteUInt32BE(data, 0x00, colVA);
         // COL at offset 0x10: signature = 0x12345678 (invalid, should be 0)
-        WriteBE(data, 0x10, 0x12345678u);
+        WriteUInt32BE(data, 0x10, 0x12345678u);
 
         var info = CreateMinidumpInfoForRange(BaseVA, data.Length);
         using var stream = new MemoryStream(data);
@@ -141,17 +142,17 @@ public class RttiReaderTests
         var tdVA = BaseVA + 0x30;
 
         // vtable[-1] → COL
-        WriteBE(data, 0x00, colVA);
+        WriteUInt32BE(data, 0x00, colVA);
         // COL: signature=0, offset=0, cdOffset=0, pTD, pCHD=0
-        WriteBE(data, 0x10, 0u); // signature
-        WriteBE(data, 0x14, 0u); // offset
-        WriteBE(data, 0x18, 0u); // cdOffset
-        WriteBE(data, 0x1C, tdVA); // pTypeDescriptor
-        WriteBE(data, 0x20, BaseVA + 0xF0); // pCHD (valid ptr but won't be reached)
+        WriteUInt32BE(data, 0x10, 0u); // signature
+        WriteUInt32BE(data, 0x14, 0u); // offset
+        WriteUInt32BE(data, 0x18, 0u); // cdOffset
+        WriteUInt32BE(data, 0x1C, tdVA); // pTypeDescriptor
+        WriteUInt32BE(data, 0x20, BaseVA + 0xF0); // pCHD (valid ptr but won't be reached)
         // TypeDescriptor: pVFTable, spare, name
-        WriteBE(data, 0x30, 0x82FFFFFFu); // pVFTable
-        WriteBE(data, 0x34, 0u); // spare
-        WriteString(data, 0x38, "NotAValidMangledName");
+        WriteUInt32BE(data, 0x30, 0x82FFFFFFu); // pVFTable
+        WriteUInt32BE(data, 0x34, 0u); // spare
+        WriteAsciiString(data, 0x38, "NotAValidMangledName");
 
         var info = CreateMinidumpInfoForRange(BaseVA, data.Length);
         using var stream = new MemoryStream(data);
@@ -252,10 +253,10 @@ public class RttiReaderTests
 
         // Simulate a striped array: alternating vtable pointers
         // At offset 0x200: vtable1 pointer, at 0x204: vtable2 pointer, repeating
-        WriteBE(data, 0x200, vtable1VA);
-        WriteBE(data, 0x204, vtable2VA);
-        WriteBE(data, 0x208, vtable1VA);
-        WriteBE(data, 0x20C, vtable2VA);
+        WriteUInt32BE(data, 0x200, vtable1VA);
+        WriteUInt32BE(data, 0x204, vtable2VA);
+        WriteUInt32BE(data, 0x208, vtable1VA);
+        WriteUInt32BE(data, 0x20C, vtable2VA);
 
         var info = CreateMinidumpInfoForRange(BaseVA, data.Length);
         using var stream = new MemoryStream(data);
@@ -281,9 +282,9 @@ public class RttiReaderTests
         BuildRttiChainAt(data, 0x00, 0x10, 0x30, ".?AVMyClass@@");
 
         // Same pointer at multiple positions
-        WriteBE(data, 0x100, vtableVA);
-        WriteBE(data, 0x104, vtableVA);
-        WriteBE(data, 0x108, vtableVA);
+        WriteUInt32BE(data, 0x100, vtableVA);
+        WriteUInt32BE(data, 0x104, vtableVA);
+        WriteUInt32BE(data, 0x108, vtableVA);
 
         var info = CreateMinidumpInfoForRange(BaseVA, data.Length);
         using var stream = new MemoryStream(data);
@@ -326,51 +327,51 @@ public class RttiReaderTests
         var bcaVA = BaseVA + 0x80;
 
         // vtable[-1] → COL
-        WriteBE(data, 0x00, colVA);
+        WriteUInt32BE(data, 0x00, colVA);
 
         // COL
-        WriteBE(data, 0x10, 0u); // signature
-        WriteBE(data, 0x14, objectOffset); // offset
-        WriteBE(data, 0x18, 0u); // cdOffset
-        WriteBE(data, 0x1C, tdVA); // pTypeDescriptor
-        WriteBE(data, 0x20, chdVA); // pClassHierarchyDescriptor
+        WriteUInt32BE(data, 0x10, 0u); // signature
+        WriteUInt32BE(data, 0x14, objectOffset); // offset
+        WriteUInt32BE(data, 0x18, 0u); // cdOffset
+        WriteUInt32BE(data, 0x1C, tdVA); // pTypeDescriptor
+        WriteUInt32BE(data, 0x20, chdVA); // pClassHierarchyDescriptor
 
         // TypeDescriptor for main class
-        WriteBE(data, 0x30, 0x82FFFFFFu); // pVFTable
-        WriteBE(data, 0x34, 0u); // spare
-        WriteString(data, 0x38, className);
+        WriteUInt32BE(data, 0x30, 0x82FFFFFFu); // pVFTable
+        WriteUInt32BE(data, 0x34, 0u); // spare
+        WriteAsciiString(data, 0x38, className);
 
         // ClassHierarchyDescriptor
         var numBases = baseClassName != null ? 2u : 1u;
-        WriteBE(data, 0x60, 0u); // signature
-        WriteBE(data, 0x64, 0u); // attributes
-        WriteBE(data, 0x68, numBases); // numBaseClasses
-        WriteBE(data, 0x6C, bcaVA); // pBaseClassArray
+        WriteUInt32BE(data, 0x60, 0u); // signature
+        WriteUInt32BE(data, 0x64, 0u); // attributes
+        WriteUInt32BE(data, 0x68, numBases); // numBaseClasses
+        WriteUInt32BE(data, 0x6C, bcaVA); // pBaseClassArray
 
         // BaseClassArray
-        WriteBE(data, 0x80, BaseVA + 0x90); // BCD[0]
+        WriteUInt32BE(data, 0x80, BaseVA + 0x90); // BCD[0]
         if (baseClassName != null)
         {
-            WriteBE(data, 0x84, BaseVA + 0xA0); // BCD[1]
+            WriteUInt32BE(data, 0x84, BaseVA + 0xA0); // BCD[1]
         }
 
         // BCD[0] — main class
-        WriteBE(data, 0x90, tdVA); // pTypeDescriptor
-        WriteBE(data, 0x94, baseClassName != null ? 1u : 0u); // numContainedBases
-        WriteBE(data, 0x98, 0); // mdisp
+        WriteUInt32BE(data, 0x90, tdVA); // pTypeDescriptor
+        WriteUInt32BE(data, 0x94, baseClassName != null ? 1u : 0u); // numContainedBases
+        WriteInt32BE(data, 0x98, 0); // mdisp
 
         // BCD[1] — base class
         if (baseClassName != null)
         {
             var baseTdVA = BaseVA + 0xB0;
-            WriteBE(data, 0xA0, baseTdVA); // pTypeDescriptor
-            WriteBE(data, 0xA4, 0u); // numContainedBases
-            WriteBE(data, 0xA8, 0); // mdisp
+            WriteUInt32BE(data, 0xA0, baseTdVA); // pTypeDescriptor
+            WriteUInt32BE(data, 0xA4, 0u); // numContainedBases
+            WriteInt32BE(data, 0xA8, 0); // mdisp
 
             // TypeDescriptor for base class
-            WriteBE(data, 0xB0, 0x82FFFFFFu); // pVFTable
-            WriteBE(data, 0xB4, 0u); // spare
-            WriteString(data, 0xB8, baseClassName);
+            WriteUInt32BE(data, 0xB0, 0x82FFFFFFu); // pVFTable
+            WriteUInt32BE(data, 0xB4, 0u); // spare
+            WriteAsciiString(data, 0xB8, baseClassName);
         }
 
         var info = CreateMinidumpInfoForRange(BaseVA, data.Length);
@@ -387,19 +388,19 @@ public class RttiReaderTests
         var tdVA = BaseVA + (uint)tdOffset;
 
         // vtable[-1] → COL
-        WriteBE(data, vtableOffset, colVA);
+        WriteUInt32BE(data, vtableOffset, colVA);
 
         // COL (no hierarchy — pCHD points to invalid area)
-        WriteBE(data, colOffset, 0u); // signature
-        WriteBE(data, colOffset + 4, 0u); // offset
-        WriteBE(data, colOffset + 8, 0u); // cdOffset
-        WriteBE(data, colOffset + 12, tdVA); // pTypeDescriptor
-        WriteBE(data, colOffset + 16, 0x82FFFFFEu); // pCHD (valid module ptr but no data)
+        WriteUInt32BE(data, colOffset, 0u); // signature
+        WriteUInt32BE(data, colOffset + 4, 0u); // offset
+        WriteUInt32BE(data, colOffset + 8, 0u); // cdOffset
+        WriteUInt32BE(data, colOffset + 12, tdVA); // pTypeDescriptor
+        WriteUInt32BE(data, colOffset + 16, 0x82FFFFFEu); // pCHD (valid module ptr but no data)
 
         // TypeDescriptor
-        WriteBE(data, tdOffset, 0x82FFFFFFu); // pVFTable
-        WriteBE(data, tdOffset + 4, 0u); // spare
-        WriteString(data, tdOffset + 8, className);
+        WriteUInt32BE(data, tdOffset, 0x82FFFFFFu); // pVFTable
+        WriteUInt32BE(data, tdOffset + 4, 0u); // spare
+        WriteAsciiString(data, tdOffset + 8, className);
     }
 
     private static MinidumpInfo CreateMinidumpInfoForRange(uint startVA, int size)
@@ -417,23 +418,6 @@ public class RttiReaderTests
                 }
             ]
         };
-    }
-
-    private static void WriteBE(byte[] data, int offset, uint value)
-    {
-        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(offset), value);
-    }
-
-    private static void WriteBE(byte[] data, int offset, int value)
-    {
-        BinaryPrimitives.WriteInt32BigEndian(data.AsSpan(offset), value);
-    }
-
-    private static void WriteString(byte[] data, int offset, string value)
-    {
-        var bytes = Encoding.ASCII.GetBytes(value);
-        bytes.CopyTo(data, offset);
-        data[offset + bytes.Length] = 0; // null terminator
     }
 
     #endregion

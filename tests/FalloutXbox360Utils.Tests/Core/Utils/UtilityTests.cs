@@ -375,61 +375,19 @@ public class UtilityTests
 
     #region Xbox360MemoryUtils.IsValidPointer
 
-    [Fact]
-    public void IsValidPointer_HeapBase_ReturnsTrue()
+    [Theory]
+    [InlineData(0x40000000u, true)]  // HeapBase
+    [InlineData(0x45000000u, true)]  // InHeap
+    [InlineData(0x50000000u, false)] // HeapEnd (exclusive)
+    [InlineData(0x82000000u, true)]  // ModuleBase
+    [InlineData(0x90000000u, true)]  // AboveModuleBase
+    [InlineData(0u, false)]          // Zero
+    [InlineData(0xFFFFFFFFu, true)]  // MaxUInt32 >= ModuleBase
+    [InlineData(0x30000000u, false)] // BelowHeap
+    [InlineData(0x60000000u, false)] // BetweenHeapAndModule
+    public void IsValidPointer_VariousAddresses(uint address, bool expected)
     {
-        Assert.True(Xbox360MemoryUtils.IsValidPointer(0x40000000));
-    }
-
-    [Fact]
-    public void IsValidPointer_InHeap_ReturnsTrue()
-    {
-        Assert.True(Xbox360MemoryUtils.IsValidPointer(0x45000000));
-    }
-
-    [Fact]
-    public void IsValidPointer_HeapEnd_ReturnsFalse()
-    {
-        // HeapEnd (0x50000000) is exclusive
-        Assert.False(Xbox360MemoryUtils.IsValidPointer(0x50000000));
-    }
-
-    [Fact]
-    public void IsValidPointer_ModuleBase_ReturnsTrue()
-    {
-        Assert.True(Xbox360MemoryUtils.IsValidPointer(0x82000000));
-    }
-
-    [Fact]
-    public void IsValidPointer_AboveModuleBase_ReturnsTrue()
-    {
-        Assert.True(Xbox360MemoryUtils.IsValidPointer(0x90000000));
-    }
-
-    [Fact]
-    public void IsValidPointer_Zero_ReturnsFalse()
-    {
-        Assert.False(Xbox360MemoryUtils.IsValidPointer(0));
-    }
-
-    [Fact]
-    public void IsValidPointer_MaxUInt32_ReturnsTrue()
-    {
-        // 0xFFFFFFFF >= ModuleBase (0x82000000)
-        Assert.True(Xbox360MemoryUtils.IsValidPointer(0xFFFFFFFF));
-    }
-
-    [Fact]
-    public void IsValidPointer_BelowHeap_ReturnsFalse()
-    {
-        Assert.False(Xbox360MemoryUtils.IsValidPointer(0x30000000));
-    }
-
-    [Fact]
-    public void IsValidPointer_BetweenHeapAndModule_ReturnsFalse()
-    {
-        // Between 0x50000000 and 0x82000000
-        Assert.False(Xbox360MemoryUtils.IsValidPointer(0x60000000));
+        Assert.Equal(expected, Xbox360MemoryUtils.IsValidPointer(address));
     }
 
     #endregion

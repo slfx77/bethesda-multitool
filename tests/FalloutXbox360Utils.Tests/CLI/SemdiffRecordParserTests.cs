@@ -1,6 +1,8 @@
 using System.Text;
 using FalloutXbox360Utils.CLI;
 using Xunit;
+using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
+using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace FalloutXbox360Utils.Tests.CLI;
 
@@ -10,147 +12,6 @@ namespace FalloutXbox360Utils.Tests.CLI;
 /// </summary>
 public class SemdiffRecordParserTests
 {
-    #region Helpers
-
-    /// <summary>Write a 4-char ASCII signature in little-endian byte order.</summary>
-    private static void WriteSigLE(byte[] buf, int offset, string sig)
-    {
-        buf[offset] = (byte)sig[0];
-        buf[offset + 1] = (byte)sig[1];
-        buf[offset + 2] = (byte)sig[2];
-        buf[offset + 3] = (byte)sig[3];
-    }
-
-    /// <summary>Write a 4-char ASCII signature in big-endian (reversed) byte order.</summary>
-    private static void WriteSigBE(byte[] buf, int offset, string sig)
-    {
-        buf[offset] = (byte)sig[3];
-        buf[offset + 1] = (byte)sig[2];
-        buf[offset + 2] = (byte)sig[1];
-        buf[offset + 3] = (byte)sig[0];
-    }
-
-    /// <summary>Write a uint32 in little-endian.</summary>
-    private static void WriteUInt32LE(byte[] buf, int offset, uint value)
-    {
-        buf[offset] = (byte)(value & 0xFF);
-        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 2] = (byte)((value >> 16) & 0xFF);
-        buf[offset + 3] = (byte)((value >> 24) & 0xFF);
-    }
-
-    /// <summary>Write a uint32 in big-endian.</summary>
-    private static void WriteUInt32BE(byte[] buf, int offset, uint value)
-    {
-        buf[offset] = (byte)((value >> 24) & 0xFF);
-        buf[offset + 1] = (byte)((value >> 16) & 0xFF);
-        buf[offset + 2] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 3] = (byte)(value & 0xFF);
-    }
-
-    /// <summary>Write a uint16 in little-endian.</summary>
-    private static void WriteUInt16LE(byte[] buf, int offset, ushort value)
-    {
-        buf[offset] = (byte)(value & 0xFF);
-        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
-    }
-
-    /// <summary>Write a uint16 in big-endian.</summary>
-    private static void WriteUInt16BE(byte[] buf, int offset, ushort value)
-    {
-        buf[offset] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 1] = (byte)(value & 0xFF);
-    }
-
-    /// <summary>
-    ///     Build a minimal little-endian ESM record with one subrecord.
-    ///     Record header: [Sig:4][DataSize:4][Flags:4][FormId:4][VC1:4][VC2:4] = 24 bytes
-    ///     Subrecord: [Sig:4][Size:2][Data:N]
-    /// </summary>
-    private static byte[] BuildMinimalRecordLE(string recSig, uint formId, string subSig, byte[] subData)
-    {
-        var subrecordSize = 4 + 2 + subData.Length; // sig + size + data
-        var dataSize = (uint)subrecordSize;
-        var totalSize = 24 + (int)dataSize;
-        var buf = new byte[totalSize];
-
-        // Record header
-        WriteSigLE(buf, 0, recSig);
-        WriteUInt32LE(buf, 4, dataSize);
-        WriteUInt32LE(buf, 8, 0);        // flags
-        WriteUInt32LE(buf, 12, formId);
-        WriteUInt32LE(buf, 16, 0);       // VC1
-        WriteUInt32LE(buf, 20, 0);       // VC2
-
-        // Subrecord
-        WriteSigLE(buf, 24, subSig);
-        WriteUInt16LE(buf, 28, (ushort)subData.Length);
-        Array.Copy(subData, 0, buf, 30, subData.Length);
-
-        return buf;
-    }
-
-    /// <summary>
-    ///     Build a minimal big-endian ESM record with one subrecord.
-    /// </summary>
-    private static byte[] BuildMinimalRecordBE(string recSig, uint formId, string subSig, byte[] subData)
-    {
-        var subrecordSize = 4 + 2 + subData.Length;
-        var dataSize = (uint)subrecordSize;
-        var totalSize = 24 + (int)dataSize;
-        var buf = new byte[totalSize];
-
-        // Record header (sig bytes reversed for big-endian)
-        WriteSigBE(buf, 0, recSig);
-        WriteUInt32BE(buf, 4, dataSize);
-        WriteUInt32BE(buf, 8, 0);
-        WriteUInt32BE(buf, 12, formId);
-        WriteUInt32BE(buf, 16, 0);
-        WriteUInt32BE(buf, 20, 0);
-
-        // Subrecord (sig bytes reversed for big-endian)
-        WriteSigBE(buf, 24, subSig);
-        WriteUInt16BE(buf, 28, (ushort)subData.Length);
-        Array.Copy(subData, 0, buf, 30, subData.Length);
-
-        return buf;
-    }
-
-    /// <summary>
-    ///     Build a little-endian record with multiple subrecords.
-    /// </summary>
-    private static byte[] BuildRecordWithSubrecordsLE(string recSig, uint formId,
-        params (string sig, byte[] data)[] subrecords)
-    {
-        var totalSubSize = 0;
-        foreach (var (_, data) in subrecords)
-        {
-            totalSubSize += 4 + 2 + data.Length;
-        }
-
-        var buf = new byte[24 + totalSubSize];
-
-        WriteSigLE(buf, 0, recSig);
-        WriteUInt32LE(buf, 4, (uint)totalSubSize);
-        WriteUInt32LE(buf, 8, 0);
-        WriteUInt32LE(buf, 12, formId);
-        WriteUInt32LE(buf, 16, 0);
-        WriteUInt32LE(buf, 20, 0);
-
-        var offset = 24;
-        foreach (var (sig, data) in subrecords)
-        {
-            WriteSigLE(buf, offset, sig);
-            WriteUInt16LE(buf, offset + 4, (ushort)data.Length);
-            Array.Copy(data, 0, buf, offset + 6, data.Length);
-            offset += 6 + data.Length;
-        }
-
-        return buf;
-    }
-
-    #endregion
-
     #region ParseRecordsWithSubrecords — Little-Endian
 
     [Fact]
@@ -229,7 +90,7 @@ public class SemdiffRecordParserTests
         var combined = new byte[24 + alchData.Length];
 
         // Write GRUP header (the parser skips it by advancing 24 bytes)
-        WriteSigLE(combined, 0, "GRUP");
+        WriteSig(combined, 0, "GRUP");
         WriteUInt32LE(combined, 4, 24); // Group size = header only
         // rest of GRUP header is zeros
 

@@ -26,7 +26,7 @@ public class SampleFileFixture
     /// <summary>Release beta memory dump.</summary>
     public string? ReleaseDump { get; } = FindSamplePath(@"Sample\MemoryDump\Fallout_Release_Beta.xex.dmp");
 
-    private static string? FindSamplePath(string relativePath)
+    public static string? FindSamplePath(string relativePath)
     {
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 8; i++)

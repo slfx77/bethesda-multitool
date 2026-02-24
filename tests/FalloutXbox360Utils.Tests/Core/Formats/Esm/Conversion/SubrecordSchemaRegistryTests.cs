@@ -68,56 +68,26 @@ public class SubrecordSchemaRegistryTests
         Assert.Same(SubrecordSchema.String, schema);
     }
 
-    [Fact]
-    public void GetSchema_ImadDnam_ReturnsFloatArray()
-    {
-        var schema = SubrecordSchemaRegistry.GetSchema("DNAM", "IMAD", 244);
-        Assert.NotNull(schema);
-        Assert.Same(SubrecordSchema.FloatArray, schema);
-    }
-
-    [Fact]
-    public void GetSchema_ImadBnam_ReturnsFloatArray()
-    {
-        var schema = SubrecordSchemaRegistry.GetSchema("BNAM", "IMAD", 8);
-        Assert.NotNull(schema);
-        Assert.Same(SubrecordSchema.FloatArray, schema);
-    }
-
     [Theory]
-    [InlineData("VNAM")]
-    [InlineData("TNAM")]
-    [InlineData("NAM3")]
-    [InlineData("RNAM")]
-    [InlineData("SNAM")]
-    [InlineData("UNAM")]
-    [InlineData("NAM1")]
-    [InlineData("NAM2")]
-    [InlineData("WNAM")]
-    [InlineData("XNAM")]
-    [InlineData("YNAM")]
-    [InlineData("NAM4")]
-    public void GetSchema_ImadKnownFloatArraySubrecord_ReturnsFloatArray(string signature)
+    [InlineData("DNAM", 244)]
+    [InlineData("BNAM", 8)]
+    [InlineData("VNAM", 16)]
+    [InlineData("TNAM", 16)]
+    [InlineData("NAM3", 16)]
+    [InlineData("RNAM", 16)]
+    [InlineData("SNAM", 16)]
+    [InlineData("UNAM", 16)]
+    [InlineData("NAM1", 16)]
+    [InlineData("NAM2", 16)]
+    [InlineData("WNAM", 16)]
+    [InlineData("XNAM", 16)]
+    [InlineData("YNAM", 16)]
+    [InlineData("NAM4", 16)]
+    [InlineData("AIAD", 8)]  // Keyed *IAD subrecord (first char is key, followed by "IAD")
+    [InlineData("QQQQ", 12)] // Unknown IMAD subrecords default to FloatArray
+    public void GetSchema_ImadFloatArraySubrecord_ReturnsFloatArray(string signature, int size)
     {
-        var schema = SubrecordSchemaRegistry.GetSchema(signature, "IMAD", 16);
-        Assert.NotNull(schema);
-        Assert.Same(SubrecordSchema.FloatArray, schema);
-    }
-
-    [Fact]
-    public void GetSchema_ImadIadSubrecord_ReturnsFloatArray()
-    {
-        // Keyed *IAD subrecords (first char is key, followed by "IAD")
-        var schema = SubrecordSchemaRegistry.GetSchema("AIAD", "IMAD", 8);
-        Assert.NotNull(schema);
-        Assert.Same(SubrecordSchema.FloatArray, schema);
-    }
-
-    [Fact]
-    public void GetSchema_ImadUnknown_ReturnsFloatArray()
-    {
-        // Unknown IMAD subrecords default to FloatArray
-        var schema = SubrecordSchemaRegistry.GetSchema("QQQQ", "IMAD", 12);
+        var schema = SubrecordSchemaRegistry.GetSchema(signature, "IMAD", size);
         Assert.NotNull(schema);
         Assert.Same(SubrecordSchema.FloatArray, schema);
     }
