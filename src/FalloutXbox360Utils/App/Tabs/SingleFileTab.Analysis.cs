@@ -326,7 +326,13 @@ public sealed partial class SingleFileTab
         try
         {
             var semanticResult = _session.SemanticResult;
-            var resolver = _session.Resolver;
+
+            // Merge load order records so DLC content appears in the browser
+            var loadOrderRecords = _session.LoadOrder.BuildMergedRecords();
+            if (loadOrderRecords != null)
+                semanticResult = loadOrderRecords.MergeWith(semanticResult);
+
+            var resolver = _session.EffectiveResolver ?? _session.Resolver;
 
             // Progress callback for status updates
             var progress = new Progress<string>(status =>

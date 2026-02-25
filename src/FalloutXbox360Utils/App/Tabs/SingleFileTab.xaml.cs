@@ -302,7 +302,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 await RunCoverageAnalysisAsync();
             }
 
-            AddDataButton.Visibility = Visibility.Visible;
+            LoadOrderButton.Visibility = Visibility.Visible;
             StatusTextBlock.Text = SingleFileAnalysisHelper.BuildCompletionStatus(_session, _allCarvedFiles);
         }
         catch (Exception ex)

@@ -223,6 +223,98 @@ public record RecordCollection
     /// </summary>
     public Dictionary<string, int> UnreconstructedTypeCounts { get; init; } = [];
 
+    /// <summary>
+    ///     Creates a new RecordCollection by merging this collection with records from
+    ///     another collection. For duplicate FormIDs, records from <paramref name="overlay"/>
+    ///     (the later load order entry) take precedence.
+    /// </summary>
+    public RecordCollection MergeWith(RecordCollection overlay)
+    {
+        return new RecordCollection
+        {
+            // Characters
+            Npcs = MergeList(Npcs, overlay.Npcs, r => r.FormId),
+            Creatures = MergeList(Creatures, overlay.Creatures, r => r.FormId),
+            Races = MergeList(Races, overlay.Races, r => r.FormId),
+            Factions = MergeList(Factions, overlay.Factions, r => r.FormId),
+
+            // Quests and Dialogue
+            Quests = MergeList(Quests, overlay.Quests, r => r.FormId),
+            DialogTopics = MergeList(DialogTopics, overlay.DialogTopics, r => r.FormId),
+            Dialogues = MergeList(Dialogues, overlay.Dialogues, r => r.FormId),
+            DialogueTree = overlay.DialogueTree ?? DialogueTree,
+            Notes = MergeList(Notes, overlay.Notes, r => r.FormId),
+            Books = MergeList(Books, overlay.Books, r => r.FormId),
+            Terminals = MergeList(Terminals, overlay.Terminals, r => r.FormId),
+            Scripts = MergeList(Scripts, overlay.Scripts, r => r.FormId),
+
+            // Items
+            Weapons = MergeList(Weapons, overlay.Weapons, r => r.FormId),
+            Armor = MergeList(Armor, overlay.Armor, r => r.FormId),
+            Ammo = MergeList(Ammo, overlay.Ammo, r => r.FormId),
+            Consumables = MergeList(Consumables, overlay.Consumables, r => r.FormId),
+            MiscItems = MergeList(MiscItems, overlay.MiscItems, r => r.FormId),
+            Keys = MergeList(Keys, overlay.Keys, r => r.FormId),
+            Containers = MergeList(Containers, overlay.Containers, r => r.FormId),
+
+            // Abilities
+            Perks = MergeList(Perks, overlay.Perks, r => r.FormId),
+            Spells = MergeList(Spells, overlay.Spells, r => r.FormId),
+
+            // World
+            Cells = MergeList(Cells, overlay.Cells, r => r.FormId),
+            Worldspaces = MergeList(Worldspaces, overlay.Worldspaces, r => r.FormId),
+            MapMarkers = MergeList(MapMarkers, overlay.MapMarkers, r => r.FormId),
+            LeveledLists = MergeList(LeveledLists, overlay.LeveledLists, r => r.FormId),
+
+            // Game Data
+            GameSettings = MergeList(GameSettings, overlay.GameSettings, r => r.FormId),
+            Globals = MergeList(Globals, overlay.Globals, r => r.FormId),
+            Enchantments = MergeList(Enchantments, overlay.Enchantments, r => r.FormId),
+            BaseEffects = MergeList(BaseEffects, overlay.BaseEffects, r => r.FormId),
+            WeaponMods = MergeList(WeaponMods, overlay.WeaponMods, r => r.FormId),
+            Recipes = MergeList(Recipes, overlay.Recipes, r => r.FormId),
+            Challenges = MergeList(Challenges, overlay.Challenges, r => r.FormId),
+            Reputations = MergeList(Reputations, overlay.Reputations, r => r.FormId),
+            Projectiles = MergeList(Projectiles, overlay.Projectiles, r => r.FormId),
+            Explosions = MergeList(Explosions, overlay.Explosions, r => r.FormId),
+            Messages = MergeList(Messages, overlay.Messages, r => r.FormId),
+            Classes = MergeList(Classes, overlay.Classes, r => r.FormId),
+            FormLists = MergeList(FormLists, overlay.FormLists, r => r.FormId),
+            Activators = MergeList(Activators, overlay.Activators, r => r.FormId),
+            Lights = MergeList(Lights, overlay.Lights, r => r.FormId),
+            Doors = MergeList(Doors, overlay.Doors, r => r.FormId),
+            Statics = MergeList(Statics, overlay.Statics, r => r.FormId),
+            Furniture = MergeList(Furniture, overlay.Furniture, r => r.FormId),
+
+            // AI
+            Packages = MergeList(Packages, overlay.Packages, r => r.FormId),
+
+            // Generic
+            GenericRecords = MergeList(GenericRecords, overlay.GenericRecords, r => r.FormId),
+
+            // Specialized
+            Sounds = MergeList(Sounds, overlay.Sounds, r => r.FormId),
+            TextureSets = MergeList(TextureSets, overlay.TextureSets, r => r.FormId),
+            ArmorAddons = MergeList(ArmorAddons, overlay.ArmorAddons, r => r.FormId),
+            Water = MergeList(Water, overlay.Water, r => r.FormId),
+            BodyPartData = MergeList(BodyPartData, overlay.BodyPartData, r => r.FormId),
+            ActorValueInfos = MergeList(ActorValueInfos, overlay.ActorValueInfos, r => r.FormId),
+            CombatStyles = MergeList(CombatStyles, overlay.CombatStyles, r => r.FormId),
+            LightingTemplates = MergeList(LightingTemplates, overlay.LightingTemplates, r => r.FormId),
+            NavMeshes = MergeList(NavMeshes, overlay.NavMeshes, r => r.FormId),
+            Weather = MergeList(Weather, overlay.Weather, r => r.FormId),
+
+            // Dictionaries: overlay overwrites base
+            ModelPathIndex = MergeDictionary(ModelPathIndex, overlay.ModelPathIndex),
+            FormIdToEditorId = MergeDictionary(FormIdToEditorId, overlay.FormIdToEditorId),
+            FormIdToDisplayName = MergeDictionary(FormIdToDisplayName, overlay.FormIdToDisplayName),
+            UnreconstructedTypeCounts = MergeDictionary(UnreconstructedTypeCounts, overlay.UnreconstructedTypeCounts),
+
+            TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed
+        };
+    }
+
     /// <summary>Creates a FormIdResolver from this collection's dictionaries.</summary>
     public FormIdResolver CreateResolver(Dictionary<uint, string>? overrideEditorIds = null)
     {
@@ -284,5 +376,41 @@ public record RecordCollection
         }
 
         return map;
+    }
+
+    /// <summary>
+    ///     Merges two lists, deduplicating by FormID. Items from <paramref name="overlay"/>
+    ///     take precedence over items from <paramref name="baseList"/> for the same FormID.
+    /// </summary>
+    private static List<T> MergeList<T>(List<T> baseList, List<T> overlay, Func<T, uint> formIdSelector)
+    {
+        if (baseList.Count == 0) return new List<T>(overlay);
+        if (overlay.Count == 0) return new List<T>(baseList);
+
+        var overlayIds = new HashSet<uint>(overlay.Select(formIdSelector));
+        var merged = new List<T>(baseList.Count + overlay.Count);
+
+        foreach (var item in baseList)
+        {
+            if (!overlayIds.Contains(formIdSelector(item)))
+            {
+                merged.Add(item);
+            }
+        }
+
+        merged.AddRange(overlay);
+        return merged;
+    }
+
+    private static Dictionary<TKey, TValue> MergeDictionary<TKey, TValue>(
+        Dictionary<TKey, TValue> baseDict, Dictionary<TKey, TValue> overlay) where TKey : notnull
+    {
+        var merged = new Dictionary<TKey, TValue>(baseDict);
+        foreach (var (k, v) in overlay)
+        {
+            merged[k] = v;
+        }
+
+        return merged;
     }
 }

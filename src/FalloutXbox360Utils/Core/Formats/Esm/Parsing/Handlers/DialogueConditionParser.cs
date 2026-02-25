@@ -20,6 +20,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
     {
         var dialogues = new List<DialogueRecord>();
         var infoRecords = _context.GetRecordsByType("INFO").ToList();
+        var log = Logger.Instance;
 
         if (_context.Accessor == null)
         {
@@ -31,6 +32,9 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
                     dialogues.Add(dialogue);
                 }
             }
+
+            log.Info("  [Dialogue] ParseAllInfoRecords: {0} INFO records (scan-only path, no accessor)",
+                infoRecords.Count);
         }
         else
         {

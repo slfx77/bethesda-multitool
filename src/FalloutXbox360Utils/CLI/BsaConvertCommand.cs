@@ -303,7 +303,7 @@ internal static class BsaConvertCommand
         AnsiConsole.MarkupLine("[yellow]Step 4a:[/] Converting {0:N0} DDX -> DDS (batch mode)...", ddxFiles.Length);
         Directory.CreateDirectory(ddxOutputDir);
 
-        var ddxConverter = new DdxSubprocessConverter();
+        var ddxConverter = new DdxConverter();
         var batchResult = await AnsiConsole.Progress()
             .AutoClear(false)
             .Columns(

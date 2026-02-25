@@ -18,7 +18,7 @@ internal sealed class PackedGeometryData
     /// <summary>
     ///     Bone indices for skinned meshes (4 bytes per vertex).
     ///     Each vertex references up to 4 bones by index.
-    ///     These are partition-local indices, not global skeleton indices.
+    ///     These are global indices into NiSkinInstance.BoneRefs[].
     /// </summary>
     public byte[]? BoneIndices { get; set; }
 

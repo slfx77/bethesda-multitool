@@ -126,11 +126,24 @@ internal sealed partial class NifSchemaConverter
         return true;
     }
 
-    private static bool TryBulkSwapFixedSizeStruct(ConversionContext ctx, NifStructDef structDef)
+    private bool TryBulkSwapFixedSizeStruct(ConversionContext ctx, NifStructDef structDef)
     {
         if (structDef.FixedSize is not (2 or 4 or 8))
         {
             return false;
+        }
+
+        // Only bulk-swap structs where all fields are single bytes (packed uint32/uint64 values
+        // like UDecVector4, ByteColor4). Structs with multi-byte sub-fields (e.g., BodyPartList
+        // = 2 × ushort, HalfTexCoord = 2 × hfloat, HavokFilter = byte+byte+ushort) need
+        // per-field endian conversion — bulk swap cross-contaminates adjacent fields.
+        foreach (var field in structDef.Fields)
+        {
+            var fieldSize = _schema.GetTypeSize(field.Type) ?? 0;
+            if (fieldSize > 1)
+            {
+                return false;
+            }
         }
 
         if (structDef.FixedSize == 2)

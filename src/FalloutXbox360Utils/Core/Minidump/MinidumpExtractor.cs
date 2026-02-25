@@ -290,7 +290,7 @@ public static class MinidumpExtractor
                 .GroupBy(e => e.Filename, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First().Offset, StringComparer.OrdinalIgnoreCase);
 
-            var converter = new DdxSubprocessConverter();
+            var converter = new DdxConverter();
             var result = await converter.ConvertBatchAsync(
                 ddxDir,
                 texturesDir,

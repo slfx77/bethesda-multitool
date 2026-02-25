@@ -71,6 +71,21 @@
                         IsAddTabButtonVisible="False" TabWidthMode="SizeToContent"
                         CanDragTabs="False" CanReorderTabs="False"
                         SelectionChanged="SubTabView_SelectionChanged">
+        <controls:TabView.TabStripFooter>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                      HorizontalAlignment="Right" Margin="0,0,8,0" Spacing="8">
+            <TextBlock x:Name="LoadOrderStatusText"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Button x:Name="LoadOrderButton"
+                    Content="Load Order..."
+                    Click="LoadOrderButton_Click"
+                    Visibility="Collapsed"
+                    VerticalAlignment="Center"
+                    FontSize="12" Padding="8,4" />
+          </StackPanel>
+        </controls:TabView.TabStripFooter>
 
         <!--  Tab 1: Memory Map  -->
         <controls:TabViewItem x:Uid="Tab_MemoryMap" IsClosable="False">
@@ -868,7 +883,6 @@
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
@@ -937,24 +951,6 @@
           IsEnabled="False"
           Style="{StaticResource AccentButtonStyle}" />
 
-        <!--  Add Data (visible after analysis)  -->
-        <Button
-          x:Name="AddDataButton"
-          Grid.Row="2"
-          Grid.Column="1"
-          Content="Add Data..."
-          Click="AddDataButton_Click"
-          Visibility="Collapsed"
-          HorizontalAlignment="Left"
-          Margin="0,4,0,0" />
-        <TextBlock
-          x:Name="AddDataStatusText"
-          Grid.Row="2"
-          Grid.Column="2"
-          Grid.ColumnSpan="2"
-          VerticalAlignment="Center"
-          FontSize="12"
-          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       </Grid>
     </Grid>
   </Grid>

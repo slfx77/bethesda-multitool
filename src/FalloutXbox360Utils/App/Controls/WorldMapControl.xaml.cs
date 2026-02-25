@@ -184,6 +184,44 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         MapCanvas.Invalidate();
     }
 
+    private async void SpritesCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_data == null)
+        {
+            return;
+        }
+
+        if (SpritesCheckBox.IsChecked == true)
+        {
+            var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+            picker.FileTypeFilter.Add("*");
+            InitializeWithWindow.Initialize(picker,
+                WindowNative.GetWindowHandle(App.Current.MainWindow));
+
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder != null)
+            {
+                var registry = WorldMapSpriteRegistry.Load(folder.Path, MapCanvas);
+                if (registry != null)
+                {
+                    _data.SpriteRegistry?.Dispose();
+                    _data.SpriteRegistry = registry;
+                    MapCanvas.Invalidate();
+                    return;
+                }
+            }
+
+            // If loading failed or was cancelled, uncheck
+            SpritesCheckBox.IsChecked = false;
+        }
+        else
+        {
+            _data.SpriteRegistry?.Dispose();
+            _data.SpriteRegistry = null;
+            MapCanvas.Invalidate();
+        }
+    }
+
     public void SelectObject(PlacedReference? obj)
     {
         _selectedObject = obj;

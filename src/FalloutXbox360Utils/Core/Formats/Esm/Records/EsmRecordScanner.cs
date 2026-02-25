@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
@@ -174,10 +174,11 @@ internal static class EsmRecordScanner
 #pragma warning disable S127 // Loop counter modified in body - intentional skip-ahead in binary parsing
         for (var i = 0; i <= searchLimit; i++)
         {
-            // Fast-reject: every valid ESM record/subrecord signature (both LE and BE)
-            // has an uppercase ASCII letter at data[i]. Skip ~90% of byte positions.
+            // Fast-reject: valid ESM signatures (LE and BE) start with A-Z, 0-9, or '_'.
+            // The underscore and digit cases cover big-endian variants: NPC_ -> _CPN (0x5F),
+            // TES4 -> 4SET (0x34). Rejects ~86% of byte positions.
             var b = buffer[i];
-            if (b < 'A' || b > 'Z')
+            if (b is < (byte)'0' or (> (byte)'9' and < (byte)'A') or (> (byte)'Z' and not (byte)'_'))
             {
                 continue;
             }

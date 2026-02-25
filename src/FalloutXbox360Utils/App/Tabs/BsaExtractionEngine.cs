@@ -315,7 +315,7 @@ internal sealed class BsaExtractionEngine
                 callbacks.OnStatusChanged(ddxEntry, BsaExtractionStatus.Converting);
             }
 
-            var converter = new DdxSubprocessConverter();
+            var converter = new DdxConverter();
             await converter.ConvertBatchAsync(
                 outputDir, ddxOutputDir,
                 (inputPath, status, error) =>

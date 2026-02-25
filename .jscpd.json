@@ -1,0 +1,16 @@
+{
+  "threshold": 5,
+  "reporters": ["html", "console"],
+  "ignore": [
+    "**/bin/**",
+    "**/obj/**",
+    "**/Generated/**",
+    "**/ScriptFunctionTable.Generated.cs",
+    "**/FaceGenControls.GeometrySymmetric.cs",
+    "**/SubrecordSchemaRegistry.Data*.cs"
+  ],
+  "minLines": 10,
+  "minTokens": 50,
+  "format": ["csharp"],
+  "output": "reports/duplication"
+}

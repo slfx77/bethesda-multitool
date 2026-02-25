@@ -36,7 +36,7 @@ public sealed partial class SingleFileTab
                 var worldData = await BuildSaveWorldDataAsync();
                 if (worldData == null)
                 {
-                    WorldMapStatusText.Text = "No world data available. Use Add Data to load an ESM for terrain.";
+                    WorldMapStatusText.Text = "No world data available. Use Load Order to load an ESM for terrain.";
                     return;
                 }
 
@@ -61,6 +61,11 @@ public sealed partial class SingleFileTab
                 WorldMapStatusText.Text = Strings.Status_NoWorldData;
                 return;
             }
+
+            // Merge load order records so DLC worldspaces appear on the map
+            var loadOrderRecords = _session.LoadOrder.BuildMergedRecords();
+            if (loadOrderRecords != null)
+                semantic = loadOrderRecords.MergeWith(semantic);
 
             WorldMapStatusText.Text = Strings.Status_BuildingWorldIndex;
 
@@ -92,9 +97,9 @@ public sealed partial class SingleFileTab
         var save = _session.SaveData;
         if (save == null) return null;
 
-        var suppRecords = _session.Supplementary?.EsmRecords;
+        var suppRecords = _session.LoadOrder.GetTerrainRecords();
         var resolver = _session.EffectiveResolver ?? FormIdResolver.Empty;
-        var supplementaryEsmPath = _session.Supplementary?.EsmFilePath;
+        var supplementaryEsmPath = _session.LoadOrder.GetTerrainFilePath();
 
         WorldMapStatusText.Text = "Building world map from save data...";
 

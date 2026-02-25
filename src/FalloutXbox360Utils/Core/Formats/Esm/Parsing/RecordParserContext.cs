@@ -219,6 +219,8 @@ public sealed class RecordParserContext
 
         if (dataStart + dataSize > FileSize)
         {
+            Logger.Instance.Debug("  [ReadRecordData] NULL: {0} 0x{1:X8} at offset 0x{2:X} — exceeds file size ({3}+{4} > {5})",
+                record.RecordType, record.FormId, record.Offset, dataStart, dataSize, FileSize);
             return null;
         }
 
@@ -231,11 +233,19 @@ public sealed class RecordParserContext
 
         if (dataSize <= 4)
         {
+            Logger.Instance.Debug("  [ReadRecordData] NULL: {0} 0x{1:X8} compressed but dataSize={2}",
+                record.RecordType, record.FormId, dataSize);
             return null;
         }
 
         var decompressed = EsmParser.DecompressRecordData(
             buffer.AsSpan(0, dataSize), record.IsBigEndian);
+        if (decompressed == null)
+        {
+            Logger.Instance.Debug("  [ReadRecordData] NULL: {0} 0x{1:X8} decompression failed (flags=0x{2:X8}, dataSize={3})",
+                record.RecordType, record.FormId, record.Flags, dataSize);
+        }
+
         return decompressed != null ? (decompressed, decompressed.Length) : null;
     }
 

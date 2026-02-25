@@ -3,6 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 using NifAnalyzer.Parsers;
 using Spectre.Console;
 using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
+using static FalloutXbox360Utils.Core.Utils.BinaryUtils;
 
 namespace NifAnalyzer.Commands;
 

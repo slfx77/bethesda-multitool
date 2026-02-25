@@ -88,7 +88,7 @@ public static class ConvertDdxCommand
 
         Directory.CreateDirectory(outputDir);
 
-        var converter = new DdxSubprocessConverter(verbose);
+        var converter = new DdxConverter(verbose);
         var success = converter.ConvertFile(inputFile, outputPath);
 
         if (success)
@@ -142,7 +142,7 @@ public static class ConvertDdxCommand
             }
         }
 
-        var converter = new DdxSubprocessConverter(verbose);
+        var converter = new DdxConverter(verbose);
         var converted = 0;
         var failed = 0;
         var unsupported = 0;

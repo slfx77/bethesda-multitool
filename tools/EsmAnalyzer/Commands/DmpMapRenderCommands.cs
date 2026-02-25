@@ -293,10 +293,21 @@ public static class DmpMapRenderCommands
         WorldBounds bounds, float pixelsPerUnit, int imageW, int imageH,
         MapExportSizing sizing, SchemeColor scheme, string frameTitle)
     {
-        // Project markers to engine input
+        // Project markers to engine input (append world coordinates as second label line)
         var inputs = markers
-            .Select(m => new MapMarkerInput(m.Position!.X, m.Position.Y,
-                ToMarkerType(m.MarkerType), m.MarkerName))
+            .Select(m =>
+            {
+                var name = m.MarkerName;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    var x = (int)MathF.Round(m.Position!.X);
+                    var y = (int)MathF.Round(m.Position.Y);
+                    name = $"{name}\n({x}, {y})";
+                }
+
+                return new MapMarkerInput(m.Position!.X, m.Position.Y,
+                    ToMarkerType(m.MarkerType), name);
+            })
             .ToList();
 
         // Compute layout via shared engine
@@ -304,7 +315,14 @@ public static class DmpMapRenderCommands
             inputs, imageW, imageH,
             bounds.MinX, bounds.MaxX, bounds.MinY, bounds.MaxY,
             pixelsPerUnit, sizing,
-            (text, fontSize) => (text.Length * fontSize * 0.55f, fontSize * 1.4f));
+            (text, fontSize) =>
+            {
+                var lines = text.Split('\n');
+                var maxWidth = 0f;
+                foreach (var line in lines)
+                    maxWidth = MathF.Max(maxWidth, line.Length * fontSize * 0.55f);
+                return (maxWidth, lines.Length * fontSize * 1.4f);
+            });
 
         // Draw grid lines
         var gridColor = MagickColor.FromRgba(255, 255, 255, 40);
@@ -318,6 +336,47 @@ public static class DmpMapRenderCommands
                 .FillColor(MagickColors.Transparent)
                 .Line(line.X1, line.Y1, line.X2, line.Y2)
                 .Draw(image);
+        }
+
+        // Draw cell coordinate labels at each cell's top-left corner
+        const float cellWorldSize = 4096f;
+        var cellLabelFontSize = (double)(sizing.LabelFontSize * 0.6);
+        var cellPixelSize = cellWorldSize * pixelsPerUnit;
+
+        if (cellPixelSize >= cellLabelFontSize * 4)
+        {
+            var cellLabelColor = MagickColor.FromRgba(255, 255, 255, 100);
+            var minCellX = (int)MathF.Floor(bounds.MinX / cellWorldSize);
+            var maxCellX = (int)MathF.Ceiling(bounds.MaxX / cellWorldSize);
+            var minCellY = (int)MathF.Floor(bounds.MinY / cellWorldSize);
+            var maxCellY = (int)MathF.Ceiling(bounds.MaxY / cellWorldSize);
+
+            for (var cy = minCellY; cy <= maxCellY; cy++)
+            {
+                for (var cx = minCellX; cx <= maxCellX; cx++)
+                {
+                    // Top-left corner: left edge = cx * 4096, top edge = (cy+1) * 4096
+                    var (px, py) = MapExportLayoutEngine.WorldToPixel(
+                        cx * cellWorldSize, (cy + 1) * cellWorldSize,
+                        bounds.MinX, bounds.MaxY, pixelsPerUnit);
+
+                    var inset = cellLabelFontSize * 0.3;
+                    var drawX = (double)px + inset;
+                    var drawY = (double)py + inset + cellLabelFontSize;
+
+                    if (drawX < 0 || drawX > imageW || drawY < 0 || drawY > imageH)
+                        continue;
+
+                    new Drawables()
+                        .Font("Consolas")
+                        .FontPointSize(cellLabelFontSize)
+                        .FillColor(cellLabelColor)
+                        .StrokeColor(MagickColors.Transparent)
+                        .TextAlignment(TextAlignment.Left)
+                        .Text(drawX, drawY, $"{cx},{cy}")
+                        .Draw(image);
+                }
+            }
         }
 
         // Draw marker icons tinted to scheme color (fallback: colored circle + glyph)
@@ -401,7 +460,7 @@ public static class DmpMapRenderCommands
             }
         }
 
-        // Draw label pills + text
+        // Draw label pills + multi-line text
         foreach (var lp in layout.Labels)
         {
             new Drawables()
@@ -412,15 +471,21 @@ public static class DmpMapRenderCommands
                     lp.LabelX + lp.PillWidth, lp.LabelY + lp.PillHeight, 3, 3)
                 .Draw(image);
 
-            new Drawables()
-                .Font("Segoe UI")
-                .FontPointSize(sizing.LabelFontSize)
-                .FillColor(MagickColors.White)
-                .StrokeColor(MagickColors.Transparent)
-                .TextAlignment(TextAlignment.Center)
-                .Text(lp.LabelX + lp.PillWidth / 2,
-                    lp.LabelY + lp.PadV + lp.TextHeight * 0.8, lp.Text)
-                .Draw(image);
+            var lines = lp.Text.Split('\n');
+            var lineHeight = sizing.LabelFontSize * 1.4f;
+            for (var i = 0; i < lines.Length; i++)
+            {
+                new Drawables()
+                    .Font("Segoe UI")
+                    .FontPointSize(sizing.LabelFontSize)
+                    .FillColor(MagickColors.White)
+                    .StrokeColor(MagickColors.Transparent)
+                    .TextAlignment(TextAlignment.Center)
+                    .Text(lp.LabelX + lp.PillWidth / 2,
+                        lp.LabelY + lp.PadV + lineHeight * i + lineHeight * 0.8,
+                        lines[i])
+                    .Draw(image);
+            }
         }
 
         // Frame title at top (CLI-only) — supports multi-line titles (name + timestamp)

@@ -126,7 +126,7 @@ public sealed class BsaProcessor : IRepackProcessor
         CancellationToken cancellationToken)
     {
         var bsaName = Path.GetFileName(sourceBsaPath);
-        var ddxConverter = new DdxSubprocessConverter();
+        var ddxConverter = new DdxConverter();
 
         // Phase 1: Extract all files from BSA
         progress.Report(new RepackerProgress

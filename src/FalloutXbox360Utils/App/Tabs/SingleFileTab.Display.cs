@@ -425,6 +425,7 @@ public sealed partial class SingleFileTab
     {
         _session.Dispose();
         _semanticReconstructionTask = null;
+        LoadOrderStatusText.Text = "";
 
         ResetMemoryMapTab();
         ResetDataBrowser();

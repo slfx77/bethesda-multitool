@@ -38,21 +38,33 @@ internal static class EsmRecordParser
 
     /// <summary>
     ///     Flat GRUP scanner that finds all records regardless of nesting structure.
-    ///     Xbox 360 ESMs have a different GRUP hierarchy than PC.
+    ///     Handles Xbox 360 three-region layout: nested GRUPs, TOFT cache, flat cell GRUPs.
+    ///     TOFT data blocks are scanned recursively for nested records.
+    ///     Orphaned data between regions triggers resync to the next GRUP signature.
     /// </summary>
     public static void ScanAllGrupsFlat(byte[] data, bool bigEndian, int startOffset, int endOffset,
         List<AnalyzerRecordInfo> records)
     {
+        // Clamp endOffset to array bounds to prevent out-of-range access
+        endOffset = Math.Min(endOffset, data.Length);
+
         var offset = startOffset;
-        var maxIterations = 1_000_000;
+        var maxIterations = 2_000_000;
         var iterations = 0;
 
-        while (offset + EsmParser.MainRecordHeaderSize <= endOffset && iterations++ < maxIterations)
+        while (offset >= 0 && offset + EsmParser.MainRecordHeaderSize <= endOffset && iterations++ < maxIterations)
         {
             var header = EsmParser.ParseRecordHeader(data.AsSpan(offset), bigEndian);
             if (header == null)
             {
-                break;
+                // Resync: scan forward for next GRUP signature to skip orphaned data
+                // Xbox 360 ESMs have gaps between the TOFT region and flat cell GRUPs
+                if (!TryResyncToNextGrup(data, bigEndian, ref offset, endOffset))
+                {
+                    break;
+                }
+
+                continue;
             }
 
             if (header.Signature == "GRUP")
@@ -60,21 +72,42 @@ internal static class EsmRecordParser
                 // GRUP: DataSize is total including header
                 var grupEnd = offset + (int)header.DataSize;
 
-                // Recursively scan GRUP contents
+                // Validate: grupEnd must advance past header and not exceed bounds
                 var innerStart = offset + EsmParser.MainRecordHeaderSize;
-                if (grupEnd > innerStart && grupEnd <= data.Length)
+                if (grupEnd > innerStart && grupEnd <= endOffset)
                 {
                     ScanAllGrupsFlat(data, bigEndian, innerStart, grupEnd, records);
                 }
 
-                offset = grupEnd;
+                offset = Math.Max(grupEnd, innerStart);
+            }
+            else if (header.Signature == "TOFT")
+            {
+                // TOFT streaming cache: Xbox 360 stores split INFO records inside data blocks
+                if (header.DataSize > 0)
+                {
+                    var toftDataStart = offset + EsmParser.MainRecordHeaderSize;
+                    var toftDataEnd = toftDataStart + (int)header.DataSize;
+                    if (toftDataEnd > toftDataStart && toftDataEnd <= endOffset)
+                    {
+                        ScanAllGrupsFlat(data, bigEndian, toftDataStart, toftDataEnd, records);
+                    }
+
+                    offset = Math.Max(toftDataEnd, toftDataStart);
+                }
+                else
+                {
+                    // Zero-size TOFT sentinel inside Cell Children GRUPs
+                    offset += EsmParser.MainRecordHeaderSize;
+                }
             }
             else
             {
                 // Regular record
                 var recordEnd = offset + EsmParser.MainRecordHeaderSize + (int)header.DataSize;
 
-                if (recordEnd <= data.Length)
+                // Validate: recordEnd must advance and not exceed bounds
+                if (recordEnd > offset && recordEnd <= endOffset)
                 {
                     records.Add(new AnalyzerRecordInfo
                     {
@@ -85,11 +118,60 @@ internal static class EsmRecordParser
                         Offset = (uint)offset,
                         TotalSize = (uint)(recordEnd - offset)
                     });
-                }
 
-                offset = recordEnd;
+                    offset = recordEnd;
+                }
+                else
+                {
+                    // Bad record size — skip header and try to continue
+                    offset += EsmParser.MainRecordHeaderSize;
+                }
             }
         }
+    }
+
+    /// <summary>
+    ///     Scans forward from the current offset to find the next GRUP signature.
+    ///     Xbox 360 ESMs have orphaned data between the TOFT region and flat cell GRUPs.
+    /// </summary>
+    private static bool TryResyncToNextGrup(byte[] data, bool bigEndian, ref int offset, int endOffset)
+    {
+        // GRUP signature bytes: big-endian stores as "PURG", little-endian as "GRUP"
+        byte b0, b1, b2, b3;
+        if (bigEndian)
+        {
+            b0 = (byte)'P';
+            b1 = (byte)'U';
+            b2 = (byte)'R';
+            b3 = (byte)'G';
+        }
+        else
+        {
+            b0 = (byte)'G';
+            b1 = (byte)'R';
+            b2 = (byte)'U';
+            b3 = (byte)'P';
+        }
+
+        var scanLimit = Math.Min(offset + 4096, endOffset - 24);
+        for (var scan = offset + 1; scan <= scanLimit; scan++)
+        {
+            if (data[scan] != b0 || data[scan + 1] != b1 ||
+                data[scan + 2] != b2 || data[scan + 3] != b3)
+            {
+                continue;
+            }
+
+            // Validate: parse as GRUP header, GroupSize must be >= 24 and fit in file
+            var candidate = EsmParser.ParseRecordHeader(data.AsSpan(scan), bigEndian);
+            if (candidate != null && candidate.DataSize >= 24 && scan + (long)candidate.DataSize <= data.Length)
+            {
+                offset = scan;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

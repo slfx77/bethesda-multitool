@@ -29,6 +29,9 @@ public record ExtractedRefrRecord
     /// <summary>Parent cell FormID (if known).</summary>
     public uint? ParentCellFormId { get; init; }
 
+    /// <summary>Whether the parent cell is an interior cell (from runtime cCellFlags bit 0).</summary>
+    public bool? ParentCellIsInterior { get; init; }
+
     /// <summary>XESP - Enable Parent FormID.</summary>
     public uint? EnableParentFormId { get; init; }
 

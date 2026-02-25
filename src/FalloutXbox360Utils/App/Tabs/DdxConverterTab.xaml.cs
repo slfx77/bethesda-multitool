@@ -355,7 +355,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
         var preserveStructure = PreserveStructureCheckBox.IsChecked == true;
         var overwrite = OverwriteExistingCheckBox.IsChecked == true;
 
-        var converter = new DdxSubprocessConverter();
+        var converter = new DdxConverter();
 
         _cts = new CancellationTokenSource();
         UpdateButtonStates();

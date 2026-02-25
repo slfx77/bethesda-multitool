@@ -64,27 +64,27 @@ internal sealed class AnalysisSessionState : IDisposable
     public Core.Formats.SaveGame.SaveFile? SaveData { get; set; }
     public Dictionary<int, DecodedFormData>? DecodedForms { get; set; }
 
-    // ── Supplementary data ──
-    public SupplementaryData? Supplementary { get; set; }
+    // ── Load order data ──
+    public LoadOrder LoadOrder { get; } = new();
 
     /// <summary>
-    ///     Effective resolver: merges primary + supplementary ESM resolvers when both are available.
-    ///     Falls back to whichever single resolver exists, or null.
+    ///     Effective resolver: merges primary + load order resolvers when both are available.
+    ///     Primary resolver takes precedence over all load order entries.
     /// </summary>
     public FormIdResolver? EffectiveResolver
     {
         get
         {
             var primary = Resolver;
-            var supplementary = Supplementary?.EsmResolver;
-            if (primary != null && supplementary != null)
-                return primary.MergeWith(supplementary);
-            return primary ?? supplementary;
+            var loadOrderMerged = LoadOrder.BuildMergedResolver();
+            if (primary != null && loadOrderMerged != null)
+                return primary.MergeWith(loadOrderMerged);
+            return primary ?? loadOrderMerged;
         }
     }
 
-    /// <summary>Subtitle index from supplementary data, if loaded.</summary>
-    public SubtitleIndex? EffectiveSubtitles => Supplementary?.Subtitles;
+    /// <summary>Subtitle index from load order data, if loaded.</summary>
+    public SubtitleIndex? EffectiveSubtitles => LoadOrder.Subtitles;
 
     public bool IsAnalyzed => AnalysisResult != null;
     public bool HasAccessor => Accessor != null;
@@ -148,9 +148,8 @@ internal sealed class AnalysisSessionState : IDisposable
         SaveData = null;
         DecodedForms = null;
 
-        // Supplementary data
-        Supplementary?.Dispose();
-        Supplementary = null;
+        // Load order data
+        LoadOrder.Dispose();
 
         // File resources
         Accessor?.Dispose();

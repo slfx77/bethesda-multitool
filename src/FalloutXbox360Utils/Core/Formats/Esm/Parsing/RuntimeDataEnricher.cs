@@ -75,6 +75,7 @@ internal static class RuntimeDataEnricher
                     Position = runtimeRefr.Position ?? existing.Position,
                     Scale = Math.Abs(runtimeRefr.Scale - 1.0f) > 0.001f ? runtimeRefr.Scale : existing.Scale,
                     ParentCellFormId = runtimeRefr.ParentCellFormId ?? existing.ParentCellFormId,
+                    ParentCellIsInterior = runtimeRefr.ParentCellIsInterior ?? existing.ParentCellIsInterior,
                     IsMapMarker = runtimeRefr.IsMapMarker || existing.IsMapMarker,
                     MarkerType = runtimeRefr.MarkerType ?? existing.MarkerType,
                     MarkerName = runtimeRefr.MarkerName ?? existing.MarkerName,

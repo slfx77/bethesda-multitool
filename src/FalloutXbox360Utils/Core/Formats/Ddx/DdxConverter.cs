@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Ddx;
 /// <summary>
 ///     Converts DDX files using DDXConv as a compiled-in library.
 /// </summary>
-public class DdxSubprocessConverter(bool verbose = false, bool saveAtlas = false)
+public class DdxConverter(bool verbose = false, bool saveAtlas = false)
 {
     /// <summary>
     ///     Callback for batch conversion progress updates.
@@ -51,22 +51,14 @@ public class DdxSubprocessConverter(bool verbose = false, bool saveAtlas = false
         Processed++;
         try
         {
-            var parser = new MemoryTextureParser(_verbose);
-            var ddxResult = parser.ConvertFromMemory(ddxData, _saveAtlas);
-
-            if (!ddxResult.Success)
-            {
-                Failed++;
-                return ConversionResult.Failure(ddxResult.Error ?? "DDXConv conversion failed");
-            }
+            var parser = new DdxParser(_verbose);
+            var ddsData = parser.ConvertDdxToDds(ddxData);
 
             Succeeded++;
             return new ConversionResult
             {
                 Success = true,
-                OutputData = ddxResult.DdsData,
-                AtlasData = ddxResult.AtlasData,
-                Notes = ddxResult.Notes
+                OutputData = ddsData
             };
         }
         catch (Exception ex)

@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.CommandLine;
+using System.IO.Enumeration;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Ddx;
 using Spectre.Console;
@@ -24,7 +25,7 @@ internal static class BsaExtractCommand
             Required = true
         };
         var filterOption = new Option<string?>("-f", "--filter")
-            { Description = "Filter by extension (e.g., .nif, .dds)" };
+            { Description = "Filter by glob pattern (e.g., *.nif, *benny*.nif) or extension (.nif)" };
         var folderOption = new Option<string?>("-d", "--folder") { Description = "Filter by folder path" };
         var overwriteOption = new Option<bool>("--overwrite") { Description = "Overwrite existing files" };
         var convertOption = new Option<bool>("-c", "--convert")
@@ -91,14 +92,27 @@ internal static class BsaExtractCommand
 
             if (!string.IsNullOrEmpty(filter) || !string.IsNullOrEmpty(folder))
             {
+                // Detect glob pattern vs simple extension
+                var isGlob = filter != null && (filter.Contains('*') || filter.Contains('?'));
+
                 predicate = file =>
                 {
                     if (!string.IsNullOrEmpty(filter))
                     {
-                        var ext = filter.StartsWith('.') ? filter : $".{filter}";
-                        if (file.Name?.EndsWith(ext, StringComparison.OrdinalIgnoreCase) != true)
+                        if (isGlob)
                         {
-                            return false;
+                            // Glob: match against full path (normalize separators)
+                            var path = file.FullPath.Replace('\\', '/');
+                            var pattern = filter.Replace('\\', '/');
+                            if (!FileSystemName.MatchesSimpleExpression(pattern, path, ignoreCase: true))
+                                return false;
+                        }
+                        else
+                        {
+                            // Extension: e.g., ".nif" or "nif"
+                            var ext = filter.StartsWith('.') ? filter : $".{filter}";
+                            if (file.Name?.EndsWith(ext, StringComparison.OrdinalIgnoreCase) != true)
+                                return false;
                         }
                     }
 
@@ -157,7 +171,7 @@ internal static class BsaExtractCommand
                     var ddxOutputDir = Path.Combine(Path.GetTempPath(), $"ddx_batch_{Guid.NewGuid():N}");
                     try
                     {
-                        var converter = new DdxSubprocessConverter();
+                        var converter = new DdxConverter();
                         var batchResult = await converter.ConvertBatchAsync(
                             output, ddxOutputDir, pcFriendly: true);
                         ddxBatchConverted = batchResult.Converted;

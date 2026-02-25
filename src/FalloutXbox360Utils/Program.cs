@@ -55,6 +55,7 @@ public static class Program
         rootCommand.Subcommands.Add(RttiCommand.Create());
         rootCommand.Subcommands.Add(SaveCommand.Create());
         rootCommand.Subcommands.Add(DmpCommand.Create());
+        rootCommand.Subcommands.Add(SpriteGenCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }

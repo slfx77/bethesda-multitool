@@ -1,3 +1,4 @@
+using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Tests.Helpers;
@@ -408,6 +409,100 @@ public class EsmRecordFormatDetectionTests(ITestOutputHelper output)
         // ScanForRecords with byte[] always reads LE first
         Assert.Equal(1, result.LittleEndianRecords);
         Assert.Equal(0, result.BigEndianRecords);
+    }
+
+    #endregion
+
+    #region 7. Big-Endian Fast-Reject Regression (NPC_, TES4)
+
+    /// <summary>
+    ///     Regression test: big-endian NPC_ records start with '_' (0x5F) when byte-swapped.
+    ///     The scanner's fast-reject must NOT skip positions starting with '_', otherwise
+    ///     NPC_ records in Xbox 360 memory dumps are silently lost.
+    /// </summary>
+    [Fact]
+    public void ScanMemoryMapped_BigEndianNpc_IsDetectedByFastReject()
+    {
+        var edid = Encoding.ASCII.GetBytes("TestNpc\0");
+        var buf = BuildMinimalRecordBE("NPC_", 0x00010001, "EDID", edid);
+
+        var result = ScanViaMemoryMappedFile(buf);
+
+        _output.WriteLine($"MainRecords: {result.MainRecords.Count}, BE: {result.BigEndianRecords}");
+        Assert.Single(result.MainRecords);
+        Assert.Equal("NPC_", result.MainRecords[0].RecordType);
+        Assert.True(result.MainRecords[0].IsBigEndian);
+    }
+
+    /// <summary>
+    ///     Regression test: big-endian TES4 records start with '4' (0x34) when byte-swapped.
+    ///     The scanner's fast-reject must allow digits so TES4 positions are not skipped.
+    ///     TES4 is not in RuntimeRecordTypes so it won't be detected as a main record,
+    ///     but the fast-reject must still allow the position to reach the dispatch lookup.
+    /// </summary>
+    [Fact]
+    public void FastReject_BigEndianTes4_DigitFirstByteAccepted()
+    {
+        // BE signature for "TES4" on disk: bytes [0x34='4', 0x53='S', 0x45='E', 0x54='T']
+        // The first byte '4' (0x34) must pass the fast-reject filter.
+        byte b = (byte)'4';
+        bool passesFilter = !(b is < (byte)'0' or (> (byte)'9' and < (byte)'A') or (> (byte)'Z' and not (byte)'_'));
+        Assert.True(passesFilter, "Digit '4' must pass the fast-reject filter");
+    }
+
+    /// <summary>
+    ///     Verify that all record types in RuntimeRecordTypes have their big-endian first byte
+    ///     accepted by the fast-reject filter. This prevents future regressions if new record
+    ///     types with non-A-Z characters are added.
+    /// </summary>
+    [Fact]
+    public void FastReject_AllRuntimeRecordTypes_BigEndianFirstByteAccepted()
+    {
+        var rejected = new List<string>();
+
+        foreach (var type in RecordScannerDispatch.RuntimeRecordTypes)
+        {
+            // Big-endian signature is reversed: "NPC_" -> "_CPN", first byte = '_'
+            byte firstByteBE = (byte)type[3];
+
+            bool passesFilter = !(firstByteBE is < (byte)'0'
+                or (> (byte)'9' and < (byte)'A')
+                or (> (byte)'Z' and not (byte)'_'));
+
+            if (!passesFilter)
+            {
+                rejected.Add($"{type} (BE first byte: 0x{firstByteBE:X2} '{(char)firstByteBE}')");
+            }
+        }
+
+        _output.WriteLine($"Checked {RecordScannerDispatch.RuntimeRecordTypes.Length} record types");
+        foreach (var r in rejected)
+        {
+            _output.WriteLine($"  REJECTED: {r}");
+        }
+
+        Assert.Empty(rejected);
+    }
+
+    /// <summary>
+    ///     Helper: writes data to a temp file and scans via ScanForRecordsMemoryMapped,
+    ///     exercising the production fast-reject + unified dispatch code path.
+    /// </summary>
+    private static EsmRecordScanResult ScanViaMemoryMappedFile(byte[] data)
+    {
+        var tmpFile = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        try
+        {
+            File.WriteAllBytes(tmpFile, data);
+            using var mmf = MemoryMappedFile.CreateFromFile(
+                tmpFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, data.Length, MemoryMappedFileAccess.Read);
+            return EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, data.Length);
+        }
+        finally
+        {
+            File.Delete(tmpFile);
+        }
     }
 
     #endregion

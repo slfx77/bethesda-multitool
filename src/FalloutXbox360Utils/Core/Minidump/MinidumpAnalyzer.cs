@@ -55,26 +55,29 @@ public sealed class MinidumpAnalyzer
         using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
 
-        // Phase 1: Signature scanning (0-50%)
-        var scanProgress = CreateScanProgress(progress);
-        var matches =
-            await Task.Run(() => _fileScanner.FindAllMatchesParallel(accessor, result.FileSize, minidumpInfo, scanProgress),
-                cancellationToken);
-
-        // Phase 2: Parsing matches (50-70%)
-        progress?.Report(new AnalysisProgress { Phase = "Parsing", FilesFound = matches.Count, PercentComplete = 50 });
-        await MinidumpFileScanner.ParseMatchesAsync(accessor, result, matches, moduleOffsets, minidumpInfo, progress, cancellationToken);
-
-        // Sort all results by offset
-        MinidumpFileScanner.SortCarvedFilesByOffset(result);
-
-        // Extract metadata (SCDA records, ESM records, FormID mapping) using memory-mapped access
         if (includeMetadata)
         {
-            // Build module ranges for ESM exclusion (modules may contain ESM-like data)
+            // Full concurrent analysis: all 5 scanners run simultaneously,
+            // followed by sequential post-processing (match parsing, LAND/REFR, FormID mapping, etc.)
             var moduleRanges = BuildModuleRanges(minidumpInfo);
-            await MinidumpMetadataExtractor.ExtractMetadataAsync(accessor, result, moduleRanges, minidumpInfo, progress, verbose,
+            await ConcurrentScanCoordinator.RunConcurrentAnalysisAsync(
+                accessor, result, minidumpInfo, _fileScanner, moduleOffsets, moduleRanges,
+                progress, verbose, cancellationToken);
+        }
+        else
+        {
+            // Lightweight path: signature scan + parse only (no metadata extraction)
+            var scanProgress = CreateScanProgress(progress);
+            var matches = await Task.Run(
+                () => _fileScanner.FindAllMatchesParallel(accessor, result.FileSize, minidumpInfo, scanProgress),
                 cancellationToken);
+
+            progress?.Report(new AnalysisProgress
+                { Phase = "Parsing", FilesFound = matches.Count, PercentComplete = 50 });
+            await MinidumpFileScanner.ParseMatchesAsync(
+                accessor, result, matches, moduleOffsets, minidumpInfo, progress, cancellationToken);
+
+            MinidumpFileScanner.SortCarvedFilesByOffset(result);
         }
 
         progress?.Report(new AnalysisProgress

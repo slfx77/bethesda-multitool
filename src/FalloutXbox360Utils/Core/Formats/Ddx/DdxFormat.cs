@@ -12,7 +12,7 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     private const string SignatureId3Xdr = "ddx_3xdr";
 
     private int _convertedCount;
-    private DdxSubprocessConverter? _converter;
+    private DdxConverter? _converter;
     private int _failedCount;
 
     public override string FormatId => "ddx";
@@ -89,7 +89,7 @@ public sealed class DdxFormat : FileFormatBase, IFileConverter
     public bool Initialize(bool verbose = false, Dictionary<string, object>? options = null)
     {
         var saveAtlas = options?.TryGetValue("saveAtlas", out var saveAtlasObj) == true && saveAtlasObj is true;
-        _converter = new DdxSubprocessConverter(verbose, saveAtlas);
+        _converter = new DdxConverter(verbose, saveAtlas);
         return true;
     }
 

@@ -92,8 +92,8 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             scale = 1.0f;
         }
 
-        // Follow pParentCell → cell FormID (expected type 0x39 = CELL)
-        var parentCellFormId = _context.FollowPointerToFormId(buffer, ParentCellPtrOffset, 0x39);
+        // Follow pParentCell → cell FormID + interior flag (expected type 0x39 = CELL)
+        (uint? parentCellFormId, bool? parentCellIsInterior) = FollowPointerToCellInfo(buffer, ParentCellPtrOffset);
 
         // Walk ExtraDataList for map marker
         var pHead = BinaryUtils.ReadUInt32BE(buffer, ExtraListHeadOffset);
@@ -111,6 +111,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
             Position = position,
             Scale = scale,
             ParentCellFormId = parentCellFormId,
+            ParentCellIsInterior = parentCellIsInterior,
             IsMapMarker = isMapMarker,
             MarkerType = markerType,
             MarkerName = markerName
@@ -279,6 +280,52 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         var markerName = _context.ReadBSStringT(mapDataFileOffset, MapMarkerNameFieldOffset);
 
         return (true, markerType, markerName);
+    }
+
+    /// <summary>
+    ///     Follow a pointer to a TESObjectCELL and return both FormID and IsInterior flag.
+    ///     Reads 53 bytes of the cell struct: TESForm header (24B) + enough for cCellFlags at offset 52.
+    /// </summary>
+    private (uint? FormId, bool? IsInterior) FollowPointerToCellInfo(byte[] buffer, int pointerOffset)
+    {
+        if (pointerOffset + 4 > buffer.Length)
+        {
+            return (null, null);
+        }
+
+        var pointer = BinaryUtils.ReadUInt32BE(buffer, pointerOffset);
+        if (pointer == 0 || !_context.IsValidPointer(pointer))
+        {
+            return (null, null);
+        }
+
+        // Read enough of the cell struct to get cCellFlags at offset 52
+        // CELL does NOT inherit TESChildCell, so no shift applies
+        const int cellReadSize = 53; // Need byte at offset 52
+        var cellBuffer = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(pointer), cellReadSize);
+        if (cellBuffer == null)
+        {
+            return (null, null);
+        }
+
+        // Validate FormType (0x39 = CELL)
+        var formType = cellBuffer[4];
+        if (formType != 0x39)
+        {
+            return (null, null);
+        }
+
+        var formId = BinaryUtils.ReadUInt32BE(cellBuffer, 12);
+        if (formId == 0 || formId == 0xFFFFFFFF)
+        {
+            return (null, null);
+        }
+
+        // cCellFlags at offset 52; bit 0 = IsInterior
+        var cellFlags = cellBuffer[52];
+        var isInterior = (cellFlags & 0x01) != 0;
+
+        return (formId, isInterior);
     }
 
     #region TESObjectREFR Struct Layout

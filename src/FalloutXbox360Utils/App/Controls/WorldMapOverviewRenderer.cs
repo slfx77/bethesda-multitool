@@ -449,6 +449,14 @@ internal static class WorldMapOverviewRenderer
                 return;
             }
 
+            // Try sprite rendering first (if registry is loaded and sprite exists)
+            var sprite = data.SpriteRegistry?.GetSprite(obj.ModelPath);
+            if (sprite != null)
+            {
+                DrawSpriteAtObject(ds, pos, halfW, halfH, obj.RotZ, sprite);
+                return;
+            }
+
             if (outlineOnly)
             {
                 var rotation = Matrix3x2.CreateRotation(-obj.RotZ, pos);
@@ -480,6 +488,28 @@ internal static class WorldMapOverviewRenderer
         var clickRadius = 6f / zoom;
         ds.FillCircle(pos, clickRadius, color);
         ds.DrawCircle(pos, clickRadius, Colors.White, 1f / zoom);
+    }
+
+    /// <summary>
+    ///     Draw a pre-rendered sprite at an object's position, sized to match its bounding box
+    ///     and rotated by the object's Z-axis rotation.
+    /// </summary>
+    private static void DrawSpriteAtObject(CanvasDrawingSession ds, Vector2 pos,
+        float halfW, float halfH, float rotZ, WorldMapSpriteRegistry.SpriteEntry sprite)
+    {
+        var saved = ds.Transform;
+
+        // Apply rotation around object center
+        if (MathF.Abs(rotZ) > 0.001f)
+        {
+            ds.Transform = Matrix3x2.CreateRotation(-rotZ, pos) * saved;
+        }
+
+        // Draw sprite sized to match bounding box
+        var destRect = new Rect(pos.X - halfW, pos.Y - halfH, halfW * 2, halfH * 2);
+        ds.DrawImage(sprite.Bitmap, destRect);
+
+        ds.Transform = saved;
     }
 
     internal static void DrawPlacedObjectDot(

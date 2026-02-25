@@ -224,7 +224,7 @@ internal static class WorldMapOverlayBuilder
             overlayMarkers.Add(new PlacedReference
             {
                 FormId = resolvedFormId,
-                BaseFormId = resolvedFormId, // Save forms don't have separate base
+                BaseFormId = resolver.GetBaseFormId(resolvedFormId) ?? resolvedFormId,
                 BaseEditorId = resolver.GetBestNameWithRefChain(resolvedFormId),
                 RecordType = recordType,
                 X = form.Initial.PosX,

@@ -150,6 +150,8 @@ internal static class CellLinkageHandler
     ///     DMP fallback: create virtual cells for orphan REFR/ACHR/ACRE records that were not
     ///     assigned to any real cell. Groups orphans by their XY-derived grid position and
     ///     creates synthetic CellRecord entries so they appear on the world map.
+    ///     Interior cell refs are separated and grouped into interior cell stubs instead of
+    ///     being placed on the exterior world map.
     /// </summary>
     internal static List<CellRecord> CreateVirtualCells(
         List<CellRecord> existingCells,
@@ -178,18 +180,63 @@ internal static class CellLinkageHandler
             return [];
         }
 
-        // Phase 1: Assign orphans to existing cells using ParentCellFormId from runtime struct reader.
-        // The proximity heuristic (ResolveCellRefs) misses many refs in DMP mode because ESM fragments
-        // are scattered across memory. ParentCellFormId from pParentCell pointer is more reliable.
+        // Separate interior refs — these should not appear on the exterior world map.
+        // Interior cell refs have local coordinates (often near origin), so they would
+        // cluster at map center (0,0) if placed on the exterior map.
+        var exteriorOrphans = new List<ExtractedRefrRecord>();
+        var interiorOrphans = new List<ExtractedRefrRecord>();
+        foreach (var orphan in orphans)
+        {
+            if (orphan.ParentCellIsInterior == true)
+            {
+                interiorOrphans.Add(orphan);
+            }
+            else
+            {
+                exteriorOrphans.Add(orphan);
+            }
+        }
+
+        if (interiorOrphans.Count > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] CreateVirtualCells: {orphans.Count} orphans ({exteriorOrphans.Count} exterior, {interiorOrphans.Count} interior)");
+        }
+
         var cellByFormId = new Dictionary<uint, CellRecord>();
         foreach (var cell in existingCells)
         {
             cellByFormId.TryAdd(cell.FormId, cell);
         }
 
+        // Phase 0.5: Create stub cells from runtime cell maps for cells not yet reconstructed.
+        // This gives Phase 1 (ParentCellFormId) and Phase 1.5 (grid lookup) real CellRecords
+        // to assign orphans to, instead of falling through to virtual cells.
+        var stubsCreated = CreateCellMapStubs(existingCells, cellByFormId, context);
+
+        // Phase Interior: Group interior orphans by their parent cell FormID.
+        var interiorCellsCreated = AssignInteriorOrphans(interiorOrphans, existingCells, cellByFormId, context);
+        if (interiorCellsCreated > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] CreateVirtualCells: created {interiorCellsCreated} interior cell stubs for {interiorOrphans.Count} interior refs");
+        }
+
+        if (exteriorOrphans.Count == 0)
+        {
+            if (stubsCreated > 0 || interiorCellsCreated > 0)
+            {
+                Logger.Instance.Debug(
+                    "  [Semantic] CreateVirtualCells: all orphans resolved (stubs + interior), no virtual cells needed");
+            }
+
+            return [];
+        }
+
+        // Phase 1: Assign exterior orphans to existing cells using ParentCellFormId.
         var reassigned = 0;
         var trueOrphans = new List<ExtractedRefrRecord>();
-        foreach (var orphan in orphans)
+        foreach (var orphan in exteriorOrphans)
         {
             if (orphan.ParentCellFormId.HasValue &&
                 cellByFormId.TryGetValue(orphan.ParentCellFormId.Value, out var parentCell))
@@ -206,7 +253,7 @@ internal static class CellLinkageHandler
         if (reassigned > 0)
         {
             Logger.Instance.Debug(
-                $"  [Semantic] CreateVirtualCells: {reassigned}/{orphans.Count} orphans reassigned to existing cells via ParentCellFormId");
+                $"  [Semantic] CreateVirtualCells: {reassigned}/{exteriorOrphans.Count} exterior orphans reassigned via ParentCellFormId");
         }
 
         if (trueOrphans.Count == 0)
@@ -216,10 +263,8 @@ internal static class CellLinkageHandler
         }
 
         // Phase 1.5: Use worldspace cell maps to resolve orphans by position -> grid -> real cell.
-        // The cell map from TESWorldSpace.pCellMap gives us the authoritative grid-to-cell mapping.
         if (context.RuntimeWorldspaceCellMaps is { Count: > 0 })
         {
-            // Build grid->CellFormId lookup across all worldspaces
             var gridToCellFormId = new Dictionary<(int, int), uint>();
             foreach (var (_, wsData) in context.RuntimeWorldspaceCellMaps)
             {
@@ -267,6 +312,17 @@ internal static class CellLinkageHandler
             }
         }
 
+        // Diagnostic: count exterior refs near origin that weren't classified as interior.
+        // These may be unloaded persistent refs or interior refs with unknown cell type.
+        var nearOriginExterior = trueOrphans.Count(r =>
+            MathF.Abs(r.Position!.X) < 100f && MathF.Abs(r.Position.Y) < 100f);
+        if (nearOriginExterior > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] CreateVirtualCells: {nearOriginExterior} exterior orphans near (0,0) — " +
+                "may be unloaded persistent refs or interior refs with unknown cell type");
+        }
+
         // Phase 2: Group remaining orphans by grid cell derived from position (4096 world units per cell)
         var groups = trueOrphans
             .GroupBy(r => ((int)MathF.Floor(r.Position!.X / 4096f), (int)MathF.Floor(r.Position.Y / 4096f)))
@@ -274,7 +330,7 @@ internal static class CellLinkageHandler
             .ToList();
 
         var virtualCells = new List<CellRecord>();
-        var syntheticFormId = 0xFF000001u; // Synthetic FormIDs in a high range unlikely to collide
+        var syntheticFormId = 0xFF000001u;
 
         foreach (var group in groups)
         {
@@ -297,6 +353,148 @@ internal static class CellLinkageHandler
             $"  [Semantic] CreateVirtualCells: {trueOrphans.Count} true orphans -> {virtualCells.Count} virtual cells");
 
         return virtualCells;
+    }
+
+    /// <summary>
+    ///     Phase 0.5: Create stub CellRecords from RuntimeWorldspaceCellMaps for cells known
+    ///     to the engine but not reconstructed from ESM fragments. This includes the persistent
+    ///     cell and grid cells from pCellMap hash tables.
+    /// </summary>
+    private static int CreateCellMapStubs(
+        List<CellRecord> existingCells,
+        Dictionary<uint, CellRecord> cellByFormId,
+        RecordParserContext context)
+    {
+        if (context.RuntimeWorldspaceCellMaps is not { Count: > 0 })
+        {
+            return 0;
+        }
+
+        var stubsCreated = 0;
+        foreach (var (wsFormId, wsData) in context.RuntimeWorldspaceCellMaps)
+        {
+            // Create persistent cell stub if not already present
+            if (wsData.PersistentCellFormId is > 0 &&
+                !cellByFormId.ContainsKey(wsData.PersistentCellFormId.Value))
+            {
+                var persistentStub = new CellRecord
+                {
+                    FormId = wsData.PersistentCellFormId.Value,
+                    EditorId = context.GetEditorId(wsData.PersistentCellFormId.Value),
+                    FullName = context.FormIdToFullName.GetValueOrDefault(wsData.PersistentCellFormId.Value),
+                    GridX = 0,
+                    GridY = 0,
+                    WorldspaceFormId = wsFormId,
+                    HasPersistentObjects = true,
+                    PlacedObjects = [],
+                    IsBigEndian = true
+                };
+                cellByFormId[persistentStub.FormId] = persistentStub;
+                existingCells.Add(persistentStub);
+                stubsCreated++;
+            }
+
+            // Create stubs for grid cells from pCellMap
+            foreach (var entry in wsData.Cells)
+            {
+                if (!cellByFormId.ContainsKey(entry.CellFormId))
+                {
+                    var stub = new CellRecord
+                    {
+                        FormId = entry.CellFormId,
+                        EditorId = context.GetEditorId(entry.CellFormId),
+                        FullName = context.FormIdToFullName.GetValueOrDefault(entry.CellFormId),
+                        GridX = entry.GridX,
+                        GridY = entry.GridY,
+                        WorldspaceFormId = entry.WorldspaceFormId ?? wsFormId,
+                        PlacedObjects = [],
+                        IsBigEndian = true
+                    };
+                    cellByFormId[stub.FormId] = stub;
+                    existingCells.Add(stub);
+                    stubsCreated++;
+                }
+            }
+        }
+
+        if (stubsCreated > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] CreateVirtualCells: created {stubsCreated} stub cells from runtime cell maps");
+        }
+
+        return stubsCreated;
+    }
+
+    /// <summary>
+    ///     Group interior orphan refs by ParentCellFormId and assign them to interior cell stubs.
+    ///     Creates new CellRecord stubs with IsInterior=true for cells not already reconstructed.
+    /// </summary>
+    private static int AssignInteriorOrphans(
+        List<ExtractedRefrRecord> interiorOrphans,
+        List<CellRecord> existingCells,
+        Dictionary<uint, CellRecord> cellByFormId,
+        RecordParserContext context)
+    {
+        if (interiorOrphans.Count == 0)
+        {
+            return 0;
+        }
+
+        var cellsCreated = 0;
+
+        // Group by parent cell FormID
+        foreach (var group in interiorOrphans.GroupBy(r => r.ParentCellFormId ?? 0))
+        {
+            CellRecord cell;
+            if (group.Key != 0 && cellByFormId.TryGetValue(group.Key, out var existingCell))
+            {
+                cell = existingCell;
+            }
+            else if (group.Key != 0)
+            {
+                cell = new CellRecord
+                {
+                    FormId = group.Key,
+                    EditorId = context.GetEditorId(group.Key),
+                    FullName = context.FormIdToFullName.GetValueOrDefault(group.Key),
+                    Flags = 1, // IsInterior
+                    PlacedObjects = [],
+                    IsBigEndian = true
+                };
+                cellByFormId[group.Key] = cell;
+                existingCells.Add(cell);
+                cellsCreated++;
+            }
+            else
+            {
+                // Interior orphans with no parent cell — create a single catch-all
+                cell = new CellRecord
+                {
+                    FormId = 0xFE000001,
+                    EditorId = "[Unassigned Interior]",
+                    Flags = 1, // IsInterior
+                    PlacedObjects = [],
+                    IsVirtual = true,
+                    IsBigEndian = true
+                };
+                cellByFormId.TryAdd(cell.FormId, cell);
+                if (!existingCells.Exists(c => c.FormId == cell.FormId))
+                {
+                    existingCells.Add(cell);
+                    cellsCreated++;
+                }
+
+                cell = cellByFormId[cell.FormId];
+            }
+
+            foreach (var orphan in group)
+            {
+                cell.PlacedObjects.Add(ToPlacedReference(orphan, context));
+            }
+        }
+
+        return cellsCreated;
     }
 
     internal static PlacedReference ToPlacedReference(ExtractedRefrRecord r, RecordParserContext context)

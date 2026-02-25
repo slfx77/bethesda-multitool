@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using NifAnalyzer.Models;
 using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
+using static FalloutXbox360Utils.Core.Utils.BinaryUtils;
 
 namespace NifAnalyzer.Parsers;
 

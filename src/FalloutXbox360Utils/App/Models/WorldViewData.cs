@@ -68,4 +68,9 @@ internal sealed class WorldViewData
 
     /// <summary>Player position from save file, if available.</summary>
     public (float X, float Y, float Z)? PlayerPosition { get; set; }
+
+#if WINDOWS_GUI
+    /// <summary>Pre-rendered sprite registry for placed object rendering (loaded from sprite-gen output).</summary>
+    public WorldMapSpriteRegistry? SpriteRegistry { get; set; }
+#endif
 }

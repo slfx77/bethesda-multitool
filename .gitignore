@@ -3,6 +3,9 @@ bin/
 obj/
 out/
 
+# Reports
+reports/
+
 # IDE
 .vs/
 .vscode/
