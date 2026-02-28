@@ -5,13 +5,17 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 /// <summary>
 ///     Renders a <see cref="NifRenderableModel"/> to a transparent RGBA pixel buffer
 ///     using orthographic top-down projection with per-vertex smooth shading, optional texture mapping,
-///     bump mapping, vertex colors, and screen-space ambient occlusion.
+///     bump mapping, and vertex colors.
 ///     Uses a scanline triangle rasterizer with Z-buffer depth testing.
 /// </summary>
 internal static class NifSpriteRenderer
 {
     /// <summary>SSAA supersample factor: render at Nx resolution, then box-filter downscale.</summary>
     private const int SsaaFactor = 2;
+
+    // Debug flags for diagnosing rendering artifacts
+    internal static bool DisableBilinear { get; set; }
+    internal static bool DisableBumpMapping { get; set; }
 
     // Lighting constants
     private const float Ambient = 0.25f;
@@ -84,7 +88,7 @@ internal static class NifSpriteRenderer
     }
 
     /// <summary>
-    ///     Core render pipeline: canvas sizing → sort → rasterize → SSAO → downsample.
+    ///     Core render pipeline: canvas sizing → sort → rasterize → downsample.
     ///     Shared by both top-down and isometric render paths.
     /// </summary>
     private static SpriteResult? RenderCore(List<TriangleData> triangleList, bool hasTexture,
@@ -154,17 +158,20 @@ internal static class NifSpriteRenderer
         var emissiveMask = new bool[ssWidth * ssHeight];
         Array.Fill(depthBuffer, float.MinValue);
 
-        // Sort by average Z ascending so we draw back-to-front
-        triangleList.Sort((a, b) => a.AvgZ.CompareTo(b.AvgZ));
+        // Sort by render order (head first, then hair, then eyes) so the engine's
+        // scene-graph rendering order is preserved. Within each layer, sort by
+        // average Z ascending (back-to-front) for correct depth compositing.
+        triangleList.Sort((a, b) =>
+        {
+            var layer = a.RenderOrder.CompareTo(b.RenderOrder);
+            return layer != 0 ? layer : a.AvgZ.CompareTo(b.AvgZ);
+        });
 
         // Rasterize each triangle at supersampled resolution
         foreach (var tri in triangleList)
         {
             RasterizeTriangle(ssPixels, depthBuffer, emissiveMask, ssWidth, ssHeight, tri, effPpu, offsetX, offsetY);
         }
-
-        // Apply screen-space ambient occlusion (skips emissive pixels)
-        ApplySSAO(ssPixels, depthBuffer, emissiveMask, ssWidth, ssHeight);
 
         // Apply bloom glow around emissive pixels
         ApplyBloom(ssPixels, emissiveMask, ssWidth, ssHeight);
@@ -330,9 +337,15 @@ internal static class NifSpriteRenderer
                 normalMap = textureResolver.GetTexture(submesh.NormalMapTexturePath);
             }
 
-            // Skip untextured, non-emissive submeshes when texture rendering is active.
-            // Emissive submeshes (BSShaderNoLightingProperty) are kept for self-illuminated rendering.
-            if (textureResolver != null && texture == null && !submesh.IsEmissive)
+            // Skip untextured submeshes when texture rendering is active.
+            // Emissive submeshes with no diffuse texture path (BSShaderNoLightingProperty
+            // with empty filename) are night-glow overlays toggled by scripts — skip those.
+            // Emissive submeshes whose texture path was set but failed to load still render
+            // (e.g., neon signs with glow textures + vertex color tinting).
+            // Vertex-colored submeshes render even without texture (e.g., hair with HCLR tint).
+            if (textureResolver != null && texture == null &&
+                !(submesh.IsEmissive && submesh.DiffuseTexturePath != null) &&
+                !(submesh.UseVertexColors && submesh.VertexColors != null))
             {
                 continue;
             }
@@ -355,7 +368,12 @@ internal static class NifSpriteRenderer
                     X1 = pos[i1], Y1 = pos[i1 + 1], Z1 = pos[i1 + 2],
                     X2 = pos[i2], Y2 = pos[i2 + 1], Z2 = pos[i2 + 2],
                     AvgZ = (pos[i0 + 2] + pos[i1 + 2] + pos[i2 + 2]) / 3f,
-                    IsEmissive = submesh.IsEmissive
+                    IsEmissive = submesh.IsEmissive,
+                    IsDoubleSided = submesh.IsDoubleSided,
+                    HasAlphaBlend = submesh.HasAlphaBlend,
+                    HasAlphaTest = submesh.HasAlphaTest,
+                    AlphaTestThreshold = submesh.AlphaTestThreshold,
+                    RenderOrder = submesh.RenderOrder
                 };
 
                 // Populate UV data if texture is available
@@ -400,17 +418,18 @@ internal static class NifSpriteRenderer
                     tri.HasTangents = true;
                 }
 
-                // Per-vertex colors
-                if (vcol != null)
+                // Per-vertex colors: gated by BSShaderFlags2 Vertex_Colors bit for lit shaders,
+                // but always applied for emissive submeshes (neon signs use vertex colors for glow tint)
+                if (vcol != null && (submesh.UseVertexColors || submesh.IsEmissive))
                 {
                     var ci0 = tris[t] * 4;
                     var ci1 = tris[t + 1] * 4;
                     var ci2 = tris[t + 2] * 4;
                     if (ci0 + 3 < vcol.Length && ci1 + 3 < vcol.Length && ci2 + 3 < vcol.Length)
                     {
-                        tri.R0 = vcol[ci0]; tri.G0 = vcol[ci0 + 1]; tri.B0 = vcol[ci0 + 2];
-                        tri.R1 = vcol[ci1]; tri.G1 = vcol[ci1 + 1]; tri.B1 = vcol[ci1 + 2];
-                        tri.R2 = vcol[ci2]; tri.G2 = vcol[ci2 + 1]; tri.B2 = vcol[ci2 + 2];
+                        tri.R0 = vcol[ci0]; tri.G0 = vcol[ci0 + 1]; tri.B0 = vcol[ci0 + 2]; tri.A0 = vcol[ci0 + 3];
+                        tri.R1 = vcol[ci1]; tri.G1 = vcol[ci1 + 1]; tri.B1 = vcol[ci1 + 2]; tri.A1 = vcol[ci1 + 3];
+                        tri.R2 = vcol[ci2]; tri.G2 = vcol[ci2 + 1]; tri.B2 = vcol[ci2 + 2]; tri.A2 = vcol[ci2 + 3];
                         tri.HasVertexColors = true;
                     }
                 }
@@ -484,11 +503,21 @@ internal static class NifSpriteRenderer
             return;
         }
 
-        // Precompute edge function denominators
+        // Precompute edge function denominators — sign indicates triangle winding in screen space.
+        // In screen space (Y-down), front-facing CCW triangles from 3D produce denom < 0.
         var denom = (sy1 - sy2) * (sx0 - sx2) + (sx2 - sx1) * (sy0 - sy2);
         if (MathF.Abs(denom) < 0.0001f)
         {
             return; // Degenerate triangle
+        }
+
+        // Backface culling: skip back-facing triangles unless double-sided.
+        // For double-sided meshes (NiStencilProperty DRAW_BOTH), we render both faces
+        // and flip vertex normals on back-facing triangles so they shade correctly.
+        var isBackFacing = denom > 0;
+        if (isBackFacing && !tri.IsDoubleSided)
+        {
+            return;
         }
 
         var invDenom = 1f / denom;
@@ -536,6 +565,14 @@ internal static class NifSpriteRenderer
                     var nx = tri.Nx0 * w0 + tri.Nx1 * w1 + tri.Nx2 * w2;
                     var ny = tri.Ny0 * w0 + tri.Ny1 * w1 + tri.Ny2 * w2;
                     var nz = tri.Nz0 * w0 + tri.Nz1 * w1 + tri.Nz2 * w2;
+
+                    // Flip normals for back-facing double-sided triangles so they shade correctly
+                    if (isBackFacing)
+                    {
+                        nx = -nx;
+                        ny = -ny;
+                        nz = -nz;
+                    }
                     var nLen = MathF.Sqrt(nx * nx + ny * ny + nz * nz);
                     if (nLen > 0.001f)
                     {
@@ -545,27 +582,56 @@ internal static class NifSpriteRenderer
                     }
 
                     // Bump mapping: perturb normal using normal map + TBN matrix
-                    if (normalMap != null && tri.HasTangents && tex != null)
+                    if (!DisableBumpMapping && normalMap != null && tri.HasTangents && tex != null)
                     {
                         var u = tri.U0 * w0 + tri.U1 * w1 + tri.U2 * w2;
                         var v = tri.V0 * w0 + tri.V1 * w1 + tri.V2 * w2;
                         u -= MathF.Floor(u);
                         v -= MathF.Floor(v);
 
-                        var (mnr, mng, mnb, _) = SampleBilinear(normalMap, u, v);
+                        var (mnr, mng, mnb, _) = SampleTexture(normalMap, u, v);
 
                         // Decode from [0,255] to [-1,1]
                         var mapNx = mnr / 127.5f - 1f;
                         var mapNy = mng / 127.5f - 1f;
                         var mapNz = mnb / 127.5f - 1f;
 
-                        // Interpolate tangent and bitangent
-                        var tx = tri.Tx0 * w0 + tri.Tx1 * w1 + tri.Tx2 * w2;
-                        var ty = tri.Ty0 * w0 + tri.Ty1 * w1 + tri.Ty2 * w2;
-                        var tz = tri.Tz0 * w0 + tri.Tz1 * w1 + tri.Tz2 * w2;
-                        var bx = tri.Bx0 * w0 + tri.Bx1 * w1 + tri.Bx2 * w2;
-                        var by = tri.By0 * w0 + tri.By1 * w1 + tri.By2 * w2;
-                        var bz = tri.Bz0 * w0 + tri.Bz1 * w1 + tri.Bz2 * w2;
+                        // Construct TBN matrix from per-vertex tangent/bitangent data.
+                        // When available, interpolate stored NIF tangent/bitangent vectors
+                        // (already rotated to view space in ApplyViewRotation).
+                        // Fall back to ad-hoc derivation only when tangent data is missing.
+                        float tx, ty, tz, bx, by, bz;
+                        if (tri.HasTangents)
+                        {
+                            // Interpolate per-vertex tangent and bitangent
+                            tx = tri.Tx0 * w0 + tri.Tx1 * w1 + tri.Tx2 * w2;
+                            ty = tri.Ty0 * w0 + tri.Ty1 * w1 + tri.Ty2 * w2;
+                            tz = tri.Tz0 * w0 + tri.Tz1 * w1 + tri.Tz2 * w2;
+                            bx = tri.Bx0 * w0 + tri.Bx1 * w1 + tri.Bx2 * w2;
+                            by = tri.By0 * w0 + tri.By1 * w1 + tri.By2 * w2;
+                            bz = tri.Bz0 * w0 + tri.Bz1 * w1 + tri.Bz2 * w2;
+                            var tLen = MathF.Sqrt(tx * tx + ty * ty + tz * tz);
+                            if (tLen > 0.001f) { tx /= tLen; ty /= tLen; tz /= tLen; }
+                            var bLen = MathF.Sqrt(bx * bx + by * by + bz * bz);
+                            if (bLen > 0.001f) { bx /= bLen; by /= bLen; bz /= bLen; }
+                        }
+                        else
+                        {
+                            // Fallback: derive tangent from cross product with stable axis
+                            if (MathF.Abs(nx) < 0.9f)
+                            {
+                                tx = 0f; ty = nz; tz = -ny;
+                            }
+                            else
+                            {
+                                tx = -nz; ty = 0f; tz = nx;
+                            }
+                            var tLen = MathF.Sqrt(tx * tx + ty * ty + tz * tz);
+                            if (tLen > 0.001f) { tx /= tLen; ty /= tLen; tz /= tLen; }
+                            bx = ny * tz - nz * ty;
+                            by = nz * tx - nx * tz;
+                            bz = nx * ty - ny * tx;
+                        }
 
                         // TBN matrix transform: world = T * mapNx + B * mapNy + N * mapNz
                         var wnx = tx * mapNx + bx * mapNy + nx * mapNz;
@@ -598,12 +664,23 @@ internal static class NifSpriteRenderer
                     v -= MathF.Floor(v);
 
                     // Bilinear filtered sample
-                    var (r, g, b, a) = SampleBilinear(tex, u, v);
+                    var (r, g, b, a) = SampleTexture(tex, u, v);
 
-                    // Alpha test: skip nearly-transparent texels
-                    if (a < 10)
+                    // Apply vertex alpha: multiply texture alpha by interpolated vertex alpha
+                    if (tri.HasVertexColors)
                     {
-                        continue;
+                        var vca = tri.A0 * w0 + tri.A1 * w1 + tri.A2 * w2;
+                        a = (byte)Math.Clamp(a * vca / 255f, 0, 255);
+                    }
+
+                    // Alpha test: discard pixels below threshold (per-mesh from NiAlphaProperty)
+                    if (tri.HasAlphaTest)
+                    {
+                        if (a <= tri.AlphaTestThreshold) continue;
+                    }
+                    else if (a == 0)
+                    {
+                        continue; // Always skip fully transparent
                     }
 
                     // Modulate texture color by shade and vertex color
@@ -621,7 +698,7 @@ internal static class NifSpriteRenderer
                         fb *= vcb;
                     }
 
-                    if (a >= 255)
+                    if (!tri.HasAlphaBlend || a >= 255)
                     {
                         // Fully opaque: overwrite pixel and update depth
                         depthBuffer[idx] = z;
@@ -632,7 +709,7 @@ internal static class NifSpriteRenderer
                     }
                     else
                     {
-                        // Semi-transparent: alpha-blend over existing pixel, no depth write
+                        // Semi-transparent: alpha-blend over existing pixel, no depth write.
                         var srcA = a / 255f;
                         var invA = 1f - srcA;
                         pixels[pIdx + 0] = (byte)Math.Clamp(fr * srcA + pixels[pIdx + 0] * invA, 0, 255);
@@ -666,78 +743,10 @@ internal static class NifSpriteRenderer
                     pixels[pIdx + 3] = 255;
                 }
 
-                if (tri.IsEmissive)
-                {
-                    emissiveMask[idx] = true;
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    ///     Screen-space ambient occlusion: darken pixels near depth discontinuities and edges.
-    /// </summary>
-    private static void ApplySSAO(byte[] pixels, float[] depthBuffer, bool[] emissiveMask,
-        int width, int height)
-    {
-        const int radius = 3;
-        const float strength = 0.4f;
-        const float depthThreshold = 0.5f;
-
-        // 8 sample points in a circle at the given radius
-        Span<(int dx, int dy)> samples =
-        [
-            (radius, 0), (-radius, 0), (0, radius), (0, -radius),
-            (radius * 707 / 1000, radius * 707 / 1000),
-            (-radius * 707 / 1000, radius * 707 / 1000),
-            (radius * 707 / 1000, -radius * 707 / 1000),
-            (-radius * 707 / 1000, -radius * 707 / 1000)
-        ];
-
-        for (var y = 0; y < height; y++)
-        {
-            for (var x = 0; x < width; x++)
-            {
-                var idx = y * width + x;
-                var pIdx = idx * 4;
-
-                // Skip background pixels and emissive pixels (self-illuminated, no AO darkening)
-                if (pixels[pIdx + 3] == 0 || emissiveMask[idx])
-                {
-                    continue;
-                }
-
-                var centerDepth = depthBuffer[idx];
-                var occluded = 0;
-
-                foreach (var (dx, dy) in samples)
-                {
-                    var sx = x + dx;
-                    var sy = y + dy;
-
-                    if (sx < 0 || sx >= width || sy < 0 || sy >= height)
-                    {
-                        occluded++;
-                        continue;
-                    }
-
-                    var sIdx = sy * width + sx;
-                    var sPIdx = sIdx * 4;
-
-                    // Background neighbor or large depth difference → occlusion
-                    if (pixels[sPIdx + 3] == 0 || depthBuffer[sIdx] - centerDepth > depthThreshold)
-                    {
-                        occluded++;
-                    }
-                }
-
-                if (occluded > 0)
-                {
-                    var factor = 1f - (float)occluded / samples.Length * strength;
-                    pixels[pIdx + 0] = (byte)(pixels[pIdx + 0] * factor);
-                    pixels[pIdx + 1] = (byte)(pixels[pIdx + 1] * factor);
-                    pixels[pIdx + 2] = (byte)(pixels[pIdx + 2] * factor);
-                }
+                // Track whether the front-most pixel at this location is emissive.
+                // Must clear when a non-emissive pixel overwrites, otherwise bloom
+                // bleeds through walls from occluded emissive surfaces behind them.
+                emissiveMask[idx] = tri.IsEmissive;
             }
         }
     }
@@ -882,6 +891,19 @@ internal static class NifSpriteRenderer
     ///     Bilinear texture sampling: interpolates between the 4 nearest texels
     ///     for smooth texture filtering instead of blocky nearest-neighbor.
     /// </summary>
+    private static (byte R, byte G, byte B, byte A) SampleTexture(DecodedTexture tex, float u, float v)
+    {
+        return DisableBilinear ? SampleNearest(tex, u, v) : SampleBilinear(tex, u, v);
+    }
+
+    private static (byte R, byte G, byte B, byte A) SampleNearest(DecodedTexture tex, float u, float v)
+    {
+        var x = ((int)(u * tex.Width) % tex.Width + tex.Width) % tex.Width;
+        var y = ((int)(v * tex.Height) % tex.Height + tex.Height) % tex.Height;
+        var i = (y * tex.Width + x) * 4;
+        return (tex.Pixels[i], tex.Pixels[i + 1], tex.Pixels[i + 2], tex.Pixels[i + 3]);
+    }
+
     private static (byte R, byte G, byte B, byte A) SampleBilinear(DecodedTexture tex, float u, float v)
     {
         var fx = u * tex.Width - 0.5f;
@@ -988,10 +1010,10 @@ internal static class NifSpriteRenderer
         public float Bx2, By2, Bz2;
         public bool HasTangents;
 
-        // Per-vertex colors (RGB, 0-255)
-        public float R0, G0, B0;
-        public float R1, G1, B1;
-        public float R2, G2, B2;
+        // Per-vertex colors (RGBA, 0-255)
+        public float R0, G0, B0, A0;
+        public float R1, G1, B1, A1;
+        public float R2, G2, B2, A2;
         public bool HasVertexColors;
 
         // Flat face normal shade (fallback when no vertex normals)
@@ -1006,6 +1028,17 @@ internal static class NifSpriteRenderer
 
         // Emissive (self-illuminated, no lighting applied)
         public bool IsEmissive;
+
+        // Double-sided (NiStencilProperty DRAW_BOTH: flip normals instead of culling)
+        public bool IsDoubleSided;
+
+        // NiAlphaProperty: per-mesh blend/test control
+        public bool HasAlphaBlend;
+        public bool HasAlphaTest;
+        public byte AlphaTestThreshold;
+
+        // Layer-based render order (engine renders head parts in scene graph order)
+        public int RenderOrder;
     }
 }
 

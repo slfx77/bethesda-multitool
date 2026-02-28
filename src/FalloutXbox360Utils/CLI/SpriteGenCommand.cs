@@ -20,7 +20,7 @@ public static partial class SpriteGenCommand
 
     public static Command Create()
     {
-        var command = new Command("sprite-gen", "Batch-render NIF models from a BSA to top-down PNG sprites");
+        var command = new Command("nif", "Batch-render NIF models from a BSA to top-down PNG sprites");
 
         var inputArg = new Argument<string>("bsa-path") { Description = "Path to meshes BSA file" };
         var outputOption = new Option<string>("-o", "--output") { Description = "Output directory for sprites", Required = true };

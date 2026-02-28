@@ -70,7 +70,7 @@ internal sealed class WorldViewData
     public (float X, float Y, float Z)? PlayerPosition { get; set; }
 
 #if WINDOWS_GUI
-    /// <summary>Pre-rendered sprite registry for placed object rendering (loaded from sprite-gen output).</summary>
+    /// <summary>Pre-rendered sprite registry for placed object rendering (loaded from render nif output).</summary>
     public WorldMapSpriteRegistry? SpriteRegistry { get; set; }
 #endif
 }

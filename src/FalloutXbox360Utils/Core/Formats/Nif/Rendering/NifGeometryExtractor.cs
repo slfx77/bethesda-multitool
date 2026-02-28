@@ -48,8 +48,54 @@ internal static class NifGeometryExtractor
     /// <param name="data">Raw NIF file bytes.</param>
     /// <param name="nif">Parsed NIF header info.</param>
     /// <param name="textureResolver">Optional texture resolver for extracting diffuse texture paths.</param>
+    /// <param name="bindPoseOnly">
+    ///     When true, skip skeletal skinning and node hierarchy transforms — return vertices in raw
+    ///     bind-pose space. Useful for determining the mesh-local coordinate origin when compositing
+    ///     multiple NIFs that need alignment.
+    /// </param>
+    /// <summary>
+    ///     Extracts world-space transforms for all named NiNode bones in the NIF skeleton.
+    ///     Used to get eye bone transforms from the head NIF for correct eye positioning.
+    /// </summary>
+    public static Dictionary<string, Matrix4x4> ExtractNamedBoneTransforms(byte[] data, NifInfo nif)
+    {
+        var nodeChildren = new Dictionary<int, List<int>>();
+        var nodeTransforms = new Dictionary<int, Matrix4x4>();
+        var shapeDataMap = new Dictionary<int, int>();
+        var shapeSkinInstanceMap = new Dictionary<int, int>();
+
+        ClassifyBlocks(data, nif, nodeChildren, shapeDataMap, null, shapeSkinInstanceMap);
+        ComputeWorldTransforms(data, nif, nodeChildren, nodeTransforms);
+
+        var result = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (blockIndex, worldTransform) in nodeTransforms)
+        {
+            if (blockIndex < 0 || blockIndex >= nif.Blocks.Count)
+            {
+                continue;
+            }
+
+            var block = nif.Blocks[blockIndex];
+            if (!NodeTypes.Contains(block.TypeName))
+            {
+                continue;
+            }
+
+            var name = ReadBlockName(data, block, nif);
+            if (name != null)
+            {
+                result[name] = worldTransform;
+            }
+        }
+
+        return result;
+    }
+
     public static NifRenderableModel? Extract(byte[] data, NifInfo nif,
-        NifTextureResolver? textureResolver = null)
+        NifTextureResolver? textureResolver = null, bool bindPoseOnly = false,
+        bool skipSkinning = false,
+        Dictionary<string, Matrix4x4>? externalBoneTransforms = null,
+        string? filterShapeName = null)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -67,27 +113,63 @@ internal static class NifGeometryExtractor
         var shapeSkinInstanceMap = new Dictionary<int, int>();
         ClassifyBlocks(data, nif, nodeChildren, shapeDataMap, shapePropertyMap, shapeSkinInstanceMap);
 
+        // Filter shapes by name if requested (e.g., "NoHat" for hair NIFs to exclude "Hat" variant).
+        // Hair NIFs contain both "NoHat" (full hair) and "Hat" (trimmed for headgear) shapes;
+        // the engine only attaches one based on equipment state.
+        if (filterShapeName != null)
+        {
+            var toRemove = shapeDataMap.Keys
+                .Where(idx => ReadBlockName(data, nif.Blocks[idx], nif) != filterShapeName)
+                .ToList();
+            foreach (var idx in toRemove)
+            {
+                shapeDataMap.Remove(idx);
+                shapePropertyMap?.Remove(idx);
+                shapeSkinInstanceMap.Remove(idx);
+            }
+        }
+
         // Compute world transforms by walking the scene graph from root.
         // Static NIF transforms represent the rest pose — animation overrides are not applied
         // since NiControllerSequence keyframes define runtime motion, not the initial pose.
         ComputeWorldTransforms(data, nif, nodeChildren, nodeTransforms);
 
-        // Extract packed geometry data for skinned shapes (Xbox 360 stores bone weights here)
-        var packedGeometryMap = ExtractPackedGeometry(data, nif, shapeDataMap);
+        Dictionary<int, ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)>
+            shapeSkinning;
 
-        // Build skinning data for each skinned shape
-        var shapeSkinning = BuildShapeSkinningData(data, nif, shapeSkinInstanceMap, shapeDataMap,
-            nodeTransforms, packedGeometryMap);
+        if (bindPoseOnly || skipSkinning)
+        {
+            // Skip skinning — vertices stay in bind-pose space
+            shapeSkinning = [];
+        }
+        else
+        {
+            // Extract packed geometry data for skinned shapes (Xbox 360 stores bone weights here)
+            var packedGeometryMap = ExtractPackedGeometry(data, nif, shapeDataMap);
+
+            // Build skinning data for each skinned shape
+            shapeSkinning = BuildShapeSkinningData(data, nif, shapeSkinInstanceMap, shapeDataMap,
+                nodeTransforms, packedGeometryMap, externalBoneTransforms);
+        }
+
+        // bindPoseOnly: strip ALL transforms (vertices in raw mesh-local space) — used for alignment offset
+        // skipSkinning: skip bone skinning but KEEP scene graph transforms — used for eye meshes
+        var effectiveTransforms = bindPoseOnly ? new Dictionary<int, Matrix4x4>() : nodeTransforms;
 
         // Extract geometry from each shape block
         var model = new NifRenderableModel();
 
         foreach (var (shapeIndex, dataIndex) in shapeDataMap)
         {
-            // Resolve texture paths from shader properties
+            // Resolve texture paths and shader flags from shader properties
             string? diffusePath = null;
             string? normalMapPath = null;
             var isEmissive = false;
+            var useVertexColors = false; // default to false; only enable if shader flags explicitly set Vertex_Colors
+            var isDoubleSided = false;
+            var hasAlphaBlend = false;
+            var hasAlphaTest = false;
+            byte alphaTestThreshold = 128;
             if (textureResolver != null && shapePropertyMap != null &&
                 shapePropertyMap.TryGetValue(shapeIndex, out var propRefs))
             {
@@ -96,14 +178,28 @@ internal static class NifGeometryExtractor
                 isEmissive = propRefs.Exists(r =>
                     r >= 0 && r < nif.Blocks.Count &&
                     nif.Blocks[r].TypeName == "BSShaderNoLightingProperty");
+
+                // BSShaderFlags2 bit 5 = Vertex_Colors: controls whether vertex colors
+                // should modulate the diffuse texture. Hair NIFs have vertex color data
+                // in the geometry but this flag unset, meaning the engine ignores them.
+                var shaderFlags2 = NifTextureResolver.ReadShaderFlags2(data, nif, propRefs);
+                if (shaderFlags2.HasValue)
+                    useVertexColors = (shaderFlags2.Value & (1u << 5)) != 0;
+
+                // NiStencilProperty DrawMode: DRAW_BOTH (3) = double-sided (no backface culling)
+                isDoubleSided = ReadIsDoubleSided(data, nif, propRefs);
+
+                // NiAlphaProperty: alpha blend/test flags and threshold
+                ReadAlphaProperty(data, nif, propRefs, out hasAlphaBlend, out hasAlphaTest, out alphaTestThreshold);
             }
 
-            // Look up skinning data for this shape (null if not skinned)
+            // Look up skinning data for this shape (null if not skinned or bind-pose mode)
             ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning =
                 shapeSkinning.TryGetValue(shapeIndex, out var sd) ? sd : null;
 
-            var submesh = ExtractSubmesh(data, nif, shapeIndex, dataIndex, nodeTransforms,
-                diffusePath, normalMapPath, isEmissive, skinning);
+            var submesh = ExtractSubmesh(data, nif, shapeIndex, dataIndex, effectiveTransforms,
+                diffusePath, normalMapPath, isEmissive, skinning, useVertexColors, isDoubleSided,
+                hasAlphaBlend, hasAlphaTest, alphaTestThreshold);
             if (submesh != null)
             {
                 model.Submeshes.Add(submesh);
@@ -143,7 +239,7 @@ internal static class NifGeometryExtractor
                 var shapeName = ReadBlockName(data, block, nif);
                 if (IsGoreShape(shapeName))
                 {
-                    continue;
+                                        continue;
                 }
 
                 // Skip gore shapes identified via BSDismemberSkinInstance partition data.
@@ -155,10 +251,11 @@ internal static class NifGeometryExtractor
                     var bodyParts = ParseDismemberPartitions(data, nif.Blocks[skinRef], be);
                     if (IsDismemberGoreShape(bodyParts))
                     {
-                        continue;
+                                                continue;
                     }
                 }
 
+                
                 // Collect skin instance ref for skeleton deformation
                 if (shapeSkinInstanceMap != null && skinRef >= 0 && skinRef < nif.Blocks.Count)
                 {
@@ -275,7 +372,8 @@ internal static class NifGeometryExtractor
             Dictionary<int, int> shapeSkinInstanceMap,
             Dictionary<int, int> shapeDataMap,
             Dictionary<int, Matrix4x4> worldTransforms,
-            Dictionary<int, PackedGeometryData> packedGeometryMap)
+            Dictionary<int, PackedGeometryData> packedGeometryMap,
+            Dictionary<string, Matrix4x4>? externalBoneTransforms = null)
     {
         var result = new Dictionary<int, ((int, float)[][], Matrix4x4[])>();
         var be = nif.IsBigEndian;
@@ -314,17 +412,37 @@ internal static class NifGeometryExtractor
                 }
 
                 var boneNodeIdx = skinInstance.BoneRefs[b];
-                if (!worldTransforms.TryGetValue(boneNodeIdx, out var boneWorldTransform))
+
+                // Priority: external skeleton transforms first (authoritative), then local scene graph.
+                // Individual NIFs (head, hair, eyes) have truncated bone hierarchies that compute
+                // incorrect world positions. The full skeleton.nif has the correct hierarchy.
+                var boneWorldTransform = Matrix4x4.Identity;
+                var resolved = false;
+                if (externalBoneTransforms != null && boneNodeIdx >= 0 && boneNodeIdx < nif.Blocks.Count)
                 {
-                    // Bone not in world transforms — try parsing its own transform
-                    if (boneNodeIdx >= 0 && boneNodeIdx < nif.Blocks.Count)
+                    var boneName = ReadBlockName(data, nif.Blocks[boneNodeIdx], nif);
+                    if (boneName != null && externalBoneTransforms.TryGetValue(boneName, out var skelTransform))
                     {
-                        boneWorldTransform = ParseNiAVObjectTransform(data, nif.Blocks[boneNodeIdx],
-                            nif.BsVersion, be);
+                        boneWorldTransform = skelTransform;
+                        resolved = true;
                     }
-                    else
+                }
+
+                if (!resolved)
+                {
+                    // Fall back to local scene graph transform
+                    if (!worldTransforms.TryGetValue(boneNodeIdx, out boneWorldTransform))
                     {
-                        boneWorldTransform = Matrix4x4.Identity;
+                        // Last resort: parse the bone's own local transform (no parent chain)
+                        if (boneNodeIdx >= 0 && boneNodeIdx < nif.Blocks.Count)
+                        {
+                            boneWorldTransform = ParseNiAVObjectTransform(data, nif.Blocks[boneNodeIdx],
+                                nif.BsVersion, be);
+                        }
+                        else
+                        {
+                            boneWorldTransform = Matrix4x4.Identity;
+                        }
                     }
                 }
 
@@ -1304,7 +1422,12 @@ internal static class NifGeometryExtractor
         int shapeIndex, int dataIndex, Dictionary<int, Matrix4x4> worldTransforms,
         string? diffuseTexturePath = null, string? normalMapTexturePath = null,
         bool isEmissive = false,
-        ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null)
+        ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
+        bool useVertexColors = true,
+        bool isDoubleSided = false,
+        bool hasAlphaBlend = false,
+        bool hasAlphaTest = false,
+        byte alphaTestThreshold = 128)
     {
         var dataBlock = nif.Blocks[dataIndex];
         var be = nif.IsBigEndian;
@@ -1344,7 +1467,12 @@ internal static class NifGeometryExtractor
                 Bitangents = submesh.Bitangents,
                 DiffuseTexturePath = diffuseTexturePath,
                 NormalMapTexturePath = normalMapTexturePath,
-                IsEmissive = isEmissive
+                IsEmissive = isEmissive,
+                UseVertexColors = useVertexColors,
+                IsDoubleSided = isDoubleSided,
+                HasAlphaBlend = hasAlphaBlend,
+                HasAlphaTest = hasAlphaTest,
+                AlphaTestThreshold = alphaTestThreshold
             };
         }
 
@@ -1697,6 +1825,94 @@ internal static class NifGeometryExtractor
     }
 
     /// <summary>
+    ///     Check if any NiStencilProperty in the property refs has DrawMode = DRAW_BOTH (3).
+    ///     NiStencilProperty format (FNV version): NiObjectNET header + Flags(ushort) where
+    ///     bits [12:11] encode DrawMode (0=CCW_OR_BOTH, 1=CCW, 2=CW, 3=BOTH).
+    /// </summary>
+    private static bool ReadIsDoubleSided(byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        foreach (var propRef in propertyRefs)
+        {
+            if (propRef < 0 || propRef >= nif.Blocks.Count)
+                continue;
+
+            var propBlock = nif.Blocks[propRef];
+            if (propBlock.TypeName != "NiStencilProperty")
+                continue;
+
+            var be = nif.IsBigEndian;
+            var pos = propBlock.DataOffset;
+            var end = propBlock.DataOffset + propBlock.Size;
+
+            // Skip NiObjectNET: Name(4) + NumExtraData(4) + refs + Controller(4)
+            if (!NifTextureResolver.SkipNiObjectNET(data, ref pos, end, be))
+                return false;
+
+            // NiStencilProperty flags (ushort) — bitfield encoding:
+            // Bits [0]: Stencil enabled
+            // Bits [4:1]: Stencil function
+            // Bits [8:5]: Fail action
+            // Bits [12:9]: Z-fail action
+            // Bits [14:13]: Pass action — wait, let me use the actual observed layout
+            // Actually for FNV the flags ushort has DrawMode in bits [12:11] (2 bits)
+            if (pos + 2 > end) return false;
+            var flags = BinaryUtils.ReadUInt16(data, pos, be);
+
+            // DrawMode: bits [12:11] — extract 2-bit value
+            var drawMode = (flags >> 11) & 0x3;
+            return drawMode == 3; // DRAW_BOTH
+        }
+
+        // Gamebryo defaults to no backface culling (double-sided) when no NiStencilProperty
+        return true;
+    }
+
+    /// <summary>
+    ///     Read NiAlphaProperty to extract alpha blend/test flags and threshold.
+    ///     NiAlphaProperty layout: NiObjectNET header + AlphaFlags(ushort) + Threshold(byte).
+    ///     AlphaFlags bit 0 = blend enable, bit 9 = test enable.
+    /// </summary>
+    private static void ReadAlphaProperty(byte[] data, NifInfo nif, List<int> propertyRefs,
+        out bool hasAlphaBlend, out bool hasAlphaTest, out byte alphaTestThreshold)
+    {
+        hasAlphaBlend = false;
+        hasAlphaTest = false;
+        alphaTestThreshold = 128;
+
+        foreach (var propRef in propertyRefs)
+        {
+            if (propRef < 0 || propRef >= nif.Blocks.Count)
+                continue;
+
+            var propBlock = nif.Blocks[propRef];
+            if (propBlock.TypeName != "NiAlphaProperty")
+                continue;
+
+            var be = nif.IsBigEndian;
+            var pos = propBlock.DataOffset;
+            var end = propBlock.DataOffset + propBlock.Size;
+
+            // Skip NiObjectNET: Name(4) + NumExtraData(4) + refs + Controller(4)
+            if (!NifTextureResolver.SkipNiObjectNET(data, ref pos, end, be))
+                return;
+
+            // AlphaFlags (ushort): bit 0 = blend enable, bit 9 = test enable
+            if (pos + 2 > end) return;
+            var alphaFlags = BinaryUtils.ReadUInt16(data, pos, be);
+            pos += 2;
+
+            // Threshold (byte)
+            if (pos + 1 > end) return;
+            var threshold = data[pos];
+
+            hasAlphaBlend = (alphaFlags & 1) != 0;
+            hasAlphaTest = (alphaFlags & (1 << 9)) != 0;
+            alphaTestThreshold = threshold;
+            return;
+        }
+    }
+
+    /// <summary>
     ///     Read vertex colors: 4 floats (RGBA, 0.0–1.0) per vertex → convert to byte[].
     /// </summary>
     private static byte[] ReadVertexColors(byte[] data, int offset, int numVerts, bool be)
@@ -1762,6 +1978,67 @@ internal static class NifGeometryExtractor
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Recomputes smooth per-vertex normals from triangle geometry using area-weighted face normals.
+    ///     Used when NIF-stored normals assume a skeleton rotation that we're not applying (e.g., eye meshes
+    ///     extracted in bind-pose instead of skinned pose).
+    /// </summary>
+    public static float[] RecomputeSmoothNormals(float[] positions, ushort[] triangles)
+    {
+        var numVerts = positions.Length / 3;
+        var normals = new float[positions.Length]; // initialized to zero
+
+        // Accumulate area-weighted face normals to each vertex
+        for (var t = 0; t < triangles.Length; t += 3)
+        {
+            var i0 = triangles[t];
+            var i1 = triangles[t + 1];
+            var i2 = triangles[t + 2];
+
+            if (i0 >= numVerts || i1 >= numVerts || i2 >= numVerts)
+            {
+                continue;
+            }
+
+            var v0 = new Vector3(positions[i0 * 3], positions[i0 * 3 + 1], positions[i0 * 3 + 2]);
+            var v1 = new Vector3(positions[i1 * 3], positions[i1 * 3 + 1], positions[i1 * 3 + 2]);
+            var v2 = new Vector3(positions[i2 * 3], positions[i2 * 3 + 1], positions[i2 * 3 + 2]);
+
+            // Cross product of edges — magnitude is proportional to triangle area (area-weighted)
+            var faceNormal = Vector3.Cross(v1 - v0, v2 - v0);
+
+            // Accumulate to each vertex of the triangle
+            normals[i0 * 3] += faceNormal.X;
+            normals[i0 * 3 + 1] += faceNormal.Y;
+            normals[i0 * 3 + 2] += faceNormal.Z;
+
+            normals[i1 * 3] += faceNormal.X;
+            normals[i1 * 3 + 1] += faceNormal.Y;
+            normals[i1 * 3 + 2] += faceNormal.Z;
+
+            normals[i2 * 3] += faceNormal.X;
+            normals[i2 * 3 + 1] += faceNormal.Y;
+            normals[i2 * 3 + 2] += faceNormal.Z;
+        }
+
+        // Normalize each accumulated vertex normal
+        for (var i = 0; i < normals.Length; i += 3)
+        {
+            var n = new Vector3(normals[i], normals[i + 1], normals[i + 2]);
+            var len = n.Length();
+            if (len > 0.001f)
+            {
+                n /= len;
+            }
+
+            normals[i] = n.X;
+            normals[i + 1] = n.Y;
+            normals[i + 2] = n.Z;
+        }
+
+        return normals;
     }
 
 }

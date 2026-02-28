@@ -35,6 +35,26 @@ public static class Program
 
     private static int RunCli(string[] args)
     {
+        // Detect plain output mode BEFORE any AnsiConsole usage.
+        // Triggers: --plain flag, --no-ansi (compat), piped output, NO_COLOR env var.
+        var plainMode = args.Contains("--plain", StringComparer.OrdinalIgnoreCase)
+                        || args.Contains("--no-ansi", StringComparer.OrdinalIgnoreCase)
+                        || Console.IsOutputRedirected
+                        || Environment.GetEnvironmentVariable("NO_COLOR") != null;
+
+        if (plainMode)
+        {
+            AnsiConsole.Profile.Capabilities.Ansi = false;
+            AnsiConsole.Profile.Capabilities.Unicode = false;
+            AnsiConsole.Profile.Capabilities.Links = false;
+            Logger.Instance.UseSpectre = false;
+        }
+
+        // Strip flags before System.CommandLine sees them
+        args = args.Where(a => !a.Equals("--plain", StringComparison.OrdinalIgnoreCase)
+                            && !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase))
+                   .ToArray();
+
         Console.OutputEncoding = Encoding.UTF8;
 
         AnsiConsole.Write(
@@ -55,7 +75,7 @@ public static class Program
         rootCommand.Subcommands.Add(RttiCommand.Create());
         rootCommand.Subcommands.Add(SaveCommand.Create());
         rootCommand.Subcommands.Add(DmpCommand.Create());
-        rootCommand.Subcommands.Add(SpriteGenCommand.Create());
+        rootCommand.Subcommands.Add(RenderCommand.Create());
 
         return rootCommand.Parse(args).Invoke();
     }
@@ -91,10 +111,6 @@ public static class Program
         {
             Description = "Enable verbose output"
         };
-        var noAnsiOption = new Option<bool>("--no-ansi")
-        {
-            Description = "Disable ANSI color output (plain text logging)"
-        };
         var maxFilesOption = new Option<int>("--max-files")
         {
             Description = "Maximum files to extract per type",
@@ -112,7 +128,6 @@ public static class Program
         rootCommand.Options.Add(convertDdxOption);
         rootCommand.Options.Add(typesOption);
         rootCommand.Options.Add(verboseOption);
-        rootCommand.Options.Add(noAnsiOption);
         rootCommand.Options.Add(maxFilesOption);
         rootCommand.Options.Add(pcFriendlyOption);
 
@@ -124,14 +139,8 @@ public static class Program
             var convertDdx = parseResult.GetValue(convertDdxOption);
             var types = parseResult.GetValue(typesOption);
             var verbose = parseResult.GetValue(verboseOption);
-            var noAnsi = parseResult.GetValue(noAnsiOption);
             var maxFiles = parseResult.GetValue(maxFilesOption);
             var pcFriendly = parseResult.GetValue(pcFriendlyOption);
-
-            if (noAnsi)
-            {
-                Logger.Instance.UseSpectre = false;
-            }
 
             if (string.IsNullOrEmpty(input))
             {

@@ -36,6 +36,7 @@ internal static class DdsTextureDecoder
             "DXT1" => DecodeDxt1(ddsData, 128, width, height),
             "DXT3" => DecodeDxt3(ddsData, 128, width, height),
             "DXT5" => DecodeDxt5(ddsData, 128, width, height),
+            "ATI2" => DecodeBc5(ddsData, 128, width, height),
             _ => null
         };
 
@@ -285,6 +286,100 @@ internal static class DdsTextureDecoder
 
                 var pIdx = (pixelY * width + pixelX) * 4;
                 pixels[pIdx + 3] = alphaPalette[idx];
+            }
+        }
+    }
+
+    private static byte[]? DecodeBc5(byte[] data, int offset, int width, int height)
+    {
+        var blocksWide = (width + 3) / 4;
+        var blocksHigh = (height + 3) / 4;
+        var requiredSize = offset + blocksWide * blocksHigh * 16;
+
+        if (data.Length < requiredSize)
+        {
+            return null;
+        }
+
+        var pixels = new byte[width * height * 4];
+        var pos = offset;
+
+        for (var by = 0; by < blocksHigh; by++)
+        {
+            for (var bx = 0; bx < blocksWide; bx++)
+            {
+                // Red channel block (8 bytes) → channel 0
+                DecodeAlphaBlockToChannel(data, pos, pixels, bx * 4, by * 4, width, height, 0);
+                // Green channel block (8 bytes) → channel 1
+                DecodeAlphaBlockToChannel(data, pos + 8, pixels, bx * 4, by * 4, width, height, 1);
+                pos += 16;
+            }
+        }
+
+        // Reconstruct Blue (Z) from Red (X) and Green (Y): z = sqrt(1 - x² - y²)
+        for (var i = 0; i < width * height; i++)
+        {
+            var pIdx = i * 4;
+            var nx = pixels[pIdx + 0] / 127.5f - 1f;
+            var ny = pixels[pIdx + 1] / 127.5f - 1f;
+            var nz2 = 1f - nx * nx - ny * ny;
+            var nz = nz2 > 0f ? MathF.Sqrt(nz2) : 0f;
+            pixels[pIdx + 2] = (byte)((nz + 1f) * 127.5f);
+            pixels[pIdx + 3] = 255;
+        }
+
+        return pixels;
+    }
+
+    private static void DecodeAlphaBlockToChannel(byte[] data, int pos, byte[] pixels,
+        int blockX, int blockY, int width, int height, int channelOffset)
+    {
+        var alpha0 = data[pos];
+        var alpha1 = data[pos + 1];
+
+        Span<byte> palette = stackalloc byte[8];
+        palette[0] = alpha0;
+        palette[1] = alpha1;
+
+        if (alpha0 > alpha1)
+        {
+            for (var i = 2; i < 8; i++)
+            {
+                palette[i] = (byte)(((8 - i) * alpha0 + (i - 1) * alpha1 + 3) / 7);
+            }
+        }
+        else
+        {
+            for (var i = 2; i < 6; i++)
+            {
+                palette[i] = (byte)(((6 - i) * alpha0 + (i - 1) * alpha1 + 2) / 5);
+            }
+
+            palette[6] = 0;
+            palette[7] = 255;
+        }
+
+        ulong bits = 0;
+        for (var i = 0; i < 6; i++)
+        {
+            bits |= (ulong)data[pos + 2 + i] << (i * 8);
+        }
+
+        for (var py = 0; py < 4; py++)
+        {
+            var pixelY = blockY + py;
+            if (pixelY >= height) break;
+
+            for (var px = 0; px < 4; px++)
+            {
+                var pixelX = blockX + px;
+                if (pixelX >= width) break;
+
+                var idx = (int)(bits & 0x7);
+                bits >>= 3;
+
+                var pIdx = (pixelY * width + pixelX) * 4;
+                pixels[pIdx + channelOffset] = palette[idx];
             }
         }
     }

@@ -77,6 +77,81 @@ internal sealed class NifTextureResolver : IDisposable
     }
 
     /// <summary>
+    ///     Read BSShaderFlags2 from the first BSShaderPPLightingProperty in a shape's properties.
+    ///     Returns null if no shader property found.
+    /// </summary>
+    public static uint? ReadShaderFlags2(byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        foreach (var propRef in propertyRefs)
+        {
+            if (propRef < 0 || propRef >= nif.Blocks.Count)
+                continue;
+
+            var propBlock = nif.Blocks[propRef];
+            if (propBlock.TypeName is "BSShaderPPLightingProperty" or "BSShaderNoLightingProperty")
+            {
+                var be = nif.IsBigEndian;
+                var pos = propBlock.DataOffset;
+                var end = propBlock.DataOffset + propBlock.Size;
+
+                if (!SkipNiObjectNET(data, ref pos, end, be))
+                    return null;
+
+                // NiShadeProperty: Flags (ushort)
+                if (pos + 2 > end) return null;
+                pos += 2;
+
+                // BSShaderProperty: ShaderType(4) + ShaderFlags(4) + ShaderFlags2(4)
+                if (pos + 12 > end) return null;
+                pos += 8; // skip ShaderType + ShaderFlags
+                return BinaryUtils.ReadUInt32(data, pos, be);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Read both BSShaderFlags (word 0) and BSShaderFlags2 (word 1) from the first
+    ///     BSShaderPPLightingProperty in a shape's properties.
+    ///     Returns (ShaderFlags, ShaderFlags2) or null if no shader property found.
+    /// </summary>
+    public static (uint ShaderFlags, uint ShaderFlags2)? ReadShaderFlagsBoth(
+        byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        foreach (var propRef in propertyRefs)
+        {
+            if (propRef < 0 || propRef >= nif.Blocks.Count)
+                continue;
+
+            var propBlock = nif.Blocks[propRef];
+            if (propBlock.TypeName is "BSShaderPPLightingProperty" or "BSShaderNoLightingProperty")
+            {
+                var be = nif.IsBigEndian;
+                var pos = propBlock.DataOffset;
+                var end = propBlock.DataOffset + propBlock.Size;
+
+                if (!SkipNiObjectNET(data, ref pos, end, be))
+                    return null;
+
+                // NiShadeProperty: Flags (ushort)
+                if (pos + 2 > end) return null;
+                pos += 2;
+
+                // BSShaderProperty: ShaderType(4) + ShaderFlags(4) + ShaderFlags2(4)
+                if (pos + 12 > end) return null;
+                pos += 4; // skip ShaderType
+                var flags1 = BinaryUtils.ReadUInt32(data, pos, be);
+                pos += 4;
+                var flags2 = BinaryUtils.ReadUInt32(data, pos, be);
+                return (flags1, flags2);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     ///     Resolve the normal map texture path from a shape's property block references.
     ///     Walks BSShaderPPLightingProperty → BSShaderTextureSet → slot 1 string.
     /// </summary>
@@ -98,6 +173,17 @@ internal sealed class NifTextureResolver : IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     Injects a pre-built texture into the cache under the given path key.
+    ///     Used for per-NPC EGT-morphed head textures that bypass normal BSA loading.
+    ///     Thread-safe (overwrites any existing entry for the key).
+    /// </summary>
+    public void InjectTexture(string texturePath, DecodedTexture texture)
+    {
+        var normalized = NormalizePath(texturePath);
+        _cache[normalized] = texture;
     }
 
     /// <summary>
@@ -325,7 +411,7 @@ internal sealed class NifTextureResolver : IDisposable
         return ReadSizedString(data, ref pos, end, be);
     }
 
-    private static bool SkipNiObjectNET(byte[] data, ref int pos, int end, bool be)
+    internal static bool SkipNiObjectNET(byte[] data, ref int pos, int end, bool be)
     {
         // Name (string index, int32)
         if (pos + 4 > end) return false;

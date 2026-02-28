@@ -88,13 +88,27 @@ public static class EsmDisplayHelpers
     /// <summary>
     ///     Creates a styled rule/header for a record.
     /// </summary>
-    public static void WriteRecordHeader(string signature, uint formId, uint? offset = null)
+    public static void WriteRecordHeader(string signature, uint formId, uint? offset = null,
+        string? editorId = null, string? fullName = null)
     {
-        var text = offset.HasValue
-            ? $"[cyan]{signature}[/] FormID: [yellow]0x{formId:X8}[/] @ [grey]0x{offset.Value:X8}[/]"
-            : $"[cyan]{signature}[/] FormID: [yellow]0x{formId:X8}[/]";
+        var parts = new List<string> { $"[cyan]{signature}[/] FormID: [yellow]0x{formId:X8}[/]" };
 
-        var rule = new Rule(text);
+        if (editorId != null)
+        {
+            parts.Add($"[green]{Markup.Escape(editorId)}[/]");
+        }
+
+        if (fullName != null)
+        {
+            parts.Add($"([white]{Markup.Escape(fullName)}[/])");
+        }
+
+        if (offset.HasValue)
+        {
+            parts.Add($"@ [grey]0x{offset.Value:X8}[/]");
+        }
+
+        var rule = new Rule(string.Join(" ", parts));
         _ = rule.LeftJustified();
         AnsiConsole.Write(rule);
     }
@@ -467,9 +481,6 @@ public static class EsmDisplayHelpers
     internal static void DisplayRecord(AnalyzerRecordInfo rec, byte[] fileData, bool bigEndian, bool showHex,
         bool showPreview = false)
     {
-        WriteRecordHeader(rec.Signature, rec.FormId, rec.Offset);
-        AnsiConsole.Write(CreateRecordInfoTable(rec.Offset, rec.DataSize, rec.Flags));
-
         // Get decompressed data if needed
         byte[] recordData;
         try
@@ -478,12 +489,33 @@ public static class EsmDisplayHelpers
         }
         catch (Exception ex)
         {
+            WriteRecordHeader(rec.Signature, rec.FormId, rec.Offset);
             AnsiConsole.MarkupLine($"[red]Failed to decompress:[/] {ex.Message}");
             return;
         }
 
-        // Parse and display subrecords
+        // Parse subrecords and extract EDID/FULL for the header
         var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
+        string? editorId = null;
+        string? fullName = null;
+        foreach (var sub in subrecords)
+        {
+            if (sub.Signature == "EDID" && sub.Data.Length > 0)
+            {
+                var nullIdx = Array.IndexOf(sub.Data, (byte)0);
+                var len = nullIdx >= 0 ? nullIdx : sub.Data.Length;
+                editorId = Encoding.UTF8.GetString(sub.Data, 0, len);
+            }
+            else if (sub.Signature == "FULL" && sub.Data.Length > 0)
+            {
+                var nullIdx = Array.IndexOf(sub.Data, (byte)0);
+                var len = nullIdx >= 0 ? nullIdx : sub.Data.Length;
+                fullName = Encoding.UTF8.GetString(sub.Data, 0, len);
+            }
+        }
+
+        WriteRecordHeader(rec.Signature, rec.FormId, rec.Offset, editorId, fullName);
+        AnsiConsole.Write(CreateRecordInfoTable(rec.Offset, rec.DataSize, rec.Flags));
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[bold]Subrecords ({subrecords.Count}):[/]");
