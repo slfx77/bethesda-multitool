@@ -30,7 +30,7 @@ jobs:
     
     - name: Run Tests with Coverage
       run: |
-        dotnet test tests/FalloutXbox360Utils.Tests/FalloutXbox360Utils.Tests.csproj `
+        dotnet test --project tests/FalloutXbox360Utils.Tests/FalloutXbox360Utils.Tests.csproj `
           --configuration Release `
           --no-build `
           --verbosity normal `
