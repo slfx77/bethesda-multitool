@@ -162,8 +162,8 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             difficulty = 0; // Sanity check: difficulty should be 0-5
         }
 
-        // Follow pOwnerQuest pointer → TESQuest* (0x47) → get Quest FormID
-        var questFormId = _context.FollowPointerToFormId(buffer, _info.QuestPtrOffset, 0x47);
+        // Follow pOwnerQuest pointer → TESQuest* (FormType 0x47) → get Quest FormID
+        var questFormId = _context.FollowPointerToFormId(buffer, _info.QuestPtrOffset);
 
         // Read bSaidOnce (bool8)
         var saidOnce = buffer[InfoSaidOnceOffset] != 0;
@@ -254,8 +254,8 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
             difficulty = 0;
         }
 
-        // Follow pOwnerQuest pointer → TESQuest* (0x47)
-        var questFormId = _context.FollowPointerToFormId(buffer, _info.QuestPtrOffset, 0x47);
+        // Follow pOwnerQuest pointer → TESQuest* (0x47 or 0x48 depending on build)
+        var questFormId = _context.FollowPointerToFormId(buffer, _info.QuestPtrOffset);
 
         // Read cPrompt BSStringT
         var promptText = _context.ReadBSStringT(fileOffset.Value, _info.PromptOffset);
@@ -519,9 +519,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
     /// <summary>
     ///     TESTopicInfo struct layout offsets.
-    ///     TESTopicInfo inherits directly from TESForm (not TESBoundObject), so fields after
-    ///     TESForm base (+24) are shifted by only +4 in the dump, not +16.
-    ///     PDB size = 80 bytes, dump size = 84 bytes (+4 shift extends last field to +84).
+    ///     TESTopicInfo inherits directly from TESForm (not TESBoundObject/TESFullName),
+    ///     so its layout matches the Release Beta PDB directly (TESForm base = 40 bytes).
+    ///     Release Beta PDB size = 96 bytes.
     /// </summary>
     private sealed record InfoOffsets(
         int StructSize,
@@ -532,18 +532,19 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
         int DifficultyOffset,
         int QuestPtrOffset);
 
-    // TESTopicInfo: Proto Debug PDB = 80 bytes, dump = 84 bytes (PDB + 4 shift after TESForm base).
-    // PDB offsets → dump offsets: 32→36, 35→39, 40→44, 60→64, 68→72, 72→76.
-    private static readonly InfoOffsets InfoLayout = new(84, 36, 39, 44, 64, 72, 76);
+    // TESTopicInfo: Release Beta PDB = 96 bytes.
+    // Field offsets from Release Beta PDB (match runtime layout directly):
+    //   iInfoIndex=48, m_Data=51, cPrompt=56, pSpeaker=76, eDifficulty=84, pOwnerQuest=88.
+    private static readonly InfoOffsets InfoLayout = new(96, 48, 51, 56, 76, 84, 88);
 
     // TESForm field present in Release builds (not in Proto Debug PDB):
-    // cFormEditorID BSStringT at offset 16 (same in both PDB and runtime — within TESForm base).
+    // cFormEditorID BSStringT at offset 16 (within TESForm base, same in all builds).
     private const int FormEditorIdOffset = 16;
 
-    // Additional TESTopicInfo offsets (adjusted = PDB + 4 shift):
-    // bSaidOnce at PDB+34 → dump +38, m_listAddTopics at PDB+48 → dump +52.
-    private const int InfoSaidOnceOffset = 38;
-    private const int InfoAddTopicsOffset = 52;
+    // Additional TESTopicInfo offsets (Release Beta PDB):
+    // bSaidOnce at +50, m_listAddTopics at +64.
+    private const int InfoSaidOnceOffset = 50;
+    private const int InfoAddTopicsOffset = 64;
 
     // TESTopic layout — consistent across all known builds (Final Debug / Release PDB, 80 bytes).
     // FullName=+44, DataType=+52, Flags=+53, Priority=+56, QuestInfoList=+60, DummyPrompt=+68.

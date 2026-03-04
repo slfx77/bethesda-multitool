@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Leveled List record (LVLI/LVLN/LVLC).
+///     Parsed Leveled List record (LVLI/LVLN/LVLC).
 /// </summary>
 public record LeveledListRecord
 {

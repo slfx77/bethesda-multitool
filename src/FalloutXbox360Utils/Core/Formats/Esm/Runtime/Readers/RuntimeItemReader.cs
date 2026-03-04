@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -114,6 +115,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             CriticalDamage = critFields.Damage,
             CriticalChance = critFields.Chance,
             ModelPath = modelPath,
+            Bounds = ReadBounds(buffer),
             PickupSoundFormId = pickupSound,
             PutdownSoundFormId = putdownSound,
             FireSound3DFormId = fireSound3D,
@@ -196,6 +198,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             BipedFlags = bipedFlags,
             DamageResistance = damageResistance,
             DamageThreshold = damageThreshold,
+            Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
         };
@@ -250,6 +253,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             FullName = entry.DisplayName,
             Value = (uint)value,
             ModelPath = modelPath,
+            Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
         };
@@ -307,6 +311,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             Value = value,
             Weight = weight,
             ModelPath = modelPath,
+            Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
         };
@@ -430,8 +435,22 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
             Value = (uint)value,
             Weight = weight,
             Flags = flags,
+            Bounds = ReadBounds(buffer),
             Offset = offset,
             IsBigEndian = true
         };
+    }
+
+    /// <summary>
+    ///     Read TESBoundObject.BoundData (12 bytes = 6 × int16) from a buffer.
+    ///     Returns null if bounds are all zero (uninitialized).
+    /// </summary>
+    private ObjectBounds? ReadBounds(byte[] buffer)
+    {
+        var off = Layouts.BoundsOffset;
+        if (off + 12 > buffer.Length) return null;
+        var bounds = RecordParserContext.ReadObjectBounds(
+            buffer.AsSpan(off, 12), bigEndian: true);
+        return bounds is { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 } ? null : bounds;
     }
 }

@@ -10,7 +10,7 @@ using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
 /// <summary>
-///     Regression tests for RecordParser reconstruction methods.
+///     Regression tests for RecordParser parsing methods.
 ///     Uses synthetic scan results to test without requiring sample files.
 ///     These tests anchor behavior before the partial-class-to-handler refactoring.
 /// </summary>
@@ -21,7 +21,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     #region Big-Endian Tests
 
     [Fact]
-    public void ReconstructBooks_BigEndian_ParsesCorrectly()
+    public void ParseBooks_BigEndian_ParsesCorrectly()
     {
         var edidData = NullTermString("BEBook");
         var fullData = NullTermString("Big Endian Book");
@@ -48,7 +48,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
 
         var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
-        var books = parser.ReconstructBooks();
+        var books = parser.ParseBooks();
 
         Assert.Single(books);
         var book = books[0];
@@ -65,7 +65,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 
     [Fact]
     [Trait("Category", "Slow")]
-    public void ReconstructAll_WithSampleFile_ProducesNonEmptyResults()
+    public void ParseAll_WithSampleFile_ProducesNonEmptyResults()
     {
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
@@ -88,15 +88,15 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
 
         var parser = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
-        var result = parser.ReconstructAll();
+        var result = parser.ParseAll();
 
         _output.WriteLine($"NPCs: {result.Npcs.Count}, Weapons: {result.Weapons.Count}, " +
                           $"Quests: {result.Quests.Count}, Dialogues: {result.Dialogues.Count}, " +
-                          $"Total: {result.TotalRecordsReconstructed}");
+                          $"Total: {result.TotalRecordsParsed}");
 
         Assert.True(result.Npcs.Count > 0, "Expected at least some NPCs");
         Assert.True(result.Weapons.Count > 0, "Expected at least some weapons");
-        Assert.True(result.TotalRecordsReconstructed > 0, "Expected non-zero reconstruction count");
+        Assert.True(result.TotalRecordsParsed > 0, "Expected non-zero parse count");
     }
 
     #endregion
@@ -205,9 +205,9 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 
     #endregion
 
-    #region Reconstruction Without Accessor Tests
+    #region Parsing Without Accessor Tests
 
-    public static TheoryData<string, uint, string?, string?> ReconstructWithoutAccessorCases => new()
+    public static TheoryData<string, uint, string?, string?> ParseWithoutAccessorCases => new()
     {
         // recordType, formId, editorId, expectedFullName
         { "NPC_", 0x00001234u, "TestNpc", null },
@@ -217,8 +217,8 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     };
 
     [Theory]
-    [MemberData(nameof(ReconstructWithoutAccessorCases))]
-    public void Reconstruct_WithoutAccessor_ReturnsBasicRecords(
+    [MemberData(nameof(ParseWithoutAccessorCases))]
+    public void Parse_WithoutAccessor_ReturnsBasicRecords(
         string recordType, uint formId, string? editorId, string? expectedFullName)
     {
         var records = new List<DetectedMainRecord> { MakeRecord(recordType, formId, 100) };
@@ -236,10 +236,10 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 
         var (resultFormId, resultEditorId, resultFullName) = recordType switch
         {
-            "NPC_" => ExtractFields(parser.ReconstructNpcs(), r => (r.FormId, r.EditorId, null)),
-            "CREA" => ExtractFields(parser.ReconstructCreatures(), r => (r.FormId, r.EditorId, null)),
-            "TERM" => ExtractFields(parser.ReconstructTerminals(), r => (r.FormId, r.EditorId, r.FullName)),
-            "PACK" => ExtractFields(parser.ReconstructPackages(), r => (r.FormId, r.EditorId, null)),
+            "NPC_" => ExtractFields(parser.ParseNpcs(), r => (r.FormId, r.EditorId, null)),
+            "CREA" => ExtractFields(parser.ParseCreatures(), r => (r.FormId, r.EditorId, null)),
+            "TERM" => ExtractFields(parser.ParseTerminals(), r => (r.FormId, r.EditorId, r.FullName)),
+            "PACK" => ExtractFields(parser.ParsePackages(), r => (r.FormId, r.EditorId, null)),
             _ => throw new ArgumentException($"Unknown record type: {recordType}")
         };
 
@@ -264,7 +264,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     }
 
     [Fact]
-    public void ReconstructGlobals_WithoutAccessor_ReturnsEmpty()
+    public void ParseGlobals_WithoutAccessor_ReturnsEmpty()
     {
         // Globals require accessor to read data - should return empty without one
         var records = new List<DetectedMainRecord>
@@ -274,17 +274,17 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 
         var scanResult = MakeScanResult(records);
         var parser = new RecordParser(scanResult);
-        var globals = parser.ReconstructGlobals();
+        var globals = parser.ParseGlobals();
 
         Assert.Empty(globals);
     }
 
     #endregion
 
-    #region Reconstruction With Accessor Tests
+    #region Parsing With Accessor Tests
 
     [Fact]
-    public void ReconstructBooks_WithAccessor_ParsesSubrecords()
+    public void ParseBooks_WithAccessor_ParsesSubrecords()
     {
         // Build a BOOK record with EDID, FULL, DESC subrecords
         var edidData = NullTermString("TestBook01");
@@ -314,7 +314,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
 
         var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
-        var books = parser.ReconstructBooks();
+        var books = parser.ParseBooks();
 
         Assert.Single(books);
         var book = books[0];
@@ -327,7 +327,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     }
 
     [Fact]
-    public void ReconstructNotes_WithAccessor_ParsesSubrecords()
+    public void ParseNotes_WithAccessor_ParsesSubrecords()
     {
         var edidData = NullTermString("TestNote01");
         var fullData = NullTermString("Test Note");
@@ -350,7 +350,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
 
         var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
-        var notes = parser.ReconstructNotes();
+        var notes = parser.ParseNotes();
 
         Assert.Single(notes);
         var note = notes[0];
@@ -361,7 +361,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     }
 
     [Fact]
-    public void ReconstructMessages_WithAccessor_ParsesSubrecords()
+    public void ParseMessages_WithAccessor_ParsesSubrecords()
     {
         var edidData = NullTermString("TestMsg01");
         var fullData = NullTermString("Message Title");
@@ -386,7 +386,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
 
         var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
-        var messages = parser.ReconstructMessages();
+        var messages = parser.ParseMessages();
 
         Assert.Single(messages);
         var msg = messages[0];
@@ -399,7 +399,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
     }
 
     [Fact]
-    public void ReconstructGlobals_WithAccessor_ParsesSubrecords()
+    public void ParseGlobals_WithAccessor_ParsesSubrecords()
     {
         var edidData = NullTermString("TimeScale");
 
@@ -425,7 +425,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
         accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
 
         var parser = new RecordParser(scanResult, accessor: accessor, fileSize: recordBytes.Length);
-        var globals = parser.ReconstructGlobals();
+        var globals = parser.ParseGlobals();
 
         Assert.Single(globals);
         var global = globals[0];
@@ -436,24 +436,24 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 
     #endregion
 
-    #region ReconstructAll Tests
+    #region ParseAll Tests
 
     [Fact]
-    public void ReconstructAll_EmptyScanResult_ReturnsEmptyCollection()
+    public void ParseAll_EmptyScanResult_ReturnsEmptyCollection()
     {
         var scanResult = MakeScanResult();
         var parser = new RecordParser(scanResult);
-        var result = parser.ReconstructAll();
+        var result = parser.ParseAll();
 
         Assert.NotNull(result);
         Assert.Empty(result.Npcs);
         Assert.Empty(result.Weapons);
         Assert.Empty(result.Dialogues);
-        Assert.Equal(0, result.TotalRecordsReconstructed);
+        Assert.Equal(0, result.TotalRecordsParsed);
     }
 
     [Fact]
-    public void ReconstructAll_WithMultipleTypes_ReturnsPopulatedCollection()
+    public void ParseAll_WithMultipleTypes_ReturnsPopulatedCollection()
     {
         var records = new List<DetectedMainRecord>
         {
@@ -475,22 +475,22 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 
         var scanResult = MakeScanResult(records);
         var parser = new RecordParser(scanResult, correlations);
-        var result = parser.ReconstructAll();
+        var result = parser.ParseAll();
 
         Assert.Single(result.Npcs);
         Assert.Single(result.Creatures);
         Assert.Single(result.Packages);
         Assert.Single(result.Terminals);
-        Assert.True(result.TotalRecordsReconstructed >= 4);
+        Assert.True(result.TotalRecordsParsed >= 4);
 
         // Verify EditorID maps are populated in the result
         Assert.True(result.FormIdToEditorId.ContainsKey(0x00001001));
     }
 
     [Fact]
-    public void ReconstructAll_PreservesMethodOrdering_EditorIdEnrichment()
+    public void ParseAll_PreservesMethodOrdering_EditorIdEnrichment()
     {
-        // Reconstruction methods enrich _formIdToEditorId as they go.
+        // Parsing methods enrich _formIdToEditorId as they go.
         // Verify that later methods can see EditorIDs added by earlier ones.
         var records = new List<DetectedMainRecord>
         {
@@ -505,7 +505,7 @@ public class RecordParserHandlerTests(ITestOutputHelper output, SampleFileFixtur
 
         var scanResult = MakeScanResult(records);
         var parser = new RecordParser(scanResult, correlations);
-        var result = parser.ReconstructAll();
+        var result = parser.ParseAll();
 
         // The FormIdToEditorId should include the well-known PlayerRef/Player even
         // though they weren't in the main records

@@ -58,66 +58,115 @@ internal sealed class RuntimeNpcFieldReader
     }
 
     /// <summary>
-    ///     Read NPC faction memberships from the NiTListItem chain at +112.
-    ///     Each NiTListItem is 16 bytes: { pPrev(4), pNext(4), pFaction(4), rankData(4) }.
+    ///     Read NPC faction memberships from BSSimpleList&lt;FACTION_RANK*&gt; at +108 (PDB).
+    ///     BSSimpleList nodes are 8 bytes: m_item (FACTION_RANK*, 4B) + m_pkNext (BSSimpleList*, 4B).
+    ///     FACTION_RANK is 8 bytes: pFaction (TESFaction*, 4B at +0) + cRank (int8 at +4).
     ///     Returns a list of (FactionFormId, Rank) pairs.
     /// </summary>
     public List<FactionMembership> ReadNpcFactions(byte[] npcBuffer)
     {
         var factions = new List<FactionMembership>();
 
-        var headVA = BinaryUtils.ReadUInt32BE(npcBuffer, NpcFactionListHeadOffset);
-        if (headVA == 0)
+        if (NpcFactionListHeadOffset + 8 > npcBuffer.Length)
         {
-            return factions; // empty list
+            return factions;
         }
 
-        var nodeVA = headVA;
-        var visited = new HashSet<uint>();
-        while (nodeVA != 0 && factions.Count < RuntimeMemoryContext.MaxListItems && !visited.Contains(nodeVA))
+        // Read inline BSSimpleList head: m_item (FACTION_RANK*) + m_pkNext (BSSimpleList*)
+        var itemPtr = BinaryUtils.ReadUInt32BE(npcBuffer, NpcFactionListHeadOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(npcBuffer, NpcFactionListHeadOffset + 4);
+
+        // Process inline first item
+        var first = ReadFactionRank(itemPtr);
+        if (first != null)
         {
-            visited.Add(nodeVA);
-            var nodeFileOffset = _context.VaToFileOffset(nodeVA);
+            factions.Add(first);
+        }
+
+        // Walk linked list
+        var visited = new HashSet<uint>();
+        while (nextPtr != 0 && factions.Count < RuntimeMemoryContext.MaxListItems &&
+               _context.IsValidPointer(nextPtr) && !visited.Contains(nextPtr))
+        {
+            visited.Add(nextPtr);
+            var nodeFileOffset = _context.VaToFileOffset(nextPtr);
             if (nodeFileOffset == null)
             {
                 break;
             }
 
-            // Read 16-byte NiTListItem
-            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 16);
+            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
             if (nodeBuf == null)
             {
                 break;
             }
 
-            // Layout: pPrev(4) + pNext(4) + pFaction(4) + rankData(4)
-            var pNext = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
-            var pFaction = BinaryUtils.ReadUInt32BE(nodeBuf, 8);
-            var rankByte = nodeBuf[12]; // first byte of rankData = rank (int8)
+            var nodeItemPtr = BinaryUtils.ReadUInt32BE(nodeBuf);
+            nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
 
-            // Follow pFaction to read FormID and validate it's a FACT (0x08)
-            if (pFaction != 0)
+            var item = ReadFactionRank(nodeItemPtr);
+            if (item != null)
             {
-                var factionFileOffset = _context.VaToFileOffset(pFaction);
-                if (factionFileOffset != null)
-                {
-                    var formBuf = _context.ReadBytes(factionFileOffset.Value, 16);
-                    if (formBuf != null)
-                    {
-                        var formType = formBuf[4];
-                        var formId = BinaryUtils.ReadUInt32BE(formBuf, 12);
-                        if (formType == 0x08 && formId != 0 && formId != 0xFFFFFFFF) // FACT
-                        {
-                            factions.Add(new FactionMembership(formId, (sbyte)rankByte));
-                        }
-                    }
-                }
+                factions.Add(item);
             }
-
-            nodeVA = pNext;
         }
 
         return factions;
+    }
+
+    /// <summary>
+    ///     Follow a FACTION_RANK* pointer to read the faction FormID and rank.
+    ///     FACTION_RANK is 8 bytes: pFaction (TESFaction*, 4B) + cRank (int8, 1B) + 3B padding.
+    /// </summary>
+    private FactionMembership? ReadFactionRank(uint factionRankVA)
+    {
+        if (factionRankVA == 0 || !_context.IsValidPointer(factionRankVA))
+        {
+            return null;
+        }
+
+        var fileOffset = _context.VaToFileOffset(factionRankVA);
+        if (fileOffset == null)
+        {
+            return null;
+        }
+
+        var buf = _context.ReadBytes(fileOffset.Value, 8);
+        if (buf == null)
+        {
+            return null;
+        }
+
+        // FACTION_RANK: pFaction (4B pointer) + cRank (1B)
+        var pFaction = BinaryUtils.ReadUInt32BE(buf, 0);
+        var rank = (sbyte)buf[4];
+
+        if (pFaction == 0 || !_context.IsValidPointer(pFaction))
+        {
+            return null;
+        }
+
+        // Follow pFaction to read TESFaction FormID, validate it's FACT (0x08)
+        var factionFileOffset = _context.VaToFileOffset(pFaction);
+        if (factionFileOffset == null)
+        {
+            return null;
+        }
+
+        var formBuf = _context.ReadBytes(factionFileOffset.Value, 16);
+        if (formBuf == null)
+        {
+            return null;
+        }
+
+        var formType = formBuf[4];
+        var formId = BinaryUtils.ReadUInt32BE(formBuf, 12);
+        if (formType != 0x08 || formId == 0 || formId == 0xFFFFFFFF)
+        {
+            return null;
+        }
+
+        return new FactionMembership(formId, rank);
     }
 
     /// <summary>
@@ -207,6 +256,153 @@ internal sealed class RuntimeNpcFieldReader
         }
 
         return value;
+    }
+
+    /// <summary>
+    ///     Read hair color uint32 (packed 0x00BBGGRR) from NPC struct.
+    ///     Returns null if the value is zero (unset).
+    /// </summary>
+    public uint? ReadNpcHairColor(byte[] buffer)
+    {
+        if (NpcHairColorOffset + 4 > buffer.Length)
+            return null;
+
+        var value = BinaryUtils.ReadUInt32BE(buffer, NpcHairColorOffset);
+        return value == 0 ? null : value;
+    }
+
+    /// <summary>
+    ///     Read head part FormIDs from BSSimpleList&lt;BGSHeadPart*&gt; at NpcHeadPartListOffset.
+    ///     Same linked list pattern as ReadPackageList: inline head node + heap-allocated chain.
+    /// </summary>
+    public List<uint> ReadNpcHeadPartFormIds(byte[] buffer)
+    {
+        var parts = new List<uint>();
+
+        if (NpcHeadPartListOffset + 8 > buffer.Length)
+            return parts;
+
+        // Read inline BSSimpleList head: m_item (BGSHeadPart*) + m_pkNext (BSSimpleList*)
+        var itemPtr = BinaryUtils.ReadUInt32BE(buffer, NpcHeadPartListOffset);
+        var nextPtr = BinaryUtils.ReadUInt32BE(buffer, NpcHeadPartListOffset + 4);
+
+        // Follow first item pointer to BGSHeadPart → read FormID at +12
+        if (itemPtr != 0 && _context.IsValidPointer(itemPtr))
+        {
+            var formId = _context.FollowPointerVaToFormId(itemPtr);
+            if (formId is > 0 and < 0x01000000)
+                parts.Add(formId.Value);
+        }
+
+        // Walk linked list (max 20 nodes — NPCs have few head parts)
+        var visited = new HashSet<uint>();
+        for (var i = 0; i < 20 && nextPtr != 0 && _context.IsValidPointer(nextPtr) && !visited.Contains(nextPtr); i++)
+        {
+            visited.Add(nextPtr);
+            var nodeFileOffset = _context.VaToFileOffset(nextPtr);
+            if (nodeFileOffset == null)
+                break;
+
+            var nodeBuf = _context.ReadBytes(nodeFileOffset.Value, 8);
+            if (nodeBuf == null)
+                break;
+
+            var nodeItemPtr = BinaryUtils.ReadUInt32BE(nodeBuf);
+            nextPtr = BinaryUtils.ReadUInt32BE(nodeBuf, 4);
+
+            if (nodeItemPtr != 0 && _context.IsValidPointer(nodeItemPtr))
+            {
+                var formId = _context.FollowPointerVaToFormId(nodeItemPtr);
+                if (formId is > 0 and < 0x01000000)
+                    parts.Add(formId.Value);
+            }
+        }
+
+        return parts;
+    }
+
+    /// <summary>
+    ///     Read NPC height multiplier (fHeight, float ~0.9-1.1, default 1.0).
+    ///     Returns null if the value is zero/unset or out of reasonable range.
+    /// </summary>
+    public float? ReadNpcHeight(byte[] buffer)
+    {
+        if (NpcHeightOffset + 4 > buffer.Length)
+        {
+            return null;
+        }
+
+        var raw = BinaryUtils.ReadUInt32BE(buffer, NpcHeightOffset);
+        if (raw == 0)
+        {
+            return null;
+        }
+
+        var value = BinaryUtils.ReadFloatBE(buffer, NpcHeightOffset);
+
+        // Reject subnormal/denormalized floats — likely garbage data.
+        if (!float.IsNormal(value) || value <= 0 || value > 3)
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    ///     Read NPC weight (fWeight, float 0-100, GECK body morph slider).
+    ///     Returns null if the value looks invalid.
+    /// </summary>
+    public float? ReadNpcWeight(byte[] buffer)
+    {
+        if (NpcWeightOffset + 4 > buffer.Length)
+        {
+            return null;
+        }
+
+        var raw = BinaryUtils.ReadUInt32BE(buffer, NpcWeightOffset);
+        if (raw == 0)
+        {
+            return null;
+        }
+
+        var value = BinaryUtils.ReadFloatBE(buffer, NpcWeightOffset);
+
+        // Reject subnormal/denormalized floats — likely garbage data.
+        if (!float.IsNormal(value) || value < 0 || value > 100)
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    ///     Read blood impact material enum (eBloodImpactMaterial, byte).
+    ///     FNV values: 0=Default, 1=Metal, 2=CinderBlock, 3=Stone.
+    /// </summary>
+    public byte? ReadNpcBloodImpactMaterial(byte[] buffer)
+    {
+        if (NpcBloodImpactMaterialOffset >= buffer.Length)
+        {
+            return null;
+        }
+
+        var value = buffer[NpcBloodImpactMaterialOffset];
+        return value > 10 ? null : value; // sanity check
+    }
+
+    /// <summary>
+    ///     Read last race face preset number (sLastRaceFaceNum, uint16).
+    /// </summary>
+    public ushort? ReadNpcRaceFacePreset(byte[] buffer)
+    {
+        if (NpcRaceFacePresetOffset + 2 > buffer.Length)
+        {
+            return null;
+        }
+
+        return BinaryUtils.ReadUInt16BE(buffer, NpcRaceFacePresetOffset);
     }
 
     /// <summary>
@@ -449,8 +645,11 @@ internal sealed class RuntimeNpcFieldReader
 
     #region NPC Struct Layout (Proto Debug PDB base + _s)
 
-    // TESNPC: PDB size 492, Debug dump 496, Release dump 508
-    public int NpcStructSize => 492 + _s;
+    // TESNPC: PDB size 492, MemDebug PDB 508. Fields after the RaceFaceOffsetCoord inline
+    // array (PDB 308-404) are +32 bytes higher at runtime vs PDB, likely due to 8-byte alignment
+    // padding in FR2MatrixVTC (24B padded to 32B × 4 = 128B vs PDB's 96B).
+    // Read buffer extends +32 to cover pOriginalRace, pFaceNPC, fHeight, fWeight at tail.
+    public int NpcStructSize => 524 + _s;
     public int NpcAcbsOffset => 52 + _s;
     public int NpcDeathItemPtrOffset => 76 + _s;
     public int NpcVoiceTypePtrOffset => 80 + _s;
@@ -475,14 +674,25 @@ internal sealed class RuntimeNpcFieldReader
     private int NpcHairLengthOffset => 444 + _s;
     public int NpcEyesPtrOffset => 448 + _s;
     public int NpcCombatStylePtrOffset => 468 + _s;
+    private int NpcHairColorOffset => 472 + _s; // iHairColor (uint32, packed 0x00BBGGRR)
+    private int NpcHeadPartListOffset => 476 + _s; // listHeadParts (BSSimpleList<BGSHeadPart*>, 8B)
     public int NpcScriptPtrOffset => 248 + _s; // TESScriptableForm::pFormScript (base+244, field+4)
     private int NpcContainerDataOffset => 104 + _s;
     private int NpcContainerNextOffset => 108 + _s;
 
-    private int NpcFactionListHeadOffset => 96 + _s;
+    private int NpcFactionListHeadOffset => 92 + _s;
 
     // TESAIForm at offset 144 in TESActorBase; AIPackList (BSSimpleList<TESPackage*>) at +24 within TESAIForm
     private int PackageListOffset => 168 + _s;
+
+    // Additional TESNPC fields from PDB (Proto Debug offset + 32 runtime shift + _s).
+    // The +32 matches the empirical shift applied to all post-FaceGen fields (Hair, Eyes, etc.).
+    private int NpcRaceFacePresetOffset => 464 + _s;          // PDB 432 + 32: sLastRaceFaceNum (uint16)
+    private int NpcBloodImpactMaterialOffset => 484 + _s;     // PDB 452 + 32: eBloodImpactMaterial (enum)
+    public int NpcOriginalRacePtrOffset => 492 + _s;           // PDB 460 + 32: pOriginalRace (TESRace*)
+    public int NpcFaceNpcPtrOffset => 496 + _s;                // PDB 464 + 32: pFaceNPC (TESNPC*)
+    private int NpcHeightOffset => 500 + _s;                   // PDB 468 + 32: fHeight (float, ~0.9-1.1)
+    private int NpcWeightOffset => 504 + _s;                   // PDB 472 + 32: fWeight (float, 0-100)
 
     #endregion
 

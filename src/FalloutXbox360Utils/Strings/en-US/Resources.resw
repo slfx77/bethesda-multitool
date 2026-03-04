@@ -228,8 +228,8 @@
   <data name="Status_RunningCoverageAnalysis" xml:space="preserve">
     <value>Running coverage analysis...</value>
   </data>
-  <data name="Status_ReconstructingRecords" xml:space="preserve">
-    <value>Reconstructing records from memory dump...</value>
+  <data name="Status_ParsingRecords" xml:space="preserve">
+    <value>Parsing records from memory dump...</value>
   </data>
   <data name="Status_LoadingEsmRecords" xml:space="preserve">
     <value>Loading ESM records...</value>
@@ -288,8 +288,8 @@
   <data name="Status_CorrelatingFormIdNames" xml:space="preserve">
     <value>Correlating FormID names...</value>
   </data>
-  <data name="Status_ReconstructedRecords" xml:space="preserve">
-    <value>Reconstructed {0:N0} records.</value>
+  <data name="Status_ParsedRecords" xml:space="preserve">
+    <value>Parsed {0:N0} records.</value>
     <comment>{0} = record count</comment>
   </data>
   <data name="Status_ParsedEsmRecords" xml:space="preserve">
@@ -324,8 +324,8 @@
   <data name="Status_LoadingDialogueData" xml:space="preserve">
     <value>Loading dialogue data...</value>
   </data>
-  <data name="Status_ReconstructingDialogueData" xml:space="preserve">
-    <value>Reconstructing dialogue data...</value>
+  <data name="Status_ParsingDialogueData" xml:space="preserve">
+    <value>Parsing dialogue data...</value>
   </data>
   <data name="Status_NoDialogueData" xml:space="preserve">
     <value>No dialogue data found in this file.</value>
@@ -344,8 +344,8 @@
   <data name="Status_LoadingWorldData" xml:space="preserve">
     <value>Loading world data...</value>
   </data>
-  <data name="Status_ReconstructingWorldData" xml:space="preserve">
-    <value>Reconstructing world data...</value>
+  <data name="Status_ParsingWorldData" xml:space="preserve">
+    <value>Parsing world data...</value>
   </data>
   <data name="Status_NoWorldData" xml:space="preserve">
     <value>No world data found in this file.</value>
@@ -404,8 +404,8 @@
   <data name="Dialog_PartialConversionSupport_Title" xml:space="preserve">
     <value>Partial Conversion Support</value>
   </data>
-  <data name="Dialog_ReconstructionFailed_Title" xml:space="preserve">
-    <value>Reconstruction Failed</value>
+  <data name="Dialog_ParseFailed_Title" xml:space="preserve">
+    <value>Parse Failed</value>
   </data>
 
   <!-- ===== Error Messages ===== -->
@@ -535,7 +535,7 @@
   </data>
 
   <!-- ===== SingleFileTab: Buttons (x:Uid) ===== -->
-  <data name="Button_ReconstructRecords.Content" xml:space="preserve">
+  <data name="Button_ParseRecords.Content" xml:space="preserve">
     <value>Load Records</value>
   </data>
   <data name="Button_GoToOffset.Content" xml:space="preserve">

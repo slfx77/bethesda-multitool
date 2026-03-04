@@ -57,25 +57,25 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
 
     #endregion
 
-    #region ReconstructCreatures
+    #region ParseCreatures
 
     /// <summary>
-    ///     Reconstruct all Creature records from the scan result.
+    ///     Parse all Creature records from the scan result.
     ///     Delegates to <see cref="CreatureRecordHandler"/>.
     /// </summary>
-    internal List<CreatureRecord> ReconstructCreatures()
+    internal List<CreatureRecord> ParseCreatures()
     {
-        return _creatures.ReconstructCreatures();
+        return _creatures.ParseCreatures();
     }
 
     #endregion
 
-    #region ReconstructFactions
+    #region ParseFactions
 
     /// <summary>
-    ///     Reconstruct all Faction records from the scan result.
+    ///     Parse all Faction records from the scan result.
     /// </summary>
-    internal List<FactionRecord> ReconstructFactions()
+    internal List<FactionRecord> ParseFactions()
     {
         var factions = new List<FactionRecord>();
         var factionRecords = _context.GetRecordsByType("FACT").ToList();
@@ -101,7 +101,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             {
                 foreach (var record in factionRecords)
                 {
-                    var faction = ReconstructFactionFromAccessor(record, buffer);
+                    var faction = ParseFactionFromAccessor(record, buffer);
                     if (faction != null)
                     {
                         factions.Add(faction);
@@ -120,7 +120,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         return factions;
     }
 
-    private FactionRecord? ReconstructFactionFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private FactionRecord? ParseFactionFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
@@ -247,25 +247,25 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
 
     #endregion
 
-    #region ReconstructNpcs
+    #region ParseNpcs
 
     /// <summary>
-    ///     Reconstruct all NPC records from the scan result.
+    ///     Parse all NPC records from the scan result.
     ///     Delegates to <see cref="NpcRecordHandler"/>.
     /// </summary>
-    internal List<NpcRecord> ReconstructNpcs()
+    internal List<NpcRecord> ParseNpcs()
     {
-        return _npcs.ReconstructNpcs();
+        return _npcs.ParseNpcs();
     }
 
     #endregion
 
-    #region ReconstructRaces
+    #region ParseRaces
 
     /// <summary>
-    ///     Reconstruct all Race records from the scan result.
+    ///     Parse all Race records from the scan result.
     /// </summary>
-    internal List<RaceRecord> ReconstructRaces()
+    internal List<RaceRecord> ParseRaces()
     {
         var races = new List<RaceRecord>();
         var raceRecords = _context.GetRecordsByType("RACE").ToList();
@@ -291,7 +291,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             {
                 foreach (var record in raceRecords)
                 {
-                    var race = ReconstructRaceFromAccessor(record, buffer);
+                    var race = ParseRaceFromAccessor(record, buffer);
                     if (race != null)
                     {
                         races.Add(race);
@@ -307,7 +307,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         return races;
     }
 
-    private RaceRecord? ReconstructRaceFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private RaceRecord? ParseRaceFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
@@ -361,6 +361,17 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         var inMaleSection = true;
         float[]? maleFggs = null, maleFgga = null, maleFgts = null;
         float[]? femaleFggs = null, femaleFgga = null, femaleFgts = null;
+
+        // Head/body part mesh and texture paths (from NAM0/NAM1 sections)
+        var inHeadPartsSection = false;
+        var inBodyPartsSection = false;
+        var currentIndx = -1;
+        string? maleHeadModel = null, femaleHeadModel = null;
+        string? maleHeadTexture = null, femaleHeadTexture = null;
+        string? maleUpperBody = null, femaleUpperBody = null;
+        string? maleLeftHand = null, femaleLeftHand = null;
+        string? maleRightHand = null, femaleRightHand = null;
+        string? maleBodyTexture = null, femaleBodyTexture = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -461,10 +472,68 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     break;
                 case "MNAM" when sub.DataLength == 0:
                     inMaleSection = true;
+                    currentIndx = -1;
                     break;
                 case "FNAM" when sub.DataLength == 0:
                     inMaleSection = false;
+                    currentIndx = -1;
                     break;
+                case "NAM0" when sub.DataLength == 0:
+                    inHeadPartsSection = true;
+                    inBodyPartsSection = false;
+                    break;
+                case "NAM1" when sub.DataLength == 0:
+                    inHeadPartsSection = false;
+                    inBodyPartsSection = true;
+                    break;
+                case "INDX" when sub.DataLength == 4 && (inHeadPartsSection || inBodyPartsSection):
+                    currentIndx = (int)RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "MODL" when inHeadPartsSection && currentIndx == 0:
+                {
+                    var path = EsmStringUtils.ReadNullTermString(subData);
+                    if (path != null)
+                    {
+                        if (inMaleSection) maleHeadModel = path;
+                        else femaleHeadModel = path;
+                    }
+
+                    break;
+                }
+                case "MODL" when inBodyPartsSection && currentIndx >= 0 && currentIndx <= 2:
+                {
+                    var path = EsmStringUtils.ReadNullTermString(subData);
+                    if (path != null)
+                    {
+                        if (currentIndx == 0) { if (inMaleSection) maleUpperBody = path; else femaleUpperBody = path; }
+                        else if (currentIndx == 1) { if (inMaleSection) maleLeftHand = path; else femaleLeftHand = path; }
+                        else if (currentIndx == 2) { if (inMaleSection) maleRightHand = path; else femaleRightHand = path; }
+                    }
+
+                    break;
+                }
+                case "ICON" when inHeadPartsSection && currentIndx == 0:
+                {
+                    var path = EsmStringUtils.ReadNullTermString(subData);
+                    if (path != null)
+                    {
+                        if (inMaleSection) maleHeadTexture = path;
+                        else femaleHeadTexture = path;
+                    }
+
+                    break;
+                }
+                case "ICON" when inBodyPartsSection && currentIndx == 0:
+                {
+                    var path = EsmStringUtils.ReadNullTermString(subData);
+                    if (path != null)
+                    {
+                        if (inMaleSection) maleBodyTexture = path;
+                        else femaleBodyTexture = path;
+                    }
+
+                    break;
+                }
                 case "FGGS" when sub.DataLength == 200:
                     if (inMaleSection)
                     {
@@ -532,6 +601,18 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             FemaleFaceGenGeometrySymmetric = femaleFggs,
             FemaleFaceGenGeometryAsymmetric = femaleFgga,
             FemaleFaceGenTextureSymmetric = femaleFgts,
+            MaleHeadModelPath = maleHeadModel,
+            FemaleHeadModelPath = femaleHeadModel,
+            MaleHeadTexturePath = maleHeadTexture,
+            FemaleHeadTexturePath = femaleHeadTexture,
+            MaleUpperBodyPath = maleUpperBody,
+            FemaleUpperBodyPath = femaleUpperBody,
+            MaleLeftHandPath = maleLeftHand,
+            FemaleLeftHandPath = femaleLeftHand,
+            MaleRightHandPath = maleRightHand,
+            FemaleRightHandPath = femaleRightHand,
+            MaleBodyTexturePath = maleBodyTexture,
+            FemaleBodyTexturePath = femaleBodyTexture,
             OlderRaceFormId = olderRace != 0 ? olderRace : null,
             YoungerRaceFormId = youngerRace != 0 ? youngerRace : null,
             MaleVoiceFormId = maleVoice != 0 ? maleVoice : null,

@@ -11,9 +11,9 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
     #region Form Lists
 
     /// <summary>
-    ///     Reconstruct all Form ID List (FLST) records.
+    ///     Parse all Form ID List (FLST) records.
     /// </summary>
-    internal List<FormListRecord> ReconstructFormLists()
+    internal List<FormListRecord> ParseFormLists()
     {
         var formLists = new List<FormListRecord>();
 
@@ -98,9 +98,9 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
     #region Leveled Lists
 
     /// <summary>
-    ///     Reconstruct leveled list records (LVLI/LVLN/LVLC).
+    ///     Parse leveled list records (LVLI/LVLN/LVLC).
     /// </summary>
-    internal List<LeveledListRecord> ReconstructLeveledLists()
+    internal List<LeveledListRecord> ParseLeveledLists()
     {
         var lists = new List<LeveledListRecord>();
         var lvliRecords = _context.GetRecordsByType("LVLI").ToList();
@@ -117,7 +117,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
         {
             foreach (var record in allRecords)
             {
-                var list = ReconstructLeveledListFromScanResult(record);
+                var list = ParseLeveledListFromScanResult(record);
                 if (list != null)
                 {
                     lists.Add(list);
@@ -131,7 +131,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
             {
                 foreach (var record in allRecords)
                 {
-                    var list = ReconstructLeveledListFromAccessor(record, buffer);
+                    var list = ParseLeveledListFromAccessor(record, buffer);
                     if (list != null)
                     {
                         lists.Add(list);
@@ -147,12 +147,12 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
         return lists;
     }
 
-    private LeveledListRecord? ReconstructLeveledListFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private LeveledListRecord? ParseLeveledListFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
-            return ReconstructLeveledListFromScanResult(record);
+            return ParseLeveledListFromScanResult(record);
         }
 
         var (data, dataSize) = recordData.Value;
@@ -211,7 +211,7 @@ internal sealed class MiscCollectionHandler(RecordParserContext context)
         };
     }
 
-    private LeveledListRecord? ReconstructLeveledListFromScanResult(DetectedMainRecord record)
+    private LeveledListRecord? ParseLeveledListFromScanResult(DetectedMainRecord record)
     {
         return new LeveledListRecord
         {

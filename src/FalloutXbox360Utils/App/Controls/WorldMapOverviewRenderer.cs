@@ -20,6 +20,13 @@ internal static class WorldMapOverviewRenderer
 {
     private const float CellWorldSize = 4096f;
 
+    /// <summary>
+    ///     Maximum half-extent in world units for rendering a placed object's bounding box.
+    ///     Half a cell (2048) is generous for even the largest buildings; anything beyond
+    ///     this is likely corrupted OBND data or extreme scale and would obscure the map.
+    /// </summary>
+    private const float MaxHalfExtent = 2048f;
+
     internal static void DrawWorldOverview(
         CanvasDrawingSession ds,
         WorldViewData data,
@@ -442,6 +449,11 @@ internal static class WorldMapOverviewRenderer
             var halfW = (bounds.X2 - bounds.X1) * 0.5f * obj.Scale;
             var halfH = (bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale;
 
+            // Clamp extreme bounds to prevent a single object from dominating the map
+            var wasClamped = halfW > MaxHalfExtent || halfH > MaxHalfExtent;
+            halfW = Math.Min(halfW, MaxHalfExtent);
+            halfH = Math.Min(halfH, MaxHalfExtent);
+
             if (halfW < 1f && halfH < 1f)
             {
                 ds.FillCircle(pos, 6f / zoom, WorldMapColors.WithAlpha(color, 120));
@@ -457,6 +469,9 @@ internal static class WorldMapOverviewRenderer
                 return;
             }
 
+            // Use reddish outline for clamped bounds to signal truncation
+            var outlineColor = wasClamped ? Color.FromArgb(180, 255, 100, 100) : color;
+
             if (outlineOnly)
             {
                 var rotation = Matrix3x2.CreateRotation(-obj.RotZ, pos);
@@ -465,16 +480,16 @@ internal static class WorldMapOverviewRenderer
                 corners[1] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y - halfH), rotation);
                 corners[2] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y + halfH), rotation);
                 corners[3] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y + halfH), rotation);
-                ds.DrawLine(corners[0], corners[1], color, lineWidth);
-                ds.DrawLine(corners[1], corners[2], color, lineWidth);
-                ds.DrawLine(corners[2], corners[3], color, lineWidth);
-                ds.DrawLine(corners[3], corners[0], color, lineWidth);
+                ds.DrawLine(corners[0], corners[1], outlineColor, lineWidth);
+                ds.DrawLine(corners[1], corners[2], outlineColor, lineWidth);
+                ds.DrawLine(corners[2], corners[3], outlineColor, lineWidth);
+                ds.DrawLine(corners[3], corners[0], outlineColor, lineWidth);
             }
             else
             {
                 using var geometry = WorldMapDrawingHelper.CreateRotatedRectGeometry(ds, pos, halfW, halfH, obj.RotZ);
-                ds.FillGeometry(geometry, WorldMapColors.WithAlpha(color, 60));
-                ds.DrawGeometry(geometry, color, lineWidth);
+                ds.FillGeometry(geometry, WorldMapColors.WithAlpha(outlineColor, 60));
+                ds.DrawGeometry(geometry, outlineColor, lineWidth);
             }
         }
         else
@@ -547,8 +562,8 @@ internal static class WorldMapOverviewRenderer
 
         if (data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
         {
-            var halfW = (bounds.X2 - bounds.X1) * 0.5f * obj.Scale;
-            var halfH = (bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale;
+            var halfW = Math.Min((bounds.X2 - bounds.X1) * 0.5f * obj.Scale, MaxHalfExtent);
+            var halfH = Math.Min((bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale, MaxHalfExtent);
 
             if (halfW >= 1f || halfH >= 1f)
             {

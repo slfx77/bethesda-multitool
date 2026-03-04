@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 /// </summary>
 public record InfoDialogueNode
 {
-    /// <summary>The reconstructed dialogue (INFO) record.</summary>
+    /// <summary>The parsed dialogue (INFO) record.</summary>
     public DialogueRecord Info { get; init; } = null!;
 
     /// <summary>Topics presented as immediate player choices (from TCLT subrecords).</summary>

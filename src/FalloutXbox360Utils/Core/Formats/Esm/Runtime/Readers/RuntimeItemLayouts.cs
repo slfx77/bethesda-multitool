@@ -13,6 +13,12 @@ internal sealed class RuntimeItemLayouts
         _s = pdbShift;
     }
 
+    /// <summary>
+    ///     TESBoundObject.BoundData offset — 12 bytes (6 × int16).
+    ///     Proto Debug PDB offset 36, all TESBoundObject-derived types.
+    /// </summary>
+    internal int BoundsOffset => 36 + _s;
+
     #region TESObjectWEAP — PDB size 908, Debug dump 912, Release dump 924
 
     internal int WeapStructSize => 908 + _s;

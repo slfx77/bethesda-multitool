@@ -257,7 +257,7 @@ internal static class SaveReportCommand
                 return null;
             }
 
-            AnsiConsole.MarkupLine("  Reconstructing records...");
+            AnsiConsole.MarkupLine("  Parsing records...");
             var fileSize = new FileInfo(path).Length;
             using var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
@@ -268,11 +268,11 @@ internal static class SaveReportCommand
                 accessor,
                 fileSize,
                 analysisResult.MinidumpInfo);
-            var records = parser.ReconstructAll();
+            var records = parser.ParseAll();
             var resolver = records.CreateResolver();
 
             AnsiConsole.MarkupLine(
-                $"  [green]Loaded {records.TotalRecordsReconstructed:N0} records for name resolution.[/]");
+                $"  [green]Loaded {records.TotalRecordsParsed:N0} records for name resolution.[/]");
             return resolver;
         }
         catch (Exception ex)

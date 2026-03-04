@@ -5,13 +5,13 @@ using Spectre.Console;
 namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
-///     CLI command for dialogue reconstruction statistics.
+///     CLI command for dialogue parse statistics.
 /// </summary>
 internal static class DialogueStatsCommand
 {
     internal static Command CreateStatsCommand()
     {
-        var command = new Command("stats", "Show dialogue reconstruction statistics");
+        var command = new Command("stats", "Show dialogue parse statistics");
 
         var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
 
@@ -28,7 +28,7 @@ internal static class DialogueStatsCommand
 
     private static async Task RunStatsAsync(string input, CancellationToken cancellationToken)
     {
-        var loaded = await DialogueCommand.LoadAndReconstructAsync(input, cancellationToken);
+        var loaded = await DialogueCommand.LoadAndParseAsync(input, cancellationToken);
         if (loaded == null)
         {
             return;
@@ -37,7 +37,7 @@ internal static class DialogueStatsCommand
         var (result, formIdMap) = loaded.Value;
 
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[blue]Dialogue Reconstruction Statistics[/]").LeftJustified());
+        AnsiConsole.Write(new Rule("[blue]Dialogue Parse Statistics[/]").LeftJustified());
         AnsiConsole.WriteLine();
 
         // Record counts

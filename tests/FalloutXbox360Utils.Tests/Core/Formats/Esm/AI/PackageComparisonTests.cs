@@ -1,4 +1,5 @@
 using System.IO.MemoryMappedFiles;
+using System.Text;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -16,18 +17,20 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
     private static readonly string ResultFile = Path.Combine(
         Path.GetTempPath(), "package_comparison_results.txt");
 
+    private readonly StringBuilder _logBuffer = new();
+
     private void Log(string msg)
     {
         output.WriteLine(msg);
-        File.AppendAllText(ResultFile, msg + Environment.NewLine);
+        _logBuffer.AppendLine(msg);
     }
 
     [Fact]
     [Trait("Category", "Slow")]
     public async Task ComparePackages_DumpVsProtoEsm_ReportsDiscrepancies()
     {
-        await File.WriteAllTextAsync(ResultFile, $"Package Comparison - {DateTime.Now}\n\n",
-            TestContext.Current.CancellationToken);
+        _logBuffer.AppendLine($"Package Comparison - {DateTime.Now}");
+        _logBuffer.AppendLine();
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
         // Find latest memory dump
@@ -400,7 +403,18 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             }
         }
 
-        Log($"\nResults written to: {ResultFile}");
+        // Write all buffered output to file once at end (avoids repeated File.AppendAllText
+        // which is flaky on Windows due to transient file locks from antivirus/indexer)
+        try
+        {
+            await File.WriteAllTextAsync(ResultFile, _logBuffer.ToString(),
+                TestContext.Current.CancellationToken);
+            output.WriteLine($"\nResults written to: {ResultFile}");
+        }
+        catch (IOException)
+        {
+            output.WriteLine($"\nCould not write results to: {ResultFile} (file in use)");
+        }
     }
 
     private static string PackageTypeName(int type)
@@ -460,7 +474,7 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
             analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileInfo.Length,
             analysisResult.MinidumpInfo);
 
-        var packages = parser.ReconstructPackages();
+        var packages = parser.ParsePackages();
 
         return (packages, (
             scan.MainRecords.Count,

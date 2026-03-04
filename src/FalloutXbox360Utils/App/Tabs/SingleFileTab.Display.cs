@@ -133,7 +133,7 @@ public sealed partial class SingleFileTab
     {
         Idle,
         Scanning,
-        Reconstructing,
+        Parsing,
         LoadingMap,
         Coverage,
         Extracting
@@ -316,11 +316,11 @@ public sealed partial class SingleFileTab
         var categories = ResultsFormatter.BuildRecordBreakdownCategories(r);
         RecordBreakdownPanel.Children.Add(PropertyPanelBuilder.BuildThreeColumnCardLayout(categories));
 
-        // Unreconstructed/unparsed record types
-        if (r.UnreconstructedTypeCounts.Count > 0)
+        // Unparsed record types
+        if (r.UnparsedTypeCounts.Count > 0)
         {
             var otherLabel = _session.IsEsmFile ? "Other (not parsed)" : "Other (not reconstructed)";
-            var otherRecords = ResultsFormatter.GetUnreconstructedRecords(r.UnreconstructedTypeCounts);
+            var otherRecords = ResultsFormatter.GetUnparsedRecords(r.UnparsedTypeCounts);
             RecordBreakdownPanel.Children.Add(PropertyPanelBuilder.BuildCategoryCard(otherLabel, otherRecords));
         }
 
@@ -424,7 +424,7 @@ public sealed partial class SingleFileTab
     private void ResetSubTabs()
     {
         _session.Dispose();
-        _semanticReconstructionTask = null;
+        _semanticParseTask = null;
         LoadOrderStatusText.Text = "";
 
         ResetMemoryMapTab();
@@ -448,11 +448,12 @@ public sealed partial class SingleFileTab
     {
         DataBrowserPlaceholder.Visibility = Visibility.Visible;
         DataBrowserContent.Visibility = Visibility.Collapsed;
-        ReconstructStatusText.Text = Strings.Empty_RunAnalysisForEsm;
+        ParseStatusText.Text = Strings.Empty_RunAnalysisForEsm;
         EsmTreeView.RootNodes.Clear();
         _flatListBuilt = false;
         _esmBrowserTree = null;
         _placementIndex = null;
+        _factionMembersIndex = null;
         _raceLookup = null;
         _currentSearchQuery = "";
         EsmSearchBox.Text = "";
@@ -528,6 +529,11 @@ public sealed partial class SingleFileTab
             ViewWorldspaceButton.Visibility = browserNode.DataObject is WorldspaceRecord
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+
+            // Show "View in World" for NPC/Creature records that have world placements
+            ViewInWorldButton.Visibility = HasWorldPlacements(browserNode.DataObject)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
         else
         {
@@ -535,6 +541,7 @@ public sealed partial class SingleFileTab
             PropertyPanel.Children.Clear();
             GoToOffsetButton.Visibility = Visibility.Collapsed;
             ViewWorldspaceButton.Visibility = Visibility.Collapsed;
+            ViewInWorldButton.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -545,6 +552,26 @@ public sealed partial class SingleFileTab
             SubTabView.SelectedIndex = 0; // Switch to Memory Map
             HexViewer.NavigateToOffset(_selectedBrowserNode.FileOffset.Value);
         }
+    }
+
+    /// <summary>
+    ///     Returns true if the record has world placements in the placement index.
+    /// </summary>
+    private bool HasWorldPlacements(object? dataObject)
+    {
+        if (_placementIndex == null || dataObject == null)
+        {
+            return false;
+        }
+
+        var formId = dataObject switch
+        {
+            NpcRecord npc => npc.FormId,
+            CreatureRecord crea => crea.FormId,
+            _ => 0u
+        };
+
+        return formId != 0 && _placementIndex.ContainsKey(formId);
     }
 
     #endregion

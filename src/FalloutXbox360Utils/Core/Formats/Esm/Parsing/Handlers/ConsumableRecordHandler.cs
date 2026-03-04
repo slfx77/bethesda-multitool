@@ -6,19 +6,19 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Handles reconstruction of ALCH (consumable/aid/food) and AMMO records
+///     Handles parsing of ALCH (consumable/aid/food) and AMMO records
 ///     from ESM data and runtime structs.
 /// </summary>
 internal sealed class ConsumableRecordHandler(RecordParserContext context)
 {
     private readonly RecordParserContext _context = context;
 
-    #region ReconstructAmmo
+    #region ParseAmmo
 
     /// <summary>
-    ///     Reconstruct all Ammo records from the scan result.
+    ///     Parse all Ammo records from the scan result.
     /// </summary>
-    internal List<AmmoRecord> ReconstructAmmo()
+    internal List<AmmoRecord> ParseAmmo()
     {
         var ammo = new List<AmmoRecord>();
         var ammoRecords = _context.GetRecordsByType("AMMO").ToList();
@@ -44,7 +44,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
             {
                 foreach (var record in ammoRecords)
                 {
-                    var item = ReconstructAmmoFromAccessor(record, buffer);
+                    var item = ParseAmmoFromAccessor(record, buffer);
                     if (item != null)
                     {
                         ammo.Add(item);
@@ -63,7 +63,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
         return ammo;
     }
 
-    private AmmoRecord? ReconstructAmmoFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private AmmoRecord? ParseAmmoFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
@@ -236,12 +236,12 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
 
     #endregion
 
-    #region ReconstructConsumables
+    #region ParseConsumables
 
     /// <summary>
-    ///     Reconstruct all Consumable (ALCH) records from the scan result.
+    ///     Parse all Consumable (ALCH) records from the scan result.
     /// </summary>
-    internal List<ConsumableRecord> ReconstructConsumables()
+    internal List<ConsumableRecord> ParseConsumables()
     {
         var consumables = new List<ConsumableRecord>();
         var alchRecords = _context.GetRecordsByType("ALCH").ToList();
@@ -267,7 +267,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
             {
                 foreach (var record in alchRecords)
                 {
-                    var item = ReconstructConsumableFromAccessor(record, buffer);
+                    var item = ParseConsumableFromAccessor(record, buffer);
                     if (item != null)
                     {
                         consumables.Add(item);
@@ -286,7 +286,7 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context)
         return consumables;
     }
 
-    private ConsumableRecord? ReconstructConsumableFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private ConsumableRecord? ParseConsumableFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)

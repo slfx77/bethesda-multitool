@@ -68,6 +68,13 @@ public static class DmpMapRenderCommands
     private static async Task RunAsync(string dirPath, string? outputDir, int longEdge, string schemeName,
         int gifDelay, string? fo3EsmPath, CancellationToken cancellationToken)
     {
+        // If the argument is an ESM file, render its map markers directly
+        if (File.Exists(dirPath) && dirPath.EndsWith(".esm", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunEsmAsync(dirPath, outputDir, longEdge, schemeName, cancellationToken);
+            return;
+        }
+
         if (!Directory.Exists(dirPath))
         {
             AnsiConsole.MarkupLine($"[red]ERROR:[/] Directory not found: {dirPath}");
@@ -188,6 +195,57 @@ public static class DmpMapRenderCommands
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[bold]Done:[/] {rendered} images rendered, {skipped} skipped (no markers)");
+
+        await Task.CompletedTask;
+    }
+
+    private static async Task RunEsmAsync(string esmPath, string? outputDir, int longEdge, string schemeName,
+        CancellationToken cancellationToken)
+    {
+        var scheme = ParseScheme(schemeName);
+        outputDir ??= Path.Combine(Path.GetDirectoryName(esmPath)!, "maps");
+        Directory.CreateDirectory(outputDir);
+
+        var stem = Path.GetFileNameWithoutExtension(esmPath);
+        AnsiConsole.MarkupLine($"[blue]Rendering map markers from ESM:[/] {Markup.Escape(Path.GetFileName(esmPath))}");
+        AnsiConsole.MarkupLine($"  Output: [cyan]{Markup.Escape(outputDir)}[/]");
+        AnsiConsole.MarkupLine($"  Size: [cyan]{longEdge}px[/] long edge");
+        AnsiConsole.MarkupLine($"  Scheme: [cyan]{scheme.Name}[/]");
+        AnsiConsole.WriteLine();
+
+        try
+        {
+            var fileInfo = new FileInfo(esmPath);
+            using var mmf = MemoryMappedFile.CreateFromFile(esmPath, FileMode.Open, null, 0,
+                MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
+
+            var scanResult = EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, fileInfo.Length);
+            EsmWorldExtractor.ExtractRefrRecords(accessor, fileInfo.Length, scanResult);
+
+            var markers = scanResult.RefrRecords
+                .Where(r => r.IsMapMarker && r.Position != null)
+                .ToList();
+
+            if (markers.Count == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]No map markers found in ESM.[/]");
+                return;
+            }
+
+            AnsiConsole.MarkupLine($"  Found [cyan]{markers.Count}[/] map markers");
+
+            var bounds = ComputeWorldBounds(markers);
+            var outputPath = Path.Combine(outputDir, $"{stem}.markers.png");
+            var title = $"{stem}\n{markers.Count} markers from ESM";
+            RenderMarkerMap(markers, outputPath, longEdge, scheme, bounds, title);
+
+            AnsiConsole.MarkupLine($"  [green]Rendered:[/] [cyan]{Markup.Escape(Path.GetFileName(outputPath))}[/]");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]ERROR:[/] {Markup.Escape(ex.Message)}");
+        }
 
         await Task.CompletedTask;
     }

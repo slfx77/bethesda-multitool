@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Weapon Mod (IMOD) from memory dump.
+///     Parsed Weapon Mod (IMOD) record.
 ///     FNV-specific record type for weapon modifications.
 /// </summary>
 public record WeaponModRecord

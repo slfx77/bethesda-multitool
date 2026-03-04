@@ -24,7 +24,7 @@ internal static class PipelinePhaseHelper
                 new ProgressBarState(IsVisible: false, IsIndeterminate: true),
             SingleFileTab.AnalysisPipelinePhase.Scanning or SingleFileTab.AnalysisPipelinePhase.Extracting =>
                 new ProgressBarState(IsVisible: true, IsIndeterminate: true),
-            SingleFileTab.AnalysisPipelinePhase.Reconstructing or SingleFileTab.AnalysisPipelinePhase.Coverage =>
+            SingleFileTab.AnalysisPipelinePhase.Parsing or SingleFileTab.AnalysisPipelinePhase.Coverage =>
                 new ProgressBarState(IsVisible: true, IsIndeterminate: false),
             SingleFileTab.AnalysisPipelinePhase.LoadingMap =>
                 new ProgressBarState(IsVisible: true, IsIndeterminate: true),
@@ -135,6 +135,6 @@ internal static class PipelinePhaseHelper
         Core.Formats.Esm.Models.RecordCollection r, bool isEsmFile)
     {
         var detailLabel = isEsmFile ? "Parsed" : "Reconstructed";
-        return $"Total Records Processed: {r.TotalRecordsProcessed:N0}    {detailLabel}: {r.TotalRecordsReconstructed:N0}";
+        return $"Total Records Processed: {r.TotalRecordsProcessed:N0}    {detailLabel}: {r.TotalRecordsParsed:N0}";
     }
 }

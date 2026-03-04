@@ -23,9 +23,15 @@ internal static class GeckWorldWriter
                 ? obj.BaseEditorId
                 : resolver.GetBestName(obj.BaseFormId)
                   ?? GeckReportHelpers.FormatFormId(obj.BaseFormId);
+            var disabledStr = obj.IsInitiallyDisabled ? " [DISABLED]" : "";
+            sb.AppendLine(
+                $"  - {baseStr} ({obj.RecordType}) [{GeckReportHelpers.FormatFormId(obj.FormId)}]{disabledStr}");
+
             var scaleStr = Math.Abs(obj.Scale - 1.0f) > 0.01f ? $" scale={obj.Scale:F2}" : "";
-            sb.AppendLine($"  - {baseStr} ({obj.RecordType})");
-            sb.Append($"      at ({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1}){scaleStr}");
+            var hasRotation = MathF.Abs(obj.RotX) > 0.001f || MathF.Abs(obj.RotY) > 0.001f ||
+                              MathF.Abs(obj.RotZ) > 0.001f;
+            var rotStr = hasRotation ? $"  rot=({obj.RotX:F3}, {obj.RotY:F3}, {obj.RotZ:F3})" : "";
+            sb.Append($"      at ({obj.X:F1}, {obj.Y:F1}, {obj.Z:F1}){rotStr}{scaleStr}");
 
             if (obj.Bounds != null)
             {
@@ -55,27 +61,30 @@ internal static class GeckWorldWriter
             sb.AppendLine();
             sb.AppendLine($"  Exterior Cells ({exteriorCells.Count}):");
 
-            foreach (var cell in exteriorCells.OrderBy(c => c.GridX).ThenBy(c => c.GridY))
+            // Group exterior cells by worldspace for clearer organization
+            var byWorldspace = exteriorCells
+                .GroupBy(c => c.WorldspaceFormId ?? 0)
+                .OrderByDescending(g => g.Count())
+                .ToList();
+
+            foreach (var wsGroup in byWorldspace)
             {
-                var gridStr = $"({cell.GridX}, {cell.GridY})";
-                GeckReportHelpers.AppendRecordHeader(sb, $"CELL {gridStr}", cell.EditorId);
-
-                sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(cell.FormId)}");
-                sb.AppendLine($"Editor ID:      {cell.EditorId ?? "(none)"}");
-                sb.AppendLine($"Display Name:   {cell.FullName ?? "(none)"}");
-                sb.AppendLine($"Grid:           {cell.GridX}, {cell.GridY}");
-                sb.AppendLine($"Flags:          0x{cell.Flags:X2}");
-                sb.AppendLine($"Has Water:      {cell.HasWater}");
-                sb.AppendLine($"Endianness:     {(cell.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
-                sb.AppendLine($"Offset:         0x{cell.Offset:X8}");
-
-                if (cell.Heightmap != null)
+                if (byWorldspace.Count > 1 || wsGroup.Key != 0)
                 {
+                    var wsName = wsGroup.Key != 0
+                        ? resolver.GetBestName(wsGroup.Key) ?? GeckReportHelpers.FormatFormId(wsGroup.Key)
+                        : "(Unlinked)";
+                    var wsTitle = $"Worldspace: {wsName} ({wsGroup.Count()} cells)";
                     sb.AppendLine();
-                    sb.AppendLine($"Heightmap:      Found (offset: {cell.Heightmap.HeightOffset:F1})");
+                    sb.AppendLine(new string('=', 80));
+                    sb.AppendLine($"  {wsTitle}");
+                    sb.AppendLine(new string('=', 80));
                 }
 
-                AppendPlacedObjects(sb, cell.PlacedObjects, resolver);
+                foreach (var cell in wsGroup.OrderBy(c => c.GridX).ThenBy(c => c.GridY))
+                {
+                    AppendExteriorCellDetail(sb, cell, resolver);
+                }
             }
         }
 
@@ -86,7 +95,7 @@ internal static class GeckWorldWriter
 
             foreach (var cell in interiorCells.OrderBy(c => c.EditorId ?? ""))
             {
-                GeckReportHelpers.AppendRecordHeader(sb, "CELL (Interior)", cell.EditorId);
+                AppendCellHeader(sb, "CELL (Interior)", cell.EditorId);
 
                 sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(cell.FormId)}");
                 sb.AppendLine($"Editor ID:      {cell.EditorId ?? "(none)"}");
@@ -98,6 +107,39 @@ internal static class GeckWorldWriter
                 AppendPlacedObjects(sb, cell.PlacedObjects, resolver);
             }
         }
+    }
+
+    private static void AppendCellHeader(StringBuilder sb, string recordType, string? editorId)
+    {
+        sb.AppendLine();
+        sb.AppendLine(new string('-', GeckReportHelpers.SeparatorWidth));
+        var title = string.IsNullOrEmpty(editorId) ? recordType : $"{recordType}: {editorId}";
+        var padding = (GeckReportHelpers.SeparatorWidth - title.Length) / 2;
+        sb.AppendLine(new string(' ', Math.Max(0, padding)) + title);
+        sb.AppendLine(new string('-', GeckReportHelpers.SeparatorWidth));
+    }
+
+    private static void AppendExteriorCellDetail(StringBuilder sb, CellRecord cell, FormIdResolver resolver)
+    {
+        var gridStr = $"({cell.GridX}, {cell.GridY})";
+        AppendCellHeader(sb, $"CELL {gridStr}", cell.EditorId);
+
+        sb.AppendLine($"FormID:         {GeckReportHelpers.FormatFormId(cell.FormId)}");
+        sb.AppendLine($"Editor ID:      {cell.EditorId ?? "(none)"}");
+        sb.AppendLine($"Display Name:   {cell.FullName ?? "(none)"}");
+        sb.AppendLine($"Grid:           {cell.GridX}, {cell.GridY}");
+        sb.AppendLine($"Flags:          0x{cell.Flags:X2}");
+        sb.AppendLine($"Has Water:      {cell.HasWater}");
+        sb.AppendLine($"Endianness:     {(cell.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
+        sb.AppendLine($"Offset:         0x{cell.Offset:X8}");
+
+        if (cell.Heightmap != null)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Heightmap:      Found (offset: {cell.Heightmap.HeightOffset:F1})");
+        }
+
+        AppendPlacedObjects(sb, cell.PlacedObjects, resolver);
     }
 
     /// <summary>

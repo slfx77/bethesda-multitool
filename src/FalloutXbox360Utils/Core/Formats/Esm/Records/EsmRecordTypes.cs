@@ -6,25 +6,25 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
 ///     All Fallout: New Vegas ESM record type signatures.
-///     Based on xEdit (FNVEdit) wbDefinitionsFNV.pas wbFormTypeEnum.
+///     Derived from PDB ENUM_FORM_ID (LF_ENUM, 122 members, sequential 0-120).
+///     Source: MemDebug PDB (Fallout_Release_MemDebug.pdb).
 /// </summary>
 public static class EsmRecordTypes
 {
     /// <summary>
-    ///     Main record types in Fallout: New Vegas (from xEdit).
+    ///     Main record types in Fallout: New Vegas.
     ///     Records are stored as 4-byte ASCII signatures in little-endian order.
+    ///     Numeric FormType IDs from PDB ENUM_FORM_ID (sequential 0x00-0x78).
     /// </summary>
     public static readonly IReadOnlyDictionary<string, RecordTypeInfo> MainRecordTypes =
         new Dictionary<string, RecordTypeInfo>
         {
-            // File header (special)
-            ["TES4"] = new("File Header", RecordCategory.System),
+            // System (0x01-0x02)
+            ["TES4"] = new("File Header", RecordCategory.System, 0x01),
+            ["GRUP"] = new("Group", RecordCategory.System, 0x02),
 
-            // Groups
-            ["GRUP"] = new("Group", RecordCategory.System),
-
-            // Game Settings (no numeric ID in xEdit enum)
-            ["GMST"] = new("Game Setting", RecordCategory.GameData),
+            // Game Settings (0x03)
+            ["GMST"] = new("Game Setting", RecordCategory.GameData, 0x03),
 
             // Core types (0x04-0x15)
             ["TXST"] = new("Texture Set", RecordCategory.Graphics, 0x04),
@@ -92,11 +92,13 @@ public static class EsmRecordTypes
             ["PGRE"] = new("Placed Grenade", RecordCategory.Reference, 0x3E),
             ["PBEA"] = new("Placed Beam", RecordCategory.Reference, 0x3F),
             ["PFLA"] = new("Placed Flame", RecordCategory.Reference, 0x40),
+            ["WRLD"] = new("World", RecordCategory.World, 0x41),
+            ["LAND"] = new("Landscape", RecordCategory.World, 0x42),
             ["NAVM"] = new("Navmesh", RecordCategory.Navigation, 0x43),
-            ["WRLD"] = new("World", RecordCategory.World, 0x44),
+            ["TLOD"] = new("LOD Terrain", RecordCategory.World, 0x44),
 
-            // Quest/Dialog (0x45-0x49)
-            ["LAND"] = new("Landscape", RecordCategory.World, 0x45),
+            // Dialog/Quest (0x45-0x49)
+            ["DIAL"] = new("Dialog Topic", RecordCategory.Dialog, 0x45),
             ["INFO"] = new("Dialog Response", RecordCategory.Dialog, 0x46),
             ["QUST"] = new("Quest", RecordCategory.Quest, 0x47),
             ["IDLE"] = new("Idle Animation", RecordCategory.Animation, 0x48),
@@ -109,6 +111,7 @@ public static class EsmRecordTypes
             ["ANIO"] = new("Animated Object", RecordCategory.Animation, 0x4D),
             ["WATR"] = new("Water Type", RecordCategory.World, 0x4E),
             ["EFSH"] = new("Effect Shader", RecordCategory.Graphics, 0x4F),
+            ["TOFT"] = new("TOFT Streaming Cache", RecordCategory.System, 0x50),
             ["EXPL"] = new("Explosion", RecordCategory.Combat, 0x51),
             ["DEBR"] = new("Debris", RecordCategory.Combat, 0x52),
 
@@ -152,15 +155,11 @@ public static class EsmRecordTypes
             ["CDCK"] = new("Caravan Deck", RecordCategory.Item, 0x75),
             ["DEHY"] = new("Dehydration Stage", RecordCategory.GameData, 0x76),
             ["HUNG"] = new("Hunger Stage", RecordCategory.GameData, 0x77),
-            ["SLPD"] = new("Sleep Deprivation Stage", RecordCategory.GameData, 0x78),
-
-            // Dialog
-            ["DIAL"] = new("Dialog Topic", RecordCategory.Dialog)
+            ["SLPD"] = new("Sleep Deprivation Stage", RecordCategory.GameData, 0x78)
         };
 
     /// <summary>
     ///     Common subrecord types found within main records.
-    ///     Based on xEdit wbDefinitionsFNV.pas and wbDefinitionsCommon.pas.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, SubrecordTypeInfo> CommonSubrecordTypes =
         new Dictionary<string, SubrecordTypeInfo>

@@ -12,9 +12,9 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
     #region Activators
 
     /// <summary>
-    ///     Reconstruct all Activator (ACTI) records.
+    ///     Parse all Activator (ACTI) records.
     /// </summary>
-    internal List<ActivatorRecord> ReconstructActivators()
+    internal List<ActivatorRecord> ParseActivators()
     {
         var activators = new List<ActivatorRecord>();
 
@@ -127,9 +127,9 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
     #region Lights
 
     /// <summary>
-    ///     Reconstruct all Light (LIGH) records.
+    ///     Parse all Light (LIGH) records.
     /// </summary>
-    internal List<LightRecord> ReconstructLights()
+    internal List<LightRecord> ParseLights()
     {
         var lights = new List<LightRecord>();
 
@@ -273,9 +273,9 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
     #region Doors
 
     /// <summary>
-    ///     Reconstruct all Door (DOOR) records.
+    ///     Parse all Door (DOOR) records.
     /// </summary>
-    internal List<DoorRecord> ReconstructDoors()
+    internal List<DoorRecord> ParseDoors()
     {
         var doors = new List<DoorRecord>();
 

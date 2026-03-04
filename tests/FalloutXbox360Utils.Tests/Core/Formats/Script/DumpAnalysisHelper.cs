@@ -48,14 +48,14 @@ internal static class DumpAnalysisHelper
                 path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new RecordParser(
+            var parser = new RecordParser(
                 analysisResult.EsmRecords,
                 analysisResult.FormIdMap,
                 accessor,
                 fileInfo.Length,
                 analysisResult.MinidumpInfo);
 
-            var semanticResult = reconstructor.ReconstructAll();
+            var semanticResult = parser.ParseAll();
             return semanticResult.Scripts;
         }
         catch

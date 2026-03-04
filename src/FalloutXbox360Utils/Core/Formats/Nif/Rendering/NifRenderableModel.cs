@@ -90,10 +90,39 @@ internal sealed class RenderableSubmesh
     public byte AlphaTestThreshold { get; set; } = 128;
 
     /// <summary>
+    ///     Alpha test comparison function from NiAlphaProperty bits 10-12.
+    ///     0=ALWAYS, 1=LESS, 2=EQUAL, 3=LEQUAL, 4=GREATER, 5=NOTEQUAL, 6=GEQUAL, 7=NEVER.
+    ///     Default 4 (GREATER) matches the standard renderer semantics (pass if a &gt; threshold).
+    /// </summary>
+    public byte AlphaTestFunction { get; set; } = 4;
+
+    /// <summary>Source blend factor from NiAlphaProperty bits 1-4 (default 6 = SRC_ALPHA).</summary>
+    public byte SrcBlendMode { get; set; } = 6;
+
+    /// <summary>Dest blend factor from NiAlphaProperty bits 5-8 (default 7 = INV_SRC_ALPHA).</summary>
+    public byte DstBlendMode { get; set; } = 7;
+
+    /// <summary>Material alpha from NiMaterialProperty (0.0-1.0). Values &lt; 1.0 trigger alpha blending.</summary>
+    public float MaterialAlpha { get; set; } = 1f;
+
+    /// <summary>True if BSShaderFlags bit 17 (Eye_Environment_Mapping = 0x20000) is set.</summary>
+    public bool IsEyeEnvmap { get; init; }
+
+    /// <summary>BSShaderProperty EnvMapScale — controls eye cubemap reflection strength. Typical 0.5-1.0.</summary>
+    public float EnvMapScale { get; init; }
+
+    /// <summary>
     ///     Render order for layer-based compositing (engine renders head parts in scene graph order).
     ///     0 = head (default), 1 = hair, 2 = eyes. Higher layers render after lower layers.
     /// </summary>
     public int RenderOrder { get; set; }
+
+    /// <summary>
+    ///     Multiplicative tint color (R, G, B in 0-1 range). Applied to texture color during rasterization.
+    ///     Used for hair color tinting (engine applies HCLR as shader uniform on hair/eyebrow/beard submeshes).
+    ///     Null = no tint (1.0 multiplier).
+    /// </summary>
+    public (float R, float G, float B)? TintColor { get; set; }
 
     public int VertexCount => Positions.Length / 3;
     public int TriangleCount => Triangles.Length / 3;

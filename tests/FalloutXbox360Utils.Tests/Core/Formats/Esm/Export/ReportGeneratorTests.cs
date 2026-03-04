@@ -65,7 +65,7 @@ public class ReportGeneratorTests
         var report = GeckReportGenerator.Generate(records);
 
         Assert.NotEmpty(report);
-        Assert.Contains("ESM Memory Dump Semantic Reconstruction Report", report);
+        Assert.Contains("ESM Memory Dump Semantic Parse Report", report);
     }
 
     [Fact]

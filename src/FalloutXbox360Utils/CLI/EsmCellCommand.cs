@@ -9,7 +9,7 @@ using Spectre.Console;
 namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
-///     Semantic-level cell inspection commands that use the full reconstruction pipeline.
+///     Semantic-level cell inspection commands that use the full parsing pipeline.
 ///     Unlike <c>cell-children</c> (which inspects raw GRUPs), these commands provide
 ///     enriched output with NPC names, categories, and persistent cell overlay.
 /// </summary>
@@ -377,6 +377,11 @@ public static class EsmCellCommand
             _ = table.AddRow("[cyan]Persistent[/]", refr.IsPersistent ? "[yellow]Yes[/]" : "No");
             _ = table.AddRow("[cyan]Disabled[/]", refr.IsInitiallyDisabled ? "[yellow]Yes[/]" : "No");
 
+            if (refr.AssignmentSource != null)
+            {
+                _ = table.AddRow("[cyan]Assigned Via[/]", Markup.Escape(refr.AssignmentSource));
+            }
+
             if (refr.EnableParentFormId is > 0)
             {
                 var parentEditorId =
@@ -409,13 +414,13 @@ public static class EsmCellCommand
         }
 
         RecordCollection records;
-        AnsiConsole.MarkupLine("[blue]Reconstructing records...[/]");
+        AnsiConsole.MarkupLine("[blue]Parsing records...[/]");
         using (var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0,
                    MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             var parser = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize);
-            records = parser.ReconstructAll();
+            records = parser.ParseAll();
         }
 
         AnsiConsole.MarkupLine(

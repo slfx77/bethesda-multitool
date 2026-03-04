@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Terminal from memory dump.
+///     Parsed Terminal record.
 /// </summary>
 public record TerminalRecord
 {

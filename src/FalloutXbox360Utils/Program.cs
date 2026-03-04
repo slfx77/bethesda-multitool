@@ -65,6 +65,14 @@ public static class Program
 
         var rootCommand = BuildRootCommand();
 
+        // Format-agnostic analysis commands (auto-detect file type)
+        rootCommand.Subcommands.Add(SearchCommand.Create());
+        rootCommand.Subcommands.Add(StatsCommand.Create());
+        rootCommand.Subcommands.Add(ListCommand.Create());
+        rootCommand.Subcommands.Add(ShowCommand.Create());
+        rootCommand.Subcommands.Add(DiffCommand.Create());
+
+        // Format-specific diagnostic commands
         rootCommand.Subcommands.Add(ConvertNifCommand.Create());
         rootCommand.Subcommands.Add(ConvertDdxCommand.Create());
         rootCommand.Subcommands.Add(EsmCommand.Create());
@@ -144,8 +152,8 @@ public static class Program
 
             if (string.IsNullOrEmpty(input))
             {
-                PrintUsage();
-                return 1;
+                new System.CommandLine.Help.HelpAction().Invoke(parseResult);
+                return 0;
             }
 
             if (!File.Exists(input) && !Directory.Exists(input))
@@ -175,24 +183,6 @@ public static class Program
         return rootCommand;
     }
 
-    private static void PrintUsage()
-    {
-        AnsiConsole.MarkupLine("[red]Error:[/] Input path is required.");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold]Usage:[/]");
-        AnsiConsole.MarkupLine("  FalloutXbox360Utils [green]<input.dmp>[/] -o [blue]<output_dir>[/] [options]");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold]Examples:[/]");
-        AnsiConsole.MarkupLine("  FalloutXbox360Utils [green]dump.dmp[/] -o [blue]extracted[/]");
-        AnsiConsole.MarkupLine("  FalloutXbox360Utils [green]dump.dmp[/] -o [blue]extracted[/] -t ddx xma nif");
-        AnsiConsole.MarkupLine("  FalloutXbox360Utils [green]dump.dmp[/] -o [blue]extracted[/] --convert-ddx -v");
-#if WINDOWS_GUI
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold]For GUI mode:[/]");
-        AnsiConsole.MarkupLine("  FalloutXbox360Utils");
-        AnsiConsole.MarkupLine("  FalloutXbox360Utils --file [green]dump.dmp[/]");
-#endif
-    }
 
 #if WINDOWS_GUI
     private static bool IsCliMode(string[] args)

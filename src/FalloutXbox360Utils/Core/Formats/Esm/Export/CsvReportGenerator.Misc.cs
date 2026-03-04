@@ -60,7 +60,7 @@ internal static class CsvMiscWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,TopicFormID,TopicName,TopicDisplayName,QuestFormID,QuestName,QuestDisplayName,SpeakerFormID,SpeakerName,SpeakerDisplayName,PreviousInfoFormID,PromptText,InfoIndex,InfoFlags,FlagsDescription,Difficulty,LinkToTopics,AddTopics,Endianness,Offset,ResponseNumber,ResponseText,EmotionType,EmotionName,EmotionValue");
+            "RowType,FormID,EditorID,TopicFormID,TopicName,TopicDisplayName,QuestFormID,QuestName,QuestDisplayName,SpeakerFormID,SpeakerName,SpeakerDisplayName,SpeakerAnimFormID,SpeakerAnimName,PreviousInfoFormID,PromptText,InfoIndex,InfoFlags,FlagsDescription,Difficulty,LinkToTopics,AddTopics,Endianness,Offset,ResponseNumber,ResponseText,EmotionType,EmotionName,EmotionValue");
 
         foreach (var d in dialogues.OrderBy(d => d.EditorId ?? ""))
         {
@@ -94,6 +94,8 @@ internal static class CsvMiscWriter
                 Fmt.FIdN(d.SpeakerFormId),
                 resolver.ResolveCsv(d.SpeakerFormId ?? 0),
                 resolver.ResolveDisplayNameCsv(d.SpeakerFormId ?? 0),
+                Fmt.FIdN(d.SpeakerAnimationFormId),
+                resolver.ResolveCsv(d.SpeakerAnimationFormId ?? 0),
                 Fmt.FIdN(d.PreviousInfo),
                 Fmt.CsvEscape(d.PromptText),
                 d.InfoIndex.ToString(),
@@ -111,7 +113,7 @@ internal static class CsvMiscWriter
                 sb.AppendLine(string.Join(",",
                     "RESPONSE",
                     Fmt.FId(d.FormId),
-                    "", "", "", "", "", "", "", "", "", "", "",
+                    "", "", "", "", "", "", "", "", "", "", "", "", "",
                     "", "", "", "", "", "", "",
                     "", "",
                     r.ResponseNumber.ToString(),

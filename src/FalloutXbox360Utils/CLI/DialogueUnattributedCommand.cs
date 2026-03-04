@@ -36,7 +36,7 @@ internal static class DialogueUnattributedCommand
     private static async Task RunUnattributedAsync(string input, int limit, bool verbose,
         CancellationToken cancellationToken)
     {
-        var loaded = await DialogueCommand.LoadAndReconstructAsync(input, cancellationToken);
+        var loaded = await DialogueCommand.LoadAndParseAsync(input, cancellationToken);
         if (loaded == null)
         {
             return;

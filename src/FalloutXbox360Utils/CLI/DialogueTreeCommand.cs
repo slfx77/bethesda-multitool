@@ -64,7 +64,7 @@ internal static class DialogueTreeCommand
     private static async Task RunTreeAsync(string input, int? limit, string? questFilter, string? output,
         CancellationToken cancellationToken)
     {
-        var loaded = await DialogueCommand.LoadAndReconstructAsync(input, cancellationToken);
+        var loaded = await DialogueCommand.LoadAndParseAsync(input, cancellationToken);
         if (loaded == null)
         {
             return;
@@ -142,7 +142,7 @@ internal static class DialogueTreeCommand
     private static async Task RunNpcAsync(string input, string? npcFilter, bool listMode,
         CancellationToken cancellationToken)
     {
-        var loaded = await DialogueCommand.LoadAndReconstructAsync(input, cancellationToken);
+        var loaded = await DialogueCommand.LoadAndParseAsync(input, cancellationToken);
         if (loaded == null)
         {
             return;

@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Explosion (EXPL) from memory dump.
+///     Parsed Explosion (EXPL) record.
 /// </summary>
 public record ExplosionRecord
 {

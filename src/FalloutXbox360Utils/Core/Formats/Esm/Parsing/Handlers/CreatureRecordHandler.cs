@@ -10,11 +10,11 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
     private readonly RecordParserContext _context = context;
 
     /// <summary>
-    ///     Reconstruct all Creature records from the scan result.
+    ///     Parse all Creature records from the scan result.
     ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
     ///     for records not found as raw ESM data.
     /// </summary>
-    internal List<CreatureRecord> ReconstructCreatures()
+    internal List<CreatureRecord> ParseCreatures()
     {
         var creatures = new List<CreatureRecord>();
         var creatureRecords = _context.GetRecordsByType("CREA").ToList();
@@ -23,7 +23,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
         {
             foreach (var record in creatureRecords)
             {
-                creatures.Add(ReconstructCreatureFromScanResult(record));
+                creatures.Add(ParseCreatureFromScanResult(record));
             }
         }
         else
@@ -33,7 +33,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
             {
                 foreach (var record in creatureRecords)
                 {
-                    creatures.Add(ReconstructCreatureFromAccessor(record, buffer));
+                    creatures.Add(ParseCreatureFromAccessor(record, buffer));
                 }
             }
             finally
@@ -48,7 +48,7 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
         return creatures;
     }
 
-    private CreatureRecord ReconstructCreatureFromScanResult(DetectedMainRecord record)
+    private CreatureRecord ParseCreatureFromScanResult(DetectedMainRecord record)
     {
         return new CreatureRecord
         {
@@ -61,12 +61,12 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
         };
     }
 
-    private CreatureRecord ReconstructCreatureFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private CreatureRecord ParseCreatureFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
-            return ReconstructCreatureFromScanResult(record);
+            return ParseCreatureFromScanResult(record);
         }
 
         var (data, dataSize) = recordData.Value;

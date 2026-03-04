@@ -66,7 +66,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
     /// <summary>
     ///     Enrich placed references in cells with base object bounds and model paths.
-    ///     Joins PlacedReference.BaseFormId to pre-built indexes from reconstructed base objects.
+    ///     Joins PlacedReference.BaseFormId to pre-built indexes from parsed base objects.
     /// </summary>
     internal static void EnrichPlacedReferences(
         List<CellRecord> cells,
@@ -100,12 +100,12 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
     #region Cells
 
     /// <summary>
-    ///     Reconstruct all Cell records from the scan result.
+    ///     Parse all Cell records from the scan result.
     ///     Delegates to <see cref="CellRecordHandler"/>.
     /// </summary>
-    internal List<CellRecord> ReconstructCells()
+    internal List<CellRecord> ParseCells()
     {
-        return _cellHandler.ReconstructCells();
+        return _cellHandler.ParseCells();
     }
 
     /// <summary>
@@ -118,7 +118,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
     }
 
     /// <summary>
-    ///     Links reconstructed cells to their parent worldspace's Cells list.
+    ///     Links parsed cells to their parent worldspace's Cells list.
     ///     Delegates to <see cref="CellLinkageHandler"/>.
     /// </summary>
     internal static void LinkCellsToWorldspaces(List<CellRecord> cells, List<WorldspaceRecord> worldspaces)
@@ -143,9 +143,9 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
     #region Worldspaces
 
     /// <summary>
-    ///     Reconstruct all Worldspace records from the scan result.
+    ///     Parse all Worldspace records from the scan result.
     /// </summary>
-    internal List<WorldspaceRecord> ReconstructWorldspaces()
+    internal List<WorldspaceRecord> ParseWorldspaces()
     {
         var worldspaces = new List<WorldspaceRecord>();
         var wrldRecords = _context.GetRecordsByType("WRLD").ToList();
@@ -154,7 +154,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         {
             foreach (var record in wrldRecords)
             {
-                var worldspace = ReconstructWorldspaceFromScanResult(record);
+                var worldspace = ParseWorldspaceFromScanResult(record);
                 if (worldspace != null)
                 {
                     worldspaces.Add(worldspace);
@@ -168,7 +168,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
             {
                 foreach (var record in wrldRecords)
                 {
-                    var worldspace = ReconstructWorldspaceFromAccessor(record, buffer);
+                    var worldspace = ParseWorldspaceFromAccessor(record, buffer);
                     if (worldspace != null)
                     {
                         worldspaces.Add(worldspace);
@@ -184,12 +184,12 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         return worldspaces;
     }
 
-    private WorldspaceRecord? ReconstructWorldspaceFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private WorldspaceRecord? ParseWorldspaceFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
-            return ReconstructWorldspaceFromScanResult(record);
+            return ParseWorldspaceFromScanResult(record);
         }
 
         var (data, dataSize) = recordData.Value;
@@ -310,7 +310,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
         };
     }
 
-    private WorldspaceRecord? ReconstructWorldspaceFromScanResult(DetectedMainRecord record)
+    private WorldspaceRecord? ParseWorldspaceFromScanResult(DetectedMainRecord record)
     {
         return new WorldspaceRecord
         {

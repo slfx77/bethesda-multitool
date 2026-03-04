@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Projectile (PROJ) from memory dump.
+///     Parsed Projectile (PROJ) record.
 /// </summary>
 public record ProjectileRecord
 {

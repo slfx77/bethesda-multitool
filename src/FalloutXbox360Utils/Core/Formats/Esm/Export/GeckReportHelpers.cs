@@ -220,7 +220,7 @@ internal static class GeckReportHelpers
     {
         sb.AppendLine("Summary:");
         sb.AppendLine($"  Total Records Processed:     {result.TotalRecordsProcessed:N0}");
-        sb.AppendLine($"  Total Records Reconstructed: {result.TotalRecordsReconstructed:N0}");
+        sb.AppendLine($"  Total Records Parsed:         {result.TotalRecordsParsed:N0}");
         sb.AppendLine();
         sb.AppendLine("  Characters:");
         sb.AppendLine($"    NPCs:         {result.Npcs.Count,6:N0}");

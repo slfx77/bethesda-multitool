@@ -73,7 +73,7 @@ internal static class WorldMapViewportHelper
             var maxExtent = Math.Max(
                 Math.Max(Math.Abs(bounds.X2 - bounds.X1), Math.Abs(bounds.Y2 - bounds.Y1)),
                 Math.Abs(bounds.Z2 - bounds.Z1)) * obj.Scale;
-            return Math.Max(maxExtent, 500f);
+            return Math.Clamp(maxExtent, 500f, CellWorldSize);
         }
 
         return 500f;

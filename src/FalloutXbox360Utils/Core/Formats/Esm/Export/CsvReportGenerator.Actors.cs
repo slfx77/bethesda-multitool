@@ -9,7 +9,7 @@ internal static class CsvActorWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Gender,Level,SPECIAL_ST,SPECIAL_PE,SPECIAL_EN,SPECIAL_CH,SPECIAL_IN,SPECIAL_AG,SPECIAL_LK,Barter,EnergyWeapons,Explosives,Guns,Lockpick,Medicine,MeleeWeapons,Repair,Science,Sneak,Speech,Survival,Unarmed,BaseHealth,CalcHealth,CalcFatigue,CritChance,MeleeDmg,UnarmedDmg,PoisonResist,RadResist,Aggression,Confidence,Mood,EnergyLevel,Responsibility,Assistance,FatigueBase,BarterGold,SpeedMult,Karma,Disposition,CalcMin,CalcMax,Flags,RaceFormID,RaceName,RaceDisplayName,ClassFormID,ClassName,ClassDisplayName,ScriptFormID,VoiceTypeFormID,TemplateFormID,HairFormID,HairName,HairDisplayName,HairLength,EyesFormID,EyesName,EyesDisplayName,CombatStyleFormID,CombatStyleName,CombatStyleDisplayName,HasFaceGen,Endianness,Offset,SubFormID,SubName,SubDisplayName,SubDetail");
+            "RowType,FormID,EditorID,Name,Gender,Level,SPECIAL_ST,SPECIAL_PE,SPECIAL_EN,SPECIAL_CH,SPECIAL_IN,SPECIAL_AG,SPECIAL_LK,Barter,EnergyWeapons,Explosives,Guns,Lockpick,Medicine,MeleeWeapons,Repair,Science,Sneak,Speech,Survival,Unarmed,BaseHealth,CalcHealth,CalcFatigue,CritChance,MeleeDmg,UnarmedDmg,PoisonResist,RadResist,Aggression,Confidence,Mood,EnergyLevel,Responsibility,Assistance,FatigueBase,BarterGold,SpeedMult,Karma,Disposition,CalcMin,CalcMax,Flags,RaceFormID,RaceName,RaceDisplayName,ClassFormID,ClassName,ClassDisplayName,ScriptFormID,VoiceTypeFormID,TemplateFormID,HairFormID,HairName,HairDisplayName,HairLength,HairColor,EyesFormID,EyesName,EyesDisplayName,CombatStyleFormID,CombatStyleName,CombatStyleDisplayName,HasFaceGen,Endianness,Offset,SubFormID,SubName,SubDisplayName,SubDetail");
 
         foreach (var npc in npcs.OrderBy(n => n.EditorId ?? ""))
         {
@@ -94,6 +94,7 @@ internal static class CsvActorWriter
                 resolver.ResolveCsv(npc.HairFormId ?? 0),
                 resolver.ResolveDisplayNameCsv(npc.HairFormId ?? 0),
                 npc.HairLength?.ToString("F2") ?? "",
+                NpcRecord.FormatHairColor(npc.HairColor) ?? "",
                 Fmt.FIdN(npc.EyesFormId),
                 resolver.ResolveCsv(npc.EyesFormId ?? 0),
                 resolver.ResolveDisplayNameCsv(npc.EyesFormId ?? 0),
@@ -105,9 +106,9 @@ internal static class CsvActorWriter
                 npc.Offset.ToString(),
                 "", "", "", ""));
 
-            // Sub-row padding: 68 empty columns between FormID (col 2) and SubFormID (col 71)
-            // Total header columns: 75 (RowType + FormID + 68 data cols + SubFormID + SubName + SubDisplayName + SubDetail)
-            var subPad = new string(',', 68); // 68 empty columns
+            // Sub-row padding: 69 empty columns between FormID (col 2) and SubFormID (col 72)
+            // Total header columns: 76 (RowType + FormID + 69 data cols + SubFormID + SubName + SubDisplayName + SubDetail)
+            var subPad = new string(',', 69); // 69 empty columns
             foreach (var f in npc.Factions)
             {
                 sb.AppendLine(

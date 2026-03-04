@@ -38,7 +38,7 @@ public static class DmpSnapshotExtractor
             throw new InvalidOperationException($"No ESM records found in DMP: {Path.GetFileName(dmpPath)}");
         }
 
-        progress?.Report((70, "Reconstructing records..."));
+        progress?.Report((70, "Parsing records..."));
 
         // Create RecordParser with DMP data
         using var mmf = MemoryMappedFile.CreateFromFile(dmpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
@@ -51,7 +51,7 @@ public static class DmpSnapshotExtractor
             analysisResult.FileSize,
             analysisResult.MinidumpInfo);
 
-        var records = parser.ReconstructAll(progress != null
+        var records = parser.ParseAll(progress != null
             ? new Progress<(int percent, string phase)>(p =>
                 progress!.Report((70 + (int)(p.percent * 0.25), p.phase)))
             : null);

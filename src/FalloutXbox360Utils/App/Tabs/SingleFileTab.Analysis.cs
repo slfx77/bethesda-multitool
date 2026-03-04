@@ -142,9 +142,9 @@ public sealed partial class SingleFileTab
         // Prevent double-population
         if (DataBrowserContent.Visibility == Visibility.Visible) return;
 
-        ReconstructProgressBar.Visibility = Visibility.Visible;
-        ReconstructProgressBar.IsIndeterminate = true;
-        ReconstructStatusText.Text = "Building save data browser...";
+        ParseProgressBar.Visibility = Visibility.Visible;
+        ParseProgressBar.IsIndeterminate = true;
+        ParseStatusText.Text = "Building save data browser...";
         StatusTextBlock.Text = "Building save data browser...";
 
         try
@@ -159,6 +159,7 @@ public sealed partial class SingleFileTab
 
             _esmBrowserTree = tree;
             _placementIndex = null;
+            _factionMembersIndex = null;
             _raceLookup = null;
             _flatListBuilt = false;
 
@@ -186,9 +187,9 @@ public sealed partial class SingleFileTab
         }
         finally
         {
-            ReconstructProgressBar.Visibility = Visibility.Collapsed;
-            ReconstructProgressBar.IsIndeterminate = false;
-            ReconstructStatusText.Text = "";
+            ParseProgressBar.Visibility = Visibility.Collapsed;
+            ParseProgressBar.IsIndeterminate = false;
+            ParseStatusText.Text = "";
             StatusTextBlock.Text = "";
         }
     }
@@ -217,12 +218,12 @@ public sealed partial class SingleFileTab
         return result;
     }
 
-    private async Task RunSemanticReconstructionPipelineAsync()
+    private async Task RunSemanticParsePipelineAsync()
     {
-        SetPipelinePhase(AnalysisPipelinePhase.Reconstructing);
+        SetPipelinePhase(AnalysisPipelinePhase.Parsing);
         StatusTextBlock.Text = _session.IsEsmFile
             ? Strings.Status_ParsingEsmRecords
-            : Strings.Status_ReconstructingRecords;
+            : Strings.Status_ParsingRecords;
 
         var reconProgress = new Progress<(int percent, string phase)>(p =>
             DispatcherQueue.TryEnqueue(() =>
@@ -231,20 +232,20 @@ public sealed partial class SingleFileTab
                 StatusTextBlock.Text = p.phase;
             }));
 
-        _semanticReconstructionTask = Task.Run(() =>
+        _semanticParseTask = Task.Run(() =>
         {
-            var reconstructor = new RecordParser(
+            var parser = new RecordParser(
                 _analysisResult!.EsmRecords!,
                 _analysisResult.FormIdMap,
                 _session.Accessor!,
                 _session.FileSize,
                 _analysisResult.MinidumpInfo);
-            return reconstructor.ReconstructAll(reconProgress);
+            return parser.ParseAll(reconProgress);
         });
 
         try
         {
-            _session.SemanticResult = await _semanticReconstructionTask;
+            _session.SemanticResult = await _semanticParseTask;
             if (_session.SemanticResult != null)
             {
                 _session.Resolver = _session.SemanticResult.CreateResolver();
@@ -256,7 +257,7 @@ public sealed partial class SingleFileTab
         }
         catch (Exception ex)
         {
-            await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
+            await ShowDialogAsync(Strings.Dialog_ParseFailed_Title,
                 $"{ex.GetType().Name}: {ex.Message}", true);
         }
     }
@@ -284,32 +285,32 @@ public sealed partial class SingleFileTab
 
     #endregion
 
-    #region Semantic Reconstruction
+    #region Semantic Parse
 
     /// <summary>
-    ///     Safety guard: ensures semantic reconstruction is complete before proceeding.
-    ///     Under the unified flow, reconstruction completes eagerly during AnalyzeButton_Click,
+    ///     Safety guard: ensures semantic parse is complete before proceeding.
+    ///     Under the unified flow, parsing completes eagerly during AnalyzeButton_Click,
     ///     so this should return immediately. Retained as a guard for edge cases.
     /// </summary>
-    private async Task EnsureSemanticReconstructionAsync()
+    private async Task EnsureSemanticParseAsync()
     {
         if (_session.SemanticResult != null) return;
-        if (_semanticReconstructionTask == null) return;
+        if (_semanticParseTask == null) return;
 
         try
         {
-            _session.SemanticResult = await _semanticReconstructionTask;
+            _session.SemanticResult = await _semanticParseTask;
 
             if (_session.SemanticResult != null)
             {
                 _session.Resolver = _session.SemanticResult.CreateResolver();
                 StatusTextBlock.Text =
-                    Strings.Status_ReconstructedRecords(_session.SemanticResult.TotalRecordsReconstructed);
+                    Strings.Status_ParsedRecords(_session.SemanticResult.TotalRecordsParsed);
             }
         }
         catch (Exception ex)
         {
-            await ShowDialogAsync(Strings.Dialog_ReconstructionFailed_Title,
+            await ShowDialogAsync(Strings.Dialog_ParseFailed_Title,
                 $"{ex.GetType().Name}: {ex.Message}", true);
         }
     }
@@ -318,9 +319,9 @@ public sealed partial class SingleFileTab
     {
         if (_session.SemanticResult == null) return;
 
-        ReconstructProgressBar.Visibility = Visibility.Visible;
-        ReconstructProgressBar.IsIndeterminate = true;
-        ReconstructStatusText.Text = Strings.Status_BuildingDataBrowserTree;
+        ParseProgressBar.Visibility = Visibility.Visible;
+        ParseProgressBar.IsIndeterminate = true;
+        ParseStatusText.Text = Strings.Status_BuildingDataBrowserTree;
         StatusTextBlock.Text = Strings.Status_BuildingDataBrowserTree;
 
         try
@@ -338,18 +339,21 @@ public sealed partial class SingleFileTab
             var progress = new Progress<string>(status =>
                 DispatcherQueue.TryEnqueue(() =>
                 {
-                    ReconstructStatusText.Text = status;
+                    ParseStatusText.Text = status;
                     StatusTextBlock.Text = status;
                 }));
 
-            // Build tree, placement index, and race lookup on background thread
-            var (tree, placements, raceLookup) = await Task.Run(() =>
+            // Build tree, placement index, faction members, and race lookup on background thread
+            var (tree, placements, factionMembers, raceLookup) = await Task.Run(() =>
             {
                 ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
                 var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, resolver);
 
                 // Build reverse placement index for "Use Info" (base FormID → world placements)
                 var placementIndex = semanticResult.BuildBaseToPlacementsMap();
+
+                // Build reverse faction index (faction FormID → NPC/creature members)
+                var factionIndex = semanticResult.BuildFactionMembersIndex();
 
                 // Build race lookup for FaceGen slider computation in property panels
                 var races = semanticResult.Races.Count > 0
@@ -361,11 +365,12 @@ public sealed partial class SingleFileTab
                 ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
                 EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
-                return (builtTree, placementIndex, races);
+                return (builtTree, placementIndex, factionIndex, races);
             });
 
             _esmBrowserTree = tree;
             _placementIndex = placements;
+            _factionMembersIndex = factionMembers;
             _raceLookup = raceLookup;
             _flatListBuilt = false;
 
@@ -394,9 +399,9 @@ public sealed partial class SingleFileTab
         }
         finally
         {
-            ReconstructProgressBar.Visibility = Visibility.Collapsed;
-            ReconstructProgressBar.IsIndeterminate = false;
-            ReconstructStatusText.Text = "";
+            ParseProgressBar.Visibility = Visibility.Collapsed;
+            ParseProgressBar.IsIndeterminate = false;
+            ParseStatusText.Text = "";
             StatusTextBlock.Text = "";
         }
     }
@@ -441,7 +446,7 @@ public sealed partial class SingleFileTab
         }
         else if (ReferenceEquals(selected, DataBrowserTab))
         {
-            ReconstructButton_Click(this, new RoutedEventArgs());
+            ParseButton_Click(this, new RoutedEventArgs());
         }
         else if (ReferenceEquals(selected, DialogueViewerTab))
         {

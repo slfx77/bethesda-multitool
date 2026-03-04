@@ -88,14 +88,14 @@ public sealed partial class SingleFileTab
         DialogueViewerProgressBar.Visibility = Visibility.Visible;
         DialogueViewerStatusText.Text = _session.IsEsmFile
             ? Strings.Status_LoadingDialogueData
-            : Strings.Status_ReconstructingDialogueData;
+            : Strings.Status_ParsingDialogueData;
 
         try
         {
             if (_session.SemanticResult == null)
             {
                 DialogueViewerProgressBar.IsIndeterminate = false;
-                await EnsureSemanticReconstructionAsync();
+                await EnsureSemanticParseAsync();
             }
 
             var result = _session.SemanticResult;

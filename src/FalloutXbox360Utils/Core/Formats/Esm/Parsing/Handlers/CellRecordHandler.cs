@@ -13,9 +13,9 @@ internal sealed class CellRecordHandler(RecordParserContext context)
     #region Cells
 
     /// <summary>
-    ///     Reconstruct all Cell records from the scan result.
+    ///     Parse all Cell records from the scan result.
     /// </summary>
-    internal List<CellRecord> ReconstructCells()
+    internal List<CellRecord> ParseCells()
     {
         var cells = new List<CellRecord>();
         var cellRecords = _context.GetRecordsByType("CELL").ToList();
@@ -40,7 +40,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
             refrOffsetIndex = refrSortedByOffset.Select(r => r.Header.Offset).ToArray();
         }
 
-        Logger.Instance.Debug($"  [Semantic] Cell reconstruction: {cellRecords.Count} cells, " +
+        Logger.Instance.Debug($"  [Semantic] Cell parsing: {cellRecords.Count} cells, " +
                               $"{refrRecords.Count} REFRs, GRUP mapping: {hasGrupMapping} ({cellToRefrMap.Count} entries)");
 
         // Pre-build heightmap lookup by cell grid coordinates for O(1) access.
@@ -71,7 +71,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         {
             foreach (var record in cellRecords)
             {
-                var cell = ReconstructCellFromScanResult(record, refrByFormId,
+                var cell = ParseCellFromScanResult(record, refrByFormId,
                     hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset);
                 if (cell != null)
                 {
@@ -92,7 +92,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
                 foreach (var record in cellRecords)
                 {
                     cellWorldMap.TryGetValue(record.FormId, out var cellWs);
-                    var cell = ReconstructCellFromAccessor(record, refrByFormId,
+                    var cell = ParseCellFromAccessor(record, refrByFormId,
                         hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
                         heightmapByGrid, terrainMeshByGrid, cellWs, buffer);
                     if (cell != null)
@@ -250,7 +250,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
             .ToList();
     }
 
-    private CellRecord? ReconstructCellFromAccessor(DetectedMainRecord record,
+    private CellRecord? ParseCellFromAccessor(DetectedMainRecord record,
         Dictionary<uint, ExtractedRefrRecord> refrByFormId,
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,
@@ -263,7 +263,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
-            return ReconstructCellFromScanResult(record, refrByFormId, cellToRefrMap,
+            return ParseCellFromScanResult(record, refrByFormId, cellToRefrMap,
                 refrOffsetIndex, refrSortedByOffset);
         }
 
@@ -370,7 +370,7 @@ internal sealed class CellRecordHandler(RecordParserContext context)
         };
     }
 
-    private CellRecord? ReconstructCellFromScanResult(DetectedMainRecord record,
+    private CellRecord? ParseCellFromScanResult(DetectedMainRecord record,
         Dictionary<uint, ExtractedRefrRecord> refrByFormId,
         Dictionary<uint, List<uint>>? cellToRefrMap,
         long[]? refrOffsetIndex,

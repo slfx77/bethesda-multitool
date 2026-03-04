@@ -12,13 +12,13 @@ public class EsmWorldspaceAchrIntegrationTests(ITestOutputHelper output, SampleF
     private readonly ITestOutputHelper _output = output;
 
     /// <summary>
-    ///     Verifies that the full pipeline (parse → GRUP mapping → cell reconstruction → worldspace linking)
+    ///     Verifies that the full pipeline (parse → GRUP mapping → cell parsing → worldspace linking)
     ///     correctly places persistent ACHR/ACRE records into worldspace cells.
     ///     Specifically checks for Veronica (ACHR 0x000E32A9) in the WastelandNV worldspace.
     /// </summary>
     [Fact]
     [Trait("Category", "Slow")]
-    public void WorldspaceReconstruction_PersistentCell_ShouldContainAchrRecords()
+    public void WorldspaceParsing_PersistentCell_ShouldContainAchrRecords()
     {
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
@@ -70,8 +70,8 @@ public class EsmWorldspaceAchrIntegrationTests(ITestOutputHelper output, SampleF
             ? $"Veronica's cell linked to worldspace 0x{veronicaWorldspace:X8}"
             : "WARNING: Veronica's cell NOT linked to any worldspace!");
 
-        // Full semantic reconstruction results
-        _output.WriteLine($"Reconstructed: {collection.Cells.Count:N0} cells, " +
+        // Full semantic parsing results
+        _output.WriteLine($"Parsed: {collection.Cells.Count:N0} cells, " +
                           $"{collection.Worldspaces.Count:N0} worldspaces");
 
         // Find WastelandNV worldspace (0x000DA726)

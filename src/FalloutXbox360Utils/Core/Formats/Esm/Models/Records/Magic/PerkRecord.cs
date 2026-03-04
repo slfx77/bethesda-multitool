@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Perk from memory dump.
+///     Parsed Perk record.
 ///     Aggregates data from PERK main record header, DATA, DESC, PRKE chains.
 /// </summary>
 public record PerkRecord

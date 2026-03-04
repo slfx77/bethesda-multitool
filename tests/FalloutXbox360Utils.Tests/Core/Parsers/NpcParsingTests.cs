@@ -144,7 +144,7 @@ public class NpcParsingTests(ITestOutputHelper output)
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void SemanticReconstructor_EsmWithNpc_ReconstructsNpcData(bool bigEndian)
+    public void RecordParser_EsmWithNpc_ParsesNpcData(bool bigEndian)
     {
         // Arrange - Create an ESM file and write to temp file
         var editorId = "TestNPC";
@@ -215,17 +215,17 @@ public class NpcParsingTests(ITestOutputHelper output)
                 MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new RecordParser(
+            var parser = new RecordParser(
                 scanResult,
                 formIdMap,
                 accessor,
                 esmData.Length);
 
-            // Act - Reconstruct NPCs
-            var npcs = reconstructor.ReconstructNpcs();
+            // Act - Parse NPCs
+            var npcs = parser.ParseNpcs();
 
             // Assert
-            _output.WriteLine($"Reconstructed {npcs.Count} NPCs:");
+            _output.WriteLine($"Parsed {npcs.Count} NPCs:");
             foreach (var npc in npcs)
             {
                 _output.WriteLine(

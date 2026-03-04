@@ -152,6 +152,48 @@ internal sealed class NifTextureResolver : IDisposable
     }
 
     /// <summary>
+    ///     Read BSShaderFlags (word 0) and EnvMapScale from BSShaderPPLightingProperty.
+    ///     Used to detect Eye_Environment_Mapping (bit 17) and get the reflection strength.
+    ///     Returns null if no BSShaderPPLightingProperty found.
+    /// </summary>
+    public static (uint ShaderFlags, float EnvMapScale)? ReadEnvMapInfo(
+        byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        foreach (var propRef in propertyRefs)
+        {
+            if (propRef < 0 || propRef >= nif.Blocks.Count)
+                continue;
+
+            var propBlock = nif.Blocks[propRef];
+            if (propBlock.TypeName != "BSShaderPPLightingProperty")
+                continue;
+
+            var be = nif.IsBigEndian;
+            var pos = propBlock.DataOffset;
+            var end = propBlock.DataOffset + propBlock.Size;
+
+            if (!SkipNiObjectNET(data, ref pos, end, be))
+                return null;
+
+            // NiShadeProperty: Flags (ushort)
+            if (pos + 2 > end) return null;
+            pos += 2;
+
+            // BSShaderProperty: ShaderType(4) + ShaderFlags(4) + ShaderFlags2(4) + EnvMapScale(4)
+            if (pos + 16 > end) return null;
+            pos += 4; // skip ShaderType
+            var shaderFlags = BinaryUtils.ReadUInt32(data, pos, be);
+            pos += 4;
+            pos += 4; // skip ShaderFlags2
+            var envMapScale = BinaryUtils.ReadFloat(data, pos, be);
+
+            return (shaderFlags, envMapScale);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     ///     Resolve the normal map texture path from a shape's property block references.
     ///     Walks BSShaderPPLightingProperty → BSShaderTextureSet → slot 1 string.
     /// </summary>
@@ -184,6 +226,16 @@ internal sealed class NifTextureResolver : IDisposable
     {
         var normalized = NormalizePath(texturePath);
         _cache[normalized] = texture;
+    }
+
+    /// <summary>
+    ///     Removes a previously injected texture from the CPU cache.
+    ///     Used to free per-NPC morphed face textures after rendering.
+    /// </summary>
+    public void EvictTexture(string texturePath)
+    {
+        var normalized = NormalizePath(texturePath);
+        _cache.TryRemove(normalized, out _);
     }
 
     /// <summary>

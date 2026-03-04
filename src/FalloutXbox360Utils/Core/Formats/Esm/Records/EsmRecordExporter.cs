@@ -70,10 +70,10 @@ public static class EsmRecordExporter
     }
 
     /// <summary>
-    ///     Export reconstructed scripts as individual text files.
+    ///     Export parsed scripts as individual text files.
     ///     Each file contains header info, source text (SCTX), decompiled bytecode, variables, and references.
     /// </summary>
-    public static async Task ExportReconstructedScriptsAsync(
+    public static async Task ExportParsedScriptsAsync(
         List<ScriptRecord> scripts,
         Dictionary<uint, string>? formIdMap,
         string outputDir)

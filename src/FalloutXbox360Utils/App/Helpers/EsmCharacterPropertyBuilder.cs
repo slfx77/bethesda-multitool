@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
@@ -98,15 +99,17 @@ internal static class EsmCharacterPropertyBuilder
 
     /// <summary>
     ///     Processes Skills (byte[14]) into an expandable property entry.
+    ///     Uses AVIF-sourced names from the resolver when available, falling back to hardcoded names.
     /// </summary>
-    internal static void AddSkills(List<EsmPropertyEntry> properties, byte[] skills)
+    internal static void AddSkills(List<EsmPropertyEntry> properties, byte[] skills,
+        FormIdResolver? resolver = null)
     {
         var subItems = new List<EsmPropertyEntry>();
         for (var i = 0; i < skills.Length && i < EsmPropertyFormatter.SkillNames.Length; i++)
         {
             if (i == 1) continue; // Skip BigGuns (index 1) - unused in Fallout NV
-            subItems.Add(new EsmPropertyEntry
-                { Name = EsmPropertyFormatter.SkillNames[i], Value = skills[i].ToString() });
+            var name = resolver?.GetSkillName(i) ?? EsmPropertyFormatter.SkillNames[i];
+            subItems.Add(new EsmPropertyEntry { Name = name, Value = skills[i].ToString() });
         }
 
         properties.Add(new EsmPropertyEntry
@@ -180,7 +183,6 @@ internal static class EsmCharacterPropertyBuilder
                         Value = $"{activeSliders.Count} of {sliders.Length} active",
                         Category = "Characteristics",
                         IsExpandable = true,
-                        IsExpandedByDefault = true,
                         SubItems = sliderSubItems
                     });
                 }
@@ -225,12 +227,14 @@ internal static class EsmCharacterPropertyBuilder
 
     /// <summary>
     ///     Processes class-specific tag skills (Actor Value codes) into a property entry.
+    ///     Uses AVIF-sourced names from the resolver when available, falling back to hardcoded names.
     /// </summary>
-    internal static void AddTagSkills(List<EsmPropertyEntry> properties, int[] tagSkillIndices)
+    internal static void AddTagSkills(List<EsmPropertyEntry> properties, int[] tagSkillIndices,
+        FormIdResolver? resolver = null)
     {
         var names = tagSkillIndices
             .Where(i => i >= 0)
-            .Select(i => EsmPropertyFormatter.ActorValueToSkillName(i) ?? $"AV#{i}");
+            .Select(i => resolver?.GetActorValueName(i) ?? EsmPropertyFormatter.ActorValueToSkillName(i) ?? $"AV#{i}");
         properties.Add(new EsmPropertyEntry
         {
             Name = "Tag Skills",
@@ -241,10 +245,14 @@ internal static class EsmCharacterPropertyBuilder
 
     /// <summary>
     ///     Processes class-specific training skill (Actor Value code) into a property entry.
+    ///     Uses AVIF-sourced names from the resolver when available, falling back to hardcoded names.
     /// </summary>
-    internal static void AddTrainingSkill(List<EsmPropertyEntry> properties, byte trainingIdx)
+    internal static void AddTrainingSkill(List<EsmPropertyEntry> properties, byte trainingIdx,
+        FormIdResolver? resolver = null)
     {
-        var skillName = EsmPropertyFormatter.ActorValueToSkillName(trainingIdx) ?? $"Unknown ({trainingIdx})";
+        var skillName = resolver?.GetActorValueName(trainingIdx)
+                        ?? EsmPropertyFormatter.ActorValueToSkillName(trainingIdx)
+                        ?? $"Unknown ({trainingIdx})";
         properties.Add(new EsmPropertyEntry
         {
             Name = "Training Skill",
@@ -349,8 +357,10 @@ internal static class EsmCharacterPropertyBuilder
 
     /// <summary>
     ///     Adds race skill boosts as a property entry.
+    ///     Uses AVIF-sourced names from the resolver when available, falling back to hardcoded names.
     /// </summary>
-    internal static void AddRaceSkillBoosts(List<EsmPropertyEntry> properties, object record)
+    internal static void AddRaceSkillBoosts(List<EsmPropertyEntry> properties, object record,
+        FormIdResolver? resolver = null)
     {
         if (record is not RaceRecord raceRecord || raceRecord.SkillBoosts.Count == 0)
         {
@@ -360,7 +370,9 @@ internal static class EsmCharacterPropertyBuilder
         var boosts = raceRecord.SkillBoosts
             .Select(b =>
             {
-                var name = EsmPropertyFormatter.ActorValueToSkillName(b.SkillIndex) ?? $"AV#{b.SkillIndex}";
+                var name = resolver?.GetActorValueName(b.SkillIndex)
+                           ?? EsmPropertyFormatter.ActorValueToSkillName(b.SkillIndex)
+                           ?? $"AV#{b.SkillIndex}";
                 return $"{name} {b.Boost:+#;-#;0}";
             });
         properties.Add(new EsmPropertyEntry

@@ -60,14 +60,16 @@ internal static class GeckActorDetailWriter
             if (npc.Skills is { Length: 14 })
             {
                 var sk = npc.Skills;
+                // Use AVIF-sourced names when available, resolver provides hardcoded fallback
+                string Sk(int i) => resolver.GetSkillName(i) ?? $"Skill#{i}";
                 sb.AppendLine("  Skills:");
                 sb.AppendLine(
-                    $"    {"Barter",-18}{sk[0],3}    {"Energy Weapons",-18}{sk[2],3}    {"Explosives",-18}{sk[3],3}");
-                sb.AppendLine($"    {"Guns",-18}{sk[9],3}    {"Lockpick",-18}{sk[4],3}    {"Medicine",-18}{sk[5],3}");
+                    $"    {Sk(0),-18}{sk[0],3}    {Sk(2),-18}{sk[2],3}    {Sk(3),-18}{sk[3],3}");
+                sb.AppendLine($"    {Sk(9),-18}{sk[9],3}    {Sk(4),-18}{sk[4],3}    {Sk(5),-18}{sk[5],3}");
                 sb.AppendLine(
-                    $"    {"Melee Weapons",-18}{sk[6],3}    {"Repair",-18}{sk[7],3}    {"Science",-18}{sk[8],3}");
-                sb.AppendLine($"    {"Sneak",-18}{sk[10],3}    {"Speech",-18}{sk[11],3}    {"Survival",-18}{sk[12],3}");
-                sb.AppendLine($"    {"Unarmed",-18}{sk[13],3}");
+                    $"    {Sk(6),-18}{sk[6],3}    {Sk(7),-18}{sk[7],3}    {Sk(8),-18}{sk[8],3}");
+                sb.AppendLine($"    {Sk(10),-18}{sk[10],3}    {Sk(11),-18}{sk[11],3}    {Sk(12),-18}{sk[12],3}");
+                sb.AppendLine($"    {Sk(13),-18}{sk[13],3}");
             }
         }
 
@@ -136,7 +138,8 @@ internal static class GeckActorDetailWriter
         }
 
         // Physical Traits
-        if (npc.HairFormId.HasValue || npc.EyesFormId.HasValue || npc.HairLength.HasValue)
+        if (npc.HairFormId.HasValue || npc.EyesFormId.HasValue || npc.HairLength.HasValue ||
+            npc.HairColor.HasValue || npc.Height.HasValue || npc.Weight.HasValue)
         {
             sb.AppendLine();
             sb.AppendLine($"  \u2500\u2500 Physical Traits {new string('\u2500', 63)}");
@@ -152,10 +155,25 @@ internal static class GeckActorDetailWriter
                 sb.AppendLine($"  Hair Length:    {npc.HairLength.Value:F2}");
             }
 
+            if (npc.HairColor.HasValue)
+            {
+                sb.AppendLine($"  Hair Color:    {NpcRecord.FormatHairColor(npc.HairColor)}");
+            }
+
             if (npc.EyesFormId.HasValue)
             {
                 sb.AppendLine(
                     $"  Eyes:           {resolver.FormatFull(npc.EyesFormId.Value)}");
+            }
+
+            if (npc.Height.HasValue)
+            {
+                sb.AppendLine($"  Height:         {npc.Height.Value:F2}");
+            }
+
+            if (npc.Weight.HasValue)
+            {
+                sb.AppendLine($"  Weight:         {npc.Weight.Value:F1}");
             }
         }
 
@@ -173,7 +191,8 @@ internal static class GeckActorDetailWriter
         }
 
         // References
-        if (npc.Script.HasValue || npc.VoiceType.HasValue || npc.Template.HasValue)
+        if (npc.Script.HasValue || npc.VoiceType.HasValue || npc.Template.HasValue ||
+            npc.OriginalRace.HasValue || npc.FaceNpc.HasValue)
         {
             sb.AppendLine();
             sb.AppendLine($"  \u2500\u2500 References {new string('\u2500', 68)}");
@@ -192,6 +211,18 @@ internal static class GeckActorDetailWriter
             {
                 sb.AppendLine(
                     $"  Template:       {resolver.FormatFull(npc.Template.Value)}");
+            }
+
+            if (npc.OriginalRace.HasValue)
+            {
+                sb.AppendLine(
+                    $"  Original Race:  {resolver.FormatFull(npc.OriginalRace.Value)}");
+            }
+
+            if (npc.FaceNpc.HasValue)
+            {
+                sb.AppendLine(
+                    $"  Face NPC:       {resolver.FormatFull(npc.FaceNpc.Value)}");
             }
         }
 

@@ -6,7 +6,7 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Orchestrator for dialogue record reconstruction. Delegates to specialized classes:
+///     Orchestrator for dialogue record parsing. Delegates to specialized classes:
 ///     <see cref="DialogueConditionParser"/> for INFO parsing and CTDA conditions,
 ///     <see cref="DialogueRuntimeMerger"/> for DMP runtime data merging,
 ///     <see cref="DialogueTopicMerger"/> for speaker propagation and linking,
@@ -20,12 +20,12 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
     private readonly DialogueTopicMerger _topicMerger = new(context);
     private readonly DialogueTreeBuilder _treeBuilder = new(context);
 
-    #region ReconstructDialogue
+    #region ParseDialogue
 
     /// <summary>
-    ///     Reconstruct all Dialogue (INFO) records from the scan result.
+    ///     Parse all Dialogue (INFO) records from the scan result.
     /// </summary>
-    internal List<DialogueRecord> ReconstructDialogue()
+    internal List<DialogueRecord> ParseDialogue()
     {
         var dialogues = _conditionParser.ParseAllInfoRecords();
 
@@ -36,12 +36,12 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
 
     #endregion
 
-    #region ReconstructDialogTopics
+    #region ParseDialogTopics
 
     /// <summary>
-    ///     Reconstruct all Dialog Topic records from the scan result.
+    ///     Parse all Dialog Topic records from the scan result.
     /// </summary>
-    internal List<DialogTopicRecord> ReconstructDialogTopics()
+    internal List<DialogTopicRecord> ParseDialogTopics()
     {
         var topics = new List<DialogTopicRecord>();
         var topicRecords = _context.GetRecordsByType("DIAL").ToList();
@@ -62,6 +62,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                         {
                             FormId = record.FormId,
                             EditorId = _context.GetEditorId(record.FormId),
+                            FullName = _context.FindFullNameInRecordBounds(record),
                             Offset = record.Offset,
                             IsBigEndian = record.IsBigEndian
                         });
@@ -163,12 +164,12 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
 
     #endregion
 
-    #region ReconstructQuests
+    #region ParseQuests
 
     /// <summary>
-    ///     Reconstruct all Quest records from the scan result.
+    ///     Parse all Quest records from the scan result.
     /// </summary>
-    internal List<QuestRecord> ReconstructQuests()
+    internal List<QuestRecord> ParseQuests()
     {
         var quests = new List<QuestRecord>();
         var questRecords = _context.GetRecordsByType("QUST").ToList();
@@ -177,7 +178,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         {
             foreach (var record in questRecords)
             {
-                var quest = ReconstructQuestFromScanResult(record);
+                var quest = ParseQuestFromScanResult(record);
                 if (quest != null)
                 {
                     quests.Add(quest);
@@ -191,7 +192,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
             {
                 foreach (var record in questRecords)
                 {
-                    var quest = ReconstructQuestFromAccessor(record, buffer);
+                    var quest = ParseQuestFromAccessor(record, buffer);
                     if (quest != null)
                     {
                         quests.Add(quest);
@@ -207,13 +208,50 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         // Merge quests from runtime struct reading
         if (_context.RuntimeReader != null)
         {
-            var esmFormIds = new HashSet<uint>(quests.Select(q => q.FormId));
+            var questByFormId = quests.ToDictionary(q => q.FormId);
             var runtimeCount = 0;
             var stubCount = 0;
+            var enrichedCount = 0;
+            var questEntryCount = 0;
             foreach (var entry in _context.ScanResult.RuntimeEditorIds)
             {
-                if (entry.FormType != 0x47 || esmFormIds.Contains(entry.FormId))
+                if (entry.FormType != 0x47)
                 {
+                    continue;
+                }
+
+                questEntryCount++;
+
+                if (questByFormId.ContainsKey(entry.FormId))
+                {
+                    // Quest already exists from ESM scan — enrich with runtime data if missing
+                    var existing = questByFormId[entry.FormId];
+                    var needsEnrichment = string.IsNullOrEmpty(existing.FullName)
+                                          || !existing.Script.HasValue;
+                    if (needsEnrichment)
+                    {
+                        var runtimeQuest = _context.RuntimeReader.ReadRuntimeQuest(entry);
+                        var newName = existing.FullName;
+                        if (string.IsNullOrEmpty(newName))
+                        {
+                            newName = runtimeQuest?.FullName ?? entry.DisplayName;
+                        }
+
+                        var script = existing.Script ?? runtimeQuest?.Script;
+
+                        if (!string.IsNullOrEmpty(newName) || script.HasValue)
+                        {
+                            var idx = quests.IndexOf(existing);
+                            quests[idx] = existing with
+                            {
+                                FullName = newName ?? existing.FullName,
+                                Script = script
+                            };
+                            questByFormId[entry.FormId] = quests[idx];
+                            enrichedCount++;
+                        }
+                    }
+
                     continue;
                 }
 
@@ -239,34 +277,34 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
                 }
             }
 
-            if (runtimeCount > 0 || stubCount > 0)
-            {
-                Logger.Instance.Debug(
-                    $"  [Semantic] Added {runtimeCount} quests from runtime struct reading " +
-                    $"+ {stubCount} stubs (total: {quests.Count}, ESM: {esmFormIds.Count})");
-            }
+            Logger.Instance.Debug(
+                $"Quest merge: {questEntryCount} runtime entries (FormType=0x47), " +
+                $"added {runtimeCount} + {stubCount} stubs, enriched {enrichedCount} " +
+                $"(total: {quests.Count}, ESM-scanned: {questByFormId.Count})");
         }
 
         return quests;
     }
 
-    private QuestRecord? ReconstructQuestFromScanResult(DetectedMainRecord record)
+    private QuestRecord? ParseQuestFromScanResult(DetectedMainRecord record)
     {
         return new QuestRecord
         {
             FormId = record.FormId,
             EditorId = _context.GetEditorId(record.FormId),
+            FullName = _context.FindFullNameNear(record.Offset)
+                       ?? _context.FormIdToFullName.GetValueOrDefault(record.FormId),
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
     }
 
-    private QuestRecord? ReconstructQuestFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private QuestRecord? ParseQuestFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
-            return ReconstructQuestFromScanResult(record);
+            return ParseQuestFromScanResult(record);
         }
 
         var (data, dataSize) = recordData.Value;

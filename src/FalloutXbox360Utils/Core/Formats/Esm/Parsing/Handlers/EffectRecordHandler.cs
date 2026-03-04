@@ -12,9 +12,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
     #region Enchantments
 
     /// <summary>
-    ///     Reconstruct all Enchantment (ENCH) records.
+    ///     Parse all Enchantment (ENCH) records.
     /// </summary>
-    internal List<EnchantmentRecord> ReconstructEnchantments()
+    internal List<EnchantmentRecord> ParseEnchantments()
     {
         var enchantments = new List<EnchantmentRecord>();
 
@@ -126,9 +126,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
     #region Base Effects
 
     /// <summary>
-    ///     Reconstruct all Base Effect (MGEF) records.
+    ///     Parse all Base Effect (MGEF) records.
     /// </summary>
-    internal List<BaseEffectRecord> ReconstructBaseEffects()
+    internal List<BaseEffectRecord> ParseBaseEffects()
     {
         var effects = new List<BaseEffectRecord>();
 
@@ -237,9 +237,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
     #region Perks
 
     /// <summary>
-    ///     Reconstruct all Perk records from the scan result.
+    ///     Parse all Perk records from the scan result.
     /// </summary>
-    internal List<PerkRecord> ReconstructPerks()
+    internal List<PerkRecord> ParsePerks()
     {
         var perks = new List<PerkRecord>();
         var perkRecords = _context.GetRecordsByType("PERK").ToList();
@@ -265,7 +265,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
             {
                 foreach (var record in perkRecords)
                 {
-                    var perk = ReconstructPerkFromAccessor(record, buffer);
+                    var perk = ParsePerkFromAccessor(record, buffer);
                     if (perk != null)
                     {
                         perks.Add(perk);
@@ -281,7 +281,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
         return perks;
     }
 
-    private PerkRecord? ReconstructPerkFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private PerkRecord? ParsePerkFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
@@ -378,9 +378,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
     #region Spells
 
     /// <summary>
-    ///     Reconstruct all Spell records from the scan result.
+    ///     Parse all Spell records from the scan result.
     /// </summary>
-    internal List<SpellRecord> ReconstructSpells()
+    internal List<SpellRecord> ParseSpells()
     {
         var spells = new List<SpellRecord>();
         var spellRecords = _context.GetRecordsByType("SPEL").ToList();
@@ -406,7 +406,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
             {
                 foreach (var record in spellRecords)
                 {
-                    var spell = ReconstructSpellFromAccessor(record, buffer);
+                    var spell = ParseSpellFromAccessor(record, buffer);
                     if (spell != null)
                     {
                         spells.Add(spell);
@@ -422,7 +422,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context)
         return spells;
     }
 
-    private SpellRecord? ReconstructSpellFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private SpellRecord? ParseSpellFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)

@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed NPC from memory dump.
+///     Parsed NPC record.
 ///     Aggregates data from NPC_ main record header, EDID, FULL, ACBS, faction refs, etc.
 /// </summary>
 public record NpcRecord
@@ -75,6 +75,30 @@ public record NpcRecord
     /// <summary>Combat style FormID (TESCombatStyle*, pointer at dump +484).</summary>
     public uint? CombatStyleFormId { get; init; }
 
+    /// <summary>Hair color (packed 0x00BBGGRR, uint32 at dump +488).</summary>
+    public uint? HairColor { get; init; }
+
+    /// <summary>Head part FormIDs (BGSHeadPart*, BSSimpleList at dump +492).</summary>
+    public List<uint>? HeadPartFormIds { get; init; }
+
+    /// <summary>Original race FormID (pOriginalRace, TESRace* at PDB offset 460+s).</summary>
+    public uint? OriginalRace { get; init; }
+
+    /// <summary>Face template NPC FormID (pFaceNPC, TESNPC* at PDB offset 464+s).</summary>
+    public uint? FaceNpc { get; init; }
+
+    /// <summary>Height multiplier (fHeight, float ~0.9-1.1, default 1.0, PDB offset 468+s).</summary>
+    public float? Height { get; init; }
+
+    /// <summary>Weight value (fWeight, float 0-100 body morph slider, PDB offset 472+s).</summary>
+    public float? Weight { get; init; }
+
+    /// <summary>Blood impact material enum (eBloodImpactMaterial, PDB offset 452+s). 0=Default, 1=Metal, etc.</summary>
+    public byte? BloodImpactMaterial { get; init; }
+
+    /// <summary>Last race face preset number (sLastRaceFaceNum, uint16, PDB offset 432+s).</summary>
+    public ushort? RaceFacePreset { get; init; }
+
     /// <summary>FaceGen geometry-symmetric morph values (FGGS, 50 floats from pointer at dump +336).</summary>
     public float[]? FaceGenGeometrySymmetric { get; init; }
 
@@ -89,4 +113,19 @@ public record NpcRecord
 
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
+
+    /// <summary>
+    ///     Formats a packed HCLR hair color (0x00BBGGRR) as "#RRGGBB (R, G, B)".
+    ///     Returns null if the value is null or zero.
+    /// </summary>
+    public static string? FormatHairColor(uint? hclr)
+    {
+        if (hclr is not { } v || v == 0)
+            return null;
+
+        var r = (byte)(v & 0xFF);
+        var g = (byte)((v >> 8) & 0xFF);
+        var b = (byte)((v >> 16) & 0xFF);
+        return $"#{r:X2}{g:X2}{b:X2} ({r}, {g}, {b})";
+    }
 }

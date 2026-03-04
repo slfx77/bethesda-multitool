@@ -44,7 +44,9 @@ public sealed partial class SingleFileTab
             EnsureAllChildrenLoaded(
                 _esmBrowserTree,
                 _session.Resolver,
-                _placementIndex);
+                _placementIndex,
+                _raceLookup,
+                _factionMembersIndex);
             _flatListBuilt = true;
         }
 
@@ -227,7 +229,7 @@ public sealed partial class SingleFileTab
         // but that handler is fire-and-forget — we must await it here.
         if (_esmBrowserTree == null && _session.HasEsmRecords)
         {
-            await EnsureSemanticReconstructionAsync();
+            await EnsureSemanticParseAsync();
             if (_session.SemanticResult != null)
             {
                 await PopulateDataBrowserAsync();
@@ -275,7 +277,7 @@ public sealed partial class SingleFileTab
 
     /// <summary>
     ///     Returns true if the FormID resolves to a known record in the browser tree
-    ///     or is present in the FormIdMap (unreconstructed but exists in the file).
+    ///     or is present in the FormIdMap (unparsed but exists in the file).
     /// </summary>
     private bool IsFormIdNavigable(uint formId)
     {

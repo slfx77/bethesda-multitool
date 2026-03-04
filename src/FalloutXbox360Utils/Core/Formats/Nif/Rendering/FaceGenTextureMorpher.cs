@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
+using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
@@ -7,14 +8,27 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 ///     Uses FGTS (symmetric) coefficients to blend per-texel int8 RGB deltas
 ///     onto the decoded RGBA texture pixels.
 ///     EGT is typically 256x256; base textures may be larger (e.g., 1024x1024).
-///     Deltas are bilinear-filtered when upscaling to match the base texture resolution.
+///     Morphs are accumulated at native EGT resolution, then bilinear-upscaled once.
 /// </summary>
 internal static class FaceGenTextureMorpher
 {
     /// <summary>
+    ///     When set, exports debug PNG files of the accumulated EGT deltas
+    ///     at native EGT resolution and at upscaled base texture resolution.
+    ///     Files: {Dir}/{NpcLabel}_egt_native_{W}x{H}.png,
+    ///            {Dir}/{NpcLabel}_egt_upscaled_{W}x{H}.png
+    /// </summary>
+    internal static string? DebugExportDir { get; set; }
+
+    /// <summary>Label used in debug filenames (e.g., NPC EditorID). Set before calling Apply.</summary>
+    internal static string? DebugLabel { get; set; }
+
+    /// <summary>
     ///     Applies EGT texture morphs to a base texture and returns a new morphed texture.
     ///     The base texture is NOT modified — a clone is returned.
-    ///     Handles resolution mismatch by bilinear sampling EGT deltas.
+    ///     Morphs are accumulated at native EGT resolution (256x256), then bilinear-upscaled
+    ///     once to match the base texture resolution. This is ~5x faster than the previous
+    ///     approach of bilinear-sampling at full texture resolution for each morph.
     /// </summary>
     public static DecodedTexture? Apply(
         DecodedTexture baseTexture,
@@ -32,13 +46,13 @@ internal static class FaceGenTextureMorpher
         // Clone the base texture pixels
         var pixels = (byte[])baseTexture.Pixels.Clone();
 
-        // Pre-compute per-morph scaled delta accumulation buffer (float RGB per texel)
-        // to avoid repeated clamping between morphs — accumulate all deltas, then apply once.
-        var deltaR = new float[texW * texH];
-        var deltaG = new float[texW * texH];
-        var deltaB = new float[texW * texH];
+        // Accumulate morph deltas at NATIVE EGT resolution (256x256) — no bilinear needed.
+        // This is O(M × egtW × egtH) instead of O(M × texW × texH), a ~16x reduction per morph.
+        var nativeSize = egtW * egtH;
+        var nativeR = new float[nativeSize];
+        var nativeG = new float[nativeSize];
+        var nativeB = new float[nativeSize];
 
-        // Apply symmetric morphs
         var count = Math.Min(textureCoeffs.Length, egt.SymmetricMorphs.Length);
         for (var m = 0; m < count; m++)
         {
@@ -49,27 +63,46 @@ internal static class FaceGenTextureMorpher
             var morph = egt.SymmetricMorphs[m];
             var scale = morph.Scale * coeff;
 
-            for (var y = 0; y < texH; y++)
+            for (var i = 0; i < nativeSize; i++)
             {
-                // Map texture row to EGT coordinate (V-flipped —
-                // DDS stores top-to-bottom, EGT stores bottom-to-top)
-                var egtFy = (egtH - 1) - (y + 0.5f) * egtH / texH;
-
-                for (var x = 0; x < texW; x++)
-                {
-                    var egtFx = (x + 0.5f) * egtW / texW - 0.5f;
-
-                    var ti = y * texW + x;
-
-                    // Bilinear sample the EGT deltas
-                    var (dr, dg, db) = BilinearSample(morph, egtFx, egtFy, egtW, egtH);
-
-                    deltaR[ti] += dr * scale;
-                    deltaG[ti] += dg * scale;
-                    deltaB[ti] += db * scale;
-                }
+                nativeR[i] += morph.DeltaR[i] * scale;
+                nativeG[i] += morph.DeltaG[i] * scale;
+                nativeB[i] += morph.DeltaB[i] * scale;
             }
         }
+
+        // Debug export: EGT deltas at native resolution and upscaled resolution
+        if (DebugExportDir != null)
+            ExportDebugNative(nativeR, nativeG, nativeB, egtW, egtH);
+
+        // Single bilinear upscale from native EGT resolution to base texture resolution.
+        // Rows are independent → parallelized across available cores.
+        var deltaR = new float[texW * texH];
+        var deltaG = new float[texW * texH];
+        var deltaB = new float[texW * texH];
+
+        Parallel.For(0, texH, y =>
+        {
+            // Map texture row to EGT coordinate (V-flipped —
+            // DDS stores top-to-bottom, EGT stores bottom-to-top)
+            var egtFy = (egtH - 1) - (y + 0.5f) * egtH / texH;
+
+            for (var x = 0; x < texW; x++)
+            {
+                var egtFx = (x + 0.5f) * egtW / texW - 0.5f;
+                var ti = y * texW + x;
+
+                var (dr, dg, db) = BilinearSampleBuffers(
+                    nativeR, nativeG, nativeB, egtFx, egtFy, egtW, egtH);
+                deltaR[ti] = dr;
+                deltaG[ti] = dg;
+                deltaB[ti] = db;
+            }
+        });
+
+        // Debug export: upscaled deltas
+        if (DebugExportDir != null)
+            ExportDebugUpscaled(deltaR, deltaG, deltaB, texW, texH);
 
         // Apply accumulated deltas to pixels
         for (var i = 0; i < texW * texH; i++)
@@ -88,10 +121,59 @@ internal static class FaceGenTextureMorpher
         };
     }
 
-    private static (float R, float G, float B) BilinearSample(
-        EgtMorph morph, float fx, float fy, int w, int h)
+    private static void ExportDebugNative(
+        float[] nativeR, float[] nativeG, float[] nativeB,
+        int egtW, int egtH)
     {
-        // Clamp coordinates to valid range
+        var label = DebugLabel ?? "unknown";
+        Directory.CreateDirectory(DebugExportDir!);
+
+        var nativePx = new byte[egtW * egtH * 4];
+        for (var i = 0; i < egtW * egtH; i++)
+        {
+            // V-flip to match DDS orientation: EGT row 0 = bottom, PNG row 0 = top
+            var srcRow = egtH - 1 - (i / egtW);
+            var srcCol = i % egtW;
+            var srcIdx = srcRow * egtW + srcCol;
+            var pi = i * 4;
+            nativePx[pi] = ClampByte(128 + nativeR[srcIdx]);
+            nativePx[pi + 1] = ClampByte(128 + nativeG[srcIdx]);
+            nativePx[pi + 2] = ClampByte(128 + nativeB[srcIdx]);
+            nativePx[pi + 3] = 255;
+        }
+
+        PngWriter.SaveRgba(nativePx, egtW, egtH,
+            Path.Combine(DebugExportDir!, $"{label}_egt_native_{egtW}x{egtH}.png"));
+    }
+
+    private static void ExportDebugUpscaled(
+        float[] deltaR, float[] deltaG, float[] deltaB,
+        int texW, int texH)
+    {
+        var label = DebugLabel ?? "unknown";
+        Directory.CreateDirectory(DebugExportDir!);
+
+        var upscaledPx = new byte[texW * texH * 4];
+        for (var i = 0; i < texW * texH; i++)
+        {
+            var pi = i * 4;
+            upscaledPx[pi] = ClampByte(128 + deltaR[i]);
+            upscaledPx[pi + 1] = ClampByte(128 + deltaG[i]);
+            upscaledPx[pi + 2] = ClampByte(128 + deltaB[i]);
+            upscaledPx[pi + 3] = 255;
+        }
+
+        PngWriter.SaveRgba(upscaledPx, texW, texH,
+            Path.Combine(DebugExportDir!, $"{label}_egt_upscaled_{texW}x{texH}.png"));
+    }
+
+    /// <summary>
+    ///     Bilinear-samples from pre-accumulated float delta buffers (R, G, B).
+    /// </summary>
+    private static (float R, float G, float B) BilinearSampleBuffers(
+        float[] bufR, float[] bufG, float[] bufB,
+        float fx, float fy, int w, int h)
+    {
         fx = Math.Clamp(fx, 0, w - 1);
         fy = Math.Clamp(fy, 0, h - 1);
 
@@ -113,12 +195,9 @@ internal static class FaceGenTextureMorpher
         var w01 = (1 - sx) * sy;
         var w11 = sx * sy;
 
-        var r = morph.DeltaR[i00] * w00 + morph.DeltaR[i10] * w10 +
-                morph.DeltaR[i01] * w01 + morph.DeltaR[i11] * w11;
-        var g = morph.DeltaG[i00] * w00 + morph.DeltaG[i10] * w10 +
-                morph.DeltaG[i01] * w01 + morph.DeltaG[i11] * w11;
-        var b = morph.DeltaB[i00] * w00 + morph.DeltaB[i10] * w10 +
-                morph.DeltaB[i01] * w01 + morph.DeltaB[i11] * w11;
+        var r = bufR[i00] * w00 + bufR[i10] * w10 + bufR[i01] * w01 + bufR[i11] * w11;
+        var g = bufG[i00] * w00 + bufG[i10] * w10 + bufG[i01] * w01 + bufG[i11] * w11;
+        var b = bufB[i00] * w00 + bufB[i10] * w10 + bufB[i01] * w01 + bufB[i11] * w11;
 
         return (r, g, b);
     }

@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Key from memory dump.
+///     Parsed Key record.
 /// </summary>
 public record KeyRecord
 {

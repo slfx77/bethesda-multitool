@@ -5,7 +5,7 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Handles reconstruction of combat-related effect records: Projectiles (PROJ) and Explosions (EXPL).
+///     Handles parsing of combat-related effect records: Projectiles (PROJ) and Explosions (EXPL).
 ///     Extracted from <see cref="EffectRecordHandler"/> to keep file sizes manageable.
 /// </summary>
 internal sealed class CombatEffectHandler(RecordParserContext context)
@@ -15,9 +15,9 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
     #region Projectiles
 
     /// <summary>
-    ///     Reconstruct all Projectile (PROJ) records.
+    ///     Parse all Projectile (PROJ) records.
     /// </summary>
-    internal List<ProjectileRecord> ReconstructProjectiles()
+    internal List<ProjectileRecord> ParseProjectiles()
     {
         var projectiles = new List<ProjectileRecord>();
 
@@ -128,9 +128,9 @@ internal sealed class CombatEffectHandler(RecordParserContext context)
     #region Explosions
 
     /// <summary>
-    ///     Reconstruct all Explosion (EXPL) records.
+    ///     Parse all Explosion (EXPL) records.
     /// </summary>
-    internal List<ExplosionRecord> ReconstructExplosions()
+    internal List<ExplosionRecord> ParseExplosions()
     {
         var explosions = new List<ExplosionRecord>();
 

@@ -7,7 +7,7 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Handles reconstruction of KEYM, ARMO, MISC, and CONT records
+///     Handles parsing of KEYM, ARMO, MISC, and CONT records
 ///     from ESM data and runtime structs.
 /// </summary>
 internal sealed class ItemRecordHandler(RecordParserContext context)
@@ -15,9 +15,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
     private readonly RecordParserContext _context = context;
 
     /// <summary>
-    ///     Reconstruct all Key records from the scan result.
+    ///     Parse all Key records from the scan result.
     /// </summary>
-    internal List<KeyRecord> ReconstructKeys()
+    internal List<KeyRecord> ParseKeys()
     {
         var keys = new List<KeyRecord>();
         var keyRecords = _context.GetRecordsByType("KEYM").ToList();
@@ -41,9 +41,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
     }
 
     /// <summary>
-    ///     Reconstruct all Armor records from the scan result.
+    ///     Parse all Armor records from the scan result.
     /// </summary>
-    internal List<ArmorRecord> ReconstructArmor()
+    internal List<ArmorRecord> ParseArmor()
     {
         var armor = new List<ArmorRecord>();
         var armorRecords = _context.GetRecordsByType("ARMO").ToList();
@@ -69,7 +69,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             {
                 foreach (var record in armorRecords)
                 {
-                    var item = ReconstructArmorFromAccessor(record, buffer);
+                    var item = ParseArmorFromAccessor(record, buffer);
                     if (item != null)
                     {
                         armor.Add(item);
@@ -88,7 +88,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
         return armor;
     }
 
-    private ArmorRecord? ReconstructArmorFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private ArmorRecord? ParseArmorFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
@@ -206,9 +206,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
     }
 
     /// <summary>
-    ///     Reconstruct all Misc Item records from the scan result.
+    ///     Parse all Misc Item records from the scan result.
     /// </summary>
-    internal List<MiscItemRecord> ReconstructMiscItems()
+    internal List<MiscItemRecord> ParseMiscItems()
     {
         var miscItems = new List<MiscItemRecord>();
         var miscRecords = _context.GetRecordsByType("MISC").ToList();
@@ -234,7 +234,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             {
                 foreach (var record in miscRecords)
                 {
-                    var item = ReconstructMiscItemFromAccessor(record, buffer);
+                    var item = ParseMiscItemFromAccessor(record, buffer);
                     if (item != null)
                     {
                         miscItems.Add(item);
@@ -253,7 +253,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
         return miscItems;
     }
 
-    private MiscItemRecord? ReconstructMiscItemFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private MiscItemRecord? ParseMiscItemFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
@@ -324,9 +324,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
     }
 
     /// <summary>
-    ///     Reconstruct all Container records from the scan result.
+    ///     Parse all Container records from the scan result.
     /// </summary>
-    internal List<ContainerRecord> ReconstructContainers()
+    internal List<ContainerRecord> ParseContainers()
     {
         var containers = new List<ContainerRecord>();
         var containerRecords = _context.GetRecordsByType("CONT").ToList();
@@ -336,7 +336,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
 
         if (_context.Accessor == null)
         {
-            // Without accessor, use basic reconstruction (no CNTO parsing)
+            // Without accessor, use basic parsing (no CNTO parsing)
             foreach (var record in containerRecords)
             {
                 containers.Add(new ContainerRecord
@@ -358,7 +358,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
             {
                 foreach (var record in containerRecords)
                 {
-                    var container = ReconstructContainerFromAccessor(record, buffer);
+                    var container = ParseContainerFromAccessor(record, buffer);
                     if (container != null)
                     {
                         containers.Add(container);
@@ -439,7 +439,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context)
         return containers;
     }
 
-    private ContainerRecord? ReconstructContainerFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private ContainerRecord? ParseContainerFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)

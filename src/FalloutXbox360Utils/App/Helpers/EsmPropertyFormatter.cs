@@ -32,6 +32,7 @@ internal static class EsmPropertyFormatter
     {
         ["EyesFormId"] = "Eyes",
         ["HairFormId"] = "Hair",
+        ["HairColor"] = "Hair Color",
         ["CombatStyleFormId"] = "Combat Style"
     };
 
@@ -111,7 +112,7 @@ internal static class EsmPropertyFormatter
     };
 
     /// <summary>
-    ///     Maps reconstructed record C# types to their 4-character ESM record signatures.
+    ///     Maps parsed record C# types to their 4-character ESM record signatures.
     /// </summary>
     internal static readonly Dictionary<Type, string> RecordTypeSignatures = new()
     {
@@ -171,13 +172,9 @@ internal static class EsmPropertyFormatter
     /// <summary>
     ///     Fallout NV skill names indexed by skill ID (0-based).
     ///     Actor value codes 32-45 map to indices 0-13.
+    ///     Delegates to the shared fallback array in FormIdResolver (single source of truth).
     /// </summary>
-    internal static readonly string[] SkillNames =
-    [
-        "Barter", "Big Guns", "Energy Weapons", "Explosives", "Lockpick",
-        "Medicine", "Melee Weapons", "Repair", "Science", "Guns",
-        "Sneak", "Speech", "Survival", "Unarmed"
-    ];
+    internal static string[] SkillNames => FormIdResolver.FallbackSkillNames;
 
     /// <summary>
     ///     Cache for PropertyInfo[] by type - avoids repeated GetProperties() calls.
@@ -292,6 +289,12 @@ internal static class EsmPropertyFormatter
             return floats.Length > 0 ? $"[{floats.Length} values]" : null;
         }
 
+        // Format packed HCLR hair color as #RRGGBB (R, G, B)
+        if (name == "HairColor" && value is uint hclr)
+        {
+            return NpcRecord.FormatHairColor(hclr);
+        }
+
         // Format FormId property (just hex, no editor ID - that's shown separately)
         if (name == "FormId" && value is uint fid)
         {
@@ -395,8 +398,10 @@ internal static class EsmPropertyFormatter
             "Offset" or "IsBigEndian" => "Metadata",
 
             // Characteristics (appearance-related)
-            "Gender" or "Race" or "VoiceType" or "Eyes" or "EyesFormId" or "Hair" or "HairFormId" or "HairLength"
+            "Gender" or "Race" or "OriginalRace" or "VoiceType" or "Eyes" or "EyesFormId"
+                or "Hair" or "HairFormId" or "HairLength" or "HairColor"
                 or "MaleHeight" or "FemaleHeight" or "MaleWeight" or "FemaleWeight"
+                or "Height" or "BloodImpactMaterial" or "RaceFacePreset"
                 or "IsPlayable" or "IsChild"
                 => "Characteristics",
             _ when name.StartsWith("FaceGen", StringComparison.Ordinal) => "Characteristics",
@@ -421,7 +426,7 @@ internal static class EsmPropertyFormatter
             // Associations (references to other records)
             "Factions" or "Spells" or "Inventory" or "Packages" or "Ranks" or "Relations"
                 or "AbilityFormIds" or "HairStyleFormIds" or "EyeColorFormIds"
-                or "RelatedNpcFormIds" or "Variables"
+                or "RelatedNpcFormIds" or "Variables" or "FaceNpc"
                 => "Associations",
 
             // References (other FormID fields)

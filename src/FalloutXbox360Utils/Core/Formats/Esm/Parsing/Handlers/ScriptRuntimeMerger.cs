@@ -7,7 +7,7 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Merges runtime Script struct data from memory dumps into reconstructed script records.
+///     Merges runtime Script struct data from memory dumps into parsed script records.
 ///     Handles enriching existing ESM scripts with runtime data (source text, compiled bytecode,
 ///     variables) and creating new scripts from runtime-only entries.
 /// </summary>
@@ -112,7 +112,7 @@ internal static class ScriptRuntimeMerger
             return existing;
         }
 
-        // Decompilation is deferred to pass 2 in ReconstructScripts()
+        // Decompilation is deferred to pass 2 in ParseScripts()
         return existing with
         {
             EditorId = !string.IsNullOrEmpty(existing.EditorId) ? existing.EditorId : runtime.EditorId,
@@ -138,7 +138,7 @@ internal static class ScriptRuntimeMerger
         var variables = runtime.Variables;
         var referencedObjects = runtime.ReferencedObjects.Select(r => r.FormId).ToList();
 
-        // Decompilation is deferred to pass 2 in ReconstructScripts()
+        // Decompilation is deferred to pass 2 in ParseScripts()
         return new ScriptRecord
         {
             FormId = runtime.FormId,

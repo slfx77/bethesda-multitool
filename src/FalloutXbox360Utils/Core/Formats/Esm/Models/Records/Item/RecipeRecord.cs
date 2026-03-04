@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Recipe (RCPE) from memory dump.
+///     Parsed Recipe (RCPE) record.
 ///     Links crafting ingredients to output items.
 /// </summary>
 public record RecipeRecord

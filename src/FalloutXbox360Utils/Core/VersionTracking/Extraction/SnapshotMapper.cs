@@ -4,7 +4,7 @@ using FalloutXbox360Utils.Core.VersionTracking.Models;
 namespace FalloutXbox360Utils.Core.VersionTracking.Extraction;
 
 /// <summary>
-///     Maps a RecordCollection (from RecordParser.ReconstructAll()) to a VersionSnapshot.
+///     Maps a RecordCollection (from RecordParser.ParseAll()) to a VersionSnapshot.
 ///     Shared by both ESM and DMP extraction pipelines.
 /// </summary>
 public static class SnapshotMapper

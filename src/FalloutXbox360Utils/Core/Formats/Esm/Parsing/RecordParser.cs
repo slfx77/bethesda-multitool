@@ -7,7 +7,7 @@ using FalloutXbox360Utils.Core.Minidump;
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
 /// <summary>
-///     Reconstructs semantic game data from ESM record scan results and runtime memory structures.
+///     Parses semantic game data from ESM record scan results and runtime memory structures.
 ///     Facade that delegates to domain-specific handler classes.
 /// </summary>
 public sealed class RecordParser
@@ -43,15 +43,15 @@ public sealed class RecordParser
     }
 
     /// <summary>
-    ///     Perform full semantic reconstruction of all supported record types.
+    ///     Perform full semantic parse of all supported record types.
     /// </summary>
-    public RecordCollection ReconstructAll(IProgress<(int percent, string phase)>? progress = null)
+    public RecordCollection ParseAll(IProgress<(int percent, string phase)>? progress = null)
     {
         var totalSw = Stopwatch.StartNew();
         var phaseSw = Stopwatch.StartNew();
 
-        // Reconstructed record types
-        var reconstructedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        // Parsed record types
+        var parsedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "NPC_", "CREA", "RACE", "FACT",
             "QUST", "DIAL", "INFO", "NOTE", "BOOK", "TERM", "SCPT",
@@ -69,13 +69,13 @@ public sealed class RecordParser
             "SOUN", "TXST", "ARMA", "WATR", "BPTD", "AVIF", "CSTY", "LGTM", "NAVM", "WTHR"
         };
 
-        // Count all record types and compute unreconstructed counts
+        // Count all record types and compute unparsed counts
         var allTypeCounts = _context.ScanResult.MainRecords
             .GroupBy(r => r.RecordType)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 
-        var unreconstructedCounts = allTypeCounts
-            .Where(kvp => !reconstructedTypes.Contains(kvp.Key))
+        var unparsedCounts = allTypeCounts
+            .Where(kvp => !parsedTypes.Contains(kvp.Key))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
 
         // === Runtime enrichment phases (LAND, REFR, worldspace cell maps) ===
@@ -84,7 +84,7 @@ public sealed class RecordParser
         RuntimeDataEnricher.EnrichWorldspaceCellMaps(_context, phaseSw);
 
         // Pre-scan all records for FULL subrecords (display names) so that
-        // unreconstructed types (HAIR, EYES, CSTY, etc.) have names available for display
+        // unparsed types (HAIR, EYES, CSTY, etc.) have names available for display
         progress?.Report((2, "Scanning display names..."));
         phaseSw.Restart();
         _context.CaptureAllFullNames();
@@ -92,35 +92,35 @@ public sealed class RecordParser
             $"  [Semantic] Display names: {phaseSw.Elapsed} ({_context.FormIdToFullName.Count} names captured)");
 
         // Build weapons and ammo first, then cross-reference for projectile data
-        progress?.Report((5, "Reconstructing characters..."));
+        progress?.Report((5, "Parseing characters..."));
         phaseSw.Restart();
-        var npcs = _actors.ReconstructNpcs();
-        var creatures = _actors.ReconstructCreatures();
-        var races = _actors.ReconstructRaces();
-        var factions = _actors.ReconstructFactions();
+        var npcs = _actors.ParseNpcs();
+        var creatures = _actors.ParseCreatures();
+        var races = _actors.ParseRaces();
+        var factions = _actors.ParseFactions();
         Logger.Instance.Debug(
             $"  [Semantic] Characters: {phaseSw.Elapsed} (NPCs: {npcs.Count}, Creatures: {creatures.Count}, Races: {races.Count}, Factions: {factions.Count})");
 
-        progress?.Report((15, "Reconstructing items..."));
+        progress?.Report((15, "Parseing items..."));
         phaseSw.Restart();
-        var weapons = _weapons.ReconstructWeapons();
-        var ammo = _consumables.ReconstructAmmo();
+        var weapons = _weapons.ParseWeapons();
+        var ammo = _consumables.ParseAmmo();
         _consumables.EnrichAmmoWithProjectileModels(weapons, ammo);
         _weapons.EnrichWeaponsWithProjectileData(weapons);
-        var armor = _items.ReconstructArmor();
-        var consumables = _consumables.ReconstructConsumables();
-        var miscItems = _items.ReconstructMiscItems();
-        var keys = _items.ReconstructKeys();
-        var containers = _items.ReconstructContainers();
+        var armor = _items.ParseArmor();
+        var consumables = _consumables.ParseConsumables();
+        var miscItems = _items.ParseMiscItems();
+        var keys = _items.ParseKeys();
+        var containers = _items.ParseContainers();
         Logger.Instance.Debug(
             $"  [Semantic] Items: {phaseSw.Elapsed} (Weapons: {weapons.Count}, Armor: {armor.Count}, Ammo: {ammo.Count}, Consumables: {consumables.Count}, Misc: {miscItems.Count}, Keys: {keys.Count}, Containers: {containers.Count})");
 
         // Build dialogue data, then construct the tree hierarchy
-        progress?.Report((30, "Reconstructing dialogue..."));
+        progress?.Report((30, "Parseing dialogue..."));
         phaseSw.Restart();
-        var quests = _dialogue.ReconstructQuests();
-        var dialogTopics = _dialogue.ReconstructDialogTopics();
-        var dialogues = _dialogue.ReconstructDialogue();
+        var quests = _dialogue.ParseQuests();
+        var dialogTopics = _dialogue.ParseDialogTopics();
+        var dialogues = _dialogue.ParseDialogue();
 
         if (_context.RuntimeReader != null)
         {
@@ -161,39 +161,64 @@ public sealed class RecordParser
             }
         }
 
-        var notes = _text.ReconstructNotes();
-        var books = _text.ReconstructBooks();
-        var terminals = _text.ReconstructTerminals();
+        var notes = _text.ParseNotes();
+        var books = _text.ParseBooks();
+        var terminals = _text.ParseTerminals();
 
-        // Reconstruct ACTI/DOOR/FURN early so their Script FormIDs are available
+        // Parse ACTI/DOOR/FURN early so their Script FormIDs are available
         // for cross-reference chain building below.
-        var activators = _miscWorldObjects.ReconstructActivators();
-        var doors = _miscWorldObjects.ReconstructDoors();
-        var furniture = _miscStaticObjects.ReconstructFurniture();
+        var activators = _miscWorldObjects.ParseActivators();
+        var doors = _miscWorldObjects.ParseDoors();
+        var furniture = _miscStaticObjects.ParseFurniture();
 
         // === Runtime script cross-reference chains ===
         QuestScriptEnricher.BuildRuntimeScriptMappings(
             _context, _scripts, npcs, creatures, containers, activators, doors, furniture);
 
-        var scripts = _scripts.ReconstructScripts();
+        var scripts = _scripts.ParseScripts();
         Logger.Instance.Debug(
             $"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
 
         // === Quest enrichment: PathwayD backfill, variables cross-reference, related NPCs ===
         QuestScriptEnricher.EnrichQuests(_context, quests, scripts, dialogues, phaseSw);
 
-        progress?.Report((55, "Reconstructing abilities..."));
+        progress?.Report((55, "Parseing abilities..."));
         phaseSw.Restart();
-        var perks = _effects.ReconstructPerks();
-        var spells = _effects.ReconstructSpells();
+        var perks = _effects.ParsePerks();
+        var spells = _effects.ParseSpells();
         Logger.Instance.Debug(
             $"  [Semantic] Abilities: {phaseSw.Elapsed} (Perks: {perks.Count}, Spells: {spells.Count})");
 
-        progress?.Report((60, "Reconstructing world data..."));
+        progress?.Report((60, "Parseing world data..."));
         phaseSw.Restart();
-        var cells = _world.ReconstructCells();
+        var cells = _world.ParseCells();
         var cellTime = phaseSw.Elapsed;
-        var worldspaces = _world.ReconstructWorldspaces();
+        var worldspaces = _world.ParseWorldspaces();
+
+        // DMP fallback: create stub WorldspaceRecords from runtime cell map walking
+        // when no WRLD records were found via ESM parsing
+        if (worldspaces.Count == 0 && _context.RuntimeWorldspaceCellMaps is { Count: > 0 })
+        {
+            foreach (var (wsFormId, wsData) in _context.RuntimeWorldspaceCellMaps)
+            {
+                if (wsFormId == 0) continue;
+
+                worldspaces.Add(new WorldspaceRecord
+                {
+                    FormId = wsFormId,
+                    EditorId = _context.GetEditorId(wsFormId),
+                    FullName = _context.FormIdToFullName.GetValueOrDefault(wsFormId),
+                    ParentWorldspaceFormId = wsData.ParentWorldFormId,
+                    IsBigEndian = true
+                });
+            }
+
+            if (worldspaces.Count > 0)
+            {
+                Logger.Instance.Debug(
+                    $"  [Semantic] Created {worldspaces.Count} stub worldspaces from runtime cell maps");
+            }
+        }
 
         // DMP fallback: infer worldspace membership from cell grid coordinates when GRUP data is absent
         if (_context.ScanResult.CellToWorldspaceMap.Count == 0 && worldspaces.Count > 0)
@@ -210,35 +235,35 @@ public sealed class RecordParser
         }
 
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
-        var packages = _ai.ReconstructPackages();
-        var leveledLists = _miscCollections.ReconstructLeveledLists();
+        var packages = _ai.ParsePackages();
+        var leveledLists = _miscCollections.ParseLeveledLists();
         var resolvedCount =
             SpawnPositionResolver.ResolveSpawnPositions(cells, packages, npcs, creatures, leveledLists);
         var mapMarkers = _world.ExtractMapMarkers();
         Logger.Instance.Debug(
             $"  [Semantic] World: {phaseSw.Elapsed} (Cells: {cells.Count} in {cellTime}, Worldspaces: {worldspaces.Count}, Packages: {packages.Count}, SpawnResolved: {resolvedCount}, MapMarkers: {mapMarkers.Count}, LeveledLists: {leveledLists.Count})");
 
-        progress?.Report((80, "Reconstructing game data..."));
+        progress?.Report((80, "Parseing game data..."));
         phaseSw.Restart();
-        var gameSettings = _misc.ReconstructGameSettings();
-        var globals = _miscBasicTypes.ReconstructGlobals();
-        var enchantments = _effects.ReconstructEnchantments();
-        var baseEffects = _effects.ReconstructBaseEffects();
-        var weaponMods = _miscItems.ReconstructWeaponMods();
-        var recipes = _miscItems.ReconstructRecipes();
-        var challenges = _miscBasicTypes.ReconstructChallenges();
-        var reputations = _miscBasicTypes.ReconstructReputations();
-        var projectiles = _combatEffects.ReconstructProjectiles();
-        var explosions = _combatEffects.ReconstructExplosions();
-        var messages = _text.ReconstructMessages();
-        var classes = _miscBasicTypes.ReconstructClasses();
-        var formLists = _miscCollections.ReconstructFormLists();
-        // activators, doors, furniture already reconstructed above (before script cross-ref chains)
-        var lights = _miscWorldObjects.ReconstructLights();
-        var statics = _miscStaticObjects.ReconstructStatics();
+        var gameSettings = _misc.ParseGameSettings();
+        var globals = _miscBasicTypes.ParseGlobals();
+        var enchantments = _effects.ParseEnchantments();
+        var baseEffects = _effects.ParseBaseEffects();
+        var weaponMods = _miscItems.ParseWeaponMods();
+        var recipes = _miscItems.ParseRecipes();
+        var challenges = _miscBasicTypes.ParseChallenges();
+        var reputations = _miscBasicTypes.ParseReputations();
+        var projectiles = _combatEffects.ParseProjectiles();
+        var explosions = _combatEffects.ParseExplosions();
+        var messages = _text.ParseMessages();
+        var classes = _miscBasicTypes.ParseClasses();
+        var formLists = _miscCollections.ParseFormLists();
+        // activators, doors, furniture already parsed above (before script cross-ref chains)
+        var lights = _miscWorldObjects.ParseLights();
+        var statics = _miscStaticObjects.ParseStatics();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
 
-        progress?.Report((85, "Reconstructing generic records..."));
+        progress?.Report((85, "Parseing generic records..."));
         phaseSw.Restart();
         var genericTypes = new[]
         {
@@ -249,24 +274,35 @@ public sealed class RecordParser
         var genericRecords = new List<GenericEsmRecord>();
         foreach (var type in genericTypes)
         {
-            genericRecords.AddRange(_misc.ReconstructGenericRecords(type));
+            genericRecords.AddRange(_misc.ParseGenericRecords(type));
         }
 
         Logger.Instance.Debug(
             $"  [Semantic] Generic records: {phaseSw.Elapsed} ({genericRecords.Count} across {genericTypes.Length} types)");
 
-        progress?.Report((88, "Reconstructing specialized records..."));
+        // Merge runtime-only records using PDB-derived struct layouts for types without specialized readers
         phaseSw.Restart();
-        var sounds = _miscEnvironment.ReconstructSounds();
-        var textureSets = _miscEnvironment.ReconstructTextureSets();
-        var armorAddons = _miscItems.ReconstructArmorAddons();
-        var water = _miscEnvironment.ReconstructWater();
-        var bodyPartData = _miscItems.ReconstructBodyPartData();
-        var actorValueInfos = _miscGameSystems.ReconstructActorValueInfos();
-        var combatStyles = _miscGameSystems.ReconstructCombatStyles();
-        var lightingTemplates = _miscGameSystems.ReconstructLightingTemplates();
-        var navMeshes = _miscGameSystems.ReconstructNavMeshes();
-        var weather = _miscEnvironment.ReconstructWeather();
+        var allEsmFormIds = new HashSet<uint>(_context.RecordsByFormId.Keys);
+        foreach (var gr in genericRecords)
+        {
+            allEsmFormIds.Add(gr.FormId);
+        }
+
+        _context.MergeRuntimeGenericRecords(genericRecords, allEsmFormIds);
+        Logger.Instance.Debug($"  [Semantic] PDB generic runtime merge: {phaseSw.Elapsed}");
+
+        progress?.Report((88, "Parseing specialized records..."));
+        phaseSw.Restart();
+        var sounds = _miscEnvironment.ParseSounds();
+        var textureSets = _miscEnvironment.ParseTextureSets();
+        var armorAddons = _miscItems.ParseArmorAddons();
+        var water = _miscEnvironment.ParseWater();
+        var bodyPartData = _miscItems.ParseBodyPartData();
+        var actorValueInfos = _miscGameSystems.ParseActorValueInfos();
+        var combatStyles = _miscGameSystems.ParseCombatStyles();
+        var lightingTemplates = _miscGameSystems.ParseLightingTemplates();
+        var navMeshes = _miscGameSystems.ParseNavMeshes();
+        var weather = _miscEnvironment.ParseWeather();
         Logger.Instance.Debug(
             $"  [Semantic] Specialized records: {phaseSw.Elapsed} " +
             $"(SOUN: {sounds.Count}, TXST: {textureSets.Count}, ARMA: {armorAddons.Count}, " +
@@ -363,12 +399,12 @@ public sealed class RecordParser
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),
             FormIdToDisplayName = _context.BuildFormIdToDisplayNameMap(),
             TotalRecordsProcessed = _context.ScanResult.MainRecords.Count,
-            UnreconstructedTypeCounts = unreconstructedCounts
+            UnparsedTypeCounts = unparsedCounts
         };
 
         totalSw.Stop();
         Logger.Instance.Info(
-            $"[Semantic Reconstruction] Complete. Time: {totalSw.Elapsed}, Records: {result.TotalRecordsReconstructed}");
+            $"[Semantic Parse] Complete. Time: {totalSw.Elapsed}, Records: {result.TotalRecordsParsed}");
 
         progress?.Report((100, "Complete"));
         return result;
@@ -418,24 +454,24 @@ public sealed class RecordParser
     }
 
     // Actors
-    public List<NpcRecord> ReconstructNpcs() => _actors.ReconstructNpcs();
-    public List<CreatureRecord> ReconstructCreatures() => _actors.ReconstructCreatures();
-    public List<FactionRecord> ReconstructFactions() => _actors.ReconstructFactions();
-    public List<RaceRecord> ReconstructRaces() => _actors.ReconstructRaces();
+    public List<NpcRecord> ParseNpcs() => _actors.ParseNpcs();
+    public List<CreatureRecord> ParseCreatures() => _actors.ParseCreatures();
+    public List<FactionRecord> ParseFactions() => _actors.ParseFactions();
+    public List<RaceRecord> ParseRaces() => _actors.ParseRaces();
 
     // Items
-    public List<WeaponRecord> ReconstructWeapons() => _weapons.ReconstructWeapons();
-    public List<ArmorRecord> ReconstructArmor() => _items.ReconstructArmor();
-    public List<AmmoRecord> ReconstructAmmo() => _consumables.ReconstructAmmo();
-    public List<ConsumableRecord> ReconstructConsumables() => _consumables.ReconstructConsumables();
-    public List<MiscItemRecord> ReconstructMiscItems() => _items.ReconstructMiscItems();
-    public List<KeyRecord> ReconstructKeys() => _items.ReconstructKeys();
-    public List<ContainerRecord> ReconstructContainers() => _items.ReconstructContainers();
+    public List<WeaponRecord> ParseWeapons() => _weapons.ParseWeapons();
+    public List<ArmorRecord> ParseArmor() => _items.ParseArmor();
+    public List<AmmoRecord> ParseAmmo() => _consumables.ParseAmmo();
+    public List<ConsumableRecord> ParseConsumables() => _consumables.ParseConsumables();
+    public List<MiscItemRecord> ParseMiscItems() => _items.ParseMiscItems();
+    public List<KeyRecord> ParseKeys() => _items.ParseKeys();
+    public List<ContainerRecord> ParseContainers() => _items.ParseContainers();
 
     // Dialogue
-    public List<QuestRecord> ReconstructQuests() => _dialogue.ReconstructQuests();
-    public List<DialogTopicRecord> ReconstructDialogTopics() => _dialogue.ReconstructDialogTopics();
-    public List<DialogueRecord> ReconstructDialogue() => _dialogue.ReconstructDialogue();
+    public List<QuestRecord> ParseQuests() => _dialogue.ParseQuests();
+    public List<DialogTopicRecord> ParseDialogTopics() => _dialogue.ParseDialogTopics();
+    public List<DialogueRecord> ParseDialogue() => _dialogue.ParseDialogue();
 
     public DialogueTreeResult BuildDialogueTrees(
         List<DialogueRecord> dialogues,
@@ -443,43 +479,43 @@ public sealed class RecordParser
         List<QuestRecord> quests) => _dialogue.BuildDialogueTrees(dialogues, topics, quests);
 
     // Text
-    public List<NoteRecord> ReconstructNotes() => _text.ReconstructNotes();
-    public List<BookRecord> ReconstructBooks() => _text.ReconstructBooks();
-    public List<TerminalRecord> ReconstructTerminals() => _text.ReconstructTerminals();
-    public List<MessageRecord> ReconstructMessages() => _text.ReconstructMessages();
+    public List<NoteRecord> ParseNotes() => _text.ParseNotes();
+    public List<BookRecord> ParseBooks() => _text.ParseBooks();
+    public List<TerminalRecord> ParseTerminals() => _text.ParseTerminals();
+    public List<MessageRecord> ParseMessages() => _text.ParseMessages();
 
     // Scripts
-    public List<ScriptRecord> ReconstructScripts() => _scripts.ReconstructScripts();
+    public List<ScriptRecord> ParseScripts() => _scripts.ParseScripts();
 
     // Effects
-    public List<PerkRecord> ReconstructPerks() => _effects.ReconstructPerks();
-    public List<SpellRecord> ReconstructSpells() => _effects.ReconstructSpells();
-    public List<EnchantmentRecord> ReconstructEnchantments() => _effects.ReconstructEnchantments();
-    public List<BaseEffectRecord> ReconstructBaseEffects() => _effects.ReconstructBaseEffects();
-    public List<ProjectileRecord> ReconstructProjectiles() => _combatEffects.ReconstructProjectiles();
-    public List<ExplosionRecord> ReconstructExplosions() => _combatEffects.ReconstructExplosions();
+    public List<PerkRecord> ParsePerks() => _effects.ParsePerks();
+    public List<SpellRecord> ParseSpells() => _effects.ParseSpells();
+    public List<EnchantmentRecord> ParseEnchantments() => _effects.ParseEnchantments();
+    public List<BaseEffectRecord> ParseBaseEffects() => _effects.ParseBaseEffects();
+    public List<ProjectileRecord> ParseProjectiles() => _combatEffects.ParseProjectiles();
+    public List<ExplosionRecord> ParseExplosions() => _combatEffects.ParseExplosions();
 
     // World
-    public List<CellRecord> ReconstructCells() => _world.ReconstructCells();
-    public List<WorldspaceRecord> ReconstructWorldspaces() => _world.ReconstructWorldspaces();
+    public List<CellRecord> ParseCells() => _world.ParseCells();
+    public List<WorldspaceRecord> ParseWorldspaces() => _world.ParseWorldspaces();
     public List<PlacedReference> ExtractMapMarkers() => _world.ExtractMapMarkers();
 
     // Misc
-    public List<GameSettingRecord> ReconstructGameSettings() => _misc.ReconstructGameSettings();
-    public List<GlobalRecord> ReconstructGlobals() => _miscBasicTypes.ReconstructGlobals();
-    public List<WeaponModRecord> ReconstructWeaponMods() => _miscItems.ReconstructWeaponMods();
-    public List<RecipeRecord> ReconstructRecipes() => _miscItems.ReconstructRecipes();
-    public List<ChallengeRecord> ReconstructChallenges() => _miscBasicTypes.ReconstructChallenges();
-    public List<ReputationRecord> ReconstructReputations() => _miscBasicTypes.ReconstructReputations();
-    public List<ClassRecord> ReconstructClasses() => _miscBasicTypes.ReconstructClasses();
-    public List<LeveledListRecord> ReconstructLeveledLists() => _miscCollections.ReconstructLeveledLists();
-    public List<FormListRecord> ReconstructFormLists() => _miscCollections.ReconstructFormLists();
-    public List<ActivatorRecord> ReconstructActivators() => _miscWorldObjects.ReconstructActivators();
-    public List<LightRecord> ReconstructLights() => _miscWorldObjects.ReconstructLights();
-    public List<DoorRecord> ReconstructDoors() => _miscWorldObjects.ReconstructDoors();
-    public List<StaticRecord> ReconstructStatics() => _miscStaticObjects.ReconstructStatics();
-    public List<FurnitureRecord> ReconstructFurniture() => _miscStaticObjects.ReconstructFurniture();
+    public List<GameSettingRecord> ParseGameSettings() => _misc.ParseGameSettings();
+    public List<GlobalRecord> ParseGlobals() => _miscBasicTypes.ParseGlobals();
+    public List<WeaponModRecord> ParseWeaponMods() => _miscItems.ParseWeaponMods();
+    public List<RecipeRecord> ParseRecipes() => _miscItems.ParseRecipes();
+    public List<ChallengeRecord> ParseChallenges() => _miscBasicTypes.ParseChallenges();
+    public List<ReputationRecord> ParseReputations() => _miscBasicTypes.ParseReputations();
+    public List<ClassRecord> ParseClasses() => _miscBasicTypes.ParseClasses();
+    public List<LeveledListRecord> ParseLeveledLists() => _miscCollections.ParseLeveledLists();
+    public List<FormListRecord> ParseFormLists() => _miscCollections.ParseFormLists();
+    public List<ActivatorRecord> ParseActivators() => _miscWorldObjects.ParseActivators();
+    public List<LightRecord> ParseLights() => _miscWorldObjects.ParseLights();
+    public List<DoorRecord> ParseDoors() => _miscWorldObjects.ParseDoors();
+    public List<StaticRecord> ParseStatics() => _miscStaticObjects.ParseStatics();
+    public List<FurnitureRecord> ParseFurniture() => _miscStaticObjects.ParseFurniture();
 
     // AI
-    public List<PackageRecord> ReconstructPackages() => _ai.ReconstructPackages();
+    public List<PackageRecord> ParsePackages() => _ai.ParsePackages();
 }

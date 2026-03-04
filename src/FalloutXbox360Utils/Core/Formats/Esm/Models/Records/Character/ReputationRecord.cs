@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Reputation (REPU) from memory dump.
+///     Parsed Reputation (REPU) record.
 ///     FNV-specific faction reputation threshold definitions.
 /// </summary>
 public record ReputationRecord

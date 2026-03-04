@@ -18,6 +18,14 @@
 # Run main app
 dotnet run --project src/FalloutXbox360Utils -f net10.0 -- <command> <args>
 
+# Format-agnostic commands (auto-detect file type: ESM, DMP, ESP)
+search text <file-or-dir> <pattern>    # Text search in any binary file
+search hex <file-or-dir> <hex-pattern> # Hex byte search (e.g., "6B F8 11 00")
+stats <file>                           # Record type statistics (categorized table)
+list <file> [-t TYPE] [-f FILTER]      # Browse reconstructed records
+show <file> <formid-or-editorid>       # Inspect record detail (NPC, quest, etc.)
+diff <fileA> <fileB> [-t TYPE] [-f ID] # Compare records between any two files
+
 # ESM commands
 esm <file>                      # Default ESM analysis
 esm stats <file>                # Record type statistics
@@ -37,6 +45,12 @@ bsa find <file> <pattern>       # Find files matching pattern
 bsa inspect <file> <path>       # Inspect a specific file entry
 bsa rawdump <file> <off> <len>  # Raw hex dump at offset
 bsa file-compare <bsa> <f> <e>  # Compare BSA entry vs extracted
+
+# Render commands
+render <path> -o <dir>                     # Render single NIF to PNG
+render <dir> -o <dir>                      # Batch render all NIFs in directory
+render <prefix> --bsa <bsa> -o <dir>       # Batch render NIFs from BSA by prefix
+render npc <meshes-bsa> --esm <e> -o <dir>  # NPC head sprites (auto-detects texture BSAs)
 
 # DMP commands
 dmp modules <file>              # List loaded modules
@@ -164,6 +178,9 @@ src/FalloutXbox360Utils/CLI/             # Main app CLI commands (migrated from 
 ├── EsmSemdiffCommand.cs                # esm semdiff
 ├── EsmDiffCommand*.cs                  # esm diff (Unified, ThreeWay, Header, Records)
 ├── EsmCellCommand.cs                   # esm cell objects, esm cell npc-trace
+├── RenderCommand.cs                    # render (NIF rendering, BSA/local/dir modes)
+├── RenderNifProcessor.cs               # NIF render processing logic
+├── RenderNpcCommand.cs                 # render npc (NPC head sprites with FaceGen)
 ├── DmpCommand.cs                       # dmp modules, regions, va2offset, hexdump
 ├── DmpCommand.Diag.cs                  # dmp dmp-diag
 └── BsaCommand.cs                       # bsa list, extract, info, find, inspect, rawdump
@@ -279,3 +296,16 @@ dotnet build -c Release
 # Run tests (coverage collection hangs - must disable it)
 dotnet test -p:CollectCoverage=false
 ```
+
+## Deferred Tasks
+
+### Boone Brow Dark Mark (Lighting Terminator Artifact)
+
+EGM mesh morphing creates a deep brow crease on some NPCs (e.g., Boone 0x00092BD2) that produces a thin dark line at the lighting terminator. Exhaustive investigation confirmed:
+
+- **NOT a geometry hole**: 0 degenerate triangles, 0 UV seam separations, mesh topologically intact
+- **NOT normal recalculation**: present even with original NIF normals
+- **NOT backface culling, bump mapping, or textures**: present without all of these
+- **IS a lighting terminator**: `max(0, NdotL)` creates a hard dark boundary at the sharp crease
+
+Current mitigation: wrap lighting (`wrap=0.25`) in both CPU and GPU shaders partially softens it. The in-game engine masks it with multiple light sources and environment maps. Low priority — cosmetic only, affects few NPCs.

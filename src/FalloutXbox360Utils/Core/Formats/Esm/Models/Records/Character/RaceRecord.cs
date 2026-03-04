@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Race from ESM or memory dump.
+///     Parsed Race record.
 ///     Aggregates data from RACE main record header, DATA (36 bytes), and related subrecords.
 /// </summary>
 public record RaceRecord
@@ -102,6 +102,43 @@ public record RaceRecord
 
     /// <summary>Female FaceGen texture-symmetric base coefficients (FGTS after FNAM, 50 floats).</summary>
     public float[]? FemaleFaceGenTextureSymmetric { get; init; }
+
+    // Body mesh paths (from body parts section after NAM1)
+    /// <summary>Male head model path (NAM0 INDX 0 MODL).</summary>
+    public string? MaleHeadModelPath { get; init; }
+
+    /// <summary>Female head model path (NAM0 INDX 0 MODL).</summary>
+    public string? FemaleHeadModelPath { get; init; }
+
+    /// <summary>Male head texture path (NAM0 INDX 0 ICON).</summary>
+    public string? MaleHeadTexturePath { get; init; }
+
+    /// <summary>Female head texture path (NAM0 INDX 0 ICON).</summary>
+    public string? FemaleHeadTexturePath { get; init; }
+
+    /// <summary>Male upper body model path (NAM1 INDX 0 MODL).</summary>
+    public string? MaleUpperBodyPath { get; init; }
+
+    /// <summary>Female upper body model path (NAM1 INDX 0 MODL).</summary>
+    public string? FemaleUpperBodyPath { get; init; }
+
+    /// <summary>Male left hand model path (NAM1 INDX 1 MODL).</summary>
+    public string? MaleLeftHandPath { get; init; }
+
+    /// <summary>Female left hand model path (NAM1 INDX 1 MODL).</summary>
+    public string? FemaleLeftHandPath { get; init; }
+
+    /// <summary>Male right hand model path (NAM1 INDX 2 MODL).</summary>
+    public string? MaleRightHandPath { get; init; }
+
+    /// <summary>Female right hand model path (NAM1 INDX 2 MODL).</summary>
+    public string? FemaleRightHandPath { get; init; }
+
+    /// <summary>Male body texture path (NAM1 INDX 0 ICON).</summary>
+    public string? MaleBodyTexturePath { get; init; }
+
+    /// <summary>Female body texture path (NAM1 INDX 0 ICON).</summary>
+    public string? FemaleBodyTexturePath { get; init; }
 
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }

@@ -97,7 +97,7 @@ public static class PackagesCommand
             return;
         }
 
-        AnsiConsole.MarkupLine("[blue]Reconstructing records...[/]");
+        AnsiConsole.MarkupLine("[blue]Parsing records...[/]");
 
         var fileInfo = new FileInfo(input);
         RecordCollection semanticResult;
@@ -108,7 +108,7 @@ public static class PackagesCommand
             var parser = new RecordParser(
                 analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileInfo.Length,
                 analysisResult.MinidumpInfo);
-            semanticResult = parser.ReconstructAll();
+            semanticResult = parser.ParseAll();
         }
 
         var packages = semanticResult.Packages;

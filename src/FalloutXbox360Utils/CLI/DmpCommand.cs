@@ -22,6 +22,7 @@ public static class DmpCommand
         command.Subcommands.Add(CreateVa2OffsetCommand());
         command.Subcommands.Add(CreateHexDumpCommand());
         command.Subcommands.Add(DmpDiagCommand.CreateDmpDiagCommand());
+        command.Subcommands.Add(DmpFormTypeCensusCommand.Create());
 
         return command;
     }

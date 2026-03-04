@@ -64,6 +64,13 @@ internal static class DialogueRecordDetailBuilder
                 $"{speakerDisplay} (0x{info.SpeakerFormId.Value:X8})", info.SpeakerFormId.Value));
         }
 
+        if (info.SpeakerAnimationFormId is > 0)
+        {
+            var animDisplay = resolveFormName(info.SpeakerAnimationFormId.Value);
+            rows.Add(new DetailRow("Speaker Animation",
+                $"{animDisplay} (0x{info.SpeakerAnimationFormId.Value:X8})", info.SpeakerAnimationFormId.Value));
+        }
+
         // Flags
         rows.Add(new DetailRow("Info Index", info.InfoIndex.ToString()));
         if (info.InfoFlags != 0)

@@ -106,7 +106,7 @@ internal sealed partial class RuntimeBufferAnalyzer
 
     /// <summary>
     ///     Run only the string pool extraction pass (no PDB required).
-    ///     Used by the analyze command to enrich ESM reconstruction output.
+    ///     Used by the analyze command to enrich ESM parsing output.
     /// </summary>
     public StringPoolSummary ExtractStringPoolOnly()
     {

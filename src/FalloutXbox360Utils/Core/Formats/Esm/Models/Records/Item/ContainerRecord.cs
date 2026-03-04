@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Container from memory dump.
+///     Parsed Container record.
 /// </summary>
 public record ContainerRecord
 {

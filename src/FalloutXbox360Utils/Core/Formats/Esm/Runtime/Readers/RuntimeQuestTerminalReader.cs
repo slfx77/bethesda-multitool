@@ -54,8 +54,11 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         var flags = buffer[QustFlagsOffset];
         var priority = buffer[QustPriorityOffset];
 
-        // Try to read quest display name from BSStringT at +68
-        var fullName = _context.ReadBSStringT(offset, QustFullNameOffset);
+        // Try to read quest display name from BSStringT, with fallback to hash table DisplayName
+        var fullName = entry.DisplayName ?? _context.ReadBSStringT(offset, QustFullNameOffset);
+
+        // Follow pFormScript pointer → Script* → get Script FormID (0x11 = SCPT)
+        var scriptFormId = _context.FollowPointerToFormId(buffer, QustScriptOffset, 0x11);
 
         return new QuestRecord
         {
@@ -64,6 +67,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
             FullName = fullName,
             Flags = flags,
             Priority = priority,
+            Script = scriptFormId,
             Offset = offset,
             IsBigEndian = true
         };
@@ -299,9 +303,10 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     // TESQuest: PDB size 108, Debug dump 112, Release dump 124
     private int QustStructSize => 108 + _s;
+    private int QustScriptOffset => 28 + _s; // pFormScript (Script*) at MemDebug PDB offset 44
+    private int QustFullNameOffset => 52 + _s;
     private int QustFlagsOffset => 60 + _s;
     private int QustPriorityOffset => 61 + _s;
-    private int QustFullNameOffset => 52 + _s;
 
     #endregion
 

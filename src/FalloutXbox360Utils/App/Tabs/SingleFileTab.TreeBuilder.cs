@@ -40,7 +40,8 @@ public sealed partial class SingleFileTab
                 browserNode,
                 _session.Resolver,
                 _placementIndex,
-                _raceLookup);
+                _raceLookup,
+                _factionMembersIndex);
         }
 
         // Add child TreeViewNodes with progressive loading for large sets
@@ -253,7 +254,7 @@ public sealed partial class SingleFileTab
             var resolver = _session.Resolver;
             var tree = _esmBrowserTree;
             var placements = _placementIndex;
-            await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver, placements, _raceLookup), token);
+            await Task.Run(() => EnsureAllChildrenLoaded(tree, resolver, placements, _raceLookup, _factionMembersIndex), token);
             _flatListBuilt = true;
         }
 
@@ -298,7 +299,8 @@ public sealed partial class SingleFileTab
         ObservableCollection<EsmBrowserNode> tree,
         FormIdResolver? resolver,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
-        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null)
+        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
+        Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
         // Snapshot collections before iterating — UI thread may modify Children
         // concurrently through tree expansion (EsmTreeView_Expanding).
@@ -320,7 +322,7 @@ public sealed partial class SingleFileTab
 
                 if (typeNode.HasUnrealizedChildren && typeNode.Children.Count == 0)
                 {
-                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver, placementIndex, raceLookup);
+                    EsmBrowserTreeBuilder.LoadRecordTypeChildren(typeNode, resolver, placementIndex, raceLookup, factionMembersIndex);
                 }
             }
         }

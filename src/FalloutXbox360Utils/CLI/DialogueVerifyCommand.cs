@@ -47,7 +47,7 @@ internal static class DialogueVerifyCommand
     {
         // Load DMP
         AnsiConsole.MarkupLine("[blue]Loading DMP:[/] {0}", Path.GetFileName(dmpPath));
-        var dmpResult = await DialogueCommand.LoadAndReconstructAsync(dmpPath, cancellationToken);
+        var dmpResult = await DialogueCommand.LoadAndParseAsync(dmpPath, cancellationToken);
         if (dmpResult == null)
         {
             return;
@@ -55,7 +55,7 @@ internal static class DialogueVerifyCommand
 
         // Load ESM
         AnsiConsole.MarkupLine("[blue]Loading ESM:[/] {0}", Path.GetFileName(esmPath));
-        var esmResult = await DialogueCommand.LoadAndReconstructAsync(esmPath, cancellationToken);
+        var esmResult = await DialogueCommand.LoadAndParseAsync(esmPath, cancellationToken);
         if (esmResult == null)
         {
             return;

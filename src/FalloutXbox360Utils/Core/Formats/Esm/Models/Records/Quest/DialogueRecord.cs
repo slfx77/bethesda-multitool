@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed dialogue response from INFO record.
+///     Parsed dialogue response from INFO record.
 ///     Aggregates data from INFO main record header, NAM1 (response text), TRDT (emotion),
 ///     runtime TESTopicInfo struct (speaker, quest, flags), and linking subrecords (TCLT/TCLF/NAME).
 /// </summary>
@@ -30,6 +30,9 @@ public record DialogueRecord
 
     /// <summary>Speaker voice type FormID (from CTDA GetIsVoiceType condition — generic dialogue).</summary>
     public uint? SpeakerVoiceTypeFormId { get; init; }
+
+    /// <summary>Speaker animation FormID (IDLE record from SNAM subrecord — NOT the speaker NPC).</summary>
+    public uint? SpeakerAnimationFormId { get; init; }
 
     /// <summary>All CTDA condition function indices found on this INFO (for diagnostics).</summary>
     public List<ushort> ConditionFunctions { get; init; } = [];

@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Creature from memory dump.
+///     Parsed Creature record.
 ///     Similar to NPC but for non-human entities.
 /// </summary>
 public record CreatureRecord

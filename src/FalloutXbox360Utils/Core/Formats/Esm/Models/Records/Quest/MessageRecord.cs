@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Message (MESG) from memory dump.
+///     Parsed Message (MESG) record.
 ///     In-game popup messages, tutorials, and notifications.
 /// </summary>
 public record MessageRecord

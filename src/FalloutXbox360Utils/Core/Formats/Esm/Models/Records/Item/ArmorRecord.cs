@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Armor from ESM/memory dump.
+///     Parsed Armor record.
 ///     Aggregates data from ARMO main record header, DATA (12 bytes), DNAM (12 bytes),
 ///     BMDT (8 bytes), ETYP (4 bytes).
 /// </summary>

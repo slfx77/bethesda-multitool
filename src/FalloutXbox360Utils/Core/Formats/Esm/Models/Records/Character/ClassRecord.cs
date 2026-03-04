@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Class (CLAS) from memory dump.
+///     Parsed Class (CLAS) record.
 ///     Determines NPC skill growth and tag skills.
 /// </summary>
 public record ClassRecord

@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Book from memory dump.
+///     Parsed Book record.
 ///     Contains text content similar to notes.
 /// </summary>
 public record BookRecord

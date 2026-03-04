@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Consumable (ALCH) from memory dump.
+///     Parsed Consumable (ALCH) record.
 ///     Aggregates data from ALCH main record header, DATA, ENIT, EFID subrecords.
 /// </summary>
 public record ConsumableRecord

@@ -16,23 +16,44 @@ internal static class NifSpriteRenderer
     // Debug flags for diagnosing rendering artifacts
     internal static bool DisableBilinear { get; set; }
     internal static bool DisableBumpMapping { get; set; }
+    internal static bool DisableTextures { get; set; }
 
-    // Lighting constants
-    private const float Ambient = 0.25f;
-    private const float DiffuseStrength = 0.65f;
-    private const float SpecStrength = 0.15f;
-    private const float Shininess = 16f;
+    /// <summary>
+    ///     Normal map bump strength (0 = flat, 1 = full).  The game's multi-light
+    ///     environment naturally softens bump detail; our single key light exaggerates
+    ///     it.  Default 0.5 compensates for the missing fill lights.
+    /// </summary>
+    internal static float BumpStrength { get; set; } = 0.5f;
+
+    // Lighting: SKIN2000.pso-accurate formula from D3D9 bytecode disassembly.
+    // Hemisphere ambient simulates sky/ground bounce light — normals facing up get
+    // more ambient than normals facing down.
+    private const float SkyAmbient = 0.50f;
+    private const float GroundAmbient = 0.30f;
+
+    // PSLightColor intensity — the game sets this per-light from the cell/weather system.
+    // We use a single white key light; this scales the directional contribution.
+    private const float LightIntensity = 0.65f;
+
+    // SM3002.pso hair tint shader constant: the "lightScalar" in the tint formula is
+    // a hardcoded -0.5 (from def c6 = {-0.5, 0, -1, -2}, register never overwritten).
+    // Formula: tintedShade = 2 * (vc * (HairTint - 0.5) + 0.5)
+    // With vc=1 this simplifies to 2 * HairTint, so dark tints darken and light tints brighten.
 
     // Light direction: mostly top-down with slight angle for depth cues
     private static readonly float LightDirX = Normalize(0.3f, 0.2f, 1.0f).x;
     private static readonly float LightDirY = Normalize(0.3f, 0.2f, 1.0f).y;
     private static readonly float LightDirZ = Normalize(0.3f, 0.2f, 1.0f).z;
 
-    // Half vector for Blinn-Phong (precomputed: normalize(lightDir + viewDir))
-    // View direction is straight down (0, 0, 1) for top-down orthographic
+    // Half vector: normalize(lightDir + viewDir), where viewDir = (0, 0, 1) for top-down orthographic.
+    // Used for NdotH in the SKIN2000 Fresnel term.
     private static readonly float HalfVecX = Normalize(LightDirX, LightDirY, LightDirZ + 1f).x;
     private static readonly float HalfVecY = Normalize(LightDirX, LightDirY, LightDirZ + 1f).y;
     private static readonly float HalfVecZ = Normalize(LightDirX, LightDirY, LightDirZ + 1f).z;
+
+    // Precomputed: dot(halfVec, -lightDir) — constant for the Fresnel rim light term.
+    // SKIN2000.pso: fresnel = dot(H, -L) * (1 - NdotH)^2
+    private static readonly float HdotNegL = -(HalfVecX * LightDirX + HalfVecY * LightDirY + HalfVecZ * LightDirZ);
 
     private static (float x, float y, float z) Normalize(float x, float y, float z)
     {
@@ -152,9 +173,14 @@ internal static class NifSpriteRenderer
         var offsetX = (ssWidth - modelWidth * effPpu) / 2f - minX * effPpu;
         var offsetY = (ssHeight - modelHeight * effPpu) / 2f - minY * effPpu;
 
-        // Allocate supersampled pixel buffer (RGBA), depth buffer, and emissive mask
+        // Allocate supersampled pixel buffer (RGBA), depth buffer, emissive mask,
+        // and face-orientation buffer (0=unwritten, 1=front-face, 2=back-face).
+        // The face-orientation buffer lets front-facing fragments always override
+        // back-facing ones at the same depth — eliminates Z-fighting on double-sided
+        // thin shells (dresses, capes, flags) without manual bias constants.
         var ssPixels = new byte[ssWidth * ssHeight * 4];
         var depthBuffer = new float[ssWidth * ssHeight];
+        var faceKind = new byte[ssWidth * ssHeight];
         var emissiveMask = new bool[ssWidth * ssHeight];
         Array.Fill(depthBuffer, float.MinValue);
 
@@ -167,11 +193,21 @@ internal static class NifSpriteRenderer
             return layer != 0 ? layer : a.AvgZ.CompareTo(b.AvgZ);
         });
 
-        // Rasterize each triangle at supersampled resolution
-        foreach (var tri in triangleList)
+        // Band-parallel rasterization: divide the framebuffer into horizontal bands,
+        // each processed by a separate thread. Since bands own exclusive rows, no
+        // synchronization is needed — each pixel (px, py) belongs to exactly one band.
+        // Triangle ordering is preserved within each band for correct alpha blending.
+        var bandCount = Math.Max(1, Environment.ProcessorCount);
+        Parallel.For(0, bandCount, bandIdx =>
         {
-            RasterizeTriangle(ssPixels, depthBuffer, emissiveMask, ssWidth, ssHeight, tri, effPpu, offsetX, offsetY);
-        }
+            var bMinY = bandIdx * ssHeight / bandCount;
+            var bMaxY = (bandIdx + 1) * ssHeight / bandCount - 1;
+            foreach (var tri in triangleList)
+            {
+                RasterizeTriangle(ssPixels, depthBuffer, faceKind, emissiveMask, ssWidth,
+                    tri, effPpu, offsetX, offsetY, bMinY, bMaxY);
+            }
+        });
 
         // Apply bloom glow around emissive pixels
         ApplyBloom(ssPixels, emissiveMask, ssWidth, ssHeight);
@@ -255,7 +291,7 @@ internal static class NifSpriteRenderer
                     nz /= len;
                 }
 
-                tri.FlatShade = ComputeShade(nx, ny, nz);
+                tri.FlatShade = ComputeShade(nx, ny, nz, tri.IsDoubleSided);
             }
 
             // Rotate tangents and bitangents
@@ -337,14 +373,13 @@ internal static class NifSpriteRenderer
                 normalMap = textureResolver.GetTexture(submesh.NormalMapTexturePath);
             }
 
-            // Skip untextured submeshes when texture rendering is active.
-            // Emissive submeshes with no diffuse texture path (BSShaderNoLightingProperty
-            // with empty filename) are night-glow overlays toggled by scripts — skip those.
-            // Emissive submeshes whose texture path was set but failed to load still render
-            // (e.g., neon signs with glow textures + vertex color tinting).
+            // Skip untextured submeshes when texture rendering is active — but only
+            // those that never had a texture path assigned (night-glow overlays, etc.).
+            // Submeshes whose texture path was set but failed to load still render with
+            // flat shading so the geometry remains visible (e.g., cut NPCs with missing textures).
             // Vertex-colored submeshes render even without texture (e.g., hair with HCLR tint).
             if (textureResolver != null && texture == null &&
-                !(submesh.IsEmissive && submesh.DiffuseTexturePath != null) &&
+                submesh.DiffuseTexturePath == null &&
                 !(submesh.UseVertexColors && submesh.VertexColors != null))
             {
                 continue;
@@ -373,7 +408,17 @@ internal static class NifSpriteRenderer
                     HasAlphaBlend = submesh.HasAlphaBlend,
                     HasAlphaTest = submesh.HasAlphaTest,
                     AlphaTestThreshold = submesh.AlphaTestThreshold,
-                    RenderOrder = submesh.RenderOrder
+                    AlphaTestFunction = submesh.AlphaTestFunction,
+                    SrcBlendMode = submesh.SrcBlendMode,
+                    DstBlendMode = submesh.DstBlendMode,
+                    MaterialAlpha = submesh.MaterialAlpha,
+                    IsEyeEnvmap = submesh.IsEyeEnvmap,
+                    EnvMapScale = submesh.EnvMapScale,
+                    RenderOrder = submesh.RenderOrder,
+                    HasTintColor = submesh.TintColor.HasValue,
+                    TintR = submesh.TintColor?.R ?? 1f,
+                    TintG = submesh.TintColor?.G ?? 1f,
+                    TintB = submesh.TintColor?.B ?? 1f
                 };
 
                 // Populate UV data if texture is available
@@ -456,7 +501,7 @@ internal static class NifSpriteRenderer
                         nz /= len;
                     }
 
-                    tri.FlatShade = ComputeShade(nx, ny, nz);
+                    tri.FlatShade = ComputeShade(nx, ny, nz, tri.IsDoubleSided);
                 }
 
                 list.Add(tri);
@@ -467,22 +512,54 @@ internal static class NifSpriteRenderer
     }
 
     /// <summary>
-    ///     Compute Blinn-Phong shading from a world-space normal.
+    ///     Compute shading from a world-space normal using the SKIN2000.pso formula
+    ///     (from D3D9 bytecode disassembly of Bethesda's face/skin pixel shader).
+    ///     <para>
+    ///     SKIN2000 lighting:
+    ///       fresnel = dot(H, -L) * (1 - NdotH)^2
+    ///       directional = min(PSLightColor * NdotL + PSLightColor * fresnel * 0.5, 1.0)
+    ///       shade = directional + AmbientColor
+    ///     </para>
     /// </summary>
-    private static float ComputeShade(float nx, float ny, float nz)
+    private static float ComputeShade(float nx, float ny, float nz, bool twoSidedLighting = false)
     {
-        var diffuse = MathF.Max(0, nx * LightDirX + ny * LightDirY + nz * LightDirZ);
-        var specDot = MathF.Max(0, nx * HalfVecX + ny * HalfVecY + nz * HalfVecZ);
-        var spec = MathF.Pow(specDot, Shininess);
-        return Math.Clamp(Ambient + diffuse * DiffuseStrength + spec * SpecStrength, 0f, 1f);
+        // Hemisphere ambient: blend between ground and sky based on normal Y
+        // Negated: view-space Y points down, so -ny maps "up" normals to sky
+        var hemiBlend = -ny * 0.5f + 0.5f;
+        var ambient = GroundAmbient + (SkyAmbient - GroundAmbient) * hemiBlend;
+
+        // NdotL — diffuse with wrap lighting to soften terminator line on FaceGen creases.
+        // Wrap factor 0.25: allows normals slightly facing away from light to receive partial
+        // illumination, preventing the harsh dark line at the lit/unlit boundary.
+        const float wrap = 0.25f;
+        var rawNdotL = nx * LightDirX + ny * LightDirY + nz * LightDirZ;
+        // Two-sided lighting: thin surfaces (skirts, flags) are lit from both sides
+        if (twoSidedLighting)
+            rawNdotL = MathF.Abs(rawNdotL);
+        var NdotL = MathF.Max(0, (rawNdotL + wrap) / (1f + wrap));
+
+        // NdotH — for Fresnel rim light (not Blinn-Phong specular)
+        var NdotH = MathF.Max(0, nx * HalfVecX + ny * HalfVecY + nz * HalfVecZ);
+
+        // SKIN2000 Fresnel: (1 - NdotH)^2 * dot(halfVec, -lightDir)
+        // This creates a rim-light effect at grazing angles rather than a specular hotspot.
+        var oneMinusNdotH = 1f - NdotH;
+        var fresnel = MathF.Max(0, HdotNegL) * oneMinusNdotH * oneMinusNdotH;
+
+        // SKIN2000: min(lightColor * NdotL + lightColor * fresnel * 0.5, 1.0) + ambient
+        var directional = MathF.Min(LightIntensity * NdotL + LightIntensity * fresnel * 0.5f, 1f);
+
+        return Math.Clamp(directional + ambient, 0f, 1f);
     }
 
     /// <summary>
     ///     Rasterize a single filled triangle using scanline algorithm with per-pixel Z-buffer.
     ///     Supports per-vertex normal interpolation, texture mapping, bump mapping, and vertex colors.
     /// </summary>
-    private static void RasterizeTriangle(byte[] pixels, float[] depthBuffer, bool[] emissiveMask,
-        int width, int height, TriangleData tri, float ppu, float offsetX, float offsetY)
+    private static void RasterizeTriangle(byte[] pixels, float[] depthBuffer, byte[] faceKind,
+        bool[] emissiveMask,
+        int width, TriangleData tri, float ppu, float offsetX, float offsetY,
+        int bandMinY, int bandMaxY)
     {
         // Project to screen coordinates (top-down: X→screenX, Y→screenY)
         var sx0 = tri.X0 * ppu + offsetX;
@@ -495,8 +572,8 @@ internal static class NifSpriteRenderer
         // Bounding box (clipped to image)
         var minPx = Math.Max(0, (int)MathF.Floor(MathF.Min(sx0, MathF.Min(sx1, sx2))));
         var maxPx = Math.Min(width - 1, (int)MathF.Ceiling(MathF.Max(sx0, MathF.Max(sx1, sx2))));
-        var minPy = Math.Max(0, (int)MathF.Floor(MathF.Min(sy0, MathF.Min(sy1, sy2))));
-        var maxPy = Math.Min(height - 1, (int)MathF.Ceiling(MathF.Max(sy0, MathF.Max(sy1, sy2))));
+        var minPy = Math.Max(bandMinY, (int)MathF.Floor(MathF.Min(sy0, MathF.Min(sy1, sy2))));
+        var maxPy = Math.Min(bandMaxY, (int)MathF.Ceiling(MathF.Max(sy0, MathF.Max(sy1, sy2))));
 
         if (minPx > maxPx || minPy > maxPy)
         {
@@ -547,7 +624,15 @@ internal static class NifSpriteRenderer
                 var z = tri.Z0 * w0 + tri.Z1 * w1 + tri.Z2 * w2;
                 var idx = py * width + px;
 
-                if (z <= depthBuffer[idx])
+                // Per-pixel front-face priority for double-sided thin shells:
+                // - Front face always overrides back face (regardless of depth)
+                // - Back face can never overwrite front face (prevents Z-fighting)
+                // - Same orientation or non-double-sided: normal depth test
+                var passesDepthTest = z > depthBuffer[idx];
+                var frontOverBack = !isBackFacing && faceKind[idx] == 2;
+                var backBlockedByFront = isBackFacing && faceKind[idx] == 1;
+
+                if (backBlockedByFront || (!passesDepthTest && !frontOverBack))
                 {
                     continue;
                 }
@@ -556,6 +641,7 @@ internal static class NifSpriteRenderer
 
                 // Emissive surfaces (BSShaderNoLightingProperty) are self-illuminated — no shading
                 float shade;
+
                 if (tri.IsEmissive)
                 {
                     shade = 1.0f;
@@ -592,8 +678,10 @@ internal static class NifSpriteRenderer
                         var (mnr, mng, mnb, _) = SampleTexture(normalMap, u, v);
 
                         // Decode from [0,255] to [-1,1]
-                        var mapNx = mnr / 127.5f - 1f;
-                        var mapNy = mng / 127.5f - 1f;
+                        // Y is negated: Bethesda normal maps use DirectX convention (Y-down)
+                        // but NIF bitangent vectors point in UV V+ direction (Y-up).
+                        var mapNx = (mnr / 127.5f - 1f) * BumpStrength;
+                        var mapNy = -(mng / 127.5f - 1f) * BumpStrength;
                         var mapNz = mnb / 127.5f - 1f;
 
                         // Construct TBN matrix from per-vertex tangent/bitangent data.
@@ -646,7 +734,16 @@ internal static class NifSpriteRenderer
                         }
                     }
 
-                    shade = ComputeShade(nx, ny, nz);
+                    shade = ComputeShade(nx, ny, nz, tri.IsDoubleSided);
+
+                    // Eye specular: approximate SLS2057.pso cubemap reflection as Blinn-Phong.
+                    // The game uses EnvironmentCubeMap sampled at the reflection vector; we
+                    // approximate with a focused specular highlight (shininess=16).
+                    if (tri.IsEyeEnvmap)
+                    {
+                        var specNdotH = MathF.Max(0f, nx * HalfVecX + ny * HalfVecY + nz * HalfVecZ);
+                        shade = MathF.Min(shade + MathF.Pow(specNdotH, 16f) * tri.EnvMapScale * 0.6f, 1f);
+                    }
                 }
                 else
                 {
@@ -664,7 +761,7 @@ internal static class NifSpriteRenderer
                     v -= MathF.Floor(v);
 
                     // Bilinear filtered sample
-                    var (r, g, b, a) = SampleTexture(tex, u, v);
+                    var (r, g, b, a) = DisableTextures ? ((byte)200, (byte)200, (byte)200, (byte)255) : SampleTexture(tex, u, v);
 
                     // Apply vertex alpha: multiply texture alpha by interpolated vertex alpha
                     if (tri.HasVertexColors)
@@ -673,35 +770,70 @@ internal static class NifSpriteRenderer
                         a = (byte)Math.Clamp(a * vca / 255f, 0, 255);
                     }
 
-                    // Alpha test: discard pixels below threshold (per-mesh from NiAlphaProperty)
+                    // Alpha test: apply comparison function from NiAlphaProperty bits 10-12
                     if (tri.HasAlphaTest)
                     {
-                        if (a <= tri.AlphaTestThreshold) continue;
+                        var pass = tri.AlphaTestFunction switch
+                        {
+                            0 => true,                              // ALWAYS
+                            1 => a < tri.AlphaTestThreshold,        // LESS
+                            2 => a == tri.AlphaTestThreshold,       // EQUAL
+                            3 => a <= tri.AlphaTestThreshold,       // LEQUAL
+                            4 => a > tri.AlphaTestThreshold,        // GREATER
+                            5 => a != tri.AlphaTestThreshold,       // NOTEQUAL
+                            6 => a >= tri.AlphaTestThreshold,       // GEQUAL
+                            _ => false,                             // NEVER
+                        };
+                        if (!pass) continue;
                     }
-                    else if (a == 0)
+                    else if (a == 0 || (tri.HasAlphaBlend && a < 16))
                     {
-                        continue; // Always skip fully transparent
+                        continue; // Skip fully transparent + DXT fringe on blended meshes
                     }
 
-                    // Modulate texture color by shade and vertex color
-                    float fr = r * shade;
-                    float fg = g * shade;
-                    float fb = b * shade;
-
-                    if (tri.HasVertexColors)
+                    float fr, fg, fb;
+                    if (tri.HasTintColor)
                     {
-                        var vcr = (tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2) / 255f;
-                        var vcg = (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f;
-                        var vcb = (tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2) / 255f;
-                        fr *= vcr;
-                        fg *= vcg;
-                        fb *= vcb;
+                        // SM3002.pso hair shader (from D3D9 bytecode disassembly):
+                        //   tintedShade = 2 * (vc * (HairTint - 0.5) + 0.5)
+                        //   final = accumulatedDiffuse * blendedTex * tintedShade
+                        // The "lightScalar" is a hardcoded -0.5 (def c6), NOT per-pixel NdotL.
+                        // With vc=1: tintedShade = 2*HairTint. Dark tints darken, light tints brighten.
+                        float vc = tri.HasVertexColors
+                            ? (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f
+                            : 1f;
+                        float tintShadeR = 2f * (vc * (tri.TintR - 0.5f) + 0.5f);
+                        float tintShadeG = 2f * (vc * (tri.TintG - 0.5f) + 0.5f);
+                        float tintShadeB = 2f * (vc * (tri.TintB - 0.5f) + 0.5f);
+                        fr = r * tintShadeR * shade;
+                        fg = g * tintShadeG * shade;
+                        fb = b * tintShadeB * shade;
+                    }
+                    else
+                    {
+                        // Standard path: modulate texture color by shade and vertex color
+                        fr = r * shade;
+                        fg = g * shade;
+                        fb = b * shade;
+
+                        if (tri.HasVertexColors)
+                        {
+                            var vcr = (tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2) / 255f;
+                            var vcg = (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f;
+                            var vcb = (tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2) / 255f;
+                            fr *= vcr;
+                            fg *= vcg;
+                            fb *= vcb;
+                        }
                     }
 
-                    if (!tri.HasAlphaBlend || a >= 255)
+                    var useBlend = tri.HasAlphaBlend || tri.MaterialAlpha < 1f;
+                    var fk = isBackFacing ? (byte)2 : (byte)1;
+                    if (!useBlend || a >= 255)
                     {
                         // Fully opaque: overwrite pixel and update depth
                         depthBuffer[idx] = z;
+                        faceKind[idx] = fk;
                         pixels[pIdx + 0] = (byte)Math.Clamp(fr, 0, 255);
                         pixels[pIdx + 1] = (byte)Math.Clamp(fg, 0, 255);
                         pixels[pIdx + 2] = (byte)Math.Clamp(fb, 0, 255);
@@ -709,12 +841,18 @@ internal static class NifSpriteRenderer
                     }
                     else
                     {
-                        // Semi-transparent: alpha-blend over existing pixel, no depth write.
+                        // Semi-transparent: alpha-blend over existing pixel using NiAlphaProperty blend modes.
+                        // Only write depth for mostly-opaque pixels (alpha >= 128). This prevents
+                        // semi-transparent hair strands from occluding geometry behind them while
+                        // still allowing opaque hair regions to block later geometry (e.g., eyebrow
+                        // fringe). Matches the GPU approach (blended pipelines have depth writes OFF).
+                        if (a >= 128) { depthBuffer[idx] = z; faceKind[idx] = fk; }
                         var srcA = a / 255f;
-                        var invA = 1f - srcA;
-                        pixels[pIdx + 0] = (byte)Math.Clamp(fr * srcA + pixels[pIdx + 0] * invA, 0, 255);
-                        pixels[pIdx + 1] = (byte)Math.Clamp(fg * srcA + pixels[pIdx + 1] * invA, 0, 255);
-                        pixels[pIdx + 2] = (byte)Math.Clamp(fb * srcA + pixels[pIdx + 2] * invA, 0, 255);
+                        var sf = ResolveBlendFactor(tri.SrcBlendMode, srcA);
+                        var df = ResolveBlendFactor(tri.DstBlendMode, srcA);
+                        pixels[pIdx + 0] = (byte)Math.Clamp(fr * sf + pixels[pIdx + 0] * df, 0, 255);
+                        pixels[pIdx + 1] = (byte)Math.Clamp(fg * sf + pixels[pIdx + 1] * df, 0, 255);
+                        pixels[pIdx + 2] = (byte)Math.Clamp(fb * sf + pixels[pIdx + 2] * df, 0, 255);
                         pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], a);
                     }
                 }
@@ -722,16 +860,31 @@ internal static class NifSpriteRenderer
                 {
                     // Grayscale shading fallback
                     depthBuffer[idx] = z;
+                    faceKind[idx] = isBackFacing ? (byte)2 : (byte)1;
                     var brightness = (byte)(shade * 220 + 35); // Range 35-255
 
-                    if (tri.HasVertexColors)
+                    if (tri.HasTintColor)
                     {
-                        var vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
-                        var vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
-                        var vcb = tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2;
-                        pixels[pIdx + 0] = (byte)Math.Clamp(vcr * shade, 0, 255);
-                        pixels[pIdx + 1] = (byte)Math.Clamp(vcg * shade, 0, 255);
-                        pixels[pIdx + 2] = (byte)Math.Clamp(vcb * shade, 0, 255);
+                        // Hair tint (no texture fallback): same SM3002 formula
+                        float vc = tri.HasVertexColors
+                            ? (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f
+                            : 1f;
+                        float baseVal = tri.HasVertexColors ? 255f : brightness;
+                        pixels[pIdx + 0] = (byte)Math.Clamp(baseVal * 2f * (vc * (tri.TintR - 0.5f) + 0.5f) * shade, 0, 255);
+                        pixels[pIdx + 1] = (byte)Math.Clamp(baseVal * 2f * (vc * (tri.TintG - 0.5f) + 0.5f) * shade, 0, 255);
+                        pixels[pIdx + 2] = (byte)Math.Clamp(baseVal * 2f * (vc * (tri.TintB - 0.5f) + 0.5f) * shade, 0, 255);
+                    }
+                    else if (tri.HasVertexColors)
+                    {
+                        float vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
+                        float vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
+                        float vcb = tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2;
+                        vcr *= shade;
+                        vcg *= shade;
+                        vcb *= shade;
+                        pixels[pIdx + 0] = (byte)Math.Clamp(vcr, 0, 255);
+                        pixels[pIdx + 1] = (byte)Math.Clamp(vcg, 0, 255);
+                        pixels[pIdx + 2] = (byte)Math.Clamp(vcb, 0, 255);
                     }
                     else
                     {
@@ -947,7 +1100,7 @@ internal static class NifSpriteRenderer
     ///     Downsample a supersampled RGBA buffer by a given factor using box filter averaging.
     ///     Input dimensions must be exact multiples of the factor.
     /// </summary>
-    private static byte[] Downsample(byte[] src, int srcW, int srcH, int factor)
+    internal static byte[] Downsample(byte[] src, int srcW, int srcH, int factor)
     {
         var dstW = srcW / factor;
         var dstH = srcH / factor;
@@ -986,6 +1139,23 @@ internal static class NifSpriteRenderer
 
         return dst;
     }
+
+    /// <summary>
+    ///     Resolve a D3D blend factor enum value to a multiplier.
+    ///     Matches SetupGeometryAlphaBlending (VA 0x82AAD430) blend mode extraction.
+    ///     Modes 2/3 (SRC_COLOR/INV_SRC_COLOR) approximated using alpha since we don't have
+    ///     per-channel source color separately in the blend equation.
+    /// </summary>
+    private static float ResolveBlendFactor(byte mode, float srcAlpha) => mode switch
+    {
+        0 => 1f,           // ONE
+        1 => 0f,           // ZERO
+        2 => srcAlpha,     // SRC_COLOR (approx: use alpha)
+        3 => 1f - srcAlpha, // INV_SRC_COLOR (approx)
+        6 => srcAlpha,     // SRC_ALPHA
+        7 => 1f - srcAlpha, // INV_SRC_ALPHA
+        _ => srcAlpha      // Fallback to SRC_ALPHA behavior
+    };
 
     private struct TriangleData
     {
@@ -1036,9 +1206,21 @@ internal static class NifSpriteRenderer
         public bool HasAlphaBlend;
         public bool HasAlphaTest;
         public byte AlphaTestThreshold;
+        public byte AlphaTestFunction; // 0=ALWAYS..4=GREATER..7=NEVER
+        public byte SrcBlendMode; // 0=ONE, 1=ZERO, 6=SRC_ALPHA, 7=INV_SRC_ALPHA, etc.
+        public byte DstBlendMode;
+        public float MaterialAlpha; // From NiMaterialProperty, 1.0 = opaque
+
+        // Eye environment map (SLS2057.pso cubemap reflection approximation)
+        public bool IsEyeEnvmap;
+        public float EnvMapScale;
 
         // Layer-based render order (engine renders head parts in scene graph order)
         public int RenderOrder;
+
+        // Hair tint from HCLR: SM3002.pso formula 2*(vc*(tint-0.5)+0.5) * accDiffuse * tex
+        public bool HasTintColor;
+        public float TintR, TintG, TintB;
     }
 }
 

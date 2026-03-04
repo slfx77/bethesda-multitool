@@ -146,6 +146,11 @@ internal static class GeckDialogueWriter
                     sb.AppendLine($"Speaker:        {resolver.FormatFull(dialogue.SpeakerFormId.Value)}");
                 }
 
+                if (dialogue.SpeakerAnimationFormId.HasValue)
+                {
+                    sb.AppendLine($"Speaker Anim:   {resolver.FormatFull(dialogue.SpeakerAnimationFormId.Value)}");
+                }
+
                 if (dialogue.PreviousInfo.HasValue)
                 {
                     sb.AppendLine($"Previous INFO:  {resolver.FormatFull(dialogue.PreviousInfo.Value)}");

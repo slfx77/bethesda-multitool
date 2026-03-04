@@ -110,7 +110,7 @@ internal static class CellLinkageHandler
     }
 
     /// <summary>
-    ///     Links reconstructed cells to their parent worldspace's Cells list
+    ///     Links parsed cells to their parent worldspace's Cells list
     ///     based on CellRecord.WorldspaceFormId.
     /// </summary>
     internal static void LinkCellsToWorldspaces(List<CellRecord> cells, List<WorldspaceRecord> worldspaces)
@@ -209,7 +209,7 @@ internal static class CellLinkageHandler
             cellByFormId.TryAdd(cell.FormId, cell);
         }
 
-        // Phase 0.5: Create stub cells from runtime cell maps for cells not yet reconstructed.
+        // Phase 0.5: Create stub cells from runtime cell maps for cells not yet parsed.
         // This gives Phase 1 (ParentCellFormId) and Phase 1.5 (grid lookup) real CellRecords
         // to assign orphans to, instead of falling through to virtual cells.
         var stubsCreated = CreateCellMapStubs(existingCells, cellByFormId, context);
@@ -241,7 +241,7 @@ internal static class CellLinkageHandler
             if (orphan.ParentCellFormId.HasValue &&
                 cellByFormId.TryGetValue(orphan.ParentCellFormId.Value, out var parentCell))
             {
-                parentCell.PlacedObjects.Add(ToPlacedReference(orphan, context));
+                parentCell.PlacedObjects.Add(ToPlacedReference(orphan, context, "ParentCell"));
                 reassigned++;
             }
             else
@@ -263,19 +263,31 @@ internal static class CellLinkageHandler
         }
 
         // Phase 1.5: Use worldspace cell maps to resolve orphans by position -> grid -> real cell.
+        // Uses per-worldspace grid maps to avoid cross-worldspace contamination when multiple
+        // worldspaces have cells at the same grid coordinates.
         if (context.RuntimeWorldspaceCellMaps is { Count: > 0 })
         {
-            var gridToCellFormId = new Dictionary<(int, int), uint>();
-            foreach (var (_, wsData) in context.RuntimeWorldspaceCellMaps)
+            // Build per-worldspace grid-to-cell maps
+            var gridToCellByWorldspace = new Dictionary<uint, Dictionary<(int, int), uint>>();
+            foreach (var (wsFormId, wsData) in context.RuntimeWorldspaceCellMaps)
             {
+                var gridMap = new Dictionary<(int, int), uint>();
                 foreach (var cellEntry in wsData.Cells)
                 {
-                    gridToCellFormId.TryAdd((cellEntry.GridX, cellEntry.GridY), cellEntry.CellFormId);
+                    gridMap.TryAdd((cellEntry.GridX, cellEntry.GridY), cellEntry.CellFormId);
+                }
+
+                if (gridMap.Count > 0)
+                {
+                    gridToCellByWorldspace[wsFormId] = gridMap;
                 }
             }
 
-            if (gridToCellFormId.Count > 0)
+            if (gridToCellByWorldspace.Count > 0)
             {
+                // Build bounding boxes from actual cell positions for worldspace disambiguation.
+                var wsBounds = BuildWorldspaceBoundsFromCellMaps(gridToCellByWorldspace);
+
                 var cellMapResolved = 0;
                 var stillOrphans = new List<ExtractedRefrRecord>();
                 foreach (var orphan in trueOrphans)
@@ -283,10 +295,11 @@ internal static class CellLinkageHandler
                     var gx = (int)MathF.Floor(orphan.Position!.X / 4096f);
                     var gy = (int)MathF.Floor(orphan.Position.Y / 4096f);
 
-                    if (gridToCellFormId.TryGetValue((gx, gy), out var realCellFormId) &&
-                        cellByFormId.TryGetValue(realCellFormId, out var realCell))
+                    var resolvedCell = TryResolveOrphanByGrid(
+                        gx, gy, gridToCellByWorldspace, wsBounds, cellByFormId, context);
+                    if (resolvedCell != null)
                     {
-                        realCell.PlacedObjects.Add(ToPlacedReference(orphan, context));
+                        resolvedCell.PlacedObjects.Add(ToPlacedReference(orphan, context, "GridMap"));
                         cellMapResolved++;
                     }
                     else
@@ -335,7 +348,7 @@ internal static class CellLinkageHandler
         foreach (var group in groups)
         {
             var (gridX, gridY) = group.Key;
-            var refs = group.Select(r => ToPlacedReference(r, context)).ToList();
+            var refs = group.Select(r => ToPlacedReference(r, context, "Virtual")).ToList();
 
             virtualCells.Add(new CellRecord
             {
@@ -357,7 +370,7 @@ internal static class CellLinkageHandler
 
     /// <summary>
     ///     Phase 0.5: Create stub CellRecords from RuntimeWorldspaceCellMaps for cells known
-    ///     to the engine but not reconstructed from ESM fragments. This includes the persistent
+    ///     to the engine but not parsed from ESM fragments. This includes the persistent
     ///     cell and grid cells from pCellMap hash tables.
     /// </summary>
     private static int CreateCellMapStubs(
@@ -428,7 +441,7 @@ internal static class CellLinkageHandler
 
     /// <summary>
     ///     Group interior orphan refs by ParentCellFormId and assign them to interior cell stubs.
-    ///     Creates new CellRecord stubs with IsInterior=true for cells not already reconstructed.
+    ///     Creates new CellRecord stubs with IsInterior=true for cells not already parsed.
     /// </summary>
     private static int AssignInteriorOrphans(
         List<ExtractedRefrRecord> interiorOrphans,
@@ -490,14 +503,15 @@ internal static class CellLinkageHandler
 
             foreach (var orphan in group)
             {
-                cell.PlacedObjects.Add(ToPlacedReference(orphan, context));
+                cell.PlacedObjects.Add(ToPlacedReference(orphan, context, "Interior"));
             }
         }
 
         return cellsCreated;
     }
 
-    internal static PlacedReference ToPlacedReference(ExtractedRefrRecord r, RecordParserContext context)
+    internal static PlacedReference ToPlacedReference(
+        ExtractedRefrRecord r, RecordParserContext context, string? assignmentSource = null)
     {
         return new PlacedReference
         {
@@ -523,7 +537,105 @@ internal static class CellLinkageHandler
             MarkerName = r.MarkerName,
             LinkedRefFormId = r.LinkedRefFormId,
             Offset = r.Header.Offset,
-            IsBigEndian = r.Header.IsBigEndian
+            IsBigEndian = r.Header.IsBigEndian,
+            AssignmentSource = assignmentSource
         };
+    }
+
+    /// <summary>
+    ///     Try to resolve an orphan ref at the given grid position to a real cell,
+    ///     disambiguating between worldspaces when multiple claim the same grid coords.
+    /// </summary>
+    private static CellRecord? TryResolveOrphanByGrid(
+        int gx, int gy,
+        Dictionary<uint, Dictionary<(int, int), uint>> gridToCellByWorldspace,
+        List<(uint WsFormId, int MinGX, int MinGY, int MaxGX, int MaxGY, int CellCount)> wsBounds,
+        Dictionary<uint, CellRecord> cellByFormId,
+        RecordParserContext context)
+    {
+        // Collect all worldspaces that have a cell at this grid position
+        uint? singleCellFormId = null;
+        var multipleMatches = false;
+
+        foreach (var (_, gridMap) in gridToCellByWorldspace)
+        {
+            if (gridMap.TryGetValue((gx, gy), out var cellFormId))
+            {
+                if (singleCellFormId == null)
+                {
+                    singleCellFormId = cellFormId;
+                }
+                else
+                {
+                    multipleMatches = true;
+                    break;
+                }
+            }
+        }
+
+        if (singleCellFormId == null)
+        {
+            return null; // No worldspace has a cell at this grid
+        }
+
+        if (!multipleMatches)
+        {
+            // Unambiguous: only one worldspace claims this grid cell
+            return cellByFormId.GetValueOrDefault(singleCellFormId.Value);
+        }
+
+        // Ambiguous: multiple worldspaces have cells at (gx, gy).
+        // Pick the most specific worldspace (smallest area) whose bounds contain the grid position.
+        // wsBounds is sorted by CellCount ascending, so the first matching is the most specific.
+        Logger.Instance.Debug(
+            $"  [Semantic] Phase1.5: grid ({gx},{gy}) claimed by multiple worldspaces, disambiguating by bounds");
+
+        foreach (var (wsFormId, minGX, minGY, maxGX, maxGY, _) in wsBounds)
+        {
+            if (gx >= minGX && gx <= maxGX && gy >= minGY && gy <= maxGY &&
+                gridToCellByWorldspace.TryGetValue(wsFormId, out var gridMap) &&
+                gridMap.TryGetValue((gx, gy), out var cellFormId) &&
+                cellByFormId.TryGetValue(cellFormId, out var cell))
+            {
+                var wsName = context.GetEditorId(wsFormId) ?? $"0x{wsFormId:X8}";
+                Logger.Instance.Debug(
+                    $"  [Semantic] Phase1.5: resolved grid ({gx},{gy}) -> {wsName}");
+                return cell;
+            }
+        }
+
+        // Fallback: just use the first match found
+        return cellByFormId.GetValueOrDefault(singleCellFormId.Value);
+    }
+
+    /// <summary>
+    ///     Build bounding boxes in grid coordinates from actual cell positions in each worldspace.
+    ///     Sorted by cell count ascending so the smallest (most specific) worldspace wins ties.
+    /// </summary>
+    private static List<(uint WsFormId, int MinGX, int MinGY, int MaxGX, int MaxGY, int CellCount)>
+        BuildWorldspaceBoundsFromCellMaps(
+            Dictionary<uint, Dictionary<(int, int), uint>> gridToCellByWorldspace)
+    {
+        var result = new List<(uint WsFormId, int MinGX, int MinGY, int MaxGX, int MaxGY, int CellCount)>();
+        foreach (var (wsFormId, gridMap) in gridToCellByWorldspace)
+        {
+            var minGX = int.MaxValue;
+            var minGY = int.MaxValue;
+            var maxGX = int.MinValue;
+            var maxGY = int.MinValue;
+            foreach (var (gx, gy) in gridMap.Keys)
+            {
+                if (gx < minGX) minGX = gx;
+                if (gy < minGY) minGY = gy;
+                if (gx > maxGX) maxGX = gx;
+                if (gy > maxGY) maxGY = gy;
+            }
+
+            result.Add((wsFormId, minGX, minGY, maxGX, maxGY, gridMap.Count));
+        }
+
+        // Sort by cell count ascending — smaller worldspaces are more specific
+        result.Sort((a, b) => a.CellCount.CompareTo(b.CellCount));
+        return result;
     }
 }

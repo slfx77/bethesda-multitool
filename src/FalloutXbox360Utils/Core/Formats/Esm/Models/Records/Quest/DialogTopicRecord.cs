@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Dialog Topic from memory dump.
+///     Parsed Dialog Topic record.
 ///     Aggregates data from ESM DIAL record and runtime TESTopic struct.
 /// </summary>
 public record DialogTopicRecord

@@ -33,7 +33,7 @@ internal static class AnalysisExtractionHelper
         AnsiConsole.MarkupLine($"[blue]Exporting ESM records to:[/] {extractEsm}");
         Directory.CreateDirectory(extractEsm);
 
-        // Run full semantic reconstruction with memory-mapped file access
+        // Run full semantic parse with memory-mapped file access
         // This enables runtime C++ struct reading for types with poor ESM coverage
         RecordCollection semanticResult;
         StringPoolSummary? stringPool = null;
@@ -41,9 +41,9 @@ internal static class AnalysisExtractionHelper
         using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0, MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
-            var reconstructor = new RecordParser(
+            var parser = new RecordParser(
                 result.EsmRecords!, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
-            semanticResult = reconstructor.ReconstructAll();
+            semanticResult = parser.ParseAll();
 
             // Extract string pool data to enrich the CSV exports
             stringPool = ExtractStringPool(result, accessor);

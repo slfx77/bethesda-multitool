@@ -250,7 +250,7 @@ public static class CompareCommand
         using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
         var parser = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize,
             result.MinidumpInfo);
-        return parser.ReconstructAll();
+        return parser.ParseAll();
     }
 
     private static async Task<RecordCollection?> LoadEsmAsync(string path, CancellationToken ct)
@@ -281,7 +281,7 @@ public static class CompareCommand
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
         var parser = new RecordParser(analysisResult.EsmRecords, analysisResult.FormIdMap, accessor,
             fileInfo.Length, analysisResult.MinidumpInfo);
-        return parser.ReconstructAll();
+        return parser.ParseAll();
     }
 
     #endregion

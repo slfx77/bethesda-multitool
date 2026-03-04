@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Faction from ESM or memory dump.
+///     Parsed Faction record.
 /// </summary>
 public record FactionRecord
 {

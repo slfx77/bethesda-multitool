@@ -7,7 +7,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;
 /// <summary>
 ///     Static cache that runs the full PC final ESM pipeline once and shares the results
 ///     between all test classes that need them (e.g. EsmWorldspaceAchrIntegrationTests).
-///     Eliminates duplicate ~17s reconstruction + ~5s parsing per test class.
+///     Eliminates duplicate ~17s parsing + ~5s parsing per test class.
 /// </summary>
 internal static class PcFinalEsmPipelineCache
 {
@@ -59,9 +59,9 @@ internal static class PcFinalEsmPipelineCache
             }
         }
 
-        var reconstructor = new RecordParser(scanResult, formIdMap,
+        var parser = new RecordParser(scanResult, formIdMap,
             accessor, fileData.Length);
-        var collection = reconstructor.ReconstructAll();
+        var collection = parser.ParseAll();
 
         return new PipelineResult(parsedRecords, grupHeaders, scanResult, collection, isBigEndian);
     }

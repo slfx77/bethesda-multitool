@@ -211,7 +211,8 @@ internal static class EsmBrowserTreeBuilder
         EsmBrowserNode typeNode,
         FormIdResolver? resolver = null,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
-        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null)
+        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
+        Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
         if (typeNode.DataObject is not IList records)
         {
@@ -291,7 +292,7 @@ internal static class EsmBrowserTreeBuilder
                 ParentIconGlyph = typeNode.IconGlyph,
                 FileOffset = offset,
                 DataObject = record,
-                Properties = BuildProperties(record, resolver, placementIndex, raceLookup)
+                Properties = BuildProperties(record, resolver, placementIndex, raceLookup, factionMembersIndex)
             };
 
             recordNodes.Add(recordNode);
@@ -362,7 +363,8 @@ internal static class EsmBrowserTreeBuilder
         object record,
         FormIdResolver? resolver = null,
         Dictionary<uint, List<WorldPlacement>>? placementIndex = null,
-        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null)
+        IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
+        Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
         var properties = new List<EsmPropertyEntry>();
         var type = record.GetType();
@@ -446,7 +448,7 @@ internal static class EsmBrowserTreeBuilder
 
             if (prop.Name == "Skills" && value is byte[] skills && skills.Length >= 13)
             {
-                EsmCharacterPropertyBuilder.AddSkills(properties, skills);
+                EsmCharacterPropertyBuilder.AddSkills(properties, skills, resolver);
                 continue;
             }
 
@@ -460,13 +462,13 @@ internal static class EsmBrowserTreeBuilder
 
             if (prop.Name == "TagSkills" && value is int[] tagSkillIndices)
             {
-                EsmCharacterPropertyBuilder.AddTagSkills(properties, tagSkillIndices);
+                EsmCharacterPropertyBuilder.AddTagSkills(properties, tagSkillIndices, resolver);
                 continue;
             }
 
             if (prop.Name == "TrainingSkill" && value is byte trainingIdx)
             {
-                EsmCharacterPropertyBuilder.AddTrainingSkill(properties, trainingIdx);
+                EsmCharacterPropertyBuilder.AddTrainingSkill(properties, trainingIdx, resolver);
                 continue;
             }
 
@@ -492,7 +494,7 @@ internal static class EsmBrowserTreeBuilder
 
             if (prop.Name == "RequiredSkill" && value is int requiredSkillAv)
             {
-                EsmItemPropertyBuilder.AddRequiredSkill(properties, requiredSkillAv);
+                EsmItemPropertyBuilder.AddRequiredSkill(properties, requiredSkillAv, resolver);
                 continue;
             }
 
@@ -510,15 +512,54 @@ internal static class EsmBrowserTreeBuilder
         EsmCharacterPropertyBuilder.AddCreatureProperties(properties, record);
         EsmWorldPropertyBuilder.AddPackageProperties(properties, record, resolver);
         EsmCharacterPropertyBuilder.AddNpcDerivedStats(properties, record);
-        EsmCharacterPropertyBuilder.AddRaceSkillBoosts(properties, record);
+        EsmCharacterPropertyBuilder.AddRaceSkillBoosts(properties, record, resolver);
         EsmWorldPropertyBuilder.AddWorldspaceStats(properties, record);
         EsmWorldPropertyBuilder.AddWorldPlacements(properties, record, type, placementIndex);
+        AddFactionMembers(properties, record, factionMembersIndex);
 
         // Sort properties by category for consistent grouping
         return properties
             .OrderBy(p => Array.IndexOf(EsmPropertyFormatter.CategoryOrder, p.Category ?? "General"))
             .ThenBy(p => p.Category == "General" ? 1 : 0)
             .ToList();
+    }
+
+    /// <summary>
+    ///     Adds faction member list for FactionRecord instances.
+    /// </summary>
+    private static void AddFactionMembers(
+        List<EsmPropertyEntry> properties,
+        object record,
+        Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex)
+    {
+        if (record is not FactionRecord faction || factionMembersIndex == null)
+        {
+            return;
+        }
+
+        if (!factionMembersIndex.TryGetValue(faction.FormId, out var members) || members.Count == 0)
+        {
+            return;
+        }
+
+        var subItems = members
+            .OrderBy(m => m.Name ?? "", StringComparer.OrdinalIgnoreCase)
+            .Select(m => new EsmPropertyEntry
+            {
+                Name = m.Name ?? $"0x{m.FormId:X8}",
+                Value = $"0x{m.FormId:X8}",
+                LinkedFormId = m.FormId
+            })
+            .ToList();
+
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = $"Members ({members.Count} NPCs)",
+            Value = "",
+            Category = "References",
+            IsExpandable = true,
+            SubItems = subItems
+        });
     }
 
     /// <summary>

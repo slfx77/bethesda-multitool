@@ -226,18 +226,11 @@ internal static class GeckActorWriter
 
             if (race.SkillBoosts.Count > 0)
             {
-                string[] raceSkillNames =
-                [
-                    "Barter", "Big Guns", "Energy Weapons", "Explosives", "Lockpick", "Medicine",
-                    "Melee Weapons", "Repair", "Science", "Guns", "Sneak", "Speech", "Survival", "Unarmed"
-                ];
                 sb.AppendLine();
                 sb.AppendLine("Skill Boosts:");
                 foreach (var (skillIndex, boost) in race.SkillBoosts)
                 {
-                    var skillName = skillIndex >= 32 && skillIndex <= 45
-                        ? raceSkillNames[skillIndex - 32]
-                        : $"AV#{skillIndex}";
+                    var skillName = resolver.GetActorValueName(skillIndex) ?? $"AV#{skillIndex}";
                     sb.AppendLine($"  {skillName,-15} {GeckReportHelpers.FormatModifier(boost)}");
                 }
             }

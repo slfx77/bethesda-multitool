@@ -2,7 +2,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
 ///     Data extracted from a runtime TESTopicInfo C++ struct in the crash dump.
-///     Intermediate record used during dialogue reconstruction before merging with ESM data.
+///     Intermediate record used during dialogue parsing before merging with ESM data.
 /// </summary>
 public record RuntimeDialogueInfo
 {

@@ -6,11 +6,11 @@ using Xunit;
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
 /// <summary>
-///     Regression tests for ESM semantic reconstruction using real Xbox 360 ESM files.
+///     Regression tests for ESM semantic parsing using real Xbox 360 ESM files.
 ///     Tests validate that compressed records are correctly decompressed and parsed.
 ///     Skipped automatically when sample files are not available.
 /// </summary>
-public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture samples)
+public class EsmParsingTests(ITestOutputHelper output, SampleFileFixture samples)
 {
     private static byte[]? _cachedFileData;
     private static EsmRecordScanResult? _cachedScanResult;
@@ -39,7 +39,7 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
 
     /// <summary>
     ///     Builds an EsmRecordScanResult from the fast structured parser output.
-    ///     Only MainRecords are needed — the accessor-based reconstruction reads subrecords directly.
+    ///     Only MainRecords are needed — the accessor-based parsing reads subrecords directly.
     /// </summary>
     private static EsmRecordScanResult BuildScanResultFromParser(byte[] fileData)
     {
@@ -59,7 +59,7 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
 
     [Fact]
     [Trait("Category", "Slow")]
-    public void NpcReconstruction_CompressedRecord_ShouldParseAllFields()
+    public void NpcParsing_CompressedRecord_ShouldParseAllFields()
     {
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
@@ -73,9 +73,9 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
             MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
 
-        var reconstructor = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
-        var npcs = reconstructor.ReconstructNpcs();
-        _output.WriteLine($"Reconstructed {npcs.Count:N0} NPCs");
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
+        var npcs = parser.ParseNpcs();
+        _output.WriteLine($"Parsed {npcs.Count:N0} NPCs");
 
         // Boone: FormID 0x00092BD2, offset 0x00ADFDFC — a compressed NPC_ record
         var boone = npcs.FirstOrDefault(n => n.FormId == 0x00092BD2);
@@ -91,7 +91,7 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
 
     [Fact]
     [Trait("Category", "Slow")]
-    public void CreatureReconstruction_ShouldParseSubrecords()
+    public void CreatureParsing_ShouldParseSubrecords()
     {
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 
@@ -102,9 +102,9 @@ public class EsmReconstructionTests(ITestOutputHelper output, SampleFileFixture 
             MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
 
-        var reconstructor = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
-        var creatures = reconstructor.ReconstructCreatures();
-        _output.WriteLine($"Reconstructed {creatures.Count:N0} creatures");
+        var parser = new RecordParser(scanResult, accessor: accessor, fileSize: fileData.Length);
+        var creatures = parser.ParseCreatures();
+        _output.WriteLine($"Parsed {creatures.Count:N0} creatures");
 
         // Verify at least some creatures have full data
         var withEditorId = creatures.Count(c => !string.IsNullOrEmpty(c.EditorId));

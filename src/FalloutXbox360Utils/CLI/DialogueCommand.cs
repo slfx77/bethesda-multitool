@@ -13,14 +13,14 @@ using Spectre.Console;
 namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
-///     CLI command for dialogue reconstruction diagnostics.
+///     CLI command for dialogue parsing diagnostics.
 ///     Entry point and shared utilities used by subcommand classes.
 /// </summary>
 public static class DialogueCommand
 {
     public static Command Create()
     {
-        var command = new Command("dialogue", "Dialogue reconstruction and diagnostics");
+        var command = new Command("dialogue", "Dialogue parsing and diagnostics");
 
         command.Subcommands.Add(DialogueStatsCommand.CreateStatsCommand());
         command.Subcommands.Add(DialogueTreeCommand.CreateTreeCommand());
@@ -32,7 +32,7 @@ public static class DialogueCommand
 
     #region Shared Utilities
 
-    internal static async Task<(RecordCollection result, Dictionary<uint, string> formIdMap)?> LoadAndReconstructAsync(
+    internal static async Task<(RecordCollection result, Dictionary<uint, string> formIdMap)?> LoadAndParseAsync(
         string input, CancellationToken cancellationToken)
     {
         if (!File.Exists(input))
@@ -76,7 +76,7 @@ public static class DialogueCommand
             return null;
         }
 
-        AnsiConsole.MarkupLine("[blue]Reconstructing dialogue...[/]");
+        AnsiConsole.MarkupLine("[blue]Parsing dialogue...[/]");
 
         var fileInfo = new FileInfo(input);
         RecordCollection semanticResult;
@@ -87,7 +87,7 @@ public static class DialogueCommand
             var parser = new RecordParser(
                 analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileInfo.Length,
                 analysisResult.MinidumpInfo);
-            semanticResult = parser.ReconstructAll();
+            semanticResult = parser.ParseAll();
         }
 
         return (semanticResult, analysisResult.FormIdMap);
@@ -234,7 +234,7 @@ public static class DialogueCommand
             return;
         }
 
-        var loaded = await LoadAndReconstructAsync(input, cancellationToken);
+        var loaded = await LoadAndParseAsync(input, cancellationToken);
         if (loaded == null)
         {
             return;

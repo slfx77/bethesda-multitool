@@ -52,7 +52,7 @@ public sealed partial class SingleFileTab
             }
 
             // ESM/DMP reports path
-            await EnsureSemanticReconstructionAsync();
+            await EnsureSemanticParseAsync();
             if (_session.SemanticResult == null) return;
 
             StatusTextBlock.Text = Strings.Status_GeneratingReports;

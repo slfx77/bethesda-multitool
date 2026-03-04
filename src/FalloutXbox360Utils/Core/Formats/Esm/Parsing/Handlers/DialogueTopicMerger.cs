@@ -21,7 +21,7 @@ internal sealed class DialogueTopicMerger(RecordParserContext context)
         List<DialogueRecord> dialogues,
         List<QuestRecord> quests)
     {
-        // Build quest EditorID -> FormID index from the reconstructed quests list.
+        // Build quest EditorID -> FormID index from the parsed quests list.
         // Quests already have EditorIDs from ESM scan + runtime merge.
         var questPrefixes = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
         foreach (var quest in quests)

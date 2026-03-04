@@ -32,7 +32,7 @@ public static class Strings
     public static string Status_ScanningForDdxFiles => Get("Status_ScanningForDdxFiles");
     public static string Status_DirectoryNotExist => Get("Status_DirectoryNotExist");
     public static string Status_RunningCoverageAnalysis => Get("Status_RunningCoverageAnalysis");
-    public static string Status_ReconstructingRecords => Get("Status_ReconstructingRecords");
+    public static string Status_ParsingRecords => Get("Status_ParsingRecords");
     public static string Status_LoadingEsmRecords => Get("Status_LoadingEsmRecords");
     public static string Status_ParsingEsmRecords => Get("Status_ParsingEsmRecords");
     public static string Status_BuildingDataBrowserTree => Get("Status_BuildingDataBrowserTree");
@@ -56,7 +56,7 @@ public static class Strings
 
     // ===== Dialogue Viewer =====
     public static string Status_LoadingDialogueData => Get("Status_LoadingDialogueData");
-    public static string Status_ReconstructingDialogueData => Get("Status_ReconstructingDialogueData");
+    public static string Status_ParsingDialogueData => Get("Status_ParsingDialogueData");
     public static string Status_NoDialogueData => Get("Status_NoDialogueData");
     public static string Status_BuildingDialogueViewer => Get("Status_BuildingDialogueViewer");
     public static string Empty_RunAnalysisForDialogues => Get("Empty_RunAnalysisForDialogues");
@@ -64,7 +64,7 @@ public static class Strings
 
     // ===== World Map =====
     public static string Status_LoadingWorldData => Get("Status_LoadingWorldData");
-    public static string Status_ReconstructingWorldData => Get("Status_ReconstructingWorldData");
+    public static string Status_ParsingWorldData => Get("Status_ParsingWorldData");
     public static string Status_NoWorldData => Get("Status_NoWorldData");
     public static string Status_BuildingWorldIndex => Get("Status_BuildingWorldIndex");
     public static string Empty_RunAnalysisForWorldMap => Get("Empty_RunAnalysisForWorldMap");
@@ -88,7 +88,7 @@ public static class Strings
     public static string Dialog_BatchProcessingFailed_Title => Get("Dialog_BatchProcessingFailed_Title");
     public static string Dialog_LimitedConversionSupport_Title => Get("Dialog_LimitedConversionSupport_Title");
     public static string Dialog_PartialConversionSupport_Title => Get("Dialog_PartialConversionSupport_Title");
-    public static string Dialog_ReconstructionFailed_Title => Get("Dialog_ReconstructionFailed_Title");
+    public static string Dialog_ParseFailed_Title => Get("Dialog_ParseFailed_Title");
 
     // ===== Coverage Tab (code-behind usage) =====
     public static string Coverage_Summary => Get("Coverage_Summary");
@@ -131,7 +131,7 @@ public static class Strings
     public static string Status_ScanningEsmRecordsPercent(int percent) =>
         GetFormat("Status_ScanningEsmRecordsPercent", percent);
 
-    public static string Status_ReconstructedRecords(int count) => GetFormat("Status_ReconstructedRecords", count);
+    public static string Status_ParsedRecords(int count) => GetFormat("Status_ParsedRecords", count);
     public static string Status_ParsedEsmRecords(int count) => GetFormat("Status_ParsedEsmRecords", count);
 
     public static string Status_FoundFilesToCarve(int totalCount, double coverage, int fileCount, int recordCount) =>

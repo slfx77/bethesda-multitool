@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Note with text content.
+///     Parsed Note record.
 ///     Aggregates data from NOTE main record header, EDID, FULL, and text content.
 /// </summary>
 public record NoteRecord

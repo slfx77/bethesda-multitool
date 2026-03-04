@@ -12,9 +12,9 @@ internal sealed class MiscItemHandler(RecordParserContext context)
     #region Weapon Mods
 
     /// <summary>
-    ///     Reconstruct all Weapon Mod (IMOD) records.
+    ///     Parse all Weapon Mod (IMOD) records.
     /// </summary>
-    internal List<WeaponModRecord> ReconstructWeaponMods()
+    internal List<WeaponModRecord> ParseWeaponMods()
     {
         var mods = new List<WeaponModRecord>();
 
@@ -110,9 +110,9 @@ internal sealed class MiscItemHandler(RecordParserContext context)
     #region Recipes
 
     /// <summary>
-    ///     Reconstruct all Recipe (RCPE) records.
+    ///     Parse all Recipe (RCPE) records.
     /// </summary>
-    internal List<RecipeRecord> ReconstructRecipes()
+    internal List<RecipeRecord> ParseRecipes()
     {
         var recipes = new List<RecipeRecord>();
 
@@ -227,9 +227,9 @@ internal sealed class MiscItemHandler(RecordParserContext context)
     #region Armor Addons
 
     /// <summary>
-    ///     Reconstruct all Armor Addon (ARMA) records.
+    ///     Parse all Armor Addon (ARMA) records.
     /// </summary>
-    internal List<ArmaRecord> ReconstructArmorAddons()
+    internal List<ArmaRecord> ParseArmorAddons()
     {
         var addons = new List<ArmaRecord>();
 
@@ -357,9 +357,9 @@ internal sealed class MiscItemHandler(RecordParserContext context)
     #region Body Part Data
 
     /// <summary>
-    ///     Reconstruct all Body Part Data (BPTD) records.
+    ///     Parse all Body Part Data (BPTD) records.
     /// </summary>
-    internal List<BodyPartDataRecord> ReconstructBodyPartData()
+    internal List<BodyPartDataRecord> ParseBodyPartData()
     {
         var parts = new List<BodyPartDataRecord>();
 

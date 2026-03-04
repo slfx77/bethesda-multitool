@@ -3,18 +3,19 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// <summary>
 ///     Constants for runtime Editor ID extraction: FormType-to-offset mappings for
 ///     TESFullName fields and INFO record prompt offsets.
+///     FormType byte values from PDB ENUM_FORM_ID. Offsets from MemDebug PDB class layouts.
 /// </summary>
 internal static class EsmEditorIdConstants
 {
     /// <summary>
-    ///     Maps runtime FormType byte values to the offset of the TESFullName pointer
-    ///     within the C++ class hierarchy for each record type.
+    ///     Maps runtime FormType byte values (ENUM_FORM_ID) to the offset of the TESFullName
+    ///     pointer within the C++ class hierarchy for each record type.
     /// </summary>
     internal static readonly Dictionary<byte, int> FullNameOffsetByFormType = new()
     {
         [0x08] = 44, // FACT - TESFaction
-        [0x0A] = 44, // HAIR - TESHair (TESForm->TESFullName->TESModel->TESHair)
-        [0x0B] = 44, // EYES - TESEyes (TESForm->TESFullName->TESModel->TESEyes)
+        [0x0A] = 44, // HAIR - TESHair
+        [0x0B] = 44, // EYES - TESEyes
         [0x0C] = 44, // RACE - TESRace
         [0x15] = 68, // ACTI - TESObjectACTI
         [0x18] = 68, // ARMO - TESObjectARMO
@@ -27,7 +28,8 @@ internal static class EsmEditorIdConstants
         [0x2A] = 228, // NPC_ - TESNPC
         [0x2E] = 68, // KEYM - TESKey
         [0x2F] = 68, // ALCH - AlchemyItem
-        [0x33] = 68 // PROJ - BGSProjectile (TESBoundObject->TESFullName->TESModel->...)
+        [0x33] = 68, // PROJ - BGSProjectile
+        [0x47] = 68 // QUST - TESQuest (ENUM_FORM_ID value 71)
     };
 
     /// <summary>

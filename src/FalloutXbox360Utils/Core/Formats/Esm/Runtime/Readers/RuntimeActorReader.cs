@@ -87,11 +87,21 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         // Read AI data (aggression, confidence, mood, etc. at +164)
         var aiData = NpcFields.ReadNpcAiData(buffer);
 
-        // Read physical traits (hair, eyes, hair length, combat style)
+        // Read physical traits (hair, eyes, hair length, combat style, hair color, head parts)
         var hair = _context.FollowPointerToFormId(buffer, NpcFields.NpcHairPtrOffset);
         var eyes = _context.FollowPointerToFormId(buffer, NpcFields.NpcEyesPtrOffset);
         var combatStyle = _context.FollowPointerToFormId(buffer, NpcFields.NpcCombatStylePtrOffset);
         var hairLength = NpcFields.ReadNpcHairLength(buffer);
+        var hairColor = NpcFields.ReadNpcHairColor(buffer);
+        var headPartFormIds = NpcFields.ReadNpcHeadPartFormIds(buffer);
+
+        // Read additional PDB-derived fields
+        var originalRace = _context.FollowPointerToFormId(buffer, NpcFields.NpcOriginalRacePtrOffset);
+        var faceNpc = _context.FollowPointerToFormId(buffer, NpcFields.NpcFaceNpcPtrOffset);
+        var height = NpcFields.ReadNpcHeight(buffer);
+        var weight = NpcFields.ReadNpcWeight(buffer);
+        var bloodImpactMaterial = NpcFields.ReadNpcBloodImpactMaterial(buffer);
+        var raceFacePreset = NpcFields.ReadNpcRaceFacePreset(buffer);
 
         // Read FaceGen morph data (follow pointers to float arrays in module space)
         var fggs = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggsPointerOffset, NpcFields.NpcFggsCountOffset);
@@ -122,6 +132,14 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
             HairLength = hairLength,
             EyesFormId = eyes,
             CombatStyleFormId = combatStyle,
+            HairColor = hairColor,
+            HeadPartFormIds = headPartFormIds.Count > 0 ? headPartFormIds : null,
+            OriginalRace = originalRace,
+            FaceNpc = faceNpc,
+            Height = height,
+            Weight = weight,
+            BloodImpactMaterial = bloodImpactMaterial,
+            RaceFacePreset = raceFacePreset,
             Script = scriptFormId,
             FaceGenGeometrySymmetric = fggs,
             FaceGenGeometryAsymmetric = fgga,
@@ -190,6 +208,9 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         // TESCreature inherits TESActorBase at offset 0, same layout as TESNPC
         var packages = NpcFields.ReadPackageList(buffer);
 
+        // Read faction memberships (BSSimpleList<FACTION_RANK*>, same offset as TESNPC)
+        var factions = NpcFields.ReadNpcFactions(buffer);
+
         return new CreatureRecord
         {
             FormId = entry.FormId,
@@ -202,6 +223,7 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
             StealthSkill = stealthSkill,
             AttackDamage = attackDamage,
             Packages = packages,
+            Factions = factions,
             Script = scriptFormId,
             ModelPath = modelPath,
             Offset = offset,
@@ -304,8 +326,12 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
             return null;
         }
 
-        // Level: -128 to 100 (negative = level-offset based, positive = fixed level)
-        if (level < -128 || level > 100)
+        // Level: when PC Level Mult flag (bit 7) is set, level is a multiplier × 100
+        // (e.g., 800 = 8.00× player level), so allow up to 1000.
+        // Otherwise, fixed level: -128 to 100.
+        var isPcLevelMult = (flags & 0x80) != 0;
+        var maxLevel = isPcLevelMult ? 1000 : 100;
+        if (level < -128 || level > maxLevel)
         {
             return null;
         }
@@ -418,4 +444,65 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
     #endregion
 
     // Creature struct layout constants are provided by NpcFields.
+
+    #region Actor Value Info (AVIF) — Runtime Struct Layout
+
+    // ActorValueInfo: PDB size 212
+    // Key fields for skill name resolution: FullName, Abbreviation, Icon
+    private int AvifStructSize => 212 + _s;
+    private int AvifFullNameOffset => 44 + _s; // TESFullName.cFullName (BSStringT)
+    private int AvifTextureOffset => 64 + _s; // TESTexture.TextureName (BSStringT) — icon path
+    private int AvifAbbreviationOffset => 76 + _s; // ActorValueInfo.sAbbreviation (BSStringT)
+
+    /// <summary>
+    ///     Read an ActorValueInfo record from a runtime C++ struct.
+    ///     Extracts FullName, Icon, and Abbreviation via BSStringT reads.
+    /// </summary>
+    public ActorValueInfoRecord? ReadRuntimeAvif(RuntimeEditorIdEntry entry)
+    {
+        if (entry.TesFormOffset == null || entry.FormType != 0x59)
+        {
+            return null;
+        }
+
+        var offset = entry.TesFormOffset.Value;
+        if (offset + AvifStructSize > _context.FileSize)
+        {
+            return null;
+        }
+
+        // Validate FormID at +12
+        var buffer = new byte[16];
+        try
+        {
+            _context.Accessor.ReadArray(offset, buffer, 0, 16);
+        }
+        catch
+        {
+            return null;
+        }
+
+        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        if (formId != entry.FormId)
+        {
+            return null;
+        }
+
+        var fullName = _context.ReadBSStringT(offset, AvifFullNameOffset);
+        var icon = _context.ReadBSStringT(offset, AvifTextureOffset);
+        var abbreviation = _context.ReadBSStringT(offset, AvifAbbreviationOffset);
+
+        return new ActorValueInfoRecord
+        {
+            FormId = entry.FormId,
+            EditorId = entry.EditorId,
+            FullName = fullName,
+            Icon = icon,
+            Abbreviation = abbreviation,
+            Offset = offset,
+            IsBigEndian = true
+        };
+    }
+
+    #endregion
 }

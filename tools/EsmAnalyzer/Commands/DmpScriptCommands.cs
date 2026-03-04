@@ -139,7 +139,7 @@ public static class DmpScriptCommands
             fileInfo.Length,
             analysisResult.MinidumpInfo);
 
-        collection = reconstructor.ReconstructAll();
+        collection = reconstructor.ParseAll();
 
         return (collection, collection.Scripts);
     }

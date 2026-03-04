@@ -123,7 +123,7 @@ internal static class RecordScannerDispatch
         "EXPL", // Explosion
         "MESG", // Message
 
-        // Perks (already reconstructed, ensure scanned)
+        // Perks (already parsed, ensure scanned)
         "PERK" // Perk
     ];
 

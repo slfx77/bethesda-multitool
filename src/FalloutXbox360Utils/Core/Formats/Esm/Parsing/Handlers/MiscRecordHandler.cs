@@ -13,11 +13,11 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
     #region Generic Records
 
     /// <summary>
-    ///     Reconstruct records of the given type into GenericEsmRecord instances.
+    ///     Parse records of the given type into GenericEsmRecord instances.
     ///     Captures EDID, FULL, MODL, OBND as named properties, and all other
     ///     subrecords into the Fields dictionary using schema-based parsing when available.
     /// </summary>
-    internal List<GenericEsmRecord> ReconstructGenericRecords(string recordType)
+    internal List<GenericEsmRecord> ParseGenericRecords(string recordType)
     {
         var records = new List<GenericEsmRecord>();
 
@@ -172,9 +172,9 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
     #region Game Settings
 
     /// <summary>
-    ///     Reconstruct all Game Setting (GMST) records from the scan result.
+    ///     Parse all Game Setting (GMST) records from the scan result.
     /// </summary>
-    internal List<GameSettingRecord> ReconstructGameSettings()
+    internal List<GameSettingRecord> ParseGameSettings()
     {
         var settings = new List<GameSettingRecord>();
         var gmstRecords = _context.GetRecordsByType("GMST").ToList();
@@ -201,7 +201,7 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
         {
             foreach (var record in gmstRecords)
             {
-                var setting = ReconstructGameSettingFromAccessor(record, buffer);
+                var setting = ParseGameSettingFromAccessor(record, buffer);
                 if (setting != null)
                 {
                     settings.Add(setting);
@@ -216,7 +216,7 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
         return settings;
     }
 
-    private GameSettingRecord? ReconstructGameSettingFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private GameSettingRecord? ParseGameSettingFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)

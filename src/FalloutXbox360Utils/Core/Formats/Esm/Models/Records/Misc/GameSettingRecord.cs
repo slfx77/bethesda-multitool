@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Game Setting (GMST) from memory dump.
+///     Parsed Game Setting (GMST) record.
 ///     The setting type is determined by the first letter of the Editor ID:
 ///     'f' = float, 'i' = integer, 's' = string, 'b' = boolean.
 /// </summary>

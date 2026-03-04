@@ -10,9 +10,9 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context)
     private readonly RecordParserContext _context = context;
 
     /// <summary>
-    ///     Reconstruct all Static (STAT) records.
+    ///     Parse all Static (STAT) records.
     /// </summary>
-    internal List<StaticRecord> ReconstructStatics()
+    internal List<StaticRecord> ParseStatics()
     {
         var statics = new List<StaticRecord>();
 
@@ -99,9 +99,9 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context)
     }
 
     /// <summary>
-    ///     Reconstruct all Furniture (FURN) records.
+    ///     Parse all Furniture (FURN) records.
     /// </summary>
-    internal List<FurnitureRecord> ReconstructFurniture()
+    internal List<FurnitureRecord> ParseFurniture()
     {
         var furniture = new List<FurnitureRecord>();
 

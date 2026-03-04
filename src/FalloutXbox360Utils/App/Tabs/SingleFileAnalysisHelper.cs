@@ -22,7 +22,6 @@ internal static class SingleFileAnalysisHelper
             return;
         }
 
-        var shift = RuntimeBuildOffsets.GetPdbShift(null);
         foreach (var entry in result.EsmRecords.RuntimeEditorIds)
         {
             if (entry.TesFormOffset is not > 0)
@@ -31,7 +30,7 @@ internal static class SingleFileAnalysisHelper
             }
 
             var typeCode = RuntimeBuildOffsets.GetRecordTypeCode(entry.FormType);
-            var structSize = RuntimeBuildOffsets.GetStructSize(entry.FormType, shift);
+            var structSize = RuntimeBuildOffsets.GetStructSize(entry.FormType);
 
             result.CarvedFiles.Add(new CarvedFileInfo
             {

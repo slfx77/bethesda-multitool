@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Challenge (CHAL) from memory dump.
+///     Parsed Challenge (CHAL) record.
 ///     FNV-specific achievement-like goals.
 /// </summary>
 public record ChallengeRecord

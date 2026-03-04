@@ -6,147 +6,147 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 public record WorldPlacement(PlacedReference Ref, CellRecord Cell);
 
 /// <summary>
-///     Aggregated semantic reconstruction result from a memory dump.
+///     Aggregated semantic parsing result from a memory dump.
 /// </summary>
 public record RecordCollection
 {
     // Characters
-    /// <summary>Reconstructed NPC records.</summary>
+    /// <summary>Parsed NPC records.</summary>
     public List<NpcRecord> Npcs { get; init; } = [];
 
-    /// <summary>Reconstructed Creature records.</summary>
+    /// <summary>Parsed Creature records.</summary>
     public List<CreatureRecord> Creatures { get; init; } = [];
 
-    /// <summary>Reconstructed Race records.</summary>
+    /// <summary>Parsed Race records.</summary>
     public List<RaceRecord> Races { get; init; } = [];
 
-    /// <summary>Reconstructed Faction records.</summary>
+    /// <summary>Parsed Faction records.</summary>
     public List<FactionRecord> Factions { get; init; } = [];
 
     // Quests and Dialogue
-    /// <summary>Reconstructed Quest records.</summary>
+    /// <summary>Parsed Quest records.</summary>
     public List<QuestRecord> Quests { get; init; } = [];
 
-    /// <summary>Reconstructed Dialog Topic records.</summary>
+    /// <summary>Parsed Dialog Topic records.</summary>
     public List<DialogTopicRecord> DialogTopics { get; init; } = [];
 
-    /// <summary>Reconstructed Dialogue (INFO) records.</summary>
+    /// <summary>Parsed Dialogue (INFO) records.</summary>
     public List<DialogueRecord> Dialogues { get; init; } = [];
 
     /// <summary>Hierarchical dialogue tree: Quest → Topic → INFO chains with cross-topic links.</summary>
     public DialogueTreeResult? DialogueTree { get; init; }
 
-    /// <summary>Reconstructed Note records.</summary>
+    /// <summary>Parsed Note records.</summary>
     public List<NoteRecord> Notes { get; init; } = [];
 
-    /// <summary>Reconstructed Book records.</summary>
+    /// <summary>Parsed Book records.</summary>
     public List<BookRecord> Books { get; init; } = [];
 
-    /// <summary>Reconstructed Terminal records.</summary>
+    /// <summary>Parsed Terminal records.</summary>
     public List<TerminalRecord> Terminals { get; init; } = [];
 
-    /// <summary>Reconstructed Script (SCPT) records.</summary>
+    /// <summary>Parsed Script (SCPT) records.</summary>
     public List<ScriptRecord> Scripts { get; init; } = [];
 
     // Items
-    /// <summary>Reconstructed Weapon records.</summary>
+    /// <summary>Parsed Weapon records.</summary>
     public List<WeaponRecord> Weapons { get; init; } = [];
 
-    /// <summary>Reconstructed Armor records.</summary>
+    /// <summary>Parsed Armor records.</summary>
     public List<ArmorRecord> Armor { get; init; } = [];
 
-    /// <summary>Reconstructed Ammo records.</summary>
+    /// <summary>Parsed Ammo records.</summary>
     public List<AmmoRecord> Ammo { get; init; } = [];
 
-    /// <summary>Reconstructed Consumable (ALCH) records.</summary>
+    /// <summary>Parsed Consumable (ALCH) records.</summary>
     public List<ConsumableRecord> Consumables { get; init; } = [];
 
-    /// <summary>Reconstructed Misc Item records.</summary>
+    /// <summary>Parsed Misc Item records.</summary>
     public List<MiscItemRecord> MiscItems { get; init; } = [];
 
-    /// <summary>Reconstructed Key records.</summary>
+    /// <summary>Parsed Key records.</summary>
     public List<KeyRecord> Keys { get; init; } = [];
 
-    /// <summary>Reconstructed Container records.</summary>
+    /// <summary>Parsed Container records.</summary>
     public List<ContainerRecord> Containers { get; init; } = [];
 
     // Abilities
-    /// <summary>Reconstructed Perk records.</summary>
+    /// <summary>Parsed Perk records.</summary>
     public List<PerkRecord> Perks { get; init; } = [];
 
-    /// <summary>Reconstructed Spell records.</summary>
+    /// <summary>Parsed Spell records.</summary>
     public List<SpellRecord> Spells { get; init; } = [];
 
     // World
-    /// <summary>Reconstructed Cell records.</summary>
+    /// <summary>Parsed Cell records.</summary>
     public List<CellRecord> Cells { get; init; } = [];
 
-    /// <summary>Reconstructed Worldspace records.</summary>
+    /// <summary>Parsed Worldspace records.</summary>
     public List<WorldspaceRecord> Worldspaces { get; init; } = [];
 
     /// <summary>Map markers extracted from REFR records with XMRK subrecord.</summary>
     public List<PlacedReference> MapMarkers { get; init; } = [];
 
-    /// <summary>Reconstructed Leveled List records (LVLI/LVLN/LVLC).</summary>
+    /// <summary>Parsed Leveled List records (LVLI/LVLN/LVLC).</summary>
     public List<LeveledListRecord> LeveledLists { get; init; } = [];
 
     // Game Data
-    /// <summary>Reconstructed Game Setting (GMST) records.</summary>
+    /// <summary>Parsed Game Setting (GMST) records.</summary>
     public List<GameSettingRecord> GameSettings { get; init; } = [];
 
-    /// <summary>Reconstructed Global Variable (GLOB) records.</summary>
+    /// <summary>Parsed Global Variable (GLOB) records.</summary>
     public List<GlobalRecord> Globals { get; init; } = [];
 
-    /// <summary>Reconstructed Enchantment (ENCH) records.</summary>
+    /// <summary>Parsed Enchantment (ENCH) records.</summary>
     public List<EnchantmentRecord> Enchantments { get; init; } = [];
 
-    /// <summary>Reconstructed Base Effect (MGEF) records.</summary>
+    /// <summary>Parsed Base Effect (MGEF) records.</summary>
     public List<BaseEffectRecord> BaseEffects { get; init; } = [];
 
-    /// <summary>Reconstructed Weapon Mod (IMOD) records.</summary>
+    /// <summary>Parsed Weapon Mod (IMOD) records.</summary>
     public List<WeaponModRecord> WeaponMods { get; init; } = [];
 
-    /// <summary>Reconstructed Recipe (RCPE) records.</summary>
+    /// <summary>Parsed Recipe (RCPE) records.</summary>
     public List<RecipeRecord> Recipes { get; init; } = [];
 
-    /// <summary>Reconstructed Challenge (CHAL) records.</summary>
+    /// <summary>Parsed Challenge (CHAL) records.</summary>
     public List<ChallengeRecord> Challenges { get; init; } = [];
 
-    /// <summary>Reconstructed Reputation (REPU) records.</summary>
+    /// <summary>Parsed Reputation (REPU) records.</summary>
     public List<ReputationRecord> Reputations { get; init; } = [];
 
-    /// <summary>Reconstructed Projectile (PROJ) records.</summary>
+    /// <summary>Parsed Projectile (PROJ) records.</summary>
     public List<ProjectileRecord> Projectiles { get; init; } = [];
 
-    /// <summary>Reconstructed Explosion (EXPL) records.</summary>
+    /// <summary>Parsed Explosion (EXPL) records.</summary>
     public List<ExplosionRecord> Explosions { get; init; } = [];
 
-    /// <summary>Reconstructed Message (MESG) records.</summary>
+    /// <summary>Parsed Message (MESG) records.</summary>
     public List<MessageRecord> Messages { get; init; } = [];
 
-    /// <summary>Reconstructed Class (CLAS) records.</summary>
+    /// <summary>Parsed Class (CLAS) records.</summary>
     public List<ClassRecord> Classes { get; init; } = [];
 
-    /// <summary>Reconstructed Form ID List (FLST) records.</summary>
+    /// <summary>Parsed Form ID List (FLST) records.</summary>
     public List<FormListRecord> FormLists { get; init; } = [];
 
-    /// <summary>Reconstructed Activator (ACTI) records.</summary>
+    /// <summary>Parsed Activator (ACTI) records.</summary>
     public List<ActivatorRecord> Activators { get; init; } = [];
 
-    /// <summary>Reconstructed Light (LIGH) records.</summary>
+    /// <summary>Parsed Light (LIGH) records.</summary>
     public List<LightRecord> Lights { get; init; } = [];
 
-    /// <summary>Reconstructed Door (DOOR) records.</summary>
+    /// <summary>Parsed Door (DOOR) records.</summary>
     public List<DoorRecord> Doors { get; init; } = [];
 
-    /// <summary>Reconstructed Static (STAT) records.</summary>
+    /// <summary>Parsed Static (STAT) records.</summary>
     public List<StaticRecord> Statics { get; init; } = [];
 
-    /// <summary>Reconstructed Furniture (FURN) records.</summary>
+    /// <summary>Parsed Furniture (FURN) records.</summary>
     public List<FurnitureRecord> Furniture { get; init; } = [];
 
     // AI
-    /// <summary>Reconstructed AI Package (PACK) records.</summary>
+    /// <summary>Parsed AI Package (PACK) records.</summary>
     public List<PackageRecord> Packages { get; init; } = [];
 
     // Generic
@@ -154,34 +154,34 @@ public record RecordCollection
     public List<GenericEsmRecord> GenericRecords { get; init; } = [];
 
     // Specialized Phase 2 records
-    /// <summary>Reconstructed Sound (SOUN) records.</summary>
+    /// <summary>Parsed Sound (SOUN) records.</summary>
     public List<SoundRecord> Sounds { get; init; } = [];
 
-    /// <summary>Reconstructed Texture Set (TXST) records.</summary>
+    /// <summary>Parsed Texture Set (TXST) records.</summary>
     public List<TextureSetRecord> TextureSets { get; init; } = [];
 
-    /// <summary>Reconstructed Armor Addon (ARMA) records.</summary>
+    /// <summary>Parsed Armor Addon (ARMA) records.</summary>
     public List<ArmaRecord> ArmorAddons { get; init; } = [];
 
-    /// <summary>Reconstructed Water (WATR) records.</summary>
+    /// <summary>Parsed Water (WATR) records.</summary>
     public List<WaterRecord> Water { get; init; } = [];
 
-    /// <summary>Reconstructed Body Part Data (BPTD) records.</summary>
+    /// <summary>Parsed Body Part Data (BPTD) records.</summary>
     public List<BodyPartDataRecord> BodyPartData { get; init; } = [];
 
-    /// <summary>Reconstructed Actor Value Info (AVIF) records.</summary>
+    /// <summary>Parsed Actor Value Info (AVIF) records.</summary>
     public List<ActorValueInfoRecord> ActorValueInfos { get; init; } = [];
 
-    /// <summary>Reconstructed Combat Style (CSTY) records.</summary>
+    /// <summary>Parsed Combat Style (CSTY) records.</summary>
     public List<CombatStyleRecord> CombatStyles { get; init; } = [];
 
-    /// <summary>Reconstructed Lighting Template (LGTM) records.</summary>
+    /// <summary>Parsed Lighting Template (LGTM) records.</summary>
     public List<LightingTemplateRecord> LightingTemplates { get; init; } = [];
 
-    /// <summary>Reconstructed Navigation Mesh (NAVM) records.</summary>
+    /// <summary>Parsed Navigation Mesh (NAVM) records.</summary>
     public List<NavMeshRecord> NavMeshes { get; init; } = [];
 
-    /// <summary>Reconstructed Weather (WTHR) records.</summary>
+    /// <summary>Parsed Weather (WTHR) records.</summary>
     public List<WeatherRecord> Weather { get; init; } = [];
 
     /// <summary>
@@ -190,7 +190,7 @@ public record RecordCollection
     /// </summary>
     public Dictionary<uint, string> ModelPathIndex { get; init; } = [];
 
-    /// <summary>FormID to Editor ID mapping built during reconstruction.</summary>
+    /// <summary>FormID to Editor ID mapping built during parsing.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
     /// <summary>FormID to display name (FullName) mapping built from runtime hash table entries.</summary>
@@ -199,8 +199,8 @@ public record RecordCollection
     /// <summary>Total records processed.</summary>
     public int TotalRecordsProcessed { get; init; }
 
-    /// <summary>Number of records successfully reconstructed.</summary>
-    public int TotalRecordsReconstructed =>
+    /// <summary>Number of records successfully parsed.</summary>
+    public int TotalRecordsParsed =>
         Npcs.Count + Creatures.Count + Races.Count + Factions.Count +
         Quests.Count + DialogTopics.Count + Dialogues.Count + Notes.Count + Books.Count + Terminals.Count +
         Scripts.Count +
@@ -218,10 +218,10 @@ public record RecordCollection
         LightingTemplates.Count + NavMeshes.Count + Weather.Count;
 
     /// <summary>
-    ///     Counts of record types that were detected but not fully reconstructed.
+    ///     Counts of record types that were detected but not fully parsed.
     ///     Used for the "Other Records" summary section in split reports.
     /// </summary>
-    public Dictionary<string, int> UnreconstructedTypeCounts { get; init; } = [];
+    public Dictionary<string, int> UnparsedTypeCounts { get; init; } = [];
 
     /// <summary>
     ///     Creates a new RecordCollection by merging this collection with records from
@@ -309,7 +309,7 @@ public record RecordCollection
             ModelPathIndex = MergeDictionary(ModelPathIndex, overlay.ModelPathIndex),
             FormIdToEditorId = MergeDictionary(FormIdToEditorId, overlay.FormIdToEditorId),
             FormIdToDisplayName = MergeDictionary(FormIdToDisplayName, overlay.FormIdToDisplayName),
-            UnreconstructedTypeCounts = MergeDictionary(UnreconstructedTypeCounts, overlay.UnreconstructedTypeCounts),
+            UnparsedTypeCounts = MergeDictionary(UnparsedTypeCounts, overlay.UnparsedTypeCounts),
 
             TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed
         };
@@ -321,7 +321,64 @@ public record RecordCollection
         return new FormIdResolver(
             overrideEditorIds ?? FormIdToEditorId,
             FormIdToDisplayName,
-            BuildRefToBaseMap());
+            BuildRefToBaseMap(),
+            BuildActorValueNames());
+    }
+
+    /// <summary>
+    ///     Builds an actor value name array from parsed AVIF records.
+    ///     ESM GRUP records arrive in AV-code order (list index = AV code), but runtime-merged
+    ///     records from DMP files arrive in arbitrary memory scan order.
+    ///     Uses the EditorID → AV code mapping to correctly position each record.
+    ///     Returns null if no AVIF records are available.
+    /// </summary>
+    private string[]? BuildActorValueNames()
+    {
+        if (ActorValueInfos.Count == 0)
+        {
+            return null;
+        }
+
+        // Determine the max AV code to size the array
+        var maxAvCode = 0;
+        foreach (var avif in ActorValueInfos)
+        {
+            if (avif.EditorId != null &&
+                FormIdResolver.AvifEditorIdToAvCode.TryGetValue(avif.EditorId, out var code))
+            {
+                if (code > maxAvCode)
+                {
+                    maxAvCode = code;
+                }
+            }
+        }
+
+        // If no EditorIDs matched, fall back to positional indexing (ESM GRUP order)
+        if (maxAvCode == 0)
+        {
+            var names = new string[ActorValueInfos.Count];
+            for (var i = 0; i < ActorValueInfos.Count; i++)
+            {
+                names[i] = ActorValueInfos[i].FullName ?? ActorValueInfos[i].EditorId ?? $"AV#{i}";
+            }
+
+            return names;
+        }
+
+        // Build array indexed by AV code using EditorID mapping
+        var result = new string[maxAvCode + 1];
+        foreach (var avif in ActorValueInfos)
+        {
+            if (avif.EditorId != null &&
+                FormIdResolver.AvifEditorIdToAvCode.TryGetValue(avif.EditorId, out var avCode))
+            {
+                // Only store FullName (from BSStringT or ESM FULL subrecord).
+                // Null slots fall through to FallbackSkillNames in GetActorValueName().
+                result[avCode] = avif.FullName;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -348,6 +405,46 @@ public record RecordCollection
 
                 list.Add(new WorldPlacement(obj, cell));
             }
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    ///     Builds a reverse index: faction FormID -> list of (NPC FormID, NPC name) members.
+    ///     Used for displaying faction membership in the data browser.
+    /// </summary>
+    public Dictionary<uint, List<(uint FormId, string? Name)>> BuildFactionMembersIndex()
+    {
+        var map = new Dictionary<uint, List<(uint, string?)>>();
+
+        void AddMembers(uint npcFormId, string? npcName, List<FactionMembership> factions)
+        {
+            foreach (var fm in factions)
+            {
+                if (fm.FactionFormId == 0)
+                {
+                    continue;
+                }
+
+                if (!map.TryGetValue(fm.FactionFormId, out var members))
+                {
+                    members = [];
+                    map[fm.FactionFormId] = members;
+                }
+
+                members.Add((npcFormId, npcName));
+            }
+        }
+
+        foreach (var npc in Npcs)
+        {
+            AddMembers(npc.FormId, npc.FullName ?? npc.EditorId, npc.Factions);
+        }
+
+        foreach (var crea in Creatures)
+        {
+            AddMembers(crea.FormId, crea.FullName ?? crea.EditorId, crea.Factions);
         }
 
         return map;

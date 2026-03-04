@@ -36,7 +36,7 @@ public static class AnalyzeCommand
         };
         var semanticOpt = new Option<string?>("-s", "--semantic")
         {
-            Description = "Export semantic reconstruction (GECK-style report) to file"
+            Description = "Export semantic parse (GECK-style report) to file"
         };
         var verboseOpt = new Option<bool>("-v", "--verbose") { Description = "Show detailed progress" };
         var terrainObjOpt = new Option<string?>("--terrain-obj")
@@ -186,9 +186,9 @@ public static class AnalyzeCommand
         AnalysisResult result, string outputPath, string? terrainObjPath = null)
     {
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[blue]Generating semantic reconstruction (GECK-style report)...[/]");
+        AnsiConsole.MarkupLine("[blue]Generating semantic parse (GECK-style report)...[/]");
 
-        // Create the semantic reconstructor with memory-mapped access for full data extraction
+        // Create the semantic parser with memory-mapped access for full data extraction
         // This enables runtime C++ struct reading for types with poor ESM coverage (NPC, WEAP, etc.)
         RecordCollection semanticResult;
         StringPoolSummary? stringPool = null;
@@ -196,9 +196,9 @@ public static class AnalyzeCommand
                    MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
         {
-            var reconstructor = new RecordParser(
+            var parser = new RecordParser(
                 result.EsmRecords!, result.FormIdMap, accessor, result.FileSize, result.MinidumpInfo);
-            semanticResult = reconstructor.ReconstructAll();
+            semanticResult = parser.ParseAll();
 
             // Extract string pool data to enrich the report
             stringPool = AnalysisExtractionHelper.ExtractStringPool(result, accessor);

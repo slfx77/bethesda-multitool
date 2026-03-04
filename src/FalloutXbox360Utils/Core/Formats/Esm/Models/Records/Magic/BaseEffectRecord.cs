@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Base Effect (MGEF) from memory dump.
+///     Parsed Base Effect (MGEF) record.
 ///     Foundation for resolving effect names on enchantments and spells.
 /// </summary>
 public record BaseEffectRecord

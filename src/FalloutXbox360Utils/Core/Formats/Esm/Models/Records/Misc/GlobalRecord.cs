@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Global Variable (GLOB) from memory dump.
+///     Parsed Global Variable (GLOB) record.
 ///     Type determined by DATA subrecord: 's' = short, 'l' = long, 'f' = float.
 /// </summary>
 public record GlobalRecord

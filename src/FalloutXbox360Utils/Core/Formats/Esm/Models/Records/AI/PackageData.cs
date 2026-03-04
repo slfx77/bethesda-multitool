@@ -11,7 +11,7 @@ public record PackageData
 
     /// <summary>
     ///     Combined general flags (iPackFlags uint32).
-    ///     Reconstructed from PKDT Flags1 (byte[0]) and Flags2 (uint16[1-2]):
+    ///     Parsed from PKDT Flags1 (byte[0]) and Flags2 (uint16[1-2]):
     ///     GeneralFlags = (uint)Flags1 | ((uint)Flags2 &lt;&lt; 8)
     /// </summary>
     public uint GeneralFlags { get; init; }

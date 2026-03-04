@@ -4,14 +4,14 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Builds object bounds and model path indexes from reconstructed records, then enriches
+///     Builds object bounds and model path indexes from parsed records, then enriches
 ///     placed references (REFR/ACHR/ACRE) with base object data.
-///     Extracted from RecordParser.ReconstructAll.
+///     Extracted from RecordParser.ParseAll.
 /// </summary>
 internal static class ObjectIndexBuilder
 {
     /// <summary>
-    ///     Build bounds/model indexes from all reconstructed record types and enrich placed references.
+    ///     Build bounds/model indexes from all parsed record types and enrich placed references.
     /// </summary>
     public static void BuildAndEnrich(
         List<StaticRecord> statics,

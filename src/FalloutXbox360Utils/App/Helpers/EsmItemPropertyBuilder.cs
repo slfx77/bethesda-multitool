@@ -78,10 +78,14 @@ internal static class EsmItemPropertyBuilder
 
     /// <summary>
     ///     Processes a recipe's Required Skill (Actor Value code) into a property entry.
+    ///     Uses AVIF-sourced names from the resolver when available, falling back to hardcoded names.
     /// </summary>
-    internal static void AddRequiredSkill(List<EsmPropertyEntry> properties, int requiredSkillAv)
+    internal static void AddRequiredSkill(List<EsmPropertyEntry> properties, int requiredSkillAv,
+        FormIdResolver? resolver = null)
     {
-        var skillName = EsmPropertyFormatter.ActorValueToSkillName(requiredSkillAv) ?? $"AV#{requiredSkillAv}";
+        var skillName = resolver?.GetActorValueName(requiredSkillAv)
+                        ?? EsmPropertyFormatter.ActorValueToSkillName(requiredSkillAv)
+                        ?? $"AV#{requiredSkillAv}";
         properties.Add(new EsmPropertyEntry
         {
             Name = "Required Skill",

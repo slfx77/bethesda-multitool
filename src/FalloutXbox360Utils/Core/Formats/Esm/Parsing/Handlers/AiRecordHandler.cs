@@ -10,10 +10,10 @@ internal sealed class AiRecordHandler(RecordParserContext context)
     private readonly RecordParserContext _context = context;
 
     /// <summary>
-    ///     Reconstruct all AI Package (PACK) records from the scan result.
+    ///     Parse all AI Package (PACK) records from the scan result.
     ///     Only extracts location data (PLDT) needed for NPC spawn resolution.
     /// </summary>
-    internal List<PackageRecord> ReconstructPackages()
+    internal List<PackageRecord> ParsePackages()
     {
         var packages = new List<PackageRecord>();
         var packRecords = _context.GetRecordsByType("PACK").ToList();
@@ -39,7 +39,7 @@ internal sealed class AiRecordHandler(RecordParserContext context)
             {
                 foreach (var record in packRecords)
                 {
-                    var package = ReconstructPackageFromAccessor(record, buffer);
+                    var package = ParsePackageFromAccessor(record, buffer);
                     packages.Add(package);
                 }
             }
@@ -55,7 +55,7 @@ internal sealed class AiRecordHandler(RecordParserContext context)
         return packages;
     }
 
-    private PackageRecord ReconstructPackageFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private PackageRecord ParsePackageFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)

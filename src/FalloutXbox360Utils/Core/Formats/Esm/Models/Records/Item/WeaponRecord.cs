@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Weapon from memory dump.
+///     Parsed Weapon record.
 ///     Aggregates data from WEAP main record header, DATA (15 bytes), DNAM (204 bytes), CRDT, etc.
 /// </summary>
 public record WeaponRecord

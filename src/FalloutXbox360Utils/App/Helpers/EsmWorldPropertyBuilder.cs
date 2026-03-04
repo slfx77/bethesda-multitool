@@ -211,12 +211,29 @@ internal static class EsmWorldPropertyBuilder
             ? $"{typeName}: {formIdStr} (radius: {location.Radius})"
             : $"{typeName}: {formIdStr}";
 
+        // For "In Cell" (type 1), navigate to world map since the union IS a cell FormID.
+        // For other types with FormID references, use data browser navigation.
+        uint? cellNavFormId = null;
+        uint? linkedFormId = null;
+        if (location.Union != 0)
+        {
+            if (location.Type == 1)
+            {
+                cellNavFormId = location.Union;
+            }
+            else
+            {
+                linkedFormId = location.Union;
+            }
+        }
+
         properties.Add(new EsmPropertyEntry
         {
             Name = label,
             Value = value,
             Category = "General",
-            LinkedFormId = location.Union != 0 ? location.Union : null
+            LinkedFormId = linkedFormId,
+            CellNavigationFormId = cellNavFormId
         });
     }
 

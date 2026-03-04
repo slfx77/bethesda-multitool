@@ -11,11 +11,11 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
     private readonly RecordParserContext _context = context;
 
     /// <summary>
-    ///     Reconstruct all NPC records from the scan result.
+    ///     Parse all NPC records from the scan result.
     ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
     ///     for records not found as raw ESM data (typically thousands of NPCs vs ~7 ESM records).
     /// </summary>
-    internal List<NpcRecord> ReconstructNpcs()
+    internal List<NpcRecord> ParseNpcs()
     {
         var npcs = new List<NpcRecord>();
         var npcRecords = _context.GetRecordsByType("NPC_").ToList();
@@ -24,7 +24,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
         {
             foreach (var record in npcRecords)
             {
-                var npc = ReconstructNpcFromScanResult(record);
+                var npc = ParseNpcFromScanResult(record);
                 if (npc != null)
                 {
                     npcs.Add(npc);
@@ -38,7 +38,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
             {
                 foreach (var record in npcRecords)
                 {
-                    var npc = ReconstructNpcFromAccessor(record, buffer);
+                    var npc = ParseNpcFromAccessor(record, buffer);
                     if (npc != null)
                     {
                         npcs.Add(npc);
@@ -57,7 +57,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
         return npcs;
     }
 
-    private NpcRecord? ReconstructNpcFromScanResult(DetectedMainRecord record)
+    private NpcRecord? ParseNpcFromScanResult(DetectedMainRecord record)
     {
         // Find matching subrecords from scan result
         var editorId = _context.GetEditorId(record.FormId);
@@ -75,12 +75,12 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
         };
     }
 
-    private NpcRecord? ReconstructNpcFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private NpcRecord? ParseNpcFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
-            return ReconstructNpcFromScanResult(record);
+            return ParseNpcFromScanResult(record);
         }
 
         var (data, dataSize) = recordData.Value;
@@ -99,6 +99,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
         uint? hairFormId = null;
         float? hairLength = null;
         uint? eyesFormId = null;
+        uint? hairColor = null;
         float[]? fggs = null;
         float[]? fgga = null;
         float[]? fgts = null;
@@ -155,6 +156,9 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
                 }
                 case "ENAM" when sub.DataLength == 4:
                     eyesFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "HCLR" when sub.DataLength == 4:
+                    hairColor = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "SNAM" when sub.DataLength >= 5:
                     var factionFormId = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
@@ -231,6 +235,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
             Template = template,
             HairFormId = hairFormId,
             HairLength = hairLength,
+            HairColor = hairColor,
             EyesFormId = eyesFormId,
             FaceGenGeometrySymmetric = fggs,
             FaceGenGeometryAsymmetric = fgga,

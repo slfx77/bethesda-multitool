@@ -15,6 +15,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeDialogueReader _dialogue;
     private readonly RuntimeEffectReader _effects;
+    private readonly RuntimeGenericReader _generic;
     private readonly RuntimeItemReader _items;
     private readonly RuntimePackageReader _packages;
     private readonly RuntimeRefrReader _refrs;
@@ -30,6 +31,7 @@ public sealed class RuntimeStructReader
         IsEarlyBuild = useProtoOffsets;
         _context = new RuntimeMemoryContext(accessor, fileSize, minidumpInfo);
         _actors = new RuntimeActorReader(_context);
+        _generic = new RuntimeGenericReader(_context);
         _items = new RuntimeItemReader(_context);
         _dialogue = new RuntimeDialogueReader(_context);
         _effects = new RuntimeEffectReader(_context);
@@ -109,6 +111,11 @@ public sealed class RuntimeStructReader
     public FactionRecord? ReadRuntimeFaction(RuntimeEditorIdEntry entry)
     {
         return _actors.ReadRuntimeFaction(entry);
+    }
+
+    public ActorValueInfoRecord? ReadRuntimeAvif(RuntimeEditorIdEntry entry)
+    {
+        return _actors.ReadRuntimeAvif(entry);
     }
 
     #endregion
@@ -224,6 +231,15 @@ public sealed class RuntimeStructReader
         IEnumerable<RuntimeEditorIdEntry> entries)
     {
         return _cells.ReadAllWorldspaceCellMaps(entries);
+    }
+
+    #endregion
+
+    #region Generic (PDB-derived)
+
+    public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
+    {
+        return _generic.ReadGenericRecord(entry);
     }
 
     #endregion

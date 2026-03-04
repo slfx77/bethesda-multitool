@@ -22,7 +22,7 @@ public static class GeckReportGenerator
         resolver ??= result.CreateResolver();
 
         // Header
-        GeckReportHelpers.AppendHeader(sb, "ESM Memory Dump Semantic Reconstruction Report");
+        GeckReportHelpers.AppendHeader(sb, "ESM Memory Dump Semantic Parse Report");
         sb.AppendLine();
         GeckReportHelpers.AppendSummary(sb, result);
         sb.AppendLine();
@@ -169,11 +169,11 @@ public static class GeckReportGenerator
         summarySb.AppendLine();
         GeckReportHelpers.AppendSummary(summarySb, result);
 
-        if (result.UnreconstructedTypeCounts.Count > 0)
+        if (result.UnparsedTypeCounts.Count > 0)
         {
             summarySb.AppendLine();
-            summarySb.AppendLine("Other Detected Records (not fully reconstructed):");
-            foreach (var (recordType, count) in result.UnreconstructedTypeCounts.OrderByDescending(x => x.Value))
+            summarySb.AppendLine("Other Detected Records (not fully parsed):");
+            foreach (var (recordType, count) in result.UnparsedTypeCounts.OrderByDescending(x => x.Value))
             {
                 summarySb.AppendLine($"  {recordType,-8} {count,6:N0}");
             }

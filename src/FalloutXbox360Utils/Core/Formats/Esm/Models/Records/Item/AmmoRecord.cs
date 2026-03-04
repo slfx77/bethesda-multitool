@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Ammo from memory dump.
+///     Parsed Ammo record.
 ///     Aggregates data from AMMO main record header, DATA (13 bytes).
 /// </summary>
 public record AmmoRecord

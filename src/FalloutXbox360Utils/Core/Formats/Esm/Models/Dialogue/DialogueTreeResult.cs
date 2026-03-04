@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Result of building the full dialogue tree hierarchy from reconstructed data.
+///     Result of building the full dialogue tree hierarchy from parsed data.
 ///     Organizes all dialogue into Quest → Topic → INFO chains.
 /// </summary>
 public record DialogueTreeResult

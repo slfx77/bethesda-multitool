@@ -26,7 +26,7 @@ public sealed partial class SingleFileTab
         WorldMapProgressBar.Visibility = Visibility.Visible;
         WorldMapStatusText.Text = _session.IsEsmFile
             ? Strings.Status_LoadingWorldData
-            : Strings.Status_ReconstructingWorldData;
+            : Strings.Status_ParsingWorldData;
 
         try
         {
@@ -48,11 +48,11 @@ public sealed partial class SingleFileTab
                 return;
             }
 
-            // Ensure semantic reconstruction is complete
+            // Ensure semantic parse is complete
             if (_session.SemanticResult == null)
             {
                 WorldMapProgressBar.IsIndeterminate = false;
-                await EnsureSemanticReconstructionAsync();
+                await EnsureSemanticParseAsync();
             }
 
             var semantic = _session.SemanticResult;
@@ -112,6 +112,7 @@ public sealed partial class SingleFileTab
         _selectedWorldCell = cell;
         _selectedWorldObject = null;
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
+        ViewCellInDetailButton.Visibility = Visibility.Visible;
         WorldMapControl?.SelectObject(null);
 
         var name = cell.EditorId ?? cell.FullName ?? $"0x{cell.FormId:X8}";
@@ -121,6 +122,14 @@ public sealed partial class SingleFileTab
 
         BuildWorldPropertyPanel(
             WorldMapCellPropertyBuilder.BuildCellProperties(cell, _session.WorldViewData, _session.Resolver));
+    }
+
+    private void ViewCellInDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedWorldCell != null)
+        {
+            WorldMapControl.NavigateToCell(_selectedWorldCell);
+        }
     }
 
     private void ViewBaseInBrowser_Click(object sender, RoutedEventArgs e)
@@ -138,8 +147,9 @@ public sealed partial class SingleFileTab
             ? ownerCell
             : null;
 
-        // Show "View in Data Browser" for the base record
+        // Show "View in Data Browser" for the base record, hide cell button
         ViewBaseInBrowserButton.Visibility = Visibility.Visible;
+        ViewCellInDetailButton.Visibility = Visibility.Collapsed;
         var navigable = obj.BaseFormId > 0 && IsFormIdNavigable(obj.BaseFormId);
         ViewBaseInBrowserButton.IsEnabled = navigable;
         ToolTipService.SetToolTip(ViewBaseInBrowserButton, navigable
@@ -475,11 +485,43 @@ public sealed partial class SingleFileTab
         WorldMapControl.NavigateToWorldspace(wsIdx);
     }
 
+    private async void ViewInWorld_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedBrowserNode?.DataObject == null || _placementIndex == null)
+        {
+            return;
+        }
+
+        var formId = _selectedBrowserNode.DataObject switch
+        {
+            NpcRecord npc => npc.FormId,
+            CreatureRecord crea => crea.FormId,
+            _ => 0u
+        };
+
+        if (formId == 0 || !_placementIndex.TryGetValue(formId, out var placements) || placements.Count == 0)
+        {
+            return;
+        }
+
+        await PopulateWorldMapAsync();
+        if (_session.WorldViewData == null)
+        {
+            return;
+        }
+
+        var cellFormId = placements[0].Cell.FormId;
+        PushUnifiedNav();
+        SubTabView.SelectedItem = WorldMapTab;
+        NavigateToCellInWorldMap(cellFormId);
+    }
+
     private void ResetWorldMap()
     {
         _selectedWorldCell = null;
         _selectedWorldObject = null;
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
+        ViewCellInDetailButton.Visibility = Visibility.Collapsed;
         WorldMapPlaceholder.Visibility = Visibility.Visible;
         WorldMapProgressBar.Visibility = Visibility.Collapsed;
         WorldMapStatusText.Text = Strings.Empty_RunAnalysisForWorldMap;

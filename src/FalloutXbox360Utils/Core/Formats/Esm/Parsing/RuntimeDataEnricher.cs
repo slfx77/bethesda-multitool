@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Enriches ESM scan results with runtime memory data (LAND, REFR, worldspace cell maps).
-///     Extracted from RecordParser.ReconstructAll to isolate the DMP-specific enrichment phases.
+///     Extracted from RecordParser.ParseAll to isolate the DMP-specific enrichment phases.
 /// </summary>
 internal static class RuntimeDataEnricher
 {

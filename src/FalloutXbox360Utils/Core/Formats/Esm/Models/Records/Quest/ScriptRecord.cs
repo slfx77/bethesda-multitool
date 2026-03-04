@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Script (SCPT) record from memory dump.
+///     Parsed Script (SCPT) record.
 ///     Fields informed by PDB SCRIPT_HEADER struct (20 bytes) and ESM subrecord structure.
 /// </summary>
 public record ScriptRecord

@@ -69,6 +69,8 @@
     <PackageReference Include="Magick.NET-Q16-AnyCPU" Version="14.2.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.1" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
+    <PackageReference Include="Veldrid" Version="4.9.0" />
+    <PackageReference Include="Veldrid.SPIRV" Version="1.0.15" />
   </ItemGroup>
 
   <!-- Windows GUI packages -->
@@ -87,6 +89,8 @@
   <!-- Embedded resources -->
   <ItemGroup>
     <EmbeddedResource Include="Core\Formats\Nif\nif.xml" LogicalName="FalloutXbox360Utils.nif.xml" />
+    <EmbeddedResource Include="Core\Formats\Esm\Runtime\pdb_layouts.json" LogicalName="FalloutXbox360Utils.pdb_layouts.json" />
+    <EmbeddedResource Include="Core\Formats\Nif\Rendering\Gpu\Shaders\*.glsl" />
     <EmbeddedResource Include="Assets\MapMarkers\*.png" />
   </ItemGroup>
 

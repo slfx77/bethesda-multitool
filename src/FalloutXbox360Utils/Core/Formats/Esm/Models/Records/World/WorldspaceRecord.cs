@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Worldspace from memory dump.
+///     Parsed Worldspace record.
 /// </summary>
 public record WorldspaceRecord
 {

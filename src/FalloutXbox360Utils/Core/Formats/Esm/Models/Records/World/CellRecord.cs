@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Cell with placed objects.
+///     Parsed Cell record with placed objects.
 ///     Aggregates data from CELL main record header and associated REFR/ACHR/ACRE records.
 /// </summary>
 public record CellRecord

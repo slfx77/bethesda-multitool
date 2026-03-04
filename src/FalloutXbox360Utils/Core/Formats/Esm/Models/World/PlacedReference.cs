@@ -84,4 +84,7 @@ public record PlacedReference
 
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
+
+    /// <summary>How this ref was assigned to its cell during DMP linkage (ParentCell, GridMap, or Virtual).</summary>
+    public string? AssignmentSource { get; init; }
 }

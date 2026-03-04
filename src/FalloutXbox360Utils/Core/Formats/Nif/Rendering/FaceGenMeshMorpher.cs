@@ -60,6 +60,9 @@ internal static class FaceGenMeshMorpher
             }
         }
 
+        // Recalculate smooth vertex normals from the morphed geometry.
+        RecalculateNormals(submesh);
+
         // Recalculate model bounds after morphing
         RecalculateBounds(model);
     }
@@ -93,6 +96,70 @@ internal static class FaceGenMeshMorpher
         }
 
         return largest;
+    }
+
+    /// <summary>
+    ///     Recalculates smooth vertex normals from the morphed triangle geometry.
+    ///     Uses area-weighted face normal accumulation (cross product magnitude = 2x triangle area).
+    /// </summary>
+    private static void RecalculateNormals(RenderableSubmesh submesh)
+    {
+        var normals = submesh.Normals;
+        if (normals == null)
+            return;
+
+        var positions = submesh.Positions;
+        var triangles = submesh.Triangles;
+
+        // Zero out normals
+        Array.Clear(normals);
+
+        // Accumulate area-weighted face normals to each vertex
+        for (var t = 0; t < triangles.Length; t += 3)
+        {
+            var i0 = triangles[t] * 3;
+            var i1 = triangles[t + 1] * 3;
+            var i2 = triangles[t + 2] * 3;
+
+            // Edge vectors
+            var e1x = positions[i1] - positions[i0];
+            var e1y = positions[i1 + 1] - positions[i0 + 1];
+            var e1z = positions[i1 + 2] - positions[i0 + 2];
+            var e2x = positions[i2] - positions[i0];
+            var e2y = positions[i2 + 1] - positions[i0 + 1];
+            var e2z = positions[i2 + 2] - positions[i0 + 2];
+
+            // Cross product = area-weighted face normal
+            var nx = e1y * e2z - e1z * e2y;
+            var ny = e1z * e2x - e1x * e2z;
+            var nz = e1x * e2y - e1y * e2x;
+
+            // Accumulate to all 3 vertices
+            normals[i0] += nx;
+            normals[i0 + 1] += ny;
+            normals[i0 + 2] += nz;
+            normals[i1] += nx;
+            normals[i1 + 1] += ny;
+            normals[i1 + 2] += nz;
+            normals[i2] += nx;
+            normals[i2 + 1] += ny;
+            normals[i2 + 2] += nz;
+        }
+
+        // Normalize
+        for (var v = 0; v < normals.Length; v += 3)
+        {
+            var nx = normals[v];
+            var ny = normals[v + 1];
+            var nz = normals[v + 2];
+            var len = MathF.Sqrt(nx * nx + ny * ny + nz * nz);
+            if (len > 1e-7f)
+            {
+                normals[v] = nx / len;
+                normals[v + 1] = ny / len;
+                normals[v + 2] = nz / len;
+            }
+        }
     }
 
     private static void RecalculateBounds(NifRenderableModel model)

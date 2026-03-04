@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;
 /// <summary>
 ///     Integration tests verifying that the Initially Disabled flag (0x0800) and
 ///     XESP (Enable Parent) data flow through the full ESM analysis pipeline
-///     from raw records to reconstructed PlacedReference objects.
+///     from raw records to parsed PlacedReference objects.
 /// </summary>
 public class EsmInitiallyDisabledFlagTests(ITestOutputHelper output, SampleFileFixture samples)
 {
@@ -13,7 +13,7 @@ public class EsmInitiallyDisabledFlagTests(ITestOutputHelper output, SampleFileF
 
     [Fact]
     [Trait("Category", "Slow")]
-    public void WorldspaceReconstruction_InitiallyDisabledFlag_ShouldBeTracked()
+    public void WorldspaceParsing_InitiallyDisabledFlag_ShouldBeTracked()
     {
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
@@ -69,11 +69,11 @@ public class EsmInitiallyDisabledFlagTests(ITestOutputHelper output, SampleFileF
                               $"EnableParent=0x{r.EnableParentFormId:X8} Flags={r.EnableParentFlags}");
         }
 
-        // Step 4: Full reconstruction results
-        _output.WriteLine($"\nReconstructed: {collection.Cells.Count:N0} cells, " +
+        // Step 4: Full parsing results
+        _output.WriteLine($"\nParsed: {collection.Cells.Count:N0} cells, " +
                           $"{collection.Worldspaces.Count:N0} worldspaces");
 
-        // Step 5: Verify flags on PlacedReference after reconstruction
+        // Step 5: Verify flags on PlacedReference after parsing
         var allPlacedObjects = collection.Worldspaces
             .SelectMany(w => w.Cells)
             .SelectMany(c => c.PlacedObjects)
@@ -89,9 +89,9 @@ public class EsmInitiallyDisabledFlagTests(ITestOutputHelper output, SampleFileF
         _output.WriteLine($"PlacedReference with EnableParentFormId: {enableParentPlaced.Count:N0}");
 
         Assert.True(disabledPlaced.Count > 0,
-            "Some PlacedReference objects should have IsInitiallyDisabled after reconstruction");
+            "Some PlacedReference objects should have IsInitiallyDisabled after parsing");
         Assert.True(enableParentPlaced.Count > 0,
-            "Some PlacedReference objects should have EnableParentFormId after reconstruction");
+            "Some PlacedReference objects should have EnableParentFormId after parsing");
 
         // Step 6: Verify WastelandNV specifically
         var wasteland = collection.Worldspaces.FirstOrDefault(w => w.FormId == 0x000DA726);

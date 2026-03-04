@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 /// <summary>
 ///     Enriches quest records with script variables, related NPCs from dialogue speakers,
 ///     and builds runtime object-to-script cross-reference mappings.
-///     Extracted from RecordParser.ReconstructAll.
+///     Extracted from RecordParser.ParseAll.
 /// </summary>
 internal static class QuestScriptEnricher
 {

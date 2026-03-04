@@ -285,15 +285,15 @@
             <StackPanel x:Name="DataBrowserPlaceholder"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
                         Spacing="12">
-              <ProgressBar x:Name="ReconstructProgressBar"
+              <ProgressBar x:Name="ParseProgressBar"
                            IsIndeterminate="False" Value="0"
                            Width="200" Visibility="Collapsed"
                            Style="{StaticResource TabProgressBarStyle}" />
-              <TextBlock x:Name="ReconstructStatusText" x:Uid="Empty_RunAnalysis"
+              <TextBlock x:Name="ParseStatusText" x:Uid="Empty_RunAnalysis"
                          HorizontalAlignment="Center"
                          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-              <Button x:Name="ReconstructButton" x:Uid="Button_ReconstructRecords"
-                      Click="ReconstructButton_Click"
+              <Button x:Name="ParseButton" x:Uid="Button_ParseRecords"
+                      Click="ParseButton_Click"
                       Visibility="Collapsed"
                       Style="{StaticResource AccentButtonStyle}" />
             </StackPanel>
@@ -380,6 +380,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
                   <StackPanel Orientation="Horizontal" Grid.Row="0" Spacing="0">
                     <TextBlock x:Name="SelectedRecordTitle" x:Uid="Empty_SelectRecord"
@@ -400,6 +401,12 @@
                           Visibility="Collapsed"
                           Margin="0,8,0,0"
                           ToolTipService.ToolTip="View this worldspace in the World tab" />
+                  <Button x:Name="ViewInWorldButton" Grid.Row="3"
+                          Content="View in World"
+                          Click="ViewInWorld_Click"
+                          Visibility="Collapsed"
+                          Margin="0,8,0,0"
+                          ToolTipService.ToolTip="View this record's placement on the World Map" />
                 </Grid>
 
                 <Border Grid.Row="1" CornerRadius="4"
@@ -588,6 +595,11 @@
 
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
                             Margin="0,0,0,8">
+                  <Button x:Name="ViewCellInDetailButton"
+                          Content="View Cell"
+                          Click="ViewCellInDetail_Click"
+                          Visibility="Collapsed"
+                          ToolTipService.ToolTip="View this cell on the map in detail mode" />
                   <Button x:Name="ViewBaseInBrowserButton"
                           Content="View in Data Browser"
                           Click="ViewBaseInBrowser_Click"

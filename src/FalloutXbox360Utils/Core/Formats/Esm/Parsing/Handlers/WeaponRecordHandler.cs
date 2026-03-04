@@ -7,18 +7,18 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Handles reconstruction of WEAP records from ESM data and runtime structs.
+///     Handles parsing of WEAP records from ESM data and runtime structs.
 /// </summary>
 internal sealed class WeaponRecordHandler(RecordParserContext context)
 {
     private readonly RecordParserContext _context = context;
 
     /// <summary>
-    ///     Reconstruct all Weapon records from the scan result.
+    ///     Parse all Weapon records from the scan result.
     ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
     ///     for records not found as raw ESM data (typically hundreds of weapons vs ~34 ESM records).
     /// </summary>
-    internal List<WeaponRecord> ReconstructWeapons()
+    internal List<WeaponRecord> ParseWeapons()
     {
         var weapons = new List<WeaponRecord>();
         var weaponRecords = _context.GetRecordsByType("WEAP").ToList();
@@ -44,7 +44,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
             {
                 foreach (var record in weaponRecords)
                 {
-                    var weapon = ReconstructWeaponFromAccessor(record, buffer);
+                    var weapon = ParseWeaponFromAccessor(record, buffer);
                     if (weapon != null)
                     {
                         weapons.Add(weapon);
@@ -63,7 +63,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context)
         return weapons;
     }
 
-    private WeaponRecord? ReconstructWeaponFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private WeaponRecord? ParseWeaponFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)

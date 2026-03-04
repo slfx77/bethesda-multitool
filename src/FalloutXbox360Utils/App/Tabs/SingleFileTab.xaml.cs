@@ -68,7 +68,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
         if (ReferenceEquals(selected, SummaryTab) && !_session.RecordBreakdownPopulated && _session.HasEsmRecords)
         {
-            await EnsureSemanticReconstructionAsync();
+            await EnsureSemanticParseAsync();
             PopulateRecordBreakdown();
         }
 
@@ -87,7 +87,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             }
             else if (_session.HasEsmRecords)
             {
-                ReconstructButton_Click(sender, new RoutedEventArgs());
+                ParseButton_Click(sender, new RoutedEventArgs());
             }
         }
 
@@ -134,6 +134,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private bool _dependencyCheckDone;
     private ObservableCollection<EsmBrowserNode>? _esmBrowserTree;
     private bool _flatListBuilt;
+    private Dictionary<uint, List<(uint FormId, string? Name)>>? _factionMembersIndex;
     private Dictionary<uint, List<WorldPlacement>>? _placementIndex;
     private IReadOnlyDictionary<uint, RaceRecord>? _raceLookup;
     private CancellationTokenSource? _searchDebounceToken;
@@ -147,7 +148,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private int _reportViewportLineCount = 20;
     private double _measuredLineHeight;
     private EsmBrowserNode? _selectedBrowserNode;
-    private Task<RecordCollection>? _semanticReconstructionTask;
+    private Task<RecordCollection>? _semanticParseTask;
     private string _currentSearchQuery = "";
     private AnalysisPipelinePhase _pipelinePhase;
 
@@ -273,10 +274,10 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 _pendingDecodedForms = null;
             }
 
-            // Run semantic reconstruction BEFORE loading HexViewer
+            // Run semantic parse BEFORE loading HexViewer
             if (_session.HasEsmRecords)
             {
-                await RunSemanticReconstructionPipelineAsync();
+                await RunSemanticParsePipelineAsync();
             }
 
             // Flush the observable file table if not already populated
@@ -290,7 +291,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
             BuildResultsFilterCheckboxes();
 
-            // Load HexViewer AFTER all analysis and reconstruction is complete
+            // Load HexViewer AFTER all analysis and parsing is complete
             SetPipelinePhase(AnalysisPipelinePhase.LoadingMap);
             await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
 
@@ -353,7 +354,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
     }
 
-    private async void ReconstructButton_Click(object sender, RoutedEventArgs e)
+    private async void ParseButton_Click(object sender, RoutedEventArgs e)
     {
         if (_session.IsSaveFile && _session.SaveData != null)
         {
@@ -363,7 +364,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
         if (_session.SemanticResult == null)
         {
-            await EnsureSemanticReconstructionAsync();
+            await EnsureSemanticParseAsync();
         }
 
         if (_session.SemanticResult != null)

@@ -31,7 +31,7 @@ public sealed partial class SingleFileTab
             }));
 
         // Build dialog content
-        var panel = new StackPanel { Spacing = 12, MinWidth = 660 };
+        var panel = new StackPanel { Spacing = 12 };
 
         // Info note
         panel.Children.Add(new TextBlock
@@ -163,7 +163,8 @@ public sealed partial class SingleFileTab
         var csvPathBox = new TextBox
         {
             PlaceholderText = "Path to transcriber CSV export",
-            Text = _session.LoadOrder.SubtitleCsvPath ?? ""
+            Text = _session.LoadOrder.SubtitleCsvPath ?? "",
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
         Grid.SetColumn(csvPathBox, 0);
         csvRow.Children.Add(csvPathBox);
@@ -182,7 +183,12 @@ public sealed partial class SingleFileTab
         var dialog = new ContentDialog
         {
             Title = "Load Order",
-            Content = panel,
+            Content = new ScrollViewer
+            {
+                Content = panel,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            },
             PrimaryButtonText = "Load",
             SecondaryButtonText = _session.LoadOrder.HasData ? "Clear All" : null,
             CloseButtonText = "Cancel",
@@ -210,7 +216,7 @@ public sealed partial class SingleFileTab
 
         try
         {
-            SetPipelinePhase(AnalysisPipelinePhase.Reconstructing);
+            SetPipelinePhase(AnalysisPipelinePhase.Parsing);
             StatusTextBlock.Text = "Loading load order data...";
             AnalysisProgressBar.IsIndeterminate = true;
 
@@ -288,8 +294,8 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        // Reconstruct records
-        StatusTextBlock.Text = $"Reconstructing {entry.DisplayName}...";
+        // Parse records
+        StatusTextBlock.Text = $"Parsing {entry.DisplayName}...";
 
         var reconProgress = new Progress<(int percent, string phase)>(p =>
             DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = $"{entry.DisplayName}: {p.phase}"));
@@ -306,7 +312,7 @@ public sealed partial class SingleFileTab
                 accessor,
                 fileSize,
                 analysisResult.MinidumpInfo);
-            return parser.ReconstructAll(reconProgress);
+            return parser.ParseAll(reconProgress);
         });
 
         entry.Resolver = records.CreateResolver();

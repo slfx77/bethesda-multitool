@@ -60,7 +60,7 @@ public static class MapStatsCommands
         using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             var parser = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize);
-            records = parser.ReconstructAll();
+            records = parser.ParseAll();
         }
 
         var (_, categoryIndex) = ObjectBoundsIndex.BuildCombined(records);

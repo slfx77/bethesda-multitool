@@ -11,9 +11,9 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
     #region Actor Value Infos
 
     /// <summary>
-    ///     Reconstruct all Actor Value Info (AVIF) records.
+    ///     Parse all Actor Value Info (AVIF) records.
     /// </summary>
-    internal List<ActorValueInfoRecord> ReconstructActorValueInfos()
+    internal List<ActorValueInfoRecord> ParseActorValueInfos()
     {
         var infos = new List<ActorValueInfoRecord>();
 
@@ -109,6 +109,9 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
+        _context.MergeRuntimeRecords(infos, 0x59, r => r.FormId,
+            (reader, entry) => reader.ReadRuntimeAvif(entry), "Actor Value Infos");
+
         return infos;
     }
 
@@ -117,9 +120,9 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
     #region Combat Styles
 
     /// <summary>
-    ///     Reconstruct all Combat Style (CSTY) records.
+    ///     Parse all Combat Style (CSTY) records.
     /// </summary>
-    internal List<CombatStyleRecord> ReconstructCombatStyles()
+    internal List<CombatStyleRecord> ParseCombatStyles()
     {
         var styles = new List<CombatStyleRecord>();
 
@@ -236,9 +239,9 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
     #region Lighting Templates
 
     /// <summary>
-    ///     Reconstruct all Lighting Template (LGTM) records.
+    ///     Parse all Lighting Template (LGTM) records.
     /// </summary>
-    internal List<LightingTemplateRecord> ReconstructLightingTemplates()
+    internal List<LightingTemplateRecord> ParseLightingTemplates()
     {
         var templates = new List<LightingTemplateRecord>();
 
@@ -331,9 +334,9 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
     #region Navigation Meshes
 
     /// <summary>
-    ///     Reconstruct all Navigation Mesh (NAVM) records.
+    ///     Parse all Navigation Mesh (NAVM) records.
     /// </summary>
-    internal List<NavMeshRecord> ReconstructNavMeshes()
+    internal List<NavMeshRecord> ParseNavMeshes()
     {
         var meshes = new List<NavMeshRecord>();
 

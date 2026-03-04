@@ -522,7 +522,7 @@ public record RuntimeTerrainMesh
         var heightOffset = heights[0, 0] / 8.0f;
         var deltas = new sbyte[VertexCount];
 
-        // Track the decoder's reconstructed column-0 value (not original heights)
+        // Track the decoder's parsed column-0 value (not original heights)
         // to prevent compounding row-start drift from rounding errors.
         var decoderCol0 = heightOffset * 8.0f;
         for (var y = 0; y < GridSize; y++)

@@ -114,18 +114,35 @@ internal static class NifGeometryExtractor
         ClassifyBlocks(data, nif, nodeChildren, shapeDataMap, shapePropertyMap, shapeSkinInstanceMap);
 
         // Filter shapes by name if requested (e.g., "NoHat" for hair NIFs to exclude "Hat" variant).
-        // Hair NIFs contain both "NoHat" (full hair) and "Hat" (trimmed for headgear) shapes;
+        // Hair NIFs may contain both "NoHat" (full hair) and "Hat" (trimmed for headgear) shapes;
         // the engine only attaches one based on equipment state.
+        // Some hair NIFs have only one shape with no hat/nohat naming — keep all shapes in that case.
         if (filterShapeName != null)
         {
-            var toRemove = shapeDataMap.Keys
-                .Where(idx => ReadBlockName(data, nif.Blocks[idx], nif) != filterShapeName)
+            var shapeNames = shapeDataMap.Keys
+                .Select(idx => (idx, name: ReadBlockName(data, nif.Blocks[idx], nif) ?? ""))
                 .ToList();
-            foreach (var idx in toRemove)
+
+            // Shape matching: "NoHat" matches shapes containing "NoHat"; "Hat" matches shapes
+            // containing "Hat" but NOT "NoHat" (since "NoHat" contains "Hat" as a substring).
+            bool MatchesFilter(string name) => filterShapeName.Equals("Hat", StringComparison.OrdinalIgnoreCase)
+                ? name.Contains("Hat", StringComparison.OrdinalIgnoreCase) &&
+                  !name.Contains("NoHat", StringComparison.OrdinalIgnoreCase)
+                : name.Contains(filterShapeName, StringComparison.OrdinalIgnoreCase);
+
+            var hasMatchingShape = shapeNames.Any(s => MatchesFilter(s.name));
+            if (hasMatchingShape)
             {
-                shapeDataMap.Remove(idx);
-                shapePropertyMap?.Remove(idx);
-                shapeSkinInstanceMap.Remove(idx);
+                var toRemove = shapeNames
+                    .Where(s => !MatchesFilter(s.name))
+                    .Select(s => s.idx)
+                    .ToList();
+                foreach (var idx in toRemove)
+                {
+                    shapeDataMap.Remove(idx);
+                    shapePropertyMap?.Remove(idx);
+                    shapeSkinInstanceMap.Remove(idx);
+                }
             }
         }
 
@@ -170,6 +187,12 @@ internal static class NifGeometryExtractor
             var hasAlphaBlend = false;
             var hasAlphaTest = false;
             byte alphaTestThreshold = 128;
+            byte alphaTestFunction = 4; // GREATER
+            byte srcBlendMode = 6; // SRC_ALPHA
+            byte dstBlendMode = 7; // INV_SRC_ALPHA
+            var materialAlpha = 1f;
+            var isEyeEnvmap = false;
+            var envMapScale = 0f;
             if (textureResolver != null && shapePropertyMap != null &&
                 shapePropertyMap.TryGetValue(shapeIndex, out var propRefs))
             {
@@ -186,11 +209,23 @@ internal static class NifGeometryExtractor
                 if (shaderFlags2.HasValue)
                     useVertexColors = (shaderFlags2.Value & (1u << 5)) != 0;
 
+                // BSShaderFlags bit 17 = Eye_Environment_Mapping + EnvMapScale for eye specular
+                var envMapInfo = NifTextureResolver.ReadEnvMapInfo(data, nif, propRefs);
+                if (envMapInfo.HasValue)
+                {
+                    isEyeEnvmap = (envMapInfo.Value.ShaderFlags & 0x20000u) != 0;
+                    envMapScale = envMapInfo.Value.EnvMapScale;
+                }
+
                 // NiStencilProperty DrawMode: DRAW_BOTH (3) = double-sided (no backface culling)
                 isDoubleSided = ReadIsDoubleSided(data, nif, propRefs);
 
-                // NiAlphaProperty: alpha blend/test flags and threshold
-                ReadAlphaProperty(data, nif, propRefs, out hasAlphaBlend, out hasAlphaTest, out alphaTestThreshold);
+                // NiAlphaProperty: alpha blend/test flags, threshold, comparison function, and blend modes
+                ReadAlphaProperty(data, nif, propRefs, out hasAlphaBlend, out hasAlphaTest,
+                    out alphaTestThreshold, out alphaTestFunction, out srcBlendMode, out dstBlendMode);
+
+                // NiMaterialProperty: alpha float (< 1.0 triggers blending even without NiAlphaProperty)
+                materialAlpha = ReadMaterialAlpha(data, nif, propRefs);
             }
 
             // Look up skinning data for this shape (null if not skinned or bind-pose mode)
@@ -199,7 +234,8 @@ internal static class NifGeometryExtractor
 
             var submesh = ExtractSubmesh(data, nif, shapeIndex, dataIndex, effectiveTransforms,
                 diffusePath, normalMapPath, isEmissive, skinning, useVertexColors, isDoubleSided,
-                hasAlphaBlend, hasAlphaTest, alphaTestThreshold);
+                hasAlphaBlend, hasAlphaTest, alphaTestThreshold, alphaTestFunction,
+                isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha);
             if (submesh != null)
             {
                 model.Submeshes.Add(submesh);
@@ -678,13 +714,16 @@ internal static class NifGeometryExtractor
         if (bodyParts == null || bodyParts.Length == 0)
             return false;
 
+        // Gore cap body parts use IDs 100-299 (section caps, torso caps, etc.).
+        // Normal body parts use IDs 0-99 (Head=0, Torso=3, LeftHand=4, etc.).
+        // Any partition in the gore range means the shape is a dismemberment cap.
         foreach (var bp in bodyParts)
         {
-            if (bp < 100 || bp > 299)
-                return false; // Has at least one non-gore-cap partition
+            if (bp >= 100 && bp <= 299)
+                return true;
         }
 
-        return true; // All partitions are gore caps
+        return false;
     }
 
     // ── Skeleton deformation (linear blend skinning) ─────────────────────────
@@ -1427,7 +1466,13 @@ internal static class NifGeometryExtractor
         bool isDoubleSided = false,
         bool hasAlphaBlend = false,
         bool hasAlphaTest = false,
-        byte alphaTestThreshold = 128)
+        byte alphaTestThreshold = 128,
+        byte alphaTestFunction = 4,
+        bool isEyeEnvmap = false,
+        float envMapScale = 0f,
+        byte srcBlendMode = 6,
+        byte dstBlendMode = 7,
+        float materialAlpha = 1f)
     {
         var dataBlock = nif.Blocks[dataIndex];
         var be = nif.IsBigEndian;
@@ -1472,7 +1517,13 @@ internal static class NifGeometryExtractor
                 IsDoubleSided = isDoubleSided,
                 HasAlphaBlend = hasAlphaBlend,
                 HasAlphaTest = hasAlphaTest,
-                AlphaTestThreshold = alphaTestThreshold
+                AlphaTestThreshold = alphaTestThreshold,
+                AlphaTestFunction = alphaTestFunction,
+                IsEyeEnvmap = isEyeEnvmap,
+                EnvMapScale = envMapScale,
+                SrcBlendMode = srcBlendMode,
+                DstBlendMode = dstBlendMode,
+                MaterialAlpha = materialAlpha
             };
         }
 
@@ -1868,16 +1919,21 @@ internal static class NifGeometryExtractor
     }
 
     /// <summary>
-    ///     Read NiAlphaProperty to extract alpha blend/test flags and threshold.
+    ///     Read NiAlphaProperty to extract alpha blend/test flags, threshold, and blend modes.
     ///     NiAlphaProperty layout: NiObjectNET header + AlphaFlags(ushort) + Threshold(byte).
-    ///     AlphaFlags bit 0 = blend enable, bit 9 = test enable.
+    ///     AlphaFlags: bit 0 = blend enable, bits 1-4 = src blend, bits 5-8 = dst blend,
+    ///     bit 9 = test enable, bits 10-12 = test function.
     /// </summary>
     private static void ReadAlphaProperty(byte[] data, NifInfo nif, List<int> propertyRefs,
-        out bool hasAlphaBlend, out bool hasAlphaTest, out byte alphaTestThreshold)
+        out bool hasAlphaBlend, out bool hasAlphaTest, out byte alphaTestThreshold,
+        out byte alphaTestFunction, out byte srcBlendMode, out byte dstBlendMode)
     {
         hasAlphaBlend = false;
         hasAlphaTest = false;
         alphaTestThreshold = 128;
+        alphaTestFunction = 4; // GREATER — matches existing a <= threshold semantics
+        srcBlendMode = 6; // SRC_ALPHA
+        dstBlendMode = 7; // INV_SRC_ALPHA
 
         foreach (var propRef in propertyRefs)
         {
@@ -1896,7 +1952,8 @@ internal static class NifGeometryExtractor
             if (!NifTextureResolver.SkipNiObjectNET(data, ref pos, end, be))
                 return;
 
-            // AlphaFlags (ushort): bit 0 = blend enable, bit 9 = test enable
+            // AlphaFlags (ushort): bit 0 = blend enable, bits 1-4 = src blend,
+            // bits 5-8 = dst blend, bit 9 = test enable, bits 10-12 = test function
             if (pos + 2 > end) return;
             var alphaFlags = BinaryUtils.ReadUInt16(data, pos, be);
             pos += 2;
@@ -1908,8 +1965,38 @@ internal static class NifGeometryExtractor
             hasAlphaBlend = (alphaFlags & 1) != 0;
             hasAlphaTest = (alphaFlags & (1 << 9)) != 0;
             alphaTestThreshold = threshold;
+            alphaTestFunction = (byte)((alphaFlags >> 10) & 0x7);
+            srcBlendMode = (byte)((alphaFlags >> 1) & 0xF);
+            dstBlendMode = (byte)((alphaFlags >> 5) & 0xF);
             return;
         }
+    }
+
+    /// <summary>
+    ///     Read material alpha from NiMaterialProperty.
+    ///     Layout: NiObjectNET header + Ambient(12B) + Diffuse(12B) + Specular(12B) + Emissive(12B) + Glossiness(4B) + Alpha(4B).
+    ///     Values &lt; 1.0 trigger alpha blending in the game engine (SetupGeometryAlphaBlending VA 0x82AAD430).
+    /// </summary>
+    private static float ReadMaterialAlpha(byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        foreach (var propRef in propertyRefs)
+        {
+            if (propRef < 0 || propRef >= nif.Blocks.Count) continue;
+            var propBlock = nif.Blocks[propRef];
+            if (propBlock.TypeName != "NiMaterialProperty") continue;
+
+            var pos = propBlock.DataOffset;
+            var end = pos + propBlock.Size;
+            if (!NifTextureResolver.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian))
+                return 1f;
+
+            // Ambient(12B) + Diffuse(12B) + Specular(12B) + Emissive(12B) + Glossiness(4B) = 52 bytes to Alpha
+            var alphaOffset = pos + 52;
+            if (alphaOffset + 4 > end) return 1f;
+            return BinaryUtils.ReadFloat(data, alphaOffset, nif.IsBigEndian);
+        }
+
+        return 1f; // Default: fully opaque
     }
 
     /// <summary>

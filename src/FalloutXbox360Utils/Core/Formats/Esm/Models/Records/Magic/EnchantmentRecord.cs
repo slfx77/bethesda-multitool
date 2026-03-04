@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Reconstructed Enchantment / Object Effect (ENCH) from memory dump.
+///     Parsed Enchantment / Object Effect (ENCH) record.
 /// </summary>
 public record EnchantmentRecord
 {

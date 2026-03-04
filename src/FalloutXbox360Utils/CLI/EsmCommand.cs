@@ -358,8 +358,8 @@ public static class EsmCommand
                 return;
             }
 
-            // Phase 2: Semantic reconstruction
-            AnsiConsole.MarkupLine("  Reconstructing records...");
+            // Phase 2: Semantic parsing
+            AnsiConsole.MarkupLine("  Parsing records...");
             var fileSize = new FileInfo(input).Length;
             RecordCollection records;
             using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0,
@@ -372,10 +372,10 @@ public static class EsmCommand
                     accessor,
                     fileSize,
                     analysisResult.MinidumpInfo);
-                records = parser.ReconstructAll();
+                records = parser.ParseAll();
             }
 
-            AnsiConsole.MarkupLine($"  [green]Reconstructed {records.TotalRecordsReconstructed:N0} records.[/]");
+            AnsiConsole.MarkupLine($"  [green]Parsed {records.TotalRecordsParsed:N0} records.[/]");
 
             // Phase 3: Generate all reports
             AnsiConsole.MarkupLine("  Generating reports...");

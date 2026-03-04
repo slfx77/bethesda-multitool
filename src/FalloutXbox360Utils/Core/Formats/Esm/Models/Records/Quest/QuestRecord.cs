@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Quest from memory dump.
+///     Parsed Quest record.
 ///     Aggregates data from QUST main record header, stages, objectives, etc.
 /// </summary>
 public record QuestRecord

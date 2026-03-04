@@ -21,11 +21,11 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
     }
 
     /// <summary>
-    ///     Reconstruct all Script (SCPT) records from the scan result.
+    ///     Parse all Script (SCPT) records from the scan result.
     ///     Uses a two-pass approach: first parses all scripts to build a cross-script variable
     ///     database, then decompiles with full context for proper name resolution.
     /// </summary>
-    internal List<ScriptRecord> ReconstructScripts()
+    internal List<ScriptRecord> ParseScripts()
     {
         var scripts = new List<ScriptRecord>();
 
@@ -94,7 +94,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         // for QUST FormIDs and map those to the script's variables.
         // RuntimeEditorIds is only populated for DMP files (runtime hash table walk).
         var questFormIds = _context.ScanResult.RuntimeEditorIds
-            .Where(e => e.FormType == 0x19)
+            .Where(e => e.FormType is 0x47)
             .Select(e => e.FormId)
             .ToHashSet();
         var questFallbackCount = 0;
@@ -177,7 +177,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
         // Many placed refs have EditorIDs like "CraigBooneREF" — strip "REF" to find
         // the base form "CraigBoone" and chain to its script's variables.
         // Note: Build a fresh reverse lookup from FormIdToEditorId (which is mutable and includes
-        // reconstruction-added entries) rather than using the stale EditorIdToFormId dictionary.
+        // parse-added entries) rather than using the stale EditorIdToFormId dictionary.
         var editorIdToFormId = _context.FormIdToEditorId
             .GroupBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
@@ -441,7 +441,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context)
             variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, null, pendingSlsdType));
         }
 
-        // Decompilation is deferred to pass 2 in ReconstructScripts()
+        // Decompilation is deferred to pass 2 in ParseScripts()
         return new ScriptRecord
         {
             FormId = record.FormId,

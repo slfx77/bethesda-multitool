@@ -11,6 +11,16 @@ internal static class WorldMapHitTester
 {
     private const float CellWorldSize = 4096f;
 
+    /// <summary>Maximum half-extent for hit testing (matches rendering clamp).</summary>
+    private const float MaxHalfExtent = 2048f;
+
+    /// <summary>
+    ///     Bounding area threshold (in square world units) above which an object is considered
+    ///     "large" for hit testing purposes. Large objects are deprioritized so smaller objects
+    ///     beneath them remain clickable.
+    /// </summary>
+    private const float LargeBoundsAreaThreshold = 500f * 500f;
+
     /// <summary>
     ///     Tests whether worldPos hits the object's visual bounds (rotated AABB or circle fallback).
     ///     Returns distance to object center if hit, float.MaxValue otherwise.
@@ -22,8 +32,8 @@ internal static class WorldMapHitTester
 
         if (data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
         {
-            var halfW = (bounds.X2 - bounds.X1) * 0.5f * obj.Scale;
-            var halfH = (bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale;
+            var halfW = Math.Min((bounds.X2 - bounds.X1) * 0.5f * obj.Scale, MaxHalfExtent);
+            var halfH = Math.Min((bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale, MaxHalfExtent);
 
             if (halfW >= 1f || halfH >= 1f)
             {
@@ -48,6 +58,22 @@ internal static class WorldMapHitTester
         return dist <= 12f / zoom ? dist : float.MaxValue;
     }
 
+    /// <summary>
+    ///     Returns the clamped bounding area (halfW * halfH) for an object.
+    ///     Objects with no bounds or point-like bounds return 0 (smallest possible).
+    /// </summary>
+    private static float GetBoundsArea(PlacedReference obj, WorldViewData data)
+    {
+        if (data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
+        {
+            var halfW = Math.Min((bounds.X2 - bounds.X1) * 0.5f * obj.Scale, MaxHalfExtent);
+            var halfH = Math.Min((bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale, MaxHalfExtent);
+            return halfW * halfH;
+        }
+
+        return 0f;
+    }
+
     internal static PlacedReference? HitTestPlacedObject(
         Vector2 worldPos, CellRecord? selectedCell, WorldViewData data,
         HashSet<PlacedObjectCategory> hiddenCategories, bool hideDisabledActors, float zoom)
@@ -57,8 +83,12 @@ internal static class WorldMapHitTester
             return null;
         }
 
-        PlacedReference? closest = null;
-        var closestDist = float.MaxValue;
+        // Two-pass: prefer normal-sized objects over large-bounds objects so that
+        // items beneath oversized bounding boxes remain clickable.
+        PlacedReference? closestSmall = null;
+        var closestSmallDist = float.MaxValue;
+        PlacedReference? closestLarge = null;
+        var closestLargeDist = float.MaxValue;
 
         foreach (var obj in selectedCell.PlacedObjects)
         {
@@ -73,14 +103,30 @@ internal static class WorldMapHitTester
             }
 
             var dist = HitTestObjectBounds(worldPos, obj, data, zoom);
-            if (dist < closestDist)
+            if (dist >= float.MaxValue)
             {
-                closestDist = dist;
-                closest = obj;
+                continue;
+            }
+
+            if (GetBoundsArea(obj, data) > LargeBoundsAreaThreshold)
+            {
+                if (dist < closestLargeDist)
+                {
+                    closestLargeDist = dist;
+                    closestLarge = obj;
+                }
+            }
+            else
+            {
+                if (dist < closestSmallDist)
+                {
+                    closestSmallDist = dist;
+                    closestSmall = obj;
+                }
             }
         }
 
-        return closest;
+        return closestSmall ?? closestLarge;
     }
 
     internal static PlacedReference? HitTestPlacedObjectInOverview(
@@ -97,8 +143,13 @@ internal static class WorldMapHitTester
 
         var useBounds = zoom > 0.07f;
         var hitRadius = 30f / zoom;
-        PlacedReference? closest = null;
-        var closestDist = float.MaxValue;
+
+        // Two-pass: prefer normal-sized objects over large-bounds objects so that
+        // items beneath oversized bounding boxes remain clickable.
+        PlacedReference? closestSmall = null;
+        var closestSmallDist = float.MaxValue;
+        PlacedReference? closestLarge = null;
+        var closestLargeDist = float.MaxValue;
 
         // Only check cells near the cursor (3x3 grid around cursor cell)
         var cellX = (int)Math.Floor(worldPos.X / CellWorldSize);
@@ -131,26 +182,9 @@ internal static class WorldMapHitTester
                         continue;
                     }
 
-                    float dist;
-                    if (useBounds)
-                    {
-                        dist = HitTestObjectBounds(worldPos, obj, data, zoom);
-                    }
-                    else
-                    {
-                        var objPos = new Vector2(obj.X, -obj.Y);
-                        dist = Vector2.Distance(worldPos, objPos);
-                        if (dist >= hitRadius)
-                        {
-                            dist = float.MaxValue;
-                        }
-                    }
-
-                    if (dist < closestDist)
-                    {
-                        closestDist = dist;
-                        closest = obj;
-                    }
+                    ClassifyHit(worldPos, obj, data, useBounds, hitRadius, zoom,
+                        ref closestSmall, ref closestSmallDist,
+                        ref closestLarge, ref closestLargeDist);
                 }
             }
         }
@@ -182,30 +216,61 @@ internal static class WorldMapHitTester
                     continue;
                 }
 
-                float dist;
-                if (useBounds)
-                {
-                    dist = HitTestObjectBounds(worldPos, obj, data, zoom);
-                }
-                else
-                {
-                    var objPos = new Vector2(obj.X, -obj.Y);
-                    dist = Vector2.Distance(worldPos, objPos);
-                    if (dist >= hitRadius)
-                    {
-                        dist = float.MaxValue;
-                    }
-                }
-
-                if (dist < closestDist)
-                {
-                    closestDist = dist;
-                    closest = obj;
-                }
+                ClassifyHit(worldPos, obj, data, useBounds, hitRadius, zoom,
+                    ref closestSmall, ref closestSmallDist,
+                    ref closestLarge, ref closestLargeDist);
             }
         }
 
-        return closest;
+        return closestSmall ?? closestLarge;
+    }
+
+    /// <summary>
+    ///     Tests a single object for a hit and classifies it as small or large bounds,
+    ///     updating the respective closest candidate.
+    /// </summary>
+    private static void ClassifyHit(
+        Vector2 worldPos, PlacedReference obj, WorldViewData data,
+        bool useBounds, float hitRadius, float zoom,
+        ref PlacedReference? closestSmall, ref float closestSmallDist,
+        ref PlacedReference? closestLarge, ref float closestLargeDist)
+    {
+        float dist;
+        if (useBounds)
+        {
+            dist = HitTestObjectBounds(worldPos, obj, data, zoom);
+        }
+        else
+        {
+            var objPos = new Vector2(obj.X, -obj.Y);
+            dist = Vector2.Distance(worldPos, objPos);
+            if (dist >= hitRadius)
+            {
+                dist = float.MaxValue;
+            }
+        }
+
+        if (dist >= float.MaxValue)
+        {
+            return;
+        }
+
+        if (GetBoundsArea(obj, data) > LargeBoundsAreaThreshold)
+        {
+            if (dist < closestLargeDist)
+            {
+                closestLargeDist = dist;
+                closestLarge = obj;
+            }
+        }
+        else
+        {
+            if (dist < closestSmallDist)
+            {
+                closestSmallDist = dist;
+                closestSmall = obj;
+            }
+        }
     }
 
     internal static PlacedReference? HitTestMapMarker(

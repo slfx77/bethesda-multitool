@@ -292,7 +292,7 @@ public static class EsmFileAnalyzer
 
             // Use EDID (editor ID) only — this map is passed to RecordParser as
             // formIdCorrelations which populates _formIdToEditorId. Using FULL (display name)
-            // here would cause EditorId == FullName on reconstructed records.
+            // here would cause EditorId == FullName on parsed records.
             var editorId = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
 
             // Track NPC_ records specifically

@@ -3,7 +3,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Spell from memory dump.
+///     Parsed Spell record.
 ///     Aggregates data from SPEL main record header, SPIT (16 bytes), EFID subrecords.
 /// </summary>
 public record SpellRecord

@@ -10,7 +10,7 @@ using FalloutXbox360Utils.Core.Utils;
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Shared context for record reconstruction, providing access to scan results,
+///     Shared context for record parsing, providing access to scan results,
 ///     memory-mapped file data, and FormID/EditorID lookup tables.
 ///     Extracted from RecordParser to enable handler-based composition.
 /// </summary>
@@ -73,6 +73,16 @@ public sealed class RecordParserContext
         // Pre-populate FormIdToFullName from scan results so that CaptureAllFullNames()
         // can skip already-known records instead of re-reading them from the accessor.
         PrePopulateFullNames(scanResult);
+
+        // Merge runtime display names into FormIdToFullName so they're available during parsing.
+        // These come from BSStringT reads on the TESFullName field during EditorID extraction.
+        foreach (var entry in scanResult.RuntimeEditorIds)
+        {
+            if (entry.FormId != 0 && !string.IsNullOrEmpty(entry.DisplayName))
+            {
+                FormIdToFullName.TryAdd(entry.FormId, entry.DisplayName);
+            }
+        }
     }
 
     public EsmRecordScanResult ScanResult { get; }
@@ -82,14 +92,14 @@ public sealed class RecordParserContext
     public Dictionary<uint, DetectedMainRecord> RecordsByFormId { get; }
 
     /// <summary>
-    ///     Mutable: handlers write to this during reconstruction (e.g., EDID subrecord enrichment).
+    ///     Mutable: handlers write to this during parsing (e.g., EDID subrecord enrichment).
     /// </summary>
     public Dictionary<uint, string> FormIdToEditorId { get; }
 
     public Dictionary<string, uint> EditorIdToFormId { get; }
 
     /// <summary>
-    ///     Mutable: handlers write to this during reconstruction (e.g., FULL subrecord enrichment).
+    ///     Mutable: handlers write to this during parsing (e.g., FULL subrecord enrichment).
     /// </summary>
     public Dictionary<uint, string> FormIdToFullName { get; } = new();
 
@@ -101,7 +111,7 @@ public sealed class RecordParserContext
 
     /// <summary>
     ///     Pre-built Ref→Base mapping from ScanResult.RefrRecords.
-    ///     Cached for reuse by both ScriptRecordHandler (during reconstruction) and CreateResolver().
+    ///     Cached for reuse by both ScriptRecordHandler (during parsing) and CreateResolver().
     /// </summary>
     public Dictionary<uint, uint> RefToBase => _refToBase ??= BuildRefToBase();
 
@@ -150,6 +160,52 @@ public sealed class RecordParserContext
             Logger.Instance.Debug(
                 $"  [Semantic] Added {runtimeCount} {typeName} from runtime struct reading " +
                 $"(total: {records.Count}, ESM: {esmFormIds.Count})");
+        }
+    }
+
+    /// <summary>
+    ///     Merges runtime-only records that have no specialized reader into the GenericRecords list
+    ///     using PDB-derived struct layouts. Skips FormTypes with hand-written readers and FormIDs
+    ///     already present in any ESM-parsed collection.
+    /// </summary>
+    public void MergeRuntimeGenericRecords(
+        List<GenericEsmRecord> genericRecords,
+        HashSet<uint> allEsmFormIds)
+    {
+        if (RuntimeReader == null)
+        {
+            return;
+        }
+
+        var runtimeCount = 0;
+        foreach (var entry in ScanResult.RuntimeEditorIds)
+        {
+            // Skip types that have specialized readers
+            if (PdbStructLayouts.HasSpecializedReader(entry.FormType))
+            {
+                continue;
+            }
+
+            // Skip if already parsed from ESM or already in generic list
+            if (allEsmFormIds.Contains(entry.FormId))
+            {
+                continue;
+            }
+
+            var record = RuntimeReader.ReadGenericRecord(entry);
+            if (record != null)
+            {
+                genericRecords.Add(record);
+                allEsmFormIds.Add(entry.FormId); // Prevent duplicates
+                runtimeCount++;
+            }
+        }
+
+        if (runtimeCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Added {runtimeCount} generic records from PDB-based runtime reading " +
+                $"(total generic: {genericRecords.Count})");
         }
     }
 

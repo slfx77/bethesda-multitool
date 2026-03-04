@@ -12,9 +12,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     #region Globals
 
     /// <summary>
-    ///     Reconstruct all Global Variable (GLOB) records.
+    ///     Parse all Global Variable (GLOB) records.
     /// </summary>
-    internal List<GlobalRecord> ReconstructGlobals()
+    internal List<GlobalRecord> ParseGlobals()
     {
         var globals = new List<GlobalRecord>();
 
@@ -87,9 +87,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     #region Classes
 
     /// <summary>
-    ///     Reconstruct all Class (CLAS) records.
+    ///     Parse all Class (CLAS) records.
     /// </summary>
-    internal List<ClassRecord> ReconstructClasses()
+    internal List<ClassRecord> ParseClasses()
     {
         var classes = new List<ClassRecord>();
 
@@ -207,9 +207,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     #region Challenges
 
     /// <summary>
-    ///     Reconstruct all Challenge (CHAL) records.
+    ///     Parse all Challenge (CHAL) records.
     /// </summary>
-    internal List<ChallengeRecord> ReconstructChallenges()
+    internal List<ChallengeRecord> ParseChallenges()
     {
         var challenges = new List<ChallengeRecord>();
 
@@ -314,9 +314,9 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
     #region Reputations
 
     /// <summary>
-    ///     Reconstruct all Reputation (REPU) records.
+    ///     Parse all Reputation (REPU) records.
     /// </summary>
-    internal List<ReputationRecord> ReconstructReputations()
+    internal List<ReputationRecord> ParseReputations()
     {
         var reputations = new List<ReputationRecord>();
 

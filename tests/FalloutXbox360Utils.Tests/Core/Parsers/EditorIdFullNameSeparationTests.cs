@@ -18,7 +18,7 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
     private readonly ITestOutputHelper _output = output;
 
     [Fact]
-    public void Reconstruction_WithEdidOnlyCorrelations_EditorIdNotEqualFullName()
+    public void Parsing_WithEdidOnlyCorrelations_EditorIdNotEqualFullName()
     {
         // Arrange: Create an ESM with records where EDID != FULL
         var records = new[]
@@ -52,18 +52,18 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
                 _output.WriteLine($"  0x{formId:X8} -> {name}");
             }
 
-            // Act: Create reconstructor with EDID-only correlations
+            // Act: Create parser with EDID-only correlations
             using var mmf = MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0,
                 MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new RecordParser(
+            var parser = new RecordParser(
                 scanResult, edidOnlyMap, accessor, esmData.Length);
 
             // Assert: GetEditorId returns EDID values
             foreach (var (_, expectedEditorId, expectedFullName, formId) in records)
             {
-                var actualEditorId = reconstructor.GetEditorId(formId);
+                var actualEditorId = parser.GetEditorId(formId);
                 _output.WriteLine(
                     $"  FormId=0x{formId:X8}: EditorId={actualEditorId ?? "(null)"}, Expected={expectedEditorId}");
 
@@ -72,8 +72,8 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
                 Assert.NotEqual(expectedFullName, actualEditorId);
             }
 
-            // Verify through reconstruction that EditorId != FullName
-            var npcs = reconstructor.ReconstructNpcs();
+            // Verify through parsing that EditorId != FullName
+            var npcs = parser.ParseNpcs();
             Assert.Single(npcs);
             Assert.Equal("CraigBoone", npcs[0].EditorId);
             Assert.Equal("Craig Boone", npcs[0].FullName);
@@ -81,7 +81,7 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
             _output.WriteLine(
                 $"NPC: EditorId={npcs[0].EditorId}, FullName={npcs[0].FullName} - correctly separated");
 
-            var keys = reconstructor.ReconstructKeys();
+            var keys = parser.ParseKeys();
             Assert.Single(keys);
             Assert.Equal("KeyVault13", keys[0].EditorId);
             Assert.Equal("Vault 13 Keycard", keys[0].FullName);
@@ -97,10 +97,10 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Reconstruction_WithFullNamePreferredCorrelations_CausesEditorIdSwap()
+    public void Parsing_WithFullNamePreferredCorrelations_CausesEditorIdSwap()
     {
         // This test documents the bug: when formIdCorrelations contains FULL (display names)
-        // instead of EDID, the reconstructor's _formIdToEditorId is contaminated.
+        // instead of EDID, the parser's _formIdToEditorId is contaminated.
         var records = new[]
         {
             ("KEYM", "KeyVault13", "Vault 13 Keycard", 0x00000005u)
@@ -133,24 +133,24 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
                 _output.WriteLine($"  0x{formId:X8} -> {name}");
             }
 
-            // Act: Create reconstructor with buggy correlations
+            // Act: Create parser with buggy correlations
             using var mmf = MemoryMappedFile.CreateFromFile(tempFile, FileMode.Open, null, 0,
                 MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, esmData.Length, MemoryMappedFileAccess.Read);
 
-            var reconstructor = new RecordParser(
+            var parser = new RecordParser(
                 scanResult, buggyMap, accessor, esmData.Length);
 
             // With the buggy map, GetEditorId returns the FullName instead of EditorId
-            var editorId = reconstructor.GetEditorId(0x00000005);
+            var editorId = parser.GetEditorId(0x00000005);
             _output.WriteLine($"GetEditorId(0x00000005) = {editorId ?? "(null)"}");
 
             // This demonstrates the bug: GetEditorId returns FullName text
             Assert.Equal("Vault 13 Keycard", editorId);
 
             // For simple record types (KEYM), EditorId comes from GetEditorId() — NOT subrecord
-            // parsing. So the buggy map poisons the reconstructed record's EditorId too.
-            var keys = reconstructor.ReconstructKeys();
+            // parsing. So the buggy map poisons the parsed record's EditorId too.
+            var keys = parser.ParseKeys();
             Assert.Single(keys);
             // Bug: EditorId == FullName because GetEditorId returned the display name
             Assert.Equal("Vault 13 Keycard", keys[0].EditorId);

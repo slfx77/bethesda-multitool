@@ -11,7 +11,7 @@ namespace FalloutXbox360Utils;
 
 /// <summary>
 ///     Shared state for an analysis session. Owns the MemoryMappedViewAccessor
-///     and caches derived analysis products (coverage, semantic reconstruction).
+///     and caches derived analysis products (coverage, semantic parse results).
 ///     Disposed when the user loads a new file or closes the tab.
 /// </summary>
 internal sealed class AnalysisSessionState : IDisposable
@@ -29,7 +29,7 @@ internal sealed class AnalysisSessionState : IDisposable
     /// <summary>Coverage analysis result (computed on demand after analysis).</summary>
     public CoverageResult? CoverageResult { get; set; }
 
-    /// <summary>Semantic reconstruction result (computed on demand for reports/data browser).</summary>
+    /// <summary>Semantic parse result (computed on demand for reports/data browser).</summary>
     public RecordCollection? SemanticResult { get; set; }
 
     /// <summary>Unified FormID resolver built from SemanticResult. Set when SemanticResult is assigned.</summary>

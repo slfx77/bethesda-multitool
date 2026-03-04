@@ -183,7 +183,7 @@ internal static class OrphanedRefAnalyzer
                     fileInfo.Length,
                     analysisResult.MinidumpInfo);
 
-                var collection = reconstructor.ReconstructAll();
+                var collection = reconstructor.ParseAll();
 
                 // Merge dump FormIDs into known set
                 foreach (var (formId, name) in collection.FormIdToEditorId)

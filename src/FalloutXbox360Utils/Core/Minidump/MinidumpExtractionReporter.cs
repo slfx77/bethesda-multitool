@@ -52,15 +52,15 @@ internal static class MinidumpExtractionReporter
                 MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-            // Generate semantic reconstruction with accessor for full data access
+            // Generate semantic parse with accessor for full data access
             // Pass MinidumpInfo to enable runtime C++ struct reading for types with poor ESM coverage
-            var reconstructor = new RecordParser(
+            var parser = new RecordParser(
                 analysisResult.EsmRecords,
                 analysisResult.FormIdMap,
                 accessor,
                 fileInfo.Length,
                 analysisResult.MinidumpInfo);
-            var semanticResult = reconstructor.ReconstructAll();
+            var semanticResult = parser.ParseAll();
 
             // Generate all GECK-style reports (split CSVs + assets + runtime EditorIDs)
             var sources = new ReportDataSources(
@@ -81,7 +81,7 @@ internal static class MinidumpExtractionReporter
             // Export individual script files (source + decompiled bytecode)
             if (semanticResult.Scripts.Count > 0)
             {
-                await EsmRecordExporter.ExportReconstructedScriptsAsync(
+                await EsmRecordExporter.ExportParsedScriptsAsync(
                     semanticResult.Scripts, analysisResult.FormIdMap, esmDir);
                 scriptsExtracted = semanticResult.Scripts.Count;
             }

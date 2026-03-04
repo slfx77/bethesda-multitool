@@ -26,7 +26,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         {
             foreach (var record in infoRecords)
             {
-                var dialogue = ReconstructDialogueFromScanResult(record);
+                var dialogue = ParseDialogueFromScanResult(record);
                 if (dialogue != null)
                 {
                     dialogues.Add(dialogue);
@@ -43,7 +43,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
             {
                 foreach (var record in infoRecords)
                 {
-                    var dialogue = ReconstructDialogueFromAccessor(record, buffer);
+                    var dialogue = ParseDialogueFromAccessor(record, buffer);
                     if (dialogue != null)
                     {
                         dialogues.Add(dialogue);
@@ -101,6 +101,11 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
                     if (best.SpeakerVoiceTypeFormId is null or 0 && other.SpeakerVoiceTypeFormId is not null and not 0)
                     {
                         best = best with { SpeakerVoiceTypeFormId = other.SpeakerVoiceTypeFormId };
+                    }
+
+                    if (best.SpeakerAnimationFormId is null or 0 && other.SpeakerAnimationFormId is not null and not 0)
+                    {
+                        best = best with { SpeakerAnimationFormId = other.SpeakerAnimationFormId };
                     }
 
                     if (best.QuestFormId is null or 0 && other.QuestFormId is not null and not 0)
@@ -161,7 +166,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
             .ToList();
     }
 
-    private DialogueRecord? ReconstructDialogueFromScanResult(DetectedMainRecord record)
+    private DialogueRecord? ParseDialogueFromScanResult(DetectedMainRecord record)
     {
         // Find response texts strictly within this INFO record's data bounds
         var dataStart = record.Offset + 24; // Skip main record header
@@ -185,12 +190,12 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         };
     }
 
-    private DialogueRecord? ReconstructDialogueFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private DialogueRecord? ParseDialogueFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
-            return ReconstructDialogueFromScanResult(record);
+            return ParseDialogueFromScanResult(record);
         }
 
         var (data, dataSize) = recordData.Value;
@@ -212,7 +217,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
         uint? conditionFaction = null;
         uint? conditionRace = null;
         uint? conditionVoiceType = null;
-        uint? snamSpeaker = null;
+        uint? speakerAnimationFormId = null;
         var conditionFunctions = new List<ushort>();
 
         // Track current response being built
@@ -271,7 +276,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
                     speakerFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "SNAM" when sub.DataLength == 4:
-                    snamSpeaker = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    // SNAM = Speaker Animation (IDLE FormID), not the speaker NPC.
+                    speakerAnimationFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "TPIC" when sub.DataLength == 4:
                     topicFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -344,11 +350,13 @@ internal sealed class DialogueConditionParser(RecordParserContext context)
             EditorId = editorId ?? _context.GetEditorId(record.FormId),
             TopicFormId = topicFormId,
             QuestFormId = questFormId,
-            // Speaker priority: ANAM > SNAM > CTDA GetIsID > (topic TNAM propagated later)
-            SpeakerFormId = speakerFormId ?? snamSpeaker ?? conditionSpeaker,
+            // Speaker priority: ANAM > CTDA GetIsID > (topic TNAM propagated later)
+            // Note: SNAM is Speaker *Animation* (IDLE FormID), NOT a speaker NPC.
+            SpeakerFormId = speakerFormId ?? conditionSpeaker,
             SpeakerFactionFormId = conditionFaction,
             SpeakerRaceFormId = conditionRace,
             SpeakerVoiceTypeFormId = conditionVoiceType,
+            SpeakerAnimationFormId = speakerAnimationFormId,
             ConditionFunctions = conditionFunctions,
             Responses = responses,
             PreviousInfo = previousInfo,

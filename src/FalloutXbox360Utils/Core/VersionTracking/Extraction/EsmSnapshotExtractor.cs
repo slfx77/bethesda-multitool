@@ -36,9 +36,9 @@ public static class EsmSnapshotExtractor
             throw new InvalidOperationException($"No ESM records found in: {Path.GetFileName(esmPath)}");
         }
 
-        progress?.Report((80, "Reconstructing records..."));
+        progress?.Report((80, "Parsing records..."));
 
-        // Create RecordParser and reconstruct all records
+        // Create RecordParser and parse all records
         var fileInfo = new FileInfo(esmPath);
         using var mmf = MemoryMappedFile.CreateFromFile(esmPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
@@ -49,7 +49,7 @@ public static class EsmSnapshotExtractor
             accessor,
             fileInfo.Length);
 
-        var records = parser.ReconstructAll(progress != null
+        var records = parser.ParseAll(progress != null
             ? new Progress<(int percent, string phase)>(p =>
                 progress!.Report((80 + (int)(p.percent * 0.15), p.phase)))
             : null);

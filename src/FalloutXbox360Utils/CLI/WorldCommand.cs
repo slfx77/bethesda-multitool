@@ -67,7 +67,7 @@ public static class WorldCommand
         return command;
     }
 
-    private static async Task<RecordCollection?> LoadAndReconstructAsync(
+    private static async Task<RecordCollection?> LoadAndParseAsync(
         string input, CancellationToken cancellationToken)
     {
         if (!File.Exists(input))
@@ -102,7 +102,7 @@ public static class WorldCommand
             return null;
         }
 
-        AnsiConsole.MarkupLine("[blue]Reconstructing world data...[/]");
+        AnsiConsole.MarkupLine("[blue]Parsing world data...[/]");
 
         var fileInfo = new FileInfo(input);
         RecordCollection semanticResult;
@@ -113,7 +113,7 @@ public static class WorldCommand
             var parser = new RecordParser(
                 analysisResult.EsmRecords, analysisResult.FormIdMap, accessor, fileInfo.Length,
                 analysisResult.MinidumpInfo);
-            semanticResult = parser.ReconstructAll();
+            semanticResult = parser.ParseAll();
         }
 
         return semanticResult;
@@ -121,7 +121,7 @@ public static class WorldCommand
 
     private static async Task RunMarkersAsync(string input, CancellationToken cancellationToken)
     {
-        var result = await LoadAndReconstructAsync(input, cancellationToken);
+        var result = await LoadAndParseAsync(input, cancellationToken);
         if (result == null)
         {
             return;
@@ -188,7 +188,7 @@ public static class WorldCommand
             return;
         }
 
-        var result = await LoadAndReconstructAsync(input, cancellationToken);
+        var result = await LoadAndParseAsync(input, cancellationToken);
         if (result == null)
         {
             return;
@@ -405,7 +405,7 @@ public static class WorldCommand
     private static async Task RunPersistentAsync(
         string input, string? outputPath, string? typeFilter, CancellationToken cancellationToken)
     {
-        var result = await LoadAndReconstructAsync(input, cancellationToken);
+        var result = await LoadAndParseAsync(input, cancellationToken);
         if (result == null)
         {
             return;

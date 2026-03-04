@@ -12,9 +12,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
     #region Water
 
     /// <summary>
-    ///     Reconstruct all Water (WATR) records.
+    ///     Parse all Water (WATR) records.
     /// </summary>
-    internal List<WaterRecord> ReconstructWater()
+    internal List<WaterRecord> ParseWater()
     {
         var water = new List<WaterRecord>();
 
@@ -159,9 +159,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
     #region Weather
 
     /// <summary>
-    ///     Reconstruct all Weather (WTHR) records.
+    ///     Parse all Weather (WTHR) records.
     /// </summary>
-    internal List<WeatherRecord> ReconstructWeather()
+    internal List<WeatherRecord> ParseWeather()
     {
         var weather = new List<WeatherRecord>();
 
@@ -263,9 +263,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
     #region Sounds
 
     /// <summary>
-    ///     Reconstruct all Sound (SOUN) records.
+    ///     Parse all Sound (SOUN) records.
     /// </summary>
-    internal List<SoundRecord> ReconstructSounds()
+    internal List<SoundRecord> ParseSounds()
     {
         var sounds = new List<SoundRecord>();
 
@@ -381,9 +381,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
     #region Texture Sets
 
     /// <summary>
-    ///     Reconstruct all Texture Set (TXST) records.
+    ///     Parse all Texture Set (TXST) records.
     /// </summary>
-    internal List<TextureSetRecord> ReconstructTextureSets()
+    internal List<TextureSetRecord> ParseTextureSets()
     {
         var textureSets = new List<TextureSetRecord>();
 

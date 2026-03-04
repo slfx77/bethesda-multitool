@@ -12,9 +12,9 @@ internal sealed class TextRecordHandler(RecordParserContext context)
     #region Terminals
 
     /// <summary>
-    ///     Reconstruct all Terminal records from the scan result.
+    ///     Parse all Terminal records from the scan result.
     /// </summary>
-    internal List<TerminalRecord> ReconstructTerminals()
+    internal List<TerminalRecord> ParseTerminals()
     {
         var terminals = new List<TerminalRecord>();
         var terminalRecords = _context.GetRecordsByType("TERM").ToList();
@@ -42,9 +42,9 @@ internal sealed class TextRecordHandler(RecordParserContext context)
     #region Messages
 
     /// <summary>
-    ///     Reconstruct all Message (MESG) records.
+    ///     Parse all Message (MESG) records.
     /// </summary>
-    internal List<MessageRecord> ReconstructMessages()
+    internal List<MessageRecord> ParseMessages()
     {
         var messages = new List<MessageRecord>();
 
@@ -147,9 +147,9 @@ internal sealed class TextRecordHandler(RecordParserContext context)
     #region Books
 
     /// <summary>
-    ///     Reconstruct all Book records from the scan result.
+    ///     Parse all Book records from the scan result.
     /// </summary>
-    internal List<BookRecord> ReconstructBooks()
+    internal List<BookRecord> ParseBooks()
     {
         var books = new List<BookRecord>();
         var bookRecords = _context.GetRecordsByType("BOOK").ToList();
@@ -175,7 +175,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
             {
                 foreach (var record in bookRecords)
                 {
-                    var book = ReconstructBookFromAccessor(record, buffer);
+                    var book = ParseBookFromAccessor(record, buffer);
                     if (book != null)
                     {
                         books.Add(book);
@@ -191,7 +191,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
         return books;
     }
 
-    private BookRecord? ReconstructBookFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private BookRecord? ParseBookFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
@@ -277,9 +277,9 @@ internal sealed class TextRecordHandler(RecordParserContext context)
     #region Notes
 
     /// <summary>
-    ///     Reconstruct all Note records from the scan result.
+    ///     Parse all Note records from the scan result.
     /// </summary>
-    internal List<NoteRecord> ReconstructNotes()
+    internal List<NoteRecord> ParseNotes()
     {
         var notes = new List<NoteRecord>();
         var noteRecords = _context.GetRecordsByType("NOTE").ToList();
@@ -288,7 +288,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
         {
             foreach (var record in noteRecords)
             {
-                var note = ReconstructNoteFromScanResult(record);
+                var note = ParseNoteFromScanResult(record);
                 if (note != null)
                 {
                     notes.Add(note);
@@ -302,7 +302,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
             {
                 foreach (var record in noteRecords)
                 {
-                    var note = ReconstructNoteFromAccessor(record, buffer);
+                    var note = ParseNoteFromAccessor(record, buffer);
                     if (note != null)
                     {
                         notes.Add(note);
@@ -321,12 +321,12 @@ internal sealed class TextRecordHandler(RecordParserContext context)
         return notes;
     }
 
-    private NoteRecord? ReconstructNoteFromAccessor(DetectedMainRecord record, byte[] buffer)
+    private NoteRecord? ParseNoteFromAccessor(DetectedMainRecord record, byte[] buffer)
     {
         var recordData = _context.ReadRecordData(record, buffer);
         if (recordData == null)
         {
-            return ReconstructNoteFromScanResult(record);
+            return ParseNoteFromScanResult(record);
         }
 
         var (data, dataSize) = recordData.Value;
@@ -376,7 +376,7 @@ internal sealed class TextRecordHandler(RecordParserContext context)
         };
     }
 
-    private NoteRecord? ReconstructNoteFromScanResult(DetectedMainRecord record)
+    private NoteRecord? ParseNoteFromScanResult(DetectedMainRecord record)
     {
         return new NoteRecord
         {

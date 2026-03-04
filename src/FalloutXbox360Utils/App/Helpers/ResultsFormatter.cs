@@ -199,13 +199,13 @@ internal static class ResultsFormatter
     }
 
     /// <summary>
-    ///     Returns unreconstructed record types sorted by count descending,
+    ///     Returns unparsed record types sorted by count descending,
     ///     as (type name, count) tuples suitable for UI display.
     /// </summary>
-    internal static (string Label, int Count)[] GetUnreconstructedRecords(
-        Dictionary<string, int> unreconstructedTypeCounts)
+    internal static (string Label, int Count)[] GetUnparsedRecords(
+        Dictionary<string, int> unparsedTypeCounts)
     {
-        return unreconstructedTypeCounts
+        return unparsedTypeCounts
             .OrderByDescending(x => x.Value)
             .Select(x => (x.Key, x.Value))
             .ToArray();

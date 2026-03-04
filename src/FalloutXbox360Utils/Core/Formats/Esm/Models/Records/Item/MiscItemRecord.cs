@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 /// <summary>
-///     Fully reconstructed Misc Item from memory dump.
+///     Parsed Misc Item record.
 ///     Aggregates data from MISC main record header, DATA (8 bytes).
 /// </summary>
 public record MiscItemRecord
