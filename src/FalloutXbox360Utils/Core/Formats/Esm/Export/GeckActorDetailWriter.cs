@@ -60,8 +60,13 @@ internal static class GeckActorDetailWriter
             if (npc.Skills is { Length: 14 })
             {
                 var sk = npc.Skills;
+
                 // Use AVIF-sourced names when available, resolver provides hardcoded fallback
-                string Sk(int i) => resolver.GetSkillName(i) ?? $"Skill#{i}";
+                string Sk(int i)
+                {
+                    return resolver.GetSkillName(i) ?? $"Skill#{i}";
+                }
+
                 sb.AppendLine("  Skills:");
                 sb.AppendLine(
                     $"    {Sk(0),-18}{sk[0],3}    {Sk(2),-18}{sk[2],3}    {Sk(3),-18}{sk[3],3}");

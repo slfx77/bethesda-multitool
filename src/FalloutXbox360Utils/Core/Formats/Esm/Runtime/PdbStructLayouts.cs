@@ -6,13 +6,22 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 ///     A single field in a flattened PDB struct layout.
 /// </summary>
 internal sealed record PdbFieldLayout(
-    string Name, int Offset, int Size, string Kind, string? Owner, string? TypeDetail);
+    string Name,
+    int Offset,
+    int Size,
+    string Kind,
+    string? Owner,
+    string? TypeDetail);
 
 /// <summary>
 ///     PDB-derived struct layout for a single FormType (e.g., TESFaction, TESObjectWEAP).
 /// </summary>
 internal sealed record PdbTypeLayout(
-    byte FormType, string RecordCode, string ClassName, int StructSize, List<PdbFieldLayout> Fields);
+    byte FormType,
+    string RecordCode,
+    string ClassName,
+    int StructSize,
+    List<PdbFieldLayout> Fields);
 
 /// <summary>
 ///     Loads and caches PDB-derived struct layouts from the embedded JSON resource.
@@ -21,19 +30,6 @@ internal sealed record PdbTypeLayout(
 internal static class PdbStructLayouts
 {
     private static readonly Lazy<Dictionary<byte, PdbTypeLayout>> LazyLayouts = new(LoadLayouts);
-
-    /// <summary>
-    ///     All loaded type layouts indexed by FormType byte.
-    /// </summary>
-    public static IReadOnlyDictionary<byte, PdbTypeLayout> Layouts => LazyLayouts.Value;
-
-    /// <summary>
-    ///     Get the layout for a specific FormType, or null if not available.
-    /// </summary>
-    public static PdbTypeLayout? Get(byte formType)
-    {
-        return LazyLayouts.Value.GetValueOrDefault(formType);
-    }
 
     /// <summary>
     ///     FormType bytes that have specialized hand-written readers and should NOT
@@ -65,8 +61,21 @@ internal static class PdbStructLayouts
         0x46, // INFO — RuntimeDialogueReader
         0x47, // QUST — RuntimeDialogueReader
         0x49, // PACK — RuntimePackageReader
-        0x59  // AVIF — RuntimeActorReader
+        0x59 // AVIF — RuntimeActorReader
     ];
+
+    /// <summary>
+    ///     All loaded type layouts indexed by FormType byte.
+    /// </summary>
+    public static IReadOnlyDictionary<byte, PdbTypeLayout> Layouts => LazyLayouts.Value;
+
+    /// <summary>
+    ///     Get the layout for a specific FormType, or null if not available.
+    /// </summary>
+    public static PdbTypeLayout? Get(byte formType)
+    {
+        return LazyLayouts.Value.GetValueOrDefault(formType);
+    }
 
     /// <summary>
     ///     Returns true if the given FormType has a hand-written specialized reader.
@@ -93,7 +102,10 @@ internal static class PdbStructLayouts
             .Where(f => f.Size > 0 &&
                         f.Kind is not "unknown" &&
                         // Skip TESForm header fields already extracted by scan pipeline
-                        f is not { Owner: "TESForm", Name: "cFormType" or "iFormFlags" or "iFormID" or "cFormEditorID" } &&
+                        f is not
+                        {
+                            Owner: "TESForm", Name: "cFormType" or "iFormFlags" or "iFormID" or "cFormEditorID"
+                        } &&
                         // Skip BSStringT fields already resolved as top-level Name/Model/EditorID
                         f is not { Name: "cFullName", Owner: "TESFullName" } &&
                         f is not { Name: "cModel", Owner: "TESModel" })
@@ -125,12 +137,12 @@ internal static class PdbStructLayouts
             foreach (var fieldElem in typeObj.GetProperty("fields").EnumerateArray())
             {
                 fields.Add(new PdbFieldLayout(
-                    Name: fieldElem.GetProperty("name").GetString() ?? "",
-                    Offset: fieldElem.GetProperty("offset").GetInt32(),
-                    Size: fieldElem.GetProperty("size").GetInt32(),
-                    Kind: fieldElem.GetProperty("kind").GetString() ?? "unknown",
-                    Owner: fieldElem.TryGetProperty("owner", out var ownerProp) ? ownerProp.GetString() : null,
-                    TypeDetail: fieldElem.TryGetProperty("typeDetail", out var detailProp) ? detailProp.GetString() : null));
+                    fieldElem.GetProperty("name").GetString() ?? "",
+                    fieldElem.GetProperty("offset").GetInt32(),
+                    fieldElem.GetProperty("size").GetInt32(),
+                    fieldElem.GetProperty("kind").GetString() ?? "unknown",
+                    fieldElem.TryGetProperty("owner", out var ownerProp) ? ownerProp.GetString() : null,
+                    fieldElem.TryGetProperty("typeDetail", out var detailProp) ? detailProp.GetString() : null));
             }
 
             result[formType] = new PdbTypeLayout(formType, recordCode, className, structSize, fields);

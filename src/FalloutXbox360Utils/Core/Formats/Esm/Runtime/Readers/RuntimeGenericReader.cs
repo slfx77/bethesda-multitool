@@ -48,8 +48,7 @@ internal sealed class RuntimeGenericReader(RuntimeMemoryContext context)
 
         // Extract display name from TESFullName.cFullName (BSStringT) if present
         string? fullName = null;
-        var fullNameField = layout.Fields.FirstOrDefault(
-            f => f is { Name: "cFullName", Owner: "TESFullName" });
+        var fullNameField = layout.Fields.FirstOrDefault(f => f is { Name: "cFullName", Owner: "TESFullName" });
         if (fullNameField != null)
         {
             fullName = _context.ReadBSStringT(entry.TesFormOffset.Value, fullNameField.Offset);
@@ -57,8 +56,7 @@ internal sealed class RuntimeGenericReader(RuntimeMemoryContext context)
 
         // Extract model path from TESModel.cModel (BSStringT) if present
         string? modelPath = null;
-        var modelField = layout.Fields.FirstOrDefault(
-            f => f is { Name: "cModel", Owner: "TESModel" });
+        var modelField = layout.Fields.FirstOrDefault(f => f is { Name: "cModel", Owner: "TESModel" });
         if (modelField != null)
         {
             modelPath = _context.ReadBSStringT(entry.TesFormOffset.Value, modelField.Offset);
@@ -66,12 +64,12 @@ internal sealed class RuntimeGenericReader(RuntimeMemoryContext context)
 
         // Extract bounds from TESBoundObject.BoundData (12 bytes = 6 × int16) if present
         ObjectBounds? bounds = null;
-        var boundsField = layout.Fields.FirstOrDefault(
-            f => f is { Name: "BoundData", Owner: "TESBoundObject", Size: 12 });
+        var boundsField =
+            layout.Fields.FirstOrDefault(f => f is { Name: "BoundData", Owner: "TESBoundObject", Size: 12 });
         if (boundsField != null && boundsField.Offset + 12 <= structData.Length)
         {
             bounds = RecordParserContext.ReadObjectBounds(
-                structData.AsSpan(boundsField.Offset, 12), bigEndian: true);
+                structData.AsSpan(boundsField.Offset, 12), true);
             if (bounds is { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 })
             {
                 bounds = null;
@@ -202,7 +200,7 @@ internal sealed class RuntimeGenericReader(RuntimeMemoryContext context)
         if (field.TypeDetail is "TESBoundObject::BOUND_DATA" && field.Size == 12)
         {
             var b = RecordParserContext.ReadObjectBounds(
-                data.AsSpan(field.Offset, 12), bigEndian: true);
+                data.AsSpan(field.Offset, 12), true);
             if (b is { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 })
             {
                 return null;

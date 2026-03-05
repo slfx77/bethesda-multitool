@@ -6,7 +6,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Handles parsing of combat-related effect records: Projectiles (PROJ) and Explosions (EXPL).
-///     Extracted from <see cref="EffectRecordHandler"/> to keep file sizes manageable.
+///     Extracted from <see cref="EffectRecordHandler" /> to keep file sizes manageable.
 /// </summary>
 internal sealed class CombatEffectHandler(RecordParserContext context)
 {

@@ -30,15 +30,15 @@ public sealed class ScriptDecompiler(
     private readonly bool _isBigEndian = isBigEndian;
     private readonly StringBuilder _output = new();
     private readonly string? _scriptName = scriptName;
-    private int _indentLevel;
-
-    // Sub-components (initialized on first Decompile call)
-    private ScriptVariableReader? _varReader;
     private ScriptExpressionDecoder? _exprDecoder;
-    private ScriptStatementDecoder? _stmtDecoder;
+    private int _indentLevel;
 
     // State during decompilation
     private BytecodeReader _reader = null!;
+    private ScriptStatementDecoder? _stmtDecoder;
+
+    // Sub-components (initialized on first Decompile call)
+    private ScriptVariableReader? _varReader;
 
     /// <summary>
     ///     Decompile compiled bytecode to GECK script source text.
@@ -74,6 +74,20 @@ public sealed class ScriptDecompiler(
 
         return _output.ToString().TrimEnd();
     }
+
+    #region Formatting Helpers
+
+    private void AppendLine(string line)
+    {
+        if (_indentLevel > 0)
+        {
+            _output.Append(new string(' ', _indentLevel * 2));
+        }
+
+        _output.AppendLine(line);
+    }
+
+    #endregion
 
     #region Top-Level Dispatcher
 
@@ -347,20 +361,6 @@ public sealed class ScriptDecompiler(
         }
 
         return paramStrings;
-    }
-
-    #endregion
-
-    #region Formatting Helpers
-
-    private void AppendLine(string line)
-    {
-        if (_indentLevel > 0)
-        {
-            _output.Append(new string(' ', _indentLevel * 2));
-        }
-
-        _output.AppendLine(line);
     }
 
     #endregion

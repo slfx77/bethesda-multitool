@@ -14,22 +14,6 @@ internal sealed class ScriptExpressionDecoder
     }
 
     /// <summary>
-    ///     Expression node on the RPN evaluation stack, carrying both the rendered text
-    ///     and the precedence level of the outermost operator.
-    ///     Higher precedence values bind more tightly; Atomic values are never wrapped.
-    /// </summary>
-    internal readonly record struct ExprNode(string Text, int Precedence)
-    {
-        public const int Atomic = int.MaxValue;
-        public const int PrecOr = 1; // ||
-        public const int PrecAnd = 2; // &&
-        public const int PrecEquality = 3; // ==, !=
-        public const int PrecRelational = 4; // <, >, <=, >=
-        public const int PrecAdditive = 5; // +, -
-        public const int PrecMultiplicative = 6; // *, /, %
-    }
-
-    /// <summary>
     ///     Decode an RPN expression within a bounded region, converting to infix notation.
     /// </summary>
     internal string DecodeExpression(BytecodeReader reader, int exprEnd)
@@ -173,7 +157,9 @@ internal sealed class ScriptExpressionDecoder
 
             case 0x5A: // 'Z' — push SCRO reference as value
                 reader.ReadByte();
-                return reader.CanRead(2) ? _varReader.ResolveScroReference(reader.ReadUInt16()) : "<truncated ref push>";
+                return reader.CanRead(2)
+                    ? _varReader.ResolveScroReference(reader.ReadUInt16())
+                    : "<truncated ref push>";
 
             default:
                 // ASCII digit literals: 0x30='0' through 0x39='9'
@@ -346,5 +332,21 @@ internal sealed class ScriptExpressionDecoder
             "*" or "/" or "%" => ExprNode.PrecMultiplicative,
             _ => ExprNode.Atomic
         };
+    }
+
+    /// <summary>
+    ///     Expression node on the RPN evaluation stack, carrying both the rendered text
+    ///     and the precedence level of the outermost operator.
+    ///     Higher precedence values bind more tightly; Atomic values are never wrapped.
+    /// </summary>
+    internal readonly record struct ExprNode(string Text, int Precedence)
+    {
+        public const int Atomic = int.MaxValue;
+        public const int PrecOr = 1; // ||
+        public const int PrecAnd = 2; // &&
+        public const int PrecEquality = 3; // ==, !=
+        public const int PrecRelational = 4; // <, >, <=, >=
+        public const int PrecAdditive = 5; // +, -
+        public const int PrecMultiplicative = 6; // *, /, %
     }
 }

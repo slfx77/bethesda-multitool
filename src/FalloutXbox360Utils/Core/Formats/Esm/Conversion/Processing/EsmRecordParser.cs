@@ -164,7 +164,7 @@ internal static class EsmRecordParser
 
             // Validate: parse as GRUP header, GroupSize must be >= 24 and fit in file
             var candidate = EsmParser.ParseRecordHeader(data.AsSpan(scan), bigEndian);
-            if (candidate != null && candidate.DataSize >= 24 && scan + (long)candidate.DataSize <= data.Length)
+            if (candidate != null && candidate.DataSize >= 24 && scan + candidate.DataSize <= data.Length)
             {
                 offset = scan;
                 return true;

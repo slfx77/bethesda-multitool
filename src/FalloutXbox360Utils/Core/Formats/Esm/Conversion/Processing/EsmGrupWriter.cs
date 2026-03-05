@@ -1,13 +1,12 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
-using static FalloutXbox360Utils.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 
 /// <summary>
 ///     Handles writing GRUP structures for world and cell hierarchies.
-///     Exterior cell writing is delegated to <see cref="ExteriorCellWriter"/>.
-///     Spiral ordering is provided by <see cref="CellSpiralOrderGenerator"/>.
+///     Exterior cell writing is delegated to <see cref="ExteriorCellWriter" />.
+///     Spiral ordering is provided by <see cref="CellSpiralOrderGenerator" />.
 /// </summary>
 public sealed class EsmGrupWriter(byte[] input, EsmRecordWriter recordWriter, EsmConversionStats stats)
 {

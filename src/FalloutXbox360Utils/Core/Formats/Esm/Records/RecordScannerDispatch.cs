@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 

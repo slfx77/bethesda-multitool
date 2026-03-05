@@ -587,6 +587,12 @@
   <data name="Checkbox_Verbose.ToolTipService.ToolTip" xml:space="preserve">
     <value>Output detailed progress to the terminal (when launched from command line)</value>
   </data>
+  <data name="Checkbox_GenerateReports.Content" xml:space="preserve">
+    <value>Generate Reports</value>
+  </data>
+  <data name="Checkbox_GenerateReports.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Run ESM semantic analysis and generate CSV/TXT reports for each dump file</value>
+  </data>
 
   <!-- ===== SingleFileTab: Empty/Placeholder States (x:Uid) ===== -->
   <data name="Empty_RunAnalysis.Text" xml:space="preserve">

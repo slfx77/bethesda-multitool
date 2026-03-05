@@ -17,7 +17,7 @@ public sealed class FormIdResolver
     public FormIdResolver(
         Dictionary<uint, string> editorIds,
         Dictionary<uint, string> displayNames)
-        : this(editorIds, displayNames, [], null)
+        : this(editorIds, displayNames, [])
     {
     }
 

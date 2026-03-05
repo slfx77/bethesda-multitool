@@ -3,6 +3,7 @@ using FalloutXbox360Utils.Core.Carving;
 using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Ddx;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Minidump;
@@ -20,11 +21,13 @@ public static class MinidumpExtractor
     /// <param name="options">Extraction options.</param>
     /// <param name="progress">Progress reporter.</param>
     /// <param name="analysisResult">Optional analysis result for ESM report generation.</param>
+    /// <param name="supplementaryRecords">Optional load order records to merge into reports for name enrichment.</param>
     public static async Task<ExtractionSummary> Extract(
         string filePath,
         ExtractionOptions options,
         IProgress<ExtractionProgress>? progress,
-        AnalysisResult? analysisResult = null)
+        AnalysisResult? analysisResult = null,
+        RecordCollection? supplementaryRecords = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -108,7 +111,7 @@ public static class MinidumpExtractor
         {
             var (reportGen, heightmaps, scripts, textures, meshes, semanticResult) =
                 await MinidumpExtractionReporter.GenerateEsmOutputsAsync(
-                    analysisResult, filePath, extractDir, progress);
+                    analysisResult, filePath, extractDir, progress, supplementaryRecords);
             esmReportGenerated = reportGen;
             heightmapsExported = heightmaps;
             scriptsExtracted = scripts;

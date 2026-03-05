@@ -12,6 +12,29 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 public sealed class RecordParser
 {
+    // Domain-specific handlers
+    private readonly ActorRecordHandler _actors;
+    private readonly AiRecordHandler _ai;
+    private readonly CombatEffectHandler _combatEffects;
+    private readonly ConsumableRecordHandler _consumables;
+
+    internal readonly RecordParserContext _context;
+    private readonly DialogueRecordHandler _dialogue;
+    private readonly EffectRecordHandler _effects;
+    private readonly ItemRecordHandler _items;
+    private readonly MiscRecordHandler _misc;
+    private readonly MiscBasicTypeHandler _miscBasicTypes;
+    private readonly MiscCollectionHandler _miscCollections;
+    private readonly MiscEnvironmentHandler _miscEnvironment;
+    private readonly MiscGameSystemHandler _miscGameSystems;
+    private readonly MiscItemHandler _miscItems;
+    private readonly MiscStaticObjectHandler _miscStaticObjects;
+    private readonly MiscWorldObjectHandler _miscWorldObjects;
+    private readonly ScriptRecordHandler _scripts;
+    private readonly TextRecordHandler _text;
+    private readonly WeaponRecordHandler _weapons;
+    private readonly WorldRecordHandler _world;
+
     public RecordParser(
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? formIdCorrelations = null,
@@ -410,29 +433,6 @@ public sealed class RecordParser
         return result;
     }
 
-    internal readonly RecordParserContext _context;
-
-    // Domain-specific handlers
-    private readonly ActorRecordHandler _actors;
-    private readonly ItemRecordHandler _items;
-    private readonly WeaponRecordHandler _weapons;
-    private readonly ConsumableRecordHandler _consumables;
-    private readonly DialogueRecordHandler _dialogue;
-    private readonly TextRecordHandler _text;
-    private readonly ScriptRecordHandler _scripts;
-    private readonly EffectRecordHandler _effects;
-    private readonly CombatEffectHandler _combatEffects;
-    private readonly WorldRecordHandler _world;
-    private readonly MiscRecordHandler _misc;
-    private readonly MiscBasicTypeHandler _miscBasicTypes;
-    private readonly MiscItemHandler _miscItems;
-    private readonly MiscWorldObjectHandler _miscWorldObjects;
-    private readonly MiscStaticObjectHandler _miscStaticObjects;
-    private readonly MiscEnvironmentHandler _miscEnvironment;
-    private readonly MiscGameSystemHandler _miscGameSystems;
-    private readonly MiscCollectionHandler _miscCollections;
-    private readonly AiRecordHandler _ai;
-
     public string? GetEditorId(uint formId)
     {
         return _context.GetEditorId(formId);
@@ -454,68 +454,234 @@ public sealed class RecordParser
     }
 
     // Actors
-    public List<NpcRecord> ParseNpcs() => _actors.ParseNpcs();
-    public List<CreatureRecord> ParseCreatures() => _actors.ParseCreatures();
-    public List<FactionRecord> ParseFactions() => _actors.ParseFactions();
-    public List<RaceRecord> ParseRaces() => _actors.ParseRaces();
+    public List<NpcRecord> ParseNpcs()
+    {
+        return _actors.ParseNpcs();
+    }
+
+    public List<CreatureRecord> ParseCreatures()
+    {
+        return _actors.ParseCreatures();
+    }
+
+    public List<FactionRecord> ParseFactions()
+    {
+        return _actors.ParseFactions();
+    }
+
+    public List<RaceRecord> ParseRaces()
+    {
+        return _actors.ParseRaces();
+    }
 
     // Items
-    public List<WeaponRecord> ParseWeapons() => _weapons.ParseWeapons();
-    public List<ArmorRecord> ParseArmor() => _items.ParseArmor();
-    public List<AmmoRecord> ParseAmmo() => _consumables.ParseAmmo();
-    public List<ConsumableRecord> ParseConsumables() => _consumables.ParseConsumables();
-    public List<MiscItemRecord> ParseMiscItems() => _items.ParseMiscItems();
-    public List<KeyRecord> ParseKeys() => _items.ParseKeys();
-    public List<ContainerRecord> ParseContainers() => _items.ParseContainers();
+    public List<WeaponRecord> ParseWeapons()
+    {
+        return _weapons.ParseWeapons();
+    }
+
+    public List<ArmorRecord> ParseArmor()
+    {
+        return _items.ParseArmor();
+    }
+
+    public List<AmmoRecord> ParseAmmo()
+    {
+        return _consumables.ParseAmmo();
+    }
+
+    public List<ConsumableRecord> ParseConsumables()
+    {
+        return _consumables.ParseConsumables();
+    }
+
+    public List<MiscItemRecord> ParseMiscItems()
+    {
+        return _items.ParseMiscItems();
+    }
+
+    public List<KeyRecord> ParseKeys()
+    {
+        return _items.ParseKeys();
+    }
+
+    public List<ContainerRecord> ParseContainers()
+    {
+        return _items.ParseContainers();
+    }
 
     // Dialogue
-    public List<QuestRecord> ParseQuests() => _dialogue.ParseQuests();
-    public List<DialogTopicRecord> ParseDialogTopics() => _dialogue.ParseDialogTopics();
-    public List<DialogueRecord> ParseDialogue() => _dialogue.ParseDialogue();
+    public List<QuestRecord> ParseQuests()
+    {
+        return _dialogue.ParseQuests();
+    }
+
+    public List<DialogTopicRecord> ParseDialogTopics()
+    {
+        return _dialogue.ParseDialogTopics();
+    }
+
+    public List<DialogueRecord> ParseDialogue()
+    {
+        return _dialogue.ParseDialogue();
+    }
 
     public DialogueTreeResult BuildDialogueTrees(
         List<DialogueRecord> dialogues,
         List<DialogTopicRecord> topics,
-        List<QuestRecord> quests) => _dialogue.BuildDialogueTrees(dialogues, topics, quests);
+        List<QuestRecord> quests)
+    {
+        return _dialogue.BuildDialogueTrees(dialogues, topics, quests);
+    }
 
     // Text
-    public List<NoteRecord> ParseNotes() => _text.ParseNotes();
-    public List<BookRecord> ParseBooks() => _text.ParseBooks();
-    public List<TerminalRecord> ParseTerminals() => _text.ParseTerminals();
-    public List<MessageRecord> ParseMessages() => _text.ParseMessages();
+    public List<NoteRecord> ParseNotes()
+    {
+        return _text.ParseNotes();
+    }
+
+    public List<BookRecord> ParseBooks()
+    {
+        return _text.ParseBooks();
+    }
+
+    public List<TerminalRecord> ParseTerminals()
+    {
+        return _text.ParseTerminals();
+    }
+
+    public List<MessageRecord> ParseMessages()
+    {
+        return _text.ParseMessages();
+    }
 
     // Scripts
-    public List<ScriptRecord> ParseScripts() => _scripts.ParseScripts();
+    public List<ScriptRecord> ParseScripts()
+    {
+        return _scripts.ParseScripts();
+    }
 
     // Effects
-    public List<PerkRecord> ParsePerks() => _effects.ParsePerks();
-    public List<SpellRecord> ParseSpells() => _effects.ParseSpells();
-    public List<EnchantmentRecord> ParseEnchantments() => _effects.ParseEnchantments();
-    public List<BaseEffectRecord> ParseBaseEffects() => _effects.ParseBaseEffects();
-    public List<ProjectileRecord> ParseProjectiles() => _combatEffects.ParseProjectiles();
-    public List<ExplosionRecord> ParseExplosions() => _combatEffects.ParseExplosions();
+    public List<PerkRecord> ParsePerks()
+    {
+        return _effects.ParsePerks();
+    }
+
+    public List<SpellRecord> ParseSpells()
+    {
+        return _effects.ParseSpells();
+    }
+
+    public List<EnchantmentRecord> ParseEnchantments()
+    {
+        return _effects.ParseEnchantments();
+    }
+
+    public List<BaseEffectRecord> ParseBaseEffects()
+    {
+        return _effects.ParseBaseEffects();
+    }
+
+    public List<ProjectileRecord> ParseProjectiles()
+    {
+        return _combatEffects.ParseProjectiles();
+    }
+
+    public List<ExplosionRecord> ParseExplosions()
+    {
+        return _combatEffects.ParseExplosions();
+    }
 
     // World
-    public List<CellRecord> ParseCells() => _world.ParseCells();
-    public List<WorldspaceRecord> ParseWorldspaces() => _world.ParseWorldspaces();
-    public List<PlacedReference> ExtractMapMarkers() => _world.ExtractMapMarkers();
+    public List<CellRecord> ParseCells()
+    {
+        return _world.ParseCells();
+    }
+
+    public List<WorldspaceRecord> ParseWorldspaces()
+    {
+        return _world.ParseWorldspaces();
+    }
+
+    public List<PlacedReference> ExtractMapMarkers()
+    {
+        return _world.ExtractMapMarkers();
+    }
 
     // Misc
-    public List<GameSettingRecord> ParseGameSettings() => _misc.ParseGameSettings();
-    public List<GlobalRecord> ParseGlobals() => _miscBasicTypes.ParseGlobals();
-    public List<WeaponModRecord> ParseWeaponMods() => _miscItems.ParseWeaponMods();
-    public List<RecipeRecord> ParseRecipes() => _miscItems.ParseRecipes();
-    public List<ChallengeRecord> ParseChallenges() => _miscBasicTypes.ParseChallenges();
-    public List<ReputationRecord> ParseReputations() => _miscBasicTypes.ParseReputations();
-    public List<ClassRecord> ParseClasses() => _miscBasicTypes.ParseClasses();
-    public List<LeveledListRecord> ParseLeveledLists() => _miscCollections.ParseLeveledLists();
-    public List<FormListRecord> ParseFormLists() => _miscCollections.ParseFormLists();
-    public List<ActivatorRecord> ParseActivators() => _miscWorldObjects.ParseActivators();
-    public List<LightRecord> ParseLights() => _miscWorldObjects.ParseLights();
-    public List<DoorRecord> ParseDoors() => _miscWorldObjects.ParseDoors();
-    public List<StaticRecord> ParseStatics() => _miscStaticObjects.ParseStatics();
-    public List<FurnitureRecord> ParseFurniture() => _miscStaticObjects.ParseFurniture();
+    public List<GameSettingRecord> ParseGameSettings()
+    {
+        return _misc.ParseGameSettings();
+    }
+
+    public List<GlobalRecord> ParseGlobals()
+    {
+        return _miscBasicTypes.ParseGlobals();
+    }
+
+    public List<WeaponModRecord> ParseWeaponMods()
+    {
+        return _miscItems.ParseWeaponMods();
+    }
+
+    public List<RecipeRecord> ParseRecipes()
+    {
+        return _miscItems.ParseRecipes();
+    }
+
+    public List<ChallengeRecord> ParseChallenges()
+    {
+        return _miscBasicTypes.ParseChallenges();
+    }
+
+    public List<ReputationRecord> ParseReputations()
+    {
+        return _miscBasicTypes.ParseReputations();
+    }
+
+    public List<ClassRecord> ParseClasses()
+    {
+        return _miscBasicTypes.ParseClasses();
+    }
+
+    public List<LeveledListRecord> ParseLeveledLists()
+    {
+        return _miscCollections.ParseLeveledLists();
+    }
+
+    public List<FormListRecord> ParseFormLists()
+    {
+        return _miscCollections.ParseFormLists();
+    }
+
+    public List<ActivatorRecord> ParseActivators()
+    {
+        return _miscWorldObjects.ParseActivators();
+    }
+
+    public List<LightRecord> ParseLights()
+    {
+        return _miscWorldObjects.ParseLights();
+    }
+
+    public List<DoorRecord> ParseDoors()
+    {
+        return _miscWorldObjects.ParseDoors();
+    }
+
+    public List<StaticRecord> ParseStatics()
+    {
+        return _miscStaticObjects.ParseStatics();
+    }
+
+    public List<FurnitureRecord> ParseFurniture()
+    {
+        return _miscStaticObjects.ParseFurniture();
+    }
 
     // AI
-    public List<PackageRecord> ParsePackages() => _ai.ParsePackages();
+    public List<PackageRecord> ParsePackages()
+    {
+        return _ai.ParsePackages();
+    }
 }

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Spectre.Console;
@@ -183,7 +184,7 @@ internal static class DialogueTreeCommand
         // Find the NPC -- try hex FormID first, then partial name match
         uint targetFormId = 0;
         if (npcFilter.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
-            uint.TryParse(npcFilter, System.Globalization.NumberStyles.HexNumber, null, out _))
+            uint.TryParse(npcFilter, NumberStyles.HexNumber, null, out _))
         {
             targetFormId = CliHelpers.ParseFormId(npcFilter) ?? 0;
         }
@@ -350,7 +351,8 @@ internal static class DialogueTreeCommand
 
                 foreach (var info in infos)
                 {
-                    var (speakerLabel, speakerColor) = DialogueCommand.ResolveSpeakerDisplay(info, lookup, topicTypeMap);
+                    var (speakerLabel, speakerColor) =
+                        DialogueCommand.ResolveSpeakerDisplay(info, lookup, topicTypeMap);
                     // In NPC tree context, fallback to the NPC name if no specific speaker
                     if (info.SpeakerFormId is not > 0 && speakerColor == "dim")
                     {

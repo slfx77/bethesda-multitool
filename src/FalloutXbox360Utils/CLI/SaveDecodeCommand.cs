@@ -319,6 +319,7 @@ internal static class SaveDecodeCommand
                 {
                     color = "grey";
                 }
+
                 AnsiConsole.MarkupLine($"  [{color}]{Markup.Escape(diag)}[/]");
             }
 

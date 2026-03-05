@@ -14,22 +14,56 @@ public static class RenderCommand
     {
         var command = new Command("render", "Render NIF models to PNG sprites");
 
-        var pathArg = new Argument<string>("path") { Description = "NIF file, directory of NIFs, or BSA-relative path (when --bsa is provided)" };
-        var bsaOption = new Option<string?>("--bsa") { Description = "Path to meshes BSA file (path argument becomes BSA-relative prefix)" };
-        var outputOption = new Option<string>("-o", "--output") { Description = "Output directory for sprites", Required = true };
-        var ppuOption = new Option<float>("--ppu") { Description = "Pixels per game unit (default: 1.0)", DefaultValueFactory = _ => 1.0f };
-        var minSizeOption = new Option<int>("--min-size") { Description = "Minimum sprite dimension (default: 32)", DefaultValueFactory = _ => 32 };
-        var maxSizeOption = new Option<int>("--max-size") { Description = "Maximum sprite dimension (default: 1024)", DefaultValueFactory = _ => 1024 };
-        var parallelismOption = new Option<int>("-j", "--parallelism") { Description = "Max parallel tasks (default: processor count)", DefaultValueFactory = _ => Environment.ProcessorCount };
-        var texturesBsaOption = new Option<string[]>("--textures-bsa") { Description = "Path to textures BSA file(s) for texture-mapped rendering (can specify multiple)", AllowMultipleArgumentsPerToken = true };
-        var esmOption = new Option<string?>("--esm") { Description = "ESM file for cross-referencing FormIDs, EditorIDs, and RefIDs" };
-        var isoOption = new Option<bool>("--iso") { Description = "Render 4 isometric views (NE, NW, SW, SE) instead of top-down", DefaultValueFactory = _ => false };
-        var elevationOption = new Option<float>("--elevation") { Description = "Isometric camera elevation in degrees from horizontal (default: 30)", DefaultValueFactory = _ => 30f };
-        var sideOption = new Option<bool>("--side") { Description = "Render 4 side profile views (front, back, left, right) at 0° elevation", DefaultValueFactory = _ => false };
-        var trimetricOption = new Option<bool>("--trimetric") { Description = "Render 4 trimetric axonometric views (unequal axis foreshortening)", DefaultValueFactory = _ => false };
-        var sizeOption = new Option<int?>("--size") { Description = "Force all sprites to this size (longest edge), regardless of model scale" };
-        var gpuOption = new Option<bool>("--gpu") { Description = "Force GPU rendering (Vulkan/D3D11)", DefaultValueFactory = _ => false };
-        var cpuOption = new Option<bool>("--cpu") { Description = "Force CPU software rendering", DefaultValueFactory = _ => false };
+        var pathArg = new Argument<string>("path")
+            { Description = "NIF file, directory of NIFs, or BSA-relative path (when --bsa is provided)" };
+        var bsaOption = new Option<string?>("--bsa")
+            { Description = "Path to meshes BSA file (path argument becomes BSA-relative prefix)" };
+        var outputOption = new Option<string>("-o", "--output")
+            { Description = "Output directory for sprites", Required = true };
+        var ppuOption = new Option<float>("--ppu")
+            { Description = "Pixels per game unit (default: 1.0)", DefaultValueFactory = _ => 1.0f };
+        var minSizeOption = new Option<int>("--min-size")
+            { Description = "Minimum sprite dimension (default: 32)", DefaultValueFactory = _ => 32 };
+        var maxSizeOption = new Option<int>("--max-size")
+            { Description = "Maximum sprite dimension (default: 1024)", DefaultValueFactory = _ => 1024 };
+        var parallelismOption = new Option<int>("-j", "--parallelism")
+        {
+            Description = "Max parallel tasks (default: processor count)",
+            DefaultValueFactory = _ => Environment.ProcessorCount
+        };
+        var texturesBsaOption = new Option<string[]>("--textures-bsa")
+        {
+            Description = "Path to textures BSA file(s) for texture-mapped rendering (can specify multiple)",
+            AllowMultipleArgumentsPerToken = true
+        };
+        var esmOption = new Option<string?>("--esm")
+            { Description = "ESM file for cross-referencing FormIDs, EditorIDs, and RefIDs" };
+        var isoOption = new Option<bool>("--iso")
+        {
+            Description = "Render 4 isometric views (NE, NW, SW, SE) instead of top-down",
+            DefaultValueFactory = _ => false
+        };
+        var elevationOption = new Option<float>("--elevation")
+        {
+            Description = "Isometric camera elevation in degrees from horizontal (default: 30)",
+            DefaultValueFactory = _ => 30f
+        };
+        var sideOption = new Option<bool>("--side")
+        {
+            Description = "Render 4 side profile views (front, back, left, right) at 0° elevation",
+            DefaultValueFactory = _ => false
+        };
+        var trimetricOption = new Option<bool>("--trimetric")
+        {
+            Description = "Render 4 trimetric axonometric views (unequal axis foreshortening)",
+            DefaultValueFactory = _ => false
+        };
+        var sizeOption = new Option<int?>("--size")
+            { Description = "Force all sprites to this size (longest edge), regardless of model scale" };
+        var gpuOption = new Option<bool>("--gpu")
+            { Description = "Force GPU rendering (Vulkan/D3D11)", DefaultValueFactory = _ => false };
+        var cpuOption = new Option<bool>("--cpu")
+            { Description = "Force CPU software rendering", DefaultValueFactory = _ => false };
 
         command.Arguments.Add(pathArg);
         command.Options.Add(bsaOption);
@@ -63,12 +97,12 @@ public static class RenderCommand
 
             var elevationExplicit = parseResult.GetResult(elevationOption) != null;
 
-            var settings = new RenderNifProcessor.NifRenderSettings
+            var settings = new NifRenderSettings
             {
                 Path = parseResult.GetValue(pathArg)!,
                 BsaPath = parseResult.GetValue(bsaOption),
                 OutputDir = parseResult.GetValue(outputOption)!,
-                Render = new RenderNifProcessor.RenderParams(
+                Render = new RenderParams(
                     parseResult.GetValue(ppuOption),
                     parseResult.GetValue(minSizeOption),
                     parseResult.GetValue(maxSizeOption)),

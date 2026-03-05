@@ -15,6 +15,20 @@ internal sealed class ScriptVariableReader
     private readonly Func<uint, string?> _resolveFormName;
     private readonly List<ScriptVariableInfo> _variables;
 
+    public ScriptVariableReader(
+        List<ScriptVariableInfo> variables,
+        List<uint> referencedObjects,
+        Func<uint, string?> resolveFormName,
+        bool isBigEndian,
+        Func<uint, ushort, string?>? resolveExternalVariable)
+    {
+        _variables = variables;
+        _referencedObjects = referencedObjects;
+        _resolveFormName = resolveFormName;
+        _isBigEndian = isBigEndian;
+        _resolveExternalVariable = resolveExternalVariable;
+    }
+
     /// <summary>Current expression boundary (prevents over-reading ASCII numbers).</summary>
     internal int ExprEnd { get; set; }
 
@@ -36,19 +50,26 @@ internal sealed class ScriptVariableReader
     /// </summary>
     internal ScriptStatementDecoder? StmtDecoder { get; set; }
 
-    public ScriptVariableReader(
-        List<ScriptVariableInfo> variables,
-        List<uint> referencedObjects,
-        Func<uint, string?> resolveFormName,
-        bool isBigEndian,
-        Func<uint, ushort, string?>? resolveExternalVariable)
+    #region Formatting
+
+    internal static string FormatDouble(double value)
     {
-        _variables = variables;
-        _referencedObjects = referencedObjects;
-        _resolveFormName = resolveFormName;
-        _isBigEndian = isBigEndian;
-        _resolveExternalVariable = resolveExternalVariable;
+        if (Math.Abs(value) < double.Epsilon)
+        {
+            return "0";
+        }
+
+        var floor = Math.Floor(value);
+        if (Math.Abs(value - floor) < 0.0001 && Math.Abs(value) < 1e15)
+        {
+            // GECK writes integer-valued numbers without decimal point (e.g., "100" not "100.0")
+            return ((long)value).ToString();
+        }
+
+        return value.ToString("G");
     }
+
+    #endregion
 
     #region Variable Reading
 
@@ -330,27 +351,6 @@ internal sealed class ScriptVariableReader
 
         var possibleFormId = (uint)floor;
         return _resolveFormName(possibleFormId);
-    }
-
-    #endregion
-
-    #region Formatting
-
-    internal static string FormatDouble(double value)
-    {
-        if (Math.Abs(value) < double.Epsilon)
-        {
-            return "0";
-        }
-
-        var floor = Math.Floor(value);
-        if (Math.Abs(value - floor) < 0.0001 && Math.Abs(value) < 1e15)
-        {
-            // GECK writes integer-valued numbers without decimal point (e.g., "100" not "100.0")
-            return ((long)value).ToString();
-        }
-
-        return value.ToString("G");
     }
 
     #endregion

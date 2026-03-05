@@ -19,16 +19,16 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-    // Shared layouts for field reading.
-    private RuntimeItemLayouts? _layouts;
-    private RuntimeItemLayouts Layouts => _layouts ??= new RuntimeItemLayouts(_s);
+    // Delegate container reading to dedicated class.
+    private RuntimeContainerReader? _containerReader;
 
     // Weapon/container field helpers (share layouts with this reader).
     private RuntimeItemFieldHelpers? _fieldHelpers;
-    private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??= new RuntimeItemFieldHelpers(_context, Layouts);
 
-    // Delegate container reading to dedicated class.
-    private RuntimeContainerReader? _containerReader;
+    // Shared layouts for field reading.
+    private RuntimeItemLayouts? _layouts;
+    private RuntimeItemLayouts Layouts => _layouts ??= new RuntimeItemLayouts(_s);
+    private RuntimeItemFieldHelpers FieldHelpers => _fieldHelpers ??= new RuntimeItemFieldHelpers(_context, Layouts);
     private RuntimeContainerReader ContainerReader => _containerReader ??= new RuntimeContainerReader(_context);
 
     /// <summary>
@@ -185,7 +185,8 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
         var damageResistance = (int)BinaryUtils.ReadUInt16BE(buffer, Layouts.ArmoRatingOffset);
 
         // DamageThreshold: OBJ_ARMO.fDamageThreshold (float32 at offset 380)
-        var damageThreshold = RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.ArmoDamageThresholdOffset, 0, 100);
+        var damageThreshold =
+            RuntimeMemoryContext.ReadValidatedFloat(buffer, Layouts.ArmoDamageThresholdOffset, 0, 100);
 
         return new ArmorRecord
         {
@@ -450,7 +451,7 @@ internal sealed class RuntimeItemReader(RuntimeMemoryContext context)
         var off = Layouts.BoundsOffset;
         if (off + 12 > buffer.Length) return null;
         var bounds = RecordParserContext.ReadObjectBounds(
-            buffer.AsSpan(off, 12), bigEndian: true);
+            buffer.AsSpan(off, 12), true);
         return bounds is { X1: 0, Y1: 0, Z1: 0, X2: 0, Y2: 0, Z2: 0 } ? null : bounds;
     }
 }

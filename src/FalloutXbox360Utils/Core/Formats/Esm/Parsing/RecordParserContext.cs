@@ -275,7 +275,8 @@ public sealed class RecordParserContext
 
         if (dataStart + dataSize > FileSize)
         {
-            Logger.Instance.Debug("  [ReadRecordData] NULL: {0} 0x{1:X8} at offset 0x{2:X} — exceeds file size ({3}+{4} > {5})",
+            Logger.Instance.Debug(
+                "  [ReadRecordData] NULL: {0} 0x{1:X8} at offset 0x{2:X} — exceeds file size ({3}+{4} > {5})",
                 record.RecordType, record.FormId, record.Offset, dataStart, dataSize, FileSize);
             return null;
         }
@@ -298,7 +299,8 @@ public sealed class RecordParserContext
             buffer.AsSpan(0, dataSize), record.IsBigEndian);
         if (decompressed == null)
         {
-            Logger.Instance.Debug("  [ReadRecordData] NULL: {0} 0x{1:X8} decompression failed (flags=0x{2:X8}, dataSize={3})",
+            Logger.Instance.Debug(
+                "  [ReadRecordData] NULL: {0} 0x{1:X8} decompression failed (flags=0x{2:X8}, dataSize={3})",
                 record.RecordType, record.FormId, record.Flags, dataSize);
         }
 
@@ -333,7 +335,7 @@ public sealed class RecordParserContext
             return;
         }
 
-        var buffer = ArrayPool<byte>.Shared.Rent(8192);
+        var buffer = ArrayPool<byte>.Shared.Rent(65536);
         try
         {
             foreach (var record in ScanResult.MainRecords)
@@ -343,26 +345,46 @@ public sealed class RecordParserContext
                     continue;
                 }
 
-                var recordData = ReadRecordData(record, buffer);
-                if (recordData == null)
+                // For compressed records larger than the buffer, rent a bigger one
+                // (compressed records need the full data to decompress)
+                byte[]? largeBuffer = null;
+                var useBuffer = buffer;
+                if (record.IsCompressed && record.DataSize > buffer.Length)
                 {
-                    continue;
+                    largeBuffer = ArrayPool<byte>.Shared.Rent((int)record.DataSize);
+                    useBuffer = largeBuffer;
                 }
 
-                var (data, dataSize) = recordData.Value;
-
-                foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                try
                 {
-                    if (sub.Signature == "FULL" && sub.DataLength > 0)
+                    var recordData = ReadRecordData(record, useBuffer);
+                    if (recordData == null)
                     {
-                        var name = EsmStringUtils.ReadNullTermString(
-                            data.AsSpan(sub.DataOffset, sub.DataLength));
-                        if (!string.IsNullOrEmpty(name))
-                        {
-                            FormIdToFullName.TryAdd(record.FormId, name);
-                        }
+                        continue;
+                    }
 
-                        break;
+                    var (data, dataSize) = recordData.Value;
+
+                    foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+                    {
+                        if (sub.Signature == "FULL" && sub.DataLength > 0)
+                        {
+                            var name = EsmStringUtils.ReadNullTermString(
+                                data.AsSpan(sub.DataOffset, sub.DataLength));
+                            if (!string.IsNullOrEmpty(name))
+                            {
+                                FormIdToFullName.TryAdd(record.FormId, name);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+                finally
+                {
+                    if (largeBuffer != null)
+                    {
+                        ArrayPool<byte>.Shared.Return(largeBuffer);
                     }
                 }
             }

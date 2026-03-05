@@ -4,7 +4,6 @@
 
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Nif.Skinning;
-using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using FalloutXbox360Utils.Core;
 using Spectre.Console;
 
@@ -77,13 +78,14 @@ public static class DiffCommand
         {
             targetFormId = formIdStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
                 ? Convert.ToUInt32(formIdStr, 16)
-                : uint.Parse(formIdStr, System.Globalization.NumberStyles.HexNumber);
+                : uint.Parse(formIdStr, NumberStyles.HexNumber);
         }
 
         var fileTypeA = FileTypeDetector.Detect(fileA);
         var fileTypeB = FileTypeDetector.Detect(fileB);
 
-        AnsiConsole.MarkupLine($"[bold]Diff:[/] [cyan]{Path.GetFileName(fileA)}[/] ({fileTypeA}) vs [cyan]{Path.GetFileName(fileB)}[/] ({fileTypeB})");
+        AnsiConsole.MarkupLine(
+            $"[bold]Diff:[/] [cyan]{Path.GetFileName(fileA)}[/] ({fileTypeA}) vs [cyan]{Path.GetFileName(fileB)}[/] ({fileTypeB})");
 
         try
         {
@@ -133,12 +135,12 @@ public static class DiffCommand
                 if (!string.IsNullOrEmpty(nameFilter))
                 {
                     flatA = flatA.Where(r =>
-                        (r.EditorId?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                        (r.DisplayName?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false))
+                            (r.EditorId?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (r.DisplayName?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false))
                         .ToList();
                     flatB = flatB.Where(r =>
-                        (r.EditorId?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                        (r.DisplayName?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false))
+                            (r.EditorId?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (r.DisplayName?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false))
                         .ToList();
                 }
 
@@ -191,7 +193,7 @@ public static class DiffCommand
 
                 // Display summary
                 AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine($"[bold]Summary:[/]");
+                AnsiConsole.MarkupLine("[bold]Summary:[/]");
                 AnsiConsole.MarkupLine($"  File A records (filtered): {flatA.Count}");
                 AnsiConsole.MarkupLine($"  File B records (filtered): {flatB.Count}");
                 AnsiConsole.MarkupLine($"  [green]Identical:[/] {same}");
@@ -262,8 +264,8 @@ public static class DiffCommand
                     var table = new Table();
                     table.AddColumn("FormID");
                     table.AddColumn("Type");
-                    table.AddColumn($"EditorID (A)");
-                    table.AddColumn($"EditorID (B)");
+                    table.AddColumn("EditorID (A)");
+                    table.AddColumn("EditorID (B)");
                     table.AddColumn("Name (A)");
                     table.AddColumn("Name (B)");
 
@@ -316,7 +318,8 @@ public static class DiffCommand
                 typeTable.AddColumn(new TableColumn("File B").RightAligned());
                 typeTable.AddColumn(new TableColumn("Delta").RightAligned());
 
-                foreach (var (type, (countA, countB)) in typeSummary.OrderByDescending(x => Math.Abs(x.Value.countA - x.Value.countB)))
+                foreach (var (type, (countA, countB)) in typeSummary.OrderByDescending(x =>
+                             Math.Abs(x.Value.countA - x.Value.countB)))
                 {
                     var delta = countB - countA;
                     var deltaStr = delta switch

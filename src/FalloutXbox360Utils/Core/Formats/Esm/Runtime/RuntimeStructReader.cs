@@ -96,6 +96,15 @@ public sealed class RuntimeStructReader
 
     #endregion
 
+    #region Generic (PDB-derived)
+
+    public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
+    {
+        return _generic.ReadGenericRecord(entry);
+    }
+
+    #endregion
+
     #region Actors
 
     public NpcRecord? ReadRuntimeNpc(RuntimeEditorIdEntry entry)
@@ -231,15 +240,6 @@ public sealed class RuntimeStructReader
         IEnumerable<RuntimeEditorIdEntry> entries)
     {
         return _cells.ReadAllWorldspaceCellMaps(entries);
-    }
-
-    #endregion
-
-    #region Generic (PDB-derived)
-
-    public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
-    {
-        return _generic.ReadGenericRecord(entry);
     }
 
     #endregion

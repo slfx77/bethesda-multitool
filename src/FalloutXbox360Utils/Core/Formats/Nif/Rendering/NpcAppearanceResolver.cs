@@ -64,49 +64,49 @@ internal sealed class NpcAppearanceResolver
             {
                 case "NPC_":
                 {
-                    var entry = ProcessNpcRecord(esmData, bigEndian, record);
+                    var entry = NpcEsmRecordParsers.ProcessNpcRecord(esmData, bigEndian, record);
                     if (entry != null)
                         npcs[record.FormId] = entry;
                     break;
                 }
                 case "RACE":
                 {
-                    var entry = ProcessRaceRecord(esmData, bigEndian, record);
+                    var entry = NpcEsmRecordParsers.ProcessRaceRecord(esmData, bigEndian, record);
                     if (entry != null)
                         races[record.FormId] = entry;
                     break;
                 }
                 case "HAIR":
                 {
-                    var entry = ProcessHairRecord(esmData, bigEndian, record);
+                    var entry = NpcEsmRecordParsers.ProcessHairRecord(esmData, bigEndian, record);
                     if (entry != null)
                         hairs[record.FormId] = entry;
                     break;
                 }
                 case "EYES":
                 {
-                    var entry = ProcessEyesRecord(esmData, bigEndian, record);
+                    var entry = NpcEsmRecordParsers.ProcessEyesRecord(esmData, bigEndian, record);
                     if (entry != null)
                         eyes[record.FormId] = entry;
                     break;
                 }
                 case "HDPT":
                 {
-                    var entry = ProcessHdptRecord(esmData, bigEndian, record);
+                    var entry = NpcEsmRecordParsers.ProcessHdptRecord(esmData, bigEndian, record);
                     if (entry != null)
                         headParts[record.FormId] = entry;
                     break;
                 }
                 case "ARMO":
                 {
-                    var entry = ProcessArmoRecord(esmData, bigEndian, record);
+                    var entry = NpcEsmRecordParsers.ProcessArmoRecord(esmData, bigEndian, record);
                     if (entry != null)
                         armors[record.FormId] = entry;
                     break;
                 }
                 case "LVLI":
                 {
-                    var entries = ProcessLvliRecord(esmData, bigEndian, record);
+                    var entries = NpcEsmRecordParsers.ProcessLvliRecord(esmData, bigEndian, record);
                     if (entries != null)
                         leveledItems[record.FormId] = entries;
                     break;
@@ -114,7 +114,7 @@ internal sealed class NpcAppearanceResolver
                 case "LVLN":
                 {
                     // LVLN uses same LVLO subrecord format as LVLI
-                    var entries = ProcessLvliRecord(esmData, bigEndian, record);
+                    var entries = NpcEsmRecordParsers.ProcessLvliRecord(esmData, bigEndian, record);
                     if (entries != null)
                         leveledNpcs[record.FormId] = entries;
                     break;
@@ -350,7 +350,7 @@ internal sealed class NpcAppearanceResolver
         if (eyesFormId.HasValue && _eyes.TryGetValue(eyesFormId.Value, out var eyesRecord))
             eyeTexturePath = eyesRecord.TexturePath != null ? "textures\\" + eyesRecord.TexturePath : null;
 
-        // Head parts from PNAM → HDPT (eyebrows, beards, etc.)
+        // Head parts from PNAM -> HDPT (eyebrows, beards, etc.)
         List<string>? headPartNifPaths = null;
         if (npc.HeadPartFormIds is { Count: > 0 })
         {
@@ -374,7 +374,7 @@ internal sealed class NpcAppearanceResolver
         var raceFgts = race != null ? (npc.IsFemale ? race.FemaleFaceGenTexture : race.MaleFaceGenTexture) : null;
         var mergedFgts = MergeCoefficients(npc.FaceGenTexture, raceFgts);
 
-        // Equipment from NPC_ CNTO inventory → ARMO biped models
+        // Equipment from NPC_ CNTO inventory -> ARMO biped models
         // Follow TPLT template chains if NPC has no own inventory
         var inventoryFormIds = ResolveInventoryFormIds(npc);
         var equippedItems = ResolveEquipment(inventoryFormIds, npc.IsFemale);
@@ -425,326 +425,10 @@ internal sealed class NpcAppearanceResolver
         };
     }
 
-    private static NpcScanEntry? ProcessNpcRecord(byte[] esmData, bool bigEndian, AnalyzerRecordInfo record)
-    {
-        var recordData = ReadRecordData(esmData, bigEndian, record);
-        if (recordData == null)
-            return null;
-
-        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
-
-        string? editorId = null;
-        string? fullName = null;
-        uint? raceFormId = null;
-        uint? hairFormId = null;
-        uint? eyesFormId = null;
-        uint? hairColor = null;
-        bool isFemale = false;
-        ushort templateFlags = 0;
-        uint? templateFormId = null;
-        float[]? fggs = null;
-        float[]? fgga = null;
-        float[]? fgts = null;
-        var headPartFormIds = new List<uint>();
-        var inventoryFormIds = new List<uint>();
-
-        foreach (var sub in subrecords)
-        {
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    editorId = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "FULL":
-                    fullName = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "RNAM" when sub.Data.Length == 4:
-                    raceFormId = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    break;
-                case "HNAM" when sub.Data.Length == 4:
-                    hairFormId = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    break;
-                case "ENAM" when sub.Data.Length == 4:
-                    eyesFormId = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    break;
-                case "PNAM" when sub.Data.Length == 4:
-                    headPartFormIds.Add(BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian));
-                    break;
-                case "HCLR" when sub.Data.Length == 4:
-                    hairColor = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    break;
-                case "ACBS" when sub.Data.Length >= 24:
-                {
-                    var flags = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    isFemale = (flags & 1) != 0;
-                    templateFlags = BinaryUtils.ReadUInt16(sub.Data, 22, bigEndian);
-                    break;
-                }
-                case "ACBS" when sub.Data.Length >= 4:
-                {
-                    var flags = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    isFemale = (flags & 1) != 0;
-                    break;
-                }
-                case "CNTO" when sub.Data.Length >= 8:
-                    inventoryFormIds.Add(BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian));
-                    break;
-                case "TPLT" when sub.Data.Length == 4:
-                    templateFormId = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    break;
-                case "FGGS" when sub.Data.Length >= 4:
-                    fggs = ReadFloatArray(sub.Data, bigEndian);
-                    break;
-                case "FGGA" when sub.Data.Length >= 4:
-                    fgga = ReadFloatArray(sub.Data, bigEndian);
-                    break;
-                case "FGTS" when sub.Data.Length >= 4:
-                    fgts = ReadFloatArray(sub.Data, bigEndian);
-                    break;
-            }
-        }
-
-        return new NpcScanEntry
-        {
-            EditorId = editorId,
-            FullName = fullName,
-            RaceFormId = raceFormId,
-            HairFormId = hairFormId,
-            EyesFormId = eyesFormId,
-            IsFemale = isFemale,
-            FaceGenSymmetric = fggs,
-            FaceGenAsymmetric = fgga,
-            FaceGenTexture = fgts,
-            HeadPartFormIds = headPartFormIds.Count > 0 ? headPartFormIds : null,
-            HairColor = hairColor,
-            InventoryFormIds = inventoryFormIds.Count > 0 ? inventoryFormIds : null,
-            TemplateFormId = templateFormId,
-            TemplateFlags = templateFlags
-        };
-    }
-
-    private static RaceScanEntry? ProcessRaceRecord(byte[] esmData, bool bigEndian, AnalyzerRecordInfo record)
-    {
-        var recordData = ReadRecordData(esmData, bigEndian, record);
-        if (recordData == null)
-            return null;
-
-        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
-
-        string? editorId = null;
-        var inMaleSection = true;
-        var inHeadPartsSection = false;
-        var inBodyPartsSection = false;
-
-        string? maleHeadModel = null, femaleHeadModel = null;
-        string? maleHeadTexture = null, femaleHeadTexture = null;
-        string? maleEyeLeftModel = null, femaleEyeLeftModel = null;
-        string? maleEyeRightModel = null, femaleEyeRightModel = null;
-        float[]? maleFggs = null, femaleFggs = null;
-        float[]? maleFgga = null, femaleFgga = null;
-        float[]? maleFgts = null, femaleFgts = null;
-        uint? defaultEyesFormId = null;
-
-        // Body mesh paths (from section after NAM1)
-        string? maleUpperBody = null, femaleUpperBody = null;
-        string? maleLeftHand = null, femaleLeftHand = null;
-        string? maleRightHand = null, femaleRightHand = null;
-        string? maleBodyTexture = null, femaleBodyTexture = null;
-
-        // Current INDX value within head/body parts sections
-        int currentIndx = -1;
-
-        foreach (var sub in subrecords)
-        {
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    editorId = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-
-                // Section markers (empty subrecords)
-                // NAM0 = head parts section start, NAM1 = head parts end / body parts start
-                case "NAM0" when sub.Data.Length == 0:
-                    inHeadPartsSection = true;
-                    inBodyPartsSection = false;
-                    break;
-                case "NAM1" when sub.Data.Length == 0:
-                    inHeadPartsSection = false;
-                    inBodyPartsSection = true;
-                    break;
-                case "MNAM" when sub.Data.Length == 0:
-                    inMaleSection = true;
-                    currentIndx = -1;
-                    break;
-                case "FNAM" when sub.Data.Length == 0:
-                    inMaleSection = false;
-                    currentIndx = -1;
-                    break;
-
-                // Part index within head or body parts section
-                case "INDX" when sub.Data.Length == 4 && (inHeadPartsSection || inBodyPartsSection):
-                    currentIndx = (int)BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    break;
-
-                // Head mesh: MODL at INDX 0 in NAM0 section
-                case "MODL" when inHeadPartsSection && currentIndx == 0:
-                {
-                    var path = EsmRecordParser.GetSubrecordString(sub);
-                    if (path != null)
-                    {
-                        if (inMaleSection)
-                            maleHeadModel = path;
-                        else
-                            femaleHeadModel = path;
-                    }
-                    break;
-                }
-
-                // Eye meshes: MODL at INDX 6 (left) and 7 (right) in NAM0 section
-                case "MODL" when inHeadPartsSection && currentIndx == 6:
-                {
-                    var path = EsmRecordParser.GetSubrecordString(sub);
-                    if (path != null)
-                    {
-                        if (inMaleSection)
-                            maleEyeLeftModel = path;
-                        else
-                            femaleEyeLeftModel = path;
-                    }
-                    break;
-                }
-                case "MODL" when inHeadPartsSection && currentIndx == 7:
-                {
-                    var path = EsmRecordParser.GetSubrecordString(sub);
-                    if (path != null)
-                    {
-                        if (inMaleSection)
-                            maleEyeRightModel = path;
-                        else
-                            femaleEyeRightModel = path;
-                    }
-                    break;
-                }
-
-                // Head texture: ICON at INDX 0 in NAM0 section
-                case "ICON" when inHeadPartsSection && currentIndx == 0:
-                {
-                    var path = EsmRecordParser.GetSubrecordString(sub);
-                    if (path != null)
-                    {
-                        if (inMaleSection)
-                            maleHeadTexture = path;
-                        else
-                            femaleHeadTexture = path;
-                    }
-                    break;
-                }
-
-                // Body meshes: MODL at INDX 0/1/2 in body parts section (after NAM1)
-                case "MODL" when inBodyPartsSection && currentIndx == 0:
-                {
-                    var path = EsmRecordParser.GetSubrecordString(sub);
-                    if (path != null)
-                    {
-                        if (inMaleSection) maleUpperBody = path;
-                        else femaleUpperBody = path;
-                    }
-                    break;
-                }
-                case "MODL" when inBodyPartsSection && currentIndx == 1:
-                {
-                    var path = EsmRecordParser.GetSubrecordString(sub);
-                    if (path != null)
-                    {
-                        if (inMaleSection) maleLeftHand = path;
-                        else femaleLeftHand = path;
-                    }
-                    break;
-                }
-                case "MODL" when inBodyPartsSection && currentIndx == 2:
-                {
-                    var path = EsmRecordParser.GetSubrecordString(sub);
-                    if (path != null)
-                    {
-                        if (inMaleSection) maleRightHand = path;
-                        else femaleRightHand = path;
-                    }
-                    break;
-                }
-
-                // Body texture: ICON at INDX 0 in body parts section
-                case "ICON" when inBodyPartsSection && currentIndx == 0:
-                {
-                    var path = EsmRecordParser.GetSubrecordString(sub);
-                    if (path != null)
-                    {
-                        if (inMaleSection) maleBodyTexture = path;
-                        else femaleBodyTexture = path;
-                    }
-                    break;
-                }
-
-                // Default eyes: ENAM is a list of valid EYES FormIDs for this race.
-                // The first entry is the default (used when NPC has no ENAM).
-                case "ENAM" when sub.Data.Length >= 4:
-                    defaultEyesFormId ??= BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    break;
-
-                // FaceGen morph coefficients (outside head parts section)
-                case "FGGS" when sub.Data.Length == 200:
-                    if (inMaleSection)
-                        maleFggs = ReadFloatArray(sub.Data, bigEndian);
-                    else
-                        femaleFggs = ReadFloatArray(sub.Data, bigEndian);
-                    break;
-                case "FGGA" when sub.Data.Length == 120:
-                    if (inMaleSection)
-                        maleFgga = ReadFloatArray(sub.Data, bigEndian);
-                    else
-                        femaleFgga = ReadFloatArray(sub.Data, bigEndian);
-                    break;
-                case "FGTS" when sub.Data.Length == 200:
-                    if (inMaleSection)
-                        maleFgts = ReadFloatArray(sub.Data, bigEndian);
-                    else
-                        femaleFgts = ReadFloatArray(sub.Data, bigEndian);
-                    break;
-            }
-        }
-
-        return new RaceScanEntry
-        {
-            EditorId = editorId,
-            DefaultEyesFormId = defaultEyesFormId,
-            MaleHeadModelPath = maleHeadModel,
-            FemaleHeadModelPath = femaleHeadModel,
-            MaleHeadTexturePath = maleHeadTexture,
-            FemaleHeadTexturePath = femaleHeadTexture,
-            MaleEyeLeftModelPath = maleEyeLeftModel,
-            FemaleEyeLeftModelPath = femaleEyeLeftModel,
-            MaleEyeRightModelPath = maleEyeRightModel,
-            FemaleEyeRightModelPath = femaleEyeRightModel,
-            MaleFaceGenSymmetric = maleFggs,
-            FemaleFaceGenSymmetric = femaleFggs,
-            MaleFaceGenAsymmetric = maleFgga,
-            FemaleFaceGenAsymmetric = femaleFgga,
-            MaleFaceGenTexture = maleFgts,
-            FemaleFaceGenTexture = femaleFgts,
-            MaleUpperBodyPath = maleUpperBody,
-            FemaleUpperBodyPath = femaleUpperBody,
-            MaleLeftHandPath = maleLeftHand,
-            FemaleLeftHandPath = femaleLeftHand,
-            MaleRightHandPath = maleRightHand,
-            FemaleRightHandPath = femaleRightHand,
-            MaleBodyTexturePath = maleBodyTexture,
-            FemaleBodyTexturePath = femaleBodyTexture
-        };
-    }
-
     /// <summary>
     ///     Derives the hand texture path from the RACE body texture path.
     ///     FNV convention: same directory, replace UpperBody{Male|Female} with Hand{Male|Female}.
-    ///     E.g., Characters\Ghoul\UpperBodyMale.dds → textures\Characters\Ghoul\HandMale.dds
+    ///     E.g., Characters\Ghoul\UpperBodyMale.dds -> textures\Characters\Ghoul\HandMale.dds
     /// </summary>
     private static string? DeriveHandTexturePath(string? bodyTexturePath, bool isFemale)
     {
@@ -762,7 +446,7 @@ internal sealed class NpcAppearanceResolver
     ///     Body EGT files use the same FREGT003 format as head EGTs and contain
     ///     per-texel RGB morph deltas for body skin tinting (same algorithm as head FaceGen).
     ///     The race variant is derived from the head model name:
-    ///       headhuman → body.egt (default), headghoul → upperbodyhumanghoul.egt, etc.
+    ///       headhuman -> body.egt (default), headghoul -> upperbodyhumanghoul.egt, etc.
     ///     Hand EGTs follow: lefthand{variant}.egt / righthand{variant}.egt.
     /// </summary>
     private static (string? bodyEgt, string? leftHandEgt, string? rightHandEgt) DeriveBodyEgtPaths(
@@ -771,7 +455,7 @@ internal sealed class NpcAppearanceResolver
         if (headNifPath == null)
             return (null, null, null);
 
-        // Extract the head variant from the NIF filename (e.g., "headhuman" → "human")
+        // Extract the head variant from the NIF filename (e.g., "headhuman" -> "human")
         var headFileName = Path.GetFileNameWithoutExtension(headNifPath);
         if (headFileName == null)
             return (null, null, null);
@@ -818,15 +502,6 @@ internal sealed class NpcAppearanceResolver
         );
     }
 
-    private static float[] ReadFloatArray(byte[] data, bool bigEndian)
-    {
-        var count = data.Length / 4;
-        var result = new float[count];
-        for (var i = 0; i < count; i++)
-            result[i] = BinaryUtils.ReadFloat(data, i * 4, bigEndian);
-        return result;
-    }
-
     /// <summary>
     ///     Element-wise addition of NPC + race base coefficients.
     ///     Engine merges: merged[i] = npc_coeff[i] + race_base_coeff[i]
@@ -843,154 +518,6 @@ internal sealed class NpcAppearanceResolver
         for (var i = 0; i < count; i++)
             merged[i] = npcCoeffs[i] + raceCoeffs[i];
         return merged;
-    }
-
-    private static EyesScanEntry? ProcessEyesRecord(byte[] esmData, bool bigEndian, AnalyzerRecordInfo record)
-    {
-        var recordData = ReadRecordData(esmData, bigEndian, record);
-        if (recordData == null)
-            return null;
-
-        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
-
-        string? editorId = null;
-        string? texturePath = null;
-
-        foreach (var sub in subrecords)
-        {
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    editorId = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "ICON":
-                    texturePath = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-            }
-        }
-
-        return new EyesScanEntry
-        {
-            EditorId = editorId,
-            TexturePath = texturePath
-        };
-    }
-
-    private static HdptScanEntry? ProcessHdptRecord(byte[] esmData, bool bigEndian, AnalyzerRecordInfo record)
-    {
-        var recordData = ReadRecordData(esmData, bigEndian, record);
-        if (recordData == null)
-            return null;
-
-        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
-
-        string? editorId = null;
-        string? modelPath = null;
-
-        foreach (var sub in subrecords)
-        {
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    editorId = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "MODL":
-                    modelPath = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-            }
-        }
-
-        return new HdptScanEntry
-        {
-            EditorId = editorId,
-            ModelPath = modelPath
-        };
-    }
-
-    private static HairScanEntry? ProcessHairRecord(byte[] esmData, bool bigEndian, AnalyzerRecordInfo record)
-    {
-        var recordData = ReadRecordData(esmData, bigEndian, record);
-        if (recordData == null)
-            return null;
-
-        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
-
-        string? editorId = null;
-        string? modelPath = null;
-        string? texturePath = null;
-
-        foreach (var sub in subrecords)
-        {
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    editorId = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "MODL":
-                    modelPath = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "ICON":
-                    texturePath = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-            }
-        }
-
-        return new HairScanEntry
-        {
-            EditorId = editorId,
-            ModelPath = modelPath,
-            TexturePath = texturePath
-        };
-    }
-
-    private static ArmoScanEntry? ProcessArmoRecord(byte[] esmData, bool bigEndian, AnalyzerRecordInfo record)
-    {
-        var recordData = ReadRecordData(esmData, bigEndian, record);
-        if (recordData == null)
-            return null;
-
-        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
-
-        string? editorId = null;
-        string? maleBipedModel = null;
-        string? femaleBipedModel = null;
-        uint bipedFlags = 0;
-
-        // FNV ARMO subrecord layout:
-        //   MODL = male biped model (3rd person worn)
-        //   MOD2 = male world/ground model (NOT biped)
-        //   MOD3 = female biped model (3rd person worn)
-        //   MOD4 = female world/ground model (NOT biped)
-        foreach (var sub in subrecords)
-        {
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    editorId = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "MODL":
-                    maleBipedModel = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "MOD3":
-                    femaleBipedModel = EsmRecordParser.GetSubrecordString(sub);
-                    break;
-                case "BMDT" when sub.Data.Length >= 4:
-                    bipedFlags = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                    break;
-            }
-        }
-
-        // Only keep armors that have at least one biped model and visual biped flags
-        if (bipedFlags == 0 || (maleBipedModel == null && femaleBipedModel == null))
-            return null;
-
-        return new ArmoScanEntry
-        {
-            EditorId = editorId,
-            BipedFlags = bipedFlags,
-            MaleBipedModelPath = maleBipedModel,
-            FemaleBipedModelPath = femaleBipedModel
-        };
     }
 
     /// <summary>
@@ -1025,7 +552,7 @@ internal sealed class NpcAppearanceResolver
                 continue;
             }
 
-            // Try LVLN (leveled NPC list) → resolve first NPC_ entry with inventory
+            // Try LVLN (leveled NPC list) -> resolve first NPC_ entry with inventory
             if (_leveledNpcs.TryGetValue(currentTemplateId, out var lvlnEntries))
             {
                 foreach (var entryId in lvlnEntries)
@@ -1050,7 +577,7 @@ internal sealed class NpcAppearanceResolver
         if (inventoryFormIds == null || inventoryFormIds.Count == 0)
             return null;
 
-        // Track first armor per biped slot (first in inventory order wins — matches game behavior)
+        // Track first armor per biped slot (first in inventory order wins -- matches game behavior)
         var slotToArmor = new Dictionary<uint, (uint BipedFlags, string MeshPath)>();
 
         foreach (var formId in inventoryFormIds)
@@ -1069,7 +596,7 @@ internal sealed class NpcAppearanceResolver
             if (meshPath == null)
                 continue;
 
-            // An armor can cover multiple slots — assign to each slot it occupies (first wins)
+            // An armor can cover multiple slots -- assign to each slot it occupies (first wins)
             for (var bit = 0; bit < 20; bit++)
             {
                 var slot = 1u << bit;
@@ -1104,7 +631,7 @@ internal sealed class NpcAppearanceResolver
     /// <summary>
     ///     Resolves a leveled item list (LVLI) FormID to the first ARMO entry found.
     ///     Recursively walks nested LVLI chains. Returns the first armor found
-    ///     (deterministic for rendering — we just need representative equipment).
+    ///     (deterministic for rendering -- we just need representative equipment).
     /// </summary>
     private ArmoScanEntry? ResolveLvliToArmor(uint formId, int depth = 0)
     {
@@ -1124,144 +651,4 @@ internal sealed class NpcAppearanceResolver
 
         return null;
     }
-
-    /// <summary>
-    ///     Scans an LVLI record for entry FormIDs (from LVLO subrecords).
-    ///     LVLO subrecords are 12 bytes: Level(2) + Padding(2) + FormID(4) + Count(2) + Padding(2).
-    /// </summary>
-    private static List<uint>? ProcessLvliRecord(byte[] esmData, bool bigEndian, AnalyzerRecordInfo record)
-    {
-        var recordData = ReadRecordData(esmData, bigEndian, record);
-        if (recordData == null)
-            return null;
-
-        var subrecords = EsmRecordParser.ParseSubrecords(recordData, bigEndian);
-        var entryFormIds = new List<uint>();
-
-        foreach (var sub in subrecords)
-        {
-            if (sub.Signature == "LVLO" && sub.Data.Length >= 8)
-            {
-                // LVLO: bytes 0-1 = level, 2-3 = padding, 4-7 = FormID
-                var entryFormId = BinaryUtils.ReadUInt32(sub.Data, 4, bigEndian);
-                if (entryFormId != 0)
-                    entryFormIds.Add(entryFormId);
-            }
-        }
-
-        return entryFormIds.Count > 0 ? entryFormIds : null;
-    }
-
-    /// <summary>
-    ///     Reads and optionally decompresses a record's data section.
-    ///     Uses EsmParser.DecompressRecordData for zlib decompression (not raw deflate).
-    /// </summary>
-    private static byte[]? ReadRecordData(byte[] esmData, bool bigEndian, AnalyzerRecordInfo record)
-    {
-        var headerSize = EsmParser.MainRecordHeaderSize;
-        var dataStart = (int)(record.Offset + headerSize);
-        var dataSize = (int)record.DataSize;
-
-        if (dataStart + dataSize > esmData.Length)
-            return null;
-
-        var rawSpan = esmData.AsSpan(dataStart, dataSize);
-
-        if (record.IsCompressed)
-            return EsmParser.DecompressRecordData(rawSpan, bigEndian);
-
-        return rawSpan.ToArray();
-    }
-}
-
-/// <summary>
-///     Scanned NPC_ record data.
-/// </summary>
-internal sealed class NpcScanEntry
-{
-    public string? EditorId { get; init; }
-    public string? FullName { get; init; }
-    public uint? RaceFormId { get; init; }
-    public bool IsFemale { get; init; }
-    public uint? HairFormId { get; init; }
-    public uint? EyesFormId { get; init; }
-    public List<uint>? HeadPartFormIds { get; init; }
-    public uint? HairColor { get; init; }
-    public float[]? FaceGenSymmetric { get; init; }
-    public float[]? FaceGenAsymmetric { get; init; }
-    public float[]? FaceGenTexture { get; init; }
-    public List<uint>? InventoryFormIds { get; init; }
-    public uint? TemplateFormId { get; init; }
-    public ushort TemplateFlags { get; init; }
-}
-
-/// <summary>
-///     Scanned RACE record data.
-/// </summary>
-internal sealed class RaceScanEntry
-{
-    public string? EditorId { get; init; }
-    public uint? DefaultEyesFormId { get; init; }
-    public string? MaleHeadModelPath { get; init; }
-    public string? FemaleHeadModelPath { get; init; }
-    public string? MaleHeadTexturePath { get; init; }
-    public string? FemaleHeadTexturePath { get; init; }
-    public string? MaleEyeLeftModelPath { get; init; }
-    public string? FemaleEyeLeftModelPath { get; init; }
-    public string? MaleEyeRightModelPath { get; init; }
-    public string? FemaleEyeRightModelPath { get; init; }
-    public float[]? MaleFaceGenSymmetric { get; init; }
-    public float[]? FemaleFaceGenSymmetric { get; init; }
-    public float[]? MaleFaceGenAsymmetric { get; init; }
-    public float[]? FemaleFaceGenAsymmetric { get; init; }
-    public float[]? MaleFaceGenTexture { get; init; }
-    public float[]? FemaleFaceGenTexture { get; init; }
-    // Body mesh paths (from body parts section after NAM1)
-    public string? MaleUpperBodyPath { get; init; }
-    public string? FemaleUpperBodyPath { get; init; }
-    public string? MaleLeftHandPath { get; init; }
-    public string? FemaleLeftHandPath { get; init; }
-    public string? MaleRightHandPath { get; init; }
-    public string? FemaleRightHandPath { get; init; }
-    public string? MaleBodyTexturePath { get; init; }
-    public string? FemaleBodyTexturePath { get; init; }
-}
-
-/// <summary>
-///     Scanned HAIR record data.
-/// </summary>
-internal sealed class HairScanEntry
-{
-    public string? EditorId { get; init; }
-    public string? ModelPath { get; init; }
-    public string? TexturePath { get; init; }
-}
-
-/// <summary>
-///     Scanned EYES record data (eye texture).
-/// </summary>
-internal sealed class EyesScanEntry
-{
-    public string? EditorId { get; init; }
-    public string? TexturePath { get; init; }
-}
-
-/// <summary>
-///     Scanned HDPT record data (head part mesh).
-/// </summary>
-internal sealed class HdptScanEntry
-{
-    public string? EditorId { get; init; }
-    public string? ModelPath { get; init; }
-}
-
-/// <summary>
-///     Scanned ARMO record data (armor biped model paths for rendering).
-/// </summary>
-internal sealed class ArmoScanEntry
-{
-    public string? EditorId { get; init; }
-    public uint BipedFlags { get; init; }
-    public string? MaleBipedModelPath { get; init; }
-    public string? FemaleBipedModelPath { get; init; }
 }

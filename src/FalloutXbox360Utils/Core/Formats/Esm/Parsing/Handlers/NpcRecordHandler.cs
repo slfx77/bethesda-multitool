@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
@@ -121,7 +120,8 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
                     fullName = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "ACBS" when sub.DataLength == 24:
-                    stats = ActorRecordHandler.ParseActorBase(subData, record.Offset + 24 + sub.DataOffset, record.IsBigEndian);
+                    stats = ActorRecordHandler.ParseActorBase(subData, record.Offset + 24 + sub.DataOffset,
+                        record.IsBigEndian);
                     break;
                 case "RNAM" when sub.DataLength == 4:
                     race = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -211,12 +211,6 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
                     fgts = ActorRecordHandler.ReadFloatArray(subData, record.IsBigEndian);
                     break;
             }
-        }
-
-        // Track FullName for display name map
-        if (!string.IsNullOrEmpty(fullName))
-        {
-            _context.FormIdToFullName.TryAdd(record.FormId, fullName);
         }
 
         return new NpcRecord

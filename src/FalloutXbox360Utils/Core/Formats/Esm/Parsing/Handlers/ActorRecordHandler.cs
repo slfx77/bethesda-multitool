@@ -9,8 +9,34 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 internal sealed class ActorRecordHandler(RecordParserContext context)
 {
     private readonly RecordParserContext _context = context;
-    private readonly NpcRecordHandler _npcs = new(context);
     private readonly CreatureRecordHandler _creatures = new(context);
+    private readonly NpcRecordHandler _npcs = new(context);
+
+    #region ParseCreatures
+
+    /// <summary>
+    ///     Parse all Creature records from the scan result.
+    ///     Delegates to <see cref="CreatureRecordHandler" />.
+    /// </summary>
+    internal List<CreatureRecord> ParseCreatures()
+    {
+        return _creatures.ParseCreatures();
+    }
+
+    #endregion
+
+    #region ParseNpcs
+
+    /// <summary>
+    ///     Parse all NPC records from the scan result.
+    ///     Delegates to <see cref="NpcRecordHandler" />.
+    /// </summary>
+    internal List<NpcRecord> ParseNpcs()
+    {
+        return _npcs.ParseNpcs();
+    }
+
+    #endregion
 
     #region Actor Parsing Helpers
 
@@ -53,19 +79,6 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
         }
 
         return result;
-    }
-
-    #endregion
-
-    #region ParseCreatures
-
-    /// <summary>
-    ///     Parse all Creature records from the scan result.
-    ///     Delegates to <see cref="CreatureRecordHandler"/>.
-    /// </summary>
-    internal List<CreatureRecord> ParseCreatures()
-    {
-        return _creatures.ParseCreatures();
     }
 
     #endregion
@@ -225,12 +238,6 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             ranks.Add(new FactionRank(currentRankNumber.Value, currentMaleTitle, currentFemaleTitle, currentInsignia));
         }
 
-        // Track FullName for display name map
-        if (!string.IsNullOrEmpty(fullName))
-        {
-            _context.FormIdToFullName.TryAdd(record.FormId, fullName);
-        }
-
         return new FactionRecord
         {
             FormId = record.FormId,
@@ -243,19 +250,6 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
-    }
-
-    #endregion
-
-    #region ParseNpcs
-
-    /// <summary>
-    ///     Parse all NPC records from the scan result.
-    ///     Delegates to <see cref="NpcRecordHandler"/>.
-    /// </summary>
-    internal List<NpcRecord> ParseNpcs()
-    {
-        return _npcs.ParseNpcs();
     }
 
     #endregion
@@ -505,9 +499,21 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
                     var path = EsmStringUtils.ReadNullTermString(subData);
                     if (path != null)
                     {
-                        if (currentIndx == 0) { if (inMaleSection) maleUpperBody = path; else femaleUpperBody = path; }
-                        else if (currentIndx == 1) { if (inMaleSection) maleLeftHand = path; else femaleLeftHand = path; }
-                        else if (currentIndx == 2) { if (inMaleSection) maleRightHand = path; else femaleRightHand = path; }
+                        if (currentIndx == 0)
+                        {
+                            if (inMaleSection) maleUpperBody = path;
+                            else femaleUpperBody = path;
+                        }
+                        else if (currentIndx == 1)
+                        {
+                            if (inMaleSection) maleLeftHand = path;
+                            else femaleLeftHand = path;
+                        }
+                        else if (currentIndx == 2)
+                        {
+                            if (inMaleSection) maleRightHand = path;
+                            else femaleRightHand = path;
+                        }
                     }
 
                     break;
@@ -568,12 +574,6 @@ internal sealed class ActorRecordHandler(RecordParserContext context)
 
                     break;
             }
-        }
-
-        // Track FullName for display name map
-        if (!string.IsNullOrEmpty(fullName))
-        {
-            _context.FormIdToFullName.TryAdd(record.FormId, fullName);
         }
 
         return new RaceRecord

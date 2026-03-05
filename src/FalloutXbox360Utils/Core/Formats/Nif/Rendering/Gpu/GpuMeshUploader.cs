@@ -10,27 +10,14 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 internal static class GpuMeshUploader
 {
     /// <summary>
-    ///     GPU vertex layout: position(12) + normal(12) + texcoord(8) + color(16) + tangent(12) + bitangent(12) = 72 bytes.
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    public struct GpuVertex
-    {
-        public Vector3 Position;
-        public Vector3 Normal;
-        public Vector2 TexCoord;
-        public Vector4 VertexColor;
-        public Vector3 Tangent;
-        public Vector3 Bitangent;
-    }
-
-    /// <summary>
     ///     Veldrid vertex layout description matching <see cref="GpuVertex" />.
     /// </summary>
     public static readonly VertexLayoutDescription VertexLayout = new(
         new VertexElementDescription("aPosition", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
         new VertexElementDescription("aNormal", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
         new VertexElementDescription("aTexCoord", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2),
-        new VertexElementDescription("aVertexColor", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4),
+        new VertexElementDescription("aVertexColor", VertexElementSemantic.TextureCoordinate,
+            VertexElementFormat.Float4),
         new VertexElementDescription("aTangent", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3),
         new VertexElementDescription("aBitangent", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3)
     );
@@ -100,5 +87,19 @@ internal static class GpuMeshUploader
         var buffer = device.ResourceFactory.CreateBuffer(new BufferDescription(size, BufferUsage.IndexBuffer));
         device.UpdateBuffer(buffer, 0, indices);
         return buffer;
+    }
+
+    /// <summary>
+    ///     GPU vertex layout: position(12) + normal(12) + texcoord(8) + color(16) + tangent(12) + bitangent(12) = 72 bytes.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct GpuVertex
+    {
+        public Vector3 Position;
+        public Vector3 Normal;
+        public Vector2 TexCoord;
+        public Vector4 VertexColor;
+        public Vector3 Tangent;
+        public Vector3 Bitangent;
     }
 }

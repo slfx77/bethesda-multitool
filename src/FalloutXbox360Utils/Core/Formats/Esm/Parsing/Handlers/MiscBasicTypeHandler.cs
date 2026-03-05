@@ -171,11 +171,6 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context)
                     }
                 }
 
-                if (!string.IsNullOrEmpty(fullName))
-                {
-                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
-                }
-
                 classes.Add(new ClassRecord
                 {
                     FormId = record.FormId,

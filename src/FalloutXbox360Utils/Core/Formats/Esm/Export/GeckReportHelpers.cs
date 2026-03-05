@@ -1,6 +1,5 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Strings;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Export;
 
@@ -26,15 +25,6 @@ internal static class GeckReportHelpers
         "sky", "water", "rocks", "grass", "plants", "lights",
         "markers", "activators", "static", "misc", "fx"
     };
-
-    /// <summary>
-    ///     Tree node for hierarchical path grouping in asset reports.
-    /// </summary>
-    internal sealed class PathTreeNode
-    {
-        public Dictionary<string, PathTreeNode> Children { get; } = new(StringComparer.OrdinalIgnoreCase);
-        public List<string> Files { get; } = [];
-    }
 
     internal static string FormatFormId(uint formId)
     {
@@ -270,5 +260,14 @@ internal static class GeckReportHelpers
         sb.AppendLine("  Combat:");
         sb.AppendLine($"    Projectiles:  {result.Projectiles.Count,6:N0}");
         sb.AppendLine($"    Explosions:   {result.Explosions.Count,6:N0}");
+    }
+
+    /// <summary>
+    ///     Tree node for hierarchical path grouping in asset reports.
+    /// </summary>
+    internal sealed class PathTreeNode
+    {
+        public Dictionary<string, PathTreeNode> Children { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public List<string> Files { get; } = [];
     }
 }

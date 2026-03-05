@@ -20,6 +20,11 @@ internal sealed class GpuDevice : IDisposable
     public GraphicsBackend Backend { get; }
     public ResourceFactory Factory => Device.ResourceFactory;
 
+    public void Dispose()
+    {
+        Device.Dispose();
+    }
+
     /// <summary>
     ///     Creates a headless GPU device (no swapchain).
     ///     Tries Vulkan first (cross-platform), then D3D11 (Windows fallback).
@@ -63,10 +68,5 @@ internal sealed class GpuDevice : IDisposable
 
         Log.Warn("No GPU backend available — falling back to CPU rendering");
         return null;
-    }
-
-    public void Dispose()
-    {
-        Device.Dispose();
     }
 }

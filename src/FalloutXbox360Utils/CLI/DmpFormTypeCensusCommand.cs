@@ -128,7 +128,7 @@ internal static class DmpFormTypeCensusCommand
         if (minidumpInfo.IsValid)
         {
             EsmEditorIdExtractor.ExtractRuntimeEditorIds(
-                accessor, fileInfo.Length, minidumpInfo, scanResult, false);
+                accessor, fileInfo.Length, minidumpInfo, scanResult);
         }
 
         // Build histogram and sample EditorIDs
@@ -237,7 +237,8 @@ internal static class DmpFormTypeCensusCommand
             return;
         }
 
-        AnsiConsole.MarkupLine($"[bold yellow]Drift Candidates ({driftCandidates.Count} FormTypes not in all DMPs):[/]");
+        AnsiConsole.MarkupLine(
+            $"[bold yellow]Drift Candidates ({driftCandidates.Count} FormTypes not in all DMPs):[/]");
         AnsiConsole.WriteLine();
 
         foreach (var ft in driftCandidates)
@@ -291,7 +292,7 @@ internal static class DmpFormTypeCensusCommand
 
             // Check what EditorIDs the NEIGHBORING byte values have in DMPs without this type
             // This helps identify if a type shifted ±1
-            foreach (var neighbor in new byte[] { (byte)(ft - 1), (byte)(ft + 1) })
+            foreach (var neighbor in new[] { (byte)(ft - 1), (byte)(ft + 1) })
             {
                 if (neighbor == 0) continue;
 

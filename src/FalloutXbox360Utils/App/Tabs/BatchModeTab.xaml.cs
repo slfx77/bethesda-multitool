@@ -1,8 +1,11 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
+using System.IO.MemoryMappedFiles;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Extraction;
+using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Minidump;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -17,6 +20,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
 {
     private readonly ObservableCollection<DumpFileEntry> _dumpFiles = [];
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
+    private readonly LoadOrder _loadOrder = new();
     private CancellationTokenSource? _cts;
     private bool _dependencyCheckDone;
     private bool _sortAscending = true;
@@ -44,6 +48,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
     public void Dispose()
     {
         _cts?.Dispose();
+        _loadOrder.Dispose();
     }
 
     private async void BatchModeTab_Loaded(object sender, RoutedEventArgs e)
@@ -233,9 +238,12 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
                 SaveAtlas = BatchSaveAtlasCheckBox.IsChecked is true,
                 Verbose = BatchVerboseCheckBox.IsChecked is true,
                 FileTypes = selectedTypes.Count > 0 ? selectedTypes : null,
-                PcFriendly = true, // Enable PC-friendly normal map conversion
-                GenerateEsmReports = false // Skip ESM reports in batch mode (requires analysis first)
+                PcFriendly = true,
+                GenerateEsmReports = BatchGenerateReportsCheckBox.IsChecked is true
             };
+
+            // Pre-build merged load order records once for all entries
+            var supplementaryRecords = _loadOrder.HasData ? _loadOrder.BuildMergedRecords() : null;
 
             var processed = 0;
             var total = selectedFiles.Count;
@@ -243,7 +251,8 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
 
             var tasks = selectedFiles.Select(entry => ProcessEntryAsync(
                 entry, options, skipExisting, semaphore,
-                () => UpdateProgress(Interlocked.Increment(ref processed), total), token));
+                () => UpdateProgress(Interlocked.Increment(ref processed), total),
+                supplementaryRecords, token));
 
             await Task.WhenAll(tasks);
             StatusTextBlock.Text = $"Completed processing {processed} file(s)";
@@ -268,7 +277,8 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
 
     private async Task ProcessEntryAsync(
         DumpFileEntry entry, ExtractionOptions options, bool skipExisting,
-        SemaphoreSlim semaphore, Action onComplete, CancellationToken token)
+        SemaphoreSlim semaphore, Action onComplete,
+        RecordCollection? supplementaryRecords, CancellationToken token)
     {
         await semaphore.WaitAsync(token);
         try
@@ -280,14 +290,28 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
                 return;
             }
 
-            DispatcherQueue.TryEnqueue(() => entry.Status = "Processing...");
+            // Phase 1: Run analysis if report generation is enabled
+            AnalysisResult? analysisResult = null;
+            if (options.GenerateEsmReports)
+            {
+                DispatcherQueue.TryEnqueue(() => entry.Status = "Analyzing...");
+                analysisResult = await Task.Run(async () =>
+                {
+                    var analyzer = new MinidumpAnalyzer();
+                    return await analyzer.AnalyzeAsync(
+                        entry.FilePath, null, true, options.Verbose);
+                }, token);
+            }
 
-            // Run extraction on background thread to avoid blocking UI
+            // Phase 2: Extract files (and generate reports if analysis was run)
+            DispatcherQueue.TryEnqueue(() => entry.Status = "Extracting...");
             await Task.Run(
                 async () => await MinidumpExtractor.Extract(
                     entry.FilePath,
                     options with { OutputPath = outputSubdir },
-                    null),
+                    null,
+                    analysisResult,
+                    supplementaryRecords),
                 token);
 
             DispatcherQueue.TryEnqueue(() => entry.Status = "Complete");
@@ -343,6 +367,258 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
         _cts?.Cancel();
         StatusTextBlock.Text = "Cancelling...";
     }
+
+    #region Load Order
+
+    private async void LoadOrderButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Create working copy of current load order (preserves already-loaded data)
+        var workingEntries = new ObservableCollection<LoadOrderEntry>(
+            _loadOrder.Entries.Select(existing => new LoadOrderEntry
+            {
+                FilePath = existing.FilePath,
+                FileType = existing.FileType,
+                Resolver = existing.Resolver,
+                Records = existing.Records
+            }));
+
+        // Build dialog content
+        var panel = new StackPanel { Spacing = 12 };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Add supplementary ESM/ESP/DMP files to enrich batch reports with NPC names, quest names, etc.",
+            TextWrapping = TextWrapping.Wrap,
+            FontStyle = Windows.UI.Text.FontStyle.Italic,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+        });
+
+        // Load order ListView
+        var listView = new ListView
+        {
+            ItemsSource = workingEntries,
+            CanReorderItems = true,
+            AllowDrop = true,
+            SelectionMode = ListViewSelectionMode.None,
+            MinHeight = 80,
+            MaxHeight = 300
+        };
+
+        listView.ItemTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(
+            """
+            <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
+                    <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                               Margin="0,0,12,0" Opacity="0.6"
+                               Text="&#x2261;" FontSize="16" />
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                               Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                    <Button Grid.Column="2" Content="&#xE711;" FontFamily="Segoe MDL2 Assets"
+                            FontSize="10" Padding="6,4" Margin="8,0,0,0"
+                            Background="Transparent" Tag="{Binding}" />
+                </Grid>
+            </DataTemplate>
+            """);
+
+        listView.ContainerContentChanging += (_, args) =>
+        {
+            if (args.Phase != 0) return;
+            var root = args.ItemContainer.ContentTemplateRoot as Grid;
+            var removeBtn = root?.Children.OfType<Button>().FirstOrDefault();
+            if (removeBtn != null)
+            {
+                removeBtn.Click -= RemoveEntryClick;
+                removeBtn.Click += RemoveEntryClick;
+            }
+        };
+
+        void RemoveEntryClick(object s, RoutedEventArgs _)
+        {
+            if (s is Button btn && btn.Tag is LoadOrderEntry entry)
+                workingEntries.Remove(entry);
+        }
+
+        panel.Children.Add(listView);
+
+        // Empty state text
+        var emptyText = new TextBlock
+        {
+            Text = "No files added. Click \"Add Files\" to get started.",
+            FontStyle = Windows.UI.Text.FontStyle.Italic,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Visibility = workingEntries.Count == 0 ? Visibility.Visible : Visibility.Collapsed,
+            Margin = new Thickness(0, -4, 0, 0)
+        };
+        workingEntries.CollectionChanged += (_, _) =>
+            emptyText.Visibility = workingEntries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        panel.Children.Add(emptyText);
+
+        // Add Files button
+        var addButton = new Button
+        {
+            Content = "Add Files...",
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        addButton.Click += async (_, _) =>
+        {
+            var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+            foreach (var ext in new[] { ".esm", ".esp", ".dmp" })
+                picker.FileTypeFilter.Add(ext);
+            InitializeWithWindow.Initialize(picker,
+                WindowNative.GetWindowHandle(App.Current.MainWindow));
+
+            var files = await picker.PickMultipleFilesAsync();
+            if (files == null || files.Count == 0) return;
+
+            foreach (var file in files)
+            {
+                var path = file.Path;
+
+                // Skip duplicates
+                if (workingEntries.Any(en => string.Equals(en.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
+                var fileType = FileTypeDetector.Detect(path);
+                if (fileType == AnalysisFileType.Unknown) continue;
+
+                workingEntries.Add(new LoadOrderEntry
+                {
+                    FilePath = path,
+                    FileType = fileType
+                });
+            }
+        };
+        panel.Children.Add(addButton);
+
+        // Show dialog
+        var dialog = new ContentDialog
+        {
+            Title = "Load Order",
+            Content = new ScrollViewer
+            {
+                Content = panel,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            },
+            PrimaryButtonText = "Load",
+            SecondaryButtonText = _loadOrder.HasData ? "Clear All" : null,
+            CloseButtonText = "Cancel",
+            XamlRoot = XamlRoot,
+            DefaultButton = ContentDialogButton.Primary
+        };
+
+        var result = await dialog.ShowAsync();
+
+        if (result == ContentDialogResult.Secondary)
+        {
+            _loadOrder.Dispose();
+            UpdateLoadOrderStatusText();
+            return;
+        }
+
+        if (result != ContentDialogResult.Primary) return;
+        if (workingEntries.Count == 0) return;
+
+        try
+        {
+            LoadOrderButton.IsEnabled = false;
+            StatusTextBlock.Text = "Loading load order data...";
+
+            // Load new entries that haven't been loaded yet
+            for (var i = 0; i < workingEntries.Count; i++)
+            {
+                var entry = workingEntries[i];
+                if (entry.IsLoaded) continue;
+
+                StatusTextBlock.Text = $"Loading {entry.DisplayName} ({i + 1}/{workingEntries.Count})...";
+                await LoadSingleEntryAsync(entry);
+            }
+
+            // Replace load order entries with working copy
+            _loadOrder.Dispose();
+            foreach (var entry in workingEntries)
+                _loadOrder.Entries.Add(entry);
+
+            UpdateLoadOrderStatusText();
+            StatusTextBlock.Text = "Load order data loaded.";
+        }
+        catch (Exception ex)
+        {
+            await ShowDialogAsync("Load Failed",
+                $"Failed to load load order data:\n{ex.GetType().Name}: {ex.Message}", true);
+        }
+        finally
+        {
+            LoadOrderButton.IsEnabled = true;
+        }
+    }
+
+    private async Task LoadSingleEntryAsync(LoadOrderEntry entry)
+    {
+        var path = entry.FilePath;
+        var fileType = entry.FileType;
+
+        if (fileType != AnalysisFileType.EsmFile && fileType != AnalysisFileType.Minidump)
+        {
+            await ShowDialogAsync("Load Failed",
+                $"Only ESM, ESP, and DMP files are supported: {entry.DisplayName}", true);
+            return;
+        }
+
+        // Run analysis
+        AnalysisResult analysisResult;
+        if (fileType == AnalysisFileType.EsmFile)
+        {
+            analysisResult = await EsmFileAnalyzer.AnalyzeAsync(path, null);
+        }
+        else
+        {
+            analysisResult = await new MinidumpAnalyzer().AnalyzeAsync(path, null);
+        }
+
+        if (analysisResult.EsmRecords == null)
+        {
+            await ShowDialogAsync("Load Failed",
+                $"No ESM records found in: {entry.DisplayName}", true);
+            return;
+        }
+
+        // Parse records
+        StatusTextBlock.Text = $"Parsing {entry.DisplayName}...";
+
+        var fileSize = new FileInfo(path).Length;
+        using var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+
+        var records = await Task.Run(() =>
+        {
+            var parser = new RecordParser(
+                analysisResult.EsmRecords,
+                analysisResult.FormIdMap,
+                accessor,
+                fileSize,
+                analysisResult.MinidumpInfo);
+            return parser.ParseAll();
+        });
+
+        entry.Resolver = records.CreateResolver();
+        entry.Records = records;
+    }
+
+    private void UpdateLoadOrderStatusText()
+    {
+        if (!_loadOrder.HasData)
+        {
+            LoadOrderStatusText.Text = "";
+            return;
+        }
+
+        var count = _loadOrder.Entries.Count;
+        LoadOrderStatusText.Text = $"{count} file{(count == 1 ? "" : "s")}";
+    }
+
+    #endregion
 
     #region Sorting
 

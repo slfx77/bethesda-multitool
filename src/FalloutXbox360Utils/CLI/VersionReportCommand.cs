@@ -16,19 +16,20 @@ namespace FalloutXbox360Utils.CLI;
 /// </summary>
 internal static class VersionReportCommand
 {
-    internal sealed record ReportOptions
+    /// <summary>
+    ///     Fields that commonly differ between FO3 PC ESM and FNV Xbox 360 DMP due to
+    ///     platform/engine differences rather than actual content changes.
+    /// </summary>
+    private static readonly HashSet<string> Fo3InsignificantFields = new(StringComparer.OrdinalIgnoreCase)
     {
-        public required string BuildsDir { get; init; }
-        public required string DumpsDir { get; init; }
-        public required string OutputDir { get; init; }
-        public required string Format { get; init; }
-        public string? Baseline { get; init; }
-        public required string CacheDir { get; init; }
-        public bool Force { get; init; }
-        public string[]? Types { get; init; }
-        public string? FormId { get; init; }
-        public string? Fo3EsmDir { get; init; }
-    }
+        "BipedFlags", // FNV overhauled biped slot system from FO3
+        "DR", // FNV replaced Damage Resistance with Damage Threshold
+        "DT", // All FO3 armor got new DT values as part of DR→DT system change
+        "Flags", // Engine flag bytes can differ between FO3 and FNV versions
+        "InfoFlags", // Dialogue info flags differ between engine versions
+        "SPECIAL", // Byte arrays may extract differently between PC ESM and Xbox 360 DMP
+        "Skills" // Same extraction issue as SPECIAL
+    };
 
     public static Command Create(string defaultBuildsDir, string defaultDumpsDir, string defaultCacheDir)
     {
@@ -407,21 +408,6 @@ internal static class VersionReportCommand
         return formIds;
     }
 
-    /// <summary>
-    ///     Fields that commonly differ between FO3 PC ESM and FNV Xbox 360 DMP due to
-    ///     platform/engine differences rather than actual content changes.
-    /// </summary>
-    private static readonly HashSet<string> Fo3InsignificantFields = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "BipedFlags", // FNV overhauled biped slot system from FO3
-        "DR", // FNV replaced Damage Resistance with Damage Threshold
-        "DT", // All FO3 armor got new DT values as part of DR→DT system change
-        "Flags", // Engine flag bytes can differ between FO3 and FNV versions
-        "InfoFlags", // Dialogue info flags differ between engine versions
-        "SPECIAL", // Byte arrays may extract differently between PC ESM and Xbox 360 DMP
-        "Skills" // Same extraction issue as SPECIAL
-    };
-
     private static bool HasSignificantFo3Changes(List<FieldChange> changes)
     {
         return changes.Any(c => !Fo3InsignificantFields.Contains(c.FieldName));
@@ -567,5 +553,19 @@ internal static class VersionReportCommand
             await File.WriteAllTextAsync(wikiPath, wiki, cancellationToken);
             AnsiConsole.MarkupLine($"  [green]Wiki:[/] {wikiPath}");
         }
+    }
+
+    internal sealed record ReportOptions
+    {
+        public required string BuildsDir { get; init; }
+        public required string DumpsDir { get; init; }
+        public required string OutputDir { get; init; }
+        public required string Format { get; init; }
+        public string? Baseline { get; init; }
+        public required string CacheDir { get; init; }
+        public bool Force { get; init; }
+        public string[]? Types { get; init; }
+        public string? FormId { get; init; }
+        public string? Fo3EsmDir { get; init; }
     }
 }

@@ -22,14 +22,14 @@ internal sealed class EsmModelCrossReference
     };
 
     /// <summary>
-    ///     Reverse index: lowercase normalized model path → list of base records that use it.
-    /// </summary>
-    private readonly Dictionary<string, List<BaseRecordRef>> _modelToRecords;
-
-    /// <summary>
     ///     Reverse index: base FormID → list of placed references.
     /// </summary>
     private readonly Dictionary<uint, List<RefEntry>> _baseToRefs;
+
+    /// <summary>
+    ///     Reverse index: lowercase normalized model path → list of base records that use it.
+    /// </summary>
+    private readonly Dictionary<string, List<BaseRecordRef>> _modelToRecords;
 
     private EsmModelCrossReference(
         Dictionary<string, List<BaseRecordRef>> modelToRecords,

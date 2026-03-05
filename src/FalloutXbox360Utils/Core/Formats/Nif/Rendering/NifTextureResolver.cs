@@ -464,23 +464,7 @@ internal sealed class NifTextureResolver : IDisposable
     }
 
     internal static bool SkipNiObjectNET(byte[] data, ref int pos, int end, bool be)
-    {
-        // Name (string index, int32)
-        if (pos + 4 > end) return false;
-        pos += 4;
-
-        // NumExtraData (uint32) + refs
-        if (pos + 4 > end) return false;
-        var numExtraData = BinaryUtils.ReadUInt32(data, pos, be);
-        pos += 4;
-        pos += (int)Math.Min(numExtraData, 100) * 4;
-
-        // Controller ref (int32)
-        if (pos + 4 > end) return false;
-        pos += 4;
-
-        return pos <= end;
-    }
+        => NifBlockParsers.SkipNiObjectNET(data, ref pos, end, be);
 
     private static string? ReadSizedString(byte[] data, ref int pos, int end, bool be)
     {

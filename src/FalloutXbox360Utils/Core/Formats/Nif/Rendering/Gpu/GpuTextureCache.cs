@@ -12,17 +12,26 @@ internal sealed class GpuTextureCache : IDisposable
     private readonly Dictionary<string, Texture> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly GraphicsDevice _device;
 
+    public GpuTextureCache(GraphicsDevice device)
+    {
+        _device = device;
+        WhitePixel = CreateSolidTexture(255, 255, 255, 255);
+        FlatNormal = CreateSolidTexture(128, 128, 255, 255);
+    }
+
     /// <summary>1x1 white pixel texture used when no diffuse texture is available.</summary>
     public Texture WhitePixel { get; }
 
     /// <summary>1x1 flat normal map (128,128,255) used when no normal map is available.</summary>
     public Texture FlatNormal { get; }
 
-    public GpuTextureCache(GraphicsDevice device)
+    public void Dispose()
     {
-        _device = device;
-        WhitePixel = CreateSolidTexture(255, 255, 255, 255);
-        FlatNormal = CreateSolidTexture(128, 128, 255, 255);
+        foreach (var tex in _cache.Values)
+            tex.Dispose();
+        _cache.Clear();
+        WhitePixel.Dispose();
+        FlatNormal.Dispose();
     }
 
     /// <summary>
@@ -80,14 +89,5 @@ internal sealed class GpuTextureCache : IDisposable
     {
         if (_cache.Remove(key, out var tex))
             tex.Dispose();
-    }
-
-    public void Dispose()
-    {
-        foreach (var tex in _cache.Values)
-            tex.Dispose();
-        _cache.Clear();
-        WhitePixel.Dispose();
-        FlatNormal.Dispose();
     }
 }

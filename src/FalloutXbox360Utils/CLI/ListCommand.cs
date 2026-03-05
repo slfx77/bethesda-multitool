@@ -92,8 +92,8 @@ public static class ListCommand
             if (!string.IsNullOrEmpty(nameFilter))
             {
                 entries = entries.Where(e =>
-                    (e.EditorId?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                    (e.DisplayName?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false))
+                        (e.EditorId?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                        (e.DisplayName?.Contains(nameFilter, StringComparison.OrdinalIgnoreCase) ?? false))
                     .ToList();
             }
 
@@ -146,8 +146,6 @@ public static class ListCommand
 /// </summary>
 internal static class RecordFlattener
 {
-    internal record FlatRecord(uint FormId, string Type, string? EditorId, string? DisplayName);
-
     internal static List<FlatRecord> Flatten(RecordCollection records)
     {
         var result = new List<FlatRecord>();
@@ -162,7 +160,8 @@ internal static class RecordFlattener
         // Quests & Dialogue
         result.AddRange(records.Quests.Select(r => new FlatRecord(r.FormId, "QUST", r.EditorId, r.FullName)));
         result.AddRange(records.DialogTopics.Select(r => new FlatRecord(r.FormId, "DIAL", r.EditorId, r.FullName)));
-        result.AddRange(records.Dialogues.Select(r => new FlatRecord(r.FormId, "INFO", r.EditorId, r.Responses.FirstOrDefault()?.Text)));
+        result.AddRange(records.Dialogues.Select(r =>
+            new FlatRecord(r.FormId, "INFO", r.EditorId, r.Responses.FirstOrDefault()?.Text)));
         result.AddRange(records.Notes.Select(r => new FlatRecord(r.FormId, "NOTE", r.EditorId, r.FullName)));
         result.AddRange(records.Books.Select(r => new FlatRecord(r.FormId, "BOOK", r.EditorId, r.FullName)));
         result.AddRange(records.Terminals.Select(r => new FlatRecord(r.FormId, "TERM", r.EditorId, r.FullName)));
@@ -210,8 +209,11 @@ internal static class RecordFlattener
         result.AddRange(records.CombatStyles.Select(r => new FlatRecord(r.FormId, "CSTY", r.EditorId, null)));
 
         // Generic
-        result.AddRange(records.GenericRecords.Select(r => new FlatRecord(r.FormId, r.RecordType, r.EditorId, r.FullName)));
+        result.AddRange(
+            records.GenericRecords.Select(r => new FlatRecord(r.FormId, r.RecordType, r.EditorId, r.FullName)));
 
         return result.OrderBy(r => r.Type).ThenBy(r => r.FormId).ToList();
     }
+
+    internal record FlatRecord(uint FormId, string Type, string? EditorId, string? DisplayName);
 }

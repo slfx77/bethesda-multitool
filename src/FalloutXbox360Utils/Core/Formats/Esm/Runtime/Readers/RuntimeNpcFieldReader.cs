@@ -138,7 +138,7 @@ internal sealed class RuntimeNpcFieldReader
         }
 
         // FACTION_RANK: pFaction (4B pointer) + cRank (1B)
-        var pFaction = BinaryUtils.ReadUInt32BE(buf, 0);
+        var pFaction = BinaryUtils.ReadUInt32BE(buf);
         var rank = (sbyte)buf[4];
 
         if (pFaction == 0 || !_context.IsValidPointer(pFaction))
@@ -687,12 +687,12 @@ internal sealed class RuntimeNpcFieldReader
 
     // Additional TESNPC fields from PDB (Proto Debug offset + 32 runtime shift + _s).
     // The +32 matches the empirical shift applied to all post-FaceGen fields (Hair, Eyes, etc.).
-    private int NpcRaceFacePresetOffset => 464 + _s;          // PDB 432 + 32: sLastRaceFaceNum (uint16)
-    private int NpcBloodImpactMaterialOffset => 484 + _s;     // PDB 452 + 32: eBloodImpactMaterial (enum)
-    public int NpcOriginalRacePtrOffset => 492 + _s;           // PDB 460 + 32: pOriginalRace (TESRace*)
-    public int NpcFaceNpcPtrOffset => 496 + _s;                // PDB 464 + 32: pFaceNPC (TESNPC*)
-    private int NpcHeightOffset => 500 + _s;                   // PDB 468 + 32: fHeight (float, ~0.9-1.1)
-    private int NpcWeightOffset => 504 + _s;                   // PDB 472 + 32: fWeight (float, 0-100)
+    private int NpcRaceFacePresetOffset => 464 + _s; // PDB 432 + 32: sLastRaceFaceNum (uint16)
+    private int NpcBloodImpactMaterialOffset => 484 + _s; // PDB 452 + 32: eBloodImpactMaterial (enum)
+    public int NpcOriginalRacePtrOffset => 492 + _s; // PDB 460 + 32: pOriginalRace (TESRace*)
+    public int NpcFaceNpcPtrOffset => 496 + _s; // PDB 464 + 32: pFaceNPC (TESNPC*)
+    private int NpcHeightOffset => 500 + _s; // PDB 468 + 32: fHeight (float, ~0.9-1.1)
+    private int NpcWeightOffset => 504 + _s; // PDB 472 + 32: fWeight (float, 0-100)
 
     #endregion
 

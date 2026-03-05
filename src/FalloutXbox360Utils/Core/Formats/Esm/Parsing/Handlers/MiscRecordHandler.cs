@@ -140,11 +140,6 @@ internal sealed class MiscRecordHandler(RecordParserContext context)
                     }
                 }
 
-                if (!string.IsNullOrEmpty(fullName))
-                {
-                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
-                }
-
                 records.Add(new GenericEsmRecord
                 {
                     FormId = record.FormId,

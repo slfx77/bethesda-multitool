@@ -93,7 +93,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         }
 
         // Follow pParentCell → cell FormID + interior flag (expected type 0x39 = CELL)
-        (uint? parentCellFormId, bool? parentCellIsInterior) = FollowPointerToCellInfo(buffer, ParentCellPtrOffset);
+        var (parentCellFormId, parentCellIsInterior) = FollowPointerToCellInfo(buffer, ParentCellPtrOffset);
 
         // Walk ExtraDataList for map marker
         var pHead = BinaryUtils.ReadUInt32BE(buffer, ExtraListHeadOffset);
@@ -159,7 +159,7 @@ internal sealed class RuntimeRefrReader(RuntimeMemoryContext context, bool usePr
         }
 
         var earlyReader = new RuntimeRefrReader(context, true);
-        var finalReader = new RuntimeRefrReader(context, false);
+        var finalReader = new RuntimeRefrReader(context);
 
         var earlySuccesses = 0;
         var finalSuccesses = 0;

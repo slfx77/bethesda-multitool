@@ -405,11 +405,15 @@ internal static class EsmWorldExtractor
         return new PositionSubrecord(x, y, z, rotX, rotY, rotZ, 0, isBigEndian);
     }
 
-    private static bool IsValidCoord(float v) =>
-        !float.IsNaN(v) && !float.IsInfinity(v) && Math.Abs(v) <= 500000f;
+    private static bool IsValidCoord(float v)
+    {
+        return !float.IsNaN(v) && !float.IsInfinity(v) && Math.Abs(v) <= 500000f;
+    }
 
-    private static bool IsValidRot(float v) =>
-        !float.IsNaN(v) && !float.IsInfinity(v) && Math.Abs(v) <= 10f;
+    private static bool IsValidRot(float v)
+    {
+        return !float.IsNaN(v) && !float.IsInfinity(v) && Math.Abs(v) <= 10f;
+    }
 
     #endregion
 
@@ -463,7 +467,9 @@ internal static class EsmWorldExtractor
         }
 
         var gridX = (int)(isBigEndian ? BinaryUtils.ReadUInt32BE(data, i + 6) : BinaryUtils.ReadUInt32LE(data, i + 6));
-        var gridY = (int)(isBigEndian ? BinaryUtils.ReadUInt32BE(data, i + 10) : BinaryUtils.ReadUInt32LE(data, i + 10));
+        var gridY = (int)(isBigEndian
+            ? BinaryUtils.ReadUInt32BE(data, i + 10)
+            : BinaryUtils.ReadUInt32LE(data, i + 10));
 
         // Validate grid coordinates (typical range is -100 to +100 for exterior cells)
         if (gridX is < -200 or > 200 || gridY is < -200 or > 200)

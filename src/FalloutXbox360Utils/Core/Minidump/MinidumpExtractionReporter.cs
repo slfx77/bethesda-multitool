@@ -24,7 +24,8 @@ internal static class MinidumpExtractionReporter
             AnalysisResult analysisResult,
             string filePath,
             string extractDir,
-            IProgress<ExtractionProgress>? progress)
+            IProgress<ExtractionProgress>? progress,
+            RecordCollection? supplementaryRecords = null)
     {
         var reportGenerated = false;
         var heightmapsExported = 0;
@@ -61,6 +62,10 @@ internal static class MinidumpExtractionReporter
                 fileInfo.Length,
                 analysisResult.MinidumpInfo);
             var semanticResult = parser.ParseAll();
+
+            // Merge supplementary records (load order) for name enrichment
+            if (supplementaryRecords != null)
+                semanticResult = supplementaryRecords.MergeWith(semanticResult);
 
             // Generate all GECK-style reports (split CSVs + assets + runtime EditorIDs)
             var sources = new ReportDataSources(
@@ -145,27 +150,46 @@ internal static class MinidumpExtractionReporter
                 runtimeTexturesExported = analysisResult.RuntimeTextures.Count;
             }
 
-            // Export runtime in-memory meshes as OBJ with enriched names
+            // Export runtime in-memory 3D meshes as OBJ (filter out UI/HUD meshes)
             if (analysisResult.RuntimeMeshes is { Count: > 0 })
             {
-                progress?.Report(new ExtractionProgress
+                var meshes3D = analysisResult.RuntimeMeshes.Where(m => m.Is3D).ToList();
+                if (meshes3D.Count > 0)
                 {
-                    PercentComplete = 97,
-                    CurrentOperation = $"Exporting {analysisResult.RuntimeMeshes.Count} runtime meshes..."
-                });
+                    progress?.Report(new ExtractionProgress
+                    {
+                        PercentComplete = 97,
+                        CurrentOperation = $"Exporting {meshes3D.Count} 3D meshes..."
+                    });
 
-                // Build model name -> EditorID reverse index for enriched naming
-                var modelNameIndex = AssetNameResolver.BuildModelNameIndex(semanticResult);
+                    var modelNameIndex = AssetNameResolver.BuildModelNameIndex(semanticResult);
+                    var sceneGraph = analysisResult.SceneGraphMap
+                                     ?? new Dictionary<long, SceneGraphInfo>();
 
-                var objDir = Path.Combine(extractDir, "obj");
-                Directory.CreateDirectory(objDir);
-                MeshObjExporter.ExportMultiple(analysisResult.RuntimeMeshes,
-                    Path.Combine(objDir, "meshes.obj"),
-                    analysisResult.SceneGraphMap,
-                    modelNameIndex);
-                MeshObjExporter.ExportSummary(analysisResult.RuntimeMeshes,
-                    Path.Combine(objDir, "meshes_summary.csv"));
-                runtimeMeshesExported = analysisResult.RuntimeMeshes.Count;
+                    var objDir = Path.Combine(extractDir, "obj");
+
+                    // Combined 3D-only OBJ
+                    MeshObjExporter.ExportMultiple(meshes3D,
+                        Path.Combine(objDir, "meshes_3d_combined.obj"),
+                        sceneGraph, modelNameIndex);
+
+                    // Individual 3D OBJ files
+                    var meshDir = Path.Combine(objDir, "3d");
+                    Directory.CreateDirectory(meshDir);
+                    for (var i = 0; i < meshes3D.Count; i++)
+                    {
+                        var mesh = meshes3D[i];
+                        var name = AssetNameResolver.ResolveMeshName(
+                            mesh, i, sceneGraph, modelNameIndex);
+                        MeshObjExporter.Export(mesh, Path.Combine(meshDir, $"{name}.obj"), name);
+                    }
+
+                    // Summary CSV (3D meshes only)
+                    MeshObjExporter.ExportSummary(meshes3D,
+                        Path.Combine(objDir, "meshes_summary.csv"));
+
+                    runtimeMeshesExported = meshes3D.Count;
+                }
             }
 
             progress?.Report(new ExtractionProgress

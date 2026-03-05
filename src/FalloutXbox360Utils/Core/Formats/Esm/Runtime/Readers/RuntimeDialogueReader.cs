@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
@@ -15,7 +14,9 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
 
     // Delegate quest/terminal/note reading to the extracted helper class.
     private RuntimeQuestTerminalReader? _questTerminalReader;
-    private RuntimeQuestTerminalReader QuestTerminal => _questTerminalReader ??= new RuntimeQuestTerminalReader(_context);
+
+    private RuntimeQuestTerminalReader QuestTerminal =>
+        _questTerminalReader ??= new RuntimeQuestTerminalReader(_context);
 
     /// <summary>
     ///     Read extended topic data from a runtime TESTopic struct.
@@ -292,19 +293,28 @@ internal sealed class RuntimeDialogueReader(RuntimeMemoryContext context)
     ///     Read extended quest data from a runtime TESQuest struct.
     ///     Delegates to <see cref="RuntimeQuestTerminalReader" />.
     /// </summary>
-    public QuestRecord? ReadRuntimeQuest(RuntimeEditorIdEntry entry) => QuestTerminal.ReadRuntimeQuest(entry);
+    public QuestRecord? ReadRuntimeQuest(RuntimeEditorIdEntry entry)
+    {
+        return QuestTerminal.ReadRuntimeQuest(entry);
+    }
 
     /// <summary>
     ///     Read extended terminal data from a runtime BGSTerminal struct.
     ///     Delegates to <see cref="RuntimeQuestTerminalReader" />.
     /// </summary>
-    public TerminalRecord? ReadRuntimeTerminal(RuntimeEditorIdEntry entry) => QuestTerminal.ReadRuntimeTerminal(entry);
+    public TerminalRecord? ReadRuntimeTerminal(RuntimeEditorIdEntry entry)
+    {
+        return QuestTerminal.ReadRuntimeTerminal(entry);
+    }
 
     /// <summary>
     ///     Read extended note data from a runtime BGSNote struct.
     ///     Delegates to <see cref="RuntimeQuestTerminalReader" />.
     /// </summary>
-    public NoteRecord? ReadRuntimeNote(RuntimeEditorIdEntry entry) => QuestTerminal.ReadRuntimeNote(entry);
+    public NoteRecord? ReadRuntimeNote(RuntimeEditorIdEntry entry)
+    {
+        return QuestTerminal.ReadRuntimeNote(entry);
+    }
 
     /// <summary>
     ///     Read a QUEST_INFO struct (52 bytes) to extract Quest FormID and INFO FormIDs.

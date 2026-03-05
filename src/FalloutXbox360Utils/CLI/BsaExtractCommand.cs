@@ -104,7 +104,7 @@ internal static class BsaExtractCommand
                             // Glob: match against full path (normalize separators)
                             var path = file.FullPath.Replace('\\', '/');
                             var pattern = filter.Replace('\\', '/');
-                            if (!FileSystemName.MatchesSimpleExpression(pattern, path, ignoreCase: true))
+                            if (!FileSystemName.MatchesSimpleExpression(pattern, path, true))
                                 return false;
                         }
                         else

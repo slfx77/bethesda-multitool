@@ -15,6 +15,19 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 /// </summary>
 internal static class EsmRecordScanner
 {
+    #region Forwarding Helpers
+
+    /// <summary>
+    ///     Forwards to <see cref="RecordValidator.IsRecordTypeMarker" />.
+    ///     Kept for backward compatibility with callers referencing <c>EsmRecordScanner.IsRecordTypeMarker</c>.
+    /// </summary>
+    internal static bool IsRecordTypeMarker(byte[] data, int offset)
+    {
+        return RecordValidator.IsRecordTypeMarker(data, offset);
+    }
+
+    #endregion
+
     #region Record Scanning
 
     public static EsmRecordScanResult ScanForRecords(byte[] data)
@@ -178,7 +191,7 @@ internal static class EsmRecordScanner
             // The underscore and digit cases cover big-endian variants: NPC_ -> _CPN (0x5F),
             // TES4 -> 4SET (0x34). Rejects ~86% of byte positions.
             var b = buffer[i];
-            if (b is < (byte)'0' or (> (byte)'9' and < (byte)'A') or (> (byte)'Z' and not (byte)'_'))
+            if (b is < (byte)'0' or > (byte)'9' and < (byte)'A' or > (byte)'Z' and not (byte)'_')
             {
                 continue;
             }
@@ -468,19 +481,6 @@ internal static class EsmRecordScanner
         }
 
         return 0;
-    }
-
-    #endregion
-
-    #region Forwarding Helpers
-
-    /// <summary>
-    ///     Forwards to <see cref="RecordValidator.IsRecordTypeMarker" />.
-    ///     Kept for backward compatibility with callers referencing <c>EsmRecordScanner.IsRecordTypeMarker</c>.
-    /// </summary>
-    internal static bool IsRecordTypeMarker(byte[] data, int offset)
-    {
-        return RecordValidator.IsRecordTypeMarker(data, offset);
     }
 
     #endregion

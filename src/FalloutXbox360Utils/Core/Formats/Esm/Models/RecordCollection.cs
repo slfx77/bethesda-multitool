@@ -225,7 +225,7 @@ public record RecordCollection
 
     /// <summary>
     ///     Creates a new RecordCollection by merging this collection with records from
-    ///     another collection. For duplicate FormIDs, records from <paramref name="overlay"/>
+    ///     another collection. For duplicate FormIDs, records from <paramref name="overlay" />
     ///     (the later load order entry) take precedence.
     /// </summary>
     public RecordCollection MergeWith(RecordCollection overlay)
@@ -476,8 +476,8 @@ public record RecordCollection
     }
 
     /// <summary>
-    ///     Merges two lists, deduplicating by FormID. Items from <paramref name="overlay"/>
-    ///     take precedence over items from <paramref name="baseList"/> for the same FormID.
+    ///     Merges two lists, deduplicating by FormID. Items from <paramref name="overlay" />
+    ///     take precedence over items from <paramref name="baseList" /> for the same FormID.
     /// </summary>
     private static List<T> MergeList<T>(List<T> baseList, List<T> overlay, Func<T, uint> formIdSelector)
     {

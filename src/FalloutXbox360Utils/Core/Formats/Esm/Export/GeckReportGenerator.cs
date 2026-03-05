@@ -447,5 +447,4 @@ public static class GeckReportGenerator
 
         return files;
     }
-
 }

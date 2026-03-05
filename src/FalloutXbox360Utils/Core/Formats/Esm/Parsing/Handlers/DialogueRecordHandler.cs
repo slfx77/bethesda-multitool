@@ -7,15 +7,15 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Orchestrator for dialogue record parsing. Delegates to specialized classes:
-///     <see cref="DialogueConditionParser"/> for INFO parsing and CTDA conditions,
-///     <see cref="DialogueRuntimeMerger"/> for DMP runtime data merging,
-///     <see cref="DialogueTopicMerger"/> for speaker propagation and linking,
-///     <see cref="DialogueTreeBuilder"/> for building hierarchical dialogue trees.
+///     <see cref="DialogueConditionParser" /> for INFO parsing and CTDA conditions,
+///     <see cref="DialogueRuntimeMerger" /> for DMP runtime data merging,
+///     <see cref="DialogueTopicMerger" /> for speaker propagation and linking,
+///     <see cref="DialogueTreeBuilder" /> for building hierarchical dialogue trees.
 /// </summary>
 internal sealed class DialogueRecordHandler(RecordParserContext context)
 {
-    private readonly RecordParserContext _context = context;
     private readonly DialogueConditionParser _conditionParser = new(context);
+    private readonly RecordParserContext _context = context;
     private readonly DialogueRuntimeMerger _runtimeMerger = new(context);
     private readonly DialogueTopicMerger _topicMerger = new(context);
     private readonly DialogueTreeBuilder _treeBuilder = new(context);
@@ -160,6 +160,21 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         }
 
         return deduped;
+    }
+
+    #endregion
+
+    #region BuildDialogueTrees (Delegation)
+
+    /// <summary>
+    ///     Build hierarchical dialogue trees: Quest -> Topic -> INFO chains with cross-topic links.
+    /// </summary>
+    internal DialogueTreeResult BuildDialogueTrees(
+        List<DialogueRecord> dialogues,
+        List<DialogTopicRecord> topics,
+        List<QuestRecord> quests)
+    {
+        return _treeBuilder.BuildDialogueTrees(dialogues, topics, quests);
     }
 
     #endregion
@@ -507,21 +522,6 @@ internal sealed class DialogueRecordHandler(RecordParserContext context)
         List<DialogTopicRecord> topics)
     {
         _topicMerger.LinkInfoToTopicsByGroupOrder(dialogues, topics);
-    }
-
-    #endregion
-
-    #region BuildDialogueTrees (Delegation)
-
-    /// <summary>
-    ///     Build hierarchical dialogue trees: Quest -> Topic -> INFO chains with cross-topic links.
-    /// </summary>
-    internal DialogueTreeResult BuildDialogueTrees(
-        List<DialogueRecord> dialogues,
-        List<DialogTopicRecord> topics,
-        List<QuestRecord> quests)
-    {
-        return _treeBuilder.BuildDialogueTrees(dialogues, topics, quests);
     }
 
     #endregion

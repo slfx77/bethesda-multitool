@@ -8,6 +8,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 /// </summary>
 internal sealed class ExteriorCellWriter(EsmGrupWriter grupWriter, EsmRecordWriter recordWriter)
 {
+    private static Dictionary<(int x, int y), int>? _wastelandOrderMap;
     private readonly EsmGrupWriter _grupWriter = grupWriter;
     private readonly EsmRecordWriter _recordWriter = recordWriter;
 
@@ -326,8 +327,6 @@ internal sealed class ExteriorCellWriter(EsmGrupWriter grupWriter, EsmRecordWrit
             return null;
         }
     }
-
-    private static Dictionary<(int x, int y), int>? _wastelandOrderMap;
 
     /// <summary>
     ///     Orders cells within a subblock using PC's reverse serpentine pattern.

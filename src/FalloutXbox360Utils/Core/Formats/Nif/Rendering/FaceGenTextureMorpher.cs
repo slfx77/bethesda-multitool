@@ -16,7 +16,7 @@ internal static class FaceGenTextureMorpher
     ///     When set, exports debug PNG files of the accumulated EGT deltas
     ///     at native EGT resolution and at upscaled base texture resolution.
     ///     Files: {Dir}/{NpcLabel}_egt_native_{W}x{H}.png,
-    ///            {Dir}/{NpcLabel}_egt_upscaled_{W}x{H}.png
+    ///     {Dir}/{NpcLabel}_egt_upscaled_{W}x{H}.png
     /// </summary>
     internal static string? DebugExportDir { get; set; }
 
@@ -85,7 +85,7 @@ internal static class FaceGenTextureMorpher
         {
             // Map texture row to EGT coordinate (V-flipped —
             // DDS stores top-to-bottom, EGT stores bottom-to-top)
-            var egtFy = (egtH - 1) - (y + 0.5f) * egtH / texH;
+            var egtFy = egtH - 1 - (y + 0.5f) * egtH / texH;
 
             for (var x = 0; x < texW; x++)
             {
@@ -132,7 +132,7 @@ internal static class FaceGenTextureMorpher
         for (var i = 0; i < egtW * egtH; i++)
         {
             // V-flip to match DDS orientation: EGT row 0 = bottom, PNG row 0 = top
-            var srcRow = egtH - 1 - (i / egtW);
+            var srcRow = egtH - 1 - i / egtW;
             var srcCol = i % egtW;
             var srcIdx = srcRow * egtW + srcCol;
             var pi = i * 4;

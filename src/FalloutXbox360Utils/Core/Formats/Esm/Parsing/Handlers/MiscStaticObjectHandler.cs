@@ -184,11 +184,6 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context)
                     }
                 }
 
-                if (!string.IsNullOrEmpty(fullName))
-                {
-                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
-                }
-
                 furniture.Add(new FurnitureRecord
                 {
                     FormId = record.FormId,

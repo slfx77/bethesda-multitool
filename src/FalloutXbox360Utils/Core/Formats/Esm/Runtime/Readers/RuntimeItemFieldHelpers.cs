@@ -53,7 +53,7 @@ internal sealed class RuntimeItemFieldHelpers
         return (value, health, weight, damage, clipSize);
     }
 
-    internal (Enums.WeaponType WeaponType, uint AnimationType, float Speed, float Reach,
+    internal (WeaponType WeaponType, uint AnimationType, float Speed, float Reach,
         float MinSpread, float Spread, float MinRange, float MaxRange,
         byte VatsChance, float ActionPoints, float ShotsPerSec) ReadWeaponCombatFields(byte[] buffer)
     {

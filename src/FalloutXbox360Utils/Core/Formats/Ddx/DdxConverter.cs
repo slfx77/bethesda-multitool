@@ -52,7 +52,8 @@ public class DdxConverter(bool verbose = false, bool saveAtlas = false)
         try
         {
             var parser = new DdxParser(_verbose);
-            var ddsData = parser.ConvertDdxToDds(ddxData);
+            var ddsData = parser.ConvertDdxToDds(ddxData,
+                new ConversionOptions { SaveAtlas = _saveAtlas });
 
             Succeeded++;
             return new ConversionResult

@@ -69,6 +69,11 @@
               x:Name="BatchVerboseCheckBox"
               x:Uid="Checkbox_Verbose"
               MinWidth="0" />
+            <CheckBox
+              x:Name="BatchGenerateReportsCheckBox"
+              x:Uid="Checkbox_GenerateReports"
+              MinWidth="0"
+              IsChecked="True" />
           </StackPanel>
         </StackPanel>
       </ScrollViewer>
@@ -85,11 +90,12 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <!--  Header row: Title + Select buttons (outside card)  -->
+      <!--  Header row: Title + Load Order + Select buttons (outside card)  -->
       <Grid Grid.Row="0"
             Margin="0,0,0,8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <TextBlock
@@ -97,6 +103,25 @@
           Style="{StaticResource SubtitleTextBlockStyle}" />
         <StackPanel
           Grid.Column="1"
+          Orientation="Horizontal"
+          VerticalAlignment="Center"
+          Spacing="8"
+          Margin="0,0,16,0">
+          <TextBlock
+            x:Name="LoadOrderStatusText"
+            VerticalAlignment="Center"
+            FontSize="11"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <Button
+            x:Name="LoadOrderButton"
+            Content="Load Order..."
+            Click="LoadOrderButton_Click"
+            VerticalAlignment="Center"
+            FontSize="12"
+            Padding="8,4" />
+        </StackPanel>
+        <StackPanel
+          Grid.Column="2"
           Style="{StaticResource SelectButtonsPanelStyle}">
           <Button
             x:Uid="Button_SelectAll"

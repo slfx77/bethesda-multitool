@@ -1,5 +1,4 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;

@@ -160,7 +160,8 @@ public static class ShowCommand
         AnsiConsole.WriteLine();
         var panel = new Panel(BuildNpcContent(npc, resolver))
         {
-            Header = new PanelHeader($"[bold]NPC_[/] {Markup.Escape(npc.EditorId ?? "")} — {Markup.Escape(npc.FullName ?? "")}")
+            Header = new PanelHeader(
+                $"[bold]NPC_[/] {Markup.Escape(npc.EditorId ?? "")} — {Markup.Escape(npc.FullName ?? "")}")
         };
         AnsiConsole.Write(panel);
         return true;
@@ -303,7 +304,7 @@ public static class ShowCommand
             $"[cyan]Playable:[/]    {race.IsPlayable}",
             $"[cyan]Height:[/]      M={race.MaleHeight:F2}  F={race.FemaleHeight:F2}",
             $"[cyan]Weight:[/]      M={race.MaleWeight:F2}  F={race.FemaleWeight:F2}",
-            $"[cyan]Flags:[/]       0x{race.DataFlags:X8}",
+            $"[cyan]Flags:[/]       0x{race.DataFlags:X8}"
         };
 
         if (race.OlderRaceFormId.HasValue)
@@ -351,7 +352,8 @@ public static class ShowCommand
 
         var panel = new Panel(string.Join("\n", lines))
         {
-            Header = new PanelHeader($"[bold]RACE[/] {Markup.Escape(race.EditorId ?? "")} — {Markup.Escape(race.FullName ?? "")}")
+            Header = new PanelHeader(
+                $"[bold]RACE[/] {Markup.Escape(race.EditorId ?? "")} — {Markup.Escape(race.FullName ?? "")}")
         };
         AnsiConsole.Write(panel);
         return true;
@@ -402,7 +404,8 @@ public static class ShowCommand
             lines.Add("[bold]Script Variables:[/]");
             foreach (var variable in quest.Variables)
             {
-                lines.Add($"  {Markup.Escape(variable.Name ?? $"var_{variable.Index}")} ({variable.TypeName}, idx {variable.Index})");
+                lines.Add(
+                    $"  {Markup.Escape(variable.Name ?? $"var_{variable.Index}")} ({variable.TypeName}, idx {variable.Index})");
             }
         }
 
@@ -428,7 +431,8 @@ public static class ShowCommand
             else
             {
                 lines.Add("");
-                lines.Add($"[cyan]Script:[/]  0x{script.FormId:X8} ({Markup.Escape(script.EditorId ?? "")}) — {script.CompiledSize} bytes compiled, no source");
+                lines.Add(
+                    $"[cyan]Script:[/]  0x{script.FormId:X8} ({Markup.Escape(script.EditorId ?? "")}) — {script.CompiledSize} bytes compiled, no source");
             }
         }
         else if (quest.Script is > 0)
@@ -439,7 +443,8 @@ public static class ShowCommand
 
         var panel = new Panel(string.Join("\n", lines))
         {
-            Header = new PanelHeader($"[bold]QUST[/] {Markup.Escape(quest.EditorId ?? "")} — {Markup.Escape(quest.FullName ?? "")}")
+            Header = new PanelHeader(
+                $"[bold]QUST[/] {Markup.Escape(quest.EditorId ?? "")} — {Markup.Escape(quest.FullName ?? "")}")
         };
         AnsiConsole.Write(panel);
         return true;
@@ -448,7 +453,8 @@ public static class ShowCommand
     private static bool TryShowFaction(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
-        var faction = records.Factions.FirstOrDefault(r => Matches(r, formId, editorId, f => f.FormId, f => f.EditorId));
+        var faction =
+            records.Factions.FirstOrDefault(r => Matches(r, formId, editorId, f => f.FormId, f => f.EditorId));
         if (faction == null)
         {
             return false;
@@ -469,7 +475,8 @@ public static class ShowCommand
             lines.Add("[bold]Relations:[/]");
             foreach (var rel in faction.Relations)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(rel.FactionFormId)}: {rel.Modifier} (combat: 0x{rel.CombatFlags:X})");
+                lines.Add(
+                    $"  {resolver.FormatWithEditorId(rel.FactionFormId)}: {rel.Modifier} (combat: 0x{rel.CombatFlags:X})");
             }
         }
 
@@ -479,7 +486,8 @@ public static class ShowCommand
             lines.Add("[bold]Ranks:[/]");
             foreach (var rank in faction.Ranks)
             {
-                lines.Add($"  [[{rank.RankNumber}]] {Markup.Escape(rank.MaleTitle ?? rank.FemaleTitle ?? "(unnamed)")}");
+                lines.Add(
+                    $"  [[{rank.RankNumber}]] {Markup.Escape(rank.MaleTitle ?? rank.FemaleTitle ?? "(unnamed)")}");
             }
         }
 
@@ -517,7 +525,8 @@ public static class ShowCommand
 
         var panel = new Panel(string.Join("\n", lines))
         {
-            Header = new PanelHeader($"[bold]FACT[/] {Markup.Escape(faction.EditorId ?? "")} — {Markup.Escape(faction.FullName ?? "")}")
+            Header = new PanelHeader(
+                $"[bold]FACT[/] {Markup.Escape(faction.EditorId ?? "")} — {Markup.Escape(faction.FullName ?? "")}")
         };
         AnsiConsole.Write(panel);
         return true;
@@ -526,7 +535,8 @@ public static class ShowCommand
     private static bool TryShowDialogTopic(RecordCollection records, FormIdResolver resolver,
         uint? formId, string? editorId)
     {
-        var topic = records.DialogTopics.FirstOrDefault(r => Matches(r, formId, editorId, t => t.FormId, t => t.EditorId));
+        var topic = records.DialogTopics.FirstOrDefault(r =>
+            Matches(r, formId, editorId, t => t.FormId, t => t.EditorId));
         if (topic == null)
         {
             return false;
@@ -575,7 +585,8 @@ public static class ShowCommand
 
         var panel = new Panel(string.Join("\n", lines))
         {
-            Header = new PanelHeader($"[bold]DIAL[/] {Markup.Escape(topic.EditorId ?? "")} — {Markup.Escape(topic.FullName ?? "")}")
+            Header = new PanelHeader(
+                $"[bold]DIAL[/] {Markup.Escape(topic.EditorId ?? "")} — {Markup.Escape(topic.FullName ?? "")}")
         };
         AnsiConsole.Write(panel);
         return true;
@@ -607,7 +618,8 @@ public static class ShowCommand
 
         var panel = new Panel(string.Join("\n", lines))
         {
-            Header = new PanelHeader($"[bold]WEAP[/] {Markup.Escape(weapon.EditorId ?? "")} — {Markup.Escape(weapon.FullName ?? "")}")
+            Header = new PanelHeader(
+                $"[bold]WEAP[/] {Markup.Escape(weapon.EditorId ?? "")} — {Markup.Escape(weapon.FullName ?? "")}")
         };
         AnsiConsole.Write(panel);
         return true;
@@ -636,7 +648,8 @@ public static class ShowCommand
 
         var panel = new Panel(string.Join("\n", lines))
         {
-            Header = new PanelHeader($"[bold]ARMO[/] {Markup.Escape(armor.EditorId ?? "")} — {Markup.Escape(armor.FullName ?? "")}")
+            Header = new PanelHeader(
+                $"[bold]ARMO[/] {Markup.Escape(armor.EditorId ?? "")} — {Markup.Escape(armor.FullName ?? "")}")
         };
         AnsiConsole.Write(panel);
         return true;
@@ -731,7 +744,8 @@ public static class ShowCommand
 
         var panel = new Panel(string.Join("\n", lines))
         {
-            Header = new PanelHeader($"[bold]{Markup.Escape(match.Type)}[/] {Markup.Escape(match.EditorId ?? $"0x{match.FormId:X8}")}")
+            Header = new PanelHeader(
+                $"[bold]{Markup.Escape(match.Type)}[/] {Markup.Escape(match.EditorId ?? $"0x{match.FormId:X8}")}")
         };
         AnsiConsole.Write(panel);
         return true;

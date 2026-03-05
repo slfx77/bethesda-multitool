@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 

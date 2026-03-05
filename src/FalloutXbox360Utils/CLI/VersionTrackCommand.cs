@@ -5,8 +5,8 @@ namespace FalloutXbox360Utils.CLI;
 /// <summary>
 ///     CLI command group for version tracking across Fallout: New Vegas builds.
 ///     Subcommands: inventory, extract, report.
-///     Delegates to <see cref="VersionInventoryCommand"/>, <see cref="VersionExtractCommand"/>,
-///     and <see cref="VersionReportCommand"/>.
+///     Delegates to <see cref="VersionInventoryCommand" />, <see cref="VersionExtractCommand" />,
+///     and <see cref="VersionReportCommand" />.
 /// </summary>
 public static class VersionTrackCommand
 {

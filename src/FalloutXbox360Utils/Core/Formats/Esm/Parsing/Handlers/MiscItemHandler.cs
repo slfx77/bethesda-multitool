@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -320,11 +319,6 @@ internal sealed class MiscItemHandler(RecordParserContext context)
                             break;
                         }
                     }
-                }
-
-                if (!string.IsNullOrEmpty(fullName))
-                {
-                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
                 }
 
                 addons.Add(new ArmaRecord

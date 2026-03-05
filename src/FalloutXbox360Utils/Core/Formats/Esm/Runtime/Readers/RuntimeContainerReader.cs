@@ -15,19 +15,6 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
         MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo));
 
-
-    #region Struct Layouts (Proto Debug PDB base + _s)
-
-    // TESObjectCONT: PDB size 156, Debug dump 160, Release dump 172
-    private int ContStructSize => 156 + _s;
-    private int ContModelPathOffset => 64 + _s;
-    private int ContScriptPtrOffset => 108 + _s; // TESScriptableForm::pFormScript (base+104, field+4)
-    private int ContContentsDataOffset => 52 + _s;
-    private int ContContentsNextOffset => 56 + _s;
-    private int ContFlagsOffset => 124 + _s;
-
-    #endregion
-
     /// <summary>
     ///     Read extended container data from a runtime TESObjectCONT struct.
     ///     Returns a ContainerRecord with weight, contents, and flags.
@@ -180,4 +167,17 @@ internal sealed class RuntimeContainerReader(RuntimeMemoryContext context)
 
         return new InventoryItem(itemFormId.Value, count);
     }
+
+
+    #region Struct Layouts (Proto Debug PDB base + _s)
+
+    // TESObjectCONT: PDB size 156, Debug dump 160, Release dump 172
+    private int ContStructSize => 156 + _s;
+    private int ContModelPathOffset => 64 + _s;
+    private int ContScriptPtrOffset => 108 + _s; // TESScriptableForm::pFormScript (base+104, field+4)
+    private int ContContentsDataOffset => 52 + _s;
+    private int ContContentsNextOffset => 56 + _s;
+    private int ContFlagsOffset => 124 + _s;
+
+    #endregion
 }

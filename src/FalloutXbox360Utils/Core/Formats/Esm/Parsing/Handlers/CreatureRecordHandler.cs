@@ -102,7 +102,8 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "ACBS" when sub.DataLength == 24:
-                    stats = ActorRecordHandler.ParseActorBase(subData, record.Offset + 24 + sub.DataOffset, record.IsBigEndian);
+                    stats = ActorRecordHandler.ParseActorBase(subData, record.Offset + 24 + sub.DataOffset,
+                        record.IsBigEndian);
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
@@ -144,12 +145,6 @@ internal sealed class CreatureRecordHandler(RecordParserContext context)
                     packages.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     break;
             }
-        }
-
-        // Track FullName for display name map
-        if (!string.IsNullOrEmpty(fullName))
-        {
-            _context.FormIdToFullName.TryAdd(record.FormId, fullName);
         }
 
         return new CreatureRecord

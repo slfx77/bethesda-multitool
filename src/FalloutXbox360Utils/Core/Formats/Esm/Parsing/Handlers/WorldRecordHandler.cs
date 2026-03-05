@@ -8,8 +8,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 
 internal sealed class WorldRecordHandler(RecordParserContext context)
 {
-    private readonly RecordParserContext _context = context;
     private readonly CellRecordHandler _cellHandler = new(context);
+    private readonly RecordParserContext _context = context;
 
     #region Map Markers
 
@@ -101,7 +101,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
     /// <summary>
     ///     Parse all Cell records from the scan result.
-    ///     Delegates to <see cref="CellRecordHandler"/>.
+    ///     Delegates to <see cref="CellRecordHandler" />.
     /// </summary>
     internal List<CellRecord> ParseCells()
     {
@@ -110,7 +110,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
     /// <summary>
     ///     DMP fallback: infer worldspace membership for exterior cells.
-    ///     Delegates to <see cref="CellLinkageHandler"/>.
+    ///     Delegates to <see cref="CellLinkageHandler" />.
     /// </summary>
     internal static void InferCellWorldspaces(List<CellRecord> cells, List<WorldspaceRecord> worldspaces)
     {
@@ -119,7 +119,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
     /// <summary>
     ///     Links parsed cells to their parent worldspace's Cells list.
-    ///     Delegates to <see cref="CellLinkageHandler"/>.
+    ///     Delegates to <see cref="CellLinkageHandler" />.
     /// </summary>
     internal static void LinkCellsToWorldspaces(List<CellRecord> cells, List<WorldspaceRecord> worldspaces)
     {
@@ -128,7 +128,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context)
 
     /// <summary>
     ///     DMP fallback: create virtual cells for orphan placed references.
-    ///     Delegates to <see cref="CellLinkageHandler"/>.
+    ///     Delegates to <see cref="CellLinkageHandler" />.
     /// </summary>
     internal static List<CellRecord> CreateVirtualCells(
         List<CellRecord> existingCells,

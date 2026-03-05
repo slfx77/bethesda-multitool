@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -15,33 +16,22 @@ internal sealed class GpuSpriteRenderer : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
 
-    /// <summary>SSAA supersample factor: render at Nx resolution, then box-filter downscale (matches CPU renderer).</summary>
-    private const int SsaaFactor = 2;
-
-    // Lighting constants — identical to NifSpriteRenderer
-    private const float SkyAmbient = 0.50f;
-    private const float GroundAmbient = 0.30f;
-    private const float LightIntensity = 0.65f;
-    private static readonly Vector3 LightDir = Vector3.Normalize(new Vector3(0.3f, 0.2f, 1.0f));
-    private static readonly Vector3 HalfVec = Vector3.Normalize(LightDir + new Vector3(0, 0, 1));
-    private static readonly float HdotNegL = Vector3.Dot(HalfVec, -LightDir);
-
     private readonly GpuDevice _gpu;
-    private readonly GpuTextureCache _textureCache;
+    private readonly Sampler _linearSampler;
     private readonly Pipeline _pipeline;
     private readonly Pipeline _pipelineBlend;
-    private readonly Pipeline _pipelineDoubleSided;
     private readonly Pipeline _pipelineBlendDoubleSided;
-    private readonly ResourceLayout _uniformLayout;
-    private readonly ResourceLayout _textureLayout;
-    private readonly Sampler _linearSampler;
+    private readonly Pipeline _pipelineDoubleSided;
     private readonly Shader[] _shaders;
+    private readonly GpuTextureCache _textureCache;
+    private readonly ResourceLayout _textureLayout;
+    private readonly ResourceLayout _uniformLayout;
+    private uint _stagingHeight;
 
     // Persistent staging texture for pixel readback — avoids per-frame create/destroy overhead.
     // Resized lazily when the render target dimensions change.
     private Texture? _stagingTexture;
     private uint _stagingWidth;
-    private uint _stagingHeight;
 
     public GpuSpriteRenderer(GpuDevice gpu)
     {
@@ -54,13 +44,14 @@ internal sealed class GpuSpriteRenderer : IDisposable
         var vertSource = LoadEmbeddedShader("skin.vert.glsl");
         var fragSource = LoadEmbeddedShader("skin.frag.glsl");
 
-        var vertDesc = new ShaderDescription(ShaderStages.Vertex, System.Text.Encoding.UTF8.GetBytes(vertSource), "main");
-        var fragDesc = new ShaderDescription(ShaderStages.Fragment, System.Text.Encoding.UTF8.GetBytes(fragSource), "main");
+        var vertDesc = new ShaderDescription(ShaderStages.Vertex, Encoding.UTF8.GetBytes(vertSource), "main");
+        var fragDesc = new ShaderDescription(ShaderStages.Fragment, Encoding.UTF8.GetBytes(fragSource), "main");
         _shaders = factory.CreateFromSpirv(vertDesc, fragDesc);
 
         // Resource layouts
         _uniformLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-            new ResourceLayoutElementDescription("Uniforms", ResourceKind.UniformBuffer, ShaderStages.Vertex | ShaderStages.Fragment)));
+            new ResourceLayoutElementDescription("Uniforms", ResourceKind.UniformBuffer,
+                ShaderStages.Vertex | ShaderStages.Fragment)));
 
         _textureLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
             new ResourceLayoutElementDescription("tDiffuse", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
@@ -75,10 +66,25 @@ internal sealed class GpuSpriteRenderer : IDisposable
             null, 0, 0, 0, 0, SamplerBorderColor.TransparentBlack));
 
         // Create pipeline variants
-        _pipeline = CreatePipeline(factory, blendEnabled: false, doubleSided: false);
-        _pipelineBlend = CreatePipeline(factory, blendEnabled: true, doubleSided: false);
-        _pipelineDoubleSided = CreatePipeline(factory, blendEnabled: false, doubleSided: true);
-        _pipelineBlendDoubleSided = CreatePipeline(factory, blendEnabled: true, doubleSided: true);
+        _pipeline = CreatePipeline(factory, false, false);
+        _pipelineBlend = CreatePipeline(factory, true, false);
+        _pipelineDoubleSided = CreatePipeline(factory, false, true);
+        _pipelineBlendDoubleSided = CreatePipeline(factory, true, true);
+    }
+
+    public void Dispose()
+    {
+        _stagingTexture?.Dispose();
+        _textureCache.Dispose();
+        _pipeline.Dispose();
+        _pipelineBlend.Dispose();
+        _pipelineDoubleSided.Dispose();
+        _pipelineBlendDoubleSided.Dispose();
+        _uniformLayout.Dispose();
+        _textureLayout.Dispose();
+        _linearSampler.Dispose();
+        foreach (var shader in _shaders)
+            shader.Dispose();
     }
 
     private Pipeline CreatePipeline(ResourceFactory factory, bool blendEnabled, bool doubleSided)
@@ -114,8 +120,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
                 doubleSided ? FaceCullMode.None : FaceCullMode.Back,
                 PolygonFillMode.Solid,
                 FrontFace.CounterClockwise,
-                depthClipEnabled: true,
-                scissorTestEnabled: false),
+                true,
+                false),
             PrimitiveTopology.TriangleList,
             new ShaderSetDescription([GpuMeshUploader.VertexLayout], _shaders),
             [_uniformLayout, _textureLayout],
@@ -126,7 +132,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
 
     /// <summary>
     ///     Renders a model to a sprite, matching the API of <see cref="NifSpriteRenderer.Render" />.
-    ///     Convenience wrapper around <see cref="SubmitRender"/> + <see cref="CompleteRender"/>.
+    ///     Convenience wrapper around <see cref="SubmitRender" /> + <see cref="CompleteRender" />.
     /// </summary>
     public SpriteResult? Render(NifRenderableModel model,
         NifTextureResolver? textureResolver,
@@ -140,28 +146,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
     }
 
     /// <summary>
-    ///     Holds intermediate state between <see cref="SubmitRender"/> and <see cref="CompleteRender"/>.
-    ///     GPU commands have been submitted but not yet waited on.
-    /// </summary>
-    internal sealed class PendingRender
-    {
-        public required int Width { get; init; }
-        public required int Height { get; init; }
-        public required int SsWidth { get; init; }
-        public required int SsHeight { get; init; }
-        public required float BoundsWidth { get; init; }
-        public required float BoundsHeight { get; init; }
-        public required bool HasTexture { get; init; }
-        public required List<IDisposable> Disposables { get; init; }
-        public required CommandList CommandList { get; init; }
-        public required Framebuffer Framebuffer { get; init; }
-        public required Texture ColorTexture { get; init; }
-        public required Texture DepthTexture { get; init; }
-    }
-
-    /// <summary>
-    ///     Builds GPU command list and submits it. Returns a <see cref="PendingRender"/>
-    ///     handle to retrieve results via <see cref="CompleteRender"/>. Returns null if
+    ///     Builds GPU command list and submits it. Returns a <see cref="PendingRender" />
+    ///     handle to retrieve results via <see cref="CompleteRender" />. Returns null if
     ///     the model has no geometry. After this call returns, the GPU executes asynchronously —
     ///     the caller can do CPU work (e.g., build next NPC model) before calling CompleteRender.
     /// </summary>
@@ -216,7 +202,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
         var margin = 1f; // 1 unit margin
         var orthoLeft = projMinX - margin;
         var orthoRight = projMinX + projWidth + margin;
-        var orthoTop = projMinY - margin;           // min view Y (top of image)
+        var orthoTop = projMinY - margin; // min view Y (top of image)
         var orthoBottom = projMinY + projHeight + margin; // max view Y (bottom of image)
         var orthoNear = -10000f;
         var orthoFar = 10000f;
@@ -229,8 +215,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
         // Create offscreen framebuffer at supersampled resolution for SSAA
         var device = _gpu.Device;
         var factory = device.ResourceFactory;
-        var ssWidth = width * SsaaFactor;
-        var ssHeight = height * SsaaFactor;
+        var ssWidth = width * RenderLightingConstants.SsaaFactor;
+        var ssHeight = height * RenderLightingConstants.SsaaFactor;
 
         var colorTex = factory.CreateTexture(new TextureDescription(
             (uint)ssWidth, (uint)ssHeight, 1, 1, 1,
@@ -297,9 +283,9 @@ internal sealed class GpuSpriteRenderer : IDisposable
             {
                 ViewProj = viewProj,
                 View = viewMatrix,
-                LightDir = new Vector4(LightDir, 0),
-                HalfVec = new Vector4(HalfVec, HdotNegL),
-                Ambient = new Vector4(SkyAmbient, GroundAmbient, LightIntensity,
+                LightDir = new Vector4(RenderLightingConstants.LightDir, 0),
+                HalfVec = new Vector4(RenderLightingConstants.HalfVec, RenderLightingConstants.HdotNegL),
+                Ambient = new Vector4(RenderLightingConstants.SkyAmbient, RenderLightingConstants.GroundAmbient, RenderLightingConstants.LightIntensity,
                     NifSpriteRenderer.BumpStrength),
                 Material = new Vector4(sub.MaterialAlpha, sub.EnvMapScale,
                     sub.AlphaTestThreshold / 255f, sub.AlphaTestFunction),
@@ -318,8 +304,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
             var ib = GpuMeshUploader.CreateIndexBuffer(device, sub.Triangles);
 
             // Bind textures
-            Texture diffuseTex = _textureCache.WhitePixel;
-            Texture normalMapTex = _textureCache.FlatNormal;
+            var diffuseTex = _textureCache.WhitePixel;
+            var normalMapTex = _textureCache.FlatNormal;
 
             if (textureResolver != null && sub.DiffuseTexturePath != null)
                 diffuseTex = _textureCache.GetOrUpload(sub.DiffuseTexturePath, textureResolver);
@@ -401,7 +387,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
 
         // Read pixels from staging texture
         var ssPixels = ReadBackStagingPixels(device, (uint)pending.SsWidth, (uint)pending.SsHeight);
-        var pixels = NifSpriteRenderer.Downsample(ssPixels, pending.SsWidth, pending.SsHeight, SsaaFactor);
+        var pixels = NifSpriteRenderer.Downsample(ssPixels, pending.SsWidth, pending.SsHeight, RenderLightingConstants.SsaaFactor);
 
         // Cleanup: dispose per-submesh resources, then per-frame resources
         foreach (var d in pending.Disposables)
@@ -433,7 +419,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
         if (!model.HasGeometry) return null;
 
         return Render(model, textureResolver, pixelsPerUnit, minSize, maxSize,
-            azimuthDeg: 0f, elevationDeg: 90f, fixedSize: fixedSize);
+            0f, 90f, fixedSize);
     }
 
     /// <summary>
@@ -541,21 +527,29 @@ internal sealed class GpuSpriteRenderer : IDisposable
     ///     Evicts a specific texture from the GPU cache.
     ///     Call after rendering each NPC to free per-NPC morphed face textures.
     /// </summary>
-    public void EvictTexture(string key) => _textureCache.EvictTexture(key);
-
-    public void Dispose()
+    public void EvictTexture(string key)
     {
-        _stagingTexture?.Dispose();
-        _textureCache.Dispose();
-        _pipeline.Dispose();
-        _pipelineBlend.Dispose();
-        _pipelineDoubleSided.Dispose();
-        _pipelineBlendDoubleSided.Dispose();
-        _uniformLayout.Dispose();
-        _textureLayout.Dispose();
-        _linearSampler.Dispose();
-        foreach (var shader in _shaders)
-            shader.Dispose();
+        _textureCache.EvictTexture(key);
+    }
+
+    /// <summary>
+    ///     Holds intermediate state between <see cref="SubmitRender" /> and <see cref="CompleteRender" />.
+    ///     GPU commands have been submitted but not yet waited on.
+    /// </summary>
+    internal sealed class PendingRender
+    {
+        public required int Width { get; init; }
+        public required int Height { get; init; }
+        public required int SsWidth { get; init; }
+        public required int SsHeight { get; init; }
+        public required float BoundsWidth { get; init; }
+        public required float BoundsHeight { get; init; }
+        public required bool HasTexture { get; init; }
+        public required List<IDisposable> Disposables { get; init; }
+        public required CommandList CommandList { get; init; }
+        public required Framebuffer Framebuffer { get; init; }
+        public required Texture ColorTexture { get; init; }
+        public required Texture DepthTexture { get; init; }
     }
 
     /// <summary>
@@ -565,14 +559,15 @@ internal sealed class GpuSpriteRenderer : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     private struct GpuUniforms
     {
-        public Matrix4x4 ViewProj;   // 64 bytes
-        public Matrix4x4 View;        // 64 bytes (3x3 view rotation for normals)
-        public Vector4 LightDir;      // 16 bytes (xyz = dir, w = 0)
-        public Vector4 HalfVec;       // 16 bytes (xyz = half, w = HdotNegL)
-        public Vector4 Ambient;       // 16 bytes (x=sky, y=ground, z=lightInt, w=bumpStr)
-        public Vector4 Material;      // 16 bytes (x=alpha, y=envmap, z=alphaThresh, w=alphaFunc)
-        public Vector4 TintColor;     // 16 bytes (rgb=tint, a=0)
-        public Vector4 Flags;         // 16 bytes (x=flags bitfield as float, yzw=0)
+        public Matrix4x4 ViewProj; // 64 bytes
+        public Matrix4x4 View; // 64 bytes (3x3 view rotation for normals)
+        public Vector4 LightDir; // 16 bytes (xyz = dir, w = 0)
+        public Vector4 HalfVec; // 16 bytes (xyz = half, w = HdotNegL)
+        public Vector4 Ambient; // 16 bytes (x=sky, y=ground, z=lightInt, w=bumpStr)
+        public Vector4 Material; // 16 bytes (x=alpha, y=envmap, z=alphaThresh, w=alphaFunc)
+        public Vector4 TintColor; // 16 bytes (rgb=tint, a=0)
+
+        public Vector4 Flags; // 16 bytes (x=flags bitfield as float, yzw=0)
         // Total: 224 bytes
     }
 }

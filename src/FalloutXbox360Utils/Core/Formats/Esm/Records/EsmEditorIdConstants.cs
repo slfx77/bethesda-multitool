@@ -8,6 +8,11 @@ namespace FalloutXbox360Utils.Core.Formats.Esm;
 internal static class EsmEditorIdConstants
 {
     /// <summary>
+    ///     Offset of the prompt/dialogue text BSStringT within an INFO record's TESForm.
+    /// </summary>
+    internal const int InfoPromptOffset = 44;
+
+    /// <summary>
     ///     Maps runtime FormType byte values (ENUM_FORM_ID) to the offset of the TESFullName
     ///     pointer within the C++ class hierarchy for each record type.
     /// </summary>
@@ -31,9 +36,4 @@ internal static class EsmEditorIdConstants
         [0x33] = 68, // PROJ - BGSProjectile
         [0x47] = 68 // QUST - TESQuest (ENUM_FORM_ID value 71)
     };
-
-    /// <summary>
-    ///     Offset of the prompt/dialogue text BSStringT within an INFO record's TESForm.
-    /// </summary>
-    internal const int InfoPromptOffset = 44;
 }

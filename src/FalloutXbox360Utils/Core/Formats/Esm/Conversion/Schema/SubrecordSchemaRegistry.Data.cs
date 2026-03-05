@@ -531,6 +531,5 @@ public static partial class SubrecordSchemaRegistry
         {
             Description = "Linked Occlusion Planes"
         };
-
     }
 }

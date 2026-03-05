@@ -104,9 +104,12 @@ internal sealed class RuntimeActorReader(RuntimeMemoryContext context)
         var raceFacePreset = NpcFields.ReadNpcRaceFacePreset(buffer);
 
         // Read FaceGen morph data (follow pointers to float arrays in module space)
-        var fggs = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggsPointerOffset, NpcFields.NpcFggsCountOffset);
-        var fgga = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggaPointerOffset, NpcFields.NpcFggaCountOffset);
-        var fgts = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFgtsPointerOffset, NpcFields.NpcFgtsCountOffset);
+        var fggs = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggsPointerOffset,
+            NpcFields.NpcFggsCountOffset);
+        var fgga = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFggaPointerOffset,
+            NpcFields.NpcFggaCountOffset);
+        var fgts = NpcFields.ReadFaceGenMorphArray(buffer, NpcFields.NpcFgtsPointerOffset,
+            NpcFields.NpcFgtsCountOffset);
 
         // Read AI package list (BSSimpleList<TESPackage*> at TESAIForm+24)
         var packages = NpcFields.ReadPackageList(buffer);

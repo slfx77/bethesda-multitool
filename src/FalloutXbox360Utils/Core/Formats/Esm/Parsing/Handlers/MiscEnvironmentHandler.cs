@@ -124,11 +124,6 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context)
                     }
                 }
 
-                if (!string.IsNullOrEmpty(fullName))
-                {
-                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
-                }
-
                 water.Add(new WaterRecord
                 {
                     FormId = record.FormId,

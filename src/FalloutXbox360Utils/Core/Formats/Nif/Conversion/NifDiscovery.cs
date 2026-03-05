@@ -352,18 +352,24 @@ internal sealed class NifDiscovery(NifConversionState state)
     ///     Extract vertex maps from NiSkinPartition blocks for skinned meshes.
     /// </summary>
     internal void ExtractVertexMaps(byte[] data, NifInfo info)
-        => NifDiscoveryValidator.ExtractVertexMaps(_state, data, info);
+    {
+        NifDiscoveryValidator.ExtractVertexMaps(_state, data, info);
+    }
 
     /// <summary>
     ///     Update geometry expansion sizes to account for triangle data from NiSkinPartition.
     ///     Only applies to NiTriShapeData blocks - NiTriStripsData keeps its strip format.
     /// </summary>
     internal void UpdateGeometryExpansionsWithTriangles()
-        => NifDiscoveryValidator.UpdateGeometryExpansionsWithTriangles(_state);
+    {
+        NifDiscoveryValidator.UpdateGeometryExpansionsWithTriangles(_state);
+    }
 
     /// <summary>
     ///     Extract triangle strips from NiTriStripsData blocks that have HasPoints=1.
     /// </summary>
     internal void ExtractNiTriStripsDataTriangles(byte[] data, NifInfo info)
-        => NifDiscoveryValidator.ExtractNiTriStripsDataTriangles(_state, data, info);
+    {
+        NifDiscoveryValidator.ExtractNiTriStripsDataTriangles(_state, data, info);
+    }
 }

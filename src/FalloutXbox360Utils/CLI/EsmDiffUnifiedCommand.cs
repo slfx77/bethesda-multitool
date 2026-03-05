@@ -63,7 +63,7 @@ internal static class EsmDiffUnifiedCommand
         if (showSemantic)
         {
             return EsmSemdiffCommand.RunSemanticDiffLabeled(fileAPath, fileBPath, labelA, labelB, formIdStr, recordType,
-                limit, false, skipHeader: true);
+                limit, false, true);
         }
 
         // Mode: specific FormID
@@ -72,14 +72,16 @@ internal static class EsmDiffUnifiedCommand
             var targetFormId = formIdStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
                 ? Convert.ToUInt32(formIdStr, 16)
                 : uint.Parse(formIdStr);
-            return EsmDiffRecordsCommand.DiffSpecificRecord(dataA, dataB, bigEndianA, bigEndianB, targetFormId, maxBytes, showBytes,
+            return EsmDiffRecordsCommand.DiffSpecificRecord(dataA, dataB, bigEndianA, bigEndianB, targetFormId,
+                maxBytes, showBytes,
                 false, false, labelA, labelB);
         }
 
         // Mode: specific record type with byte-level diff
         if (!string.IsNullOrEmpty(recordType) && !showStats)
         {
-            return EsmDiffRecordsCommand.DiffRecordType(dataA, dataB, bigEndianA, bigEndianB, recordType, limit, maxBytes, showBytes,
+            return EsmDiffRecordsCommand.DiffRecordType(dataA, dataB, bigEndianA, bigEndianB, recordType, limit,
+                maxBytes, showBytes,
                 false, false, labelA, labelB);
         }
 

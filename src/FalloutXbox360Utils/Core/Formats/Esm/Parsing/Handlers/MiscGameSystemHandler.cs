@@ -86,11 +86,6 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context)
                     }
                 }
 
-                if (!string.IsNullOrEmpty(fullName))
-                {
-                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
-                }
-
                 infos.Add(new ActorValueInfoRecord
                 {
                     FormId = record.FormId,

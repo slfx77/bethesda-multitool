@@ -1,8 +1,5 @@
-using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 

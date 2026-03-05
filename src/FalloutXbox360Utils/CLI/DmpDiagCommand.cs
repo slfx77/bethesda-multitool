@@ -356,7 +356,7 @@ internal static class DmpDiagCommand
         if (minidumpInfo.IsValid)
         {
             EsmEditorIdExtractor.ExtractRuntimeEditorIds(
-                accessor, fileInfo.Length, minidumpInfo, scanResult, false);
+                accessor, fileInfo.Length, minidumpInfo, scanResult);
 
             // Step 2b: Detect build era — probe REFR struct layout (or use forceProto override)
             if (forceProto.HasValue)

@@ -100,7 +100,7 @@ internal static class DdsTextureDecoder
                 // Explicit alpha block (8 bytes): 4 bits per texel, 16 texels
                 DecodeDxt3AlphaBlock(data, pos, pixels, bx * 4, by * 4, width, height);
                 // Color block (8 bytes) — always 4-color mode for DXT3
-                DecodeDxt1Block(data, pos + 8, pixels, bx * 4, by * 4, width, height, forceFourColor: true);
+                DecodeDxt1Block(data, pos + 8, pixels, bx * 4, by * 4, width, height, true);
                 pos += 16;
             }
         }
@@ -129,7 +129,7 @@ internal static class DdsTextureDecoder
                 // Alpha block (8 bytes)
                 DecodeAlphaBlock(data, pos, pixels, bx * 4, by * 4, width, height);
                 // Color block (8 bytes) — always 4-color mode for DXT5
-                DecodeDxt1Block(data, pos + 8, pixels, bx * 4, by * 4, width, height, forceFourColor: true);
+                DecodeDxt1Block(data, pos + 8, pixels, bx * 4, by * 4, width, height, true);
                 pos += 16;
             }
         }
@@ -151,8 +151,14 @@ internal static class DdsTextureDecoder
         Span<byte> b = stackalloc byte[4];
         Span<byte> a = stackalloc byte[4];
 
-        r[0] = r0; g[0] = g0; b[0] = b0; a[0] = 255;
-        r[1] = r1; g[1] = g1; b[1] = b1; a[1] = 255;
+        r[0] = r0;
+        g[0] = g0;
+        b[0] = b0;
+        a[0] = 255;
+        r[1] = r1;
+        g[1] = g1;
+        b[1] = b1;
+        a[1] = 255;
 
         if (c0 > c1 || forceFourColor)
         {
@@ -175,7 +181,10 @@ internal static class DdsTextureDecoder
             b[2] = (byte)((b0 + b1) / 2);
             a[2] = 255;
 
-            r[3] = 0; g[3] = 0; b[3] = 0; a[3] = 0; // Transparent
+            r[3] = 0;
+            g[3] = 0;
+            b[3] = 0;
+            a[3] = 0; // Transparent
         }
 
         // 4x4 lookup table: 2 bits per texel, packed into 4 bytes (LE)

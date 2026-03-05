@@ -138,7 +138,8 @@ public static class SearchCommand
         var patternBytes = ParseHexPattern(hexPattern);
         if (patternBytes == null)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Invalid hex pattern. Use format like \"6B F8 11 00\" or \"6BF81100\".");
+            AnsiConsole.MarkupLine(
+                "[red]Error:[/] Invalid hex pattern. Use format like \"6B F8 11 00\" or \"6BF81100\".");
             return 1;
         }
 
@@ -167,7 +168,8 @@ public static class SearchCommand
         int contextBytes, int limit, bool countOnly, string displayPattern)
     {
         var fileInfo = new FileInfo(filePath);
-        AnsiConsole.MarkupLine($"[bold]Searching:[/] [cyan]{Path.GetFileName(filePath)}[/] ({fileInfo.Length:N0} bytes) for \"{Markup.Escape(displayPattern)}\"");
+        AnsiConsole.MarkupLine(
+            $"[bold]Searching:[/] [cyan]{Path.GetFileName(filePath)}[/] ({fileInfo.Length:N0} bytes) for \"{Markup.Escape(displayPattern)}\"");
         AnsiConsole.WriteLine();
 
         if (countOnly)
@@ -226,7 +228,8 @@ public static class SearchCommand
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"[bold]Searching {files.Count} files[/] in [cyan]{dirPath}[/] for \"{Markup.Escape(displayPattern)}\"");
+        AnsiConsole.MarkupLine(
+            $"[bold]Searching {files.Count} files[/] in [cyan]{dirPath}[/] for \"{Markup.Escape(displayPattern)}\"");
         AnsiConsole.WriteLine();
 
         if (countOnly)
@@ -334,7 +337,7 @@ public static class SearchCommand
                             break;
                         }
 
-                        DisplayMatch(data, offset, pattern.Length, contextBytes, indent: true);
+                        DisplayMatch(data, offset, pattern.Length, contextBytes, true);
                         shown++;
                     }
 
@@ -595,7 +598,9 @@ public static class SearchCommand
                 var byteIdx = i + j;
                 var isHighlighted = byteIdx >= highlightStart &&
                                     byteIdx < highlightStart + highlightLength;
-                Console.Write(isHighlighted ? $"[green bold]{Markup.Escape(c.ToString())}[/]" : Markup.Escape(c.ToString()));
+                Console.Write(isHighlighted
+                    ? $"[green bold]{Markup.Escape(c.ToString())}[/]"
+                    : Markup.Escape(c.ToString()));
             }
 
             Console.WriteLine();

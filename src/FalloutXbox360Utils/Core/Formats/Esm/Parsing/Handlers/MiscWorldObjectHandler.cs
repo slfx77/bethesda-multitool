@@ -235,11 +235,6 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
                     }
                 }
 
-                if (!string.IsNullOrEmpty(fullName))
-                {
-                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
-                }
-
                 lights.Add(new LightRecord
                 {
                     FormId = record.FormId,
@@ -366,11 +361,6 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context)
                             flags = subData[0];
                             break;
                     }
-                }
-
-                if (!string.IsNullOrEmpty(fullName))
-                {
-                    _context.FormIdToFullName.TryAdd(record.FormId, fullName);
                 }
 
                 doors.Add(new DoorRecord
