@@ -160,7 +160,7 @@ void main()
 
         if (!pass) discard;
     }
-    else if (texColor.a == 0.0 || ((flags & HAS_ALPHA_BLEND) != 0u && texColor.a < 16.0 / 255.0))
+    else if ((flags & HAS_ALPHA_BLEND) != 0u && (texColor.a == 0.0 || texColor.a < 16.0 / 255.0))
     {
         discard; // Skip fully transparent + DXT fringe on blended meshes
     }

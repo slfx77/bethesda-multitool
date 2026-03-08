@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
 /// <summary>
@@ -41,6 +43,9 @@ internal sealed class NpcAppearance
     // Phase 7: Equipment (resolved from NPC_ CNTO inventory → ARMO biped models)
     public List<EquippedItem>? EquippedItems { get; init; }
 
+    // Phase 10: Weapon (resolved from NPC_ CNTO inventory → WEAP)
+    public EquippedWeapon? EquippedWeapon { get; init; }
+
     // Phase 8: Body meshes (from RACE body parts section, after NAM1)
     public string? UpperBodyNifPath { get; init; }
     public string? LeftHandNifPath { get; init; }
@@ -61,5 +66,14 @@ internal sealed class NpcAppearance
 internal sealed class EquippedItem
 {
     public uint BipedFlags { get; init; }
+    public string MeshPath { get; init; } = "";
+}
+
+/// <summary>
+///     A weapon resolved from NPC_ CNTO inventory → WEAP.
+/// </summary>
+internal sealed class EquippedWeapon
+{
+    public WeaponType WeaponType { get; init; }
     public string MeshPath { get; init; } = "";
 }

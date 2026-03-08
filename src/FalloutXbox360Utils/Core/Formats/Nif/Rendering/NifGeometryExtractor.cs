@@ -1,5 +1,6 @@
 using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
@@ -124,7 +125,8 @@ internal static class NifGeometryExtractor
         bool skipSkinning = false,
         Dictionary<string, Matrix4x4>? externalBoneTransforms = null,
         string? filterShapeName = null,
-        Dictionary<string, Matrix4x4>? externalPoseDeltas = null)
+        Dictionary<string, Matrix4x4>? externalPoseDeltas = null,
+        bool useDualQuaternionSkinning = false)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -190,12 +192,11 @@ internal static class NifGeometryExtractor
         }
         else
         {
-            // Extract packed geometry data for skinned shapes (Xbox 360 stores bone weights here)
-            var packedGeometryMap = NifSkinningExtractor.ExtractPackedGeometry(data, nif, shapeDataMap);
-
             // Build skinning data for each skinned shape
+            // NiSkinData has HasVertexWeights=true after NIF conversion (vertex weights are
+            // written from BSPackedAdditionalGeometryData during the NiSkinData expansion)
             shapeSkinning = NifSkinningExtractor.BuildShapeSkinningData(data, nif, shapeSkinInstanceMap, shapeDataMap,
-                nodeTransforms, packedGeometryMap, externalBoneTransforms, externalPoseDeltas);
+                nodeTransforms, externalBoneTransforms, externalPoseDeltas);
         }
 
         // bindPoseOnly: strip ALL transforms (vertices in raw mesh-local space) — used for alignment offset
@@ -264,7 +265,8 @@ internal static class NifGeometryExtractor
             var submesh = NifBlockParsers.ExtractSubmesh(data, nif, shapeIndex, dataIndex, effectiveTransforms,
                 diffusePath, normalMapPath, isEmissive, skinning, useVertexColors, isDoubleSided,
                 hasAlphaBlend, hasAlphaTest, alphaTestThreshold, alphaTestFunction,
-                isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha);
+                isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha,
+                useDualQuaternionSkinning);
             if (submesh != null)
             {
                 model.Submeshes.Add(submesh);

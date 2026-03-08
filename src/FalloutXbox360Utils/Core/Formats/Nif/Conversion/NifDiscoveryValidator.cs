@@ -3,6 +3,7 @@
 // and validates/updates geometry expansion sizes with triangle data.
 
 using System.Buffers.Binary;
+using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 using FalloutXbox360Utils.Core.Formats.Nif.Skinning;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Conversion;
@@ -91,28 +92,41 @@ internal static class NifDiscoveryValidator
     private static void TryMapGeometryToSkinPartition(NifConversionState state, byte[] data,
         BlockInfo geometryBlock, BlockInfo skinInstanceBlock, NifInfo info)
     {
-        // Read the skin partition ref from offset 4 in the skin instance
-        var skinPartitionRefPos = skinInstanceBlock.DataOffset + 4;
-        if (skinPartitionRefPos + 4 > data.Length)
+        // Read the NiSkinData ref from offset 0 in the skin instance
+        var skinDataRefPos = skinInstanceBlock.DataOffset;
+        if (skinDataRefPos + 8 > data.Length)
         {
             return;
         }
+
+        var skinDataRef = info.IsBigEndian
+            ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(skinDataRefPos, 4))
+            : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(skinDataRefPos, 4));
+
+        // Read the skin partition ref from offset 4 in the skin instance
+        var skinPartitionRefPos = skinInstanceBlock.DataOffset + 4;
 
         var skinPartitionRef = info.IsBigEndian
             ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(skinPartitionRefPos, 4))
             : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(skinPartitionRefPos, 4));
 
-        if (skinPartitionRef < 0)
+        // Find the data ref in the NiTriShape
+        var dataRef = NifRefFinders.FindDataRef(data, geometryBlock, info);
+        if (dataRef < 0)
         {
             return;
         }
 
-        // Find the data ref in the NiTriShape
-        var dataRef = NifRefFinders.FindDataRef(data, geometryBlock, info);
-        if (dataRef >= 0 && state.VertexMaps.ContainsKey(skinPartitionRef))
+        if (skinPartitionRef >= 0 && state.VertexMaps.ContainsKey(skinPartitionRef))
         {
             state.GeometryToSkinPartition[dataRef] = skinPartitionRef;
             Log.Debug($"  Mapped geometry block {dataRef} -> NiSkinPartition {skinPartitionRef}");
+        }
+
+        if (skinDataRef >= 0)
+        {
+            state.GeometryToSkinData[dataRef] = skinDataRef;
+            Log.Debug($"  Mapped geometry block {dataRef} -> NiSkinData {skinDataRef}");
         }
     }
 

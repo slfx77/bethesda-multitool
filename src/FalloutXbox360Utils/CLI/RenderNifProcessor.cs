@@ -15,39 +15,6 @@ namespace FalloutXbox360Utils.CLI;
 internal static class RenderNifProcessor
 {
     /// <summary>
-    ///     Trimetric axonometric view directions matching Fallout 1/2 camera setup.
-    ///     Azimuth 30° (vs isometric 45°) produces unequal X/Y axis foreshortening.
-    ///     Default elevation: 25.66° = asin(cos(30°)/2), per original Fallout engine.
-    /// </summary>
-    private const float TrimetricDefaultElevation = 25.65891f;
-
-    /// <summary>Isometric view directions: name suffix → azimuth angle in degrees.</summary>
-    private static readonly (string Suffix, float Azimuth)[] IsoViews =
-    [
-        ("_ne", 45f),
-        ("_nw", 135f),
-        ("_sw", 225f),
-        ("_se", 315f)
-    ];
-
-    /// <summary>Side profile view directions: name suffix → azimuth angle in degrees (0° elevation).</summary>
-    private static readonly (string Suffix, float Azimuth)[] SideViews =
-    [
-        ("_front", 0f),
-        ("_back", 180f),
-        ("_left", 90f),
-        ("_right", 270f)
-    ];
-
-    private static readonly (string Suffix, float Azimuth)[] TrimetricViews =
-    [
-        ("_tri_ne", 30f),
-        ("_tri_nw", 120f),
-        ("_tri_sw", 210f),
-        ("_tri_se", 300f)
-    ];
-
-    /// <summary>
     ///     Creates GPU device and renderer if not force-CPU. Returns null if GPU unavailable.
     /// </summary>
     private static (GpuDevice? device, GpuSpriteRenderer? renderer) TryCreateGpuRenderer(
@@ -78,9 +45,10 @@ internal static class RenderNifProcessor
 
     internal static async Task RunBsaBatchAsync(NifRenderSettings s, CancellationToken ct)
     {
-        if (!File.Exists(s.BsaPath))
+        if (string.IsNullOrWhiteSpace(s.BsaPath) || !File.Exists(s.BsaPath))
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] BSA file not found: {0}", s.BsaPath);
+            var bsaPath = s.BsaPath ?? "(null)";
+            AnsiConsole.MarkupLine("[red]Error:[/] BSA file not found: {0}", bsaPath);
             return;
         }
 
@@ -135,7 +103,7 @@ internal static class RenderNifProcessor
                     new SpinnerColumn())
                 .StartAsync(async ctx =>
                 {
-                    var taskLabel = s.Isometric || s.SideProfile || s.Trimetric
+                    var taskLabel = s.Camera.IsMultiView
                         ? "Rendering sprites (4 views)"
                         : "Rendering sprites";
                     var task = ctx.AddTask(taskLabel, maxValue: nifFiles.Count);
@@ -254,7 +222,7 @@ internal static class RenderNifProcessor
                     new SpinnerColumn())
                 .StartAsync(async ctx =>
                 {
-                    var taskLabel = s.Isometric || s.SideProfile || s.Trimetric
+                    var taskLabel = s.Camera.IsMultiView
                         ? "Rendering sprites (4 views)"
                         : "Rendering sprites";
                     var task = ctx.AddTask(taskLabel, maxValue: nifPaths.Length);
@@ -397,76 +365,21 @@ internal static class RenderNifProcessor
 
         var entries = new List<SpriteIndexEntry>();
 
-        if (s.Isometric || s.SideProfile || s.Trimetric)
+        foreach (var (suffix, azimuth, elevation) in s.Camera.ResolveViews())
         {
-            var views = IsoViews;
-            if (s.Trimetric)
-            {
-                views = TrimetricViews;
-            }
-            else if (s.SideProfile)
-            {
-                views = SideViews;
-            }
-
-            var viewElevation = s.ElevationDeg;
-            if (s.SideProfile)
-            {
-                viewElevation = 0f;
-            }
-            else if (s.Trimetric && !s.ElevationOverridden)
-            {
-                viewElevation = TrimetricDefaultElevation;
-            }
-
-            foreach (var (suffix, azimuth) in views)
-            {
-                var sprite = gpuRenderer != null
-                    ? gpuRenderer.Render(model, textureResolver,
-                        renderParams.PixelsPerUnit, renderParams.MinSize, renderParams.MaxSize,
-                        azimuth, viewElevation, s.FixedSize)
-                    : NifSpriteRenderer.Render(model, textureResolver,
-                        renderParams.PixelsPerUnit, renderParams.MinSize, renderParams.MaxSize,
-                        azimuth, viewElevation, s.FixedSize);
-                if (sprite == null)
-                {
-                    continue;
-                }
-
-                var spriteFileName = baseName + suffix + ".png";
-                var spritePath = Path.Combine(outputDir, spriteFileName);
-                PngWriter.SaveRgba(sprite.Pixels, sprite.Width, sprite.Height, spritePath);
-
-                var entry = new SpriteIndexEntry
-                {
-                    File = spriteFileName,
-                    Width = sprite.Width,
-                    Height = sprite.Height,
-                    BoundsWidth = sprite.BoundsWidth,
-                    BoundsHeight = sprite.BoundsHeight,
-                    HasTexture = sprite.HasTexture
-                };
-
-                RenderNifHelpers.EnrichWithCrossReference(entry, crossRef, modelPath);
-                entries.Add(entry);
-            }
-        }
-        else
-        {
-            // Default: front-facing view (azimuth 0°, elevation 0°)
             var sprite = gpuRenderer != null
                 ? gpuRenderer.Render(model, textureResolver,
                     renderParams.PixelsPerUnit, renderParams.MinSize, renderParams.MaxSize,
-                    0f, 0f, s.FixedSize)
+                    azimuth, elevation, s.FixedSize)
                 : NifSpriteRenderer.Render(model, textureResolver,
                     renderParams.PixelsPerUnit, renderParams.MinSize, renderParams.MaxSize,
-                    0f, 0f, s.FixedSize);
+                    azimuth, elevation, s.FixedSize);
             if (sprite == null)
             {
-                return null;
+                continue;
             }
 
-            var spriteFileName = baseName + ".png";
+            var spriteFileName = baseName + suffix + ".png";
             var spritePath = Path.Combine(outputDir, spriteFileName);
             PngWriter.SaveRgba(sprite.Pixels, sprite.Width, sprite.Height, spritePath);
 

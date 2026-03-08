@@ -39,9 +39,9 @@ internal static class NifSceneGraphWalker
             }
             else if (ShapeTypes.Contains(block.TypeName))
             {
-                // Skip gore/dismembered shape variants by name (e.g., "UpperBodyGore", "Decapitated")
+                // Skip gore/dismembered shape variants and editor helper shapes by name
                 var shapeName = NifBlockParsers.ReadBlockName(data, block, nif);
-                if (NifBlockParsers.IsGoreShape(shapeName))
+                if (NifBlockParsers.IsGoreShape(shapeName) || NifBlockParsers.IsEditorHelperShape(shapeName))
                 {
                                     continue;
                 }

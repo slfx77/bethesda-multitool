@@ -245,7 +245,7 @@ internal static class NifScanlineRasterizer
                         };
                         if (!pass) continue;
                     }
-                    else if (a == 0 || (tri.HasAlphaBlend && a < 16))
+                    else if (tri.HasAlphaBlend && (a == 0 || a < 16))
                     {
                         continue; // Skip fully transparent + DXT fringe on blended meshes
                     }

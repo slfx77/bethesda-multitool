@@ -111,11 +111,14 @@ public static class RenderCommand
                     parseResult.GetValue(bsaOption),
                     parseResult.GetValue(texturesBsaOption)),
                 EsmPath = parseResult.GetValue(esmOption),
-                Isometric = isIso,
-                ElevationDeg = parseResult.GetValue(elevationOption),
-                ElevationOverridden = elevationExplicit,
-                SideProfile = isSide,
-                Trimetric = isTrimetric,
+                Camera = new CameraConfig
+                {
+                    Isometric = isIso,
+                    ElevationDeg = parseResult.GetValue(elevationOption),
+                    ElevationOverridden = elevationExplicit,
+                    SideProfile = isSide,
+                    Trimetric = isTrimetric
+                },
                 FixedSize = parseResult.GetValue(sizeOption),
                 ForceGpu = parseResult.GetValue(gpuOption),
                 ForceCpu = parseResult.GetValue(cpuOption)

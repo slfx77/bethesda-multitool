@@ -1,5 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using System.Globalization;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -29,7 +30,10 @@ public sealed class PackageComparisonTests(ITestOutputHelper output, SampleFileF
     [Trait("Category", "Slow")]
     public async Task ComparePackages_DumpVsProtoEsm_ReportsDiscrepancies()
     {
-        _logBuffer.AppendLine($"Package Comparison - {DateTime.Now}");
+        _logBuffer.AppendLine(string.Format(
+            CultureInfo.InvariantCulture,
+            "Package Comparison - {0:O}",
+            DateTime.Now));
         _logBuffer.AppendLine();
         Assert.SkipWhen(samples.Xbox360ProtoEsm is null, "Xbox 360 proto ESM not available");
 

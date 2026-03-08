@@ -106,6 +106,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
         var spells = new List<uint>();
         var inventory = new List<InventoryItem>();
         var packages = new List<uint>();
+        var headPartFormIds = new List<uint>();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -201,6 +202,9 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
                 case "PKID" when sub.DataLength == 4:
                     packages.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     break;
+                case "PNAM" when sub.DataLength == 4:
+                    headPartFormIds.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                    break;
                 case "FGGS" when sub.DataLength >= 4:
                     fggs = ActorRecordHandler.ReadFloatArray(subData, record.IsBigEndian);
                     break;
@@ -238,6 +242,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context)
             Spells = spells,
             Inventory = inventory,
             Packages = packages,
+            HeadPartFormIds = headPartFormIds.Count > 0 ? headPartFormIds : null,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

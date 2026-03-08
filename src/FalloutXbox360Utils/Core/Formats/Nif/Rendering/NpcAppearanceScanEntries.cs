@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
 /// <summary>
@@ -90,4 +92,15 @@ internal sealed class ArmoScanEntry
     public uint BipedFlags { get; init; }
     public string? MaleBipedModelPath { get; init; }
     public string? FemaleBipedModelPath { get; init; }
+}
+
+/// <summary>
+///     Scanned WEAP record data (weapon model path for NPC rendering).
+/// </summary>
+internal sealed class WeapScanEntry
+{
+    public string? EditorId { get; init; }
+    public string? ModelPath { get; init; }
+    public WeaponType WeaponType { get; init; }
+    public short Damage { get; init; }
 }

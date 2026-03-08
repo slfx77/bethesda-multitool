@@ -12,7 +12,7 @@ using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Minidump;
 using Spectre.Console;
 
-namespace FalloutXbox360Utils.CLI;
+namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
 
 /// <summary>
 ///     Shared utility methods for NPC rendering: BSA loading, model cloning,
@@ -81,6 +81,102 @@ internal static class NpcRenderHelpers
     }
 
     /// <summary>
+    ///     Applies a correction transform to unskinned head attachment geometry (hair, eyes,
+    ///     eyebrows). These NIFs are in bone-local space — if the NIF has Bip01 Head in its
+    ///     scene graph, we undo that baked-in transform and apply the target's instead.
+    ///     If the NIF has no Bip01 Head (boneless), vertices are in the head bone's local
+    ///     frame (near origin) and we translate them to the target head bone position.
+    /// </summary>
+    internal static void ApplyHeadBoneCorrection(
+        NifRenderableModel model,
+        byte[] nifData, NifInfo nifInfo,
+        Matrix4x4 targetHeadTransform)
+    {
+        var nifBones = NifGeometryExtractor.ExtractNamedBoneTransforms(nifData, nifInfo);
+
+        Log.Debug("HeadBoneCorrection: {0} NIF bones: [{1}]",
+            nifBones.Count,
+            nifBones.Count > 0 ? string.Join(", ", nifBones.Keys) : "(none)");
+
+        Matrix4x4 correction;
+        if (nifBones.TryGetValue("Bip01 Head", out var nifBip01Head) &&
+            Matrix4x4.Invert(nifBip01Head, out var invNifBip01Head))
+        {
+            // Boned NIF: undo baked-in bone transform, apply target transform.
+            correction = invNifBip01Head * targetHeadTransform;
+            Log.Debug("  BONED: nifBone T=({0:F2},{1:F2},{2:F2}), correction T=({3:F2},{4:F2},{5:F2})",
+                nifBip01Head.M41, nifBip01Head.M42, nifBip01Head.M43,
+                correction.M41, correction.M42, correction.M43);
+        }
+        else
+        {
+            // Boneless NIF: undo the NIF's own root transform, then translate to the
+            // bone position. The NIF's __root__ rotation is an authoring-space transform
+            // (Identity for hair/eyebrows, 90° for eyes, flip for some female hair).
+            // Inverting it brings vertices back to their raw positions, then translating
+            // to the bone's world position places them correctly on the head.
+            nifBones.TryGetValue("__root__", out var nifRoot);
+            var boneTranslation = Matrix4x4.CreateTranslation(targetHeadTransform.Translation);
+
+            // Compute determinant of upper-left 3x3 to distinguish rotation from reflection.
+            // det > 0 = rotation: undo it (e.g. eye NIFs have 90° root rotation).
+            // det < 0 = reflection: preserve it (e.g. female hair NIFs have intentional X-flip).
+            var det3x3 = nifRoot.M11 * (nifRoot.M22 * nifRoot.M33 - nifRoot.M23 * nifRoot.M32)
+                       - nifRoot.M12 * (nifRoot.M21 * nifRoot.M33 - nifRoot.M23 * nifRoot.M31)
+                       + nifRoot.M13 * (nifRoot.M21 * nifRoot.M32 - nifRoot.M22 * nifRoot.M31);
+
+            var isNonTrivialRotation = det3x3 > 0 && nifRoot != default
+                && (MathF.Abs(nifRoot.M11 - 1) > 0.01f || MathF.Abs(nifRoot.M22 - 1) > 0.01f
+                    || MathF.Abs(nifRoot.M33 - 1) > 0.01f);
+
+            if (isNonTrivialRotation && Matrix4x4.Invert(nifRoot, out var invNifRoot))
+            {
+                correction = invNifRoot * boneTranslation;
+                Log.Debug("  BONELESS: inv(__root__) * T({0:F2},{1:F2},{2:F2}) [det={3:F2}, rotation]",
+                    targetHeadTransform.Translation.X,
+                    targetHeadTransform.Translation.Y,
+                    targetHeadTransform.Translation.Z,
+                    det3x3);
+            }
+            else
+            {
+                correction = boneTranslation;
+                Log.Debug("  BONELESS: T({0:F2},{1:F2},{2:F2}) [det={3:F2}, diag=({4:F2},{5:F2},{6:F2})]",
+                    targetHeadTransform.Translation.X,
+                    targetHeadTransform.Translation.Y,
+                    targetHeadTransform.Translation.Z,
+                    det3x3,
+                    nifRoot.M11, nifRoot.M22, nifRoot.M33);
+            }
+        }
+
+        foreach (var sub in model.Submeshes)
+            TransformSubmesh(sub, correction);
+
+        // Log post-correction bounds for debugging attachment positioning
+        if (model.Submeshes.Count > 0)
+        {
+            float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
+            float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
+            foreach (var sub in model.Submeshes)
+            {
+                for (var i = 0; i < sub.Positions.Length; i += 3)
+                {
+                    minX = MathF.Min(minX, sub.Positions[i]);
+                    minY = MathF.Min(minY, sub.Positions[i + 1]);
+                    minZ = MathF.Min(minZ, sub.Positions[i + 2]);
+                    maxX = MathF.Max(maxX, sub.Positions[i]);
+                    maxY = MathF.Max(maxY, sub.Positions[i + 1]);
+                    maxZ = MathF.Max(maxZ, sub.Positions[i + 2]);
+                }
+            }
+
+            Log.Debug("  Post-correction bounds: ({0:F1},{1:F1},{2:F1})→({3:F1},{4:F1},{5:F1})",
+                minX, minY, minZ, maxX, maxY, maxZ);
+        }
+    }
+
+    /// <summary>
     ///     Loads a NIF from BSA, converts BE→LE if needed, and extracts renderable geometry.
     /// </summary>
     internal static NifRenderableModel? LoadNifFromBsa(
@@ -90,7 +186,8 @@ internal static class NpcRenderHelpers
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? externalBoneTransforms = null,
         string? filterShapeName = null,
-        Dictionary<string, Matrix4x4>? externalPoseDeltas = null)
+        Dictionary<string, Matrix4x4>? externalPoseDeltas = null,
+        bool useDualQuaternionSkinning = false)
     {
         var result = LoadNifRawFromBsa(bsaPath, archive, extractor);
         if (result == null)
@@ -98,12 +195,13 @@ internal static class NpcRenderHelpers
 
         return NifGeometryExtractor.Extract(result.Value.Data, result.Value.Info, textureResolver,
             externalBoneTransforms: externalBoneTransforms, filterShapeName: filterShapeName,
-            externalPoseDeltas: externalPoseDeltas);
+            externalPoseDeltas: externalPoseDeltas,
+            useDualQuaternionSkinning: useDualQuaternionSkinning);
     }
 
     /// <summary>
-    ///     Loads and converts a NIF from BSA, returning the raw byte data and parsed NifInfo
-    ///     for use with ExtractNamedBoneTransforms() or other NIF inspection.
+    ///     Loads and converts a NIF from BSA, returning the raw byte data, parsed NifInfo,
+    ///     and any packed geometry data extracted before conversion (for Xbox 360 NIFs).
     /// </summary>
     internal static (byte[] Data, NifInfo Info)? LoadNifRawFromBsa(
         string bsaPath,

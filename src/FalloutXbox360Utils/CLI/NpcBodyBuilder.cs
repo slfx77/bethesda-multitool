@@ -1,10 +1,13 @@
 using System.Numerics;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Bsa;
+using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.CLI.Rendering.Npc;
 
-namespace FalloutXbox360Utils.CLI;
+namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 
 /// <summary>
 ///     Builds composited NPC full-body models: skeleton + body parts + equipment + head.
@@ -27,13 +30,13 @@ internal static class NpcBodyBuilder
         Dictionary<string, EgtParser?> egtCache,
         ref Dictionary<string, Matrix4x4>? skeletonBoneCache,
         ref Dictionary<string, Matrix4x4>? poseDeltaCache,
-        RenderNpcCommand.NpcRenderSettings s)
+        NpcRenderSettings s)
     {
         // Load skeleton bone transforms (cached across NPCs — same skeleton for all humans)
         if (skeletonBoneCache == null && npc.SkeletonNifPath != null)
         {
             LoadSkeletonBones(npc.SkeletonNifPath, meshesArchive, meshExtractor, s.BindPose,
-                out skeletonBoneCache, out poseDeltaCache);
+                out skeletonBoneCache, out poseDeltaCache, s.AnimOverride);
         }
 
         // Skeleton-only mode: build geometric visualization from bone positions/hierarchy.
@@ -44,8 +47,6 @@ internal static class NpcBodyBuilder
             if (skelModel != null)
                 return skelModel;
         }
-
-        var poseDeltas = poseDeltaCache;
 
         // Determine which body slots are covered by equipment
         var coveredSlots = 0u;
@@ -71,36 +72,72 @@ internal static class NpcBodyBuilder
                 ref effectiveBodyTex, ref effectiveHandTex);
         }
 
-        // Load body parts with skeleton-driven skinning
+        // Load body parts using skeleton idle-pose bone transforms directly.
+        // skinMatrix = IBP * skelIdleWorld correctly transforms from each equipment NIF's
+        // own bind-pose space to idle-pose world space, regardless of whether the equipment
+        // NIF's bone transforms match the skeleton's bind pose (they may differ after
+        // Xbox BE→LE conversion).
+        var idleBones = skeletonBoneCache;
         if ((coveredSlots & 0x04) == 0 && npc.UpperBodyNifPath != null)
         {
             LoadAndMergeBodyPart(npc.UpperBodyNifPath, effectiveBodyTex, 0,
-                meshesArchive, meshExtractor, textureResolver, skeletonBoneCache, bodyModel);
+                meshesArchive, meshExtractor, textureResolver, idleBones, bodyModel);
         }
 
         if ((coveredSlots & 0x08) == 0 && npc.LeftHandNifPath != null)
         {
             LoadAndMergeBodyPart(npc.LeftHandNifPath, effectiveHandTex, 0,
-                meshesArchive, meshExtractor, textureResolver, skeletonBoneCache, bodyModel);
+                meshesArchive, meshExtractor, textureResolver, idleBones, bodyModel);
         }
 
         if ((coveredSlots & 0x10) == 0 && npc.RightHandNifPath != null)
         {
             LoadAndMergeBodyPart(npc.RightHandNifPath, effectiveHandTex, 0,
-                meshesArchive, meshExtractor, textureResolver, skeletonBoneCache, bodyModel);
+                meshesArchive, meshExtractor, textureResolver, idleBones, bodyModel);
         }
 
-        // Head equipment transform: skeleton's idle-pose Bip01 Head world transform
+        // Head equipment transform: skeleton's idle-pose Bip01 Head world transform.
+        // Equipment NIFs are in world-oriented space (Z-up), needing only translation
+        // to the head position + the idle animation's head tilt rotation.
+        // poseDelta = inv(skelBind) * skelIdle: the Bip01 hierarchy's 90° rotation
+        // cancels in the product, leaving only the idle animation's local rotation delta.
         Matrix4x4? headEquipTransform = null;
+        Matrix4x4? headEquipCorrection = null;
         if (skeletonBoneCache != null &&
             skeletonBoneCache.TryGetValue("Bip01 Head", out var skelIdleHead))
         {
             headEquipTransform = skelIdleHead;
+
+            if (poseDeltaCache != null &&
+                poseDeltaCache.TryGetValue("Bip01 Head", out var headPoseDelta))
+            {
+                // Extract just the rotation from the pose delta (strip translation).
+                // The pose delta's translation is in a rotated frame; we use the
+                // skeleton's idle-pose translation directly for correct world positioning.
+                var rotOnly = headPoseDelta;
+                rotOnly.M41 = 0;
+                rotOnly.M42 = 0;
+                rotOnly.M43 = 0;
+                headEquipCorrection = rotOnly * Matrix4x4.CreateTranslation(skelIdleHead.Translation);
+                Log.Debug("Head poseDelta rotation: [{0:F4},{1:F4},{2:F4}] [{3:F4},{4:F4},{5:F4}] [{6:F4},{7:F4},{8:F4}]",
+                    rotOnly.M11, rotOnly.M12, rotOnly.M13,
+                    rotOnly.M21, rotOnly.M22, rotOnly.M23,
+                    rotOnly.M31, rotOnly.M32, rotOnly.M33);
+            }
+            else
+            {
+                Log.Debug("No poseDelta for Bip01 Head — equipment uses translation-only (bind pose)");
+            }
         }
 
         // Load equipment meshes
-        LoadEquipment(npc, meshesArchive, meshExtractor, textureResolver, skeletonBoneCache,
-            headEquipTransform, effectiveBodyTex, effectiveHandTex, bodyModel, s);
+        LoadEquipment(npc, meshesArchive, meshExtractor, textureResolver, idleBones,
+            headEquipTransform, effectiveBodyTex, effectiveHandTex, bodyModel, s,
+            headEquipCorrection, egmCache);
+
+        // Load weapon mesh (positioned using holster animation bone transforms)
+        LoadWeapon(npc, meshesArchive, meshExtractor, textureResolver, idleBones, bodyModel, s,
+            npc.SkeletonNifPath);
 
         // Build head model with hat-aware hair filtering
         var hasHat = (coveredSlots & (0x01 | 0x400 | 0x4000)) != 0;
@@ -108,7 +145,7 @@ internal static class NpcBodyBuilder
 
         var headModel = NpcHeadBuilder.Build(npc, meshesArchive, meshExtractor, textureResolver,
             headMeshCache, egmCache, egtCache, s, hairFilter,
-            poseDeltas: poseDeltas, idlePoseBones: skeletonBoneCache);
+            idlePoseBones: skeletonBoneCache);
 
         if (headModel != null && headModel.HasGeometry)
         {
@@ -131,7 +168,8 @@ internal static class NpcBodyBuilder
         BsaArchive meshesArchive, BsaExtractor meshExtractor,
         bool bindPose,
         out Dictionary<string, Matrix4x4>? boneCache,
-        out Dictionary<string, Matrix4x4>? poseDeltaCache)
+        out Dictionary<string, Matrix4x4>? poseDeltaCache,
+        string? animOverride = null)
     {
         boneCache = null;
         poseDeltaCache = null;
@@ -145,7 +183,7 @@ internal static class NpcBodyBuilder
 
         var idleOverrides = bindPose
             ? null
-            : LoadIdleAnimationOverrides(skeletonNifPath, meshesArchive, meshExtractor, skelRaw);
+            : LoadIdleAnimationOverrides(skeletonNifPath, meshesArchive, meshExtractor, skelRaw, animOverride);
 
         boneCache = NifGeometryExtractor.ExtractNamedBoneTransforms(
             skelRaw.Value.Data, skelRaw.Value.Info, idleOverrides);
@@ -166,6 +204,7 @@ internal static class NpcBodyBuilder
         Log.Debug("Skeleton loaded: {0} bones, {1} pose deltas from {2}{3}",
             boneCache.Count, poseDeltaCache.Count, skeletonNifPath,
             idleOverrides != null ? $" (idle pose: {idleOverrides.Count} overrides)" : " (bind pose)");
+
     }
 
     /// <summary>
@@ -175,9 +214,25 @@ internal static class NpcBodyBuilder
     private static Dictionary<string, NifAnimationParser.AnimPoseOverride>? LoadIdleAnimationOverrides(
         string skeletonNifPath,
         BsaArchive meshesArchive, BsaExtractor meshExtractor,
-        (byte[] Data, NifInfo Info)? skelRaw)
+        (byte[] Data, NifInfo Info)? skelRaw,
+        string? animOverride = null)
     {
         var skelDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
+
+        // Custom animation override: resolve relative to skeleton directory
+        if (animOverride != null)
+        {
+            var customPath = skelDir + animOverride;
+            var customRaw = NpcRenderHelpers.LoadNifRawFromBsa(customPath, meshesArchive, meshExtractor, true);
+            if (customRaw != null)
+            {
+                Log.Debug("Using custom animation: {0}", customPath);
+                return NifAnimationParser.ParseIdlePoseOverrides(customRaw.Value.Data, customRaw.Value.Info);
+            }
+
+            Log.Warn("Custom animation not found: {0}", customPath);
+        }
+
         var idleKfPath = skelDir + "locomotion\\mtidle.kf";
         var idleRaw = NpcRenderHelpers.LoadNifRawFromBsa(idleKfPath, meshesArchive, meshExtractor, true);
 
@@ -228,7 +283,7 @@ internal static class NpcBodyBuilder
         string nifPath, string? textureOverride, int renderOrder,
         BsaArchive meshesArchive, BsaExtractor meshExtractor,
         NifTextureResolver textureResolver,
-        Dictionary<string, Matrix4x4>? skeletonIdleBones,
+        Dictionary<string, Matrix4x4>? idleBoneTransforms,
         NifRenderableModel targetModel)
     {
         var raw = NpcRenderHelpers.LoadNifRawFromBsa(nifPath, meshesArchive, meshExtractor);
@@ -239,7 +294,8 @@ internal static class NpcBodyBuilder
         }
 
         var partModel = NifGeometryExtractor.Extract(raw.Value.Data, raw.Value.Info, textureResolver,
-            externalBoneTransforms: skeletonIdleBones);
+            externalBoneTransforms: idleBoneTransforms,
+            useDualQuaternionSkinning: true);
         if (partModel == null || !partModel.HasGeometry)
         {
             Log.Warn("Body part NIF has no geometry: {0}", nifPath);
@@ -297,10 +353,12 @@ internal static class NpcBodyBuilder
         NpcAppearance npc,
         BsaArchive meshesArchive, BsaExtractor meshExtractor,
         NifTextureResolver textureResolver,
-        Dictionary<string, Matrix4x4>? skeletonBoneCache,
+        Dictionary<string, Matrix4x4>? idleBoneTransforms,
         Matrix4x4? headEquipTransform,
         string? effectiveBodyTex, string? effectiveHandTex,
-        NifRenderableModel bodyModel, RenderNpcCommand.NpcRenderSettings s)
+        NifRenderableModel bodyModel, NpcRenderSettings s,
+        Matrix4x4? headEquipCorrection = null,
+        Dictionary<string, EgmParser?>? egmCache = null)
     {
         if (s.NoEquip || npc.EquippedItems == null)
             return;
@@ -321,18 +379,42 @@ internal static class NpcBodyBuilder
 
             var equipModel = NifGeometryExtractor.Extract(
                 equipRaw.Value.Data, equipRaw.Value.Info, textureResolver,
-                externalBoneTransforms: skeletonBoneCache);
+                externalBoneTransforms: idleBoneTransforms,
+                useDualQuaternionSkinning: true);
             if (equipModel == null || !equipModel.HasGeometry)
             {
                 Log.Warn("Equipment NIF has no geometry: {0}", item.MeshPath);
                 continue;
             }
 
-            // Unskinned head equipment: vertices near origin in head-local space.
-            if (isHeadEquip && equipModel.MaxZ < 30f && headEquipTransform.HasValue)
+            // Unskinned head equipment (hats, glasses, masks): translate to head position
+            // with idle animation tilt. Equipment NIFs are modeled in world-oriented space
+            // (Z-up, same axes as NIF world) centered near the bone origin — they need
+            // translation to the head position plus the idle animation's head tilt rotation,
+            // but NOT the Bip01 hierarchy's 90° bone rotation (which would rotate Z-up to X).
+            if (isHeadEquip && headEquipTransform.HasValue)
             {
-                foreach (var sub in equipModel.Submeshes)
-                    NpcRenderHelpers.TransformSubmesh(sub, headEquipTransform.Value);
+                var hasSkinning = equipRaw.Value.Info.Blocks.Any(b =>
+                    b.TypeName is "NiSkinInstance" or "BSDismemberSkinInstance");
+                if (!hasSkinning)
+                {
+                    // Apply FaceGen EGM morphs to head equipment (glasses, masks, etc.)
+                    // before positioning. Equipment NIFs have matching .egm files with
+                    // morph deltas that adjust the mesh to fit the NPC's face shape.
+                    if (egmCache != null &&
+                        (npc.FaceGenSymmetricCoeffs != null || npc.FaceGenAsymmetricCoeffs != null))
+                    {
+                        var egmPath = Path.ChangeExtension(item.MeshPath, ".egm");
+                        NpcRenderHelpers.LoadAndApplyEgm(egmPath, equipModel,
+                            npc.FaceGenSymmetricCoeffs, npc.FaceGenAsymmetricCoeffs,
+                            meshesArchive, meshExtractor, egmCache);
+                    }
+
+                    var correction = headEquipCorrection
+                        ?? Matrix4x4.CreateTranslation(headEquipTransform.Value.Translation);
+                    foreach (var sub in equipModel.Submeshes)
+                        NpcRenderHelpers.TransformSubmesh(sub, correction);
+                }
             }
 
             Log.Debug("Equipment '{0}': {1} submeshes, bounds ({2:F2},{3:F2},{4:F2})→({5:F2},{6:F2},{7:F2})",
@@ -342,6 +424,12 @@ internal static class NpcBodyBuilder
 
             foreach (var sub in equipModel.Submeshes)
             {
+                Log.Debug("  Equip sub: tex={0}, alphaBlend={1}, alphaTest={2} func={3} thresh={4}, matAlpha={5:F2}, doubleSided={6}, verts={7}",
+                    sub.DiffuseTexturePath ?? "(null)",
+                    sub.HasAlphaBlend, sub.HasAlphaTest,
+                    sub.AlphaTestFunction, sub.AlphaTestThreshold,
+                    sub.MaterialAlpha, sub.IsDoubleSided, sub.Positions.Length / 3);
+
                 if (effectiveBodyTex != null &&
                     NpcRenderHelpers.IsEquipmentSkinSubmesh(sub.DiffuseTexturePath))
                 {
@@ -357,6 +445,148 @@ internal static class NpcBodyBuilder
             }
         }
     }
+
+    private static void LoadWeapon(
+        NpcAppearance npc,
+        BsaArchive meshesArchive, BsaExtractor meshExtractor,
+        NifTextureResolver textureResolver,
+        Dictionary<string, Matrix4x4>? idleBoneTransforms,
+        NifRenderableModel bodyModel, NpcRenderSettings s,
+        string? skeletonNifPath)
+    {
+        if (s.NoEquip || s.NoWeapon || npc.EquippedWeapon == null || idleBoneTransforms == null)
+            return;
+
+        // Try loading weapon holster animation for data-driven bone positioning.
+        // Holster KF files (e.g., 2hrholster.kf) contain per-bone transforms that position
+        // the Weapon bone correctly for the holstered state, layered over the base idle.
+        var holsterBones = LoadWeaponHolsterBones(skeletonNifPath, meshesArchive, meshExtractor,
+            npc.EquippedWeapon.WeaponType);
+
+        // Use holster animation's Weapon bone if available; otherwise fall back to base idle
+        var effectiveBones = holsterBones ?? idleBoneTransforms;
+        if (!effectiveBones.TryGetValue("Weapon", out var weaponBoneTransform))
+        {
+            Log.Warn("No Weapon bone found in skeleton for {0}", npc.EquippedWeapon.MeshPath);
+            return;
+        }
+
+        var weaponRaw = NpcRenderHelpers.LoadNifRawFromBsa(
+            npc.EquippedWeapon.MeshPath, meshesArchive, meshExtractor);
+        if (weaponRaw == null)
+        {
+            Log.Warn("Weapon NIF failed to load: {0}", npc.EquippedWeapon.MeshPath);
+            return;
+        }
+
+        var weaponModel = NifGeometryExtractor.Extract(
+            weaponRaw.Value.Data, weaponRaw.Value.Info, textureResolver);
+        if (weaponModel == null || !weaponModel.HasGeometry)
+        {
+            Log.Warn("Weapon NIF has no geometry: {0}", npc.EquippedWeapon.MeshPath);
+            return;
+        }
+
+        foreach (var sub in weaponModel.Submeshes)
+            NpcRenderHelpers.TransformSubmesh(sub, weaponBoneTransform);
+
+        Log.Debug("Weapon '{0}' ({1}): Weapon bone at ({2:F1},{3:F1},{4:F1}){5}, {6} submeshes",
+            npc.EquippedWeapon.MeshPath, npc.EquippedWeapon.WeaponType,
+            weaponBoneTransform.Translation.X, weaponBoneTransform.Translation.Y,
+            weaponBoneTransform.Translation.Z,
+            holsterBones != null ? " (from holster KF)" : " (base idle)",
+            weaponModel.Submeshes.Count);
+
+        foreach (var sub in weaponModel.Submeshes)
+        {
+            sub.RenderOrder = 6;
+            bodyModel.Submeshes.Add(sub);
+            bodyModel.ExpandBounds(sub.Positions);
+        }
+    }
+
+    /// <summary>
+    ///     Loads the weapon holster animation KF and computes skeleton bone transforms with it
+    ///     layered over the base idle animation. Returns the full bone dictionary with the
+    ///     Weapon bone positioned for the holstered state, or null if no holster KF exists.
+    /// </summary>
+    private static Dictionary<string, Matrix4x4>? LoadWeaponHolsterBones(
+        string? skeletonNifPath,
+        BsaArchive meshesArchive, BsaExtractor meshExtractor,
+        WeaponType weaponType)
+    {
+        if (skeletonNifPath == null)
+            return null;
+
+        var kfRelPath = GetWeaponHolsterKfRelPath(weaponType);
+        if (kfRelPath == null)
+            return null;
+
+        var skelDir = skeletonNifPath.Replace("skeleton.nif", "", StringComparison.OrdinalIgnoreCase);
+        var kfPath = skelDir + kfRelPath;
+
+        var kfRaw = NpcRenderHelpers.LoadNifRawFromBsa(kfPath, meshesArchive, meshExtractor, true);
+
+        // Female→male fallback (same pattern as base idle loading)
+        if (kfRaw == null && skelDir.Contains("_female", StringComparison.OrdinalIgnoreCase))
+        {
+            var malePath = skelDir.Replace("_female", "_male", StringComparison.OrdinalIgnoreCase) + kfRelPath;
+            kfRaw = NpcRenderHelpers.LoadNifRawFromBsa(malePath, meshesArchive, meshExtractor, true);
+        }
+
+        if (kfRaw == null)
+            return null;
+
+        var holsterOverrides = NifAnimationParser.ParseIdlePoseOverrides(kfRaw.Value.Data, kfRaw.Value.Info);
+        if (holsterOverrides == null || holsterOverrides.Count == 0)
+            return null;
+
+        // Load skeleton and base idle overrides, then layer holster overrides on top.
+        // Priority-based: holster KF wins for bones it defines, base idle fills the rest.
+        var skelRaw = NpcRenderHelpers.LoadNifRawFromBsa(skeletonNifPath, meshesArchive, meshExtractor);
+        if (skelRaw == null)
+            return null;
+
+        var baseIdle = LoadIdleAnimationOverrides(skeletonNifPath, meshesArchive, meshExtractor, skelRaw);
+        var merged = new Dictionary<string, NifAnimationParser.AnimPoseOverride>(StringComparer.OrdinalIgnoreCase);
+        if (baseIdle != null)
+        {
+            foreach (var (bone, pose) in baseIdle)
+                merged[bone] = pose;
+        }
+
+        foreach (var (bone, pose) in holsterOverrides)
+            merged[bone] = pose;
+
+        Log.Debug("Weapon holster KF '{0}': {1} overrides ({2} base + {3} holster)",
+            kfRelPath, merged.Count, baseIdle?.Count ?? 0, holsterOverrides.Count);
+
+        return NifGeometryExtractor.ExtractNamedBoneTransforms(
+            skelRaw.Value.Data, skelRaw.Value.Info, merged);
+    }
+
+    /// <summary>
+    ///     Maps WeaponType to the holster animation KF filename (relative to skeleton directory).
+    ///     Holster KFs contain bone transforms for the weapon-holstered idle pose.
+    ///     Returns null for weapon types that don't have holster animations.
+    /// </summary>
+    private static string? GetWeaponHolsterKfRelPath(WeaponType weaponType) =>
+        weaponType switch
+        {
+            WeaponType.Pistol => "1hpholster.kf",
+            WeaponType.PistolAutomatic => "1hpholster.kf",
+            WeaponType.Rifle => "2hrholster.kf",
+            WeaponType.RifleAutomatic => "2haholster.kf",
+            WeaponType.Melee1H => "1hmholster.kf",
+            WeaponType.Melee2H => "2hmholster.kf",
+            WeaponType.HandToHand => "h2hholster.kf",
+            WeaponType.Handle => "2hhholster.kf",
+            WeaponType.Launcher => "2hlholster.kf",
+            WeaponType.GrenadeThrow => "1gtholster.kf",
+            WeaponType.LandMine => "1lmholster.kf",
+            WeaponType.MinePlacement => "1mdholster.kf",
+            _ => null
+        };
 
     /// <summary>
     ///     Builds a geometric visualization of the skeleton: small octahedra at joints,

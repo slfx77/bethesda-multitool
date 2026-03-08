@@ -3,8 +3,10 @@ using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
+using FalloutXbox360Utils.CLI.Rendering.Npc;
 
-namespace FalloutXbox360Utils.CLI;
+namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
 
 /// <summary>
 ///     Builds composited NPC head models: base head mesh + EGM/EGT morphs + hair + eyes + head parts.
@@ -25,40 +27,30 @@ internal static class NpcHeadBuilder
         Dictionary<string, NifRenderableModel?> headMeshCache,
         Dictionary<string, EgmParser?> egmCache,
         Dictionary<string, EgtParser?> egtCache,
-        RenderNpcCommand.NpcRenderSettings s,
+        NpcRenderSettings s,
         string? hairFilterOverride = null,
         Dictionary<string, Matrix4x4>? skeletonBones = null,
-        Dictionary<string, Matrix4x4>? poseDeltas = null,
         Dictionary<string, Matrix4x4>? idlePoseBones = null)
     {
         NifRenderableModel? model = null;
         var headTexturePath = npc.HeadDiffuseOverride;
         var usedBaseRaceMesh = false;
+        var isFullBody = skeletonBones != null || idlePoseBones != null;
 
         // Bone transforms for positioning unskinned attachments (hair, eyes, head parts).
-        // Full-body mode: use skeleton bones (same frame as body parts).
-        // Head-only mode: extract from head NIF's own scene graph.
-        var attachmentBoneTransforms = skeletonBones;
+        // Full-body mode: skeleton's idle-pose bones (target space for attachments).
+        // Head-only mode: head NIF's own bones (no Bip01 chain rotation).
+        var attachmentBoneTransforms = skeletonBones ?? idlePoseBones;
 
         if (npc.BaseHeadNifPath != null)
         {
-            if (skeletonBones != null)
+            if (isFullBody)
             {
-                // Full-body mode with skeleton bones: extract head with skeleton-driven skinning.
+                var skelBones = skeletonBones ?? idlePoseBones;
                 model = NpcRenderHelpers.LoadNifFromBsa(npc.BaseHeadNifPath, meshesArchive, meshExtractor,
-                    textureResolver, skeletonBones);
+                    textureResolver, skelBones, useDualQuaternionSkinning: true);
                 if (model != null)
                     usedBaseRaceMesh = true;
-            }
-            else if (idlePoseBones != null)
-            {
-                // Full-body mode: use skeleton's idle-pose world transforms for head skinning.
-                model = NpcRenderHelpers.LoadNifFromBsa(npc.BaseHeadNifPath, meshesArchive, meshExtractor,
-                    textureResolver, idlePoseBones);
-                if (model != null)
-                    usedBaseRaceMesh = true;
-
-                attachmentBoneTransforms = idlePoseBones;
             }
             else
             {
@@ -160,7 +152,7 @@ internal static class NpcHeadBuilder
         BsaArchive meshesArchive, BsaExtractor meshExtractor,
         NifTextureResolver textureResolver,
         Dictionary<string, EgtParser?> egtCache,
-        NifRenderableModel model, RenderNpcCommand.NpcRenderSettings s)
+        NifRenderableModel model, NpcRenderSettings s)
     {
         var egtPath = Path.ChangeExtension(npc.BaseHeadNifPath!, ".egt");
 
@@ -214,32 +206,45 @@ internal static class NpcHeadBuilder
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache)
     {
-        var hairBaseName = Path.GetFileNameWithoutExtension(npc.HairNifPath!);
-        var hairDir = Path.GetDirectoryName(npc.HairNifPath!) ?? "";
+        var hairNifPath = npc.HairNifPath!;
+        var hairBaseName = Path.GetFileNameWithoutExtension(hairNifPath);
+        var hairDir = Path.GetDirectoryName(hairNifPath) ?? "";
 
-        var hairModel = NpcRenderHelpers.LoadNifFromBsa(npc.HairNifPath!, meshesArchive, meshExtractor,
-            textureResolver, filterShapeName: hairFilterOverride ?? "NoHat");
-        if (hairModel == null || !hairModel.HasGeometry)
+        var hairRaw = NpcRenderHelpers.LoadNifRawFromBsa(
+            hairNifPath,
+            meshesArchive,
+            meshExtractor);
+        if (hairRaw == null)
         {
-            Log.Warn("Hair NIF failed to load or has no geometry: {0}", npc.HairNifPath);
+            Log.Warn("Hair NIF failed to load: {0}", hairNifPath);
             return;
         }
 
-        // Hair NIFs are NOT skinned — vertices are in Bip01 Head local space.
+        var hairModel = NifGeometryExtractor.Extract(hairRaw.Value.Data, hairRaw.Value.Info, textureResolver,
+            filterShapeName: hairFilterOverride ?? "NoHat");
+        if (hairModel == null || !hairModel.HasGeometry)
+        {
+            Log.Warn("Hair NIF has no geometry: {0}", hairNifPath);
+            return;
+        }
+
+        // Position hair: parent to Bip01 Head bone. In full-body mode, the skeleton's
+        // head bone includes Bip01's 90° Z rotation, so boneless NIFs need the head NIF's
+        // own Bip01 Head as a reference to remap correctly: inv(headNifBone) * skelBone.
         if (attachmentBoneTransforms != null &&
             attachmentBoneTransforms.TryGetValue("Bip01 Head", out var headBoneMatrix))
         {
-            Log.Debug("Transforming hair by Bip01 Head: T=({0:F4}, {1:F4}, {2:F4})",
-                headBoneMatrix.Translation.X, headBoneMatrix.Translation.Y, headBoneMatrix.Translation.Z);
-            foreach (var sub in hairModel.Submeshes)
-                NpcRenderHelpers.TransformSubmesh(sub, headBoneMatrix);
+            NpcRenderHelpers.ApplyHeadBoneCorrection(
+                hairModel, hairRaw.Value.Data, hairRaw.Value.Info, headBoneMatrix);
         }
         else
         {
-            Log.Warn("'Bip01 Head' bone not found — hair will render at origin. Available bones: {0}",
-                attachmentBoneTransforms != null
-                    ? string.Join(", ", attachmentBoneTransforms.Keys)
-                    : "(null)");
+            var availableBones = attachmentBoneTransforms == null
+                ? "(null)"
+                : string.Join(", ", attachmentBoneTransforms.Keys);
+            Log.Warn(
+                "'Bip01 Head' bone not found — hair will render at origin. Available bones: {0}",
+                availableBones);
         }
 
         // Apply same EGM morphs to hair
@@ -290,10 +295,17 @@ internal static class NpcHeadBuilder
         if (eyeNifPath == null)
             return;
 
-        var eyeModel = NpcRenderHelpers.LoadNifFromBsa(eyeNifPath, meshesArchive, meshExtractor, textureResolver);
+        var eyeRaw = NpcRenderHelpers.LoadNifRawFromBsa(eyeNifPath, meshesArchive, meshExtractor);
+        if (eyeRaw == null)
+        {
+            Log.Warn("Eye NIF failed to load: {0}", eyeNifPath);
+            return;
+        }
+
+        var eyeModel = NifGeometryExtractor.Extract(eyeRaw.Value.Data, eyeRaw.Value.Info, textureResolver);
         if (eyeModel == null || !eyeModel.HasGeometry)
         {
-            Log.Warn("Eye NIF failed to load or has no geometry: {0}", eyeNifPath);
+            Log.Warn("Eye NIF has no geometry: {0}", eyeNifPath);
             return;
         }
 
@@ -301,15 +313,13 @@ internal static class NpcHeadBuilder
             eyeNifPath, eyeModel.MinX, eyeModel.MinY, eyeModel.MinZ,
             eyeModel.MaxX, eyeModel.MaxY, eyeModel.MaxZ);
 
-        // Eye NIFs are NOT skinned — transform from local space to world space via head bone.
+        // Eye NIFs are NOT skinned — use correction matrix to undo NIF's own bone transform
+        // and apply the skeleton's instead.
         if (headBoneTransforms != null &&
             headBoneTransforms.TryGetValue(boneName, out var eyeBoneMatrix))
         {
-            var t = eyeBoneMatrix.Translation;
-            Log.Debug("Transforming eye by {0} matrix: T=({1:F4}, {2:F4}, {3:F4})",
-                boneName, t.X, t.Y, t.Z);
-            foreach (var sub in eyeModel.Submeshes)
-                NpcRenderHelpers.TransformSubmesh(sub, eyeBoneMatrix);
+            NpcRenderHelpers.ApplyHeadBoneCorrection(
+                eyeModel, eyeRaw.Value.Data, eyeRaw.Value.Info, eyeBoneMatrix);
         }
         else
         {
@@ -356,19 +366,26 @@ internal static class NpcHeadBuilder
     {
         foreach (var partPath in npc.HeadPartNifPaths!)
         {
-            var partModel = NpcRenderHelpers.LoadNifFromBsa(partPath, meshesArchive, meshExtractor, textureResolver);
-            if (partModel == null || !partModel.HasGeometry)
+            var partRaw = NpcRenderHelpers.LoadNifRawFromBsa(partPath, meshesArchive, meshExtractor);
+            if (partRaw == null)
             {
                 Log.Warn("Head part NIF failed to load: {0}", partPath);
                 continue;
             }
 
-            // Head parts are NOT skinned — apply head bone transform.
+            var partModel = NifGeometryExtractor.Extract(partRaw.Value.Data, partRaw.Value.Info, textureResolver);
+            if (partModel == null || !partModel.HasGeometry)
+            {
+                Log.Warn("Head part NIF has no geometry: {0}", partPath);
+                continue;
+            }
+
+            // Position head parts: parent to Bip01 Head bone (same as hair).
             if (attachmentBoneTransforms != null &&
                 attachmentBoneTransforms.TryGetValue("Bip01 Head", out var headBone))
             {
-                foreach (var sub in partModel.Submeshes)
-                    NpcRenderHelpers.TransformSubmesh(sub, headBone);
+                NpcRenderHelpers.ApplyHeadBoneCorrection(
+                    partModel, partRaw.Value.Data, partRaw.Value.Info, headBone);
             }
 
             // Apply EGM morphs

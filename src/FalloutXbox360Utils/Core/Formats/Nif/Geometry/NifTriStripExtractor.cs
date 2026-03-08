@@ -4,7 +4,7 @@
 
 using FalloutXbox360Utils.Core.Utils;
 
-namespace FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+namespace FalloutXbox360Utils.Core.Formats.Nif.Geometry;
 
 /// <summary>
 ///     Extracts and converts triangle strip data from NIF geometry blocks.
