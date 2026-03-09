@@ -378,6 +378,7 @@ internal static class NpcRenderHelpers
         {
             clone.Submeshes.Add(new RenderableSubmesh
             {
+                ShapeName = sub.ShapeName,
                 Positions = (float[])sub.Positions.Clone(),
                 Triangles = sub.Triangles,
                 Normals = sub.Normals != null ? (float[])sub.Normals.Clone() : null,
@@ -385,6 +386,7 @@ internal static class NpcRenderHelpers
                 VertexColors = sub.VertexColors,
                 Tangents = sub.Tangents,
                 Bitangents = sub.Bitangents,
+                ShaderMetadata = sub.ShaderMetadata,
                 DiffuseTexturePath = sub.DiffuseTexturePath,
                 NormalMapTexturePath = sub.NormalMapTexturePath,
                 IsEmissive = sub.IsEmissive,

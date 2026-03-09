@@ -61,6 +61,8 @@ internal static class NifConverter
             discovery.ExtractNiTriStripsDataTriangles(data, info);
             discovery.UpdateGeometryExpansionsWithTriangles();
             discovery.FindHavokExpansions(data, info);
+            // TODO: Re-enable after fixing block offset corruption
+            // discovery.FindSkinDataExpansions(data, info);
             discovery.FindSkinPartitionExpansions(data, info);
 
             // Calculate phase: block remapping and output size

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using FalloutXbox360Utils.Core.Utils;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -15,8 +16,6 @@ namespace FalloutXbox360Utils.CLI;
 /// </summary>
 public static class SearchCommand
 {
-    private const int StreamBufferSize = 8 * 1024 * 1024; // 8 MB chunks for streaming
-
     public static Command Create()
     {
         var command = new Command("search", "Search any file for text or hex patterns");
@@ -174,7 +173,9 @@ public static class SearchCommand
 
         if (countOnly)
         {
-            var count = CountMatchesStreaming(filePath, pattern, patternLower);
+            var count = BinaryPatternSearcher.CountMatchesStreaming(
+                filePath,
+                new BinarySearchPattern(pattern, patternLower));
             AnsiConsole.MarkupLine(count == 0
                 ? "[grey]No matches found.[/]"
                 : $"[green]{count} match(es) found[/]");
@@ -187,7 +188,9 @@ public static class SearchCommand
         var data = new byte[fileInfo.Length];
         accessor.ReadArray(0, data, 0, data.Length);
 
-        var matches = FindMatches(data, pattern, patternLower);
+        var matches = BinaryPatternSearcher.FindMatches(
+            data,
+            new BinarySearchPattern(pattern, patternLower));
 
         if (matches.Count == 0)
         {
@@ -253,7 +256,9 @@ public static class SearchCommand
             var file = files[i];
             try
             {
-                var count = CountMatchesStreaming(file, pattern, patternLower);
+                var count = BinaryPatternSearcher.CountMatchesStreaming(
+                    file,
+                    new BinarySearchPattern(pattern, patternLower));
                 results[i] = (Path.GetFileName(file), new FileInfo(file).Length, count);
             }
             catch
@@ -317,7 +322,9 @@ public static class SearchCommand
                 var fileName = Path.GetFileName(file);
 
                 // Use streaming count first to check if there are matches
-                var count = CountMatchesStreaming(file, pattern, patternLower);
+                var count = BinaryPatternSearcher.CountMatchesStreaming(
+                    file,
+                    new BinarySearchPattern(pattern, patternLower));
                 results.Add((fileName, fileInfo.Length, count));
                 totalMatches += count;
 
@@ -327,7 +334,9 @@ public static class SearchCommand
 
                     // Only load full file for context display
                     var data = File.ReadAllBytes(file);
-                    var matches = FindMatches(data, pattern, patternLower);
+                    var matches = BinaryPatternSearcher.FindMatches(
+                        data,
+                        new BinarySearchPattern(pattern, patternLower));
                     var shown = 0;
                     foreach (var offset in matches)
                     {
@@ -384,151 +393,6 @@ public static class SearchCommand
             $"[bold]{totalMatches} total matches across {filesWithHits}/{results.Count} files[/]");
 
         return 0;
-    }
-
-    /// <summary>
-    ///     Count matches using streaming I/O with 8 MB buffer chunks.
-    ///     Avoids loading entire files into memory. Uses SIMD-accelerated
-    ///     Span.IndexOf for case-sensitive patterns.
-    /// </summary>
-    private static int CountMatchesStreaming(string filePath, byte[] pattern, byte[]? patternLower)
-    {
-        var fileLength = new FileInfo(filePath).Length;
-        if (fileLength < pattern.Length)
-        {
-            return 0;
-        }
-
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
-            StreamBufferSize, FileOptions.SequentialScan);
-        // Buffer size + overlap region for patterns that span chunk boundaries
-        var overlap = pattern.Length - 1;
-        var buffer = new byte[StreamBufferSize + overlap];
-        var count = 0;
-        var isFirstRead = true;
-
-        while (true)
-        {
-            int readStart;
-            if (isFirstRead)
-            {
-                readStart = 0;
-                isFirstRead = false;
-            }
-            else
-            {
-                // Carry over overlap bytes from previous chunk's end
-                Array.Copy(buffer, StreamBufferSize, buffer, 0, overlap);
-                readStart = overlap;
-            }
-
-            var bytesRead = fs.Read(buffer, readStart, StreamBufferSize);
-            if (bytesRead == 0)
-            {
-                break;
-            }
-
-            var totalBytes = readStart + bytesRead;
-            var searchLength = totalBytes - pattern.Length + 1;
-            if (searchLength <= 0)
-            {
-                break;
-            }
-
-            if (patternLower != null)
-            {
-                // Case-insensitive: manual scan with first-byte filter
-                for (var i = 0; i < searchLength; i++)
-                {
-                    if (MatchesAtCaseInsensitive(buffer, i, pattern, patternLower))
-                    {
-                        count++;
-                    }
-                }
-            }
-            else
-            {
-                // Case-sensitive: SIMD-accelerated Span.IndexOf
-                var span = buffer.AsSpan(0, totalBytes);
-                var patternSpan = pattern.AsSpan();
-                var offset = 0;
-
-                while (offset < searchLength)
-                {
-                    var idx = span[offset..].IndexOf(patternSpan);
-                    if (idx < 0)
-                    {
-                        break;
-                    }
-
-                    count++;
-                    offset += idx + 1;
-                }
-            }
-        }
-
-        return count;
-    }
-
-    /// <summary>
-    ///     Find all match offsets in a byte array. Uses SIMD-accelerated
-    ///     Span.IndexOf for case-sensitive patterns (typically 10-100x faster
-    ///     than naive byte-by-byte comparison).
-    /// </summary>
-    private static List<long> FindMatches(byte[] data, byte[] pattern, byte[]? patternLower)
-    {
-        var matches = new List<long>();
-
-        if (patternLower != null)
-        {
-            // Case-insensitive: manual scan
-            var searchLength = data.Length - pattern.Length;
-            for (long i = 0; i <= searchLength; i++)
-            {
-                if (MatchesAtCaseInsensitive(data, i, pattern, patternLower))
-                {
-                    matches.Add(i);
-                }
-            }
-        }
-        else
-        {
-            // Case-sensitive: SIMD-accelerated Span.IndexOf
-            var span = data.AsSpan();
-            var patternSpan = pattern.AsSpan();
-            var offset = 0;
-            var searchLimit = data.Length - pattern.Length + 1;
-
-            while (offset < searchLimit)
-            {
-                var idx = span[offset..].IndexOf(patternSpan);
-                if (idx < 0)
-                {
-                    break;
-                }
-
-                matches.Add(offset + idx);
-                offset += idx + 1;
-            }
-        }
-
-        return matches;
-    }
-
-    private static bool MatchesAtCaseInsensitive(byte[] data, long offset, byte[] patternUpper, byte[] patternLower)
-    {
-        for (var j = 0; j < patternUpper.Length; j++)
-        {
-            var b = data[offset + j];
-            // Lowercase the byte if it's an uppercase ASCII letter
-            var bLower = b is >= (byte)'A' and <= (byte)'Z' ? (byte)(b + 32) : b;
-            if (bLower != patternLower[j] && data[offset + j] != patternUpper[j])
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static void DisplayMatch(byte[] data, long offset, int patternLength,

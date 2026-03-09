@@ -29,6 +29,12 @@ internal sealed class NifTextureResolver : IDisposable
     public static string? ResolveDiffusePath(byte[] data, NifInfo nif, List<int> propertyRefs)
         => NifShaderTexturePropertyReader.ResolveDiffusePath(data, nif, propertyRefs);
 
+    public static NifShaderTextureMetadata? ReadShaderMetadata(
+        byte[] data,
+        NifInfo nif,
+        List<int> propertyRefs)
+        => NifShaderTexturePropertyReader.ReadShaderMetadata(data, nif, propertyRefs);
+
     public static uint? ReadShaderFlags2(byte[] data, NifInfo nif, List<int> propertyRefs)
         => NifShaderTexturePropertyReader.ReadShaderFlags2(data, nif, propertyRefs);
 

@@ -48,15 +48,56 @@ public sealed class NifTextureResolverTests
         var propertyRefs = new List<int> { 0 };
         var resolvedDiffuse = NifTextureResolver.ResolveDiffusePath(data, nif, propertyRefs);
         var resolvedNormal = NifTextureResolver.ResolveNormalMapPath(data, nif, propertyRefs);
+        var metadata = NifTextureResolver.ReadShaderMetadata(data, nif, propertyRefs);
         var shaderFlags2 = NifTextureResolver.ReadShaderFlags2(data, nif, propertyRefs);
         var envMapInfo = NifTextureResolver.ReadEnvMapInfo(data, nif, propertyRefs);
 
         Assert.Equal(diffusePath, resolvedDiffuse);
         Assert.Equal(normalPath, resolvedNormal);
+        Assert.NotNull(metadata);
+        Assert.Equal(8, metadata.TextureSlots.Count);
+        Assert.Equal(diffusePath, metadata.GetTextureSlot(0));
+        Assert.Equal(normalPath, metadata.GetTextureSlot(1));
+        for (var slot = 2; slot < 8; slot++)
+        {
+            Assert.Null(metadata.GetTextureSlot(slot));
+        }
+
         Assert.Equal(1u << 5, shaderFlags2);
         Assert.NotNull(envMapInfo);
         Assert.Equal(0x20000u, envMapInfo.Value.ShaderFlags);
         Assert.Equal(0.75f, envMapInfo.Value.EnvMapScale, 3);
+    }
+
+    [Fact]
+    public void ReadShaderMetadata_FromNoLightingProperty_UsesFixedSlotLayout()
+    {
+        const string diffusePath = @"textures\effects\neon.dds";
+
+        var data = new byte[96];
+        WriteNiObjectNetHeader(data, 0);
+        WriteUInt16(data, 12, 0);
+        WriteUInt32(data, 14, 7);
+        WriteUInt32(data, 18, 1u << 25);
+        WriteUInt32(data, 22, 0);
+        WriteFloat(data, 26, 0f);
+        WriteUInt32(data, 30, 0);
+
+        var pos = 34;
+        WriteSizedString(data, ref pos, diffusePath);
+
+        var nif = CreateNifInfo(("BSShaderNoLightingProperty", 0, pos));
+        var metadata = NifTextureResolver.ReadShaderMetadata(data, nif, [0]);
+
+        Assert.NotNull(metadata);
+        Assert.Equal("BSShaderNoLightingProperty", metadata.PropertyType);
+        Assert.True(metadata.HasRemappableTextures);
+        Assert.Equal(diffusePath, metadata.DiffusePath);
+        Assert.Equal(8, metadata.TextureSlots.Count);
+        for (var slot = 1; slot < 8; slot++)
+        {
+            Assert.Null(metadata.GetTextureSlot(slot));
+        }
     }
 
     private static NifInfo CreateNifInfo(params (string TypeName, int DataOffset, int Size)[] blocks)

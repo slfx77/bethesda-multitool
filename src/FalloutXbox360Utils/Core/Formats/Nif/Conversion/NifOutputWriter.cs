@@ -34,7 +34,7 @@ internal sealed class NifOutputWriter(NifConversionState state)
 
         // Complex case: rebuild the file with new block sizes
         Log.Debug(
-            $"  Rebuilding file: removing {_state.BlocksToStrip.Count} packed blocks, expanding {_state.GeometryExpansions.Count} geometry, {_state.SkinPartitionExpansions.Count} skin partition blocks, adding {_state.NewStrings.Count} strings");
+            $"  Rebuilding file: removing {_state.BlocksToStrip.Count} packed blocks, expanding {_state.GeometryExpansions.Count} geometry, {_state.SkinDataExpansions.Count} skin data, {_state.SkinPartitionExpansions.Count} skin partition blocks, adding {_state.NewStrings.Count} strings");
 
         var schemaConverter = new NifSchemaConverter(
             _state.Schema,
@@ -89,6 +89,12 @@ internal sealed class NifOutputWriter(NifConversionState state)
         {
             var pos = NifGeometryWriter.WriteExpandedHavokBlock(input, output, outPos, block);
             return (pos, havokExpansion.NewSize);
+        }
+
+        if (_state.SkinDataExpansions.TryGetValue(block.Index, out var skinDataExpansion))
+        {
+            var pos = NifSkinDataExpander.WriteExpanded(skinDataExpansion.ParsedData, output, outPos);
+            return (pos, skinDataExpansion.NewSize);
         }
 
         if (_state.SkinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))

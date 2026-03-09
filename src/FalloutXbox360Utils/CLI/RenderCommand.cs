@@ -95,7 +95,7 @@ public static class RenderCommand
                 return;
             }
 
-            var elevationExplicit = parseResult.GetResult(elevationOption) != null;
+            var elevationExplicit = parseResult.GetResult(elevationOption) is { Implicit: false };
 
             var settings = new NifRenderSettings
             {

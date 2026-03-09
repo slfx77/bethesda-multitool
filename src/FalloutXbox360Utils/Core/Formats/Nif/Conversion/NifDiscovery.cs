@@ -249,6 +249,129 @@ internal sealed class NifDiscovery(NifConversionState state)
     }
 
     /// <summary>
+    ///     Find NiSkinData blocks that need vertex weight expansion from packed geometry data.
+    /// </summary>
+    internal void FindSkinDataExpansions(byte[] data, NifInfo info)
+    {
+        Log.Debug(
+            $"  FindSkinDataExpansions: {_state.GeometryExpansions.Count} geometry expansions, " +
+            $"{_state.GeometryToSkinData.Count} geom->skinData mappings, " +
+            $"{_state.VertexMaps.Count} vertex maps");
+
+        var expansionsFound = 0;
+
+        // For each geometry block with packed data, find its NiSkinData block
+        foreach (var kvp in _state.GeometryExpansions)
+        {
+            var geomBlockIndex = kvp.Key;
+            var packedBlockIndex = kvp.Value.PackedBlockIndex;
+
+            if (!_state.GeometryToSkinData.TryGetValue(geomBlockIndex, out var skinDataIndex))
+            {
+                Log.Debug($"    Geom block {geomBlockIndex}: no GeometryToSkinData mapping, skipping");
+                continue;
+            }
+
+            if (!_state.PackedGeometryByBlock.TryGetValue(packedBlockIndex, out var packedData))
+            {
+                Log.Debug($"    Geom block {geomBlockIndex}: packed block {packedBlockIndex} not found, skipping");
+                continue;
+            }
+
+            if (packedData is not { BoneIndices: not null, BoneWeights: not null })
+            {
+                Log.Debug(
+                    $"    Geom block {geomBlockIndex}: packed data has no bone data (BoneIndices={packedData.BoneIndices != null}, BoneWeights={packedData.BoneWeights != null}), skipping");
+                continue;
+            }
+
+            // Find the NiSkinData block
+            var skinDataBlock = info.Blocks.FirstOrDefault(b => b.Index == skinDataIndex);
+            if (skinDataBlock?.TypeName != "NiSkinData")
+            {
+                Log.Debug(
+                    $"    Geom block {geomBlockIndex}: skinData ref {skinDataIndex} is not NiSkinData (type={skinDataBlock?.TypeName}), skipping");
+                continue;
+            }
+
+            // Skip if already has vertex weights (already expanded)
+            // Parse the NiSkinData block
+            var skinData = NifSkinDataExpander.Parse(data, skinDataBlock.DataOffset, skinDataBlock.Size,
+                info.IsBigEndian);
+            if (skinData == null)
+            {
+                Log.Debug($"    Geom block {geomBlockIndex}: NiSkinData parse failed, skipping");
+                continue;
+            }
+
+            Log.Debug(
+                $"    Geom block {geomBlockIndex}: NiSkinData block {skinDataBlock.Index} - {skinData.NumBones} bones, HasVertexWeights={skinData.OriginalHasVertexWeights}, size={skinDataBlock.Size}");
+
+            if (skinData.OriginalHasVertexWeights)
+            {
+                Log.Debug(
+                    $"  Block {skinDataBlock.Index}: NiSkinData already has vertex weights, skipping expansion");
+                continue;
+            }
+
+            // Look up vertex map and partition data for bone index mapping
+            ushort[]? vertexMap = null;
+            List<NifSkinPartitionExpander.PartitionInfo>? partitions = null;
+            if (_state.GeometryToSkinPartition.TryGetValue(geomBlockIndex, out var skinPartIdx))
+            {
+                _state.VertexMaps.TryGetValue(skinPartIdx, out vertexMap);
+
+                // Parse the NiSkinPartition to get per-partition Bones[] arrays
+                // Needed to map partition-local bone indices → global bone indices
+                var skinPartBlock = info.Blocks.FirstOrDefault(b => b.Index == skinPartIdx);
+                if (skinPartBlock != null)
+                {
+                    var skinPartData = NifSkinPartitionExpander.Parse(data, skinPartBlock.DataOffset,
+                        skinPartBlock.Size, info.IsBigEndian);
+                    partitions = skinPartData?.Partitions;
+                }
+
+                Log.Debug(
+                    $"    Geom block {geomBlockIndex}: skinPartition={skinPartIdx}, vertexMap={vertexMap?.Length ?? -1}, partitions={partitions?.Count ?? 0}, packedVerts={packedData.NumVertices}");
+            }
+            else
+            {
+                Log.Debug($"    Geom block {geomBlockIndex}: no skin partition mapping, using raw indices");
+            }
+
+            // Populate per-bone weights from packed data
+            // Partition info is needed to map partition-local bone indices to global
+            NifSkinDataExpander.PopulateWeightsFromPackedData(skinData, packedData, vertexMap, partitions);
+
+            // Calculate expanded size
+            var newSize = NifSkinDataExpander.CalculateExpandedSize(skinData);
+            var sizeIncrease = newSize - skinDataBlock.Size;
+
+            if (sizeIncrease > 0)
+            {
+                _state.SkinDataExpansions[skinDataBlock.Index] = new SkinDataExpansion
+                {
+                    BlockIndex = skinDataBlock.Index,
+                    OriginalSize = skinDataBlock.Size,
+                    NewSize = newSize,
+                    ParsedData = skinData
+                };
+
+                Log.Debug(
+                    $"  Block {skinDataBlock.Index}: NiSkinData -> expand from {skinDataBlock.Size} to {newSize} bytes (+{sizeIncrease} for vertex weights)");
+                expansionsFound++;
+            }
+            else
+            {
+                Log.Debug(
+                    $"    Geom block {geomBlockIndex}: NiSkinData expansion size increase is {sizeIncrease}, skipping");
+            }
+        }
+
+        Log.Debug($"  FindSkinDataExpansions complete: {expansionsFound} expansions found");
+    }
+
+    /// <summary>
     ///     Parse a geometry block to find its Additional Data block reference.
     /// </summary>
     private static int ParseAdditionalDataRef(byte[] data, BlockInfo block)

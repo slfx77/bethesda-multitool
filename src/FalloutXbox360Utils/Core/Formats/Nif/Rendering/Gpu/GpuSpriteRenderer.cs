@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Dds;
 using Veldrid;
 using Veldrid.SPIRV;
 
@@ -18,10 +19,9 @@ internal sealed class GpuSpriteRenderer : IDisposable
 
     private readonly GpuDevice _gpu;
     private readonly Sampler _linearSampler;
-    private readonly Pipeline _pipeline;
-    private readonly Pipeline _pipelineBlend;
-    private readonly Pipeline _pipelineBlendDoubleSided;
-    private readonly Pipeline _pipelineDoubleSided;
+    private readonly Dictionary<BlendPipelineKey, Pipeline> _blendPipelines = [];
+    private readonly Pipeline _opaqueDoubleSidedPipeline;
+    private readonly Pipeline _opaquePipeline;
     private readonly Shader[] _shaders;
     private readonly GpuTextureCache _textureCache;
     private readonly ResourceLayout _textureLayout;
@@ -65,21 +65,20 @@ internal sealed class GpuSpriteRenderer : IDisposable
             SamplerFilter.MinLinear_MagLinear_MipLinear,
             null, 0, 0, 0, 0, SamplerBorderColor.TransparentBlack));
 
-        // Create pipeline variants
-        _pipeline = CreatePipeline(factory, false, false);
-        _pipelineBlend = CreatePipeline(factory, true, false);
-        _pipelineDoubleSided = CreatePipeline(factory, false, true);
-        _pipelineBlendDoubleSided = CreatePipeline(factory, true, true);
+        _opaquePipeline = CreatePipeline(factory, blendAttachment: null, depthWriteEnabled: true, doubleSided: false);
+        _opaqueDoubleSidedPipeline = CreatePipeline(factory, blendAttachment: null, depthWriteEnabled: true, doubleSided: true);
     }
 
     public void Dispose()
     {
         _stagingTexture?.Dispose();
         _textureCache.Dispose();
-        _pipeline.Dispose();
-        _pipelineBlend.Dispose();
-        _pipelineDoubleSided.Dispose();
-        _pipelineBlendDoubleSided.Dispose();
+        _opaquePipeline.Dispose();
+        _opaqueDoubleSidedPipeline.Dispose();
+        foreach (var pipeline in _blendPipelines.Values)
+        {
+            pipeline.Dispose();
+        }
         _uniformLayout.Dispose();
         _textureLayout.Dispose();
         _linearSampler.Dispose();
@@ -87,35 +86,28 @@ internal sealed class GpuSpriteRenderer : IDisposable
             shader.Dispose();
     }
 
-    private Pipeline CreatePipeline(ResourceFactory factory, bool blendEnabled, bool doubleSided)
+    private Pipeline CreatePipeline(
+        ResourceFactory factory,
+        BlendAttachmentDescription? blendAttachment,
+        bool depthWriteEnabled,
+        bool doubleSided)
     {
-        var blendState = blendEnabled
-            ? new BlendStateDescription(
-                RgbaFloat.White,
-                new BlendAttachmentDescription(
-                    true,
-                    BlendFactor.SourceAlpha,
-                    BlendFactor.InverseSourceAlpha,
-                    BlendFunction.Add,
-                    BlendFactor.One,
-                    BlendFactor.InverseSourceAlpha,
-                    BlendFunction.Add))
-            : BlendStateDescription.SingleAlphaBlend;
-
-        // Use a transparent-aware blend: when blendEnabled is false, we still need alpha for the PNG
-        if (!blendEnabled)
-        {
-            blendState = new BlendStateDescription(
+        var blendState = blendAttachment.HasValue
+            ? new BlendStateDescription(RgbaFloat.White, blendAttachment.Value)
+            : new BlendStateDescription(
                 RgbaFloat.White,
                 new BlendAttachmentDescription(
                     false,
-                    BlendFactor.One, BlendFactor.Zero, BlendFunction.Add,
-                    BlendFactor.One, BlendFactor.Zero, BlendFunction.Add));
-        }
+                    BlendFactor.One,
+                    BlendFactor.Zero,
+                    BlendFunction.Add,
+                    BlendFactor.One,
+                    BlendFactor.Zero,
+                    BlendFunction.Add));
 
         return factory.CreateGraphicsPipeline(new GraphicsPipelineDescription(
             blendState,
-            new DepthStencilStateDescription(true, !blendEnabled, ComparisonKind.LessEqual),
+            new DepthStencilStateDescription(true, depthWriteEnabled, ComparisonKind.LessEqual),
             new RasterizerStateDescription(
                 doubleSided ? FaceCullMode.None : FaceCullMode.Back,
                 PolygonFillMode.Solid,
@@ -128,6 +120,28 @@ internal sealed class GpuSpriteRenderer : IDisposable
             new OutputDescription(
                 new OutputAttachmentDescription(PixelFormat.D32_Float_S8_UInt),
                 new OutputAttachmentDescription(PixelFormat.R8_G8_B8_A8_UNorm))));
+    }
+
+    private Pipeline GetBlendPipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided)
+    {
+        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided);
+        if (_blendPipelines.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var blendAttachment = new BlendAttachmentDescription(
+            true,
+            ResolveBlendFactor(srcBlendMode),
+            ResolveBlendFactor(dstBlendMode),
+            BlendFunction.Add,
+            BlendFactor.One,
+            BlendFactor.One,
+            BlendFunction.Maximum);
+
+        var pipeline = CreatePipeline(_gpu.Factory, blendAttachment, depthWriteEnabled: false, doubleSided: doubleSided);
+        _blendPipelines[key] = pipeline;
+        return pipeline;
     }
 
     /// <summary>
@@ -232,9 +246,40 @@ internal sealed class GpuSpriteRenderer : IDisposable
 
         var framebuffer = factory.CreateFramebuffer(new FramebufferDescription(depthTex, colorTex));
 
-        // Sort submeshes: by RenderOrder, then average Z ascending (back-to-front)
-        var sorted = model.Submeshes.OrderBy(s => s.RenderOrder)
-            .ThenBy(s => ComputeAverageZ(s))
+        var renderItems = new List<RenderItem>();
+        foreach (var sub in model.Submeshes)
+        {
+            if (sub.TriangleCount == 0 || sub.VertexCount == 0)
+            {
+                continue;
+            }
+
+            DecodedTexture? diffuseTexture = null;
+            if (textureResolver != null && sub.DiffuseTexturePath != null)
+            {
+                diffuseTexture = textureResolver.GetTexture(sub.DiffuseTexturePath);
+            }
+
+            // Skip untextured submeshes using the same criteria as the CPU path.
+            if (textureResolver != null && diffuseTexture == null &&
+                sub.DiffuseTexturePath == null &&
+                !(sub.IsEmissive && sub.DiffuseTexturePath != null) &&
+                !(sub.UseVertexColors && sub.VertexColors != null))
+            {
+                continue;
+            }
+
+            renderItems.Add(new RenderItem(
+                sub,
+                NifAlphaClassifier.Classify(sub, diffuseTexture),
+                ComputeAverageZ(sub, viewMatrix),
+                diffuseTexture != null));
+        }
+
+        var ordered = renderItems
+            .OrderBy(item => item.Submesh.RenderOrder)
+            .ThenBy(item => item.AlphaState.RenderMode == NifAlphaRenderMode.Blend ? 1 : 0)
+            .ThenBy(item => item.AverageZ)
             .ToList();
 
         // Collect per-submesh GPU resources for deferred disposal after single submit.
@@ -249,17 +294,11 @@ internal sealed class GpuSpriteRenderer : IDisposable
         cl.ClearDepthStencil(1f);
         cl.SetViewport(0, new Viewport(0, 0, ssWidth, ssHeight, 0, 1));
 
-        foreach (var sub in sorted)
+        foreach (var item in ordered)
         {
-            if (sub.TriangleCount == 0 || sub.VertexCount == 0)
-                continue;
-
-            // Skip untextured submeshes (same logic as CPU renderer)
-            var hasDiffuse = textureResolver != null && sub.DiffuseTexturePath != null;
-            if (textureResolver != null && !hasDiffuse &&
-                !(sub.IsEmissive && sub.DiffuseTexturePath != null) &&
-                !(sub.UseVertexColors && sub.VertexColors != null))
-                continue;
+            var sub = item.Submesh;
+            var alphaState = item.AlphaState;
+            var hasDiffuse = item.HasDiffuseTexture;
 
             // Build flags bitfield
             uint flags = 0;
@@ -271,8 +310,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
                 flags |= 8; // HAS_VCOL
             if (sub.IsEmissive) flags |= 16; // IS_EMISSIVE
             if (sub.IsDoubleSided) flags |= 32; // IS_DOUBLE_SIDED
-            if (sub.HasAlphaBlend) flags |= 64; // HAS_ALPHA_BLEND
-            if (sub.HasAlphaTest) flags |= 128; // HAS_ALPHA_TEST
+            if (alphaState.HasAlphaBlend) flags |= 64; // HAS_ALPHA_BLEND
+            if (alphaState.HasAlphaTest) flags |= 128; // HAS_ALPHA_TEST
             if (sub.IsEyeEnvmap) flags |= 256; // IS_EYE_ENVMAP
             if (sub.TintColor.HasValue) flags |= 512; // HAS_TINT
 
@@ -287,8 +326,8 @@ internal sealed class GpuSpriteRenderer : IDisposable
                 HalfVec = new Vector4(RenderLightingConstants.HalfVec, RenderLightingConstants.HdotNegL),
                 Ambient = new Vector4(RenderLightingConstants.SkyAmbient, RenderLightingConstants.GroundAmbient, RenderLightingConstants.LightIntensity,
                     NifSpriteRenderer.BumpStrength),
-                Material = new Vector4(sub.MaterialAlpha, sub.EnvMapScale,
-                    sub.AlphaTestThreshold / 255f, sub.AlphaTestFunction),
+                Material = new Vector4(alphaState.MaterialAlpha, sub.EnvMapScale,
+                    alphaState.AlphaTestThreshold / 255f, alphaState.AlphaTestFunction),
                 TintColor = new Vector4(
                     sub.TintColor?.R ?? 1f, sub.TintColor?.G ?? 1f, sub.TintColor?.B ?? 1f, 0),
                 Flags = new Vector4(flags, 0, 0, 0)
@@ -307,7 +346,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             var diffuseTex = _textureCache.WhitePixel;
             var normalMapTex = _textureCache.FlatNormal;
 
-            if (textureResolver != null && sub.DiffuseTexturePath != null)
+            if (hasDiffuse && textureResolver != null && sub.DiffuseTexturePath != null)
                 diffuseTex = _textureCache.GetOrUpload(sub.DiffuseTexturePath, textureResolver);
             if (textureResolver != null && sub.NormalMapTexturePath != null)
                 normalMapTex = _textureCache.GetOrUpload(sub.NormalMapTexturePath, textureResolver);
@@ -316,15 +355,11 @@ internal sealed class GpuSpriteRenderer : IDisposable
                 _textureLayout, diffuseTex, _linearSampler, normalMapTex, _linearSampler));
 
             // Select pipeline variant
-            var isBlend = sub.HasAlphaBlend || sub.MaterialAlpha < 1f;
-            var isDualSided = sub.IsDoubleSided;
-            var pipeline = (isBlend, isDualSided) switch
-            {
-                (false, false) => _pipeline,
-                (true, false) => _pipelineBlend,
-                (false, true) => _pipelineDoubleSided,
-                (true, true) => _pipelineBlendDoubleSided
-            };
+            var pipeline = alphaState.RenderMode == NifAlphaRenderMode.Blend
+                ? GetBlendPipeline(alphaState.SrcBlendMode, alphaState.DstBlendMode, sub.IsDoubleSided)
+                : sub.IsDoubleSided
+                    ? _opaqueDoubleSidedPipeline
+                    : _opaquePipeline;
 
             cl.SetPipeline(pipeline);
             cl.SetGraphicsResourceSet(0, subUniformSet);
@@ -367,7 +402,7 @@ internal sealed class GpuSpriteRenderer : IDisposable
             SsHeight = ssHeight,
             BoundsWidth = projWidth,
             BoundsHeight = projHeight,
-            HasTexture = sorted.Any(s => s.DiffuseTexturePath != null),
+            HasTexture = ordered.Any(item => item.HasDiffuseTexture),
             Disposables = disposables,
             CommandList = cl,
             Framebuffer = framebuffer,
@@ -477,15 +512,30 @@ internal sealed class GpuSpriteRenderer : IDisposable
         return (minX, minY, maxX - minX, maxY - minY, viewMatrix);
     }
 
-    private static float ComputeAverageZ(RenderableSubmesh sub)
+    private static float ComputeAverageZ(RenderableSubmesh sub, Matrix4x4 viewMatrix)
     {
         if (sub.Positions.Length < 3) return 0f;
         var sum = 0f;
         var count = sub.Positions.Length / 3;
-        for (var i = 2; i < sub.Positions.Length; i += 3)
-            sum += sub.Positions[i];
+        for (var i = 0; i < sub.Positions.Length; i += 3)
+        {
+            var pos = new Vector3(sub.Positions[i], sub.Positions[i + 1], sub.Positions[i + 2]);
+            sum += Vector3.Transform(pos, viewMatrix).Z;
+        }
+
         return sum / count;
     }
+
+    private static BlendFactor ResolveBlendFactor(byte mode) => mode switch
+    {
+        0 => BlendFactor.One,
+        1 => BlendFactor.Zero,
+        2 => BlendFactor.SourceAlpha,
+        3 => BlendFactor.InverseSourceAlpha,
+        6 => BlendFactor.SourceAlpha,
+        7 => BlendFactor.InverseSourceAlpha,
+        _ => BlendFactor.SourceAlpha
+    };
 
     /// <summary>
     ///     Reads pixels from the persistent staging texture (already populated via CopyTexture
@@ -551,6 +601,17 @@ internal sealed class GpuSpriteRenderer : IDisposable
         public required Texture ColorTexture { get; init; }
         public required Texture DepthTexture { get; init; }
     }
+
+    private readonly record struct BlendPipelineKey(
+        byte SrcBlendMode,
+        byte DstBlendMode,
+        bool DoubleSided);
+
+    private sealed record RenderItem(
+        RenderableSubmesh Submesh,
+        NifAlphaRenderState AlphaState,
+        float AverageZ,
+        bool HasDiffuseTexture);
 
     /// <summary>
     ///     GPU uniform buffer layout — must match shader Uniforms block exactly.

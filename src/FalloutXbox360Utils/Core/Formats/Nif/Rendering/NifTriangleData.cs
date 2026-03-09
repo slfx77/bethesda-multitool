@@ -55,6 +55,7 @@ internal struct TriangleData
     public byte SrcBlendMode; // 0=ONE, 1=ZERO, 6=SRC_ALPHA, 7=INV_SRC_ALPHA, etc.
     public byte DstBlendMode;
     public float MaterialAlpha; // From NiMaterialProperty, 1.0 = opaque
+    public NifAlphaRenderMode AlphaRenderMode;
 
     // Eye environment map (SLS2057.pso cubemap reflection approximation)
     public bool IsEyeEnvmap;

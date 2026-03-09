@@ -35,7 +35,7 @@ internal static class ConcurrentScanCoordinator
         var sw = Stopwatch.StartNew();
 
         // Launch all independent scans concurrently
-        var (matches, esmRecords, assetStrings, meshes, textures) =
+        var (matches, esmRecords, assetStrings, meshes, textures, gpuTextures) =
             await LaunchConcurrentScansAsync(
                 accessor, result, minidumpInfo, fileScanner, moduleRanges, progress, verbose, ct);
 
@@ -50,7 +50,7 @@ internal static class ConcurrentScanCoordinator
 
         // Metadata post-processing (LAND/REFR, FormID mapping, scene graph, etc.)
         await MinidumpMetadataExtractor.PostProcessMetadataAsync(
-            accessor, result, esmRecords, assetStrings, meshes, textures,
+            accessor, result, esmRecords, assetStrings, meshes, textures, gpuTextures,
             minidumpInfo, progress, verbose, ct);
 
         log.Debug("ConcurrentScan: Total analysis completed in {0:N0} ms", sw.ElapsedMilliseconds);
@@ -61,7 +61,8 @@ internal static class ConcurrentScanCoordinator
         EsmRecordScanResult esmRecords,
         List<DetectedAssetString> assetStrings,
         List<ExtractedMesh>? meshes,
-        List<ExtractedTexture>? textures)>
+        List<ExtractedTexture>? textures,
+        List<ExtractedTexture>? gpuTextures)>
         LaunchConcurrentScansAsync(
             MemoryMappedViewAccessor accessor,
             AnalysisResult result,
@@ -80,6 +81,7 @@ internal static class ConcurrentScanCoordinator
         List<DetectedAssetString>? assetStrings = null;
         List<ExtractedMesh>? meshes = null;
         List<ExtractedTexture>? textures = null;
+        List<ExtractedTexture>? gpuTextures = null;
 
         // Create progress adapter for the signature scanner (0-50% range).
         // The signature scanner visits every byte and is the slowest scanner,
@@ -101,7 +103,7 @@ internal static class ConcurrentScanCoordinator
             });
         }
 
-        var tasks = new List<Task>(5);
+        var tasks = new List<Task>(6);
 
         // 1. Signature scanning (Aho-Corasick, visits every byte, parallel by region)
         tasks.Add(Task.Run(() =>
@@ -153,6 +155,16 @@ internal static class ConcurrentScanCoordinator
                 log.Debug("ConcurrentScan:   Textures: {0:N0} in {1:N0} ms",
                     textures.Count, scanSw.ElapsedMilliseconds);
             }, ct));
+
+            // 6. GPU-prepared texture scanning (NiXenonSourceTextureData structs)
+            var gpuTexScanner = new RuntimeGpuTextureScanner(context);
+            tasks.Add(Task.Run(() =>
+            {
+                var scanSw = Stopwatch.StartNew();
+                gpuTextures = gpuTexScanner.ScanForGpuTextures();
+                log.Debug("ConcurrentScan:   GPU textures: {0:N0} in {1:N0} ms",
+                    gpuTextures.Count, scanSw.ElapsedMilliseconds);
+            }, ct));
         }
 
         progress?.Report(new AnalysisProgress
@@ -160,6 +172,6 @@ internal static class ConcurrentScanCoordinator
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
 
-        return (matches!, esmRecords!, assetStrings!, meshes, textures);
+        return (matches!, esmRecords!, assetStrings!, meshes, textures, gpuTextures);
     }
 }

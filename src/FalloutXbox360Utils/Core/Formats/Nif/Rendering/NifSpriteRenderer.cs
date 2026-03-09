@@ -158,28 +158,31 @@ internal static class NifSpriteRenderer
         var emissiveMask = new bool[ssWidth * ssHeight];
         Array.Fill(depthBuffer, float.MinValue);
 
-        // Sort by render order (head first, then hair, then eyes) so the engine's
-        // scene-graph rendering order is preserved. Within each layer, sort by
-        // average Z ascending (back-to-front) for correct depth compositing.
-        triangleList.Sort((a, b) =>
-        {
-            var layer = a.RenderOrder.CompareTo(b.RenderOrder);
-            return layer != 0 ? layer : a.AvgZ.CompareTo(b.AvgZ);
-        });
+        var renderLayers = BuildRenderLayers(triangleList);
 
         // Band-parallel rasterization: divide the framebuffer into horizontal bands,
         // each processed by a separate thread. Since bands own exclusive rows, no
         // synchronization is needed — each pixel (px, py) belongs to exactly one band.
-        // Triangle ordering is preserved within each band for correct alpha blending.
+        // Within a render layer, opaque/cutout triangles run before blended triangles so
+        // thin shells write depth before later transparent overlays are composited.
         var bandCount = Math.Max(1, Environment.ProcessorCount);
         Parallel.For(0, bandCount, bandIdx =>
         {
             var bMinY = bandIdx * ssHeight / bandCount;
             var bMaxY = (bandIdx + 1) * ssHeight / bandCount - 1;
-            foreach (var tri in triangleList)
+            foreach (var layer in renderLayers)
             {
-                NifScanlineRasterizer.RasterizeTriangle(ssPixels, depthBuffer, faceKind, emissiveMask, ssWidth,
-                    tri, effPpu, offsetX, offsetY, bMinY, bMaxY);
+                foreach (var tri in layer.OpaqueAndCutoutTriangles)
+                {
+                    NifScanlineRasterizer.RasterizeTriangle(ssPixels, depthBuffer, faceKind, emissiveMask, ssWidth,
+                        tri, effPpu, offsetX, offsetY, bMinY, bMaxY);
+                }
+
+                foreach (var tri in layer.BlendedTriangles)
+                {
+                    NifScanlineRasterizer.RasterizeTriangle(ssPixels, depthBuffer, faceKind, emissiveMask, ssWidth,
+                        tri, effPpu, offsetX, offsetY, bMinY, bMaxY);
+                }
             }
         });
 
@@ -315,6 +318,21 @@ internal static class NifSpriteRenderer
         z = f0 * ox + f1 * oy + f2 * oz;
     }
 
+    private static IReadOnlyList<RenderLayer> BuildRenderLayers(List<TriangleData> triangles)
+    {
+        return triangles
+            .GroupBy(tri => tri.RenderOrder)
+            .OrderBy(group => group.Key)
+            .Select(group => new RenderLayer(
+                group.Where(tri => tri.AlphaRenderMode != NifAlphaRenderMode.Blend)
+                    .OrderBy(tri => tri.AvgZ)
+                    .ToArray(),
+                group.Where(tri => tri.AlphaRenderMode == NifAlphaRenderMode.Blend)
+                    .OrderBy(tri => tri.AvgZ)
+                    .ToArray()))
+            .ToArray();
+    }
+
     private static List<TriangleData> CollectTriangles(NifRenderableModel model,
         NifTextureResolver? textureResolver, ref bool hasTexture)
     {
@@ -341,6 +359,8 @@ internal static class NifSpriteRenderer
                     hasTexture = true;
                 }
             }
+
+            var alphaState = NifAlphaClassifier.Classify(submesh, texture);
 
             if (textureResolver != null && uvs != null && submesh.NormalMapTexturePath != null)
             {
@@ -379,13 +399,14 @@ internal static class NifSpriteRenderer
                     AvgZ = (pos[i0 + 2] + pos[i1 + 2] + pos[i2 + 2]) / 3f,
                     IsEmissive = submesh.IsEmissive,
                     IsDoubleSided = submesh.IsDoubleSided,
-                    HasAlphaBlend = submesh.HasAlphaBlend,
-                    HasAlphaTest = submesh.HasAlphaTest,
-                    AlphaTestThreshold = submesh.AlphaTestThreshold,
-                    AlphaTestFunction = submesh.AlphaTestFunction,
-                    SrcBlendMode = submesh.SrcBlendMode,
-                    DstBlendMode = submesh.DstBlendMode,
-                    MaterialAlpha = submesh.MaterialAlpha,
+                    HasAlphaBlend = alphaState.HasAlphaBlend,
+                    HasAlphaTest = alphaState.HasAlphaTest,
+                    AlphaTestThreshold = alphaState.AlphaTestThreshold,
+                    AlphaTestFunction = alphaState.AlphaTestFunction,
+                    SrcBlendMode = alphaState.SrcBlendMode,
+                    DstBlendMode = alphaState.DstBlendMode,
+                    MaterialAlpha = alphaState.MaterialAlpha,
+                    AlphaRenderMode = alphaState.RenderMode,
                     IsEyeEnvmap = submesh.IsEyeEnvmap,
                     EnvMapScale = submesh.EnvMapScale,
                     RenderOrder = submesh.RenderOrder,
@@ -484,6 +505,10 @@ internal static class NifSpriteRenderer
 
         return list;
     }
+
+    private sealed record RenderLayer(
+        TriangleData[] OpaqueAndCutoutTriangles,
+        TriangleData[] BlendedTriangles);
 
     /// <summary>
     ///     Compute shading from a world-space normal using the SKIN2000.pso formula

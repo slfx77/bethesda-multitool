@@ -23,20 +23,7 @@ internal static class NifTextureLoader
             {
                 var rawData = source.Extractor.ExtractFile(fileRecord);
                 var ddsData = ConvertDdxIfNeeded(rawData);
-                if (ddsData.Length >= 128)
-                {
-                    var width = BitConverter.ToUInt32(ddsData, 16);
-                    var height = BitConverter.ToUInt32(ddsData, 12);
-                    var fourCc = System.Text.Encoding.ASCII
-                        .GetString(ddsData, 84, 4)
-                        .TrimEnd('\0');
-                    Console.Error.WriteLine(
-                        $"[TEX] {path}: raw={rawData.Length}B dds={ddsData.Length}B {width}x{height} {fourCc}");
-                }
-
-                var decoded = DdsTextureDecoder.Decode(ddsData);
-                LogOutfitSamples(path, decoded);
-                return decoded;
+                return DdsTextureDecoder.Decode(ddsData);
             }
             catch
             {
@@ -47,36 +34,9 @@ internal static class NifTextureLoader
         return null;
     }
 
-    private static void LogOutfitSamples(string path, DecodedTexture? decoded)
-    {
-        if (decoded == null ||
-            !path.Contains("outfitf", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        var centerX = decoded.Width / 2;
-        var centerY = decoded.Height / 2;
-        for (var sampleY = -2; sampleY <= 2; sampleY++)
-        {
-            var pixelIndex = ((centerY + sampleY * 50) * decoded.Width + centerX) * 4;
-            if (pixelIndex < 0 || pixelIndex + 3 >= decoded.Pixels.Length)
-            {
-                continue;
-            }
-
-            Console.Error.WriteLine(
-                $"[TEX-SAMPLE] outfitf pixel ({centerX},{centerY + sampleY * 50}): " +
-                $"R={decoded.Pixels[pixelIndex]} " +
-                $"G={decoded.Pixels[pixelIndex + 1]} " +
-                $"B={decoded.Pixels[pixelIndex + 2]} " +
-                $"A={decoded.Pixels[pixelIndex + 3]}");
-        }
-    }
-
     /// <summary>
-    ///     If the data is a DDX texture (Xbox 360 format), convert it to DDS in memory.
-    /// </summary>
+     ///     If the data is a DDX texture (Xbox 360 format), convert it to DDS in memory.
+     /// </summary>
     private static byte[] ConvertDdxIfNeeded(byte[] data)
     {
         if (data.Length < 4)

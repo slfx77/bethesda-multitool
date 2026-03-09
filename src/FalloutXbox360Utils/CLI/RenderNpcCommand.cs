@@ -127,7 +127,7 @@ public static class RenderNpcCommand
         var elevationOption = new Option<float>("--elevation")
         {
             Description =
-                "Camera elevation in degrees from horizontal (default: 30 iso, 5 body, 0 head)",
+                "Camera elevation in degrees from horizontal (default: 30 iso, 0 single-view NPC renders)",
             DefaultValueFactory = _ => 30f
         };
         var sideOption = new Option<bool>("--side")
@@ -185,7 +185,7 @@ public static class RenderNpcCommand
                 return Task.CompletedTask;
             }
 
-            var elevationExplicit = parseResult.GetResult(elevationOption) != null;
+            var elevationExplicit = parseResult.GetResult(elevationOption) is { Implicit: false };
             var settings = new NpcRenderSettings
             {
                 MeshesBsaPath = parseResult.GetValue(inputArg)!,

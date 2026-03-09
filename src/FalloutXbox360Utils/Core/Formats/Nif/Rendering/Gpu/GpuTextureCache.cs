@@ -1,3 +1,4 @@
+using System.Linq;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using Veldrid;
 
@@ -46,7 +47,7 @@ internal sealed class GpuTextureCache : IDisposable
         if (decoded == null)
             return WhitePixel;
 
-        var tex = UploadRgba(decoded.Pixels, (uint)decoded.Width, (uint)decoded.Height);
+        var tex = UploadTexture(decoded);
         _cache[path] = tex;
         return tex;
     }
@@ -59,8 +60,47 @@ internal sealed class GpuTextureCache : IDisposable
         if (_cache.TryGetValue(key, out var cached))
             return cached;
 
-        var tex = UploadRgba(decoded.Pixels, (uint)decoded.Width, (uint)decoded.Height);
+        var tex = UploadTexture(decoded);
         _cache[key] = tex;
+        return tex;
+    }
+
+    internal static IReadOnlyList<(uint Width, uint Height, int PixelLength)> DescribeMipUploads(
+        DecodedTexture decoded)
+    {
+        return decoded.MipLevels
+            .Select(level => ((uint)level.Width, (uint)level.Height, level.Pixels.Length))
+            .ToArray();
+    }
+
+    private Texture UploadTexture(DecodedTexture decoded)
+    {
+        var tex = _device.ResourceFactory.CreateTexture(new TextureDescription(
+            (uint)decoded.Width,
+            (uint)decoded.Height,
+            1,
+            (uint)decoded.MipCount,
+            1,
+            PixelFormat.R8_G8_B8_A8_UNorm,
+            TextureUsage.Sampled,
+            TextureType.Texture2D));
+
+        for (uint mipLevel = 0; mipLevel < decoded.MipCount; mipLevel++)
+        {
+            var level = decoded.GetMipLevel((int)mipLevel);
+            _device.UpdateTexture(
+                tex,
+                level.Pixels,
+                0,
+                0,
+                0,
+                (uint)level.Width,
+                (uint)level.Height,
+                1,
+                mipLevel,
+                0);
+        }
+
         return tex;
     }
 

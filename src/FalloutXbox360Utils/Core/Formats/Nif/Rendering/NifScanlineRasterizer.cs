@@ -56,6 +56,20 @@ internal static class NifScanlineRasterizer
         var invDenom = 1f / denom;
         var tex = tri.Texture;
         var normalMap = tri.NormalMap;
+        var hasUvGradients = tri.Texture != null || tri.NormalMap != null;
+        float duDx = 0f, duDy = 0f, dvDx = 0f, dvDy = 0f;
+        if (hasUvGradients)
+        {
+            (duDx, duDy, dvDx, dvDy) = ComputeUvGradients(
+                tri,
+                sx0,
+                sy0,
+                sx1,
+                sy1,
+                sx2,
+                sy2,
+                invDenom);
+        }
 
         // Rasterize using barycentric coordinates
         for (var py = minPy; py <= maxPy; py++)
@@ -80,13 +94,13 @@ internal static class NifScanlineRasterizer
                 var z = tri.Z0 * w0 + tri.Z1 * w1 + tri.Z2 * w2;
                 var idx = py * width + px;
 
-                // Per-pixel front-face priority for double-sided thin shells:
-                // - Front face always overrides back face (regardless of depth)
-                // - Back face can never overwrite front face (prevents Z-fighting)
-                // - Same orientation or non-double-sided: normal depth test
+                var writesDepth = tri.AlphaRenderMode != NifAlphaRenderMode.Blend;
+
+                // Per-pixel front-face priority is only used for opaque/cutout thin shells.
+                // Blended surfaces are composited strictly by draw order with depth writes off.
                 var passesDepthTest = z > depthBuffer[idx];
-                var frontOverBack = !isBackFacing && faceKind[idx] == 2;
-                var backBlockedByFront = isBackFacing && faceKind[idx] == 1;
+                var frontOverBack = writesDepth && !isBackFacing && faceKind[idx] == 2;
+                var backBlockedByFront = writesDepth && isBackFacing && faceKind[idx] == 1;
 
                 if (backBlockedByFront || (!passesDepthTest && !frontOverBack))
                 {
@@ -131,7 +145,14 @@ internal static class NifScanlineRasterizer
                         u -= MathF.Floor(u);
                         v -= MathF.Floor(v);
 
-                        var (mnr, mng, mnb, _) = SampleTexture(normalMap, u, v);
+                        var (mnr, mng, mnb, _) = SampleTexture(
+                            normalMap,
+                            u,
+                            v,
+                            duDx,
+                            dvDx,
+                            duDy,
+                            dvDy);
 
                         // Decode from [0,255] to [-1,1]
                         // Y is negated: Bethesda normal maps use DirectX convention (Y-down)
@@ -220,7 +241,9 @@ internal static class NifScanlineRasterizer
                     v -= MathF.Floor(v);
 
                     // Bilinear filtered sample
-                    var (r, g, b, a) = NifSpriteRenderer.DisableTextures ? ((byte)200, (byte)200, (byte)200, (byte)255) : SampleTexture(tex, u, v);
+                    var (r, g, b, a) = NifSpriteRenderer.DisableTextures
+                        ? ((byte)200, (byte)200, (byte)200, (byte)255)
+                        : SampleTexture(tex, u, v, duDx, dvDx, duDy, dvDy);
 
                     // Apply vertex alpha: multiply texture alpha by interpolated vertex alpha
                     if (tri.HasVertexColors)
@@ -286,11 +309,10 @@ internal static class NifScanlineRasterizer
                         }
                     }
 
-                    var useBlend = tri.HasAlphaBlend || tri.MaterialAlpha < 1f;
                     var fk = isBackFacing ? (byte)2 : (byte)1;
-                    if (!useBlend || a >= 255)
+                    if (tri.AlphaRenderMode != NifAlphaRenderMode.Blend)
                     {
-                        // Fully opaque: overwrite pixel and update depth
+                        // Opaque + alpha-tested cutout passes overwrite color and write depth.
                         depthBuffer[idx] = z;
                         faceKind[idx] = fk;
                         pixels[pIdx + 0] = (byte)Math.Clamp(fr, 0, 255);
@@ -300,28 +322,51 @@ internal static class NifScanlineRasterizer
                     }
                     else
                     {
-                        // Semi-transparent: alpha-blend over existing pixel using NiAlphaProperty blend modes.
-                        // Only write depth for mostly-opaque pixels (alpha >= 128). This prevents
-                        // semi-transparent hair strands from occluding geometry behind them while
-                        // still allowing opaque hair regions to block later geometry (e.g., eyebrow
-                        // fringe). Matches the GPU approach (blended pipelines have depth writes OFF).
-                        if (a >= 128) { depthBuffer[idx] = z; faceKind[idx] = fk; }
-                        var srcA = a / 255f;
+                        // Blended pass: preserve existing depth so later transparent layers can
+                        // composite while still respecting opaque geometry already in the Z buffer.
+                        var srcA = Math.Clamp(a * MathF.Min(tri.MaterialAlpha, 1f) / 255f, 0f, 1f);
+                        if (srcA <= 0f)
+                        {
+                            continue;
+                        }
+
                         var sf = ResolveBlendFactor(tri.SrcBlendMode, srcA);
                         var df = ResolveBlendFactor(tri.DstBlendMode, srcA);
                         pixels[pIdx + 0] = (byte)Math.Clamp(fr * sf + pixels[pIdx + 0] * df, 0, 255);
                         pixels[pIdx + 1] = (byte)Math.Clamp(fg * sf + pixels[pIdx + 1] * df, 0, 255);
                         pixels[pIdx + 2] = (byte)Math.Clamp(fb * sf + pixels[pIdx + 2] * df, 0, 255);
-                        pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], a);
+                        pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], (byte)Math.Clamp(srcA * 255f, 0f, 255f));
                     }
                 }
                 else
                 {
                     // Grayscale shading fallback
-                    depthBuffer[idx] = z;
-                    faceKind[idx] = isBackFacing ? (byte)2 : (byte)1;
                     var brightness = (byte)(shade * 220 + 35); // Range 35-255
+                    var fk = isBackFacing ? (byte)2 : (byte)1;
+                    var vertexAlpha = tri.HasVertexColors
+                        ? Math.Clamp(tri.A0 * w0 + tri.A1 * w1 + tri.A2 * w2, 0f, 255f)
+                        : 255f;
 
+                    if (tri.HasAlphaTest)
+                    {
+                        var pass = tri.AlphaTestFunction switch
+                        {
+                            0 => true,
+                            1 => vertexAlpha < tri.AlphaTestThreshold,
+                            2 => MathF.Abs(vertexAlpha - tri.AlphaTestThreshold) < 0.5f,
+                            3 => vertexAlpha <= tri.AlphaTestThreshold,
+                            4 => vertexAlpha > tri.AlphaTestThreshold,
+                            5 => MathF.Abs(vertexAlpha - tri.AlphaTestThreshold) >= 0.5f,
+                            6 => vertexAlpha >= tri.AlphaTestThreshold,
+                            _ => false
+                        };
+                        if (!pass)
+                        {
+                            continue;
+                        }
+                    }
+
+                    float fr, fg, fb;
                     if (tri.HasTintColor)
                     {
                         // Hair tint (no texture fallback): same SM3002 formula
@@ -329,30 +374,50 @@ internal static class NifScanlineRasterizer
                             ? (tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2) / 255f
                             : 1f;
                         float baseVal = tri.HasVertexColors ? 255f : brightness;
-                        pixels[pIdx + 0] = (byte)Math.Clamp(baseVal * 2f * (vc * (tri.TintR - 0.5f) + 0.5f) * shade, 0, 255);
-                        pixels[pIdx + 1] = (byte)Math.Clamp(baseVal * 2f * (vc * (tri.TintG - 0.5f) + 0.5f) * shade, 0, 255);
-                        pixels[pIdx + 2] = (byte)Math.Clamp(baseVal * 2f * (vc * (tri.TintB - 0.5f) + 0.5f) * shade, 0, 255);
+                        fr = Math.Clamp(baseVal * 2f * (vc * (tri.TintR - 0.5f) + 0.5f) * shade, 0, 255);
+                        fg = Math.Clamp(baseVal * 2f * (vc * (tri.TintG - 0.5f) + 0.5f) * shade, 0, 255);
+                        fb = Math.Clamp(baseVal * 2f * (vc * (tri.TintB - 0.5f) + 0.5f) * shade, 0, 255);
                     }
                     else if (tri.HasVertexColors)
                     {
                         float vcr = tri.R0 * w0 + tri.R1 * w1 + tri.R2 * w2;
                         float vcg = tri.G0 * w0 + tri.G1 * w1 + tri.G2 * w2;
                         float vcb = tri.B0 * w0 + tri.B1 * w1 + tri.B2 * w2;
-                        vcr *= shade;
-                        vcg *= shade;
-                        vcb *= shade;
-                        pixels[pIdx + 0] = (byte)Math.Clamp(vcr, 0, 255);
-                        pixels[pIdx + 1] = (byte)Math.Clamp(vcg, 0, 255);
-                        pixels[pIdx + 2] = (byte)Math.Clamp(vcb, 0, 255);
+                        fr = Math.Clamp(vcr * shade, 0, 255);
+                        fg = Math.Clamp(vcg * shade, 0, 255);
+                        fb = Math.Clamp(vcb * shade, 0, 255);
                     }
                     else
                     {
-                        pixels[pIdx + 0] = brightness;
-                        pixels[pIdx + 1] = brightness;
-                        pixels[pIdx + 2] = brightness;
+                        fr = brightness;
+                        fg = brightness;
+                        fb = brightness;
                     }
 
-                    pixels[pIdx + 3] = 255;
+                    if (tri.AlphaRenderMode != NifAlphaRenderMode.Blend)
+                    {
+                        depthBuffer[idx] = z;
+                        faceKind[idx] = fk;
+                        pixels[pIdx + 0] = (byte)fr;
+                        pixels[pIdx + 1] = (byte)fg;
+                        pixels[pIdx + 2] = (byte)fb;
+                        pixels[pIdx + 3] = 255;
+                    }
+                    else
+                    {
+                        var srcA = Math.Clamp(vertexAlpha * MathF.Min(tri.MaterialAlpha, 1f) / 255f, 0f, 1f);
+                        if (srcA <= 0f)
+                        {
+                            continue;
+                        }
+
+                        var sf = ResolveBlendFactor(tri.SrcBlendMode, srcA);
+                        var df = ResolveBlendFactor(tri.DstBlendMode, srcA);
+                        pixels[pIdx + 0] = (byte)Math.Clamp(fr * sf + pixels[pIdx + 0] * df, 0, 255);
+                        pixels[pIdx + 1] = (byte)Math.Clamp(fg * sf + pixels[pIdx + 1] * df, 0, 255);
+                        pixels[pIdx + 2] = (byte)Math.Clamp(fb * sf + pixels[pIdx + 2] * df, 0, 255);
+                        pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], (byte)Math.Clamp(srcA * 255f, 0f, 255f));
+                    }
                 }
 
                 // Track whether the front-most pixel at this location is emissive.
@@ -372,18 +437,112 @@ internal static class NifScanlineRasterizer
         return NifSpriteRenderer.DisableBilinear ? SampleNearest(tex, u, v) : SampleBilinear(tex, u, v);
     }
 
+    internal static (byte R, byte G, byte B, byte A) SampleTexture(
+        DecodedTexture tex,
+        float u,
+        float v,
+        float duDx,
+        float dvDx,
+        float duDy,
+        float dvDy)
+    {
+        var mipLevel = SelectMipLevel(tex, duDx, dvDx, duDy, dvDy);
+        return NifSpriteRenderer.DisableBilinear
+            ? SampleNearest(tex.GetMipLevel(mipLevel), u, v)
+            : SampleBilinear(tex.GetMipLevel(mipLevel), u, v);
+    }
+
+    internal static int SelectMipLevel(
+        DecodedTexture tex,
+        float duDx,
+        float dvDx,
+        float duDy,
+        float dvDy)
+    {
+        if (tex.MipCount <= 1)
+        {
+            return 0;
+        }
+
+        var rhoX = MathF.Sqrt(
+            duDx * duDx * tex.Width * tex.Width +
+            dvDx * dvDx * tex.Height * tex.Height);
+        var rhoY = MathF.Sqrt(
+            duDy * duDy * tex.Width * tex.Width +
+            dvDy * dvDy * tex.Height * tex.Height);
+        var rho = MathF.Max(rhoX, rhoY);
+
+        if (rho <= 1f)
+        {
+            return 0;
+        }
+
+        var lod = MathF.Log2(rho);
+        return Math.Clamp((int)MathF.Round(lod), 0, tex.MipCount - 1);
+    }
+
+    internal static (float DuDx, float DuDy, float DvDx, float DvDy) ComputeUvGradients(
+        TriangleData tri,
+        float sx0,
+        float sy0,
+        float sx1,
+        float sy1,
+        float sx2,
+        float sy2,
+        float invDenom)
+    {
+        var duDx = (
+            tri.U0 * (sy1 - sy2) +
+            tri.U1 * (sy2 - sy0) +
+            tri.U2 * (sy0 - sy1)) * invDenom;
+        var duDy = (
+            tri.U0 * (sx2 - sx1) +
+            tri.U1 * (sx0 - sx2) +
+            tri.U2 * (sx1 - sx0)) * invDenom;
+        var dvDx = (
+            tri.V0 * (sy1 - sy2) +
+            tri.V1 * (sy2 - sy0) +
+            tri.V2 * (sy0 - sy1)) * invDenom;
+        var dvDy = (
+            tri.V0 * (sx2 - sx1) +
+            tri.V1 * (sx0 - sx2) +
+            tri.V2 * (sx1 - sx0)) * invDenom;
+
+        return (duDx, duDy, dvDx, dvDy);
+    }
+
     internal static (byte R, byte G, byte B, byte A) SampleNearest(DecodedTexture tex, float u, float v)
     {
-        var x = ((int)(u * tex.Width) % tex.Width + tex.Width) % tex.Width;
-        var y = ((int)(v * tex.Height) % tex.Height + tex.Height) % tex.Height;
-        var i = (y * tex.Width + x) * 4;
-        return (tex.Pixels[i], tex.Pixels[i + 1], tex.Pixels[i + 2], tex.Pixels[i + 3]);
+        return SampleNearest(tex.GetMipLevel(0), u, v);
     }
 
     internal static (byte R, byte G, byte B, byte A) SampleBilinear(DecodedTexture tex, float u, float v)
     {
-        var fx = u * tex.Width - 0.5f;
-        var fy = v * tex.Height - 0.5f;
+        return SampleBilinear(tex.GetMipLevel(0), u, v);
+    }
+
+    private static (byte R, byte G, byte B, byte A) SampleNearest(
+        DecodedTextureMipLevel mipLevel,
+        float u,
+        float v)
+    {
+        var x = ((int)(u * mipLevel.Width) % mipLevel.Width + mipLevel.Width) % mipLevel.Width;
+        var y = ((int)(v * mipLevel.Height) % mipLevel.Height + mipLevel.Height) % mipLevel.Height;
+        var i = (y * mipLevel.Width + x) * 4;
+        return (
+            mipLevel.Pixels[i],
+            mipLevel.Pixels[i + 1],
+            mipLevel.Pixels[i + 2],
+            mipLevel.Pixels[i + 3]);
+    }
+
+    private static (byte R, byte G, byte B, byte A) SampleBilinear(
+        DecodedTextureMipLevel mipLevel,
+        float u,
+        float v)
+    {
+        var fx = u * mipLevel.Width - 0.5f;
+        var fy = v * mipLevel.Height - 0.5f;
 
         var x0 = (int)MathF.Floor(fx);
         var y0 = (int)MathF.Floor(fy);
@@ -392,18 +551,18 @@ internal static class NifScanlineRasterizer
 
         // Wrap coordinates for tiling
         var x1 = x0 + 1;
-        x0 = ((x0 % tex.Width) + tex.Width) % tex.Width;
-        x1 = ((x1 % tex.Width) + tex.Width) % tex.Width;
-        y0 = ((y0 % tex.Height) + tex.Height) % tex.Height;
-        var y1 = (y0 + 1) % tex.Height;
+        x0 = ((x0 % mipLevel.Width) + mipLevel.Width) % mipLevel.Width;
+        x1 = ((x1 % mipLevel.Width) + mipLevel.Width) % mipLevel.Width;
+        y0 = ((y0 % mipLevel.Height) + mipLevel.Height) % mipLevel.Height;
+        var y1 = (y0 + 1) % mipLevel.Height;
 
         // Fetch 4 texels
-        var i00 = (y0 * tex.Width + x0) * 4;
-        var i10 = (y0 * tex.Width + x1) * 4;
-        var i01 = (y1 * tex.Width + x0) * 4;
-        var i11 = (y1 * tex.Width + x1) * 4;
+        var i00 = (y0 * mipLevel.Width + x0) * 4;
+        var i10 = (y0 * mipLevel.Width + x1) * 4;
+        var i01 = (y1 * mipLevel.Width + x0) * 4;
+        var i11 = (y1 * mipLevel.Width + x1) * 4;
 
-        var p = tex.Pixels;
+        var p = mipLevel.Pixels;
         var invFx = 1f - fracX;
         var invFy = 1f - fracY;
         var w00 = invFx * invFy;

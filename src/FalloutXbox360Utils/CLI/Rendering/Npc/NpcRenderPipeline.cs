@@ -204,10 +204,9 @@ internal static class NpcRenderPipeline
         ref int skipped,
         ref int failed)
     {
-        var defaultElevation = settings.HeadOnly ? 0f : 5f;
         var views = settings.Camera.ResolveViews(
             defaultAzimuth: 90f,
-            defaultElevation: defaultElevation);
+            defaultElevation: 0f);
 
         foreach (var npc in appearances)
         {
@@ -348,10 +347,9 @@ internal static class NpcRenderPipeline
         ref int skipped,
         ref int failed)
     {
-        var defaultElevation = settings.HeadOnly ? 0f : 5f;
         var views = settings.Camera.ResolveViews(
             defaultAzimuth: 90f,
-            defaultElevation: defaultElevation);
+            defaultElevation: 0f);
 
         NifRenderableModel? currentModel = null;
         if (appearances.Count > 0)

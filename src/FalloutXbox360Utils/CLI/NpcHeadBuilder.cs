@@ -262,13 +262,6 @@ internal static class NpcHeadBuilder
         var hairTint = NpcRenderHelpers.UnpackHairColor(npc.HairColor);
         foreach (var sub in hairModel.Submeshes)
         {
-            if (!sub.HasAlphaBlend && !sub.HasAlphaTest)
-            {
-                sub.HasAlphaBlend = true;
-                sub.HasAlphaTest = true;
-                sub.AlphaTestThreshold = 0;
-            }
-
             sub.TintColor = hairTint;
             if (npc.HairTexturePath != null)
                 sub.DiffuseTexturePath = npc.HairTexturePath;

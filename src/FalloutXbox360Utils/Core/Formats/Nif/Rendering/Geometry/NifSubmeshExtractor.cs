@@ -15,6 +15,8 @@ internal static class NifSubmeshExtractor
         int shapeIndex,
         int dataIndex,
         Dictionary<int, Matrix4x4> worldTransforms,
+        string? shapeName = null,
+        NifShaderTextureMetadata? shaderMetadata = null,
         string? diffuseTexturePath = null,
         string? normalMapTexturePath = null,
         bool isEmissive = false,
@@ -60,17 +62,14 @@ internal static class NifSubmeshExtractor
             _ => null
         };
 
-        if (submesh == null ||
-            (!isEmissive &&
-             submesh.UVs == null &&
-             diffuseTexturePath == null &&
-             normalMapTexturePath == null))
+        if (submesh == null)
         {
-            return submesh;
+            return null;
         }
 
         return new RenderableSubmesh
         {
+            ShapeName = shapeName,
             Positions = submesh.Positions,
             Triangles = submesh.Triangles,
             Normals = submesh.Normals,
@@ -78,6 +77,7 @@ internal static class NifSubmeshExtractor
             VertexColors = submesh.VertexColors,
             Tangents = submesh.Tangents,
             Bitangents = submesh.Bitangents,
+            ShaderMetadata = shaderMetadata,
             DiffuseTexturePath = diffuseTexturePath,
             NormalMapTexturePath = normalMapTexturePath,
             IsEmissive = isEmissive,

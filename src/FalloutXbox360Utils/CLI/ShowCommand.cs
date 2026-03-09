@@ -197,6 +197,13 @@ public static class ShowCommand
             lines.Add($"[cyan]Eyes:[/]       {resolver.FormatWithEditorId(npc.EyesFormId.Value)}");
         }
 
+        if (npc.HeadPartFormIds is { Count: > 0 })
+        {
+            lines.Add("[cyan]Head Parts:[/]");
+            foreach (var hdptId in npc.HeadPartFormIds)
+                lines.Add($"  {resolver.FormatWithEditorId(hdptId)}");
+        }
+
         if (npc.Height.HasValue)
         {
             lines.Add($"[cyan]Height:[/]     {npc.Height.Value:F2}");
@@ -607,6 +614,8 @@ public static class ShowCommand
             $"[cyan]FormID:[/]    0x{weapon.FormId:X8}",
             $"[cyan]EditorID:[/]  {Markup.Escape(weapon.EditorId ?? "(none)")}",
             $"[cyan]Name:[/]      {Markup.Escape(weapon.FullName ?? "(none)")}",
+            $"[cyan]Type:[/]      {weapon.WeaponTypeName}",
+            $"[cyan]Equip:[/]     {weapon.EquipmentTypeName}",
             $"[cyan]Damage:[/]    {weapon.Damage}",
             $"[cyan]Crit %:[/]    {weapon.CriticalChance:P0}",
             $"[cyan]Crit Dmg:[/]  {weapon.CriticalDamage}",

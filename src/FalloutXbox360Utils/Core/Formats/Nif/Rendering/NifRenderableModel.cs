@@ -44,6 +44,9 @@ internal sealed class NifRenderableModel
 /// </summary>
 internal sealed class RenderableSubmesh
 {
+    /// <summary>Name of the source NiTriShape/NiTriStrips block, if available.</summary>
+    public string? ShapeName { get; init; }
+
     /// <summary>X, Y, Z per vertex (length = numVertices * 3).</summary>
     public required float[] Positions { get; init; }
 
@@ -70,6 +73,9 @@ internal sealed class RenderableSubmesh
 
     /// <summary>Normal map texture path resolved from shader properties (slot 1).</summary>
     public string? NormalMapTexturePath { get; init; }
+
+    /// <summary>Shader property metadata resolved from the source NIF.</summary>
+    public NifShaderTextureMetadata? ShaderMetadata { get; init; }
 
     /// <summary>True if this submesh uses BSShaderNoLightingProperty (self-illuminated, e.g., neon signs).</summary>
     public bool IsEmissive { get; init; }

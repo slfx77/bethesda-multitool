@@ -3,13 +3,12 @@ using System.Text;
 namespace FalloutXbox360Utils.Core.Formats.Dds;
 
 /// <summary>
-///     Decodes DDS textures (DXT1/DXT3/DXT5) to raw RGBA pixel data.
-///     Only reads mip level 0. Designed for texture sampling in the sprite renderer.
+///     Decodes DDS textures (DXT1/DXT3/DXT5/ATI2) to RGBA mip chains.
 /// </summary>
 internal static class DdsTextureDecoder
 {
     /// <summary>
-    ///     Decode mip0 of a DDS file to RGBA8888.
+    ///     Decode a DDS file to RGBA8888 mip levels.
     ///     Returns null if the format is unsupported or data is invalid.
     /// </summary>
     public static DecodedTexture? Decode(byte[] ddsData)
@@ -29,41 +28,114 @@ internal static class DdsTextureDecoder
             return null;
         }
 
+        var mipCount = Math.Max(1, (int)BitConverter.ToUInt32(ddsData, 28));
         var fourcc = Encoding.ASCII.GetString(ddsData, 84, 4).TrimEnd('\0');
 
-        var pixels = fourcc switch
+        return fourcc switch
         {
-            "DXT1" => DecodeDxt1(ddsData, 128, width, height),
-            "DXT3" => DecodeDxt3(ddsData, 128, width, height),
-            "DXT5" => DecodeDxt5(ddsData, 128, width, height),
-            "ATI2" => DecodeBc5(ddsData, 128, width, height),
+            "DXT1" => DecodeMipChain(
+                ddsData,
+                128,
+                width,
+                height,
+                mipCount,
+                DecodeDxt1Level,
+                static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 8)),
+            "DXT3" => DecodeMipChain(
+                ddsData,
+                128,
+                width,
+                height,
+                mipCount,
+                DecodeDxt3Level,
+                static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
+            "DXT5" => DecodeMipChain(
+                ddsData,
+                128,
+                width,
+                height,
+                mipCount,
+                DecodeDxt5Level,
+                static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
+            "ATI2" => DecodeMipChain(
+                ddsData,
+                128,
+                width,
+                height,
+                mipCount,
+                DecodeBc5Level,
+                static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
             _ => null
-        };
-
-        if (pixels == null)
-        {
-            return null;
-        }
-
-        return new DecodedTexture
-        {
-            Pixels = pixels,
-            Width = width,
-            Height = height
         };
     }
 
-    private static byte[]? DecodeDxt1(byte[] data, int offset, int width, int height)
+    private static DecodedTexture? DecodeMipChain(
+        byte[] data,
+        int offset,
+        int width,
+        int height,
+        int mipCount,
+        Func<byte[], int, int, int, byte[]?> levelDecoder,
+        Func<int, int, int> levelSizeCalculator)
+    {
+        var levels = new List<DecodedTextureMipLevel>();
+        var pos = offset;
+        var mipWidth = width;
+        var mipHeight = height;
+
+        for (var mipLevel = 0; mipLevel < mipCount; mipLevel++)
+        {
+            var levelSize = levelSizeCalculator(mipWidth, mipHeight);
+            if (pos + levelSize > data.Length)
+            {
+                break;
+            }
+
+            var pixels = levelDecoder(data, pos, mipWidth, mipHeight);
+            if (pixels == null)
+            {
+                break;
+            }
+
+            levels.Add(new DecodedTextureMipLevel
+            {
+                Pixels = pixels,
+                Width = mipWidth,
+                Height = mipHeight
+            });
+
+            pos += levelSize;
+            if (mipWidth == 1 && mipHeight == 1)
+            {
+                break;
+            }
+
+            mipWidth = Math.Max(1, mipWidth >> 1);
+            mipHeight = Math.Max(1, mipHeight >> 1);
+        }
+
+        return levels.Count == 0
+            ? null
+            : new DecodedTexture { MipLevels = levels };
+    }
+
+    private static int GetCompressedLevelSize(int width, int height, int bytesPerBlock)
     {
         var blocksWide = (width + 3) / 4;
         var blocksHigh = (height + 3) / 4;
-        var requiredSize = offset + blocksWide * blocksHigh * 8;
+        return blocksWide * blocksHigh * bytesPerBlock;
+    }
 
+    private static byte[]? DecodeDxt1Level(byte[] data, int offset, int width, int height)
+    {
+        var requiredSize = offset + GetCompressedLevelSize(width, height, 8);
         if (data.Length < requiredSize)
         {
             return null;
         }
 
+        var blocksWide = (width + 3) / 4;
+        var blocksHigh = (height + 3) / 4;
         var pixels = new byte[width * height * 4];
         var pos = offset;
 
@@ -79,17 +151,16 @@ internal static class DdsTextureDecoder
         return pixels;
     }
 
-    private static byte[]? DecodeDxt3(byte[] data, int offset, int width, int height)
+    private static byte[]? DecodeDxt3Level(byte[] data, int offset, int width, int height)
     {
-        var blocksWide = (width + 3) / 4;
-        var blocksHigh = (height + 3) / 4;
-        var requiredSize = offset + blocksWide * blocksHigh * 16;
-
+        var requiredSize = offset + GetCompressedLevelSize(width, height, 16);
         if (data.Length < requiredSize)
         {
             return null;
         }
 
+        var blocksWide = (width + 3) / 4;
+        var blocksHigh = (height + 3) / 4;
         var pixels = new byte[width * height * 4];
         var pos = offset;
 
@@ -108,17 +179,16 @@ internal static class DdsTextureDecoder
         return pixels;
     }
 
-    private static byte[]? DecodeDxt5(byte[] data, int offset, int width, int height)
+    private static byte[]? DecodeDxt5Level(byte[] data, int offset, int width, int height)
     {
-        var blocksWide = (width + 3) / 4;
-        var blocksHigh = (height + 3) / 4;
-        var requiredSize = offset + blocksWide * blocksHigh * 16;
-
+        var requiredSize = offset + GetCompressedLevelSize(width, height, 16);
         if (data.Length < requiredSize)
         {
             return null;
         }
 
+        var blocksWide = (width + 3) / 4;
+        var blocksHigh = (height + 3) / 4;
         var pixels = new byte[width * height * 4];
         var pos = offset;
 
@@ -299,17 +369,16 @@ internal static class DdsTextureDecoder
         }
     }
 
-    private static byte[]? DecodeBc5(byte[] data, int offset, int width, int height)
+    private static byte[]? DecodeBc5Level(byte[] data, int offset, int width, int height)
     {
-        var blocksWide = (width + 3) / 4;
-        var blocksHigh = (height + 3) / 4;
-        var requiredSize = offset + blocksWide * blocksHigh * 16;
-
+        var requiredSize = offset + GetCompressedLevelSize(width, height, 16);
         if (data.Length < requiredSize)
         {
             return null;
         }
 
+        var blocksWide = (width + 3) / 4;
+        var blocksHigh = (height + 3) / 4;
         var pixels = new byte[width * height * 4];
         var pos = offset;
 
@@ -402,13 +471,145 @@ internal static class DdsTextureDecoder
 }
 
 /// <summary>
-///     A decoded RGBA texture ready for sampling.
+///     One RGBA mip level ready for sampling.
 /// </summary>
-internal sealed class DecodedTexture
+internal sealed class DecodedTextureMipLevel
 {
     /// <summary>RGBA pixel data (length = Width * Height * 4).</summary>
     public required byte[] Pixels { get; init; }
 
     public required int Width { get; init; }
     public required int Height { get; init; }
+}
+
+/// <summary>
+///     A decoded RGBA texture ready for sampling.
+/// </summary>
+internal sealed class DecodedTexture
+{
+    public required IReadOnlyList<DecodedTextureMipLevel> MipLevels { get; init; }
+
+    /// <summary>RGBA pixel data for mip 0.</summary>
+    public byte[] Pixels => MipLevels[0].Pixels;
+
+    public int Width => MipLevels[0].Width;
+    public int Height => MipLevels[0].Height;
+    public int MipCount => MipLevels.Count;
+
+    /// <summary>
+    ///     Returns true if the texture has a significant number of fully transparent pixels,
+    ///     indicating it's an overlay/decal that needs alpha testing even without explicit NiAlphaProperty.
+    /// </summary>
+    public bool HasSignificantAlpha()
+    {
+        var pixels = Pixels;
+        if (pixels.Length < 4) return false;
+
+        var totalPixels = pixels.Length / 4;
+        var transparentCount = 0;
+
+        // Sample every 4th pixel for performance on large textures
+        var step = Math.Max(1, totalPixels / 4096);
+        var sampled = 0;
+        for (var i = 3; i < pixels.Length; i += 4 * step)
+        {
+            sampled++;
+            if (pixels[i] < 128)
+                transparentCount++;
+        }
+
+        // If >10% of sampled pixels are mostly transparent, this texture needs alpha
+        return sampled > 0 && transparentCount > sampled / 10;
+    }
+
+    public DecodedTextureMipLevel GetMipLevel(int level)
+    {
+        var clamped = Math.Clamp(level, 0, MipLevels.Count - 1);
+        return MipLevels[clamped];
+    }
+
+    public static DecodedTexture FromBaseLevel(
+        byte[] pixels,
+        int width,
+        int height,
+        bool generateMipChain = true)
+    {
+        var levels = generateMipChain
+            ? BuildMipChain(pixels, width, height)
+            : [new DecodedTextureMipLevel
+            {
+                Pixels = pixels,
+                Width = width,
+                Height = height
+            }];
+
+        return new DecodedTexture { MipLevels = levels };
+    }
+
+    internal static IReadOnlyList<DecodedTextureMipLevel> BuildMipChain(
+        byte[] basePixels,
+        int width,
+        int height)
+    {
+        var levels = new List<DecodedTextureMipLevel>
+        {
+            new()
+            {
+                Pixels = basePixels,
+                Width = width,
+                Height = height
+            }
+        };
+
+        var currentPixels = basePixels;
+        var currentWidth = width;
+        var currentHeight = height;
+
+        while (currentWidth > 1 || currentHeight > 1)
+        {
+            var nextWidth = Math.Max(1, currentWidth >> 1);
+            var nextHeight = Math.Max(1, currentHeight >> 1);
+            var nextPixels = new byte[nextWidth * nextHeight * 4];
+
+            for (var y = 0; y < nextHeight; y++)
+            {
+                for (var x = 0; x < nextWidth; x++)
+                {
+                    var srcX0 = Math.Min(currentWidth - 1, x * 2);
+                    var srcY0 = Math.Min(currentHeight - 1, y * 2);
+                    var srcX1 = Math.Min(currentWidth - 1, srcX0 + 1);
+                    var srcY1 = Math.Min(currentHeight - 1, srcY0 + 1);
+                    var dstIndex = (y * nextWidth + x) * 4;
+
+                    for (var channel = 0; channel < 4; channel++)
+                    {
+                        var sample00 =
+                            currentPixels[(srcY0 * currentWidth + srcX0) * 4 + channel];
+                        var sample10 =
+                            currentPixels[(srcY0 * currentWidth + srcX1) * 4 + channel];
+                        var sample01 =
+                            currentPixels[(srcY1 * currentWidth + srcX0) * 4 + channel];
+                        var sample11 =
+                            currentPixels[(srcY1 * currentWidth + srcX1) * 4 + channel];
+
+                        nextPixels[dstIndex + channel] = (byte)(
+                            (sample00 + sample10 + sample01 + sample11 + 2) / 4);
+                    }
+                }
+            }
+
+            levels.Add(new DecodedTextureMipLevel
+            {
+                Pixels = nextPixels,
+                Width = nextWidth,
+                Height = nextHeight
+            });
+
+            currentPixels = nextPixels;
+            currentWidth = nextWidth;
+            currentHeight = nextHeight;
+        }
+
+        return levels;
+    }
 }

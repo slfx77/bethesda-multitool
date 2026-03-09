@@ -21,6 +21,9 @@ internal sealed class NifConversionState
     /// <summary>Triangles extracted from NiTriStripsData strips (for non-skinned meshes), keyed by geometry block index.</summary>
     public readonly Dictionary<int, ushort[]> GeometryStripTriangles = [];
 
+    /// <summary>Maps geometry block index to its associated NiSkinData block index.</summary>
+    public readonly Dictionary<int, int> GeometryToSkinData = [];
+
     /// <summary>Maps geometry block index to its associated NiSkinPartition block index.</summary>
     public readonly Dictionary<int, int> GeometryToSkinPartition = [];
 
@@ -38,6 +41,9 @@ internal sealed class NifConversionState
 
     /// <summary>Extracted geometry data indexed by packed block index.</summary>
     public readonly Dictionary<int, PackedGeometryData> PackedGeometryByBlock = [];
+
+    /// <summary>NiSkinData blocks that need vertex weight expansion.</summary>
+    public readonly Dictionary<int, SkinDataExpansion> SkinDataExpansions = [];
 
     /// <summary>NiSkinPartition blocks that need bone weights/indices expansion.</summary>
     public readonly Dictionary<int, SkinPartitionExpansion> SkinPartitionExpansions = [];
@@ -69,6 +75,7 @@ internal sealed class NifConversionState
         BlocksToStrip.Count == 0 &&
         GeometryExpansions.Count == 0 &&
         HavokExpansions.Count == 0 &&
+        SkinDataExpansions.Count == 0 &&
         SkinPartitionExpansions.Count == 0 &&
         NewStrings.Count == 0;
 
@@ -85,6 +92,8 @@ internal sealed class NifConversionState
         SkinPartitionTriangles.Clear();
         GeometryStripTriangles.Clear();
         GeometryToSkinPartition.Clear();
+        GeometryToSkinData.Clear();
+        SkinDataExpansions.Clear();
         SkinPartitionExpansions.Clear();
         SkinPartitionToPackedData.Clear();
         NodeNamesByBlock.Clear();
@@ -106,6 +115,11 @@ internal sealed class NifConversionState
         if (HavokExpansions.TryGetValue(block.Index, out var havokExpansion))
         {
             return havokExpansion.NewSize;
+        }
+
+        if (SkinDataExpansions.TryGetValue(block.Index, out var skinDataExpansion))
+        {
+            return skinDataExpansion.NewSize;
         }
 
         if (SkinPartitionExpansions.TryGetValue(block.Index, out var skinPartExpansion))
@@ -166,6 +180,12 @@ internal sealed class NifConversionState
         {
             size += kvp.Value.SizeIncrease;
             Log.Debug($"    + Expand Havok block {kvp.Key}: {kvp.Value.SizeIncrease} bytes");
+        }
+
+        foreach (var kvp in SkinDataExpansions)
+        {
+            size += kvp.Value.SizeIncrease;
+            Log.Debug($"    + Expand NiSkinData block {kvp.Key}: {kvp.Value.SizeIncrease} bytes");
         }
 
         foreach (var kvp in SkinPartitionExpansions)

@@ -272,18 +272,34 @@ XMA to WAV conversion requires [FFmpeg](https://www.ffmpeg.org/download.html) on
 
 MIT License - See [LICENSE](LICENSE) for details.
 
-### Third-Party Components
+### Third-Party Components (included in repository)
 
 | Component | License | Usage |
 | --- | --- | --- |
 | [DDXConv](https://github.com/GamesPastOrg/DDXConv) | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE) | DDX to DDS texture conversion (forked, built-in) |
 | [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema (embedded) |
-| [Whisper.net](https://github.com/sandrohanea/whisper.net) | [MIT](https://github.com/sandrohanea/whisper.net/blob/main/LICENSE) | Speech-to-text transcription (Audio Transcriber) |
-| [NAudio](https://github.com/naudio/NAudio) | [MIT](https://github.com/naudio/NAudio/blob/master/license.txt) | Audio playback and resampling (Audio Transcriber) |
+| [Xenia](https://github.com/xenia-project/xenia) | [BSD-3-Clause](https://github.com/xenia-project/xenia/blob/master/LICENSE) | Xbox 360 texture tiling code (in DDXConv) |
 
 ## Acknowledgments
 
+### Tools & Libraries
+
+- [Veldrid](https://github.com/veldrid/veldrid) - GPU rendering abstraction (MIT)
+- [Spectre.Console](https://github.com/spectreconsole/spectre.console) - CLI output formatting (MIT)
+- [System.CommandLine](https://github.com/dotnet/command-line-api) - CLI argument parsing (MIT)
+- [Magick.NET](https://github.com/dlemstra/Magick.NET) - Image processing (Apache-2.0)
+- [SixLabors.ImageSharp](https://github.com/SixLabors/ImageSharp) - Image processing (Apache-2.0)
+- [BCnEncoder.Net](https://github.com/Nominom/BCnEncoder.NET) - Block compression encoding (MIT)
+- [Whisper.net](https://github.com/sandrohanea/whisper.net) - Speech-to-text transcription (MIT)
+- [NAudio](https://github.com/naudio/NAudio) - Audio playback and resampling (MIT)
+- [xunit](https://github.com/xunit/xunit) - Unit testing (Apache-2.0)
+- [microsoft/microsoft-pdb](https://github.com/microsoft/microsoft-pdb) - PDB format and cvdump tool (MIT)
+- [wbenny/pdbex](https://github.com/wbenny/pdbex) - PDB struct layout extraction (MIT)
+- [0dinD/ghidra](https://github.com/0dinD/ghidra) - VMX128 PowerPC SLEIGH definitions for Ghidra
+
+### Format References
+
+- [xEdit / TES5Edit](https://github.com/TES5Edit) - ESM format documentation
 - [AlexxEG/BSA_Browser](https://github.com/AlexxEG/BSA_Browser) - BSA format reference
+- [fo76utils/NifSkope](https://github.com/fo76utils/nifskope) - NIF format documentation (BSD-3-Clause)
 - [GamesPastOrg/DDXConv](https://github.com/GamesPastOrg/DDXConv) - DDX texture conversion (MIT, Copyright 2026 Kran)
-- [fo76utils/NifSkope](https://github.com/fo76utils/nifskope) - NIF format schema (BSD-3-Clause)
-- [Xenia](https://github.com/xenia-project/xenia) - Format documentation and research

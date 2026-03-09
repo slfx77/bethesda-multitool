@@ -234,7 +234,7 @@ internal static class NifPackedDataExtractor
         {
             // Non-skinned mesh: ubyte4 (if present) is vertex colors
             result.VertexColors = ExtractUbyte4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride,
-                streams.Ubyte4Streams[0]);
+                streams.Ubyte4Streams[0], ctx.IsBigEndian);
             Log.Debug("      Non-skinned mesh: extracted vertex colors");
         }
     }
@@ -244,7 +244,7 @@ internal static class NifPackedDataExtractor
         // Extract bone indices from ubyte4 stream at offset 16
         var boneIndicesStream = streams.Ubyte4Streams.First(s => s.BlockOffset == 16);
         result.BoneIndices = ExtractUbyte4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride,
-            boneIndicesStream);
+            boneIndicesStream, ctx.IsBigEndian);
 
         // Bone weights are at offset 8 for skinned meshes (stride 48)
         var hasBoneWeightsStream = streams.Half4Streams.Any(s => s.BlockOffset == 8);
@@ -519,12 +519,14 @@ internal static class NifPackedDataExtractor
     }
 
     /// <summary>
-    ///     Extract a ubyte4 stream (4 unsigned bytes per vertex) as raw RGBA bytes.
-    ///     Vertex colors are stored as RGBA (4 bytes per vertex).
-    ///     Note: No endian conversion needed for single-byte values.
+    ///     Extract a ubyte4 stream (4 unsigned bytes per vertex).
+    ///     On Xbox 360 (big-endian), ubyte4 is packed as a big-endian uint32, so the
+    ///     4 component bytes are in reversed order compared to PC (little-endian).
+    ///     Xbox: x=byte[3], y=byte[2], z=byte[1], w=byte[0]
+    ///     PC:   x=byte[0], y=byte[1], z=byte[2], w=byte[3]
     /// </summary>
     private static byte[] ExtractUbyte4Stream(byte[] data, int rawDataOffset, int numVertices, int stride,
-        DataStreamInfo stream)
+        DataStreamInfo stream, bool isBigEndian)
     {
         var result = new byte[numVertices * 4];
         var offset = (int)stream.BlockOffset;
@@ -537,10 +539,21 @@ internal static class NifPackedDataExtractor
                 break;
             }
 
-            result[v * 4 + 0] = data[vertexOffset + 0];
-            result[v * 4 + 1] = data[vertexOffset + 1];
-            result[v * 4 + 2] = data[vertexOffset + 2];
-            result[v * 4 + 3] = data[vertexOffset + 3];
+            if (isBigEndian)
+            {
+                // Reverse byte order: Xbox uint32 MSB-first → PC component order
+                result[v * 4 + 0] = data[vertexOffset + 3];
+                result[v * 4 + 1] = data[vertexOffset + 2];
+                result[v * 4 + 2] = data[vertexOffset + 1];
+                result[v * 4 + 3] = data[vertexOffset + 0];
+            }
+            else
+            {
+                result[v * 4 + 0] = data[vertexOffset + 0];
+                result[v * 4 + 1] = data[vertexOffset + 1];
+                result[v * 4 + 2] = data[vertexOffset + 2];
+                result[v * 4 + 3] = data[vertexOffset + 3];
+            }
         }
 
         return result;

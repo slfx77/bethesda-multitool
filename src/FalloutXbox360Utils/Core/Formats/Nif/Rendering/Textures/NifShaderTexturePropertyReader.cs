@@ -1,3 +1,4 @@
+using System.Linq;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Parsing;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -8,30 +9,65 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 /// </summary>
 internal static class NifShaderTexturePropertyReader
 {
-    internal static string? ResolveDiffusePath(
+    internal static NifShaderTextureMetadata? ReadShaderMetadata(
         byte[] data,
         NifInfo nif,
         List<int> propertyRefs)
     {
         foreach (var propRef in propertyRefs)
         {
-            if (!TryGetPropertyBlock(nif, propRef, out var propBlock))
+            if (!TryGetPropertyBlock(nif, propRef, out var propBlock) ||
+                !IsShaderProperty(propBlock))
+            {
+                continue;
+            }
+
+            if (!TryReadCommonShaderData(
+                    data,
+                    nif,
+                    propBlock,
+                    out var shaderType,
+                    out var shaderFlags,
+                    out var shaderFlags2,
+                    out var envMapScale))
             {
                 continue;
             }
 
             if (propBlock.TypeName == "BSShaderPPLightingProperty")
             {
-                return ResolvePPLightingTexture(data, nif, propBlock, slotIndex: 0);
+                return new NifShaderTextureMetadata
+                {
+                    PropertyType = propBlock.TypeName,
+                    ShaderType = shaderType,
+                    ShaderFlags = shaderFlags,
+                    ShaderFlags2 = shaderFlags2,
+                    EnvMapScale = envMapScale,
+                    TextureSlots = ReadTextureSetSlots(data, nif, propBlock)
+                };
             }
 
-            if (propBlock.TypeName == "BSShaderNoLightingProperty")
+            return new NifShaderTextureMetadata
             {
-                return ResolveNoLightingTexture(data, nif, propBlock);
-            }
+                PropertyType = propBlock.TypeName,
+                ShaderType = shaderType,
+                ShaderFlags = shaderFlags,
+                ShaderFlags2 = shaderFlags2,
+                EnvMapScale = envMapScale,
+                TextureSlots = CreateFixedTextureSlots(
+                    ResolveNoLightingTexture(data, nif, propBlock))
+            };
         }
 
         return null;
+    }
+
+    internal static string? ResolveDiffusePath(
+        byte[] data,
+        NifInfo nif,
+        List<int> propertyRefs)
+    {
+        return ReadShaderMetadata(data, nif, propertyRefs)?.DiffusePath;
     }
 
     internal static string? ResolveNormalMapPath(
@@ -39,45 +75,12 @@ internal static class NifShaderTexturePropertyReader
         NifInfo nif,
         List<int> propertyRefs)
     {
-        foreach (var propRef in propertyRefs)
-        {
-            if (!TryGetPropertyBlock(nif, propRef, out var propBlock) ||
-                propBlock.TypeName != "BSShaderPPLightingProperty")
-            {
-                continue;
-            }
-
-            return ResolvePPLightingTexture(data, nif, propBlock, slotIndex: 1);
-        }
-
-        return null;
+        return ReadShaderMetadata(data, nif, propertyRefs)?.NormalMapPath;
     }
 
     internal static uint? ReadShaderFlags2(byte[] data, NifInfo nif, List<int> propertyRefs)
     {
-        foreach (var propRef in propertyRefs)
-        {
-            if (!TryGetPropertyBlock(nif, propRef, out var propBlock) ||
-                !IsShaderProperty(propBlock))
-            {
-                continue;
-            }
-
-            if (!TryReadShaderPropertyStart(data, propBlock, nif.IsBigEndian, out var pos, out var end))
-            {
-                return null;
-            }
-
-            if (pos + 12 > end)
-            {
-                return null;
-            }
-
-            pos += 8;
-            return BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
-        }
-
-        return null;
+        return ReadShaderMetadata(data, nif, propertyRefs)?.ShaderFlags2;
     }
 
     internal static (uint ShaderFlags, uint ShaderFlags2)? ReadShaderFlagsBoth(
@@ -85,32 +88,13 @@ internal static class NifShaderTexturePropertyReader
         NifInfo nif,
         List<int> propertyRefs)
     {
-        foreach (var propRef in propertyRefs)
+        var metadata = ReadShaderMetadata(data, nif, propertyRefs);
+        if (metadata?.ShaderFlags == null || metadata.ShaderFlags2 == null)
         {
-            if (!TryGetPropertyBlock(nif, propRef, out var propBlock) ||
-                !IsShaderProperty(propBlock))
-            {
-                continue;
-            }
-
-            if (!TryReadShaderPropertyStart(data, propBlock, nif.IsBigEndian, out var pos, out var end))
-            {
-                return null;
-            }
-
-            if (pos + 12 > end)
-            {
-                return null;
-            }
-
-            pos += 4;
-            var shaderFlags = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
-            pos += 4;
-            var shaderFlags2 = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
-            return (shaderFlags, shaderFlags2);
+            return null;
         }
 
-        return null;
+        return (metadata.ShaderFlags.Value, metadata.ShaderFlags2.Value);
     }
 
     internal static (uint ShaderFlags, float EnvMapScale)? ReadEnvMapInfo(
@@ -118,32 +102,15 @@ internal static class NifShaderTexturePropertyReader
         NifInfo nif,
         List<int> propertyRefs)
     {
-        foreach (var propRef in propertyRefs)
+        var metadata = ReadShaderMetadata(data, nif, propertyRefs);
+        if (metadata?.PropertyType != "BSShaderPPLightingProperty" ||
+            metadata.ShaderFlags == null ||
+            metadata.EnvMapScale == null)
         {
-            if (!TryGetPropertyBlock(nif, propRef, out var propBlock) ||
-                propBlock.TypeName != "BSShaderPPLightingProperty")
-            {
-                continue;
-            }
-
-            if (!TryReadShaderPropertyStart(data, propBlock, nif.IsBigEndian, out var pos, out var end))
-            {
-                return null;
-            }
-
-            if (pos + 16 > end)
-            {
-                return null;
-            }
-
-            pos += 4;
-            var shaderFlags = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
-            pos += 8;
-            var envMapScale = BinaryUtils.ReadFloat(data, pos, nif.IsBigEndian);
-            return (shaderFlags, envMapScale);
+            return null;
         }
 
-        return null;
+        return (metadata.ShaderFlags.Value, metadata.EnvMapScale.Value);
     }
 
     private static bool TryGetPropertyBlock(
@@ -166,30 +133,34 @@ internal static class NifShaderTexturePropertyReader
             "BSShaderPPLightingProperty" or
             "BSShaderNoLightingProperty";
 
-    private static string? ResolvePPLightingTexture(
+    private static bool TryReadCommonShaderData(
         byte[] data,
         NifInfo nif,
         BlockInfo propBlock,
-        int slotIndex)
+        out uint shaderType,
+        out uint shaderFlags,
+        out uint shaderFlags2,
+        out float envMapScale)
     {
-        if (!TryReadTextureSetRef(data, nif, propBlock, out var textureSetRef) ||
-            textureSetRef < 0 ||
-            textureSetRef >= nif.Blocks.Count)
+        shaderType = 0;
+        shaderFlags = 0;
+        shaderFlags2 = 0;
+        envMapScale = 0f;
+
+        if (!TryReadShaderPropertyStart(data, propBlock, nif.IsBigEndian, out var pos, out var end) ||
+            pos + 16 > end)
         {
-            return null;
+            return false;
         }
 
-        var textureSetBlock = nif.Blocks[textureSetRef];
-        if (textureSetBlock.TypeName != "BSShaderTextureSet")
-        {
-            return null;
-        }
-
-        return ReadTextureSetSlot(
-            data,
-            textureSetBlock,
-            nif.IsBigEndian,
-            slotIndex);
+        shaderType = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        pos += 4;
+        shaderFlags = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        pos += 4;
+        shaderFlags2 = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        pos += 4;
+        envMapScale = BinaryUtils.ReadFloat(data, pos, nif.IsBigEndian);
+        return true;
     }
 
     private static bool TryReadTextureSetRef(
@@ -235,6 +206,61 @@ internal static class NifShaderTexturePropertyReader
         return NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian);
     }
 
+    private static List<string?> ReadTextureSetSlots(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo propBlock)
+    {
+        if (!TryReadTextureSetRef(data, nif, propBlock, out var textureSetRef) ||
+            textureSetRef < 0 ||
+            textureSetRef >= nif.Blocks.Count)
+        {
+            return [];
+        }
+
+        var textureSetBlock = nif.Blocks[textureSetRef];
+        if (textureSetBlock.TypeName != "BSShaderTextureSet")
+        {
+            return CreateFixedTextureSlots();
+        }
+
+        return ReadTextureSetSlots(data, textureSetBlock, nif.IsBigEndian);
+    }
+
+    private static List<string?> ReadTextureSetSlots(
+        byte[] data,
+        BlockInfo block,
+        bool be)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+
+        if (pos + 4 > end)
+        {
+            return CreateFixedTextureSlots();
+        }
+
+        var numTextures = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+
+        if (numTextures > 20)
+        {
+            return CreateFixedTextureSlots();
+        }
+
+        var slots = new List<string?>();
+        for (var i = 0; i < numTextures; i++)
+        {
+            slots.Add(NifBinaryCursor.ReadSizedString(data, ref pos, end, be));
+            if (pos > end)
+            {
+                return CreateFixedTextureSlots();
+            }
+        }
+
+        return CreateFixedTextureSlots(slots);
+    }
+
     private static bool TryReadShaderPropertyStart(
         byte[] data,
         BlockInfo propBlock,
@@ -259,37 +285,21 @@ internal static class NifShaderTexturePropertyReader
         return true;
     }
 
-    private static string? ReadTextureSetSlot(
-        byte[] data,
-        BlockInfo block,
-        bool be,
-        int slotIndex)
+    private static List<string?> CreateFixedTextureSlots(
+        params string?[] slots)
     {
-        var pos = block.DataOffset;
-        var end = block.DataOffset + block.Size;
+        return CreateFixedTextureSlots((IEnumerable<string?>)slots);
+    }
 
-        if (pos + 4 > end)
+    private static List<string?> CreateFixedTextureSlots(
+        IEnumerable<string?> slots)
+    {
+        var fixedSlots = slots.Take(8).ToList();
+        while (fixedSlots.Count < 8)
         {
-            return null;
+            fixedSlots.Add(null);
         }
 
-        var numTextures = BinaryUtils.ReadUInt32(data, pos, be);
-        pos += 4;
-
-        if (numTextures <= (uint)slotIndex || numTextures > 20)
-        {
-            return null;
-        }
-
-        for (var i = 0; i < slotIndex; i++)
-        {
-            _ = NifBinaryCursor.ReadSizedString(data, ref pos, end, be);
-            if (pos > end)
-            {
-                return null;
-            }
-        }
-
-        return NifBinaryCursor.ReadSizedString(data, ref pos, end, be);
+        return fixedSlots;
     }
 }

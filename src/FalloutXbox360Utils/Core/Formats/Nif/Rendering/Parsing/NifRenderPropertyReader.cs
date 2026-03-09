@@ -7,6 +7,8 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Parsing;
 /// </summary>
 internal static class NifRenderPropertyReader
 {
+    private const uint LegacyMaterialPropertyFlagsMaxVersion = 0x0A000102;
+
     internal readonly record struct AlphaPropertyInfo(
         bool HasAlphaBlend,
         bool HasAlphaTest,
@@ -46,7 +48,7 @@ internal static class NifRenderPropertyReader
             }
 
             var flags = BinaryUtils.ReadUInt16(data, pos, nif.IsBigEndian);
-            var drawMode = (flags >> 11) & 0x3;
+            var drawMode = (flags >> 10) & 0x3;
             return drawMode == 3;
         }
 
@@ -145,7 +147,7 @@ internal static class NifRenderPropertyReader
                 return 1f;
             }
 
-            var alphaOffset = pos + 52;
+            var alphaOffset = pos + GetMaterialAlphaOffset(nif);
             if (alphaOffset + 4 > end)
             {
                 return 1f;
@@ -155,5 +157,27 @@ internal static class NifRenderPropertyReader
         }
 
         return 1f;
+    }
+
+    private static int GetMaterialAlphaOffset(NifInfo nif)
+    {
+        var offset = 0;
+
+        // Legacy NIF versions stored a NiMaterialProperty flags field before the color data.
+        if (nif.BinaryVersion != 0 &&
+            nif.BinaryVersion <= LegacyMaterialPropertyFlagsMaxVersion)
+        {
+            offset += 2;
+        }
+
+        // Older BS versions include ambient + diffuse colors; Fallout 3 / New Vegas do not.
+        if (nif.BsVersion < 26)
+        {
+            offset += 24;
+        }
+
+        // Specular color + emissive color + glossiness
+        offset += 12 + 12 + 4;
+        return offset;
     }
 }

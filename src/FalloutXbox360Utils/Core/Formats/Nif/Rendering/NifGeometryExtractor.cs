@@ -137,9 +137,7 @@ internal static class NifGeometryExtractor
         var nodeTransforms = new Dictionary<int, Matrix4x4>();
         var nodeChildren = new Dictionary<int, List<int>>();
         var shapeDataMap = new Dictionary<int, int>(); // shape block → data block
-        Dictionary<int, List<int>>? shapePropertyMap = textureResolver != null
-            ? new Dictionary<int, List<int>>()
-            : null;
+        var shapePropertyMap = new Dictionary<int, List<int>>();
 
         var shapeSkinInstanceMap = new Dictionary<int, int>();
         NifSceneGraphWalker.ClassifyBlocks(data, nif, nodeChildren, shapeDataMap, shapePropertyMap, shapeSkinInstanceMap);
@@ -171,7 +169,7 @@ internal static class NifGeometryExtractor
                 foreach (var idx in toRemove)
                 {
                     shapeDataMap.Remove(idx);
-                    shapePropertyMap?.Remove(idx);
+                    shapePropertyMap.Remove(idx);
                     shapeSkinInstanceMap.Remove(idx);
                 }
             }
@@ -209,6 +207,11 @@ internal static class NifGeometryExtractor
         foreach (var (shapeIndex, dataIndex) in shapeDataMap)
         {
             // Resolve texture paths and shader flags from shader properties
+            var shapeName = NifBlockParsers.ReadBlockName(
+                data,
+                nif.Blocks[shapeIndex],
+                nif);
+            NifShaderTextureMetadata? shaderMetadata = null;
             string? diffusePath = null;
             string? normalMapPath = null;
             var isEmissive = false;
@@ -223,28 +226,34 @@ internal static class NifGeometryExtractor
             var materialAlpha = 1f;
             var isEyeEnvmap = false;
             var envMapScale = 0f;
-            if (textureResolver != null && shapePropertyMap != null &&
-                shapePropertyMap.TryGetValue(shapeIndex, out var propRefs))
+            if (shapePropertyMap.TryGetValue(shapeIndex, out var propRefs))
             {
-                diffusePath = NifTextureResolver.ResolveDiffusePath(data, nif, propRefs);
-                normalMapPath = NifTextureResolver.ResolveNormalMapPath(data, nif, propRefs);
-                isEmissive = propRefs.Exists(r =>
-                    r >= 0 && r < nif.Blocks.Count &&
-                    nif.Blocks[r].TypeName == "BSShaderNoLightingProperty");
-
-                // BSShaderFlags2 bit 5 = Vertex_Colors: controls whether vertex colors
-                // should modulate the diffuse texture. Hair NIFs have vertex color data
-                // in the geometry but this flag unset, meaning the engine ignores them.
-                var shaderFlags2 = NifTextureResolver.ReadShaderFlags2(data, nif, propRefs);
-                if (shaderFlags2.HasValue)
-                    useVertexColors = (shaderFlags2.Value & (1u << 5)) != 0;
-
-                // BSShaderFlags bit 17 = Eye_Environment_Mapping + EnvMapScale for eye specular
-                var envMapInfo = NifTextureResolver.ReadEnvMapInfo(data, nif, propRefs);
-                if (envMapInfo.HasValue)
+                if (textureResolver != null)
                 {
-                    isEyeEnvmap = (envMapInfo.Value.ShaderFlags & 0x20000u) != 0;
-                    envMapScale = envMapInfo.Value.EnvMapScale;
+                    shaderMetadata = NifTextureResolver.ReadShaderMetadata(
+                        data,
+                        nif,
+                        propRefs);
+                    diffusePath = shaderMetadata?.DiffusePath;
+                    normalMapPath = shaderMetadata?.NormalMapPath;
+                    isEmissive = shaderMetadata?.PropertyType ==
+                        "BSShaderNoLightingProperty";
+
+                    // BSShaderFlags2 bit 5 = Vertex_Colors: controls whether vertex colors
+                    // should modulate the diffuse texture. Hair NIFs have vertex color data
+                    // in the geometry but this flag unset, meaning the engine ignores them.
+                    if (shaderMetadata?.ShaderFlags2 is uint shaderFlags2)
+                    {
+                        useVertexColors = (shaderFlags2 & (1u << 5)) != 0;
+                    }
+
+                    // BSShaderFlags bit 17 = Eye_Environment_Mapping + EnvMapScale for eye specular
+                    if (shaderMetadata?.ShaderFlags is uint shaderFlags &&
+                        shaderMetadata.EnvMapScale is float resolvedEnvMapScale)
+                    {
+                        isEyeEnvmap = (shaderFlags & 0x20000u) != 0;
+                        envMapScale = resolvedEnvMapScale;
+                    }
                 }
 
                 // NiStencilProperty DrawMode: DRAW_BOTH (3) = double-sided (no backface culling)
@@ -263,7 +272,7 @@ internal static class NifGeometryExtractor
                 shapeSkinning.TryGetValue(shapeIndex, out var sd) ? sd : null;
 
             var submesh = NifBlockParsers.ExtractSubmesh(data, nif, shapeIndex, dataIndex, effectiveTransforms,
-                diffusePath, normalMapPath, isEmissive, skinning, useVertexColors, isDoubleSided,
+                shapeName, shaderMetadata, diffusePath, normalMapPath, isEmissive, skinning, useVertexColors, isDoubleSided,
                 hasAlphaBlend, hasAlphaTest, alphaTestThreshold, alphaTestFunction,
                 isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha,
                 useDualQuaternionSkinning);

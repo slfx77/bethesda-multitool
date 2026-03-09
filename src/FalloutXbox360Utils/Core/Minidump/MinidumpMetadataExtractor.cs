@@ -23,6 +23,7 @@ internal static class MinidumpMetadataExtractor
         List<DetectedAssetString> assetStrings,
         List<ExtractedMesh>? meshes,
         List<ExtractedTexture>? textures,
+        List<ExtractedTexture>? gpuTextures,
         MinidumpInfo minidumpInfo,
         IProgress<AnalysisProgress>? progress,
         bool verbose,
@@ -76,7 +77,7 @@ internal static class MinidumpMetadataExtractor
 
         // Runtime mesh and texture results
         result.RuntimeMeshes = meshes;
-        result.RuntimeTextures = textures;
+        result.RuntimeTextures = MergeTextureLists(textures, gpuTextures);
 
         // Walk scene graph for mesh naming (depends on geometry results)
         if (meshes is { Count: > 0 } && minidumpInfo.IsValid)
@@ -144,6 +145,51 @@ internal static class MinidumpMetadataExtractor
                 Category = FileCategory.Texture
             });
         }
+    }
+
+    /// <summary>
+    ///     Merge CPU-side (NiPixelData) and GPU-side (NiXenonSourceTextureData) texture lists.
+    ///     Deduplicates by DataHash to avoid exporting the same texture found by both scanners.
+    /// </summary>
+    private static List<ExtractedTexture>? MergeTextureLists(
+        List<ExtractedTexture>? cpuTextures, List<ExtractedTexture>? gpuTextures)
+    {
+        if (cpuTextures == null && gpuTextures == null)
+        {
+            return null;
+        }
+
+        if (gpuTextures is not { Count: > 0 })
+        {
+            return cpuTextures;
+        }
+
+        if (cpuTextures is not { Count: > 0 })
+        {
+            return gpuTextures;
+        }
+
+        // Deduplicate: CPU textures take priority (they have more reliable metadata)
+        var seenHashes = new HashSet<long>(cpuTextures.Select(t => t.DataHash));
+        var merged = new List<ExtractedTexture>(cpuTextures);
+        var addedCount = 0;
+
+        foreach (var gpu in gpuTextures)
+        {
+            if (seenHashes.Add(gpu.DataHash))
+            {
+                merged.Add(gpu);
+                addedCount++;
+            }
+        }
+
+        if (addedCount > 0)
+        {
+            Logger.Instance.Info("Texture merge: {0} CPU + {1} GPU ({2} new after dedup) = {3} total",
+                cpuTextures.Count, gpuTextures.Count, addedCount, merged.Count);
+        }
+
+        return merged.OrderBy(t => t.SourceOffset).ToList();
     }
 
     /// <summary>

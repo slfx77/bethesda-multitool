@@ -28,6 +28,11 @@ jobs:
       - name: Build and Publish Windows GUI
         run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -o publish/win-gui
 
+      - name: Include license files
+        run: |
+          Copy-Item LICENSE publish/win-gui/
+          Copy-Item THIRD_PARTY_LICENSES publish/win-gui/
+
       - name: Upload Windows GUI artifact
         uses: actions/upload-artifact@v4
         with:
@@ -50,6 +55,11 @@ jobs:
 
       - name: Build and Publish Windows CLI
         run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r win-x64 --self-contained -o publish/win-cli
+
+      - name: Include license files
+        run: |
+          Copy-Item LICENSE publish/win-cli/
+          Copy-Item THIRD_PARTY_LICENSES publish/win-cli/
 
       - name: Upload Windows CLI artifact
         uses: actions/upload-artifact@v4
@@ -74,6 +84,11 @@ jobs:
       - name: Build and Publish Linux CLI
         run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r linux-x64 --self-contained -p:TargetFrameworks=net10.0 -o publish/linux-cli
 
+      - name: Include license files
+        run: |
+          cp LICENSE publish/linux-cli/
+          cp THIRD_PARTY_LICENSES publish/linux-cli/
+
       - name: Upload Linux CLI artifact
         uses: actions/upload-artifact@v4
         with:
@@ -96,6 +111,11 @@ jobs:
 
       - name: Build and Publish Audio Transcriber
         run: dotnet publish src/FalloutAudioTranscriber/FalloutAudioTranscriber.csproj -c Release -r win-x64 --self-contained -o publish/audio-transcriber
+
+      - name: Include license files
+        run: |
+          Copy-Item LICENSE publish/audio-transcriber/
+          Copy-Item THIRD_PARTY_LICENSES publish/audio-transcriber/
 
       - name: Upload Audio Transcriber artifact
         uses: actions/upload-artifact@v4

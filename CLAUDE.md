@@ -197,12 +197,45 @@ tools/EsmAnalyzer/                      # Niche debugging commands (fast build)
 
 ## Standard File Paths
 
+### Sample Directory Layout
+
+```
+Sample/
+├── ESM/                    # Individual ESM files
+│   ├── 360_final/          # Xbox 360 final ESM
+│   ├── 360_proto/          # Xbox 360 prototype ESM
+│   ├── fallout_3/          # Fallout 3 ESM
+│   └── pc_final/           # PC final ESM
+├── Full_Builds/            # Full game data (BSAs + ESMs + textures)
+│   ├── Fallout New Vegas (360 Final)/Data/
+│   ├── Fallout New Vegas (Aug 22, 2010)/Data/
+│   ├── Fallout New Vegas (July 21, 2010)/Data/
+│   └── Fallout New Vegas (PC Final)/Data/
+├── Meshes/                 # Extracted Meshes BSAs
+├── Textures/               # Extracted Texture BSAs
+├── MemoryDump/             # Xbox 360 crash dumps
+├── PDB/                    # Extracted PDB info from cvdump
+├── Reference_Code/         # Source code from useful projects
+├── Saves/                  # Save game files from 360 prototypes
+├── TCRF/                   # Reference documentation for article writing
+└── Unpacked_Builds/        # Full game data with BSAs extracted
+    ├── 360_July_Unpacked/
+    └── PC_Final_Unpacked/
+```
+
+### Full Game Builds (for rendering — needs BSAs + textures)
+
+- **Xbox 360 final**: `Sample/Full_Builds/Fallout New Vegas (360 Final)/Data/`
+- **Xbox 360 Aug 2010**: `Sample/Full_Builds/Fallout New Vegas (Aug 22, 2010)/Data/`
+- **Xbox 360 July 2010**: `Sample/Full_Builds/Fallout New Vegas (July 21, 2010)/Data/`
+- **PC final**: `Sample/Full_Builds/Fallout New Vegas (PC Final)/Data/`
+- **PC install**: `E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\`
+
 ### ESM Conversion Testing
 
 - **Xbox 360 source**: `Sample/ESM/360_final/FalloutNV.esm`
 - **Converted output**: `TestOutput/FalloutNV.pc.esm` (standard location, overwritten during testing)
 - **PC reference**: `Sample/ESM/pc_final/FalloutNV.esm`
-- **Game install**: `E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\FalloutNV.esm`
 
 ### Three-Way Diff (Primary Debugging Tool)
 

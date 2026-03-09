@@ -63,11 +63,8 @@ internal static partial class NifSkinPartitionExpander
         outPos = WriteFacesSection(partition, output, outPos);
         outPos = WriteBoneIndicesSection(partition, packedData, output, outPos, packedVertexOffset);
 
-        // Track offset for non-mapped partitions
-        if (!partition.HasVertexMap)
-        {
-            packedVertexOffset += partition.NumVertices;
-        }
+        // Always advance packed vertex offset — packed data stores ALL partitions' vertices contiguously
+        packedVertexOffset += partition.NumVertices;
 
         return outPos;
     }
@@ -139,21 +136,21 @@ internal static partial class NifSkinPartitionExpander
         // Write weights for each vertex
         for (var v = 0; v < partition.NumVertices; v++)
         {
-            var globalVertexIdx = GetGlobalVertexIndex(partition, v, packedVertexOffset);
-            outPos = WriteVertexWeights(partition, packedData, globalVertexIdx, output, outPos);
+            var packedIdx = GetPackedVertexIndex(v, packedVertexOffset);
+            outPos = WriteVertexWeights(partition, packedData, packedIdx, output, outPos);
         }
 
         return outPos;
     }
 
     /// <summary>
-    ///     Gets the global vertex index from partition local index.
+    ///     Gets the packed data vertex index from partition local index.
+    ///     Packed data stores vertices in partition order (partition 0 first, then 1, etc.),
+    ///     so the packed index is always packedVertexOffset + localIdx.
     /// </summary>
-    private static int GetGlobalVertexIndex(PartitionInfo partition, int localIdx, int packedVertexOffset)
+    private static int GetPackedVertexIndex(int localIdx, int packedVertexOffset)
     {
-        return partition.HasVertexMap && localIdx < partition.VertexMap.Length
-            ? partition.VertexMap[localIdx]
-            : packedVertexOffset + localIdx;
+        return packedVertexOffset + localIdx;
     }
 
     /// <summary>
@@ -162,13 +159,13 @@ internal static partial class NifSkinPartitionExpander
     private static int WriteVertexWeights(
         PartitionInfo partition,
         PackedGeometryData packedData,
-        int globalVertexIdx,
+        int packedVertexIdx,
         byte[] output,
         int outPos)
     {
         for (var w = 0; w < partition.NumWeightsPerVertex; w++)
         {
-            var weight = GetBoneWeight(packedData, globalVertexIdx, w);
+            var weight = GetBoneWeight(packedData, packedVertexIdx, w);
             BinaryPrimitives.WriteSingleLittleEndian(output.AsSpan(outPos), weight);
             outPos += 4;
         }
@@ -179,14 +176,14 @@ internal static partial class NifSkinPartitionExpander
     /// <summary>
     ///     Gets a bone weight from packed data.
     /// </summary>
-    private static float GetBoneWeight(PackedGeometryData packedData, int globalVertexIdx, int weightIdx)
+    private static float GetBoneWeight(PackedGeometryData packedData, int packedVertexIdx, int weightIdx)
     {
-        if (packedData.BoneWeights == null || globalVertexIdx >= packedData.NumVertices)
+        if (packedData.BoneWeights == null || packedVertexIdx >= packedData.NumVertices)
         {
             return 0f;
         }
 
-        var idx = globalVertexIdx * 4 + weightIdx;
+        var idx = packedVertexIdx * 4 + weightIdx;
         return idx < packedData.BoneWeights.Length ? packedData.BoneWeights[idx] : 0f;
     }
 
@@ -280,8 +277,8 @@ internal static partial class NifSkinPartitionExpander
         // Write bone indices for each vertex
         for (var v = 0; v < partition.NumVertices; v++)
         {
-            var globalVertexIdx = GetGlobalVertexIndex(partition, v, packedVertexOffset);
-            outPos = WriteVertexBoneIndices(partition, packedData, globalVertexIdx, output, outPos);
+            var packedIdx = GetPackedVertexIndex(v, packedVertexOffset);
+            outPos = WriteVertexBoneIndices(packedData, packedIdx, partition.NumWeightsPerVertex, output, outPos);
         }
 
         return outPos;
@@ -291,15 +288,15 @@ internal static partial class NifSkinPartitionExpander
     ///     Writes bone indices for a single vertex.
     /// </summary>
     private static int WriteVertexBoneIndices(
-        PartitionInfo partition,
         PackedGeometryData packedData,
-        int globalVertexIdx,
+        int packedVertexIdx,
+        int numWeightsPerVertex,
         byte[] output,
         int outPos)
     {
-        for (var w = 0; w < partition.NumWeightsPerVertex; w++)
+        for (var w = 0; w < numWeightsPerVertex; w++)
         {
-            var boneIdx = GetMappedBoneIndex(packedData, globalVertexIdx, w, partition.Bones);
+            var boneIdx = GetPackedBoneIndex(packedData, packedVertexIdx, w);
             output[outPos++] = boneIdx;
         }
 
@@ -307,44 +304,21 @@ internal static partial class NifSkinPartitionExpander
     }
 
     /// <summary>
-    ///     Gets a bone index from packed data and maps it to partition-local index.
+    ///     Gets a bone index from packed data for a given vertex and weight slot.
+    ///     Packed bone indices are ALREADY partition-local (indices into the partition's Bones[] array),
+    ///     which is exactly what NiSkinPartition.BoneIndices stores, so no mapping is needed.
     /// </summary>
-    private static byte GetMappedBoneIndex(
+    private static byte GetPackedBoneIndex(
         PackedGeometryData packedData,
-        int globalVertexIdx,
-        int weightIdx,
-        ushort[] partitionBones)
+        int packedVertexIdx,
+        int weightIdx)
     {
-        if (packedData.BoneIndices == null || globalVertexIdx >= packedData.NumVertices)
+        if (packedData.BoneIndices == null || packedVertexIdx >= packedData.NumVertices)
         {
             return 0;
         }
 
-        var idx = globalVertexIdx * 4 + weightIdx;
-        if (idx >= packedData.BoneIndices.Length)
-        {
-            return 0;
-        }
-
-        var globalBoneIdx = packedData.BoneIndices[idx];
-        return MapToPartitionBoneIndex(globalBoneIdx, partitionBones);
-    }
-
-    /// <summary>
-    ///     Maps a global bone index to a partition-local bone index.
-    ///     The partition's Bones array contains the mapping from local to global.
-    /// </summary>
-    private static byte MapToPartitionBoneIndex(byte globalBoneIdx, ushort[] partitionBones)
-    {
-        for (var i = 0; i < partitionBones.Length; i++)
-        {
-            if (partitionBones[i] == globalBoneIdx)
-            {
-                return (byte)i;
-            }
-        }
-
-        // Bone not found in partition - return 0 as fallback
-        return 0;
+        var idx = packedVertexIdx * 4 + weightIdx;
+        return idx < packedData.BoneIndices.Length ? packedData.BoneIndices[idx] : (byte)0;
     }
 }

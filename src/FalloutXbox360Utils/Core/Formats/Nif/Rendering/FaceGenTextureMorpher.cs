@@ -113,12 +113,7 @@ internal static class FaceGenTextureMorpher
             pixels[pi + 2] = ClampByte(pixels[pi + 2] + deltaB[i]);
         }
 
-        return new DecodedTexture
-        {
-            Pixels = pixels,
-            Width = texW,
-            Height = texH
-        };
+        return DecodedTexture.FromBaseLevel(pixels, texW, texH);
     }
 
     private static void ExportDebugNative(
