@@ -100,6 +100,28 @@ internal static class NpcRenderHelpers
         return invRootRotation * targetTransform;
     }
 
+    internal static bool TryGetRootRotationCompensation(
+        byte[] nifData,
+        NifInfo nifInfo,
+        out Matrix4x4 compensation)
+    {
+        compensation = Matrix4x4.Identity;
+
+        var nifBones = NifGeometryExtractor.ExtractNamedBoneTransforms(nifData, nifInfo);
+        if (!nifBones.TryGetValue(NifGeometryExtractor.RootTransformKey, out var nifRoot))
+            return false;
+
+        var rootRotation = RemoveTranslation(nifRoot);
+        if (IsNearlyIdentity(rootRotation) ||
+            !Matrix4x4.Invert(rootRotation, out compensation))
+        {
+            compensation = Matrix4x4.Identity;
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>
     ///     Transforms all positions (and normals/tangents/bitangents if present) in a submesh by the given matrix.
     /// </summary>
@@ -237,9 +259,7 @@ internal static class NpcRenderHelpers
 
         // Boneless attachments preserve their authored local root basis. Most head attachments
         // (hair, brows, facial hair, head-slot gear) should use the explicit boneless
-        // attachment transform instead of the full head basis. Eyes are the special case:
-        // they intentionally omit the override and keep the target head transform so their
-        // socket basis remains intact.
+        // attachment transform instead of the full head basis.
         nifBones.TryGetValue("__root__", out var nifRoot);
         var det3x3 = GetDeterminant3x3(RemoveTranslation(nifRoot));
         var effectiveBonelessTransform = bonelessAttachmentTransform ?? targetHeadTransform;
@@ -425,6 +445,20 @@ internal static class NpcRenderHelpers
                 egmPath, egm.SymmetricMorphs.Length, egm.AsymmetricMorphs.Length, egm.VertexCount);
             FaceGenMeshMorpher.Apply(model, egm, symCoeffs, asymCoeffs);
         }
+    }
+
+    internal static EgmParser? LoadAndCacheEgm(
+        string egmPath,
+        BsaArchive archive, BsaExtractor extractor,
+        Dictionary<string, EgmParser?> egmCache)
+    {
+        if (!egmCache.TryGetValue(egmPath, out var egm))
+        {
+            egm = LoadEgmFromBsa(egmPath, archive, extractor);
+            egmCache[egmPath] = egm;
+        }
+
+        return egm;
     }
 
     /// <summary>

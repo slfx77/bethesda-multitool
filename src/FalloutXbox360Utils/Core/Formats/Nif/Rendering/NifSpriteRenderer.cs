@@ -14,6 +14,7 @@ internal static class NifSpriteRenderer
     internal static bool DisableBilinear { get; set; }
     internal static bool DisableBumpMapping { get; set; }
     internal static bool DisableTextures { get; set; }
+    internal static bool DrawWireframeOverlay { get; set; }
 
     /// <summary>
     ///     Normal map bump strength (0 = flat, 1 = full).  The game's multi-light
@@ -188,6 +189,22 @@ internal static class NifSpriteRenderer
 
         // Apply bloom glow around emissive pixels
         NifPostProcessing.ApplyBloom(ssPixels, emissiveMask, ssWidth, ssHeight);
+
+        if (DrawWireframeOverlay)
+        {
+            foreach (var tri in triangleList)
+            {
+                NifScanlineRasterizer.DrawTriangleWireframeOverlay(
+                    ssPixels,
+                    depthBuffer,
+                    ssWidth,
+                    ssHeight,
+                    tri,
+                    effPpu,
+                    offsetX,
+                    offsetY);
+            }
+        }
 
         // Downsample to final resolution with box filter
         var pixels = Downsample(ssPixels, ssWidth, ssHeight, RenderLightingConstants.SsaaFactor);

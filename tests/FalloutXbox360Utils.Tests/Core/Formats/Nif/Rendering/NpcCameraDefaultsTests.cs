@@ -92,4 +92,20 @@ public sealed class NpcCameraDefaultsTests
         Assert.NotNull(elevationResult);
         Assert.False(elevationResult.Implicit);
     }
+
+    [Fact]
+    public void RenderNpcCommand_WireframeOptionParsesWithoutErrors()
+    {
+        var command = RenderNpcCommand.Create();
+
+        var parseResult = command.Parse([
+            "meshes.bsa",
+            "--esm", "FalloutNV.esm",
+            "--output", "TestOutput",
+            "--npc", "VMS38RedLucy",
+            "--wireframe"
+        ]);
+
+        Assert.Empty(parseResult.Errors);
+    }
 }

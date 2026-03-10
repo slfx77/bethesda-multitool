@@ -184,6 +184,13 @@ internal static class NpcRenderPipeline
                 "Textures [yellow]disabled[/] (flat white lighting only)");
         }
 
+        NifSpriteRenderer.DrawWireframeOverlay = settings.Wireframe;
+        if (settings.Wireframe)
+        {
+            AnsiConsole.MarkupLine(
+                "Wireframe overlay [yellow]enabled[/] (eyes highlighted in cyan)");
+        }
+
         if (settings.BumpStrength.HasValue)
         {
             NifSpriteRenderer.BumpStrength = settings.BumpStrength.Value;
@@ -379,8 +386,6 @@ internal static class NpcRenderPipeline
                     {
                         var renderModel = PrepareModelForView(
                             currentModel,
-                            azimuth,
-                            elevation,
                             cloneForRender: viewIndex < views.Length - 1);
                         pending = gpuRenderer.SubmitRender(
                             renderModel,
@@ -472,16 +477,9 @@ internal static class NpcRenderPipeline
 
     private static NifRenderableModel PrepareModelForView(
         NifRenderableModel model,
-        float azimuth,
-        float elevation,
         bool cloneForRender)
     {
         var renderModel = cloneForRender ? NpcRenderHelpers.DeepCloneModel(model) : model;
-        if (NpcEyeLookAt.HasEyeSubmeshes(renderModel))
-        {
-            NpcEyeLookAt.Apply(renderModel, azimuth, elevation);
-        }
-
         return renderModel;
     }
 
@@ -507,11 +505,6 @@ internal static class NpcRenderPipeline
         if (model == null || !model.HasGeometry)
         {
             return null;
-        }
-
-        if (NpcEyeLookAt.HasEyeSubmeshes(model))
-        {
-            NpcEyeLookAt.Apply(model, azimuth, elevation);
         }
 
         return NifSpriteRenderer.Render(
@@ -549,11 +542,6 @@ internal static class NpcRenderPipeline
         if (model == null)
         {
             return null;
-        }
-
-        if (NpcEyeLookAt.HasEyeSubmeshes(model))
-        {
-            NpcEyeLookAt.Apply(model, azimuth, elevation);
         }
 
         return NifSpriteRenderer.Render(
@@ -662,6 +650,19 @@ internal static class NpcRenderPipeline
 
         internal static NpcGpuRenderResources Create(NpcRenderSettings settings)
         {
+            if (settings.Wireframe)
+            {
+                if (settings.ForceGpu)
+                {
+                    AnsiConsole.MarkupLine(
+                        "[yellow]Wireframe overlay currently uses the CPU renderer; ignoring --gpu[/]");
+                }
+
+                AnsiConsole.MarkupLine(
+                    "Using [yellow]CPU software renderer[/] (--wireframe)");
+                return new NpcGpuRenderResources(null, null, false);
+            }
+
             if (settings.ForceCpu)
             {
                 AnsiConsole.MarkupLine(

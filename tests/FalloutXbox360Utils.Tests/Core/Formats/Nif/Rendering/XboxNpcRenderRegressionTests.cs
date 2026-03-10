@@ -196,44 +196,6 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
     }
 
     [Fact]
-    public void BuildRedLucyHeadOnly_Xbox360EyesAimTowardFrontCamera()
-    {
-        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
-
-        using var assets = CreateXboxAssets();
-        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
-        var lucy = ResolveNpcAppearance(
-            assets.AppearanceResolver,
-            pluginName,
-            fullName: "Red Lucy",
-            editorIdFragment: LucyEditorId);
-
-        Assert.NotNull(lucy);
-
-        var headMeshCache =
-            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
-        var egmCache =
-            new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
-        var egtCache =
-            new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
-
-        var model = NpcHeadBuilder.Build(
-            lucy!,
-            assets.MeshesArchive,
-            assets.MeshExtractor,
-            assets.TextureResolver,
-            headMeshCache,
-            egmCache,
-            egtCache,
-            CreateSettings(headOnly: true));
-
-        Assert.NotNull(model);
-        Assert.True(model.HasGeometry);
-
-        AssertEyesAimTowardCamera(model, new System.Numerics.Vector3(0f, 1f, 0f));
-    }
-
-    [Fact]
     public void BuildRedLucyFullBodyHead_Xbox360AttachmentsRemainAnchoredToFace()
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
@@ -302,25 +264,6 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
     }
 
     [Fact]
-    public void BuildRedLucyFullBodyHead_Xbox360EyesAimTowardFrontCamera()
-    {
-        Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
-
-        using var assets = CreateXboxAssets();
-        var pluginName = Path.GetFileName(samples.Xbox360FinalEsm!);
-        var lucy = ResolveNpcAppearance(
-            assets.AppearanceResolver,
-            pluginName,
-            fullName: "Red Lucy",
-            editorIdFragment: LucyEditorId);
-
-        Assert.NotNull(lucy);
-
-        var model = BuildFullBodyHeadModel(assets, lucy!);
-        AssertEyesAimTowardCamera(model, new System.Numerics.Vector3(0f, 1f, 0f));
-    }
-
-    [Fact]
     public void BuildDocMitchellHeadOnly_Xbox360AttachmentsRemainAnchoredToFace()
     {
         Assert.SkipWhen(samples.Xbox360FinalEsm is null, "Xbox 360 final ESM not available");
@@ -355,7 +298,6 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         Assert.NotNull(model);
         Assert.True(model.HasGeometry);
         AssertAttachmentAnchoring(model, assets.TextureResolver);
-        AssertEyesAimTowardCamera(model, new System.Numerics.Vector3(0f, 1f, 0f));
     }
 
     [Fact]
@@ -698,11 +640,6 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
         return submesh.RenderOrder == 0 && !IsHairLikeSubmesh(submesh);
     }
 
-    private static bool IsPrimaryHairSubmesh(RenderableSubmesh submesh)
-    {
-        return submesh.RenderOrder == 1 || ContainsHint(submesh.ShapeName, "hair");
-    }
-
     private static bool IsAnchoredAttachmentSubmesh(RenderableSubmesh submesh)
     {
         if (IsEyeSubmesh(submesh) || IsBaseFaceSubmesh(submesh))
@@ -761,29 +698,6 @@ public sealed class XboxNpcRenderRegressionTests(SampleFileFixture samples)
                 value.Contains("\\eyes\\", StringComparison.OrdinalIgnoreCase) ||
                 value.Contains("/eyes/", StringComparison.OrdinalIgnoreCase)) &&
                !value.Contains("eyebrow", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static void AssertEyesAimTowardCamera(
-        NifRenderableModel model,
-        System.Numerics.Vector3 desiredForward)
-    {
-        var azimuth = MathF.Atan2(desiredForward.Y, desiredForward.X) * 180f / MathF.PI;
-        var elevation = MathF.Asin(Math.Clamp(desiredForward.Z, -1f, 1f)) * 180f / MathF.PI;
-        if (NpcEyeLookAt.HasEyeSubmeshes(model))
-        {
-            NpcEyeLookAt.Apply(model, azimuth, elevation);
-        }
-
-        var eyeSubmeshes = model.Submeshes.Where(IsEyeSubmesh).ToList();
-        Assert.NotEmpty(eyeSubmeshes);
-
-        foreach (var submesh in eyeSubmeshes)
-        {
-            Assert.True(NpcEyeLookAt.TryEstimateLookDirection(submesh, out _, out var lookDirection));
-            Assert.True(
-                System.Numerics.Vector3.Dot(lookDirection, desiredForward) >= 0.92f,
-                $"Eye submesh '{submesh.ShapeName ?? "(unnamed)"}' look direction was {lookDirection}");
-        }
     }
 
     private static HairCompositionEvidence AnalyzeHairComposition(

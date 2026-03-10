@@ -111,6 +111,10 @@ public static class RenderNpcCommand
         {
             Description = "Render skeleton bones only (debug visualization)"
         };
+        var wireframeOption = new Option<bool>("--wireframe")
+        {
+            Description = "Overlay mesh wireframe for geometry debugging (eyes highlighted in cyan)"
+        };
         var bindPoseOption = new Option<bool>("--bind-pose")
         {
             Description = "Use bind pose (T-pose) instead of idle animation"
@@ -163,6 +167,7 @@ public static class RenderNpcCommand
         command.Options.Add(gpuOption);
         command.Options.Add(cpuOption);
         command.Options.Add(skeletonOption);
+        command.Options.Add(wireframeOption);
         command.Options.Add(bindPoseOption);
         command.Options.Add(animOption);
         command.Options.Add(isoOption);
@@ -208,6 +213,7 @@ public static class RenderNpcCommand
                 ForceGpu = parseResult.GetValue(gpuOption),
                 ForceCpu = parseResult.GetValue(cpuOption),
                 Skeleton = parseResult.GetValue(skeletonOption),
+                Wireframe = parseResult.GetValue(wireframeOption),
                 BindPose = parseResult.GetValue(bindPoseOption),
                 AnimOverride = parseResult.GetValue(animOption),
                 Camera = new CameraConfig

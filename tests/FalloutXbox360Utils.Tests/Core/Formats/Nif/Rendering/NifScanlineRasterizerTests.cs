@@ -239,6 +239,79 @@ public sealed class NifScanlineRasterizerTests
         Assert.Equal(1f, depthBuffer[rightIndex]);
     }
 
+    [Fact]
+    public void DrawTriangleWireframeOverlay_EyeLayerUsesCyanHighlight()
+    {
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(float.MinValue, width * height).ToArray();
+
+        var triangle = new TriangleData
+        {
+            X0 = 8f,
+            Y0 = 8f,
+            Z0 = 1f,
+            X1 = 24f,
+            Y1 = 8f,
+            Z1 = 1f,
+            X2 = 16f,
+            Y2 = 24f,
+            Z2 = 1f,
+            RenderOrder = 2
+        };
+
+        NifScanlineRasterizer.DrawTriangleWireframeOverlay(
+            pixels,
+            depthBuffer,
+            width,
+            height,
+            triangle,
+            ppu: 1f,
+            offsetX: 0f,
+            offsetY: 0f);
+
+        var sample = ReadPixel(pixels, width, 16, 8);
+        Assert.True(sample.G > 200);
+        Assert.True(sample.B > 200);
+        Assert.True(sample.R < 40);
+        Assert.Equal(255, sample.A);
+    }
+
+    [Fact]
+    public void DrawTriangleWireframeOverlay_OccludedDepthSuppressesOverlay()
+    {
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(5f, width * height).ToArray();
+
+        var triangle = new TriangleData
+        {
+            X0 = 8f,
+            Y0 = 8f,
+            Z0 = 1f,
+            X1 = 24f,
+            Y1 = 8f,
+            Z1 = 1f,
+            X2 = 16f,
+            Y2 = 24f,
+            Z2 = 1f
+        };
+
+        NifScanlineRasterizer.DrawTriangleWireframeOverlay(
+            pixels,
+            depthBuffer,
+            width,
+            height,
+            triangle,
+            ppu: 1f,
+            offsetX: 0f,
+            offsetY: 0f);
+
+        Assert.All(pixels, component => Assert.Equal(0, component));
+    }
+
     private static DecodedTextureMipLevel CreateUniformMipLevel(
         int width,
         int height,
@@ -411,6 +484,7 @@ public sealed class NifScanlineRasterizerTests
         private readonly bool _disableBilinear;
         private readonly bool _disableBumpMapping;
         private readonly bool _disableTextures;
+        private readonly bool _drawWireframeOverlay;
         private readonly float _bumpStrength;
 
         public RendererStateScope()
@@ -418,11 +492,13 @@ public sealed class NifScanlineRasterizerTests
             _disableBilinear = NifSpriteRenderer.DisableBilinear;
             _disableBumpMapping = NifSpriteRenderer.DisableBumpMapping;
             _disableTextures = NifSpriteRenderer.DisableTextures;
+            _drawWireframeOverlay = NifSpriteRenderer.DrawWireframeOverlay;
             _bumpStrength = NifSpriteRenderer.BumpStrength;
 
             NifSpriteRenderer.DisableBilinear = true;
             NifSpriteRenderer.DisableBumpMapping = false;
             NifSpriteRenderer.DisableTextures = false;
+            NifSpriteRenderer.DrawWireframeOverlay = false;
             NifSpriteRenderer.BumpStrength = 0.5f;
         }
 
@@ -431,6 +507,7 @@ public sealed class NifScanlineRasterizerTests
             NifSpriteRenderer.DisableBilinear = _disableBilinear;
             NifSpriteRenderer.DisableBumpMapping = _disableBumpMapping;
             NifSpriteRenderer.DisableTextures = _disableTextures;
+            NifSpriteRenderer.DrawWireframeOverlay = _drawWireframeOverlay;
             NifSpriteRenderer.BumpStrength = _bumpStrength;
         }
     }

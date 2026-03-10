@@ -94,7 +94,8 @@ internal static class NifBlockParsers
         byte srcBlendMode = 6,
         byte dstBlendMode = 7,
         float materialAlpha = 1f,
-        bool useDualQuaternionSkinning = false)
+        bool useDualQuaternionSkinning = false,
+        float[]? preSkinMorphDeltas = null)
         => NifSubmeshExtractor.ExtractSubmesh(
             data,
             nif,
@@ -118,7 +119,8 @@ internal static class NifBlockParsers
             srcBlendMode,
             dstBlendMode,
             materialAlpha,
-            useDualQuaternionSkinning);
+            useDualQuaternionSkinning,
+            preSkinMorphDeltas);
 
     internal static RenderableSubmesh? ExtractTriShapeData(
         byte[] data,

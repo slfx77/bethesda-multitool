@@ -32,7 +32,8 @@ internal static class NifSubmeshExtractor
         byte srcBlendMode = 6,
         byte dstBlendMode = 7,
         float materialAlpha = 1f,
-        bool useDualQuaternionSkinning = false)
+        bool useDualQuaternionSkinning = false,
+        float[]? preSkinMorphDeltas = null)
     {
         var dataBlock = nif.Blocks[dataIndex];
         worldTransforms.TryGetValue(shapeIndex, out var transform);
@@ -50,7 +51,8 @@ internal static class NifSubmeshExtractor
                 nif.BsVersion,
                 transform,
                 skinning,
-                useDualQuaternionSkinning),
+                useDualQuaternionSkinning,
+                preSkinMorphDeltas),
             "NiTriStripsData" => ExtractTriStripsData(
                 data,
                 dataBlock,
@@ -58,7 +60,8 @@ internal static class NifSubmeshExtractor
                 nif.BsVersion,
                 transform,
                 skinning,
-                useDualQuaternionSkinning),
+                useDualQuaternionSkinning,
+                preSkinMorphDeltas),
             _ => null
         };
 
@@ -102,7 +105,8 @@ internal static class NifSubmeshExtractor
         uint bsVersion,
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
-        bool useDualQuaternionSkinning = false)
+        bool useDualQuaternionSkinning = false,
+        float[]? preSkinMorphDeltas = null)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -261,6 +265,14 @@ internal static class NifSubmeshExtractor
             pos += 2;
         }
 
+        // Apply EGM morph deltas in bind-pose space BEFORE skinning transforms vertices
+        if (preSkinMorphDeltas != null && positions != null)
+        {
+            var count = Math.Min(positions.Length, preSkinMorphDeltas.Length);
+            for (var i = 0; i < count; i++)
+                positions[i] += preSkinMorphDeltas[i];
+        }
+
         var transformed = ApplySkinningOrTransform(
             positions,
             normals,
@@ -289,7 +301,8 @@ internal static class NifSubmeshExtractor
         uint bsVersion,
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
-        bool useDualQuaternionSkinning = false)
+        bool useDualQuaternionSkinning = false,
+        float[]? preSkinMorphDeltas = null)
     {
         var triangles = NifTriStripExtractor.ExtractTrianglesFromTriStripsData(data, block, be);
         if (triangles == null || triangles.Length == 0)
@@ -401,6 +414,14 @@ internal static class NifSubmeshExtractor
             {
                 uvs = NifGeometryDataReader.ReadUvs(data, pos, numVerts, be);
             }
+        }
+
+        // Apply EGM morph deltas in bind-pose space BEFORE skinning transforms vertices
+        if (preSkinMorphDeltas != null)
+        {
+            var count = Math.Min(positions.Length, preSkinMorphDeltas.Length);
+            for (var i = 0; i < count; i++)
+                positions[i] += preSkinMorphDeltas[i];
         }
 
         var transformed = ApplySkinningOrTransform(

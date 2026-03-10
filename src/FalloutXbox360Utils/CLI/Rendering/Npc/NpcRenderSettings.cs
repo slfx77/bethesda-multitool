@@ -24,6 +24,7 @@ internal sealed class NpcRenderSettings
     public bool ForceGpu { get; init; }
     public bool ForceCpu { get; init; }
     public bool Skeleton { get; init; }
+    public bool Wireframe { get; init; }
     public bool BindPose { get; init; }
     public string? AnimOverride { get; init; }
     public CameraConfig Camera { get; init; } = new();

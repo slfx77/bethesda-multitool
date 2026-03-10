@@ -126,7 +126,8 @@ internal static class NifGeometryExtractor
         Dictionary<string, Matrix4x4>? externalBoneTransforms = null,
         string? filterShapeName = null,
         Dictionary<string, Matrix4x4>? externalPoseDeltas = null,
-        bool useDualQuaternionSkinning = false)
+        bool useDualQuaternionSkinning = false,
+        float[]? preSkinMorphDeltas = null)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -271,11 +272,20 @@ internal static class NifGeometryExtractor
             ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning =
                 shapeSkinning.TryGetValue(shapeIndex, out var sd) ? sd : null;
 
+            // Apply pre-skinning morph deltas only to the first skinned shape (head mesh).
+            // Once applied, clear the reference so subsequent shapes don't get them.
+            float[]? shapeMorphDeltas = null;
+            if (preSkinMorphDeltas != null && skinning != null)
+            {
+                shapeMorphDeltas = preSkinMorphDeltas;
+                preSkinMorphDeltas = null;
+            }
+
             var submesh = NifBlockParsers.ExtractSubmesh(data, nif, shapeIndex, dataIndex, effectiveTransforms,
                 shapeName, shaderMetadata, diffusePath, normalMapPath, isEmissive, skinning, useVertexColors, isDoubleSided,
                 hasAlphaBlend, hasAlphaTest, alphaTestThreshold, alphaTestFunction,
                 isEyeEnvmap, envMapScale, srcBlendMode, dstBlendMode, materialAlpha,
-                useDualQuaternionSkinning);
+                useDualQuaternionSkinning, shapeMorphDeltas);
             if (submesh != null)
             {
                 model.Submeshes.Add(submesh);
